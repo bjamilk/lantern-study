@@ -1746,11 +1746,9 @@ router.get(
     const activeListings = listings.filter((l) => l.status === 'active');
     const reservedListings = listings.filter((l) => l.status === 'reserved');
     const soldCount = listings.filter((l) => l.status === 'sold').length;
-    // Public: buyable active listings only. Owner also sees reserved (sale in progress).
-    const shopShelfListings = isOwner
-      ? [...reservedListings, ...activeListings]
-      : activeListings;
-    const visibleListings = isOwner ? listings : activeListings;
+    // Shop shelf: active + reserved (reserved shown as sale-in-progress, not buyable).
+    const shopShelfListings = [...reservedListings, ...activeListings];
+    const visibleListings = isOwner ? listings : shopShelfListings;
 
     // Reviews only on listings the viewer is allowed to know about
     const reviewListingIds = isOwner
@@ -1827,7 +1825,7 @@ router.get(
     } else {
       // Public: no inquiries, favorites, views, or sold/inventory internals
       stats = {
-        activeListings: activeListings.length,
+        activeListings: activeListings.length + reservedListings.length,
         avgRating: roundedAvg,
         totalReviews: allReviews.length,
         isVerified,

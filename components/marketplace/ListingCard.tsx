@@ -96,6 +96,12 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           <span className="truncate">{categoryName}</span>
         </span>
 
+        {listing.status === 'reserved' ? (
+          <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-amber-500/95 text-[10px] font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
+            Sale in progress
+          </span>
+        ) : null}
+
         {isOwner ? (
           <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-lantern-primary/90 backdrop-blur-sm text-[10px] font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
             Your Listing

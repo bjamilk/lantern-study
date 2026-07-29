@@ -259,10 +259,11 @@ export class MarketplaceSellerToolsService {
     const q = (input.q || '').trim().toLowerCase();
     const campusId = input.campusId || null;
 
+    // Include reserved (sale in progress) so shops stay discoverable while a deal is open.
     let listingsQuery = this.db
       .from('marketplace_listings')
       .select('id, user_id, campus_id, location, created_at, status')
-      .eq('status', 'active')
+      .in('status', ['active', 'reserved'])
       .order('created_at', { ascending: false })
       .limit(2000);
 

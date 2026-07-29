@@ -810,7 +810,24 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
             {/* Action Buttons */}
             <div className="space-y-2 sm:space-y-2.5 pt-2">
-              {!isOwner && (
+              {listing.status === 'reserved' ? (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Sale in progress</p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
+                    This listing is reserved for an open order. It will leave Explore again after the sale completes, or return if the order is cancelled.
+                  </p>
+                  {isOwner ? (
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('MarketplaceOrders')}
+                      className="mt-2 text-xs font-semibold text-lantern-primary hover:underline"
+                    >
+                      Open orders
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {!isOwner && listing.status !== 'reserved' && (
                 <button
                   onClick={handleContactSeller}
                   className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
@@ -822,7 +839,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   )}
                 </button>
               )}
-              {!isOwner && listing.price && listing.price > 0 && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
                 <button
                   onClick={() => {
                     if (requireAuth()) return;
@@ -834,7 +851,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   Make an Offer
                 </button>
               )}
-              {!isOwner && listing.price && listing.price > 0 && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
                 <div className="p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border space-y-2">
                   <p className="text-xs font-semibold text-lantern-text-secondary">Have a coupon?</p>
                   <div className="flex gap-2">
@@ -865,7 +882,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   )}
                 </div>
               )}
-              {!isOwner && listing.price && listing.price > 0 && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
                 <button
                   onClick={handleBuyNow}
                   disabled={buyingNow}

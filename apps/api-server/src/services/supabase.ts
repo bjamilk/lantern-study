@@ -8416,7 +8416,8 @@ export class SupabaseService {
     let query = this.supabase
       .from("marketplace_listings")
       .select(selectClause, { count: "exact" })
-      .eq("status", "active")
+      // Reserved stays visible (sale in progress) but purchase APIs still require active.
+      .in("status", ["active", "reserved"])
       .range(offset, offset + limit - 1);
 
     if (countryCode) {
@@ -8617,7 +8618,8 @@ export class SupabaseService {
     const listing = await this.getMarketplaceListingById(listingId);
     if (!listing) return null;
 
-    if (listing.status === "active") return listing;
+    // Reserved = sale in progress: visible (read-only), but buy/offer paths still require active.
+    if (listing.status === "active" || listing.status === "reserved") return listing;
 
     if (!viewerId) return null;
 
