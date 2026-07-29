@@ -199,7 +199,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
               <ResolvedStorageImg
                 src={card.imageUrl}
                 alt="Flashcard"
-                className="block max-w-full max-h-[400px] h-auto rounded-lg shadow-sm"
+                className="block max-w-full max-h-[min(70vh,560px)] h-auto rounded-lg shadow-sm"
               />
 
               {card.occlusionData?.type === 'rectangles' && card.occlusionData.rectangles?.map((rect, idx) => (
@@ -291,8 +291,9 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   }
 
   return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background">
-      <div className="flex justify-between items-center mb-4">
+    <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-lantern-background">
+      <div className="min-h-full flex flex-col p-4 md:p-6">
+      <div className="flex-shrink-0 flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold text-rose-600 dark:text-rose-400">{session.deck.name}</h1>
         <div className="flex items-center gap-2">
           <span className="text-xs text-lantern-text-secondary mr-2">{currentIndex + 1} / {session.cardQueue.length}</span>
@@ -313,19 +314,19 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col justify-center items-center">
+      <div className="flex-1 flex flex-col justify-safe-center items-center py-2">
         {isAnswerShown ? (
           <article
-            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border"
+            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col border border-lantern-border"
             aria-label="Flashcard answer"
           >
             <div
               key={`${currentCard.id}-back`}
-              className="text-center flex-grow flex flex-col justify-center items-center animate-[fadeIn_0.25s_ease-out]"
+              className="text-center flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col justify-safe-center items-center animate-[fadeIn_0.25s_ease-out] pr-1"
             >
               {renderCardContent(currentCard, true)}
             </div>
-            <div className="mt-6 pt-4 border-t border-lantern-border">
+            <div className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border">
               {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
                 <div className="mb-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
                   <span className="text-sm text-amber-700 dark:text-amber-400">You've struggled with this card. Want some help?</span>
@@ -369,7 +370,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           </article>
         ) : (
           <div
-            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border cursor-pointer"
+            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col border border-lantern-border cursor-pointer"
             onClick={handleShowAnswer}
             role="button"
             tabIndex={0}
@@ -378,12 +379,12 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           >
             <div
               key={`${currentCard.id}-front`}
-              className="text-center flex-grow flex flex-col justify-center items-center animate-[fadeIn_0.25s_ease-out]"
+              className="text-center flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col justify-safe-center items-center animate-[fadeIn_0.25s_ease-out] pr-1"
             >
               {renderCardContent(currentCard, false)}
               <p className="mt-4 text-xs text-lantern-text-tertiary">Space or click to reveal</p>
             </div>
-            <div className="mt-6 pt-4 border-t border-lantern-border">
+            <div className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border">
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleShowAnswer(); }}
@@ -395,7 +396,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           </div>
         )}
       </div>
-      <div className="mt-6 bg-lantern-surface rounded-xl shadow-inner border border-lantern-border">
+      <div className="flex-shrink-0 mt-6 bg-lantern-surface rounded-xl shadow-inner border border-lantern-border">
         <button
           type="button"
           onClick={() => setCommentsOpen((open) => !open)}
@@ -445,6 +446,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
 
       <div className="flex-shrink-0 text-center pb-4">
         <button onClick={onEndSession} className="text-sm text-lantern-text-secondary hover:text-lantern-text hover:underline transition-colors">End Session Early</button>
+      </div>
       </div>
     </div>
   );

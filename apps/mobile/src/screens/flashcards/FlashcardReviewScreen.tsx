@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { FlashcardType, FLASHCARD_GRADE_LABELS } from '@lantern/shared';
@@ -289,9 +289,15 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         </Text>
       ) : null}
 
-      <View className="flex-1 px-4 justify-center">
+      <ScrollView
+        className="flex-1 px-4"
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 8 }}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+      >
         {nextCard ? (
-          <View className="absolute left-4 right-4 top-1/2 -mt-32 opacity-30 scale-95">
+          <View className="absolute left-0 right-0 top-1/2 -mt-32 opacity-30 scale-95" pointerEvents="none">
             <View
               className="min-h-[260px] rounded-2xl bg-lantern-surface border border-lantern-border"
               style={{ backgroundColor: colors.surface, borderColor: colors.border }}
@@ -310,7 +316,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
           onToggleBack={handleToggleBack}
           onGrade={handleRate}
         />
-      </View>
+      </ScrollView>
 
       <View className="px-4 gap-3" style={{ paddingBottom: Math.max(insets.bottom, 12) + 12 }}>
         {!showBack ? (

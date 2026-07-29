@@ -126,7 +126,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
               <ResolvedStorageImg
                 src={card.imageUrl}
                 alt="Flashcard"
-                className="block max-w-full max-h-[400px] h-auto rounded-lg shadow-sm"
+                className="block max-w-full max-h-[min(70vh,560px)] h-auto rounded-lg shadow-sm"
               />
 
               {card.occlusionData?.type === 'rectangles' && card.occlusionData.rectangles?.map((rect, idx) => (
@@ -233,8 +233,9 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
   }
 
   return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background-secondary dark:bg-lantern-background">
-      <div className="flex justify-between items-center mb-4">
+    <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-lantern-background-secondary dark:bg-lantern-background">
+      <div className="min-h-full flex flex-col p-4 md:p-6">
+      <div className="flex-shrink-0 flex justify-between items-center mb-4">
         <div>
           <h1 className="text-xl font-semibold text-lantern-primary">{modeLabel} — {session.deck.name}</h1>
           {timeLeft !== null && (
@@ -248,9 +249,9 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
         </span>
       </div>
 
-      <div className="flex-1 flex flex-col justify-center items-center">
-        <div className="w-full max-w-2xl min-h-[300px] bg-lantern-surface dark:bg-lantern-surface rounded-xl shadow-lg p-6 flex flex-col justify-between">
-          <div className="text-center flex-grow flex flex-col justify-center items-center">
+      <div className="flex-1 flex flex-col justify-safe-center items-center py-2">
+        <div className="w-full max-w-2xl min-h-[300px] bg-lantern-surface dark:bg-lantern-surface rounded-xl shadow-lg p-6 flex flex-col">
+          <div className="text-center flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col justify-safe-center items-center pr-1">
             {renderCardContent(currentCard, false)}
             
             {isAnswerShown && (
@@ -261,7 +262,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
             )}
           </div>
 
-          <div className="mt-6 pt-4 border-t border-lantern-border">
+          <div className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border">
             {!isAnswerShown ? (
               <button
                 onClick={() => setIsAnswerShown(true)}
@@ -301,6 +302,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
       </div>
       <div className="flex-shrink-0 text-center pb-4">
         <button onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })} className="text-sm text-lantern-text-secondary hover:underline">End Cram Session</button>
+      </div>
       </div>
     </div>
   );

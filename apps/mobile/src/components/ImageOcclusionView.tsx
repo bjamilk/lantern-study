@@ -115,13 +115,13 @@ export function ImageOcclusionView({ card, showAnswer }: ImageOcclusionViewProps
 const styles = StyleSheet.create({
   wrapper: {
     width: '100%',
-    maxHeight: 320,
+    maxHeight: 480,
     alignSelf: 'center',
     position: 'relative',
   },
   image: {
     width: '100%',
-    height: 280,
+    height: 360,
     borderRadius: 12,
   },
   mask: {
