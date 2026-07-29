@@ -30,11 +30,13 @@ export function mergeDmThreadLists(
   existing: DMThread[],
   fetched: DMThread[],
 ): DMThread[] {
+  const existingList = Array.isArray(existing) ? existing : [];
+  const fetchedList = Array.isArray(fetched) ? fetched : [];
   const byId = new Map<string, DMThread>();
-  for (const thread of fetched) {
+  for (const thread of fetchedList) {
     byId.set(thread.id, thread);
   }
-  for (const local of existing) {
+  for (const local of existingList) {
     const server = byId.get(local.id);
     if (!server) {
       byId.set(local.id, local);

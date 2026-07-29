@@ -70,6 +70,7 @@ function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
 }
 
 function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, number>) {
+    if (!Array.isArray(fetched)) return [];
     return fetched.map((t: any) => mapDmThreadFromApi(t, dmUnreadCounts));
 }
 
@@ -215,12 +216,12 @@ export function useAppEffects({
             ]);
             if (Array.isArray(fetchedThreads)) {
                 const mapped = mapFetchedDmThreads(fetchedThreads, dmUnreadCounts);
-                setDmThreads((prev) => mergeDmThreadLists(prev, mapped));
+                updateDmThreads((prev) => mergeDmThreadLists(prev, mapped));
             }
         } catch (err) {
             console.warn('[DM] Failed to refresh threads:', err);
         }
-    }, [setDmThreads]);
+    }, [updateDmThreads]);
 
     // --- Presence heartbeat for online status ---
     useEffect(() => {

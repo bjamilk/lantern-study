@@ -139,11 +139,15 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
     return { messages: newMessages };
   }),
   
-  setDmThreads: (threads) => set({ dmThreads: threads }),
+  setDmThreads: (threads) => set({
+    dmThreads: Array.isArray(threads) ? threads : [],
+  }),
   
-  updateDmThreads: (updater) => set((state) => ({
-    dmThreads: updater(state.dmThreads),
-  })),
+  updateDmThreads: (updater) => set((state) => {
+    const prev = Array.isArray(state.dmThreads) ? state.dmThreads : [];
+    const next = updater(prev);
+    return { dmThreads: Array.isArray(next) ? next : prev };
+  }),
 
   removeDmThread: (threadId) => set((state) => {
     const { [threadId]: _, ...remainingMessages } = state.directMessages;
