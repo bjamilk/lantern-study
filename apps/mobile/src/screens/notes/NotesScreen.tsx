@@ -220,6 +220,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     removeFolder,
     saveNote,
     moveNotesToFolder,
+    removeNotes,
     setSelectedFolderId,
     setError,
   } = useNotesStore();
@@ -239,6 +240,8 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [movePickerOpen, setMovePickerOpen] = useState(false);
   const [movingNotes, setMovingNotes] = useState(false);
+  const [deletingNotes, setDeletingNotes] = useState(false);
+  const selectionBusy = movingNotes || deletingNotes;
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
 
   const loadData = useCallback(async () => {
@@ -289,6 +292,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
 
+  const canDeleteNote = (note: StudyNote) =>
+    !note.accessRole || note.accessRole === 'owner';
+
   const exitSelectMode = () => {
     setSelectMode(false);
     setSelectedNoteIds([]);
@@ -318,6 +324,40 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       Alert.alert('Could not move notes', e instanceof Error ? e.message : 'Try again.');
     } finally {
       setMovingNotes(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedNoteIds.length === 0 || deletingNotes) return;
+    const ownedIds = selectedNoteIds.filter((id) => {
+      const note = notes.find((n) => n.id === id);
+      return note ? canDeleteNote(note) : false;
+    });
+    if (ownedIds.length === 0) {
+      Alert.alert(
+        'Cannot delete',
+        'Only notes you own can be deleted. Shared notes stay with their owner.',
+      );
+      return;
+    }
+    const confirmed = await confirmSheet({
+      title: ownedIds.length === 1 ? 'Delete note' : 'Delete notes',
+      message:
+        ownedIds.length === 1
+          ? 'Delete this note? This cannot be undone.'
+          : `Delete ${ownedIds.length} notes? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!confirmed) return;
+    setDeletingNotes(true);
+    try {
+      await removeNotes(ownedIds);
+      exitSelectMode();
+    } catch (e: unknown) {
+      Alert.alert('Could not delete notes', e instanceof Error ? e.message : 'Try again.');
+    } finally {
+      setDeletingNotes(false);
     }
   };
 
@@ -364,6 +404,38 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         });
       },
     });
+    if (canDeleteNote(note)) {
+      buttons.push({
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          setTimeout(() => {
+            setSelectedNoteIds([note.id]);
+            void (async () => {
+              const confirmed = await confirmSheet({
+                title: 'Delete note',
+                message: 'Delete this note? This cannot be undone.',
+                danger: true,
+                confirmLabel: 'Delete',
+              });
+              if (!confirmed) return;
+              setDeletingNotes(true);
+              try {
+                await removeNotes([note.id]);
+                exitSelectMode();
+              } catch (e: unknown) {
+                Alert.alert(
+                  'Could not delete notes',
+                  e instanceof Error ? e.message : 'Try again.',
+                );
+              } finally {
+                setDeletingNotes(false);
+              }
+            })();
+          }, 50);
+        },
+      });
+    }
     buttons.push({ text: 'Cancel', style: 'cancel' });
     Alert.alert(note.title, undefined, buttons);
   };
@@ -783,7 +855,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       )}
 
       {selectMode ? (
-        <View className="mx-4 mb-2 flex-row items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2">
+        <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2">
           <Text className="flex-1 text-sm text-lantern-text">
             {selectedNoteIds.length === 0
               ? 'Select notes'
@@ -791,11 +863,23 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           </Text>
           <Button
             size="sm"
-            disabled={selectedNoteIds.length === 0 || movingNotes}
+            variant="secondary"
+            disabled={selectedNoteIds.length === 0 || selectionBusy}
             loading={movingNotes}
             onPress={() => setMovePickerOpen(true)}
           >
             Move
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={selectedNoteIds.length === 0 || selectionBusy}
+            loading={deletingNotes}
+            onPress={() => {
+              void handleDeleteSelected();
+            }}
+          >
+            Delete
           </Button>
         </View>
       ) : null}

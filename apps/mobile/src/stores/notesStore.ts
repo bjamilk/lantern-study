@@ -27,6 +27,8 @@ interface NotesState {
   /** Move notes into a folder, or `null` for All notes (unfiled). */
   moveNotesToFolder: (noteIds: string[], folderId: string | null) => Promise<void>;
   removeNote: (noteId: string) => Promise<void>;
+  /** Permanently delete notes via the same DELETE path as single-note delete. */
+  removeNotes: (noteIds: string[]) => Promise<void>;
   setSelectedFolderId: (id: string | null) => void;
   setSelectedNote: (note: (StudyNote & { attachments?: NoteAttachment[] }) | null) => void;
   setError: (e: string | null) => void;
@@ -232,5 +234,47 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   removeNote: async (noteId) => {
     await notesApi.deleteNote(noteId);
     set({ notes: get().notes.filter((n) => n.id !== noteId) });
+  },
+
+  removeNotes: async (noteIds) => {
+    const uniqueIds = [...new Set(noteIds)].filter(Boolean);
+    if (uniqueIds.length === 0) return;
+
+    const results = await Promise.allSettled(
+      uniqueIds.map((noteId) => notesApi.deleteNote(noteId)),
+    );
+
+    const deletedIds = new Set<string>();
+    const failures: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        deletedIds.add(uniqueIds[index]);
+      } else {
+        failures.push(
+          result.reason instanceof Error ? result.reason.message : 'Failed to delete note',
+        );
+      }
+    });
+
+    if (deletedIds.size > 0) {
+      const selected = get().selectedNote;
+      set({
+        notes: get().notes.filter((n) => !deletedIds.has(n.id)),
+        selectedNote: selected && deletedIds.has(selected.id) ? null : selected,
+        error: failures.length > 0 ? failures[0] : null,
+      });
+    }
+
+    if (failures.length > 0 && deletedIds.size === 0) {
+      set({ error: failures[0] });
+      throw new Error(failures[0]);
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        deletedIds.size > 0
+          ? `Deleted ${deletedIds.size} note(s); ${failures.length} failed.`
+          : failures[0],
+      );
+    }
   },
 }));

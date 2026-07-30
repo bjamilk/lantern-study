@@ -909,6 +909,12 @@ export const App: React.FC = () => {
                     throw e;
                 });
             }}
+            onDeleteNotes={(noteIds) => {
+                return noteHandlers.handleDeleteNotes(noteIds).catch((e: any) => {
+                    showToast(e?.message || 'Failed to delete notes', 'error');
+                    throw e;
+                });
+            }}
             onSelectNote={(id) => { void noteHandlers.openNote(id); }}
             onPdfImport={async (file) => {
                 try {

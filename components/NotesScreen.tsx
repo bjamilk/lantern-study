@@ -15,6 +15,7 @@ import {
   BookmarkIcon,
   ArchiveBoxIcon,
   CheckIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
@@ -51,6 +52,8 @@ interface NotesScreenProps {
   onArchiveNote?: (noteId: string, isArchived: boolean) => void | Promise<void>;
   /** Move one or more notes into a folder, or `null` for All notes (unfiled). */
   onMoveNotesToFolder?: (noteIds: string[], folderId: string | null) => void | Promise<void>;
+  /** Permanently delete one or more owned notes (same DELETE path as single-note delete). */
+  onDeleteNotes?: (noteIds: string[]) => void | Promise<void>;
   onSelectNote: (noteId: string) => void;
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
@@ -82,6 +85,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onTogglePinNote,
   onArchiveNote,
   onMoveNotesToFolder,
+  onDeleteNotes,
   onSelectNote,
   onPdfImport,
   onPresentationImport,
@@ -104,6 +108,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [movePickerOpen, setMovePickerOpen] = useState(false);
   const [movingNotes, setMovingNotes] = useState(false);
+  const [deletingNotes, setDeletingNotes] = useState(false);
+  const selectionEnabled = Boolean(onMoveNotesToFolder || onDeleteNotes);
+  const selectionBusy = movingNotes || deletingNotes;
   // Mount only one folder surface: CSS-hidden Menus still portal and duplicate.
   const [isMdUp, setIsMdUp] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
@@ -173,6 +180,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
 
+  const canDeleteNote = (note: StudyNote) =>
+    !note.accessRole || note.accessRole === 'owner';
+
   const exitSelectMode = () => {
     setSelectMode(false);
     setSelectedNoteIds([]);
@@ -202,6 +212,45 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     } finally {
       setMovingNotes(false);
     }
+  };
+
+  const handleDeleteNotesByIds = (noteIds: string[]) => {
+    if (!onDeleteNotes || noteIds.length === 0 || deletingNotes) return;
+    const ownedIds = noteIds.filter((id) => {
+      const note = notes.find((n) => n.id === id);
+      return note ? canDeleteNote(note) : false;
+    });
+    if (ownedIds.length === 0) {
+      void confirmDialog({
+        title: 'Cannot delete',
+        message: 'Only notes you own can be deleted. Shared notes stay with their owner.',
+        confirmLabel: 'OK',
+        cancelLabel: 'Close',
+      });
+      return;
+    }
+    void confirmDialog({
+      title: ownedIds.length === 1 ? 'Delete note' : 'Delete notes',
+      message:
+        ownedIds.length === 1
+          ? 'Delete this note? This cannot be undone.'
+          : `Delete ${ownedIds.length} notes? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    }).then(async (ok) => {
+      if (!ok) return;
+      setDeletingNotes(true);
+      try {
+        await onDeleteNotes(ownedIds);
+        exitSelectMode();
+      } finally {
+        setDeletingNotes(false);
+      }
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    handleDeleteNotesByIds(selectedNoteIds);
   };
 
   const handlePdf = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -340,7 +389,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       <Modal
         isOpen={movePickerOpen}
         onClose={() => {
-          if (!movingNotes) setMovePickerOpen(false);
+          if (!selectionBusy) setMovePickerOpen(false);
         }}
         ariaLabelledBy="move-notes-title"
         maxWidthClass="max-w-sm"
@@ -357,7 +406,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           <button
             type="button"
             role="option"
-            disabled={movingNotes}
+            disabled={selectionBusy}
             onClick={() => void handleMoveToFolder(null)}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
           >
@@ -370,7 +419,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               key={folder.id}
               type="button"
               role="option"
-              disabled={movingNotes}
+              disabled={selectionBusy}
               onClick={() => void handleMoveToFolder(folder.id)}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
             >
@@ -401,7 +450,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           <Button
             type="button"
             variant="ghost"
-            disabled={movingNotes}
+            disabled={selectionBusy}
             onClick={() => setMovePickerOpen(false)}
             className="min-h-[44px]"
           >
@@ -458,7 +507,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             className="mb-0 sm:mb-2"
             actions={
               <div className="flex gap-1.5 sm:gap-2">
-                {onMoveNotesToFolder ? (
+                {selectionEnabled ? (
                   <Button
                     variant="secondary"
                     size="sm"
@@ -496,7 +545,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
         <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3 sm:space-y-4">
           {embedded && (
             <div className="flex gap-1.5 sm:gap-2 justify-end">
-              {onMoveNotesToFolder ? (
+              {selectionEnabled ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -661,7 +710,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             </div>
           )}
 
-          {selectMode && onMoveNotesToFolder ? (
+          {selectMode && selectionEnabled ? (
             <div
               className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2"
               role="toolbar"
@@ -673,16 +722,30 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                   : `${selectedNoteIds.length} selected`}
               </span>
               <div className="ml-auto flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={selectedNoteIds.length === 0 || movingNotes}
-                  onClick={() => setMovePickerOpen(true)}
-                >
-                  <FolderIcon className="w-4 h-4 sm:mr-1" aria-hidden />
-                  Move to folder
-                </Button>
-                <Button size="sm" variant="ghost" onClick={exitSelectMode}>
+                {onMoveNotesToFolder ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={selectedNoteIds.length === 0 || selectionBusy}
+                    onClick={() => setMovePickerOpen(true)}
+                  >
+                    <FolderIcon className="w-4 h-4 sm:mr-1" aria-hidden />
+                    Move to folder
+                  </Button>
+                ) : null}
+                {onDeleteNotes ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={selectedNoteIds.length === 0 || selectionBusy}
+                    onClick={handleDeleteSelected}
+                    aria-label="Delete selected notes"
+                  >
+                    <TrashIcon className="w-4 h-4 sm:mr-1" aria-hidden />
+                    Delete
+                  </Button>
+                ) : null}
+                <Button size="sm" variant="ghost" onClick={exitSelectMode} disabled={selectionBusy}>
                   Cancel
                 </Button>
               </div>
@@ -726,9 +789,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 const menuOpen = noteMenuId === note.id;
                 const showMenu =
                   canManageNote(note) &&
-                  (onTogglePinNote || onArchiveNote || onMoveNotesToFolder);
+                  (onTogglePinNote || onArchiveNote || onMoveNotesToFolder || onDeleteNotes);
                 const isSelected = selectedNoteIds.includes(note.id);
-                const selectable = selectMode && canManageNote(note) && Boolean(onMoveNotesToFolder);
+                const selectable = selectMode && canManageNote(note) && selectionEnabled;
                 return (
                   <div
                     key={note.id}
@@ -850,6 +913,20 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               >
                                 <ArchiveBoxIcon className="h-4 w-4" aria-hidden />
                                 {note.isArchived ? 'Unarchive' : 'Archive'}
+                              </button>
+                            ) : null}
+                            {onDeleteNotes && canDeleteNote(note) ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                onClick={() => {
+                                  setNoteMenuId(null);
+                                  window.setTimeout(() => handleDeleteNotesByIds([note.id]), 50);
+                                }}
+                              >
+                                <TrashIcon className="h-4 w-4" aria-hidden />
+                                Delete
                               </button>
                             ) : null}
                           </div>

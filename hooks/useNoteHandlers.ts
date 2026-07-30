@@ -15,6 +15,7 @@ import { trackQuestProgress } from '../services/questProgress';
 import { trackNoteCreated } from '../services/productAnalytics';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { useToastStore } from '../stores/toastStore';
+import { useLectureRecordingStore } from '../stores/lectureRecordingStore';
 
 const INSUFFICIENT_STUDY_CONTENT_MESSAGE = `Note needs at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content. For presentations, wait for slide text extraction or add your own notes.`;
 
@@ -30,6 +31,7 @@ export function useNoteHandlers(currentUserId?: string) {
     saveNote,
     moveNotesToFolder,
     removeNote,
+    removeNotes,
     selectedNote,
     setSelectedNote,
     loadComments,
@@ -378,6 +380,31 @@ export function useNoteHandlers(currentUserId?: string) {
     [cancelAutoSave, removeNote, setSelectedNote]
   );
 
+  const handleDeleteNotes = useCallback(
+    async (noteIds: string[]) => {
+      cancelAutoSave();
+      const uniqueIds = [...new Set(noteIds)].filter(Boolean);
+      if (uniqueIds.length === 0) return;
+
+      const lecture = useLectureRecordingStore.getState();
+      if (
+        lecture.noteId &&
+        uniqueIds.includes(lecture.noteId) &&
+        lecture.status !== 'idle'
+      ) {
+        lecture.discard();
+      }
+
+      const selectedId = useNotesStore.getState().selectedNote?.id;
+      if (selectedId && uniqueIds.includes(selectedId)) {
+        setSelectedNote(null);
+      }
+
+      await removeNotes(uniqueIds);
+    },
+    [cancelAutoSave, removeNotes, setSelectedNote],
+  );
+
   const handleRenameFolder = useCallback(
     async (folderId: string, name: string) => {
       await updateFolder(folderId, { name });
@@ -439,6 +466,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleShareWithGroup,
     handleAddCollaborator,
     handleDeleteNote,
+    handleDeleteNotes,
     handlePostComment: postComment,
     setStudyGoal,
     studyGoal,
