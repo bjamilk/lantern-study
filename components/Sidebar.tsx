@@ -11,6 +11,7 @@ import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useUIStore } from '../stores/uiStore';
 import { formatUnreadBadgeCount, getTotalActiveUnreadChatCount } from '../utils/chatUnread';
+import { isInboundDmMessageRequest } from '../utils/dmThreads';
 import { featureAccents } from '@lantern/shared/design';
 
 interface SidebarProps {
@@ -111,7 +112,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       : AppMode.GAME_ACTIVE;
   const pausedSessionLabel = pausedTest ? 'Test' : pausedStudy ? 'Study' : 'Game';
 
-  const { topLevelChats, subGroupsMap, archivedGroups } = useMemo(() => {
+  const { topLevelChats, messageRequestChats, subGroupsMap, archivedGroups } = useMemo(() => {
     const allChats: ChatItem[] = [
       ...groups.map(g => ({ ...g, chatType: 'group' as const })),
       ...dmThreads.map(t => ({ ...t, chatType: 'dm' as const }))
@@ -124,6 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     });
 
     const topLevel: ChatItem[] = [];
+    const messageRequests: ChatItem[] = [];
     const subMap: Record<string, Group[]> = {};
     const archived: ChatItem[] = [];
     
@@ -142,6 +144,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       } else {
         if ((chat as any).isArchived) {
           archived.push(chat);
+        } else if (isInboundDmMessageRequest(chat, currentUser.id)) {
+          messageRequests.push(chat);
         } else {
           topLevel.push(chat);
         }
@@ -152,8 +156,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         subMap[parentId].sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    return { topLevelChats: topLevel, subGroupsMap: subMap, archivedGroups: archived };
-  }, [groups, dmThreads]);
+    return {
+      topLevelChats: topLevel,
+      messageRequestChats: messageRequests,
+      subGroupsMap: subMap,
+      archivedGroups: archived,
+    };
+  }, [groups, dmThreads, currentUser.id]);
 
   const totalUnreadChatCount = useMemo(
     () => getTotalActiveUnreadChatCount(groups, dmThreads),
@@ -374,6 +383,24 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
             {isChatsSectionExpanded && (
             <div>
+              {messageRequestChats.length > 0 && showText && (
+                <div className="mb-1">
+                  <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                    Message requests ({messageRequestChats.length})
+                  </p>
+                  {messageRequestChats.map((chat) => (
+                    <GroupListItem
+                      key={chat.id}
+                      chat={chat}
+                      currentUser={currentUser}
+                      isSelected={selectedChatId === chat.id && currentAppMode === AppMode.CHAT}
+                      onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
+                      isDisabled={!canInteractWithChats}
+                      showText={showText}
+                    />
+                  ))}
+                </div>
+              )}
               {topLevelChats.map((chat) => {
                   if (chat.chatType === 'group') {
                     // Use recursive render for groups
@@ -393,7 +420,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                     );
                   }
               })}
-              {topLevelChats.length === 0 && showText && <p className="px-3 py-2 text-sm text-lantern-text-secondary">No active chats.</p>}
+              {topLevelChats.length === 0 && messageRequestChats.length === 0 && showText && (
+                <p className="px-3 py-2 text-sm text-lantern-text-secondary">No active chats.</p>
+              )}
               {archivedGroups.length > 0 && showText && (
                 <div className="mt-2 pt-2 border-t border-lantern-border">
                     <button

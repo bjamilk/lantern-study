@@ -27,6 +27,19 @@ export function mapDmThreadFromApi(
   };
 }
 
+/** Inbound pending request — recipient has not accepted/replied yet. */
+export function isInboundDmMessageRequest(
+  thread: Pick<DMThread, 'status' | 'requestedBy'>,
+  currentUserId: string | null | undefined,
+): boolean {
+  if (!currentUserId) return false;
+  return (
+    thread.status === 'pending' &&
+    typeof thread.requestedBy === 'string' &&
+    thread.requestedBy !== currentUserId
+  );
+}
+
 /**
  * Merge server threads with local ones. Keeps optimistic threads that are not
  * on the server yet (first message has not created the row).

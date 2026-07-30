@@ -47,6 +47,11 @@ export interface PrivacySettings {
   discoverableForInvites: boolean;
   showOnlineStatus: boolean;
   showStudyActivity: boolean;
+  /**
+   * Cold-DM acceptance — does not affect search/discoverability.
+   * everyone = open immediately; groups = open for shared groups else request;
+   * none = message requests only (anyone may still attempt a first message).
+   */
   allowDirectMessages: 'everyone' | 'groups' | 'none';
 }
 

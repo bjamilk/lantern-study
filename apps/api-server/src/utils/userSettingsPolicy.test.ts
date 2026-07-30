@@ -84,7 +84,7 @@ describe('resolveDirectMessageAccess', () => {
     supabase.from.mockReset();
   });
 
-  it('denies when recipient policy is none and no open thread exists', async () => {
+  it('creates a message request when recipient policy is none (not deny)', async () => {
     supabase.from.mockImplementation((table: string) => {
       if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') return mockThreadState(null);
@@ -97,10 +97,8 @@ describe('resolveDirectMessageAccess', () => {
       'recipient',
       parseUserSettings({ privacy: { allowDirectMessages: 'none' } })
     );
-    expect(result).toEqual({
-      mode: 'deny',
-      reason: 'This user does not accept direct messages',
-    });
+    expect(result).toEqual({ mode: 'request' });
+    expect(supabase.from).not.toHaveBeenCalledWith('group_members');
   });
 
   it('allows everyone policy without group lookup', async () => {

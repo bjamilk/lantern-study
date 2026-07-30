@@ -931,10 +931,10 @@ export default function SettingsScreen() {
               title="Direct Messages"
               subtitle={
                 settings.privacy.allowDirectMessages === 'everyone'
-                  ? 'Anyone can message you'
+                  ? 'Anyone can message you directly'
                   : settings.privacy.allowDirectMessages === 'groups'
-                    ? 'Group members only'
-                    : 'No direct messages'
+                    ? 'Group members open; others send requests'
+                    : 'Message requests only'
               }
               onPress={() => setShowDirectMessagesModal(true)}
             />
@@ -1670,14 +1670,18 @@ export default function SettingsScreen() {
               >
                 <View>
                   <Text style={[styles.optionTitle, modalTheme.optionTitle]}>
-                    {option === 'everyone' ? 'Everyone' : option === 'groups' ? 'Group Members Only' : 'No One'}
+                    {option === 'everyone'
+                      ? 'Everyone'
+                      : option === 'groups'
+                        ? 'Group members open'
+                        : 'Message requests only'}
                   </Text>
                   <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
                     {option === 'everyone'
-                      ? 'Any signed-in user can message you'
+                      ? 'Any signed-in user can open a chat with you immediately'
                       : option === 'groups'
-                        ? 'Only people in your shared groups'
-                        : 'Block all new direct messages'}
+                        ? 'Shared group members open chats; others send a message request'
+                        : 'Anyone can still message you — new chats arrive as requests you accept or decline'}
                   </Text>
                 </View>
                 {settings.privacy.allowDirectMessages === option && (

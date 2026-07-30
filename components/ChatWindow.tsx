@@ -911,7 +911,22 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   if (!chat) {
     // Desktop: show placeholder
     // Mobile: show inline group/DM list for navigation
-    const activeDmThreads = dmThreads.filter(t => !t.isArchived);
+    const inboundRequestThreads = dmThreads.filter(
+      (t) =>
+        !t.isArchived &&
+        t.status === 'pending' &&
+        typeof t.requestedBy === 'string' &&
+        t.requestedBy !== currentUser.id,
+    );
+    const activeDmThreads = dmThreads.filter(
+      (t) =>
+        !t.isArchived &&
+        !(
+          t.status === 'pending' &&
+          typeof t.requestedBy === 'string' &&
+          t.requestedBy !== currentUser.id
+        ),
+    );
     const archivedDmThreads = dmThreads.filter(t => t.isArchived);
     const totalArchived = archivedTopLevelGroups.length + archivedDmThreads.length;
 
@@ -949,7 +964,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
           {/* List */}
           <div className="flex-1 overflow-y-auto">
-            {activeTopLevelGroups.length === 0 && activeDmThreads.length === 0 ? (
+            {activeTopLevelGroups.length === 0 &&
+            activeDmThreads.length === 0 &&
+            inboundRequestThreads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
                 <div className="w-16 h-16 rounded-2xl bg-lantern-primary-background flex items-center justify-center mb-4">
                   <UserGroupIcon className="w-8 h-8 text-lantern-primary" />
@@ -964,6 +981,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </div>
             ) : (
               <div className="divide-y divide-lantern-border">
+                {inboundRequestThreads.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wider bg-amber-50 dark:bg-amber-950/30">
+                      Message requests ({inboundRequestThreads.length})
+                    </div>
+                    {inboundRequestThreads.map((thread) => (
+                      <GroupListItem
+                        key={thread.id}
+                        chat={{ ...thread, chatType: 'dm' as const }}
+                        currentUser={currentUser}
+                        isSelected={false}
+                        onClick={() => onSelectChat?.({ ...thread, chatType: 'dm' as const })}
+                        showText={true}
+                      />
+                    ))}
+                  </>
+                )}
+
                 {/* DM threads */}
                 {activeDmThreads.map(thread => (
                   <GroupListItem

@@ -267,15 +267,19 @@ export async function resolveDirectMessageAccess(
 
   const policy = getDirectMessagePolicy(recipientSettingsRaw);
 
+  // DM privacy never hides users from search — that is profileVisibility /
+  // discoverableForInvites. Privacy only controls whether cold outreach opens
+  // two-way immediately or arrives as a message request.
+  //
+  // everyone → open immediately
+  // groups   → open if they share a group; otherwise message request
+  // none     → always message request (not deny / not invisible)
   if (policy === "everyone") {
     return { mode: "allow" };
   }
 
   if (policy === "none") {
-    return {
-      mode: "deny",
-      reason: "This user does not accept direct messages",
-    };
+    return { mode: "request" };
   }
 
   // policy === 'groups'

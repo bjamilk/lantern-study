@@ -24,6 +24,7 @@ import { useTheme } from '../../theme';
 type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
 
 type ListItem =
+  | { kind: 'section'; title: string }
   | { kind: 'dm'; thread: DMThread; otherUserId: string; name: string }
   | { kind: 'group'; group: Group; nestingLevel: number; hasChildren: boolean };
 
@@ -44,6 +45,7 @@ function ChatRow({
   time,
   unread,
   isDm,
+  isMessageRequest,
   nestingLevel = 0,
   hasChildren = false,
   isExpanded = false,
@@ -55,6 +57,7 @@ function ChatRow({
   time?: string;
   unread?: number;
   isDm?: boolean;
+  isMessageRequest?: boolean;
   nestingLevel?: number;
   hasChildren?: boolean;
   isExpanded?: boolean;
@@ -110,6 +113,11 @@ function ChatRow({
           </Text>
           {time ? <Text className="text-xs text-lantern-text-tertiary shrink-0">{time}</Text> : null}
         </View>
+        {isMessageRequest ? (
+          <Text className="text-xs text-amber-700 dark:text-amber-300 mt-0.5" numberOfLines={1}>
+            Message request
+          </Text>
+        ) : null}
         {preview ? (
           <Text className="text-sm text-lantern-text-secondary mt-0.5" numberOfLines={1}>
             {preview}
@@ -174,20 +182,35 @@ export function GroupsScreen({ navigation }: Props) {
   }, [loadChats]);
 
   const listItems = useMemo((): ListItem[] => {
-    const items: ListItem[] = [];
-    const activeDms = dmThreads.filter(t => !t.isArchived);
+    const activeDms = dmThreads.filter((t) => !t.isArchived);
+    const inboundRequests = activeDms.filter(
+      (t) =>
+        t.status === 'pending' &&
+        typeof t.requestedBy === 'string' &&
+        t.requestedBy !== user?.id,
+    );
+    const openDms = activeDms.filter(
+      (t) =>
+        !(
+          t.status === 'pending' &&
+          typeof t.requestedBy === 'string' &&
+          t.requestedBy !== user?.id
+        ),
+    );
 
-    for (const thread of activeDms) {
-      const otherUserId = thread.participantIds.find(id => id !== user?.id) || '';
+    const toDmItem = (thread: DMThread): ListItem => {
+      const otherUserId = thread.participantIds.find((id) => id !== user?.id) || '';
       const name = otherUserId
         ? thread.participants[otherUserId]?.name || 'Direct message'
         : 'Direct message';
-      items.push({ kind: 'dm', thread, otherUserId, name });
-    }
+      return { kind: 'dm', thread, otherUserId, name };
+    };
+
+    const openItems: ListItem[] = openDms.map(toDmItem);
 
     const appendGroupEntries = (group: Group, level: number) => {
       const children = subGroupsMap[group.id] || [];
-      items.push({
+      openItems.push({
         kind: 'group',
         group,
         nestingLevel: level,
@@ -204,19 +227,32 @@ export function GroupsScreen({ navigation }: Props) {
       appendGroupEntries(group, 0);
     }
 
-    items.sort((a, b) => {
+    openItems.sort((a, b) => {
       const timeA =
         a.kind === 'dm'
           ? a.thread.lastMessageTimestamp
-          : a.group.lastMessage?.createdAt || a.group.updatedAt;
+          : a.kind === 'group'
+            ? a.group.lastMessage?.createdAt || a.group.updatedAt
+            : 0;
       const timeB =
         b.kind === 'dm'
           ? b.thread.lastMessageTimestamp
-          : b.group.lastMessage?.createdAt || b.group.updatedAt;
+          : b.kind === 'group'
+            ? b.group.lastMessage?.createdAt || b.group.updatedAt
+            : 0;
       return new Date(timeB || 0).getTime() - new Date(timeA || 0).getTime();
     });
 
-    return items;
+    const rebuilt: ListItem[] = [];
+    if (inboundRequests.length > 0) {
+      rebuilt.push({
+        kind: 'section',
+        title: `Message requests (${inboundRequests.length})`,
+      });
+      rebuilt.push(...inboundRequests.map(toDmItem));
+    }
+    rebuilt.push(...openItems);
+    return rebuilt;
   }, [dmThreads, getTopLevelGroups, subGroupsMap, expandedParentGroups, user?.id]);
 
   const toggleGroupExpand = useCallback((groupId: string) => {
@@ -233,6 +269,7 @@ export function GroupsScreen({ navigation }: Props) {
   };
 
   const handlePress = (item: ListItem) => {
+    if (item.kind === 'section') return;
     if (item.kind === 'group') {
       handleSelectGroup(item.group);
       return;
@@ -267,9 +304,11 @@ export function GroupsScreen({ navigation }: Props) {
         <FlatList
           data={listItems}
           keyExtractor={item =>
-            item.kind === 'dm'
-              ? `dm-${item.thread.id}`
-              : `group-${item.group.id}-L${item.nestingLevel}`
+            item.kind === 'section'
+              ? `section-${item.title}`
+              : item.kind === 'dm'
+                ? `dm-${item.thread.id}`
+                : `group-${item.group.id}-L${item.nestingLevel}`
           }
           contentContainerStyle={{ paddingBottom: tabBarClearance }}
           refreshControl={
@@ -290,7 +329,20 @@ export function GroupsScreen({ navigation }: Props) {
             </View>
           }
           renderItem={({ item }) => {
+            if (item.kind === 'section') {
+              return (
+                <View className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-lantern-border">
+                  <Text className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                    {item.title}
+                  </Text>
+                </View>
+              );
+            }
             if (item.kind === 'dm') {
+              const isMessageRequest =
+                item.thread.status === 'pending' &&
+                typeof item.thread.requestedBy === 'string' &&
+                item.thread.requestedBy !== user?.id;
               return (
                 <ChatRow
                   name={item.name}
@@ -302,6 +354,7 @@ export function GroupsScreen({ navigation }: Props) {
                   )}
                   unread={item.thread.unreadCount}
                   isDm
+                  isMessageRequest={isMessageRequest}
                   onPress={() => handlePress(item)}
                 />
               );

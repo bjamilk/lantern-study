@@ -41,6 +41,11 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
   const avatarUrl = isGroup ? chat.avatarUrl : (chat.participantIds.find(id => id !== currentUser.id) ? chat.participants[chat.participantIds.find(id => id !== currentUser.id)!].avatarUrl : undefined);
   const unreadCount = chat.unreadCount || 0;
   const isArchived = isGroup ? chat.isArchived : (chat as any).isArchived;
+  const isMessageRequest =
+    !isGroup &&
+    (chat as DMThread).status === 'pending' &&
+    typeof (chat as DMThread).requestedBy === 'string' &&
+    (chat as DMThread).requestedBy !== currentUser.id;
   
   const baseClasses = `flex items-center w-full p-3 md:p-3 py-3.5 md:py-3 border-l-4 transition-colors duration-200 min-h-[52px]`;
   const accentBorder = isSubGroup || nestingLevel > 0 ? featureAccents.groups : undefined;
@@ -133,6 +138,9 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
         <>
             <div className="flex-1 min-w-0 ml-2.5">
                 <p className="font-semibold truncate text-lantern-text">{name}</p>
+                {isMessageRequest && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300 truncate">Message request</p>
+                )}
             </div>
             {isArchived && <ArchiveBoxIcon className="w-4 h-4 text-lantern-text-tertiary ml-2 flex-shrink-0" title="Archived"/>}
             {unreadCount > 0 && !isArchived && (

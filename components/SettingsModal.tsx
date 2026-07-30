@@ -524,10 +524,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <select value={privacy.allowDirectMessages}
                             onChange={(e) => onUpdateSettingsCategory('privacy', { allowDirectMessages: e.target.value as UserSettings['privacy']['allowDirectMessages'] })}
                             className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text">
-                            <option value="everyone">Everyone</option>
-                            <option value="groups">Group members only</option>
-                            <option value="none">Nobody</option>
+                            <option value="everyone">Everyone — open chats immediately</option>
+                            <option value="groups">Group members open; others send requests</option>
+                            <option value="none">Message requests only</option>
                         </select>
+                        <p className="mt-1 text-xs text-lantern-text-secondary">
+                          Anyone can still find you and send a first message. Restrictive settings turn cold outreach into a request you can accept or decline — they do not hide you from search. Use profile visibility or “Allow search for invites” to control discoverability, and Block to stop messaging.
+                        </p>
                     </div>
                     <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow search for invites" description="Let others find you by name or @username when adding group or deck members. Profile visibility still controls who can view your full profile." />
                     <ToggleSwitch enabled={privacy.showOnlineStatus} onChange={(val) => onUpdateSettingsCategory('privacy', { showOnlineStatus: val })} label="Show online status" description="Let others see when you are active." />
