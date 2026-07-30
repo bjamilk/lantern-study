@@ -75,6 +75,44 @@ describe('mergeDmThreadLists', () => {
       })
     ).toBe(false);
   });
+
+  it('keeps clientPending first-DM threads after local lastMessage write', () => {
+    const existing = [
+      {
+        id: 'a-b',
+        lastMessage: 'hello',
+        lastMessageTimestamp: '2026-07-30T12:00:00.000Z',
+        clientPending: true,
+      },
+    ];
+    const fetched: Array<{ id: string; lastMessage?: string }> = [];
+    expect(mergeDmThreadLists(existing, fetched, 'server').map((t) => t.id)).toEqual(['a-b']);
+    expect(isOptimisticDmThread(existing[0]!)).toBe(true);
+  });
+
+  it('clears clientPending when server returns the thread', () => {
+    const existing = [
+      {
+        id: 'a-b',
+        lastMessage: 'hello',
+        lastMessageTimestamp: '2026-07-30T12:00:00.000Z',
+        clientPending: true,
+        participants: { a: { name: 'A' } },
+      },
+    ];
+    const fetched = [
+      {
+        id: 'a-b',
+        lastMessage: 'hello',
+        lastMessageTimestamp: '2026-07-30T12:00:01.000Z',
+        participants: { b: { name: 'B' } },
+      },
+    ];
+    const merged = mergeDmThreadLists(existing, fetched, 'server');
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.clientPending).toBeUndefined();
+    expect(merged[0]?.participants).toEqual({ a: { name: 'A' }, b: { name: 'B' } });
+  });
 });
 
 describe('withTransientRetry', () => {

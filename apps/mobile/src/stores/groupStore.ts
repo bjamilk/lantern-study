@@ -14,6 +14,7 @@ import {
   mergeChatMessagesById,
   mergeDmThreadLists,
   filterMessagesAfterDmHistoryCutoff,
+  createOptimisticClientMessageId,
   withTransientRetry,
   DeliveryIntentRegistry,
   isUncertainDeliveryError,
@@ -1529,7 +1530,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const clientMessageId = deliveryIntents.resolve(
       deliveryScope,
       deliveryFingerprint,
-      Crypto.randomUUID
+      () => createOptimisticClientMessageId(() => Crypto.randomUUID())
     );
     const existing = get().directMessages[threadId] || [];
     const parent = options?.replyToMessageId
@@ -1552,6 +1553,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       threadRootId,
       replyCount: 0,
       receiptStatus: 'sent',
+      clientMessageId,
     };
 
     const withOptimistic = [...existing, optimistic];
@@ -1563,23 +1565,39 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         })
       : withOptimistic;
 
-    set(state => ({
-      directMessages: {
-        ...state.directMessages,
-        [threadId]: updatedList,
-      },
-      dmThreads: state.dmThreads.map(t =>
-        t.id === threadId
-          ? { ...t, lastMessage: text, lastMessageTimestamp: new Date().toISOString() }
-          : t
-      ),
-    }));
+    set(state => {
+      const { [threadId]: _cleared, ...restCutoffs } = state.dmHistoryClearedAtByThread;
+      return {
+        directMessages: {
+          ...state.directMessages,
+          [threadId]: updatedList,
+        },
+        dmHistoryClearedAtByThread: restCutoffs,
+        dmThreads: state.dmThreads.map(t =>
+          t.id === threadId
+            ? {
+                ...t,
+                lastMessage: text,
+                lastMessageTimestamp: new Date().toISOString(),
+                ...(t.clientPending ? { clientPending: true } : {}),
+                historyClearedAt: null,
+              }
+            : t
+        ),
+      };
+    });
 
     try {
       const sent = await api.sendDirectMessage(senderId, recipientId, text, clientMessageId, {
         replyToMessageId: options?.replyToMessageId,
       });
-      const confirmed = mapDirectMessage(sent, threadId);
+      const confirmed = {
+        ...mapDirectMessage(sent, threadId),
+        clientMessageId:
+          (sent as { clientMessageId?: string; client_message_id?: string }).clientMessageId
+          || (sent as { client_message_id?: string }).client_message_id
+          || clientMessageId,
+      };
       set(state => ({
         directMessages: {
           ...state.directMessages,
@@ -1591,8 +1609,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         },
       }));
       deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
-      // Refresh thread status in the background so send stays snappy.
+      // Refresh thread + messages so the first bubble survives empty open-fetch races.
       void get().fetchDmThreads(senderId).catch(() => undefined);
+      void get().fetchDirectMessagesForThread(senderId, recipientId, threadId).catch(() => undefined);
     } catch (error) {
       if (isUncertainDeliveryError(error)) {
         deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);

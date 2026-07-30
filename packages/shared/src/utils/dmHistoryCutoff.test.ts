@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import {
+  clearDmHistoryClearedAtForUser,
   effectiveDmUnreadFloor,
   filterMessagesAfterDmHistoryCutoff,
   readDmHistoryClearedAt,
@@ -24,12 +25,32 @@ describe('dmHistoryCutoff', () => {
       { id: 'a', timestamp: '2026-07-30T17:59:59.000Z' },
       { id: 'b', timestamp: '2026-07-30T18:00:00.000Z' },
       { id: 'c', timestamp: '2026-07-30T18:00:01.000Z' },
-      { id: 'temp', timestamp: null },
+      { id: 'no-ts', timestamp: null },
     ];
     expect(filterMessagesAfterDmHistoryCutoff(messages, cutoff).map((m) => m.id)).toEqual([
       'c',
-      'temp',
+      'no-ts',
     ]);
+  });
+
+  it('keeps in-flight optimistic temps even at or before cutoff', () => {
+    const cutoff = '2026-07-30T18:00:00.000Z';
+    const messages = [
+      { id: 'temp-first-send', timestamp: cutoff },
+      { id: 'old', timestamp: '2026-07-30T17:00:00.000Z' },
+    ];
+    expect(filterMessagesAfterDmHistoryCutoff(messages, cutoff).map((m) => m.id)).toEqual([
+      'temp-first-send',
+    ]);
+  });
+
+  it('clears one user cutoff when they send again', () => {
+    expect(
+      clearDmHistoryClearedAtForUser(
+        { u1: '2026-07-30T18:00:00.000Z', u2: '2026-07-30T17:00:00.000Z' },
+        'u1',
+      ),
+    ).toEqual({ u2: '2026-07-30T17:00:00.000Z' });
   });
 
   it('uses the later of last-read and history cutoff for unread floor', () => {

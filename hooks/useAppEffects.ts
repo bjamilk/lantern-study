@@ -1177,6 +1177,7 @@ export function useAppEffects({
                 editedAt: raw.edited_at,
                 removedAt: raw.removed_at,
                 isRemoved: !!raw.removed_at,
+                clientMessageId: raw.client_message_id,
                 replyToMessageId: raw.reply_to_message_id,
                 threadRootId: raw.thread_root_id,
                 replyCount: 0,
@@ -1217,7 +1218,11 @@ export function useAppEffects({
                         (m) =>
                             m.senderId === currentUser.id &&
                             m.text === message.text &&
-                            (m.id.startsWith('msg-') || m.id.startsWith('temp-') || m.id.startsWith('optimistic-'))
+                            (m.id.startsWith('msg-') ||
+                              m.id.startsWith('temp-') ||
+                              m.id.startsWith('optimistic-') ||
+                              m.id.startsWith('local-') ||
+                              m.clientMessageId === m.id)
                     );
                     if (hasOptimistic && !raw.client_message_id) return prev;
                 }

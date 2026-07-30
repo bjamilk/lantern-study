@@ -5,6 +5,8 @@
  * the thread is resurrected by a new message (hidden_by cleared).
  */
 
+import { isTempMessageId } from './chatMessageMerge';
+
 export function readDmHistoryClearedAt(
   historyClearedAt: unknown,
   userId: string,
@@ -36,8 +38,10 @@ export function withDmHistoryClearedAt(
   return { ...base, [userId]: clearedAtIso };
 }
 
-/** Drop messages at or before the viewer's delete cutoff. Keeps optimistic temps without timestamps. */
-export function filterMessagesAfterDmHistoryCutoff<T extends { timestamp?: Date | string | number | null }>(
+/** Drop messages at or before the viewer's delete cutoff. Keeps in-flight optimistic temps. */
+export function filterMessagesAfterDmHistoryCutoff<
+  T extends { id?: string; timestamp?: Date | string | number | null },
+>(
   messages: T[],
   historyClearedAtIso: string | null | undefined,
 ): T[] {
@@ -45,11 +49,29 @@ export function filterMessagesAfterDmHistoryCutoff<T extends { timestamp?: Date 
   const cutoffMs = Date.parse(historyClearedAtIso);
   if (!Number.isFinite(cutoffMs)) return messages;
   return messages.filter((message) => {
+    // Never hide an in-flight optimistic send — same-ms delete/resend must stay visible.
+    if (typeof message.id === 'string' && isTempMessageId(message.id)) return true;
     if (message.timestamp == null) return true;
     const ms = new Date(message.timestamp as Date | string | number).getTime();
     if (!Number.isFinite(ms)) return true;
     return ms > cutoffMs;
   });
+}
+
+/** Remove one user's delete-for-me cutoff (e.g. when they send a new message). */
+export function clearDmHistoryClearedAtForUser(
+  historyClearedAt: unknown,
+  userId: string,
+): Record<string, string> {
+  if (!userId || !historyClearedAt || typeof historyClearedAt !== 'object' || Array.isArray(historyClearedAt)) {
+    return {};
+  }
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(historyClearedAt as Record<string, unknown>)) {
+    if (key === userId) continue;
+    if (typeof value === 'string' && value) next[key] = value;
+  }
+  return next;
 }
 
 /** Effective unread floor: max(lastReadAt, historyClearedAt). */

@@ -601,6 +601,11 @@ export interface DMThread {
    * Messages at or before this time must stay hidden even after the thread resurfaces.
    */
   historyClearedAt?: string | null;
+  /**
+   * Local-only: thread was opened/created on the client before the server row exists.
+   * Cleared when a threads fetch returns this id.
+   */
+  clientPending?: boolean;
   /** open = two-way; pending = message request; declined = rejected request */
   status?: DmThreadStatus;
   /** User who initiated a pending/declined message request */

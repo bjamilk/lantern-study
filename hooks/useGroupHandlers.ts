@@ -11,6 +11,7 @@ import {
     mapMessagesFromApi,
     mapMessageFromApi,
     mergeChatMessagesById,
+    createOptimisticClientMessageId,
     computeDmReceiptStatus,
     resolveThreadRootId,
     DeliveryIntentRegistry,
@@ -437,7 +438,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 participants: {
                     [currentUser.id]: { name: currentUser.name, avatarUrl: currentUser.avatarUrl },
                     [otherUserId]: { name: otherUser.name, avatarUrl: otherUser.avatarUrl },
-                }
+                },
+                clientPending: true,
             };
             updateDmThreads(prev => (prev.some((t) => t.id === threadId) ? prev : [...prev, newThread]));
             handleSelectChat({ ...newThread, chatType: 'dm' });
@@ -499,7 +501,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         const clientMessageId = dmDeliveryIntents.resolve(
             deliveryScope,
             deliveryFingerprint,
-            uuidv4
+            () => createOptimisticClientMessageId(uuidv4)
         );
         const existing = useGroupStore.getState().directMessages[threadId] || [];
         const parent = options?.replyToMessageId
@@ -521,6 +523,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             threadRootId,
             replyCount: threadRootId ? rootReplyCount : 0,
             receiptStatus: 'sent',
+            clientMessageId,
         };
         
         updateDirectMessages(prev => {
@@ -537,9 +540,26 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 }),
             };
         });
+        // Keep clientPending until a threads fetch returns this id — otherwise a
+        // server merge can drop the thread right after the first local lastMessage write.
         updateDmThreads(prevThreads => prevThreads.map(t => 
-            t.id === threadId ? { ...t, lastMessage: text, lastMessageTimestamp: new Date() } : t
+            t.id === threadId
+                ? {
+                    ...t,
+                    lastMessage: text,
+                    lastMessageTimestamp: new Date(),
+                    // Preserve pending only for local-first threads; never mark server threads pending.
+                    ...(t.clientPending ? { clientPending: true } : {}),
+                    historyClearedAt: null,
+                  }
+                : t
         ));
+        // Sender just messaged — clear local delete-for-me cutoff so the bubble stays.
+        useGroupStore.setState((state) => {
+            if (!state.dmHistoryClearedAtByThread[threadId]) return state;
+            const { [threadId]: _cleared, ...rest } = state.dmHistoryClearedAtByThread;
+            return { dmHistoryClearedAtByThread: rest };
+        });
         
         try {
             const sent = await sendDirectMessage(currentUser.id, otherUserId, text, clientMessageId, {
@@ -563,6 +583,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         ? sent.replyCount
                         : optimisticMessage.replyCount,
                 receiptStatus: sent.receiptStatus || optimisticMessage.receiptStatus,
+                clientMessageId:
+                    sent.clientMessageId || sent.client_message_id || clientMessageId,
             };
             updateDirectMessages(prev => ({
                 ...prev,
@@ -588,6 +610,22 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 })
                 .catch((err) => {
                     console.warn('[DM] Failed to refresh threads after send:', err);
+                });
+            // Ensure first-message history is on screen even if the open-chat fetch raced empty.
+            void fetchDirectMessages(currentUser.id, otherUserId)
+                .then((fetchedMessages) => {
+                    if (useUIStore.getState().selectedChat?.id !== threadId) return;
+                    const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                    updateDirectMessages((prev) => ({
+                        ...prev,
+                        [threadId]: mergeChatMessagesById(
+                            prev[threadId] || [],
+                            raw.map((m: any) => mapDirectMessageFromApi(m, threadId)) as any
+                        ) as DirectMessage[],
+                    }));
+                })
+                .catch((err) => {
+                    console.warn('[DM] Failed to refresh messages after send:', err);
                 });
         } catch (error) {
             console.error('Failed to send DM:', error);

@@ -44,6 +44,7 @@ import {
   computeGroupReceipt,
 } from "@lantern/shared/utils/chatMedia";
 import {
+  clearDmHistoryClearedAtForUser,
   effectiveDmUnreadFloor,
   filterMessagesAfterDmHistoryCutoff,
   readDmHistoryClearedAt,
@@ -4539,6 +4540,7 @@ export class SupabaseService {
           timestamp,
           edited_at,
           removed_at,
+          client_message_id,
           reply_to_message_id,
           thread_root_id,
           profiles:sender_id (
@@ -4595,6 +4597,7 @@ export class SupabaseService {
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
+        clientMessageId: msg.client_message_id || undefined,
         replyToMessageId: msg.reply_to_message_id || undefined,
         replyTo: msg.replyTo || undefined,
         threadRootId: msg.thread_root_id || undefined,
@@ -4667,7 +4670,7 @@ export class SupabaseService {
     try {
       const { data: existingThread } = await this.supabase
         .from("dm_threads")
-        .select("id, status, requested_by, archived_by")
+        .select("id, status, requested_by, archived_by, history_cleared_at")
         .eq("id", threadId)
         .maybeSingle();
 
@@ -4793,6 +4796,8 @@ export class SupabaseService {
               upvotes: 0,
               downvotes: 0,
               flaggedAsSimilarUserIds: [],
+              clientMessageId:
+                withReply.client_message_id || options?.clientMessageId || undefined,
               replyToMessageId: withReply.reply_to_message_id || undefined,
               replyTo: withReply.replyTo || undefined,
               threadRootId: withReply.thread_root_id || undefined,
@@ -4806,13 +4811,18 @@ export class SupabaseService {
       }
 
       // Un-archive for recipient, un-hide for inbox resurrection, and update
-      // last message. Clearing hidden_by resurfaces the thread; history_cleared_at
-      // is intentionally left alone so each deleter keeps a fresh history view.
+      // last message. Clearing hidden_by resurfaces the thread. Clear the *sender's*
+      // history_cleared_at so their first message after delete-for-me is visible;
+      // the recipient's cutoff is preserved.
       const archivedBy: string[] = Array.isArray(existingThread?.archived_by)
         ? existingThread.archived_by
         : [];
       const updatedArchivedBy = archivedBy.filter(
         (id: string) => id !== recipientId,
+      );
+      const nextHistoryClearedAt = clearDmHistoryClearedAtForUser(
+        existingThread?.history_cleared_at,
+        senderId,
       );
 
       await this.supabase
@@ -4824,6 +4834,7 @@ export class SupabaseService {
           hidden_by: [],
           status: nextStatus,
           requested_by: nextRequestedBy,
+          history_cleared_at: nextHistoryClearedAt,
         })
         .eq("id", threadId);
 
@@ -4874,6 +4885,8 @@ export class SupabaseService {
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
+        clientMessageId:
+          withReply.client_message_id || options?.clientMessageId || undefined,
         replyToMessageId: withReply.reply_to_message_id || undefined,
         replyTo: withReply.replyTo || undefined,
         threadRootId: withReply.thread_root_id || undefined,

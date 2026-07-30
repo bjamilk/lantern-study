@@ -9,6 +9,11 @@ export type MergeableDmThread = {
   lastMessageTimestamp?: Date | string | number | null;
   unreadCount?: number | null;
   participants?: Record<string, unknown> | null;
+  /**
+   * Set on locally created threads until the server returns the row.
+   * Survives first-send lastMessage updates so server merges cannot drop the thread.
+   */
+  clientPending?: boolean | null;
   [key: string]: unknown;
 };
 
@@ -18,8 +23,9 @@ function threadTimeMs(thread: MergeableDmThread): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-/** Local-only thread created before the first message hits the server. */
+/** Local-only thread created before the server acknowledges the row. */
 export function isOptimisticDmThread(thread: MergeableDmThread): boolean {
+  if (thread.clientPending) return true;
   return !thread.lastMessage && !thread.lastMessageTimestamp;
 }
 
@@ -51,9 +57,12 @@ export function mergeDmThreadLists<T extends MergeableDmThread>(
       }
       continue;
     }
+    // Server row is authoritative — drop clientPending so future merges treat it as real.
+    const { clientPending: _clientPending, ...localRest } = local;
     byId.set(local.id, {
-      ...local,
+      ...localRest,
       ...server,
+      clientPending: undefined,
       participants: {
         ...((local.participants as Record<string, unknown>) || {}),
         ...((server.participants as Record<string, unknown>) || {}),

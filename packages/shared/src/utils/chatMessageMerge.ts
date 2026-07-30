@@ -16,13 +16,20 @@ function messageTimeMs(message: MergeableChatMessage): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function isTempMessageId(id: string): boolean {
+/** In-flight optimistic / local-only chat message ids (web + mobile). */
+export function isTempMessageId(id: string): boolean {
   return (
     id.startsWith('msg-') ||
     id.startsWith('temp-') ||
     id.startsWith('optimistic-') ||
     id.startsWith('local-')
   );
+}
+
+/** Prefer a temp-prefixed client id so merge/realtime can recognize in-flight sends. */
+export function createOptimisticClientMessageId(createId: () => string = () => crypto.randomUUID()): string {
+  const raw = createId();
+  return isTempMessageId(raw) ? raw : `temp-${raw}`;
 }
 
 /**

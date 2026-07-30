@@ -92,6 +92,7 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
               id: params.threadId,
               participantIds: [userId, otherUserId].sort() as [string, string],
               participants: {},
+              clientPending: true,
             };
             useGroupStore.getState().updateDmThreads((prev) =>
               prev.some((t) => t.id === params.threadId) ? prev : [...prev, synthesized]

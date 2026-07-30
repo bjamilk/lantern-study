@@ -42,4 +42,39 @@ describe('mergeChatMessagesById', () => {
     const merged = mergeChatMessagesById(existing, incoming);
     expect(merged.map((m) => m.id).sort()).toEqual(['a', 'msg-temp-2']);
   });
+
+  it('keeps first-DM optimistic temp when a concurrent empty fetch arrives', () => {
+    const existing = [
+      {
+        id: 'temp-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        timestamp: '2026-07-30T12:00:00.000Z',
+        text: 'hello first timer',
+      },
+    ];
+    const merged = mergeChatMessagesById(existing, []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.id).toBe('temp-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  });
+
+  it('reconciles temp-prefixed first send via clientMessageId from fetch', () => {
+    const existing = [
+      {
+        id: 'temp-client-1',
+        clientMessageId: 'temp-client-1',
+        timestamp: '2026-07-30T12:00:00.000Z',
+        text: 'hi',
+      },
+    ];
+    const incoming = [
+      {
+        id: 'server-dm-1',
+        clientMessageId: 'temp-client-1',
+        timestamp: '2026-07-30T12:00:01.000Z',
+        text: 'hi',
+      },
+    ];
+    const merged = mergeChatMessagesById(existing, incoming);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.id).toBe('server-dm-1');
+  });
 });
