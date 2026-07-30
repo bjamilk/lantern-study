@@ -13,6 +13,53 @@ export interface SrsCalculationOptions {
     maxInterval?: number;
 }
 
+/**
+ * Normalize legacy snake_case / mixed SRS payloads from JSONB or raw API rows
+ * into the canonical camelCase SrsData shape used by isCardDue and FSRS.
+ */
+export function normalizeSrsData(raw: unknown): SrsData | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const data = raw as Record<string, unknown>;
+    const nextReviewDate =
+        (typeof data.nextReviewDate === 'string' && data.nextReviewDate) ||
+        (typeof data.next_review_date === 'string' && data.next_review_date) ||
+        (typeof data.next_review === 'string' && data.next_review) ||
+        undefined;
+    const intervalRaw = data.interval;
+    const repetitionsRaw = data.repetitions;
+    const hasScheduleFields =
+        intervalRaw !== undefined ||
+        repetitionsRaw !== undefined ||
+        nextReviewDate !== undefined ||
+        data.easeFactor !== undefined ||
+        data.ease_factor !== undefined;
+    if (!hasScheduleFields) return undefined;
+
+    const interval = typeof intervalRaw === 'number' ? intervalRaw : Number(intervalRaw) || 0;
+    const repetitions =
+        typeof repetitionsRaw === 'number' ? repetitionsRaw : Number(repetitionsRaw) || 0;
+    const easeRaw = data.easeFactor ?? data.ease_factor;
+    const easeFactor =
+        typeof easeRaw === 'number' ? easeRaw : Number(easeRaw) || INITIAL_EASE_FACTOR;
+    const failedRaw = data.failedAttempts ?? data.failed_attempts;
+    const failedAttempts =
+        typeof failedRaw === 'number' ? failedRaw : Number(failedRaw) || 0;
+
+    return {
+        interval,
+        easeFactor,
+        repetitions,
+        nextReviewDate: nextReviewDate || '',
+        failedAttempts,
+        isLeech: Boolean(data.isLeech ?? data.is_leech ?? false),
+        ...(data.scheduler === 'fsrs' || data.scheduler === 'sm2'
+            ? { scheduler: data.scheduler }
+            : {}),
+        ...(typeof data.difficulty === 'number' ? { difficulty: data.difficulty } : {}),
+        ...(typeof data.stability === 'number' ? { stability: data.stability } : {}),
+    };
+}
+
 export const calculateSrsData = (
     currentSrsData: SrsData | undefined,
     performanceRating: PerformanceRating,
@@ -20,6 +67,7 @@ export const calculateSrsData = (
 ): SrsData => {
     const maxInterval = Math.max(1, options?.maxInterval ?? 365);
     const today = new Date();
+    currentSrsData = normalizeSrsData(currentSrsData) ?? currentSrsData;
     
     // If it's a new card or srsData is empty/incomplete, treat as new
     if (!currentSrsData || currentSrsData.interval === undefined || currentSrsData.repetitions === undefined) {
@@ -114,15 +162,21 @@ export const calculateSrsData = (
  * True when a scheduled card is ready for review.
  * New / never-scheduled cards are NOT due — they enter via the daily new-card budget.
  * Learning cards with repetitions but a missing/invalid date are treated as due.
+ *
+ * Accepts camelCase or legacy snake_case SRS blobs so a raw API assign cannot
+ * leave reviewed cards stuck "due" until the next full remap/refresh.
  */
-export const isCardDue = (srsData: SrsData | undefined): boolean => {
-    if (!srsData?.nextReviewDate) {
-        return (srsData?.repetitions ?? 0) > 0;
+export const isCardDue = (srsData: SrsData | undefined | Record<string, unknown>): boolean => {
+    const normalized = normalizeSrsData(srsData);
+    if (!normalized) return false;
+
+    if (!normalized.nextReviewDate) {
+        return (normalized.repetitions ?? 0) > 0;
     }
 
-    const nextReview = new Date(srsData.nextReviewDate);
+    const nextReview = new Date(normalized.nextReviewDate);
     if (Number.isNaN(nextReview.getTime())) {
-        return (srsData.repetitions ?? 0) > 0;
+        return (normalized.repetitions ?? 0) > 0;
     }
 
     return Date.now() >= nextReview.getTime();

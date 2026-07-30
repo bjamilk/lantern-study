@@ -4,7 +4,7 @@
  */
 
 import type { SrsData } from '../types';
-import type { PerformanceRating } from './srs';
+import { normalizeSrsData, type PerformanceRating } from './srs';
 
 const INITIAL_STABILITY = 2.4;
 const INITIAL_DIFFICULTY = 5.0;
@@ -32,6 +32,7 @@ export function calculateFsrsData(
   const maxInterval = Math.max(1, options?.maxInterval ?? 365);
   const today = new Date();
   const grade = ratingToGrade(rating);
+  current = normalizeSrsData(current) ?? current;
 
   if (!current || current.repetitions === undefined || current.interval === undefined) {
     const interval = grade === 1 ? 1 : grade === 2 ? 1 : grade === 3 ? 3 : 5;

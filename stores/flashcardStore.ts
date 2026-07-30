@@ -35,6 +35,14 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
+/** In-flight optimistic grades — prevents fetchAllFlashcards from resurrecting stale due state. */
+const pendingLocalReviews = new Map<string, Flashcard>();
+
+function mergeCardsPreferPendingReviews(remoteCards: Flashcard[]): Flashcard[] {
+  if (pendingLocalReviews.size === 0) return remoteCards;
+  return remoteCards.map((card) => pendingLocalReviews.get(card.id) ?? card);
+}
+
 interface FlashcardState {
   // State
   decks: Deck[];
@@ -59,6 +67,8 @@ interface FlashcardState {
   addFlashcard: (flashcard: Flashcard) => void;
   updateFlashcardInState: (flashcardId: string, updates: Partial<Flashcard>) => void;
   removeFlashcard: (flashcardId: string) => void;
+  rememberPendingLocalReview: (flashcardId: string, card: Flashcard) => void;
+  clearPendingLocalReview: (flashcardId: string) => void;
   
   // SRS
   getDueCards: (deckId?: string) => Flashcard[];
@@ -128,8 +138,11 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
     const nextFlashcards = typeof flashcards === 'function'
       ? flashcards(get().flashcards)
       : flashcards;
+    const merged = mergeCardsPreferPendingReviews(
+      Array.isArray(nextFlashcards) ? nextFlashcards : []
+    );
 
-    set({ flashcards: Array.isArray(nextFlashcards) ? nextFlashcards : [] });
+    set({ flashcards: merged });
     get().calculateDueCardsCount();
   },
   
@@ -148,13 +161,25 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
     get().calculateDueCardsCount();
   },
   
-  updateFlashcardInState: (flashcardId, updates) => set((state) => ({
-    flashcards: state.flashcards.map(f =>
-      f.id === flashcardId ? { ...f, ...updates } : f
-    ),
-  })),
+  updateFlashcardInState: (flashcardId, updates) => {
+    set((state) => ({
+      flashcards: state.flashcards.map(f =>
+        f.id === flashcardId ? { ...f, ...updates } : f
+      ),
+    }));
+    get().calculateDueCardsCount();
+  },
+
+  rememberPendingLocalReview: (flashcardId, card) => {
+    pendingLocalReviews.set(flashcardId, card);
+  },
+
+  clearPendingLocalReview: (flashcardId) => {
+    pendingLocalReviews.delete(flashcardId);
+  },
   
   removeFlashcard: (flashcardId) => {
+    pendingLocalReviews.delete(flashcardId);
     set((state) => ({
       flashcards: state.flashcards.filter(f => f.id !== flashcardId),
     }));
@@ -188,15 +213,18 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
   
-  reset: () => set({
-    decks: [],
-    flashcards: [],
-    dueCardsCount: 0,
-    isLoading: false,
-    error: null,
-    offlineDeckIds: [],
-    pendingFlashcardReviews: [],
-  }),
+  reset: () => {
+    pendingLocalReviews.clear();
+    set({
+      decks: [],
+      flashcards: [],
+      dueCardsCount: 0,
+      isLoading: false,
+      error: null,
+      offlineDeckIds: [],
+      pendingFlashcardReviews: [],
+    });
+  },
 
   loadFromStorage: () => {
     try {

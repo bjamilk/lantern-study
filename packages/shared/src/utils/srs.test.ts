@@ -1,4 +1,4 @@
-import { isCardDue, getCardsDue } from './srs';
+import { isCardDue, getCardsDue, normalizeSrsData } from './srs';
 import type { SrsData } from '../types';
 
 describe('isCardDue', () => {
@@ -13,6 +13,23 @@ describe('isCardDue', () => {
         nextReviewDate: undefined as unknown as string,
       })
     ).toBe(false);
+  });
+
+  it('does not treat reviewed cards as due when only snake_case next_review_date is set', () => {
+    // Regression: web assigned raw API srs_data without mapping; isCardDue only
+    // read nextReviewDate and treated repetitions>0 + missing date as forever-due.
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    expect(
+      isCardDue({
+        interval: 3,
+        ease_factor: 2.5,
+        repetitions: 1,
+        next_review_date: future,
+      } as unknown as SrsData)
+    ).toBe(false);
+    expect(normalizeSrsData({ next_review_date: future, repetitions: 1, interval: 3 })?.nextReviewDate).toBe(
+      future
+    );
   });
 
   it('treats scheduled cards as due when nextReviewDate is in the past', () => {

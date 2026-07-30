@@ -26,7 +26,7 @@ import { aiGenerateFlashcards } from '../services/ai';
 import { buildFlashcardSourceFromTestResult } from '../utils/buildFlashcardSource';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { navigateForAppMode } from '../utils/appNavigation';
-import { mapFlashcardsFromApi } from '@lantern/shared/utils';
+import { mapFlashcardFromApi, mapFlashcardsFromApi } from '@lantern/shared/utils';
 
 const srsReviewInFlight = new Set<string>();
 const FLASHCARD_PAGE_SIZE = 100;
@@ -444,58 +444,62 @@ export function useFlashcardHandlers() {
         if (srsReviewInFlight.has(cardId)) return;
         srsReviewInFlight.add(cardId);
 
-        const cardIndex = flashcards.findIndex(fc => fc.id === cardId);
-        if (cardIndex === -1) {
+        // Read latest card from the store — closed-over flashcards go stale during rapid grading.
+        const card = useFlashcardStore.getState().flashcards.find(fc => fc.id === cardId);
+        if (!card) {
             srsReviewInFlight.delete(cardId);
             return;
         }
 
-        const card = flashcards[cardIndex];
         const wasNew = isNewFlashcard(card);
         const settings = normalizeUserSettings(currentUser.settings);
         const useOfflinePath = !isOnline || isDeckOffline(card.deckId);
 
+        // Optimistic local FSRS so due badges drop immediately (before network).
+        const locallyUpdated = applyLocalFlashcardReview(card, performanceRating, settings.study);
+        useFlashcardStore.getState().rememberPendingLocalReview(cardId, locallyUpdated);
+        updateFlashcards(prev => prev.map(fc => (fc.id === cardId ? locallyUpdated : fc)));
+
         try {
             if (useOfflinePath) {
-                const updatedCard = applyLocalFlashcardReview(card, performanceRating, settings.study);
-                updateFlashcards(prev => prev.map(fc => fc.id === cardId ? updatedCard : fc));
                 queueFlashcardReview(cardId, card.deckId, performanceRating);
                 if (isOnline) {
                     void syncPendingFlashcardReviews();
                 }
-                trackQuestProgress('review_cards');
-                trackStudyActivity('flashcard', 1);
-                if (wasNew) {
-                    trackStudyActivity('flashcard_new', 1);
-                }
             } else {
                 const updated = await reviewFlashcard(cardId, performanceRating, card.version);
-                const newSrsData = updated?.srs_data ?? updated?.srsData;
-                const newVersion = updated?.version;
-                if (newSrsData || newVersion != null) {
-                    updateFlashcards(prev =>
-                      prev.map(fc =>
-                        fc.id === cardId
-                          ? {
-                              ...fc,
-                              ...(newSrsData ? { srsData: newSrsData } : {}),
-                              ...(newVersion != null ? { version: Number(newVersion) } : {}),
-                            }
-                          : fc
-                      )
-                    );
-                }
-                trackQuestProgress('review_cards');
-                trackStudyActivity('flashcard', 1);
-                if (wasNew) {
-                    trackStudyActivity('flashcard_new', 1);
-                }
+                const mapped = updated ? mapFlashcardFromApi(updated) : null;
+                const finalCard =
+                    mapped?.srsData?.nextReviewDate
+                        ? {
+                            ...locallyUpdated,
+                            ...mapped,
+                            srsData: mapped.srsData,
+                            version:
+                              mapped.version != null
+                                ? Number(mapped.version)
+                                : locallyUpdated.version,
+                          }
+                        : {
+                            ...locallyUpdated,
+                            ...(mapped?.version != null
+                              ? { version: Number(mapped.version) }
+                              : {}),
+                          };
+                useFlashcardStore.getState().clearPendingLocalReview(cardId);
+                updateFlashcards(prev =>
+                    prev.map(fc => (fc.id === cardId ? finalCard : fc))
+                );
+            }
+            trackQuestProgress('review_cards');
+            trackStudyActivity('flashcard', 1);
+            if (wasNew) {
+                trackStudyActivity('flashcard_new', 1);
             }
         } catch (error) {
             console.error('Error updating SRS data:', error);
             try {
-                const updatedCard = applyLocalFlashcardReview(card, performanceRating, settings.study);
-                updateFlashcards(prev => prev.map(fc => fc.id === cardId ? updatedCard : fc));
+                // Keep optimistic schedule; queue for sync so a refetch cannot resurrect "due".
                 queueFlashcardReview(cardId, card.deckId, performanceRating);
                 if (isOnline) {
                     void syncPendingFlashcardReviews();
@@ -507,13 +511,13 @@ export function useFlashcardHandlers() {
                 }
             } catch (fallbackError) {
                 console.error('Offline SRS fallback failed:', fallbackError);
+                useFlashcardStore.getState().clearPendingLocalReview(cardId);
                 alert('Failed to update SRS data. Please try again.');
             }
         } finally {
             srsReviewInFlight.delete(cardId);
         }
-    }, [currentUser, flashcards, updateFlashcards, isOnline, isDeckOffline, queueFlashcardReview]);
-
+    }, [currentUser, updateFlashcards, isOnline, isDeckOffline, queueFlashcardReview]);
     const handleLoadMoreFlashcards = useCallback(async (deckId: string, page: number, limit = FLASHCARD_PAGE_SIZE) => {
         if (!currentUser) return 0;
         try {
