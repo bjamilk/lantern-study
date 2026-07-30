@@ -28,7 +28,7 @@ describe('mergeChatMessagesById', () => {
     ];
     const merged = mergeChatMessagesById(existing, incoming);
     expect(merged).toHaveLength(1);
-    expect(merged[0].id).toBe('server-1');
+    expect(merged[0]?.id).toBe('server-1');
   });
 
   it('keeps unmatched optimistic messages', () => {
