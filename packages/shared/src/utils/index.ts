@@ -27,6 +27,7 @@ export * from './chatMedia';
 export * from './chatMute';
 export * from './questionVisibility';
 export * from './deliveryIntegrity';
+export * from './chatMessageMerge';
 export * from './noteComments';
 export * from './groupTree';
 export * from './groupPerformanceSeries';

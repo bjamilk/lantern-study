@@ -1457,7 +1457,7 @@ export function useAppEffects({
         };
 
         const channel = supabase
-            .channel(`group-messages-all:${currentUser.id}`)
+            .channel(`group-messages-all:${currentUser.id}:e${realtimeEpoch}`)
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'messages' },
@@ -1468,19 +1468,162 @@ export function useAppEffects({
                 { event: 'UPDATE', schema: 'public', table: 'messages' },
                 (payload) => applyIncoming(payload.new as Record<string, unknown>, true)
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    bumpRealtimeEpoch();
+                }
+            });
 
         return () => {
-            channel.unsubscribe();
+            void supabase.removeChannel(channel);
         };
-    }, [currentUser?.id, lowDataMode, updateMessages]);
+    }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, updateMessages, bumpRealtimeEpoch]);
+
+    // --- Recover missed chat/note events after tab sleep or reconnect ---
+    useEffect(() => {
+        if (!currentUser || !authTokenReady) return;
+
+        const recoverOpenSurfaces = async () => {
+            bumpRealtimeEpoch();
+            void refreshDmThreadsForUser(currentUser.id);
+            void useNotesStore.getState().loadNotes().catch(() => {});
+
+            const chat = useUIStore.getState().selectedChat;
+            if (!chat || lowDataMode) return;
+
+            try {
+                if (chat.chatType === 'group') {
+                    const limit = lowDataMode ? 20 : 50;
+                    const fetched = await fetchMessages(chat.id, undefined, limit);
+                    const list = (Array.isArray(fetched) ? fetched : [])
+                        .map((item) => {
+                            try {
+                                return mapMessageFromApi(item);
+                            } catch {
+                                return null;
+                            }
+                        })
+                        .filter((message): message is NonNullable<typeof message> => message != null)
+                        .map((message) => ({
+                            ...message,
+                            clientMessageId:
+                                (message as { clientMessageId?: string }).clientMessageId,
+                        }));
+                    updateMessages((prev) => ({
+                        ...prev,
+                        [chat.id]: mergeChatMessagesById(prev[chat.id] || [], list as any),
+                    }));
+                } else if (chat.chatType === 'dm') {
+                    const otherUserId = Array.isArray((chat as { participantIds?: string[] }).participantIds)
+                        ? (chat as { participantIds: string[] }).participantIds.find((id) => id !== currentUser.id)
+                        : undefined;
+                    if (!otherUserId) return;
+                    const fetched = await fetchDirectMessages(currentUser.id, otherUserId);
+                    const mapped: DirectMessage[] = (Array.isArray(fetched) ? fetched : []).map((raw: any) => ({
+                        id: raw.id,
+                        threadId: raw.threadId || raw.thread_id || chat.id,
+                        senderId: raw.senderId || raw.sender_id,
+                        text: raw.isRemoved || raw.removed_at ? '' : raw.text || '',
+                        timestamp: new Date(raw.timestamp),
+                        editedAt: raw.editedAt || raw.edited_at,
+                        removedAt: raw.removedAt || raw.removed_at,
+                        isRemoved: raw.isRemoved || !!raw.removed_at,
+                        replyToMessageId: raw.replyToMessageId || raw.reply_to_message_id,
+                        threadRootId: raw.threadRootId || raw.thread_root_id,
+                        replyCount: typeof raw.replyCount === 'number' ? raw.replyCount : raw.reply_count,
+                        clientMessageId: raw.clientMessageId || raw.client_message_id,
+                    }));
+                    updateDirectMessages((prev) => ({
+                        ...prev,
+                        [chat.id]: mergeChatMessagesById(prev[chat.id] || [], mapped as any) as DirectMessage[],
+                    }));
+                }
+            } catch (err) {
+                console.warn('[Realtime] Foreground chat recovery failed:', err);
+            }
+
+            const selectedNote = useNotesStore.getState().selectedNote;
+            if (selectedNote?.id) {
+                void useNotesStore.getState().loadComments(selectedNote.id).catch(() => {});
+                void useNotesStore.getState().loadNote(selectedNote.id).catch(() => {});
+            }
+        };
+
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                void recoverOpenSurfaces();
+            }
+        };
+        const onOnline = () => {
+            void recoverOpenSurfaces();
+        };
+
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('online', onOnline);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('online', onOnline);
+        };
+    }, [
+        currentUser?.id,
+        authTokenReady,
+        lowDataMode,
+        bumpRealtimeEpoch,
+        refreshDmThreadsForUser,
+        updateMessages,
+        updateDirectMessages,
+    ]);
+
+    // Notes list / collaborator content — pick up shares and remote edits without full reload.
+    useEffect(() => {
+        if (!currentUser || !authTokenReady || lowDataMode) return;
+
+        let notesRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+        const scheduleNotesRefresh = () => {
+            if (notesRefreshTimer) clearTimeout(notesRefreshTimer);
+            notesRefreshTimer = setTimeout(() => {
+                void useNotesStore.getState().loadNotes().catch(() => {});
+                const selected = useNotesStore.getState().selectedNote;
+                if (selected?.id) {
+                    void useNotesStore.getState().loadNote(selected.id).catch(() => {});
+                }
+            }, 400);
+        };
+
+        const channel = supabase
+            .channel(`notes-access:${currentUser.id}:e${realtimeEpoch}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'notes' },
+                () => {
+                    scheduleNotesRefresh();
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'note_collaborators' },
+                () => {
+                    scheduleNotesRefresh();
+                }
+            )
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    bumpRealtimeEpoch();
+                }
+            });
+
+        return () => {
+            if (notesRefreshTimer) clearTimeout(notesRefreshTimer);
+            void supabase.removeChannel(channel);
+        };
+    }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, bumpRealtimeEpoch]);
 
     // --- Real-time profile updates subscription ---
     useEffect(() => {
-        if (!currentUser || lowDataMode) return;
+        if (!currentUser || !authTokenReady || lowDataMode) return;
 
         const profileSubscription = supabase
-            .channel('profile')
+            .channel(`profile:${currentUser.id}:e${realtimeEpoch}`)
             .on(
                 'postgres_changes',
                 {
@@ -1508,21 +1651,25 @@ export function useAppEffects({
                     });
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    bumpRealtimeEpoch();
+                }
+            });
 
         return () => {
-            profileSubscription.unsubscribe();
+            void supabase.removeChannel(profileSubscription);
         };
-    }, [currentUser?.id, lowDataMode]);
+    }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, bumpRealtimeEpoch]);
 
     // --- Real-time group membership subscription ---
     // Keeps the groups list in sync when the user is added to / removed from groups
     // without requiring a full page refresh or manual re-fetch.
     useEffect(() => {
-        if (!currentUser || lowDataMode) return;
+        if (!currentUser || !authTokenReady || lowDataMode) return;
 
         const groupMembershipSubscription = supabase
-            .channel(`group_members:${currentUser.id}`)
+            .channel(`group_members:${currentUser.id}:e${realtimeEpoch}`)
             .on(
                 'postgres_changes',
                 {
@@ -1570,12 +1717,16 @@ export function useAppEffects({
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    bumpRealtimeEpoch();
+                }
+            });
 
         return () => {
-            groupMembershipSubscription.unsubscribe();
+            void supabase.removeChannel(groupMembershipSubscription);
         };
-    }, [currentUser?.id, lowDataMode, updateGroups]);
+    }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, updateGroups, bumpRealtimeEpoch]);
 
     // --- Persist offline data ---
     useEffect(() => {

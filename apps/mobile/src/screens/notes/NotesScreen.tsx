@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import {
@@ -233,6 +234,13 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   useEffect(() => {
     loadNotes(selectedFolderId || undefined);
   }, [selectedFolderId, loadNotes]);
+
+  // Recover collaborator/share updates missed while another screen was focused.
+  useFocusEffect(
+    useCallback(() => {
+      void loadData();
+    }, [loadData])
+  );
 
   const filteredNotes = useMemo(() => {
     let list = notes;

@@ -10,6 +10,7 @@ import {
     formatActorLabel,
     mapMessagesFromApi,
     mapMessageFromApi,
+    mergeChatMessagesById,
     computeDmReceiptStatus,
     resolveThreadRootId,
     DeliveryIntentRegistry,
@@ -94,6 +95,7 @@ function mapDirectMessageFromApi(raw: any, threadId: string): DirectMessage {
         threadRootId: raw.threadRootId || raw.thread_root_id,
         replyCount: typeof raw.replyCount === 'number' ? raw.replyCount : raw.reply_count,
         receiptStatus: raw.receiptStatus || raw.receipt_status,
+        clientMessageId: raw.clientMessageId || raw.client_message_id,
     };
 }
 
@@ -186,7 +188,13 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) =>
                         mapDirectMessageFromApi(m, chat.id)
                     );
-                    updateDirectMessages(prev => ({ ...prev, [chat.id]: mappedMessages }));
+                    updateDirectMessages(prev => ({
+                        ...prev,
+                        [chat.id]: mergeChatMessagesById(
+                            prev[chat.id] || [],
+                            mappedMessages as any
+                        ) as DirectMessage[],
+                    }));
                 }).catch(error => {
                     console.error('Error fetching DM messages:', error);
                 });
@@ -247,7 +255,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     if (requestId !== groupMessagesFetchSeqRef.current) return;
                     if (useUIStore.getState().selectedChat?.id !== chatId) return;
                     const list = normalizeFetchedMessages(fetchedMessages);
-                    updateMessages((prev) => ({ ...prev, [chatId]: list }));
+                    updateMessages((prev) => ({
+                        ...prev,
+                        [chatId]: mergeChatMessagesById(prev[chatId] || [], list as any) as Message[],
+                    }));
                 } catch (error) {
                     console.error('[selectedChat] Error fetching messages:', error);
                 }
@@ -310,7 +321,13 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                             const mappedMessages: DirectMessage[] = raw.map((m: any) =>
                                 mapDirectMessageFromApi(m, threadId)
                             );
-                            updateDirectMessages((prev) => ({ ...prev, [threadId]: mappedMessages }));
+                            updateDirectMessages((prev) => ({
+                                ...prev,
+                                [threadId]: mergeChatMessagesById(
+                                    prev[threadId] || [],
+                                    mappedMessages as any
+                                ) as DirectMessage[],
+                            }));
                         })
                         .catch((error) => {
                             console.error('[selectedChat] Error fetching DM messages:', error);

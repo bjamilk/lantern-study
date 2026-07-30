@@ -259,6 +259,8 @@ export interface Message {
   receiptStatus?: 'sent' | 'read';
   seenByCount?: number;
   seenByTotal?: number;
+  /** Optimistic reconcile key from messages.client_message_id. */
+  clientMessageId?: string;
 }
 
 export type ChatItem = (Group & { chatType: 'group' }) | (DMThread & { chatType: 'dm' });

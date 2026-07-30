@@ -218,9 +218,21 @@ class RealtimeSubscriptionManager {
       )
       .subscribe((status) => {
         console.log(`[Realtime] Notifications channel status: ${status}`);
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          void this.recoverChannel(channelName, () => this.subscribeToNotifications(userId));
+        }
       });
 
     this.channels.set(channelName, channel);
+  }
+
+  private async recoverChannel(channelName: string, recreate: () => void): Promise<void> {
+    const existing = this.channels.get(channelName);
+    if (existing) {
+      await supabase.removeChannel(existing);
+      this.channels.delete(channelName);
+    }
+    recreate();
   }
 
   /** Single channel for all group messages (RLS scopes rows; client filters by membership). */
@@ -254,6 +266,9 @@ class RealtimeSubscriptionManager {
       )
       .subscribe((status) => {
         console.log(`[Realtime] Group messages (all) status: ${status}`);
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          void this.recoverChannel(channelName, () => this.subscribeToAllGroupMessages(userId));
+        }
       });
 
     this.channels.set(channelName, channel);
@@ -305,6 +320,9 @@ class RealtimeSubscriptionManager {
       )
       .subscribe((status) => {
         console.log(`[Realtime] DM messages (all) status: ${status}`);
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          void this.recoverChannel(channelName, () => this.subscribeToAllDmMessages(userId));
+        }
       });
 
     this.channels.set(channelName, channel);
@@ -520,8 +538,48 @@ export function useRealtimeSubscriptions(
     }
   }, [onSettingsUpdate, loadSettings, user?.id]);
 
+  const refetchOpenChat = useCallback(async () => {
+    const store = useGroupStore.getState();
+    const activeGroupId = store.activeGroupId;
+    if (activeGroupId) {
+      try {
+        // refresh:false merges by id so optimistic/realtime rows are not wiped.
+        await store.fetchMessages(activeGroupId, { page: 1, refresh: false, limit: 50 });
+      } catch (error) {
+        console.warn('[useRealtimeSubscriptions] Group refetch failed:', error);
+      }
+    }
+    const activeDm = store.dmThreads.find(
+      (thread) => (store.directMessages[thread.id] || []).length > 0
+    );
+    // Prefer the thread currently loaded in the DM screen if present.
+    const dmThreadId =
+      Object.keys(store.directMessages).find((id) => (store.directMessages[id] || []).length > 0) ||
+      activeDm?.id;
+    if (dmThreadId && user?.id) {
+      const thread = store.dmThreads.find((t) => t.id === dmThreadId);
+      const otherUserId = thread?.participantIds?.find((id) => id !== user.id);
+      if (otherUserId) {
+        try {
+          await store.fetchDirectMessagesForThread(user.id, otherUserId, dmThreadId);
+        } catch (error) {
+          console.warn('[useRealtimeSubscriptions] DM refetch failed:', error);
+        }
+      }
+    }
+  }, [user?.id]);
+
   const subscribe = useCallback(async () => {
     if (!user?.id) return;
+    // Ensure the Supabase client has a session JWT before postgres_changes (RLS).
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.access_token) {
+        await supabase.auth.refreshSession();
+      }
+    } catch (error) {
+      console.warn('[useRealtimeSubscriptions] Session check failed:', error);
+    }
     const mode: RealtimeSubscribeMode =
       appStateRef.current === 'active' ? 'full' : 'lean';
     const gIds = useGroupStore.getState().groups.map(g => g.id);
@@ -570,12 +628,15 @@ export function useRealtimeSubscriptions(
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        console.log('[useRealtimeSubscriptions] App resumed — full realtime');
+        console.log('[useRealtimeSubscriptions] App resumed — full realtime + refetch');
         if (user?.id && autoSubscribe) {
           const gIds = useGroupStore.getState().groups.map(g => g.id);
           const dIds = useGroupStore.getState().dmThreads.map(t => t.id);
           subscriptionManager.setMembership(gIds, dIds);
-          await subscriptionManager.setMode('full');
+          // Force channel recreate after background (lean dropped message feeds).
+          await subscriptionManager.unsubscribe();
+          await subscribe();
+          await refetchOpenChat();
         }
       } else if (nextAppState === 'background') {
         // Lean only on true background (not iOS inactive / control center).
@@ -589,7 +650,7 @@ export function useRealtimeSubscriptions(
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
-  }, [user?.id, autoSubscribe]);
+  }, [user?.id, autoSubscribe, subscribe, refetchOpenChat]);
 
   const status = subscriptionManager.getStatus();
 

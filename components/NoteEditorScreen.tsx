@@ -172,6 +172,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setBody(note.body);
   }, [note.id]);
 
+  // Collaborator / remote updates: apply when the viewer has not typed locally.
+  useEffect(() => {
+    if (userEditedRef.current) return;
+    setTitle(note.title);
+    setBody(note.body);
+  }, [note.title, note.body, note.updatedAt]);
+
   useEffect(() => {
     saveEnabledRef.current = canEdit;
     return () => {

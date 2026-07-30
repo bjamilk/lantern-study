@@ -11,6 +11,7 @@ import {
   formatChatSenderLabel,
   resolveThreadRootId,
   computeDmReceiptStatus,
+  mergeChatMessagesById,
   DeliveryIntentRegistry,
   isUncertainDeliveryError,
   reconcileDeliveredItem,
@@ -763,11 +764,15 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         (get().currentGroup?.id === groupId ? get().currentGroup?.members : undefined);
       const mapped = apiMessages.map((m: any) => mapApiMessage(m, groupId, roster));
 
-      const existing = refresh ? [] : (get().messagesCache[groupId] || []);
-      const existingIds = new Set(existing.map(m => m.id));
-      const merged = refresh
-        ? mapped
-        : [...mapped.filter((m: Message) => !existingIds.has(m.id)), ...existing];
+      const existing = get().messagesCache[groupId] || [];
+      // Always merge by id so a late fetch cannot wipe realtime/optimistic rows.
+      const merged = mergeChatMessagesById(
+        refresh ? [] : existing,
+        mapped as any
+      ) as Message[];
+      const withLocalOptimistic = refresh
+        ? mergeChatMessagesById(merged as any, existing as any) as Message[]
+        : merged;
 
       const hasMore = pagination?.hasMore ?? mapped.length >= limit;
 
@@ -775,8 +780,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
       const isActiveGroup = get().activeGroupId === groupId;
       set({
-        messages: isActiveGroup ? merged : get().messages,
-        messagesCache: { ...get().messagesCache, [groupId]: merged },
+        messages: isActiveGroup ? withLocalOptimistic : get().messages,
+        messagesCache: { ...get().messagesCache, [groupId]: withLocalOptimistic },
         messagePagination: {
           ...get().messagePagination,
           [groupId]: { page, hasMore },
@@ -1424,9 +1429,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       if (requestId !== dmFetchSeqByThread[threadId]) return;
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const mapped = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
-      set(state => ({
-        directMessages: { ...state.directMessages, [threadId]: mapped },
-      }));
+      set(state => {
+        const existing = state.directMessages[threadId] || [];
+        const merged = mergeChatMessagesById(existing as any, mapped as any) as DirectMessage[];
+        return {
+          directMessages: { ...state.directMessages, [threadId]: merged },
+        };
+      });
     } catch (error) {
       if (requestId !== dmFetchSeqByThread[threadId]) return;
       console.warn('[GroupStore] Failed to fetch direct messages:', error);
