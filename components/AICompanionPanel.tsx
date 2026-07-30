@@ -14,7 +14,11 @@ import { useCompanionStore } from '../stores/companionStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { CompanionMessage, CompanionAction, CompanionUserContext } from '../types';
-import { submitCompanionFeedback, trackAIAnalyticsEvent } from '../services/ai';
+import {
+  isPersistedCompanionMessageId,
+  submitCompanionFeedback,
+  trackAIAnalyticsEvent,
+} from '../services/ai';
 import { transcribeAudioForNote } from '../services/notes';
 import { AIDisclaimer } from './AIDisclaimer';
 import Drawer from './ui/Drawer';
@@ -581,19 +585,22 @@ interface MessageBubbleProps {
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction, isStreaming }) => {
   const isUser = message.role === 'user';
-  const [feedback, setFeedback] = useState<'up' | 'down' | null>(message.feedback ?? null);
+  const setMessageFeedback = useCompanionStore((s) => s.setMessageFeedback);
+  const feedback = message.feedback ?? null;
   const pendingRef = useRef(false);
-
-  useEffect(() => {
-    setFeedback(message.feedback ?? null);
-  }, [message.id, message.feedback]);
+  const canRate =
+    !isUser &&
+    !isStreaming &&
+    message.content.length > 0 &&
+    isPersistedCompanionMessageId(message.id);
 
   const handleFeedback = async (rating: 'up' | 'down') => {
-    if (pendingRef.current) return;
+    if (pendingRef.current || !canRate) return;
     const next = feedback === rating ? null : rating;
     pendingRef.current = true;
     const previous = feedback;
-    setFeedback(next);
+    // Persist in the store immediately so remounts / history merges keep the selection.
+    setMessageFeedback(message.id, next);
     try {
       await submitCompanionFeedback(message.id, next);
       trackAIAnalyticsEvent('companion_feedback', {
@@ -601,7 +608,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
         messageId: message.id,
       });
     } catch {
-      setFeedback(previous);
+      setMessageFeedback(message.id, previous);
     } finally {
       pendingRef.current = false;
     }
@@ -645,8 +652,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
             ))}
           </div>
         )}
-        {/* Thumbs feedback (only on completed assistant messages) */}
-        {!isUser && !isStreaming && message.content.length > 0 && (
+        {/* Thumbs feedback (only on completed, persisted assistant messages) */}
+        {canRate && (
           <div className="flex items-center gap-1 mt-0.5" role="group" aria-label="Rate this response">
             <button
               type="button"

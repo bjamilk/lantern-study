@@ -387,13 +387,22 @@ export async function companionSendMessageStream(
   }
 }
 
+const PERSISTED_COMPANION_MESSAGE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isPersistedCompanionMessageId(messageId: string): boolean {
+  return PERSISTED_COMPANION_MESSAGE_ID.test(messageId);
+}
+
 export async function submitCompanionFeedback(
   messageId: string,
   rating: 'up' | 'down' | null
 ): Promise<void> {
   const userId = useAuthStore.getState().currentUser?.id;
-  if (!userId) return;
-  if (messageId.startsWith('tmp-')) {
+  if (!userId) {
+    throw new Error('Not authenticated');
+  }
+  if (!isPersistedCompanionMessageId(messageId)) {
     throw new Error('Message is still saving; try feedback again in a moment');
   }
   const headers = await getAuthHeaders();

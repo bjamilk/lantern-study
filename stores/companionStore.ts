@@ -37,6 +37,7 @@ interface CompanionState {
 
   // Actions
   loadHistory: () => Promise<void>;
+  setMessageFeedback: (messageId: string, rating: 'up' | 'down' | null) => void;
   sendMessage: (text: string, context?: CompanionUserContext) => Promise<void>;
   sendMessageStreaming: (text: string, context?: CompanionUserContext) => Promise<void>;
   clearHistory: () => Promise<void>;
@@ -74,17 +75,31 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     set((s) => ({ messages: [...s.messages, assistantMsg], error: null }));
   },
 
+  setMessageFeedback: (messageId, rating) => {
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId ? { ...m, feedback: rating } : m
+      ),
+    }));
+  },
+
   loadHistory: async () => {
     set({ isLoadingHistory: true, error: null });
     try {
       const { messages } = await fetchCompanionHistory();
+      // Keep in-memory ratings if a refetch races ahead of the feedback write.
+      const previousFeedback = new Map(
+        get()
+          .messages.filter((m) => m.feedback === 'up' || m.feedback === 'down')
+          .map((m) => [m.id, m.feedback as 'up' | 'down'])
+      );
       set({
         messages: messages.map(m => ({
           id: m.id,
           role: m.role,
           content: m.content,
           actions: m.actions,
-          feedback: m.feedback ?? null,
+          feedback: m.feedback ?? previousFeedback.get(m.id) ?? null,
           created_at: m.created_at,
         })),
         isLoadingHistory: false,

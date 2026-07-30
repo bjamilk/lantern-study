@@ -179,7 +179,9 @@ export function createCompanionClient(config: AIClientConfig) {
       messageId: string,
       rating: 'up' | 'down' | null
     ): Promise<void> => {
-      if (messageId.startsWith('tmp-')) {
+      const persistedId =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!persistedId.test(messageId)) {
         throw new Error('Message is still saving; try feedback again in a moment');
       }
       const headers = await config.getAuthHeaders();
