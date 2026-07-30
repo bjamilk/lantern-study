@@ -20,7 +20,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
 
-import { copyNote, summarizeNote, generateNoteQuiz, addImagesToPhotoNote } from '../../services/notes';
+import {
+  copyNote,
+  fetchNote,
+  summarizeNote,
+  generateNoteQuiz,
+  addImagesToPhotoNote,
+  retryYoutubeTranscript,
+} from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 
@@ -99,6 +106,8 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
   const [generatingCards, setGeneratingCards] = useState(false);
+  const [retryingYoutubeTranscript, setRetryingYoutubeTranscript] = useState(false);
+  const [youtubeTranscriptExpanded, setYoutubeTranscriptExpanded] = useState(true);
   const [showCollaborators, setShowCollaborators] = useState(false);
   const [parentScrollEnabled, setParentScrollEnabled] = useState(true);
   const handleDocumentScrollLock = useCallback((locked: boolean) => {
@@ -109,7 +118,24 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const isDocumentNote =
     selectedNote?.sourceType === 'pdf' || selectedNote?.sourceType === 'presentation';
+  const isYoutubeNote =
+    selectedNote?.sourceType === 'youtube' || Boolean(selectedNote?.youtubeVideoId);
   const isPhotoNote = selectedNote?.sourceType === 'photos';
+  const youtubeAttachment = useMemo(
+    () => selectedNote?.attachments?.find((a) => a.type === 'youtube'),
+    [selectedNote?.attachments]
+  );
+  const youtubeTranscriptText = youtubeAttachment?.extractedText?.trim() || '';
+  const youtubeTranscriptStatus = useMemo(() => {
+    if (youtubeTranscriptText) return 'ready' as const;
+    const status = youtubeAttachment?.metadata?.transcriptStatus;
+    if (status === 'processing' || status === 'ready' || status === 'failed') return status;
+    return youtubeAttachment ? ('missing' as const) : ('missing' as const);
+  }, [youtubeAttachment, youtubeTranscriptText]);
+  const youtubeTranscriptError =
+    typeof youtubeAttachment?.metadata?.transcriptError === 'string'
+      ? youtubeAttachment.metadata.transcriptError
+      : null;
   const imageAttachments = useMemo(
     () =>
       (selectedNote?.attachments || [])
@@ -258,6 +284,48 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     loadNote(noteId);
   }, [noteId, loadNote]);
 
+  // Poll while YouTube transcript is processing so Smart Notes unlocks in-session.
+  useEffect(() => {
+    if (!isYoutubeNote || youtubeTranscriptStatus !== 'processing') return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 40;
+    const tick = async () => {
+      if (cancelled || attempts >= maxAttempts) return;
+      attempts += 1;
+      try {
+        const refreshed = await fetchNote(noteId);
+        if (cancelled) return;
+        const prev = useNotesStore.getState().selectedNote;
+        if (!prev || prev.id !== noteId) return;
+        setSelectedNote({
+          ...prev,
+          ...refreshed,
+          attachments: refreshed.attachments ?? prev.attachments,
+        });
+        const attachment = refreshed.attachments?.find((a) => a.type === 'youtube');
+        const text = attachment?.extractedText?.trim();
+        const status = text
+          ? 'ready'
+          : attachment?.metadata?.transcriptStatus === 'failed'
+            ? 'failed'
+            : attachment?.metadata?.transcriptStatus === 'ready'
+              ? 'ready'
+              : 'processing';
+        if (status === 'processing') {
+          setTimeout(() => void tick(), 2500);
+        }
+      } catch {
+        if (!cancelled) setTimeout(() => void tick(), 4000);
+      }
+    };
+    const timer = setTimeout(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isYoutubeNote, youtubeTranscriptStatus, noteId, setSelectedNote]);
+
   const lastHydratedNoteIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -401,11 +469,46 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
+  const handleRetryYoutubeTranscript = async () => {
+    if (!canEdit || retryingYoutubeTranscript) return;
+    setRetryingYoutubeTranscript(true);
+    try {
+      const result = await retryYoutubeTranscript(noteId);
+      const prev = useNotesStore.getState().selectedNote;
+      if (prev?.id === noteId) {
+        setSelectedNote({
+          ...prev,
+          ...result.note,
+          attachments:
+            prev.attachments?.map((a) =>
+              a.id === result.attachment.id ? result.attachment : a
+            ) ?? [result.attachment],
+        });
+      }
+      if (result.status === 'failed') {
+        Alert.alert(
+          'Transcript unavailable',
+          result.transcriptError ||
+            'Still could not fetch a transcript for this video.'
+        );
+      }
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Transcript retry failed');
+    } finally {
+      setRetryingYoutubeTranscript(false);
+    }
+  };
+
   const handleSummarize = async () => {
 
     if (!studyContent.trim()) {
 
-      Alert.alert('Empty note', 'Add some content before summarizing.');
+      Alert.alert(
+        'Empty note',
+        isYoutubeNote
+          ? 'Wait for the video transcript, or add your own notes, before summarizing.'
+          : 'Add some content before summarizing.'
+      );
 
       return;
 
@@ -728,6 +831,70 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </Pressable>
           ) : null}
 
+          {isYoutubeNote ? (
+            <View className="mb-4 rounded-xl border border-lantern-border bg-lantern-surface p-4">
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1">
+                  <Text className="text-sm font-semibold text-lantern-text">
+                    {youtubeTranscriptStatus === 'ready'
+                      ? 'Video transcript'
+                      : youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript
+                        ? 'Fetching transcript…'
+                        : 'Transcript unavailable'}
+                  </Text>
+                  <Text className="text-xs text-lantern-text-secondary mt-1">
+                    {youtubeTranscriptStatus === 'ready'
+                      ? 'Ready for Smart Notes, flashcards, and chat.'
+                      : youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript
+                        ? 'We’ll use this transcript for Smart Notes and other AI study tools.'
+                        : youtubeTranscriptError ||
+                          'We couldn’t fetch captions for this video. Private videos, disabled captions, and some rate limits can block import.'}
+                  </Text>
+                </View>
+                {(youtubeTranscriptStatus === 'failed' ||
+                  youtubeTranscriptStatus === 'missing') &&
+                canEdit ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={retryingYoutubeTranscript}
+                    onPress={() => void handleRetryYoutubeTranscript()}
+                  >
+                    Retry
+                  </Button>
+                ) : null}
+                {youtubeTranscriptStatus === 'ready' && youtubeTranscriptText ? (
+                  <Pressable onPress={() => setYoutubeTranscriptExpanded((v) => !v)}>
+                    <Text className="text-xs font-medium text-lantern-primary">
+                      {youtubeTranscriptExpanded ? 'Hide' : 'Show'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {(youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript) && (
+                <View className="flex-row items-center gap-2 mt-3">
+                  <ActivityIndicator size="small" color="#0ea5e9" />
+                  <Text className="text-xs text-lantern-text-tertiary">
+                    Pulling captions from YouTube…
+                  </Text>
+                </View>
+              )}
+              {youtubeTranscriptStatus === 'ready' &&
+              youtubeTranscriptExpanded &&
+              youtubeTranscriptText ? (
+                <ScrollView
+                  nestedScrollEnabled
+                  style={{ maxHeight: 224 }}
+                  className="mt-3 rounded-lg border border-lantern-border bg-lantern-background-secondary p-3"
+                >
+                  <Text className="text-xs leading-relaxed text-lantern-text-secondary">
+                    {youtubeTranscriptText}
+                  </Text>
+                </ScrollView>
+              ) : null}
+            </View>
+          ) : null}
+
           {isDocumentNote && !documentAttachment ? (
             <Text className="text-sm text-lantern-text-secondary mb-4">
               {selectedNote?.sourceType === 'presentation'
@@ -737,7 +904,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </Text>
           ) : null}
 
-          {isDocumentNote || isPhotoNote ? (
+          {isDocumentNote || isPhotoNote || isYoutubeNote ? (
             <>
               <Text className="text-sm font-semibold text-lantern-text mb-2">
                 Your notes
@@ -750,7 +917,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 placeholder={
                   isPhotoNote
                     ? 'Add your own notes alongside these photos...'
-                    : 'Add your own notes on top of this document...'
+                    : isYoutubeNote
+                      ? 'Add your own notes alongside this video transcript...'
+                      : 'Add your own notes on top of this document...'
                 }
                 placeholderTextColor="#94a3b8"
                 multiline

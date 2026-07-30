@@ -14,6 +14,9 @@ import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, S
 import NoteLearnPanel from './NoteLearnPanel';
 import DailyQuizWidget from './DailyQuizWidget';
 import YouTubeEmbed from './YouTubeEmbed';
+import YoutubeTranscriptPanel, {
+  resolveTranscriptStatus,
+} from './YoutubeTranscriptPanel';
 import NoteCollaboratorsModal from './NoteCollaboratorsModal';
 import Modal from './ui/Modal';
 import NotePdfViewer from './NotePdfViewer';
@@ -131,6 +134,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     useNoteCommentsSync(note.id, onRefreshComments);
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
+  const isYoutubeNote = note.sourceType === 'youtube' || Boolean(note.youtubeVideoId);
   const isPhotoNote = note.sourceType === 'photos';
   const imageAttachments = (note.attachments || [])
     .filter((a) => a.type === 'image')
@@ -142,10 +146,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const showImageGallery = isPhotoNote || imageAttachments.length > 0;
   const addPhotosInputRef = useRef<HTMLInputElement>(null);
   const [addingPhotos, setAddingPhotos] = useState(false);
+  const [retryingYoutubeTranscript, setRetryingYoutubeTranscript] = useState(false);
   const documentAttachment = note.attachments?.find(
     (a) => a.type === 'pdf' || (a.type === 'presentation' && a.metadata?.previewStoragePath)
   );
   const presentationAttachment = note.attachments?.find((a) => a.type === 'presentation');
+  const youtubeAttachment = note.attachments?.find((a) => a.type === 'youtube');
+  const youtubeTranscriptStatus = resolveTranscriptStatus(youtubeAttachment);
   const presentationPreviewPath =
     typeof presentationAttachment?.metadata?.previewStoragePath === 'string'
       ? presentationAttachment.metadata.previewStoragePath
@@ -240,6 +247,50 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setPreviewBannerDismissed(false);
     previewAttemptedRef.current.delete(note.id);
   }, [note.id]);
+
+  // Poll while a YouTube transcript job is still processing so Smart Notes unlocks.
+  useEffect(() => {
+    if (!isYoutubeNote) return;
+    if (youtubeTranscriptStatus !== 'processing') return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 40;
+    const tick = async () => {
+      if (cancelled || attempts >= maxAttempts) return;
+      attempts += 1;
+      try {
+        const refreshed = await notesApi.fetchNote(note.id);
+        if (cancelled) return;
+        const prev = useNotesStore.getState().selectedNote;
+        if (!prev || prev.id !== note.id) return;
+        setSelectedNote({
+          ...prev,
+          ...refreshed,
+          attachments: refreshed.attachments ?? prev.attachments,
+        });
+        const nextStatus = resolveTranscriptStatus(
+          refreshed.attachments?.find((a) => a.type === 'youtube')
+        );
+        if (nextStatus === 'processing') {
+          window.setTimeout(() => void tick(), 2500);
+        }
+      } catch {
+        if (!cancelled) {
+          window.setTimeout(() => void tick(), 4000);
+        }
+      }
+    };
+    const timer = window.setTimeout(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    isYoutubeNote,
+    note.id,
+    youtubeTranscriptStatus,
+    setSelectedNote,
+  ]);
 
   useEffect(() => {
     if (note.sourceType !== 'presentation') return;
@@ -414,6 +465,38 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setPreviewTrigger((t) => t + 1);
   };
 
+  const handleRetryYoutubeTranscript = async () => {
+    if (!canEdit || retryingYoutubeTranscript) return;
+    setRetryingYoutubeTranscript(true);
+    try {
+      const result = await notesApi.retryYoutubeTranscript(note.id);
+      const prev = useNotesStore.getState().selectedNote;
+      if (prev?.id === note.id) {
+        setSelectedNote({
+          ...prev,
+          ...result.note,
+          attachments:
+            prev.attachments?.map((a) =>
+              a.id === result.attachment.id ? result.attachment : a
+            ) ?? [result.attachment],
+        });
+      }
+      if (result.status === 'failed') {
+        showToast(
+          result.transcriptError ||
+            'Still could not fetch a transcript for this video.',
+          'error'
+        );
+      } else {
+        showToast('Transcript ready for Smart Notes', 'success');
+      }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Transcript retry failed', 'error');
+    } finally {
+      setRetryingYoutubeTranscript(false);
+    }
+  };
+
   const handleShareGroup = () => {
     if (groups.length === 0) {
       useToastStore.getState().showToast('Join a group first to share notes.', 'info');
@@ -575,6 +658,16 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             <YouTubeEmbed videoId={note.youtubeVideoId} title={title || note.title} />
           )}
 
+          {isYoutubeNote && (
+            <YoutubeTranscriptPanel
+              theme={theme}
+              attachment={youtubeAttachment}
+              canRetry={canEdit}
+              retrying={retryingYoutubeTranscript}
+              onRetry={() => void handleRetryYoutubeTranscript()}
+            />
+          )}
+
           {documentAttachment && (
             <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
           )}
@@ -663,7 +756,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             </div>
           )}
 
-          {isDocumentNote || isPhotoNote ? (
+          {isDocumentNote || isPhotoNote || isYoutubeNote ? (
             <div>
               <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
                 Your notes
@@ -676,7 +769,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 placeholder={
                   isPhotoNote
                     ? 'Add your own notes alongside these photos...'
-                    : 'Add your own notes on top of this document...'
+                    : isYoutubeNote
+                      ? 'Add your own notes alongside this video transcript...'
+                      : 'Add your own notes on top of this document...'
                 }
                 className={`w-full min-h-[160px] sm:min-h-[200px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
                   isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'

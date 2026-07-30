@@ -163,23 +163,60 @@ function parseTimedTextXml(body: string): TranscriptSegment[] {
   return segments;
 }
 
-async function fetchTranscriptViaInnertube(videoId: string): Promise<YoutubeTranscript> {
-  // The ANDROID client bypasses most consent/age walls and returns caption tracks.
+type InnertubeClient = {
+  clientName: string;
+  clientVersion: string;
+  userAgent: string;
+  extra?: Record<string, unknown>;
+};
+
+const INNERTUBE_CLIENTS: InnertubeClient[] = [
+  {
+    // ANDROID bypasses most consent/age walls and returns caption tracks.
+    clientName: 'ANDROID',
+    clientVersion: '20.10.38',
+    userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+    extra: { androidSdkVersion: 30 },
+  },
+  {
+    // WEB as a second attempt when datacenter IPs trip ANDROID restrictions.
+    clientName: 'WEB',
+    clientVersion: '2.20250320.01.00',
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  },
+];
+
+function humanizePlayabilityError(status: string, reason?: string): string {
+  const detail = reason ? `: ${reason}` : '';
+  if (/LOGIN_REQUIRED|UNPLAYABLE|AGE/i.test(`${status} ${reason || ''}`)) {
+    return 'This video is private, age-restricted, or otherwise unavailable for transcript fetch.';
+  }
+  if (/ERROR|CONTENT_CHECK_REQUIRED/i.test(status)) {
+    return `This video cannot be accessed for transcripts (${status}${detail}).`;
+  }
+  return `Video is not playable (${status}${detail})`;
+}
+
+async function fetchTranscriptViaInnertubeClient(
+  videoId: string,
+  client: InnertubeClient
+): Promise<YoutubeTranscript> {
   const playerRes = await fetchWithTimeout(
     'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+        'User-Agent': client.userAgent,
       },
       body: JSON.stringify({
         context: {
           client: {
-            clientName: 'ANDROID',
-            clientVersion: '20.10.38',
-            androidSdkVersion: 30,
+            clientName: client.clientName,
+            clientVersion: client.clientVersion,
             hl: 'en',
+            ...(client.extra || {}),
           },
         },
         videoId,
@@ -199,9 +236,7 @@ async function fetchTranscriptViaInnertube(videoId: string): Promise<YoutubeTran
 
   const status = player.playabilityStatus?.status;
   if (status && status !== 'OK') {
-    throw new Error(
-      `Video is not playable (${status}${player.playabilityStatus?.reason ? `: ${player.playabilityStatus.reason}` : ''})`
-    );
+    throw new Error(humanizePlayabilityError(status, player.playabilityStatus?.reason));
   }
 
   const tracks = player.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
@@ -212,9 +247,7 @@ async function fetchTranscriptViaInnertube(videoId: string): Promise<YoutubeTran
 
   const timedTextUrl = `${track.baseUrl}${track.baseUrl.includes('?') ? '&' : '?'}fmt=json3`;
   const textRes = await fetchWithTimeout(timedTextUrl, {
-    headers: {
-      'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
-    },
+    headers: { 'User-Agent': client.userAgent },
   });
   if (!textRes.ok) {
     throw new Error(`Transcript download failed (${textRes.status})`);
@@ -237,6 +270,23 @@ async function fetchTranscriptViaInnertube(videoId: string): Promise<YoutubeTran
     text: segments.map((s) => s.text).join(' '),
     segments,
   };
+}
+
+async function fetchTranscriptViaInnertube(videoId: string): Promise<YoutubeTranscript> {
+  let lastError: Error | null = null;
+  for (const client of INNERTUBE_CLIENTS) {
+    try {
+      return await fetchTranscriptViaInnertubeClient(videoId, client);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      logger.warn('InnerTube client failed', {
+        videoId,
+        client: client.clientName,
+        error: lastError.message,
+      });
+    }
+  }
+  throw lastError || new Error('Could not fetch a transcript for this video.');
 }
 
 // ---------------------------------------------------------------------------
@@ -346,14 +396,38 @@ export async function getYoutubeTranscript(
   }
 
   if (isManagedTranscriptFallbackEnabled()) {
-    const transcript = await fetchTranscriptViaSupadata(videoId);
-    await writeTranscriptCache(client, transcript);
-    return transcript;
+    try {
+      const transcript = await fetchTranscriptViaSupadata(videoId);
+      await writeTranscriptCache(client, transcript);
+      return transcript;
+    } catch (err) {
+      const supadataError = err instanceof Error ? err : new Error(String(err));
+      logger.warn('Supadata transcript fetch failed', {
+        videoId,
+        error: supadataError.message,
+      });
+      if (/402|credit|quota|rate.?limit|429/i.test(supadataError.message)) {
+        throw new Error(
+          'Transcript provider rate-limited or out of credits. Try again in a few minutes.'
+        );
+      }
+      throw new Error(
+        innertubeError?.message ||
+          supadataError.message ||
+          'Could not fetch a transcript for this video.'
+      );
+    }
   }
 
-  throw new Error(
-    innertubeError?.message || 'Could not fetch a transcript for this video.'
-  );
+  const baseMessage =
+    innertubeError?.message || 'Could not fetch a transcript for this video.';
+  // Cloud hosts are often IP-blocked by YouTube's free caption endpoints.
+  if (/failed \(\d{3}\)|abort|timeout|fetch/i.test(baseMessage)) {
+    throw new Error(
+      `${baseMessage} YouTube may be blocking transcript fetches from this server. Try again later, or use a video with public captions.`
+    );
+  }
+  throw new Error(baseMessage);
 }
 
 // ---------------------------------------------------------------------------

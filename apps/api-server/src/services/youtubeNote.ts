@@ -34,6 +34,12 @@ export async function runYoutubeTranscriptJob(
 ): Promise<YoutubeTranscriptJobResult> {
   const { noteId, attachmentId, videoId, meta } = params;
 
+  const {
+    transcriptError: _prevError,
+    transcriptFailedAt: _prevFailedAt,
+    ...baseMeta
+  } = meta;
+
   try {
     const transcript = await getYoutubeTranscript(supabaseService.getClient(), videoId);
     const formatted = formatTranscriptForNote(transcript.segments) || transcript.text;
@@ -41,13 +47,15 @@ export async function runYoutubeTranscriptJob(
     await supabaseService.updateNoteAttachment(attachmentId, {
       extractedText: formatted,
       metadata: {
-        ...meta,
+        ...baseMeta,
         videoId,
         transcriptStatus: 'ready',
         transcriptLanguage: transcript.language,
         transcriptSource: transcript.source,
         transcriptSegments: transcript.segments.length,
         transcriptFetchedAt: new Date().toISOString(),
+        transcriptError: null,
+        transcriptFailedAt: null,
       },
     });
 
@@ -66,10 +74,11 @@ export async function runYoutubeTranscriptJob(
     await supabaseService
       .updateNoteAttachment(attachmentId, {
         metadata: {
-          ...meta,
+          ...baseMeta,
           videoId,
           transcriptStatus: 'failed',
           transcriptError: message,
+          transcriptFailedAt: new Date().toISOString(),
         },
       })
       .catch((updateErr) => {

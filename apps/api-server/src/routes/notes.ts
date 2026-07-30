@@ -1781,6 +1781,92 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
   res.json({ success: true, data: outcome.result });
 }));
 
+router.post(
+  '/:noteId/retry-youtube-transcript',
+  requireNoteEdit('noteId'),
+  validateNoteId,
+  handleValidationErrors,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const videoId =
+      note.youtubeVideoId ||
+      parseYoutubeVideoId(typeof note.youtubeUrl === 'string' ? note.youtubeUrl : '');
+    if (!videoId) {
+      res.status(400).json({ error: 'This note is not linked to a YouTube video.' });
+      return;
+    }
+
+    const canonicalUrl = canonicalYoutubeUrl(videoId);
+    const attachments = await supabaseService.getNoteAttachments(note.id);
+    let attachment = attachments.find((a) => a.type === 'youtube');
+    const priorMeta = (attachment?.metadata || {}) as Record<string, unknown>;
+    const attachmentMeta: Record<string, unknown> = {
+      ...priorMeta,
+      videoId,
+      transcriptStatus: 'processing',
+      transcriptStartedAt: new Date().toISOString(),
+      transcriptError: null,
+      transcriptFailedAt: null,
+    };
+
+    if (!attachment) {
+      attachment = await supabaseService.addNoteAttachment(note.id, {
+        type: 'youtube',
+        fileUrl: note.youtubeUrl || canonicalUrl,
+        fileName: note.title || 'YouTube video',
+        metadata: attachmentMeta,
+      });
+    } else {
+      attachment = await supabaseService.updateNoteAttachment(attachment.id, {
+        metadata: attachmentMeta,
+      });
+    }
+
+    const outcome = await runSyncOrEnqueue(
+      'notes.youtube.transcript',
+      {
+        noteId: note.id,
+        attachmentId: attachment.id,
+        videoId,
+        meta: attachmentMeta,
+      },
+      userId,
+      () =>
+        runYoutubeTranscriptJob(supabaseService, {
+          noteId: note.id,
+          attachmentId: attachment!.id,
+          videoId,
+          meta: attachmentMeta,
+        })
+    );
+
+    if (outcome.mode === 'async') {
+      res.status(202).json({
+        success: true,
+        data: { note, attachment, status: 'processing' },
+        jobId: outcome.jobId,
+      });
+      return;
+    }
+
+    const jobResult = outcome.result;
+    const refreshed = await supabaseService.getNoteAttachments(note.id);
+    const updatedAttachment = refreshed.find((a) => a.id === attachment!.id) || attachment;
+    res.json({
+      success: true,
+      data: {
+        note,
+        attachment: updatedAttachment,
+        status: jobResult.status,
+        ...(jobResult.status === 'failed' ? { transcriptError: jobResult.error } : {}),
+      },
+    });
+  })
+);
+
 router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
