@@ -8,9 +8,12 @@ import {
   HandThumbDownIcon,
   MicrophoneIcon,
   StopIcon,
+  PlusIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as ThumbUpSolid, HandThumbDownIcon as ThumbDownSolid } from '@heroicons/react/24/solid';
 import { useCompanionStore } from '../stores/companionStore';
+import { useNotesStore } from '../stores/notesStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { CompanionMessage, CompanionAction, CompanionUserContext } from '../types';
@@ -81,13 +84,19 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     loadHistory, sendMessageStreaming, clearHistory, clearError,
     pendingMessage, setPendingMessage,
     pendingAssistantMessage, setPendingAssistantMessage, injectAssistantMessage,
+    activeNoteContext, setActiveNoteContext,
   } = useCompanionStore();
+  const notes = useNotesStore((s) => s.notes);
+  const notesLoading = useNotesStore((s) => s.isLoading);
+  const loadNotes = useNotesStore((s) => s.loadNotes);
   const currentUser = useAuthStore(s => s.currentUser);
   const showToast = useToastStore(s => s.showToast);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showNotePicker, setShowNotePicker] = useState(false);
+  const [noteSearch, setNoteSearch] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -101,7 +110,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
   const transcribeAbortRef = useRef<AbortController | null>(null);
   const inputValueRef = useRef('');
 
-  // Load history on first open
+  // Load history on first open (scoped to active note thread if any)
   const hasLoaded = useRef(false);
   useEffect(() => {
     if (isOpen && !hasLoaded.current && currentUser) {
@@ -109,6 +118,54 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
       loadHistory();
     }
   }, [isOpen, currentUser, loadHistory]);
+
+  // Once per panel open: if no persisted note thread, seed from the open note editor
+  const didAutoAttachRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) {
+      didAutoAttachRef.current = false;
+      return;
+    }
+    if (didAutoAttachRef.current) return;
+    didAutoAttachRef.current = true;
+    if (activeNoteContext || !context?.noteId) return;
+    void setActiveNoteContext({
+      id: context.noteId,
+      title: context.noteTitle || 'Untitled note',
+    });
+  }, [isOpen, context?.noteId, context?.noteTitle, activeNoteContext, setActiveNoteContext]);
+
+  // Load notes list when opening the picker
+  useEffect(() => {
+    if (!showNotePicker || !currentUser) return;
+    if (notes.length === 0) {
+      void loadNotes();
+    }
+  }, [showNotePicker, currentUser, notes.length, loadNotes]);
+
+  const filteredNotes = useMemo(() => {
+    const q = noteSearch.trim().toLowerCase();
+    if (!q) return notes;
+    return notes.filter((n) => (n.title || '').toLowerCase().includes(q));
+  }, [notes, noteSearch]);
+
+  const handleSelectNote = useCallback(
+    async (note: { id: string; title?: string | null }) => {
+      setShowNotePicker(false);
+      setNoteSearch('');
+      await setActiveNoteContext({
+        id: note.id,
+        title: (note.title || '').trim() || 'Untitled note',
+      });
+      trackAIAnalyticsEvent('companion_note_context_attached', { noteId: note.id });
+    },
+    [setActiveNoteContext]
+  );
+
+  const handleClearNoteContext = useCallback(async () => {
+    await setActiveNoteContext(null);
+    trackAIAnalyticsEvent('companion_note_context_cleared');
+  }, [setActiveNoteContext]);
 
   // Auto-send pending message only after history has loaded (never during history fetch)
   useEffect(() => {
@@ -511,8 +568,107 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
         {/* Input area — pad above home indicator; stays above bottom nav when that is visible */}
         <div className={`px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] border-t flex-shrink-0
           ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-background'}`}>
+          {activeNoteContext && (
+            <div className="mb-2 flex items-center gap-2">
+              <div
+                className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs
+                  ${theme === 'dark'
+                    ? 'border-lantern-primary/40 bg-lantern-primary/15 text-lantern-primary-light'
+                    : 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary'
+                  }`}
+              >
+                <DocumentTextIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate font-medium" title={activeNoteContext.title}>
+                  {activeNoteContext.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleClearNoteContext()}
+                  title="Remove note context"
+                  aria-label="Remove note context"
+                  className="flex-shrink-0 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
+                >
+                  <XMarkIcon className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+          {showNotePicker && (
+            <div
+              className={`mb-2 rounded-xl border shadow-lg overflow-hidden
+                ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface-secondary' : 'border-lantern-border bg-lantern-surface'}`}
+              role="listbox"
+              aria-label="Select a note for context"
+            >
+              <div className={`flex items-center gap-2 px-3 py-2 border-b ${theme === 'dark' ? 'border-lantern-border' : 'border-lantern-border'}`}>
+                <input
+                  type="search"
+                  value={noteSearch}
+                  onChange={(e) => setNoteSearch(e.target.value)}
+                  placeholder="Search notes…"
+                  autoFocus
+                  className={`flex-1 bg-transparent text-sm outline-none placeholder:text-lantern-text-tertiary
+                    ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => { setShowNotePicker(false); setNoteSearch(''); }}
+                  className="text-xs text-lantern-text-secondary hover:underline"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                {notesLoading && notes.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-center text-lantern-text-secondary">Loading notes…</p>
+                ) : filteredNotes.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-center text-lantern-text-secondary">
+                    {noteSearch.trim() ? 'No matching notes' : 'No notes yet'}
+                  </p>
+                ) : (
+                  filteredNotes.map((note) => (
+                    <button
+                      key={note.id}
+                      type="button"
+                      role="option"
+                      aria-selected={activeNoteContext?.id === note.id}
+                      onClick={() => void handleSelectNote(note)}
+                      className={`w-full text-left px-3 py-2.5 text-sm truncate transition-colors
+                        ${activeNoteContext?.id === note.id
+                          ? theme === 'dark'
+                            ? 'bg-lantern-primary/20 text-lantern-primary-light'
+                            : 'bg-lantern-primary-background text-lantern-primary'
+                          : theme === 'dark'
+                            ? 'text-white hover:bg-lantern-surface'
+                            : 'text-lantern-text hover:bg-lantern-background-secondary'
+                        }`}
+                    >
+                      {(note.title || '').trim() || 'Untitled note'}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
           <div className={`flex items-end gap-2 rounded-xl border px-3 py-2
             ${theme === 'dark' ? 'bg-lantern-surface-secondary border-lantern-border' : 'bg-lantern-surface border-lantern-border'}`}>
+            <button
+              type="button"
+              onClick={() => setShowNotePicker((v) => !v)}
+              disabled={isBusy}
+              title="Attach a note as context"
+              aria-label="Attach a note as context"
+              aria-expanded={showNotePicker}
+              className={`flex-shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
+                ${showNotePicker || activeNoteContext
+                  ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary/20'
+                  : theme === 'dark'
+                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
+                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
+                }`}
+            >
+              <PlusIcon className="w-4 h-4" />
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -538,7 +694,15 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isRecording ? 'Listening…' : isTranscribing ? 'Transcribing…' : 'Ask Lantern anything…'}
+              placeholder={
+                isRecording
+                  ? 'Listening…'
+                  : isTranscribing
+                    ? 'Transcribing…'
+                    : activeNoteContext
+                      ? `Ask about “${activeNoteContext.title.slice(0, 28)}${activeNoteContext.title.length > 28 ? '…' : ''}”`
+                      : 'Ask Lantern anything…'
+              }
               rows={1}
               disabled={dictationBusy}
               className={`flex-1 resize-none bg-transparent text-sm outline-none max-h-24 leading-relaxed

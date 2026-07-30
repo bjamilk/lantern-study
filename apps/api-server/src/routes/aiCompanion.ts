@@ -29,18 +29,36 @@ const router = Router();
 router.use(authMiddleware as any);
 router.use(requirePermission('ai'));
 
+const NOTE_CONTEXT_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseNoteContextId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return NOTE_CONTEXT_UUID.test(trimmed) ? trimmed : null;
+}
+
+/** Scope companion history to a note thread, or the general (null) thread. */
+function applyNoteContextFilter(query: any, noteContextId: string | null) {
+  return noteContextId ? query.eq('note_context_id', noteContextId) : query.is('note_context_id', null);
+}
+
 router.get('/history', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
+  const noteContextId = parseNoteContextId(req.query.noteContextId);
   try {
-    const { data, error } = await supabaseService.getClient()
+    let query = supabaseService.getClient()
       .from('ai_companion_messages')
-      .select('id, role, content, actions, feedback, created_at')
-      .eq('user_id', userId)
+      .select('id, role, content, actions, feedback, created_at, note_context_id')
+      .eq('user_id', userId);
+    query = applyNoteContextFilter(query, noteContextId);
+    const { data, error } = await query
       .order('created_at', { ascending: true })
       .limit(50);
 
     if (error) throw error;
-    res.json({ messages: data || [] });
+    res.json({ messages: data || [], noteContextId });
   } catch (err: any) {
     console.error('Companion history error:', err.message);
     res.status(500).json({ error: 'Failed to fetch conversation history' });
@@ -49,14 +67,19 @@ router.get('/history', async (req: Request, res: Response) => {
 
 router.delete('/history', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
+  const noteContextId = parseNoteContextId(
+    req.query.noteContextId ?? (req.body as { noteContextId?: string } | undefined)?.noteContextId
+  );
   try {
-    const { error } = await supabaseService.getClient()
+    let query = supabaseService.getClient()
       .from('ai_companion_messages')
       .delete()
       .eq('user_id', userId);
+    query = applyNoteContextFilter(query, noteContextId);
+    const { error } = await query;
 
     if (error) throw error;
-    res.json({ success: true });
+    res.json({ success: true, noteContextId });
   } catch (err: any) {
     console.error('Companion clear history error:', err.message);
     res.status(500).json({ error: 'Failed to clear conversation history' });
@@ -190,19 +213,23 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
       { message: message.trim(), context: context || {} },
       userId,
       async () => {
-        const { data: historyRows } = await supabaseService.getClient()
-          .from('ai_companion_messages')
-          .select('role, content')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
         const trustedContext = await buildTrustedCompanionContext(
           supabaseService,
           userId,
           context || {}
         );
+        const threadNoteId = trustedContext.noteId || null;
+
+        let historyQuery = supabaseService.getClient()
+          .from('ai_companion_messages')
+          .select('role, content')
+          .eq('user_id', userId);
+        historyQuery = applyNoteContextFilter(historyQuery, threadNoteId);
+        const { data: historyRows } = await historyQuery
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
         const { reply, actions, provider } = await companionChat(message.trim(), history, trustedContext);
 
         await logAIInference(supabaseService.getClient(), {
@@ -216,8 +243,21 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
         await supabaseService.getClient()
           .from('ai_companion_messages')
           .insert([
-            { user_id: userId, role: 'user', content: message.trim(), created_at: now },
-            { user_id: userId, role: 'assistant', content: reply, actions: actions.length ? actions : null, created_at: new Date(Date.now() + 1).toISOString() },
+            {
+              user_id: userId,
+              role: 'user',
+              content: message.trim(),
+              created_at: now,
+              note_context_id: threadNoteId,
+            },
+            {
+              user_id: userId,
+              role: 'assistant',
+              content: reply,
+              actions: actions.length ? actions : null,
+              created_at: new Date(Date.now() + 1).toISOString(),
+              note_context_id: threadNoteId,
+            },
           ]);
 
         return { reply, actions, provider };
@@ -273,27 +313,44 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
   };
 
   try {
-    const { data: historyRows } = await supabaseService.getClient()
-      .from('ai_companion_messages')
-      .select('role, content')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
     const trustedContext = await buildTrustedCompanionContext(
       supabaseService,
       userId,
       context || {}
     );
+    const threadNoteId = trustedContext.noteId || null;
+
+    let historyQuery = supabaseService.getClient()
+      .from('ai_companion_messages')
+      .select('role, content')
+      .eq('user_id', userId);
+    historyQuery = applyNoteContextFilter(historyQuery, threadNoteId);
+    const { data: historyRows } = await historyQuery
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
     const { reply, actions } = await companionChat(message.trim(), history, trustedContext);
 
     const now = new Date().toISOString();
     const { data: inserted, error: insertError } = await supabaseService.getClient()
       .from('ai_companion_messages')
       .insert([
-        { user_id: userId, role: 'user', content: message.trim(), created_at: now },
-        { user_id: userId, role: 'assistant', content: reply, actions: actions.length ? actions : null, created_at: new Date(Date.now() + 1).toISOString() },
+        {
+          user_id: userId,
+          role: 'user',
+          content: message.trim(),
+          created_at: now,
+          note_context_id: threadNoteId,
+        },
+        {
+          user_id: userId,
+          role: 'assistant',
+          content: reply,
+          actions: actions.length ? actions : null,
+          created_at: new Date(Date.now() + 1).toISOString(),
+          note_context_id: threadNoteId,
+        },
       ])
       .select('id, role');
 

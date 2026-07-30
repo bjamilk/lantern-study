@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { CompanionUserContext } from '@lantern/shared';
 import { useCompanionStore } from '../stores/companionStore';
+import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
 import { useAuthStore } from '../stores/authStore';
@@ -63,13 +64,22 @@ export function AICompanionPanel({ context }: Props) {
     clearError,
     pendingMessage,
     setPendingMessage,
+    activeNoteContext,
+    setActiveNoteContext,
+    hydrateNoteContext,
   } = useCompanionStore();
+  const notes = useNotesStore((s) => s.notes);
+  const notesLoading = useNotesStore((s) => s.isLoading);
+  const loadNotes = useNotesStore((s) => s.loadNotes);
 
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [showNotePicker, setShowNotePicker] = useState(false);
+  const [noteSearch, setNoteSearch] = useState('');
   const hasLoaded = useRef(false);
+  const didAutoAttachRef = useRef(false);
   const listRef = useRef<FlatList>(null);
   const inputValueRef = useRef('');
   const recordingRef = useRef<RecordingHandle | null>(null);
@@ -98,11 +108,53 @@ export function AICompanionPanel({ context }: Props) {
   }, [input]);
 
   useEffect(() => {
-    if (isOpen && !hasLoaded.current && user?.id) {
-      hasLoaded.current = true;
-      void loadHistory();
+    if (!isOpen || !user?.id) return;
+    if (hasLoaded.current) return;
+    hasLoaded.current = true;
+    void (async () => {
+      await hydrateNoteContext();
+      if (!useCompanionStore.getState().activeNoteContext && context?.noteId && !didAutoAttachRef.current) {
+        didAutoAttachRef.current = true;
+        await setActiveNoteContext({
+          id: context.noteId,
+          title: context.noteTitle || 'Untitled note',
+        });
+        return;
+      }
+      await loadHistory();
+    })();
+  }, [isOpen, user?.id, hydrateNoteContext, loadHistory, setActiveNoteContext, context?.noteId, context?.noteTitle]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      hasLoaded.current = false;
+      didAutoAttachRef.current = false;
     }
-  }, [isOpen, user?.id, loadHistory]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!showNotePicker) return;
+    if (notes.length === 0) void loadNotes();
+  }, [showNotePicker, notes.length, loadNotes]);
+
+  const filteredNotes = useMemo(() => {
+    const q = noteSearch.trim().toLowerCase();
+    if (!q) return notes;
+    return notes.filter((n) => (n.title || '').toLowerCase().includes(q));
+  }, [notes, noteSearch]);
+
+  const handleSelectNote = useCallback(
+    async (note: { id: string; title?: string | null }) => {
+      setShowNotePicker(false);
+      setNoteSearch('');
+      await setActiveNoteContext({
+        id: note.id,
+        title: (note.title || '').trim() || 'Untitled note',
+      });
+      trackAIAnalyticsEvent('companion_note_context_attached', { noteId: note.id });
+    },
+    [setActiveNoteContext]
+  );
 
   useEffect(() => {
     if (
@@ -413,7 +465,92 @@ export function AICompanionPanel({ context }: Props) {
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View className="px-4 py-3 border-t border-lantern-border">
+            {activeNoteContext ? (
+              <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
+                <Ionicons name="document-text-outline" size={14} color="#6366f1" />
+                <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary" numberOfLines={1}>
+                  {activeNoteContext.title}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    void setActiveNoteContext(null);
+                    trackAIAnalyticsEvent('companion_note_context_cleared');
+                  }}
+                  hitSlop={8}
+                  accessibilityLabel="Remove note context"
+                >
+                  <Ionicons name="close" size={14} color="#6366f1" />
+                </Pressable>
+              </View>
+            ) : null}
+
+            {showNotePicker ? (
+              <View className="mb-2 max-h-52 rounded-xl border border-lantern-border bg-lantern-background-secondary overflow-hidden">
+                <View className="flex-row items-center px-3 py-2 border-b border-lantern-border">
+                  <TextInput
+                    value={noteSearch}
+                    onChangeText={setNoteSearch}
+                    placeholder="Search notes…"
+                    placeholderTextColor="#94a3b8"
+                    className="flex-1 text-sm text-lantern-text dark:text-white"
+                    autoFocus
+                  />
+                  <Pressable
+                    onPress={() => {
+                      setShowNotePicker(false);
+                      setNoteSearch('');
+                    }}
+                    className="pl-2"
+                  >
+                    <Text className="text-xs text-lantern-text-secondary">Close</Text>
+                  </Pressable>
+                </View>
+                {notesLoading && notes.length === 0 ? (
+                  <View className="py-4 items-center">
+                    <ActivityIndicator color="#6366f1" />
+                  </View>
+                ) : (
+                  <FlatList
+                    data={filteredNotes}
+                    keyExtractor={(item) => item.id}
+                    keyboardShouldPersistTaps="handled"
+                    style={{ maxHeight: 160 }}
+                    ListEmptyComponent={
+                      <Text className="px-3 py-4 text-sm text-center text-lantern-text-secondary">
+                        {noteSearch.trim() ? 'No matching notes' : 'No notes yet'}
+                      </Text>
+                    }
+                    renderItem={({ item }) => (
+                      <Pressable
+                        onPress={() => void handleSelectNote(item)}
+                        className={`px-3 py-2.5 border-b border-lantern-border/50 ${
+                          activeNoteContext?.id === item.id ? 'bg-lantern-primary/10' : ''
+                        }`}
+                      >
+                        <Text className="text-sm text-lantern-text dark:text-white" numberOfLines={1}>
+                          {(item.title || '').trim() || 'Untitled note'}
+                        </Text>
+                      </Pressable>
+                    )}
+                  />
+                )}
+              </View>
+            ) : null}
+
             <View className="flex-row items-end gap-2">
+              <Pressable
+                onPress={() => setShowNotePicker((v) => !v)}
+                disabled={isBusy}
+                accessibilityRole="button"
+                accessibilityLabel="Attach a note as context"
+                className={`h-11 w-11 items-center justify-center rounded-full ${
+                  showNotePicker || activeNoteContext
+                    ? 'bg-lantern-primary-background'
+                    : 'bg-lantern-background-secondary'
+                } ${isBusy ? 'opacity-40' : ''}`}
+              >
+                <Ionicons name="add" size={22} color="#6366f1" />
+              </Pressable>
               <Pressable
                 onPress={() => {
                   if (isRecording) void finishDictation();
@@ -437,7 +574,13 @@ export function AICompanionPanel({ context }: Props) {
                 value={input}
                 onChangeText={setInput}
                 placeholder={
-                  isRecording ? 'Listening…' : isTranscribing ? 'Transcribing…' : 'Ask Lantern AI...'
+                  isRecording
+                    ? 'Listening…'
+                    : isTranscribing
+                      ? 'Transcribing…'
+                      : activeNoteContext
+                        ? `Ask about this note…`
+                        : 'Ask Lantern AI...'
                 }
                 placeholderTextColor="#94a3b8"
                 multiline

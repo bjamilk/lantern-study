@@ -91,8 +91,12 @@ export function createCompanionClient(config: AIClientConfig) {
         { trackUsage: false }
       ),
 
-    fetchCompanionHistory: () =>
-      companionRequest<{
+    fetchCompanionHistory: (noteContextId?: string | null) => {
+      const qs =
+        noteContextId && noteContextId.trim()
+          ? `?noteContextId=${encodeURIComponent(noteContextId.trim())}`
+          : '';
+      return companionRequest<{
         messages: Array<{
           id: string;
           role: 'user' | 'assistant';
@@ -101,10 +105,22 @@ export function createCompanionClient(config: AIClientConfig) {
           feedback?: 'up' | 'down' | null;
           created_at: string;
         }>;
-      }>('/history', 'GET', undefined, { trackUsage: false }),
+        noteContextId: string | null;
+      }>(`/history${qs}`, 'GET', undefined, { trackUsage: false });
+    },
 
-    clearCompanionHistory: () =>
-      companionRequest<{ success: boolean }>('/history', 'DELETE', undefined, { trackUsage: false }),
+    clearCompanionHistory: (noteContextId?: string | null) => {
+      const qs =
+        noteContextId && noteContextId.trim()
+          ? `?noteContextId=${encodeURIComponent(noteContextId.trim())}`
+          : '';
+      return companionRequest<{ success: boolean; noteContextId: string | null }>(
+        `/history${qs}`,
+        'DELETE',
+        undefined,
+        { trackUsage: false }
+      );
+    },
 
     companionSendMessageStream: async (
       message: string,

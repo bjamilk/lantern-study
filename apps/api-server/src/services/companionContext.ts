@@ -128,7 +128,11 @@ export async function buildTrustedCompanionContext(
     studyGoal: sanitizeHint(clientContext.studyGoal || studyGoalFromPrefs, 40),
   };
 
-  const noteId = sanitizeHint(clientContext.noteId, 64);
+  const rawNoteId = typeof clientContext.noteId === 'string' ? clientContext.noteId.trim() : '';
+  const noteId =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawNoteId)
+      ? rawNoteId
+      : undefined;
   if (noteId) {
     const { data: note } = await db
       .from('notes')
@@ -138,6 +142,7 @@ export async function buildTrustedCompanionContext(
       .maybeSingle();
 
     if (note) {
+      trusted.noteId = note.id;
       trusted.noteTitle = sanitizeHint(note.title, 120);
       const body = [
         typeof note.summary === 'string' ? note.summary : '',

@@ -287,7 +287,7 @@ export async function companionSendMessage(
   return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
 }
 
-export async function fetchCompanionHistory(): Promise<{
+export async function fetchCompanionHistory(noteContextId?: string | null): Promise<{
   messages: Array<{
     id: string;
     role: 'user' | 'assistant';
@@ -296,12 +296,24 @@ export async function fetchCompanionHistory(): Promise<{
     feedback?: 'up' | 'down' | null;
     created_at: string;
   }>;
+  noteContextId: string | null;
 }> {
-  return companionRequest('/history', 'GET', undefined, { trackUsage: false });
+  const qs =
+    noteContextId && noteContextId.trim()
+      ? `?noteContextId=${encodeURIComponent(noteContextId.trim())}`
+      : '';
+  return companionRequest(`/history${qs}`, 'GET', undefined, { trackUsage: false });
 }
 
-export async function clearCompanionHistory(): Promise<{ success: boolean }> {
-  return companionRequest('/history', 'DELETE', undefined, { trackUsage: false });
+export async function clearCompanionHistory(noteContextId?: string | null): Promise<{
+  success: boolean;
+  noteContextId: string | null;
+}> {
+  const qs =
+    noteContextId && noteContextId.trim()
+      ? `?noteContextId=${encodeURIComponent(noteContextId.trim())}`
+      : '';
+  return companionRequest(`/history${qs}`, 'DELETE', undefined, { trackUsage: false });
 }
 
 export type CompanionStreamDone = {

@@ -1,8 +1,10 @@
 /**
  * AI Companion Store
- * Manages conversation state for the Lantern AI companion panel
+ * Manages conversation state for the Lantern AI companion panel.
+ * Note-attached chats use a separate server thread keyed by noteId.
  */
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CompanionMessage, CompanionUserContext } from '@lantern/shared';
 import {
   companionSendMessage,
@@ -10,6 +12,37 @@ import {
   fetchCompanionHistory,
   clearCompanionHistory,
 } from '../services/ai';
+
+export type CompanionNoteContext = {
+  id: string;
+  title: string;
+};
+
+const NOTE_CONTEXT_STORAGE_KEY = 'lantern_companion_note_context';
+
+async function readPersistedNoteContext(): Promise<CompanionNoteContext | null> {
+  try {
+    const raw = await AsyncStorage.getItem(NOTE_CONTEXT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: unknown; title?: unknown };
+    if (typeof parsed.id !== 'string' || !parsed.id.trim()) return null;
+    return {
+      id: parsed.id.trim(),
+      title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : 'Untitled note',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function persistNoteContext(ctx: CompanionNoteContext | null) {
+  try {
+    if (!ctx) await AsyncStorage.removeItem(NOTE_CONTEXT_STORAGE_KEY);
+    else await AsyncStorage.setItem(NOTE_CONTEXT_STORAGE_KEY, JSON.stringify(ctx));
+  } catch {
+    /* ignore */
+  }
+}
 
 interface CompanionState {
   isOpen: boolean;
@@ -19,6 +52,10 @@ interface CompanionState {
   pendingMessage: string | null;
   setPendingMessage: (msg: string | null) => void;
   openWithMessage: (msg: string) => void;
+
+  activeNoteContext: CompanionNoteContext | null;
+  hydrateNoteContext: () => Promise<void>;
+  setActiveNoteContext: (ctx: CompanionNoteContext | null) => Promise<void>;
 
   messages: CompanionMessage[];
   isLoading: boolean;
@@ -44,6 +81,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isStreaming: false,
   error: null,
   pendingMessage: null,
+  activeNoteContext: null,
 
   open: () => set({ isOpen: true }),
   close: () => set({ isOpen: false }),
@@ -51,6 +89,30 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   clearError: () => set({ error: null }),
   setPendingMessage: (msg) => set({ pendingMessage: msg }),
   openWithMessage: (msg) => set({ isOpen: true, pendingMessage: msg }),
+
+  hydrateNoteContext: async () => {
+    const ctx = await readPersistedNoteContext();
+    if (!ctx) return;
+    if (get().activeNoteContext?.id === ctx.id) return;
+    set({ activeNoteContext: ctx });
+  },
+
+  setActiveNoteContext: async (ctx) => {
+    const prev = get().activeNoteContext;
+    const nextId = ctx?.id ?? null;
+    const prevId = prev?.id ?? null;
+    if (nextId === prevId && (ctx?.title ?? null) === (prev?.title ?? null)) {
+      return;
+    }
+    await persistNoteContext(ctx);
+    set({
+      activeNoteContext: ctx,
+      messages: [],
+      historyLoaded: false,
+      error: null,
+    });
+    await get().loadHistory();
+  },
 
   setMessageFeedback: (messageId, rating) => {
     set((s) => ({
@@ -62,14 +124,17 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
 
   loadHistory: async () => {
     set({ isLoadingHistory: true, error: null });
+    const noteContextId = get().activeNoteContext?.id ?? null;
     try {
-      const { messages } = await fetchCompanionHistory();
-      // Keep in-memory ratings if a refetch races ahead of the feedback write.
+      const { messages } = await fetchCompanionHistory(noteContextId);
       const previousFeedback = new Map(
         get()
           .messages.filter((m) => m.feedback === 'up' || m.feedback === 'down')
           .map((m) => [m.id, m.feedback as 'up' | 'down'])
       );
+      if ((get().activeNoteContext?.id ?? null) !== noteContextId) {
+        return;
+      }
       set({
         messages: messages.map((m) => ({
           id: m.id,
@@ -83,11 +148,22 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         historyLoaded: true,
       });
     } catch {
+      if ((get().activeNoteContext?.id ?? null) !== noteContextId) {
+        return;
+      }
       set({ isLoadingHistory: false, historyLoaded: true });
     }
   },
 
   sendMessage: async (text: string, context?: CompanionUserContext) => {
+    const noteCtx = get().activeNoteContext;
+    const mergedContext: CompanionUserContext = {
+      ...context,
+      ...(noteCtx
+        ? { noteId: noteCtx.id, noteTitle: noteCtx.title, noteContext: undefined }
+        : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
+    };
+
     const tempUserMsg: CompanionMessage = {
       id: `tmp-user-${Date.now()}`,
       role: 'user',
@@ -102,7 +178,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }));
 
     try {
-      const { reply, actions } = await companionSendMessage(text, context);
+      const { reply, actions } = await companionSendMessage(text, mergedContext);
       const assistantMsg: CompanionMessage = {
         id: `tmp-ai-${Date.now()}`,
         role: 'assistant',
@@ -121,6 +197,14 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   sendMessageStreaming: async (text: string, context?: CompanionUserContext) => {
+    const noteCtx = get().activeNoteContext;
+    const mergedContext: CompanionUserContext = {
+      ...context,
+      ...(noteCtx
+        ? { noteId: noteCtx.id, noteTitle: noteCtx.title, noteContext: undefined }
+        : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
+    };
+
     const tempUserMsg: CompanionMessage = {
       id: `tmp-user-${Date.now()}`,
       role: 'user',
@@ -144,7 +228,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
 
     await companionSendMessageStream(
       text,
-      context,
+      mergedContext,
       (token) => {
         set((s) => ({
           messages: s.messages.map((m) =>
@@ -181,8 +265,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   clearHistory: async () => {
+    const noteContextId = get().activeNoteContext?.id ?? null;
     try {
-      await clearCompanionHistory();
+      await clearCompanionHistory(noteContextId);
       set({ messages: [] });
     } catch (err: unknown) {
       set({
