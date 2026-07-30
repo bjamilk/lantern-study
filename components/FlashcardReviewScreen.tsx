@@ -1,14 +1,20 @@
 
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useToastStore } from '../stores/toastStore';
-import { Deck, Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
+import { Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
 import { ArrowUturnLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { escapeHtml } from '../utils/helpers';
 import { useAuthStore } from '../stores/authStore';
 import { fetchFlashcardComments, addFlashcardComment } from '../services/supabase';
 import { FLASHCARD_GRADE_LABELS } from '@lantern/shared';
-import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
+import {
+  FlashcardReviewAdvanceGuard,
+  formatFreeformPointsForSvg,
+  getBlurRegions,
+  getFreeformPaths,
+  resolveAutoAdvanceDelayMs,
+} from '@lantern/shared/utils';
+import { normalizeUserSettings } from '@lantern/shared/settings/userSettings';
 import { useCompanionStore } from '../stores/companionStore';
 import { trackFlashcardReviewCompleted, trackStudyModeCompleted } from '../services/productAnalytics';
 import { useRegisterFeatureTip } from './featureTips/FeatureTip';
@@ -23,35 +29,102 @@ interface FlashcardReviewScreenProps {
 const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, onUpdateSrs, onEndSession }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnswerShown, setIsAnswerShown] = useState(false);
+  const [ratingLocked, setRatingLocked] = useState(false);
   const [comments, setComments] = useState<FlashcardComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
 
   const currentUser = useAuthStore(state => state.currentUser);
-  const ratedCardIdsRef = useRef(new Set<string>());
-  const gradingRef = useRef(false);
+  const advanceGuardRef = useRef(new FlashcardReviewAdvanceGuard());
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAdvanceGenerationRef = useRef<number | null>(null);
+  const gradingRegionRef = useRef<HTMLDivElement | null>(null);
 
   const currentCard = session.cardQueue[currentIndex];
   const isSessionComplete = currentIndex >= session.cardQueue.length;
   const canGoBack = currentIndex > 0;
-  const canGoForward = currentIndex < session.cardQueue.length - 1;
+  // Browse forward only over cards already graded — never skip an unrated card.
+  const canBrowseForward =
+    currentIndex < session.cardQueue.length - 1 &&
+    Boolean(currentCard && advanceGuardRef.current.hasRated(currentCard.id)) &&
+    pendingAdvanceGenerationRef.current == null;
+  const canFlushPendingAdvance = pendingAdvanceGenerationRef.current != null;
+  const canGoForward = canBrowseForward || canFlushPendingAdvance;
 
   useRegisterFeatureTip('flashcards.grading', !isSessionComplete && session.cardQueue.length > 0);
 
+  const clearAutoAdvanceTimer = useCallback(() => {
+    if (autoAdvanceTimerRef.current != null) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
-    // Reset answer visibility when card changes
+    advanceGuardRef.current.setActiveCard(currentCard?.id ?? null);
+    clearAutoAdvanceTimer();
+    pendingAdvanceGenerationRef.current = null;
+    setRatingLocked(false);
     setIsAnswerShown(false);
-  }, [currentIndex]);
+  }, [currentIndex, currentCard?.id, clearAutoAdvanceTimer]);
+
+  useEffect(() => () => clearAutoAdvanceTimer(), [clearAutoAdvanceTimer]);
 
   const completionTrackedRef = useRef(false);
   useEffect(() => {
     if (isSessionComplete && !completionTrackedRef.current) {
       completionTrackedRef.current = true;
-      trackFlashcardReviewCompleted(ratedCardIdsRef.current.size);
+      trackFlashcardReviewCompleted(
+        session.cardQueue.filter((c) => advanceGuardRef.current.hasRated(c.id)).length
+      );
       trackStudyModeCompleted('smart_review');
     }
-  }, [isSessionComplete]);
+  }, [isSessionComplete, session.cardQueue]);
+
+  const applyAdvance = useCallback((generation: number) => {
+    if (!advanceGuardRef.current.isAdvanceGenerationCurrent(generation)) return;
+    pendingAdvanceGenerationRef.current = null;
+    setCurrentIndex((prev) => prev + 1);
+  }, []);
+
+  const flushPendingAdvance = useCallback(() => {
+    const generation = pendingAdvanceGenerationRef.current;
+    if (generation == null) return false;
+    clearAutoAdvanceTimer();
+    applyAdvance(generation);
+    return true;
+  }, [clearAutoAdvanceTimer, applyAdvance]);
+
+  const handleRatePerformance = useCallback((rating: 'again' | 'hard' | 'good' | 'easy') => {
+    if (!currentCard || ratingLocked) return;
+    const claim = advanceGuardRef.current.tryClaimAdvance(currentCard.id);
+    if (!claim.ok || claim.generation == null) return;
+
+    setRatingLocked(true);
+    onUpdateSrs(currentCard.id, rating);
+
+    const delayMs = resolveAutoAdvanceDelayMs(
+      normalizeUserSettings(currentUser?.settings).study.autoAdvanceDelay
+    );
+    clearAutoAdvanceTimer();
+    if (delayMs <= 0) {
+      applyAdvance(claim.generation);
+      return;
+    }
+    pendingAdvanceGenerationRef.current = claim.generation;
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      autoAdvanceTimerRef.current = null;
+      applyAdvance(claim.generation!);
+    }, delayMs);
+  }, [
+    currentCard,
+    ratingLocked,
+    onUpdateSrs,
+    currentUser?.settings,
+    clearAutoAdvanceTimer,
+    applyAdvance,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -66,27 +139,35 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
 
       if (event.key === 'ArrowLeft' && canGoBack) {
         event.preventDefault();
+        clearAutoAdvanceTimer();
         setCurrentIndex(prev => prev - 1);
         return;
       }
 
+      // ArrowRight only revisits already-graded cards — never skips an unrated card.
       if (event.key === 'ArrowRight' && canGoForward) {
         event.preventDefault();
+        if (flushPendingAdvance()) return;
         setCurrentIndex(prev => prev + 1);
         return;
       }
 
-      // Space / Enter: show answer
+      // Space / Enter: show answer (never auto-grade via native button activation).
       if ((event.key === ' ' || event.key === 'Enter') && !isAnswerShown) {
         event.preventDefault();
         setIsAnswerShown(true);
         return;
       }
 
+      // While the answer is visible, Space must not activate a focused grade button.
+      if (isAnswerShown && (event.key === ' ' || event.key === 'Spacebar')) {
+        event.preventDefault();
+        return;
+      }
+
       // Anki-style ratings when answer is shown
       if (isAnswerShown && currentCard) {
         if (event.repeat) return;
-        if (gradingRef.current || ratedCardIdsRef.current.has(currentCard.id)) return;
 
         const ratingMap: Record<string, 'again' | 'hard' | 'good' | 'easy'> = {
           '1': 'again',
@@ -97,18 +178,22 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
         const rating = ratingMap[event.key];
         if (rating) {
           event.preventDefault();
-          gradingRef.current = true;
-          ratedCardIdsRef.current.add(currentCard.id);
-          onUpdateSrs(currentCard.id, rating);
-          setCurrentIndex(prev => prev + 1);
-          gradingRef.current = false;
+          handleRatePerformance(rating);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canGoBack, canGoForward, isSessionComplete, isAnswerShown, currentCard, onUpdateSrs]);
+  }, [
+    canGoBack,
+    canGoForward,
+    isSessionComplete,
+    isAnswerShown,
+    currentCard,
+    handleRatePerformance,
+    flushPendingAdvance,
+  ]);
 
   useEffect(() => {
     if (!currentCard?.id) return;
@@ -127,25 +212,24 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     };
   }, [currentCard?.id]);
 
+  useEffect(() => {
+    if (!isAnswerShown) return;
+    // Move focus to the grading region so Space/Enter cannot re-activate a leftover button.
+    gradingRegionRef.current?.focus({ preventScroll: true });
+  }, [isAnswerShown, currentCard?.id]);
+
   const handleShowAnswer = () => setIsAnswerShown(true);
 
   const handlePreviousCard = () => {
     if (!canGoBack) return;
+    clearAutoAdvanceTimer();
     setCurrentIndex(prev => prev - 1);
   };
 
   const handleNextCard = () => {
     if (!canGoForward) return;
+    if (flushPendingAdvance()) return;
     setCurrentIndex(prev => prev + 1);
-  };
-
-  const handleRatePerformance = (rating: 'again' | 'hard' | 'good' | 'easy') => {
-    if (!currentCard || gradingRef.current || ratedCardIdsRef.current.has(currentCard.id)) return;
-    gradingRef.current = true;
-    ratedCardIdsRef.current.add(currentCard.id);
-    onUpdateSrs(currentCard.id, rating);
-    setCurrentIndex(prev => prev + 1);
-    gradingRef.current = false;
   };
 
   const handleSubmitComment = async () => {
@@ -290,6 +374,36 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     );
   }
 
+  if (!currentCard) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-lantern-background">
+        <h2 className="text-xl font-semibold text-lantern-text">Card unavailable</h2>
+        <p className="text-lantern-text-secondary mt-2">
+          This review step could not load. Continue to the next card or end the session.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              clearAutoAdvanceTimer();
+              setCurrentIndex((prev) => prev + 1);
+            }}
+            className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md font-semibold transition-colors"
+          >
+            Continue
+          </button>
+          <button
+            type="button"
+            onClick={onEndSession}
+            className="px-5 py-2.5 border border-lantern-border text-lantern-text rounded-md font-semibold hover:bg-lantern-background-secondary transition-colors"
+          >
+            End session
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-lantern-background">
       <div className="min-h-full flex flex-col p-4 md:p-6">
@@ -298,6 +412,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
         <div className="flex items-center gap-2">
           <span className="text-xs text-lantern-text-secondary mr-2">{currentIndex + 1} / {session.cardQueue.length}</span>
           <button
+            type="button"
             onClick={handlePreviousCard}
             disabled={!canGoBack}
             className="px-3 py-1 text-sm font-medium rounded-full border border-lantern-border text-lantern-text disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors"
@@ -305,8 +420,10 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
             Prev
           </button>
           <button
+            type="button"
             onClick={handleNextCard}
             disabled={!canGoForward}
+            title={canGoForward ? 'Next card' : 'Rate this card to continue'}
             className="px-3 py-1 text-sm font-medium rounded-full border border-lantern-border text-lantern-text disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors"
           >
             Next
@@ -326,7 +443,11 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
             >
               {renderCardContent(currentCard, true)}
             </div>
-            <div className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border">
+            <div
+              ref={gradingRegionRef}
+              tabIndex={-1}
+              className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border outline-none"
+            >
               {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
                 <div className="mb-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
                   <span className="text-sm text-amber-700 dark:text-amber-400">You've struggled with this card. Want some help?</span>
@@ -351,7 +472,8 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
                     key={grade}
                     type="button"
                     onClick={() => handleRatePerformance(grade)}
-                    className={`py-3 rounded-lg font-semibold transition-colors ${
+                    disabled={ratingLocked || advanceGuardRef.current.hasRated(currentCard.id)}
+                    className={`py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       grade === 'again'
                         ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60'
                         : grade === 'hard'

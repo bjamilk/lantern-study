@@ -7,6 +7,7 @@ export * from './apiMappers';
 export * from './deckFormats';
 export * from './fsrs';
 export * from './offlineReview';
+export * from './flashcardReviewAdvance';
 export * from './flashcardGeneration';
 export * from './occlusionHelpers';
 export * from './activity';

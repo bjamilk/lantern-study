@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -29,7 +29,7 @@ interface Props {
   showBack: boolean;
   reduceMotion?: boolean;
   onToggleBack: () => void;
-  onGrade: (rating: PerformanceRating) => void;
+  onGrade: (rating: PerformanceRating, cardId: string) => void;
 }
 
 function resolveSwipeGrade(
@@ -68,8 +68,12 @@ export function SwipeableFlashcard({
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const flipProgress = useSharedValue(showBack ? 1 : 0);
+  const gradedForCardRef = useRef(false);
+  const cardKeyRef = useRef(cardKey);
+  cardKeyRef.current = cardKey;
 
   useEffect(() => {
+    gradedForCardRef.current = false;
     translateX.value = 0;
     translateY.value = 0;
     flipProgress.value = showBack ? 1 : 0;
@@ -81,8 +85,11 @@ export function SwipeableFlashcard({
       : withTiming(showBack ? 1 : 0, { duration: 280 });
   }, [showBack, flipProgress, reduceMotion]);
 
-  const finishGrade = (rating: PerformanceRating) => {
-    onGrade(rating);
+  const finishGrade = (rating: PerformanceRating, gradedCardId: string) => {
+    // Ignore stale swipe animation completions after the visible card changed.
+    if (cardKeyRef.current !== gradedCardId || gradedForCardRef.current) return;
+    gradedForCardRef.current = true;
+    onGrade(rating, gradedCardId);
   };
 
   const pan = Gesture.Pan()
@@ -105,6 +112,7 @@ export function SwipeableFlashcard({
         return;
       }
 
+      const gradedCardId = cardKey;
       const exitX =
         rating === 'again'
           ? -SCREEN_WIDTH * 1.2
@@ -121,12 +129,12 @@ export function SwipeableFlashcard({
       translateX.value = reduceMotion ? exitX : withTiming(exitX, { duration: 220 });
       if (reduceMotion) {
         translateY.value = exitY;
-        runOnJS(finishGrade)(rating);
+        runOnJS(finishGrade)(rating, gradedCardId);
         return;
       }
       translateY.value = withTiming(exitY, { duration: 220 }, finished => {
         if (finished) {
-          runOnJS(finishGrade)(rating);
+          runOnJS(finishGrade)(rating, gradedCardId);
         }
       });
     });
