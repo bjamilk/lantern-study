@@ -327,9 +327,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     }
   };
 
-  const handleDeleteSelected = async () => {
-    if (selectedNoteIds.length === 0 || deletingNotes) return;
-    const ownedIds = selectedNoteIds.filter((id) => {
+  const handleDeleteNotesByIds = async (noteIds: string[]) => {
+    if (noteIds.length === 0 || deletingNotes) return;
+    const ownedIds = noteIds.filter((id) => {
       const note = notes.find((n) => n.id === id);
       return note ? canDeleteNote(note) : false;
     });
@@ -359,6 +359,10 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     } finally {
       setDeletingNotes(false);
     }
+  };
+
+  const handleDeleteSelected = async () => {
+    await handleDeleteNotesByIds(selectedNoteIds);
   };
 
   const handleNoteOptions = (note: StudyNote) => {
@@ -410,28 +414,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         style: 'destructive',
         onPress: () => {
           setTimeout(() => {
-            setSelectedNoteIds([note.id]);
-            void (async () => {
-              const confirmed = await confirmSheet({
-                title: 'Delete note',
-                message: 'Delete this note? This cannot be undone.',
-                danger: true,
-                confirmLabel: 'Delete',
-              });
-              if (!confirmed) return;
-              setDeletingNotes(true);
-              try {
-                await removeNotes([note.id]);
-                exitSelectMode();
-              } catch (e: unknown) {
-                Alert.alert(
-                  'Could not delete notes',
-                  e instanceof Error ? e.message : 'Try again.',
-                );
-              } finally {
-                setDeletingNotes(false);
-              }
-            })();
+            void handleDeleteNotesByIds([note.id]);
           }, 50);
         },
       });
