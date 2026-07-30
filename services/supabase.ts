@@ -4135,44 +4135,60 @@ export const deleteMarketplaceImage = async (filePath: string) => {
 
 export const fetchDirectMessages = async (userId: string, otherUserId: string, options: { page?: number; limit?: number } = {}) => {
   console.log('Fetching direct messages between:', userId, 'and:', otherUserId);
-  try {
+  const run = async () => {
     const { page = 1, limit = 50 } = options;
     const queryParams = new URLSearchParams({
       otherUserId,
       page: page.toString(),
       limit: limit.toString(),
     });
-    
+
     const response = await fetch(`${getApiRoot()}/api/v1/messages/user/${userId}?${queryParams}`, {
       method: 'GET',
-      headers: await getAuthHeaders(),
+      headers: await getRequiredAuthHeaders(),
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch direct messages');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || error.error || 'Failed to fetch direct messages');
     }
 
     const result = await response.json();
-    console.log('Fetched direct messages count:', result.data.length);
-    return result.data;
+    const data = Array.isArray(result.data) ? result.data : [];
+    console.log('Fetched direct messages count:', data.length);
+    return data;
+  };
+
+  try {
+    return await run();
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // One retry for auth bootstrap / transient network failures.
+    if (/Authentication required|Failed to fetch|NetworkError|timeout|503|502|504/i.test(message)) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      try {
+        return await run();
+      } catch (retryError) {
+        console.error('Error fetching direct messages:', retryError);
+        throw retryError;
+      }
+    }
     console.error('Error fetching direct messages:', error);
     throw error;
   }
 };
 
 export const fetchDmThreads = async (_userId: string) => {
+  // Never return [] for auth/bootstrap failure — callers treat [] as "no threads"
+  // and would wipe a previously loaded (or optimistic) inbox.
   const isAuthenticated = await hasValidSession();
   if (!isAuthenticated) {
-    // Auth can still be initializing during startup; treat as empty until token is ready.
-    return [];
+    throw new Error('AUTH_NOT_READY');
   }
 
   const authHeaders = await getAuthHeaders();
   if (!authHeaders.Authorization) {
-    // Avoid unauthenticated requests during auth bootstrap races.
-    return [];
+    throw new Error('AUTH_NOT_READY');
   }
 
   try {
@@ -4186,7 +4202,7 @@ export const fetchDmThreads = async (_userId: string) => {
     );
 
     if (response.status === 401 || response.status === 403) {
-      return [];
+      throw new Error('AUTH_UNAUTHORIZED');
     }
 
     if (!response.ok) {
@@ -4195,10 +4211,9 @@ export const fetchDmThreads = async (_userId: string) => {
     }
 
     const result = await response.json();
-    return result.data || [];
+    return Array.isArray(result.data) ? result.data : [];
   } catch (error) {
     console.error('Error fetching DM threads:', error);
-    // Do not return [] on network/server failure — callers would wipe local threads.
     throw error;
   }
 };

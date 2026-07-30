@@ -94,7 +94,7 @@ export function useAppEffects({
     const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, setPasswordRecovery } = useAuthStore();
     const [authTokenReady, setAuthTokenReady] = useState(() => bootstrapAuthFromStorage() !== null);
   const { groups, setGroups, updateGroups,
-        dmThreads, setDmThreads, updateDmThreads,
+        dmThreads, updateDmThreads,
         setAllMessages,
         updateMessages,
         updateDirectMessages,
@@ -228,7 +228,9 @@ export function useAppEffects({
             ]);
             if (Array.isArray(fetchedThreads)) {
                 const mapped = mapFetchedDmThreads(fetchedThreads, dmUnreadCounts);
-                updateDmThreads((prev) => mergeDmThreadLists(prev, mapped));
+                // Soft merge: keep optimistic first-message threads; never wipe on failure
+                // (failures throw before we get here).
+                updateDmThreads((prev) => mergeDmThreadLists(prev, mapped, 'soft'));
             }
         } catch (err) {
             console.warn('[DM] Failed to refresh threads:', err);
@@ -733,7 +735,13 @@ export function useAppEffects({
                 if (dmResult.status === 'fulfilled') {
                     const fetchedDmThreads = dmResult.value;
                     const dmUnreadCounts = dmUnreadResult.status === 'fulfilled' ? dmUnreadResult.value : {};
-                    setDmThreads(mapFetchedDmThreads(fetchedDmThreads || [], dmUnreadCounts));
+                    const mapped = mapFetchedDmThreads(
+                        Array.isArray(fetchedDmThreads) ? fetchedDmThreads : [],
+                        dmUnreadCounts,
+                    );
+                    // Server-authoritative merge keeps only optimistic locals, so a real
+                    // empty inbox clears stale threads without wiping in-flight creates.
+                    updateDmThreads((prev) => mergeDmThreadLists(prev, mapped, 'server'));
                 }
 
                 // --- [4] Decks + [5] Flashcards ---

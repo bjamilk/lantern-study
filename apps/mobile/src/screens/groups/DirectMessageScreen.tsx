@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  type AppStateStatus,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -140,6 +142,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     fetchThread,
     fetchDmThreads,
     applyPeerChatRead,
+    setActiveDmThreadId,
   } =
     useGroupStore();
   const { colors } = useTheme();
@@ -362,7 +365,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   const loadThread = useCallback(async () => {
     if (!user?.id) return;
-    setLoading(true);
+    // Keep showing last-known messages while refreshing (avoid empty flash).
+    const hasCached = (useGroupStore.getState().directMessages[threadId] || []).length > 0;
+    if (!hasCached) setLoading(true);
     initialAnchorDoneRef.current = false;
     setUnreadAnchorAt(undefined);
     setFirstUnreadId(null);
@@ -379,8 +384,25 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   }, [user?.id, recipientId, threadId, fetchDirectMessagesForThread, markDMAsRead]);
 
   useEffect(() => {
+    setActiveDmThreadId(threadId);
     loadThread();
-  }, [loadThread]);
+    return () => {
+      if (useGroupStore.getState().activeDmThreadId === threadId) {
+        setActiveDmThreadId(null);
+      }
+    };
+  }, [loadThread, threadId, setActiveDmThreadId]);
+
+  // Foreground resync for the open thread (missed realtime while backgrounded).
+  useEffect(() => {
+    const onAppState = (next: AppStateStatus) => {
+      if (next !== 'active' || !user?.id) return;
+      void fetchDirectMessagesForThread(user.id, recipientId, threadId);
+      void fetchDmThreads(user.id);
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [user?.id, recipientId, threadId, fetchDirectMessagesForThread, fetchDmThreads]);
 
   useEffect(() => {
     let cancelled = false;

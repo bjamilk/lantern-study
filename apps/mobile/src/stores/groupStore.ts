@@ -12,6 +12,8 @@ import {
   resolveThreadRootId,
   computeDmReceiptStatus,
   mergeChatMessagesById,
+  mergeDmThreadLists,
+  withTransientRetry,
   DeliveryIntentRegistry,
   isUncertainDeliveryError,
   reconcileDeliveredItem,
@@ -211,6 +213,8 @@ interface GroupState {
   messagesCache: Record<string, Message[]>;
   messagePagination: Record<string, MessagePagination>;
   dmThreads: DMThread[];
+  /** Currently open DM thread (for foreground resync). */
+  activeDmThreadId: string | null;
   directMessages: Record<string, DirectMessage[]>;
   dmUnreadCounts: Record<string, number>;
   groupUnreadCounts: Record<string, number>;
@@ -241,6 +245,7 @@ interface GroupState {
   createGroup: (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => Promise<Group>;
   leaveGroup: (groupId: string, userId: string) => Promise<void>;
 
+  setActiveDmThreadId: (threadId: string | null) => void;
   fetchDmThreads: (userId: string) => Promise<void>;
   fetchDMUnreadCounts: (userId: string) => Promise<void>;
   fetchDirectMessagesForThread: (userId: string, otherUserId: string, threadId: string) => Promise<void>;
@@ -585,6 +590,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   messagesCache: {},
   messagePagination: {},
   dmThreads: [],
+  activeDmThreadId: null,
   directMessages: {},
   dmUnreadCounts: {},
   groupUnreadCounts: {},
@@ -1397,14 +1403,25 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     return get().dmThreads.filter(t => !t.isArchived);
   },
 
+  setActiveDmThreadId: (threadId) => {
+    set({ activeDmThreadId: threadId });
+  },
+
   fetchDmThreads: async (userId: string) => {
     try {
       const [threads, unreadCounts] = await Promise.all([
-        api.fetchDMThreads(userId),
+        withTransientRetry(() => api.fetchDMThreads(userId), { delayMs: 400 }),
         api.fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
       ]);
-      const dmThreads = threads.map(t => mapDmThread(t, unreadCounts));
-      set({ dmThreads, dmUnreadCounts: unreadCounts });
+      const mapped = (Array.isArray(threads) ? threads : []).map((t) =>
+        mapDmThread(t, unreadCounts)
+      );
+      set((state) => ({
+        // Server-authoritative merge keeps optimistic locals; never blank the inbox
+        // when the network returns a transient empty/error (errors are caught below).
+        dmThreads: mergeDmThreadLists(state.dmThreads, mapped, 'server'),
+        dmUnreadCounts: unreadCounts,
+      }));
     } catch (error) {
       console.warn('[GroupStore] Failed to fetch DM threads:', error);
     }
@@ -1425,12 +1442,19 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   fetchDirectMessagesForThread: async (userId: string, otherUserId: string, threadId: string) => {
     const requestId = (dmFetchSeqByThread[threadId] = (dmFetchSeqByThread[threadId] || 0) + 1);
     try {
-      const result = await api.fetchDirectMessages(userId, otherUserId);
+      const result = await withTransientRetry(
+        () => api.fetchDirectMessages(userId, otherUserId),
+        { delayMs: 400 }
+      );
       if (requestId !== dmFetchSeqByThread[threadId]) return;
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const mapped = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
       set(state => {
         const existing = state.directMessages[threadId] || [];
+        // Empty fetch must not wipe last-known / optimistic messages.
+        if (!mapped.length && existing.length) {
+          return state;
+        }
         const merged = mergeChatMessagesById(existing as any, mapped as any) as DirectMessage[];
         return {
           directMessages: { ...state.directMessages, [threadId]: merged },

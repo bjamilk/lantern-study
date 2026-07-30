@@ -549,19 +549,22 @@ export function useRealtimeSubscriptions(
         console.warn('[useRealtimeSubscriptions] Group refetch failed:', error);
       }
     }
-    const activeDm = store.dmThreads.find(
-      (thread) => (store.directMessages[thread.id] || []).length > 0
-    );
-    // Prefer the thread currently loaded in the DM screen if present.
     const dmThreadId =
-      Object.keys(store.directMessages).find((id) => (store.directMessages[id] || []).length > 0) ||
-      activeDm?.id;
+      store.activeDmThreadId ||
+      Object.keys(store.directMessages).find((id) => (store.directMessages[id] || []).length > 0);
     if (dmThreadId && user?.id) {
       const thread = store.dmThreads.find((t) => t.id === dmThreadId);
-      const otherUserId = thread?.participantIds?.find((id) => id !== user.id);
+      let otherUserId = thread?.participantIds?.find((id) => id !== user.id);
+      if (!otherUserId) {
+        const prefix = `${user.id}-`;
+        const suffix = `-${user.id}`;
+        if (dmThreadId.startsWith(prefix)) otherUserId = dmThreadId.slice(prefix.length);
+        else if (dmThreadId.endsWith(suffix)) otherUserId = dmThreadId.slice(0, -suffix.length);
+      }
       if (otherUserId) {
         try {
           await store.fetchDirectMessagesForThread(user.id, otherUserId, dmThreadId);
+          await store.fetchDmThreads(user.id);
         } catch (error) {
           console.warn('[useRealtimeSubscriptions] DM refetch failed:', error);
         }

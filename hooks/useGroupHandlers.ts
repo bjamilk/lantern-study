@@ -308,19 +308,43 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         });
                 }
 
-                const otherUserId = Array.isArray((selectedChat as DMThread).participantIds)
-                    ? (selectedChat as DMThread).participantIds.find((id) => id !== currentUser.id)
-                    : undefined;
+                const threadFromStore = useGroupStore.getState().dmThreads.find((t) => t.id === threadId);
+                const participantIds =
+                    (Array.isArray((selectedChat as DMThread).participantIds) &&
+                    (selectedChat as DMThread).participantIds.length > 0
+                        ? (selectedChat as DMThread).participantIds
+                        : threadFromStore?.participantIds) || [];
+                let otherUserId = participantIds.find((id) => id !== currentUser.id);
+
+                // Threads list may still be loading; derive peer from composite id.
+                if (!otherUserId) {
+                    const prefix = `${currentUser.id}-`;
+                    const suffix = `-${currentUser.id}`;
+                    if (threadId.startsWith(prefix)) otherUserId = threadId.slice(prefix.length);
+                    else if (threadId.endsWith(suffix)) otherUserId = threadId.slice(0, -suffix.length);
+                }
+
                 if (otherUserId) {
                     const requestId = ++dmFetchSeqRef.current;
-                    fetchDirectMessages(currentUser.id, otherUserId)
+                    const loadMessages = async () => {
+                        try {
+                            return await fetchDirectMessages(currentUser.id, otherUserId!);
+                        } catch (firstError) {
+                            console.warn('[selectedChat] DM fetch failed, retrying once:', firstError);
+                            await new Promise((resolve) => setTimeout(resolve, 400));
+                            return fetchDirectMessages(currentUser.id, otherUserId!);
+                        }
+                    };
+                    loadMessages()
                         .then((fetchedMessages) => {
+                            if (cancelled) return;
                             if (requestId !== dmFetchSeqRef.current) return;
                             if (useUIStore.getState().selectedChat?.id !== threadId) return;
                             const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
                             const mappedMessages: DirectMessage[] = raw.map((m: any) =>
                                 mapDirectMessageFromApi(m, threadId)
                             );
+                            // Merge by id — never replace with empty/stale page.
                             updateDirectMessages((prev) => ({
                                 ...prev,
                                 [threadId]: mergeChatMessagesById(
@@ -331,6 +355,35 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         })
                         .catch((error) => {
                             console.error('[selectedChat] Error fetching DM messages:', error);
+                        });
+                } else {
+                    // Peer unknown — refresh threads then retry once when list arrives.
+                    void fetchDmThreads(currentUser.id)
+                        .then((fetchedThreads) => {
+                            if (cancelled || !Array.isArray(fetchedThreads)) return;
+                            const mapped = fetchedThreads.map((t: any) => mapDmThreadFromApi(t));
+                            updateDmThreads((prev) => mergeDmThreadLists(prev, mapped, 'soft'));
+                            const refreshed = useGroupStore
+                                .getState()
+                                .dmThreads.find((t) => t.id === threadId);
+                            const peer = refreshed?.participantIds?.find((id) => id !== currentUser.id);
+                            if (!peer || useUIStore.getState().selectedChat?.id !== threadId) return;
+                            const requestId = ++dmFetchSeqRef.current;
+                            return fetchDirectMessages(currentUser.id, peer).then((fetchedMessages) => {
+                                if (cancelled || requestId !== dmFetchSeqRef.current) return;
+                                if (useUIStore.getState().selectedChat?.id !== threadId) return;
+                                const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                                updateDirectMessages((prev) => ({
+                                    ...prev,
+                                    [threadId]: mergeChatMessagesById(
+                                        prev[threadId] || [],
+                                        raw.map((m: any) => mapDirectMessageFromApi(m, threadId)) as any
+                                    ) as DirectMessage[],
+                                }));
+                            });
+                        })
+                        .catch((error) => {
+                            console.error('[selectedChat] Error resolving DM peer:', error);
                         });
                 }
             }
@@ -397,7 +450,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             const fetchedThreads = await fetchDmThreads(currentUser.id);
             if (Array.isArray(fetchedThreads)) {
                 const mapped = fetchedThreads.map((t: any) => mapDmThreadFromApi(t));
-                updateDmThreads((prev) => mergeDmThreadLists(prev, mapped));
+                updateDmThreads((prev) => mergeDmThreadLists(prev, mapped, 'soft'));
             }
         } catch (err) {
             console.warn('[DM] Failed to refresh threads after initiate:', err);
@@ -521,14 +574,16 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             }));
             dmDeliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
             // Don't block the composer on a full list refresh; merge in background.
+            // Avoid handleSelectChat here — re-selecting remounts fetch races.
             void fetchDmThreads(currentUser.id)
                 .then((fetchedThreads) => {
                     if (!Array.isArray(fetchedThreads)) return;
                     const mapped = fetchedThreads.map((t: any) => mapDmThreadFromApi(t));
-                    updateDmThreads((prev) => mergeDmThreadLists(prev, mapped));
+                    updateDmThreads((prev) => mergeDmThreadLists(prev, mapped, 'soft'));
                     const refreshed = mapped.find((t) => t.id === threadId);
-                    if (refreshed && useUIStore.getState().selectedChat?.id === threadId) {
-                        handleSelectChat({ ...refreshed, chatType: 'dm' });
+                    const selected = useUIStore.getState().selectedChat;
+                    if (refreshed && selected?.chatType === 'dm' && selected.id === threadId) {
+                        setSelectedChat({ ...selected, ...refreshed, chatType: 'dm' });
                     }
                 })
                 .catch((err) => {
@@ -554,7 +609,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         } finally {
             sendingThreadIds.delete(threadId);
         }
-    }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads, handleSelectChat]);
+    }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads, setSelectedChat]);
 
     const handleDmThreadStatusChange = useCallback(
         (

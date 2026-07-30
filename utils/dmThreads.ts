@@ -1,4 +1,8 @@
 import type { DMThread } from '../types';
+import {
+  mergeDmThreadLists as mergeDmThreadListsShared,
+  type MergeDmThreadListsMode,
+} from '@lantern/shared/utils';
 
 /** Map API DM thread rows into client DMThread shape. */
 export function mapDmThreadFromApi(
@@ -29,29 +33,7 @@ export function mapDmThreadFromApi(
 export function mergeDmThreadLists(
   existing: DMThread[],
   fetched: DMThread[],
+  mode: MergeDmThreadListsMode = 'soft',
 ): DMThread[] {
-  const existingList = Array.isArray(existing) ? existing : [];
-  const fetchedList = Array.isArray(fetched) ? fetched : [];
-  const byId = new Map<string, DMThread>();
-  for (const thread of fetchedList) {
-    byId.set(thread.id, thread);
-  }
-  for (const local of existingList) {
-    const server = byId.get(local.id);
-    if (!server) {
-      byId.set(local.id, local);
-      continue;
-    }
-    byId.set(local.id, {
-      ...local,
-      ...server,
-      participants: { ...local.participants, ...server.participants },
-      unreadCount: server.unreadCount ?? local.unreadCount,
-    });
-  }
-  return Array.from(byId.values()).sort((a, b) => {
-    const at = a.lastMessageTimestamp ? new Date(a.lastMessageTimestamp).getTime() : 0;
-    const bt = b.lastMessageTimestamp ? new Date(b.lastMessageTimestamp).getTime() : 0;
-    return bt - at;
-  });
+  return mergeDmThreadListsShared(existing, fetched, mode);
 }
