@@ -31,6 +31,7 @@
     "src/utils/apiMappers.ts",
     "src/utils/chatMedia.ts",
     "src/utils/chatMute.ts",
+    "src/utils/dmHistoryCutoff.ts",
     "src/settings/**/*.ts",
     "src/marketplace/**/*.ts",
     "src/jobs/**/*.ts",
