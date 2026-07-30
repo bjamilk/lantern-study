@@ -28,6 +28,7 @@ export function useNoteHandlers(currentUserId?: string) {
     updateFolder,
     removeFolder,
     saveNote,
+    moveNotesToFolder,
     removeNote,
     selectedNote,
     setSelectedNote,
@@ -405,6 +406,13 @@ export function useNoteHandlers(currentUserId?: string) {
     [saveNote],
   );
 
+  const handleMoveNotesToFolder = useCallback(
+    async (noteIds: string[], folderId: string | null) => {
+      await moveNotesToFolder(noteIds, folderId);
+    },
+    [moveNotesToFolder],
+  );
+
   return {
     navigateToNotes,
     openNote,
@@ -414,6 +422,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleDeleteFolder,
     handleTogglePinNote,
     handleArchiveNote,
+    handleMoveNotesToFolder,
     handleAutoSave,
     cancelAutoSave,
     handleSmartNote,

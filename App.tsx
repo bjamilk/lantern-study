@@ -903,6 +903,12 @@ export const App: React.FC = () => {
                     showToast(e?.message || 'Failed to update archive', 'error');
                 });
             }}
+            onMoveNotesToFolder={(noteIds, folderId) => {
+                return noteHandlers.handleMoveNotesToFolder(noteIds, folderId).catch((e: any) => {
+                    showToast(e?.message || 'Failed to move notes', 'error');
+                    throw e;
+                });
+            }}
             onSelectNote={(id) => { void noteHandlers.openNote(id); }}
             onPdfImport={async (file) => {
                 try {

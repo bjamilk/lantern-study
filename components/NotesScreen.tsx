@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   PlusIcon,
   FolderPlusIcon,
+  FolderIcon,
   MagnifyingGlassIcon,
   DocumentTextIcon,
   DocumentArrowUpIcon,
@@ -13,6 +14,7 @@ import {
   EllipsisHorizontalIcon,
   BookmarkIcon,
   ArchiveBoxIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
@@ -47,6 +49,8 @@ interface NotesScreenProps {
   onDeleteFolder?: (folderId: string) => void | Promise<void>;
   onTogglePinNote?: (noteId: string, isPinned: boolean) => void | Promise<void>;
   onArchiveNote?: (noteId: string, isArchived: boolean) => void | Promise<void>;
+  /** Move one or more notes into a folder, or `null` for All notes (unfiled). */
+  onMoveNotesToFolder?: (noteIds: string[], folderId: string | null) => void | Promise<void>;
   onSelectNote: (noteId: string) => void;
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
@@ -77,6 +81,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onDeleteFolder,
   onTogglePinNote,
   onArchiveNote,
+  onMoveNotesToFolder,
   onSelectNote,
   onPdfImport,
   onPresentationImport,
@@ -95,6 +100,10 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [accessFilter, setAccessFilter] = useState<'mine' | 'shared'>('mine');
   const [listFilter, setListFilter] = useState<'active' | 'archived'>('active');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [movePickerOpen, setMovePickerOpen] = useState(false);
+  const [movingNotes, setMovingNotes] = useState(false);
   // Mount only one folder surface: CSS-hidden Menus still portal and duplicate.
   const [isMdUp, setIsMdUp] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
@@ -163,6 +172,37 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
 
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedNoteIds([]);
+    setMovePickerOpen(false);
+  };
+
+  const toggleNoteSelected = (noteId: string) => {
+    setSelectedNoteIds((prev) =>
+      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId],
+    );
+  };
+
+  const openMovePickerForNotes = (noteIds: string[]) => {
+    if (!onMoveNotesToFolder || noteIds.length === 0) return;
+    setSelectedNoteIds(noteIds);
+    setSelectMode(true);
+    setNoteMenuId(null);
+    setMovePickerOpen(true);
+  };
+
+  const handleMoveToFolder = async (folderId: string | null) => {
+    if (!onMoveNotesToFolder || selectedNoteIds.length === 0) return;
+    setMovingNotes(true);
+    try {
+      await onMoveNotesToFolder(selectedNoteIds, folderId);
+      exitSelectMode();
+    } finally {
+      setMovingNotes(false);
+    }
+  };
 
   const handlePdf = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -298,6 +338,79 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       />
 
       <Modal
+        isOpen={movePickerOpen}
+        onClose={() => {
+          if (!movingNotes) setMovePickerOpen(false);
+        }}
+        ariaLabelledBy="move-notes-title"
+        maxWidthClass="max-w-sm"
+      >
+        <h2 id="move-notes-title" className="text-lg font-bold text-lantern-text mb-1">
+          Move to folder
+        </h2>
+        <p className="text-sm text-lantern-text-secondary mb-4">
+          {selectedNoteIds.length === 1
+            ? 'Choose a folder for this note.'
+            : `Choose a folder for ${selectedNoteIds.length} notes.`}
+        </p>
+        <div className="space-y-1 max-h-64 overflow-y-auto" role="listbox" aria-label="Folders">
+          <button
+            type="button"
+            role="option"
+            disabled={movingNotes}
+            onClick={() => void handleMoveToFolder(null)}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
+          >
+            <FolderIcon className="h-4 w-4 text-lantern-text-secondary shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1">All notes</span>
+            <span className="text-xs text-lantern-text-tertiary shrink-0">Unfiled</span>
+          </button>
+          {folders.map((folder) => (
+            <button
+              key={folder.id}
+              type="button"
+              role="option"
+              disabled={movingNotes}
+              onClick={() => void handleMoveToFolder(folder.id)}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: folder.color || '#6366f1' }}
+              />
+              <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+            </button>
+          ))}
+        </div>
+        {folders.length === 0 ? (
+          <p className="mt-3 text-xs text-lantern-text-secondary">
+            No folders yet.{' '}
+            <button
+              type="button"
+              className="font-medium text-lantern-primary underline-offset-2 hover:underline"
+              onClick={() => {
+                setMovePickerOpen(false);
+                setFolderModalOpen(true);
+              }}
+            >
+              Create a folder
+            </button>
+          </p>
+        ) : null}
+        <div className="mt-4 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={movingNotes}
+            onClick={() => setMovePickerOpen(false)}
+            className="min-h-[44px]"
+          >
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
         isOpen={youtubeModalOpen}
         onClose={() => setYoutubeModalOpen(false)}
         ariaLabelledBy="youtube-import-title"
@@ -345,6 +458,17 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             className="mb-0 sm:mb-2"
             actions={
               <div className="flex gap-1.5 sm:gap-2">
+                {onMoveNotesToFolder ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                    aria-pressed={selectMode}
+                    aria-label={selectMode ? 'Cancel selection' : 'Select notes'}
+                  >
+                    {selectMode ? 'Cancel' : 'Select'}
+                  </Button>
+                ) : null}
                 <Button variant="secondary" size="sm" onClick={() => setFolderModalOpen(true)} aria-label="New folder">
                   <FolderPlusIcon className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">Folder</span>
@@ -372,6 +496,16 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
         <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3 sm:space-y-4">
           {embedded && (
             <div className="flex gap-1.5 sm:gap-2 justify-end">
+              {onMoveNotesToFolder ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                  aria-pressed={selectMode}
+                >
+                  {selectMode ? 'Cancel' : 'Select'}
+                </Button>
+              ) : null}
               <Button variant="secondary" size="sm" onClick={() => setFolderModalOpen(true)}>
                 <FolderPlusIcon className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Folder</span>
@@ -527,6 +661,34 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             </div>
           )}
 
+          {selectMode && onMoveNotesToFolder ? (
+            <div
+              className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2"
+              role="toolbar"
+              aria-label="Note selection"
+            >
+              <span className="text-sm text-lantern-text">
+                {selectedNoteIds.length === 0
+                  ? 'Select notes'
+                  : `${selectedNoteIds.length} selected`}
+              </span>
+              <div className="ml-auto flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={selectedNoteIds.length === 0 || movingNotes}
+                  onClick={() => setMovePickerOpen(true)}
+                >
+                  <FolderIcon className="w-4 h-4 sm:mr-1" aria-hidden />
+                  Move to folder
+                </Button>
+                <Button size="sm" variant="ghost" onClick={exitSelectMode}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {isLoading ? (
             <p className="text-sm text-lantern-text-secondary">Loading notes...</p>
           ) : filteredNotes.length === 0 ? (
@@ -562,17 +724,47 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 pb-4">
               {filteredNotes.map(note => {
                 const menuOpen = noteMenuId === note.id;
-                const showMenu = canManageNote(note) && (onTogglePinNote || onArchiveNote);
+                const showMenu =
+                  canManageNote(note) &&
+                  (onTogglePinNote || onArchiveNote || onMoveNotesToFolder);
+                const isSelected = selectedNoteIds.includes(note.id);
+                const selectable = selectMode && canManageNote(note) && Boolean(onMoveNotesToFolder);
                 return (
                   <div
                     key={note.id}
-                    className="relative text-left p-3 sm:p-4 rounded-xl border border-lantern-border bg-lantern-surface transition hover:shadow-md hover:border-lantern-primary min-w-0"
+                    className={`relative text-left p-3 sm:p-4 rounded-xl border bg-lantern-surface transition hover:shadow-md min-w-0 ${
+                      isSelected
+                        ? 'border-lantern-primary ring-1 ring-lantern-primary/40'
+                        : 'border-lantern-border hover:border-lantern-primary'
+                    }`}
                   >
                     <button
                       type="button"
-                      onClick={() => onSelectNote(note.id)}
-                      className={`w-full text-left min-w-0 ${showMenu ? 'pr-8' : ''}`}
+                      onClick={() => {
+                        if (selectable) {
+                          toggleNoteSelected(note.id);
+                          return;
+                        }
+                        if (selectMode) return;
+                        onSelectNote(note.id);
+                      }}
+                      aria-pressed={selectable ? isSelected : undefined}
+                      className={`w-full text-left min-w-0 ${showMenu && !selectMode ? 'pr-8' : ''} ${
+                        selectable ? 'pl-8' : ''
+                      }`}
                     >
+                      {selectable ? (
+                        <span
+                          className={`absolute left-3 top-3.5 flex h-5 w-5 items-center justify-center rounded border ${
+                            isSelected
+                              ? 'border-lantern-primary bg-lantern-primary text-white'
+                              : 'border-lantern-border bg-lantern-background'
+                          }`}
+                          aria-hidden
+                        >
+                          {isSelected ? <CheckIcon className="h-3.5 w-3.5" /> : null}
+                        </span>
+                      ) : null}
                       <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
                         <h3 className="font-semibold line-clamp-2 sm:line-clamp-1 min-w-0 text-lantern-text inline-flex items-center gap-1.5">
                           {note.isPinned ? (
@@ -600,7 +792,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                         Updated {new Date(note.updatedAt).toLocaleDateString()}
                       </p>
                     </button>
-                    {showMenu ? (
+                    {showMenu && !selectMode ? (
                       <div className="absolute right-2 top-2">
                         <button
                           type="button"
@@ -621,6 +813,17 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                             className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-lantern-border bg-lantern-surface py-1 shadow-lg"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            {onMoveNotesToFolder ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                onClick={() => openMovePickerForNotes([note.id])}
+                              >
+                                <FolderIcon className="h-4 w-4" aria-hidden />
+                                Move to folder
+                              </button>
+                            ) : null}
                             {onTogglePinNote && !note.isArchived ? (
                               <button
                                 type="button"

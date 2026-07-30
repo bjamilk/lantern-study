@@ -100,7 +100,10 @@ export const fetchNote = (noteId: string) =>
   notesRequest<StudyNote & { attachments?: NoteAttachment[] }>(`/${noteId}`);
 export const createNote = (payload: Partial<StudyNote>) =>
   notesRequest<StudyNote>('/', { method: 'POST', body: JSON.stringify(payload) });
-export const updateNote = (noteId: string, updates: Partial<StudyNote>) => {
+export const updateNote = (
+  noteId: string,
+  updates: Partial<Omit<StudyNote, 'folderId'>> & { folderId?: string | null }
+) => {
   const { version, ...rest } = updates;
   return notesRequest<StudyNote>(`/${noteId}`, {
     method: 'PATCH',

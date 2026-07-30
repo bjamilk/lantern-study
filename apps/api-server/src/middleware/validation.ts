@@ -211,7 +211,11 @@ export const validateNoteUpdate = [
   body('title').optional().trim().isLength({ max: 500 }).withMessage('Title must be at most 500 characters'),
   body('body').optional().isString().isLength({ max: 500000 }).withMessage('Body is too large'),
   body('summary').optional().isString().isLength({ max: 10000 }).withMessage('Summary is too large'),
-  body('folderId').optional().isUUID().withMessage('folderId must be a valid UUID'),
+  // null clears folder (unfiled / All notes)
+  body('folderId')
+    .optional({ values: 'null' })
+    .isUUID()
+    .withMessage('folderId must be a valid UUID'),
   body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
   body('isPinned').optional().isBoolean().withMessage('isPinned must be a boolean'),
 ];
