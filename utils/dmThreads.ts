@@ -21,6 +21,7 @@ export function mapDmThreadFromApi(
     lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
     unreadCount: unreadCounts[t.id] || t.unreadCount || 0,
     isArchived: t.isArchived || t.is_archived || false,
+    historyClearedAt: t.historyClearedAt ?? t.history_cleared_at ?? null,
     status,
     requestedBy: t.requestedBy ?? t.requested_by ?? null,
   };

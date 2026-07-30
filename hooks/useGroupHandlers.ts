@@ -746,9 +746,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
     const handleDeleteDmThread = useCallback(async (threadId: string) => {
         if (!currentUser) return;
-        const { removeDmThread } = useGroupStore.getState();
-        
-        // Optimistically remove from UI
+        const { removeDmThread, markDmHistoryCleared } = useGroupStore.getState();
+
+        // Delete-for-me: stamp local cutoff so pre-delete messages cannot resurface
+        // from client merge caches after the same thread_id is reused.
+        markDmHistoryCleared(threadId);
         removeDmThread(threadId);
         
         try {

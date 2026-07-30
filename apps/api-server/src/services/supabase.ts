@@ -43,6 +43,12 @@ import {
   computeDmReceiptStatus,
   computeGroupReceipt,
 } from "@lantern/shared/utils/chatMedia";
+import {
+  effectiveDmUnreadFloor,
+  filterMessagesAfterDmHistoryCutoff,
+  readDmHistoryClearedAt,
+  withDmHistoryClearedAt,
+} from "@lantern/shared/utils/dmHistoryCutoff";
 
 function extractMentionUsernames(text?: string | null): string[] {
   if (!text) return [];
@@ -4512,7 +4518,17 @@ export class SupabaseService {
     const threadId = sortedIds.join("-");
 
     try {
-      const { data, error } = await this.supabase
+      const { data: threadMeta } = await this.supabase
+        .from("dm_threads")
+        .select("history_cleared_at")
+        .eq("id", threadId)
+        .maybeSingle();
+      const historyClearedAt = readDmHistoryClearedAt(
+        threadMeta?.history_cleared_at,
+        userId,
+      );
+
+      let query = this.supabase
         .from("dm_messages")
         .select(
           `
@@ -4535,6 +4551,13 @@ export class SupabaseService {
         .eq("thread_id", threadId)
         .order("timestamp", { ascending: false })
         .range(offset, offset + limit - 1);
+
+      // Delete-for-me: never return pre-cutoff history to the deleter.
+      if (historyClearedAt) {
+        query = query.gt("timestamp", historyClearedAt);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         logger.error("Error fetching DM messages from database", {
@@ -4782,8 +4805,9 @@ export class SupabaseService {
         throw new Error(`Failed to send DM: ${error.message}`);
       }
 
-      // Un-archive for recipient, un-hide for everyone, and update the
-      // thread's last message. A new message resurrects a "deleted" thread.
+      // Un-archive for recipient, un-hide for inbox resurrection, and update
+      // last message. Clearing hidden_by resurfaces the thread; history_cleared_at
+      // is intentionally left alone so each deleter keeps a fresh history view.
       const archivedBy: string[] = Array.isArray(existingThread?.archived_by)
         ? existingThread.archived_by
         : [];
@@ -7481,7 +7505,7 @@ export class SupabaseService {
   ): Promise<Message[]> {
     const { data: thread, error: threadError } = await this.supabase
       .from("dm_threads")
-      .select("participant_ids")
+      .select("participant_ids, history_cleared_at")
       .eq("id", threadId)
       .maybeSingle();
     if (threadError) throw threadError;
@@ -7495,6 +7519,10 @@ export class SupabaseService {
     if (!peerUserId) {
       throw new Error("Invalid DM thread");
     }
+    const historyClearedAt = readDmHistoryClearedAt(
+      thread?.history_cleared_at,
+      viewerUserId,
+    );
 
     const selectClause = `
       id,
@@ -7535,7 +7563,11 @@ export class SupabaseService {
     if (repliesError) throw repliesError;
     if (!root) return [];
 
-    const combined = [root, ...(replies || [])];
+    const combined = filterMessagesAfterDmHistoryCutoff(
+      [root, ...(replies || [])],
+      historyClearedAt,
+    );
+    if (!combined.length) return [];
     const withReplies = await this.attachReplyPreviewsBatch(
       combined,
       "dm_messages",
@@ -9251,24 +9283,36 @@ export class SupabaseService {
   async getDMUnreadCount(threadId: string, userId: string): Promise<number> {
     try {
       // Get user's last read timestamp for this thread
-      const { data: readStatus, error: readError } = await this.supabase
-        .from("dm_read_status")
-        .select("last_read_at")
-        .eq("thread_id", threadId)
-        .eq("user_id", userId)
-        .single();
+      const [{ data: readStatus }, { data: threadMeta }] = await Promise.all([
+        this.supabase
+          .from("dm_read_status")
+          .select("last_read_at")
+          .eq("thread_id", threadId)
+          .eq("user_id", userId)
+          .maybeSingle(),
+        this.supabase
+          .from("dm_threads")
+          .select("history_cleared_at")
+          .eq("id", threadId)
+          .maybeSingle(),
+      ]);
 
       // If no read status exists, count all messages not from this user
       const lastReadAt = readStatus?.last_read_at || new Date(0).toISOString();
+      const historyClearedAt = readDmHistoryClearedAt(
+        threadMeta?.history_cleared_at,
+        userId,
+      );
+      const unreadFloor = effectiveDmUnreadFloor(lastReadAt, historyClearedAt);
 
-      // Count messages after last read that were not sent by the user
+      // Count messages after last read (and after delete cutoff) not sent by the user
       const { count, error: countError } = await this.supabase
         .from("dm_messages")
         .select("id", { count: "exact", head: true })
         .eq("thread_id", threadId)
         .neq("sender_id", userId)
         .is("removed_at", null)
-        .gt("timestamp", lastReadAt);
+        .gt("timestamp", unreadFloor);
 
       if (countError) {
         console.error("Error counting unread DMs:", countError);
@@ -9403,15 +9447,16 @@ export class SupabaseService {
     }
   }
 
-  // "Delete" a DM thread for one user: soft-delete via hidden_by so the other
-  // participant keeps their history and marketplace inquiries aren't cascaded.
-  // A new message in the thread clears hidden_by and resurrects it.
+  // "Delete for me": hide from inbox (hidden_by) and set a history cutoff so
+  // pre-delete messages never resurface for this user. The other participant
+  // keeps their full history; marketplace inquiry FKs are preserved.
+  // A new message clears hidden_by (thread resurrects) but keeps history_cleared_at.
   async deleteDmThread(threadId: string, userId: string): Promise<boolean> {
     try {
       // Verify the user is a participant of this thread
       const { data: thread, error: fetchError } = await this.supabase
         .from("dm_threads")
-        .select("participant_ids, hidden_by")
+        .select("participant_ids, hidden_by, history_cleared_at")
         .eq("id", threadId)
         .single();
 
@@ -9431,17 +9476,39 @@ export class SupabaseService {
       const hiddenBy: string[] = Array.isArray(thread.hidden_by)
         ? thread.hidden_by
         : [];
-      if (hiddenBy.includes(userId)) return true; // Already hidden
+      const clearedAt = new Date().toISOString();
+      const nextHiddenBy = hiddenBy.includes(userId)
+        ? hiddenBy
+        : [...hiddenBy, userId];
+      const nextHistoryClearedAt = withDmHistoryClearedAt(
+        thread.history_cleared_at,
+        userId,
+        clearedAt,
+      );
 
       const { error: updateError } = await this.supabase
         .from("dm_threads")
-        .update({ hidden_by: [...hiddenBy, userId] })
+        .update({
+          hidden_by: nextHiddenBy,
+          history_cleared_at: nextHistoryClearedAt,
+        })
         .eq("id", threadId);
 
       if (updateError) {
         console.error("Error hiding DM thread:", updateError);
         return false;
       }
+
+      // Anchor read cursor at delete time so unread math cannot revive old rows
+      // before history_cleared_at is applied everywhere.
+      await this.supabase.from("dm_read_status").upsert(
+        {
+          thread_id: threadId,
+          user_id: userId,
+          last_read_at: clearedAt,
+        },
+        { onConflict: "thread_id,user_id" },
+      );
 
       return true;
     } catch (error) {

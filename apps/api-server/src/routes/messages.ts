@@ -15,6 +15,7 @@ import {
   mutedUntilFromMinutes,
   resolveChatMuteDurationMinutes,
 } from '@lantern/shared/utils/chatMute';
+import { readDmHistoryClearedAt } from '@lantern/shared/utils/dmHistoryCutoff';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
 const ALLOWED_AUDIO_TYPES = [
@@ -414,7 +415,7 @@ router.get(
       // (a JS array becomes Postgres {uuid} and fails with 22P02 invalid json).
       const { data: threads, error } = await supabaseService.getClient()
         .from('dm_threads')
-        .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by, status, requested_by')
+        .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by, history_cleared_at, status, requested_by')
         .contains('participant_ids', JSON.stringify([userId]))
         .order('last_message_time', { ascending: false, nullsFirst: false });
 
@@ -499,6 +500,7 @@ router.get(
           lastMessage: t.last_message,
           lastMessageTimestamp: t.last_message_time,
           isArchived: Array.isArray(t.archived_by) && t.archived_by.includes(userId),
+          historyClearedAt: readDmHistoryClearedAt(t.history_cleared_at, userId),
           status,
           requestedBy: typeof t.requested_by === 'string' ? t.requested_by : null,
         };

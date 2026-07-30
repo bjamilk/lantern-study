@@ -30,6 +30,7 @@ export * from './questionVisibility';
 export * from './deliveryIntegrity';
 export * from './chatMessageMerge';
 export * from './dmThreads';
+export * from './dmHistoryCutoff';
 export * from './noteComments';
 export * from './groupTree';
 export * from './groupPerformanceSeries';

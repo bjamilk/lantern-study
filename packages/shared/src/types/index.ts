@@ -596,6 +596,11 @@ export interface DMThread {
   lastMessageTimestamp?: Date | string;
   unreadCount?: number;
   isArchived?: boolean;
+  /**
+   * ISO timestamp when the current user deleted this chat ("delete for me").
+   * Messages at or before this time must stay hidden even after the thread resurfaces.
+   */
+  historyClearedAt?: string | null;
   /** open = two-way; pending = message request; declined = rejected request */
   status?: DmThreadStatus;
   /** User who initiated a pending/declined message request */

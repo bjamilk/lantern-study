@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand';
 import { Group, Message, DMThread, DirectMessage, AppNotification, User } from '../types';
+import { filterMessagesAfterDmHistoryCutoff } from '@lantern/shared/utils';
 import { supabase } from '../services/supabase';
 
 // Chat item can be a group or DM thread
@@ -25,6 +26,8 @@ interface GroupState {
   selectedChat: ChatItem | null;
   dmThreads: DMThread[];
   directMessages: Record<string, DirectMessage[]>;
+  /** Local delete-for-me cutoffs keyed by thread id (survives inbox removal). */
+  dmHistoryClearedAtByThread: Record<string, string>;
   userVotes: Record<string, 'up' | 'down' | undefined>;
   notifications: AppNotification[];
   groupUnreadCounts: Record<string, number>;
@@ -48,6 +51,7 @@ interface GroupState {
   setDmThreads: (threads: DMThread[]) => void;
   updateDmThreads: (updater: (prev: DMThread[]) => DMThread[]) => void;
   removeDmThread: (threadId: string) => void;
+  markDmHistoryCleared: (threadId: string, clearedAtIso?: string) => void;
   archiveDmThread: (threadId: string) => void;
   unarchiveDmThread: (threadId: string) => void;
   setDirectMessages: (threadId: string, messages: DirectMessage[]) => void;
@@ -85,6 +89,7 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
   selectedChat: null,
   dmThreads: [],
   directMessages: {},
+  dmHistoryClearedAtByThread: {},
   userVotes: {},
   notifications: [],
   groupUnreadCounts: {},
@@ -139,14 +144,52 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
     return { messages: newMessages };
   }),
   
-  setDmThreads: (threads) => set({
-    dmThreads: Array.isArray(threads) ? threads : [],
+  setDmThreads: (threads) => set((state) => {
+    const list = Array.isArray(threads) ? threads : [];
+    const nextCutoffs = { ...state.dmHistoryClearedAtByThread };
+    const nextDirectMessages = { ...state.directMessages };
+    for (const thread of list) {
+      if (thread.historyClearedAt) {
+        nextCutoffs[thread.id] = thread.historyClearedAt;
+      }
+      const cutoff = nextCutoffs[thread.id] || thread.historyClearedAt || null;
+      if (cutoff && nextDirectMessages[thread.id]) {
+        nextDirectMessages[thread.id] = filterMessagesAfterDmHistoryCutoff(
+          nextDirectMessages[thread.id],
+          cutoff,
+        );
+      }
+    }
+    return {
+      dmThreads: list,
+      dmHistoryClearedAtByThread: nextCutoffs,
+      directMessages: nextDirectMessages,
+    };
   }),
   
   updateDmThreads: (updater) => set((state) => {
     const prev = Array.isArray(state.dmThreads) ? state.dmThreads : [];
     const next = updater(prev);
-    return { dmThreads: Array.isArray(next) ? next : prev };
+    const list = Array.isArray(next) ? next : prev;
+    const nextCutoffs = { ...state.dmHistoryClearedAtByThread };
+    const nextDirectMessages = { ...state.directMessages };
+    for (const thread of list) {
+      if (thread.historyClearedAt) {
+        nextCutoffs[thread.id] = thread.historyClearedAt;
+      }
+      const cutoff = nextCutoffs[thread.id] || thread.historyClearedAt || null;
+      if (cutoff && nextDirectMessages[thread.id]) {
+        nextDirectMessages[thread.id] = filterMessagesAfterDmHistoryCutoff(
+          nextDirectMessages[thread.id],
+          cutoff,
+        );
+      }
+    }
+    return {
+      dmThreads: list,
+      dmHistoryClearedAtByThread: nextCutoffs,
+      directMessages: nextDirectMessages,
+    };
   }),
 
   removeDmThread: (threadId) => set((state) => {
@@ -160,6 +203,13 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
     };
   }),
 
+  markDmHistoryCleared: (threadId, clearedAtIso) => set((state) => ({
+    dmHistoryClearedAtByThread: {
+      ...state.dmHistoryClearedAtByThread,
+      [threadId]: clearedAtIso || new Date().toISOString(),
+    },
+  })),
+
   archiveDmThread: (threadId) => set((state) => ({
     dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, isArchived: true } : t),
     selectedChat: state.selectedChat?.id === threadId ? null : state.selectedChat,
@@ -169,22 +219,63 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
     dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, isArchived: false } : t),
   })),
   
-  setDirectMessages: (threadId, messages) => set((state) => ({
-    directMessages: { ...state.directMessages, [threadId]: messages },
-  })),
+  setDirectMessages: (threadId, messages) => set((state) => {
+    const cutoff =
+      state.dmHistoryClearedAtByThread[threadId] ||
+      state.dmThreads.find((t) => t.id === threadId)?.historyClearedAt ||
+      null;
+    return {
+      directMessages: {
+        ...state.directMessages,
+        [threadId]: filterMessagesAfterDmHistoryCutoff(messages, cutoff),
+      },
+    };
+  }),
   
-  setAllDirectMessages: (messages) => set({ directMessages: messages }),
+  setAllDirectMessages: (messages) => set((state) => {
+    const next: Record<string, DirectMessage[]> = {};
+    for (const [threadId, list] of Object.entries(messages || {})) {
+      const cutoff =
+        state.dmHistoryClearedAtByThread[threadId] ||
+        state.dmThreads.find((t) => t.id === threadId)?.historyClearedAt ||
+        null;
+      next[threadId] = filterMessagesAfterDmHistoryCutoff(list, cutoff);
+    }
+    return { directMessages: next };
+  }),
   
-  updateDirectMessages: (updater) => set((state) => ({
-    directMessages: updater(state.directMessages),
-  })),
+  updateDirectMessages: (updater) => set((state) => {
+    const updated = updater(state.directMessages);
+    const next: Record<string, DirectMessage[]> = {};
+    for (const [threadId, list] of Object.entries(updated || {})) {
+      const cutoff =
+        state.dmHistoryClearedAtByThread[threadId] ||
+        state.dmThreads.find((t) => t.id === threadId)?.historyClearedAt ||
+        null;
+      next[threadId] = filterMessagesAfterDmHistoryCutoff(list, cutoff);
+    }
+    return { directMessages: next };
+  }),
   
-  addDirectMessage: (threadId, message) => set((state) => ({
-    directMessages: {
-      ...state.directMessages,
-      [threadId]: [...(state.directMessages[threadId] || []), message],
-    },
-  })),
+  addDirectMessage: (threadId, message) => set((state) => {
+    const cutoff =
+      state.dmHistoryClearedAtByThread[threadId] ||
+      state.dmThreads.find((t) => t.id === threadId)?.historyClearedAt ||
+      null;
+    if (filterMessagesAfterDmHistoryCutoff([message], cutoff).length === 0) {
+      return state;
+    }
+    const existing = filterMessagesAfterDmHistoryCutoff(
+      state.directMessages[threadId] || [],
+      cutoff,
+    );
+    return {
+      directMessages: {
+        ...state.directMessages,
+        [threadId]: [...existing, message],
+      },
+    };
+  }),
   
   setUserVotes: (votes) => set({ userVotes: votes }),
   
@@ -239,6 +330,7 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
     selectedChat: null,
     dmThreads: [],
     directMessages: {},
+    dmHistoryClearedAtByThread: {},
     userVotes: {},
     notifications: [],
     groupUnreadCounts: {},
@@ -246,4 +338,4 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
     isLoading: false,
     error: null,
   }),
-}));;
+}));
