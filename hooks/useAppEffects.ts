@@ -12,6 +12,7 @@ import { resolvePlatformAdmin } from '../utils/platformAdmin';
 import {
     supabase, setCachedAuthToken,
     fetchGroups, fetchGroupMembers,
+    fetchMessages, fetchDirectMessages,
     fetchDecks, fetchAllFlashcards,
     fetchTestResults, fetchUserQuestionStats,
     fetchDashboardSummary,
@@ -40,7 +41,7 @@ import {
     refreshCookieSession,
 } from '../services/authCookieSession';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
-import { mapMessageFromApi, computeStudyStreak, getCardsDue } from '@lantern/shared/utils';
+import { mapMessageFromApi, computeStudyStreak, getCardsDue, mergeChatMessagesById } from '@lantern/shared/utils';
 import { mapUserStatsFromApi } from '@lantern/shared/utils/apiMappers';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
@@ -49,6 +50,7 @@ import { fetchBudgetWalletData } from '../services/budgetApi';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { DirectMessage } from '../types';
 import {
+  beginSrsWebReminderSend,
   getWebNotificationPermission,
   markSrsWebReminderSent,
   onWebNotificationClick,
@@ -121,6 +123,16 @@ export function useAppEffects({
     const [serverStreak, setServerStreak] = useState(0);
     const [streakFreezes, setStreakFreezes] = useState(0);
     const [questsLoaded, setQuestsLoaded] = useState(false);
+    /** Bumped on tab focus / channel errors so Realtime resubscribes with a live JWT. */
+    const [realtimeEpoch, setRealtimeEpoch] = useState(0);
+    const lastRealtimeBumpRef = useRef(0);
+    const bumpRealtimeEpoch = useCallback(() => {
+        const now = Date.now();
+        // Avoid tight CHANNEL_ERROR → recreate loops.
+        if (now - lastRealtimeBumpRef.current < 5000) return;
+        lastRealtimeBumpRef.current = now;
+        setRealtimeEpoch((value) => value + 1);
+    }, []);
 
     const refreshDashboardGamification = useCallback(async () => {
         const user = useAuthStore.getState().currentUser;
@@ -966,11 +978,12 @@ export function useAppEffects({
 
     // --- Real-time notifications subscription ---
     // Always on — duel/challenge alerts must work even in low-data mode.
+    // Wait for authTokenReady so the Realtime socket has a JWT (RLS filters otherwise drop all events).
     useEffect(() => {
-        if (!currentUser) return;
+        if (!currentUser || !authTokenReady) return;
 
         const notificationsSubscription = supabase
-            .channel(`notifications:${currentUser.id}`)
+            .channel(`notifications:${currentUser.id}:e${realtimeEpoch}`)
             .on(
                 'postgres_changes',
                 {
@@ -1051,12 +1064,16 @@ export function useAppEffects({
                     updateNotifications(prev => prev.filter(n => n.id !== deletedId));
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    bumpRealtimeEpoch();
+                }
+            });
 
         return () => {
-            notificationsSubscription.unsubscribe();
+            void supabase.removeChannel(notificationsSubscription);
         };
-    }, [currentUser?.id, updateNotifications, openModal, onChallengeNotification, refreshDmThreadsForUser]);
+    }, [currentUser?.id, authTokenReady, realtimeEpoch, updateNotifications, openModal, onChallengeNotification, refreshDmThreadsForUser, bumpRealtimeEpoch]);
 
     // Manual refresh hook (e.g. after contact-seller creates a DM thread)
     useEffect(() => {
@@ -1068,12 +1085,12 @@ export function useAppEffects({
         return () => window.removeEventListener('lantern:refresh-dm-threads', onRefresh);
     }, [currentUser?.id, refreshDmThreadsForUser]);
 
-    // New / updated DM threads (contact-seller, first message) — keep chat list in sync without full reload.
+    // New / updated DM threads (contact-seller, first message, message requests).
     useEffect(() => {
-        if (!currentUser || lowDataMode) return;
+        if (!currentUser || !authTokenReady || lowDataMode) return;
 
         const channel = supabase
-            .channel(`dm-threads:${currentUser.id}`)
+            .channel(`dm-threads:${currentUser.id}:e${realtimeEpoch}`)
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'dm_threads' },
@@ -1098,12 +1115,16 @@ export function useAppEffects({
                     void refreshDmThreadsForUser(currentUser.id);
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    bumpRealtimeEpoch();
+                }
+            });
 
         return () => {
-            channel.unsubscribe();
+            void supabase.removeChannel(channel);
         };
-    }, [currentUser?.id, lowDataMode, refreshDmThreadsForUser]);
+    }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, refreshDmThreadsForUser, bumpRealtimeEpoch]);
 
     // Stable key for membership filtering (does not recreate the DM channel).
     const dmThreadIdsKey = dmThreads.map((t) => t.id).sort().join(',');
@@ -1114,7 +1135,7 @@ export function useAppEffects({
 
     // --- Real-time DM messages: one channel for all threads (RLS + client filter) ---
     useEffect(() => {
-        if (!currentUser || lowDataMode) return;
+        if (!currentUser || !authTokenReady || lowDataMode) return;
 
         const applyDmChange = (
             payload: { new: Record<string, unknown> },
@@ -1136,7 +1157,6 @@ export function useAppEffects({
             if (!threadId) return;
             const threadIds = dmThreadIdsRef.current;
             if (threadIds.size > 0 && !threadIds.has(threadId)) return;
-            if (!isUpdate && raw.sender_id === currentUser.id) return;
             const viewingThisThread =
                 useUIStore.getState().selectedChat?.chatType === 'dm' &&
                 useUIStore.getState().selectedChat?.id === threadId;
@@ -1183,6 +1203,16 @@ export function useAppEffects({
                         ),
                     };
                 }
+                // Self-sends from this device are usually optimistic; still accept other-device echoes.
+                if (raw.sender_id === currentUser.id) {
+                    const hasOptimistic = existing.some(
+                        (m) =>
+                            m.senderId === currentUser.id &&
+                            m.text === message.text &&
+                            (m.id.startsWith('msg-') || m.id.startsWith('temp-') || m.id.startsWith('optimistic-'))
+                    );
+                    if (hasOptimistic && !raw.client_message_id) return prev;
+                }
                 return { ...prev, [threadId]: [...existing, message] };
             });
 
@@ -1207,7 +1237,7 @@ export function useAppEffects({
         };
 
         const channel = supabase
-            .channel(`dm-messages-all:${currentUser.id}`)
+            .channel(`dm-messages-all:${currentUser.id}:e${realtimeEpoch}`)
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'dm_messages' },
@@ -1218,17 +1248,24 @@ export function useAppEffects({
                 { event: 'UPDATE', schema: 'public', table: 'dm_messages' },
                 (payload) => applyDmChange(payload as { new: Record<string, unknown> }, true)
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    bumpRealtimeEpoch();
+                }
+            });
 
         return () => {
-            channel.unsubscribe();
+            void supabase.removeChannel(channel);
         };
     }, [
         currentUser?.id,
+        authTokenReady,
         lowDataMode,
+        realtimeEpoch,
         refreshDmThreadsForUser,
         updateDirectMessages,
         updateDmThreads,
+        bumpRealtimeEpoch,
     ]);
 
     const groupIdsKey = groups.map((g) => g.id).sort().join(',');
@@ -1239,7 +1276,7 @@ export function useAppEffects({
 
     // --- Real-time group messages for all joined groups (so chat updates before/with notifications) ---
     useEffect(() => {
-        if (!currentUser || lowDataMode) return;
+        if (!currentUser || !authTokenReady || lowDataMode) return;
 
         const applyIncoming = (payloadNew: Record<string, unknown>, isUpdate: boolean) => {
             const groupId = String(payloadNew.group_id || '');
@@ -1579,17 +1616,23 @@ export function useAppEffects({
     // Use shared isCardDue once — do not add "new" + "date-due" (double-counts Again/new cards).
     // OS toasts only when the tab is in the background and throttled — studying notes/flashcards
     // must not keep popping "cards due" notifications.
+    const srsRemindersEnabled = Boolean(
+        currentUser &&
+            getNotificationSettings(normalizeUserSettings(currentUser.settings)).srsReminders
+    );
+    const srsUserId = currentUser?.id ?? null;
+
     const checkForDueCardsAndNotify = useCallback(() => {
-        if (!currentUser) return;
+        if (!srsUserId || !srsRemindersEnabled) return;
         const cards = useFlashcardStore.getState().flashcards;
         if (!cards.length) return;
 
         const totalDue = getCardsDue(cards).length;
-        setDueCardsCount(totalDue);
-
-        if (!getNotificationSettings(normalizeUserSettings(currentUser.settings)).srsReminders) return;
         if (getWebNotificationPermission() !== 'granted') return;
-        if (!shouldSendSrsWebReminder(totalDue)) return;
+        if (!shouldSendSrsWebReminder(totalDue, Date.now(), srsUserId)) return;
+        // Claim + persist before the async show path so remount / visibility churn cannot spam.
+        if (!beginSrsWebReminderSend(srsUserId)) return;
+        markSrsWebReminderSent(totalDue, Date.now(), srsUserId);
 
         void showWebNotification({
             title: 'Flashcard Review Due',
@@ -1602,8 +1645,7 @@ export function useAppEffects({
                 setAppMode(AppMode.FLASHCARDS);
             },
         });
-        markSrsWebReminderSent(totalDue);
-    }, [currentUser, setAppMode, setDueCardsCount]);
+    }, [srsUserId, srsRemindersEnabled, setAppMode]);
 
     useEffect(() => {
         return onWebNotificationClick((data) => {
@@ -1618,10 +1660,10 @@ export function useAppEffects({
     useEffect(() => {
         if (!currentUser || !flashcards.length) return;
         setDueCardsCount(getCardsDue(flashcards).length);
-    }, [currentUser, flashcards, setDueCardsCount]);
+    }, [currentUser?.id, flashcards, setDueCardsCount]);
 
     useEffect(() => {
-        if (!currentUser) return;
+        if (!srsUserId) return;
 
         // Ask once when permission is still undecided.
         if (getWebNotificationPermission() === 'default') {
@@ -1652,8 +1694,7 @@ export function useAppEffects({
             clearInterval(interval);
             document.removeEventListener('visibilitychange', onVisibility);
         };
-    }, [currentUser?.id, checkForDueCardsAndNotify, lowDataMode]);
-
+    }, [srsUserId, checkForDueCardsAndNotify, lowDataMode]);
     // Auto-sync queued flashcard reviews when back online
     useEffect(() => {
         if (!currentUser?.id || !isOnline) return;

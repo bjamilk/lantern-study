@@ -10,6 +10,15 @@
  * studying notes/flashcards are not interrupted by OS toast spam.
  */
 
+import {
+  getSrsReminderStorageKey,
+  parseSrsReminderMarker,
+  serializeSrsReminderMarker,
+  shouldSendSrsReminder,
+  type SrsReminderMarker,
+  SRS_REMINDER_COOLDOWN_MS as SHARED_SRS_COOLDOWN_MS,
+} from '@lantern/shared/settings';
+
 export interface WebNotificationPayload {
   title: string;
   body?: string;
@@ -25,9 +34,13 @@ export interface WebNotificationPayload {
   forceWhileVisible?: boolean;
 }
 
-const SRS_REMINDER_STORAGE_KEY = 'lantern.srsReminder.lastNotified';
-/** Minimum gap between SRS OS notifications when the tab is in the background. */
-export const SRS_REMINDER_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+/** Re-export shared cooldown for callers/tests. */
+export const SRS_REMINDER_COOLDOWN_MS = SHARED_SRS_COOLDOWN_MS;
+
+/** In-memory fallback when localStorage is unavailable (private mode / quota). */
+const srsMemoryByKey = new Map<string, SrsReminderMarker>();
+/** Prevents re-entrant double-sends before persistence completes. */
+const srsInFlightKeys = new Set<string>();
 
 export function hasWebNotificationSupport(): boolean {
   return typeof window !== 'undefined' && 'Notification' in window;
@@ -59,38 +72,80 @@ export async function requestWebNotificationPermission(): Promise<NotificationPe
   }
 }
 
+function readSrsMarker(userId?: string | null): SrsReminderMarker | null {
+  const key = getSrsReminderStorageKey(userId);
+  const memory = srsMemoryByKey.get(key);
+  if (memory) return memory;
+
+  try {
+    const parsed = parseSrsReminderMarker(localStorage.getItem(key));
+    if (parsed) {
+      srsMemoryByKey.set(key, parsed);
+      return parsed;
+    }
+    // Migrate legacy unscoped key when reading a user-scoped marker.
+    if (userId) {
+      const legacy = parseSrsReminderMarker(
+        localStorage.getItem(getSrsReminderStorageKey(null))
+      );
+      if (legacy) {
+        srsMemoryByKey.set(key, legacy);
+        return legacy;
+      }
+    }
+  } catch {
+    // private mode / disabled storage — memory only
+  }
+  return null;
+}
+
 /**
  * Whether an SRS due-card OS notification should fire now.
  * Suppresses while the tab is visible and throttles background reminders.
  */
-export function shouldSendSrsWebReminder(totalDue: number, now = Date.now()): boolean {
-  if (totalDue <= 0) return false;
+export function shouldSendSrsWebReminder(
+  totalDue: number,
+  now = Date.now(),
+  userId?: string | null
+): boolean {
   if (isLanternPageVisible()) return false;
+  const key = getSrsReminderStorageKey(userId);
+  if (srsInFlightKeys.has(key)) return false;
+  return shouldSendSrsReminder(totalDue, readSrsMarker(userId), now);
+}
 
+export function markSrsWebReminderSent(
+  totalDue: number,
+  now = Date.now(),
+  userId?: string | null
+): void {
+  const key = getSrsReminderStorageKey(userId);
+  const marker: SrsReminderMarker = { at: now, dueCount: totalDue };
+  srsMemoryByKey.set(key, marker);
+  srsInFlightKeys.delete(key);
   try {
-    const raw = localStorage.getItem(SRS_REMINDER_STORAGE_KEY);
-    if (!raw) return true;
-    const parsed = JSON.parse(raw) as { at?: number; dueCount?: number };
-    const at = typeof parsed.at === 'number' ? parsed.at : 0;
-    const previousDue = typeof parsed.dueCount === 'number' ? parsed.dueCount : 0;
-    const cooledDown = now - at >= SRS_REMINDER_COOLDOWN_MS;
-    // Allow an earlier ping if the backlog grew substantially while away.
-    const backlogGrew = totalDue >= previousDue + 10;
-    return cooledDown || backlogGrew;
+    localStorage.setItem(key, serializeSrsReminderMarker(marker));
   } catch {
-    return true;
+    // Memory marker still blocks remount/AppState spam for this session.
   }
 }
 
-export function markSrsWebReminderSent(totalDue: number, now = Date.now()): void {
-  try {
-    localStorage.setItem(
-      SRS_REMINDER_STORAGE_KEY,
-      JSON.stringify({ at: now, dueCount: totalDue })
-    );
-  } catch {
-    // ignore quota / private mode
-  }
+/** Claim the send slot before the async showNotification path runs. */
+export function beginSrsWebReminderSend(userId?: string | null): boolean {
+  const key = getSrsReminderStorageKey(userId);
+  if (srsInFlightKeys.has(key)) return false;
+  srsInFlightKeys.add(key);
+  return true;
+}
+
+export function cancelSrsWebReminderSend(userId?: string | null): void {
+  srsInFlightKeys.delete(getSrsReminderStorageKey(userId));
+}
+
+/** Test helper — clears in-memory SRS throttle state. */
+export function __resetSrsWebReminderStateForTests(): void {
+  srsMemoryByKey.clear();
+  srsInFlightKeys.clear();
 }
 
 export async function showWebNotification(payload: WebNotificationPayload): Promise<void> {
@@ -114,7 +169,9 @@ export async function showWebNotification(payload: WebNotificationPayload): Prom
           icon,
           tag,
           data: notificationData,
-        });
+          // Replace any prior notification with the same tag (dedupe tray spam).
+          renotify: false,
+        } as NotificationOptions);
         return;
       }
     } catch (err) {
