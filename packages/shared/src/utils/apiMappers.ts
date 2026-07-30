@@ -32,14 +32,20 @@ import { normalizeStorageUrl } from './storageUrl';
 
 export const mapUserFromApi = (data: any): User => {
   if (!data) return data;
-  
+
+  // Prefer camelCase from API User shape; fall back to snake_case DB aliases.
+  const avatarUrl = data.avatarUrl || data.avatar_url || undefined;
+  const phoneNumber = data.phoneNumber || data.phone_number || data.phone || undefined;
+  const firstName = data.firstName || data.first_name || undefined;
+  const lastName = data.lastName || data.last_name || undefined;
+
   return {
     id: data.id,
     name: data.name || data.full_name || '',
-    avatarUrl: data.avatar_url || data.avatarUrl,
+    avatarUrl,
     email: data.email,
     password: data.password,
-    phoneNumber: data.phone_number || data.phone,
+    phoneNumber,
     points: data.points || 0,
     badges: (data.badges || []).map(mapBadgeFromApi),
     stats: mapUserStatsFromApi(data.stats || {}),
@@ -48,9 +54,15 @@ export const mapUserFromApi = (data: any): User => {
     decks: data.decks,
     flashcards: data.flashcards,
     username: data.username || undefined,
-    firstName: data.first_name || data.firstName || undefined,
-    lastName: data.last_name || data.lastName || undefined,
-  };
+    firstName,
+    lastName,
+    // Preserve snake_case aliases — login/restore paths still read these.
+    // Matches API mapProfileRowToUser dual-shape contract.
+    avatar_url: avatarUrl,
+    phone: phoneNumber,
+    first_name: firstName,
+    last_name: lastName,
+  } as User;
 };
 
 export const mapBadgeFromApi = (data: any): Badge => {

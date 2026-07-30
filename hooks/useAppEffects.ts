@@ -262,17 +262,17 @@ export function useAppEffects({
         ): User => ({
             id: profile.id as string,
             name: profile.name as string,
-            avatarUrl: (profile.avatar_url as string) || '',
+            avatarUrl: (profile.avatarUrl as string) || (profile.avatar_url as string) || '',
             email,
             password: '',
-            phoneNumber: (profile.phone as string) || '',
+            phoneNumber: (profile.phoneNumber as string) || (profile.phone as string) || '',
             points: (profile.points as number) || 0,
             badges: (profile.badges as User['badges']) || [],
             stats: mapUserStatsFromApi(profile.stats || {}),
             settings: normalizeUserSettings(profile.settings),
             username: (profile.username as string) || undefined,
-            firstName: (profile.first_name as string) || undefined,
-            lastName: (profile.last_name as string) || undefined,
+            firstName: (profile.firstName as string) || (profile.first_name as string) || undefined,
+            lastName: (profile.lastName as string) || (profile.last_name as string) || undefined,
             isAdmin: resolvePlatformAdmin(authUser, profile.settings as Record<string, unknown>),
         });
 
