@@ -62,6 +62,166 @@ interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   jsonOutput?: boolean;
+  /** Prefer this provider first (sticky routing across map-reduce chunks). */
+  preferredProvider?: string;
+}
+
+type ProviderFailureKind =
+  | 'rate_limit'
+  | 'auth'
+  | 'timeout'
+  | 'not_configured'
+  | 'daily_limit'
+  | 'empty'
+  | 'other';
+
+type ProviderAttemptError = {
+  provider: string;
+  kind: ProviderFailureKind;
+  message: string;
+  retryAfterMs?: number;
+};
+
+/** In-process cooldown after upstream 429s so map-reduce does not thrash the same provider. */
+const providerCooldowns = new Map<string, number>();
+const MAX_RATE_LIMIT_WAIT_MS = 20_000;
+const MAX_RATE_LIMIT_RETRIES = 2;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(message: string): number | undefined {
+  const secondsMatch = message.match(/try again in\s+([\d.]+)\s*s/i);
+  if (secondsMatch) {
+    const ms = Math.ceil(parseFloat(secondsMatch[1]) * 1000) + 250;
+    if (Number.isFinite(ms) && ms > 0) return Math.min(ms, MAX_RATE_LIMIT_WAIT_MS);
+  }
+  const headerMatch = message.match(/retry[- ]after[:\s]+(\d+)/i);
+  if (headerMatch) {
+    const ms = parseInt(headerMatch[1], 10) * 1000;
+    if (Number.isFinite(ms) && ms > 0) return Math.min(ms, MAX_RATE_LIMIT_WAIT_MS);
+  }
+  return undefined;
+}
+
+export function classifyProviderFailure(message: string): ProviderFailureKind {
+  const m = message || '';
+  if (/unavailable \(\d+\/\d+ used\)/i.test(m) && /\/\d+ used\)/i.test(m)) {
+    const usedMatch = m.match(/unavailable \((\d+)\/(\d+) used\)/i);
+    if (usedMatch) {
+      const used = parseInt(usedMatch[1], 10);
+      const limit = parseInt(usedMatch[2], 10);
+      if (used === 0) return 'not_configured';
+      if (used >= limit) return 'daily_limit';
+    }
+    return 'not_configured';
+  }
+  if (/\b429\b|rate limit|tokens per minute|tpm|rpm|quota exceeded|resource.?exhausted/i.test(m)) {
+    return 'rate_limit';
+  }
+  if (/\b401\b|\b403\b|invalid api key|incorrect api key|authentication|permission denied/i.test(m)) {
+    return 'auth';
+  }
+  if (/timeout|timed out|aborted|AbortError/i.test(m)) {
+    return 'timeout';
+  }
+  if (/empty .+ response/i.test(m)) {
+    return 'empty';
+  }
+  return 'other';
+}
+
+function setProviderCooldown(providerName: string, retryAfterMs?: number): void {
+  const until = Date.now() + (retryAfterMs ?? 5_000);
+  const prev = providerCooldowns.get(providerName) ?? 0;
+  providerCooldowns.set(providerName, Math.max(prev, until));
+}
+
+function getProviderCooldownMs(providerName: string): number {
+  const until = providerCooldowns.get(providerName);
+  if (!until) return 0;
+  const remaining = until - Date.now();
+  if (remaining <= 0) {
+    providerCooldowns.delete(providerName);
+    return 0;
+  }
+  return remaining;
+}
+
+function buildCascadeError(errors: ProviderAttemptError[]): ApiError {
+  const kinds = new Set(errors.map((e) => e.kind));
+  const onlyUnconfigured =
+    errors.length > 0 && errors.every((e) => e.kind === 'not_configured');
+  if (onlyUnconfigured) {
+    return new ApiError(
+      'AI is not configured on this server. Add at least one provider API key and try again.',
+      503
+    );
+  }
+
+  const hasRateLimit = kinds.has('rate_limit');
+  const configuredFailures = errors.filter((e) => e.kind !== 'not_configured');
+  const onlyRateLimits =
+    configuredFailures.length > 0 &&
+    configuredFailures.every((e) => e.kind === 'rate_limit' || e.kind === 'daily_limit');
+
+  if (hasRateLimit && onlyRateLimits) {
+    const waitMs = Math.max(
+      0,
+      ...configuredFailures.map((e) => e.retryAfterMs ?? 0)
+    );
+    const waitHint =
+      waitMs > 0
+        ? ` Please wait about ${Math.ceil(waitMs / 1000)} seconds and try again.`
+        : ' Please try again in a moment.';
+    return new ApiError(
+      `AI is temporarily rate-limited.${waitHint}`,
+      503
+    );
+  }
+
+  if (kinds.has('daily_limit') && !hasRateLimit && configuredFailures.every((e) => e.kind === 'daily_limit' || e.kind === 'not_configured')) {
+    return new ApiError(
+      'AI daily provider limits are exhausted. Please try again tomorrow.',
+      503
+    );
+  }
+
+  if (kinds.has('auth') && configuredFailures.every((e) => e.kind === 'auth' || e.kind === 'not_configured')) {
+    return new ApiError(
+      'AI provider authentication failed. Check API keys and try again.',
+      503
+    );
+  }
+
+  if (kinds.has('timeout') && configuredFailures.every((e) => e.kind === 'timeout' || e.kind === 'not_configured')) {
+    return new ApiError(
+      'AI request timed out. Please try again with a shorter note, or retry shortly.',
+      503
+    );
+  }
+
+  // Common production shape: Groq rate-limited + fallbacks not configured.
+  if (hasRateLimit && errors.some((e) => e.kind === 'not_configured')) {
+    const waitMs = Math.max(
+      0,
+      ...errors.filter((e) => e.kind === 'rate_limit').map((e) => e.retryAfterMs ?? 0)
+    );
+    const waitHint =
+      waitMs > 0
+        ? ` Wait about ${Math.ceil(waitMs / 1000)} seconds and retry.`
+        : ' Please retry shortly.';
+    return new ApiError(
+      `AI is temporarily rate-limited.${waitHint}`,
+      503
+    );
+  }
+
+  return new ApiError(
+    'AI is temporarily unavailable. Please try again in a moment.',
+    503
+  );
 }
 
 // ─── Usage Tracking ─────────────────────────────────────────
@@ -388,28 +548,109 @@ async function chatCompletion(
   options: ChatOptions = {}
 ): Promise<{ text: string; provider: string }> {
   return withAiInflight(async () => {
-    const errors: string[] = [];
+    const errors: ProviderAttemptError[] = [];
+    const { preferredProvider, ...providerChatOptions } = options;
 
-    for (const provider of providers) {
+    const ordered = preferredProvider
+      ? [
+          ...providers.filter((p) => p.name === preferredProvider),
+          ...providers.filter((p) => p.name !== preferredProvider),
+        ]
+      : providers;
+
+    for (const provider of ordered) {
       const available = await syncProviderUsageFromRedis(provider, checkAndResetCounter);
       if (!available) {
-        errors.push(`${provider.name}: unavailable (${provider.dailyUsed}/${provider.dailyLimit} used)`);
+        const detail = `${provider.name}: unavailable (${provider.dailyUsed}/${provider.dailyLimit} used)`;
+        errors.push({
+          provider: provider.name,
+          kind: classifyProviderFailure(detail),
+          message: detail,
+        });
         continue;
       }
 
-      try {
-        const text = await provider.chat(systemPrompt, userPrompt, options);
-        await incrementProviderDailyUsage(provider.name);
-        return { text, provider: provider.name };
-      } catch (error: any) {
-        errors.push(`${provider.name}: ${error.message}`);
-        console.warn(`AI provider ${provider.name} failed:`, error.message);
+      const cooldownMs = getProviderCooldownMs(provider.name);
+      if (cooldownMs > 0 && cooldownMs <= MAX_RATE_LIMIT_WAIT_MS) {
+        // Only configured provider (or preferred) — wait instead of failing immediately.
+        const otherConfigured = ordered.some(
+          (p) =>
+            p.name !== provider.name &&
+            getProviderCooldownMs(p.name) === 0 &&
+            // cheap sync check; Redis sync happens if we reach that provider
+            (p.name === 'mock-fallback' ||
+              (p.name === 'groq' && !!process.env.GROQ_API_KEY) ||
+              (p.name === 'gemini' && !!process.env.GEMINI_API_KEY) ||
+              (p.name === 'cloudflare' &&
+                !!process.env.CF_API_TOKEN &&
+                !!process.env.CF_ACCOUNT_ID) ||
+              (p.name === 'huggingface' && !!process.env.HF_API_TOKEN))
+        );
+        if (!otherConfigured) {
+          logger.info(`Waiting ${cooldownMs}ms for ${provider.name} rate-limit cooldown`);
+          await sleep(cooldownMs);
+        } else {
+          errors.push({
+            provider: provider.name,
+            kind: 'rate_limit',
+            message: `${provider.name}: cooling down (${Math.ceil(cooldownMs / 1000)}s)`,
+            retryAfterMs: cooldownMs,
+          });
+          continue;
+        }
+      } else if (cooldownMs > MAX_RATE_LIMIT_WAIT_MS) {
+        errors.push({
+          provider: provider.name,
+          kind: 'rate_limit',
+          message: `${provider.name}: cooling down (${Math.ceil(cooldownMs / 1000)}s)`,
+          retryAfterMs: cooldownMs,
+        });
         continue;
+      }
+
+      let rateLimitRetries = 0;
+      while (true) {
+        try {
+          const text = await provider.chat(systemPrompt, userPrompt, providerChatOptions);
+          await incrementProviderDailyUsage(provider.name);
+          return { text, provider: provider.name };
+        } catch (error: any) {
+          const message = error?.message || String(error);
+          const kind = classifyProviderFailure(message);
+          const retryAfterMs = parseRetryAfterMs(message);
+          console.warn(`AI provider ${provider.name} failed:`, message);
+
+          if (kind === 'rate_limit' && rateLimitRetries < MAX_RATE_LIMIT_RETRIES) {
+            const waitMs = Math.min(retryAfterMs ?? 4_000 * (rateLimitRetries + 1), MAX_RATE_LIMIT_WAIT_MS);
+            setProviderCooldown(provider.name, waitMs);
+            rateLimitRetries += 1;
+            logger.info(
+              `Rate-limited by ${provider.name}; retry ${rateLimitRetries}/${MAX_RATE_LIMIT_RETRIES} after ${waitMs}ms`
+            );
+            await sleep(waitMs);
+            continue;
+          }
+
+          if (kind === 'rate_limit') {
+            setProviderCooldown(provider.name, retryAfterMs ?? 8_000);
+          }
+
+          errors.push({
+            provider: provider.name,
+            kind,
+            message: `${provider.name}: ${message}`,
+            retryAfterMs,
+          });
+          break;
+        }
       }
     }
 
-    console.error('All AI providers exhausted:', errors);
-    throw new Error('AI is temporarily unavailable. All providers are at capacity. Please try again later.');
+    console.error(
+      'All AI providers exhausted:',
+      errors.map((e) => e.message)
+    );
+    throw buildCascadeError(errors);
   });
 }
 
@@ -1057,26 +1298,91 @@ export async function generateSmartNoteContent(
 
   const partialPrompt = buildSmartNotesSystemPrompt(options.sourceType, 'partial');
   const partialNotes: string[] = [];
+  const failedParts: number[] = [];
+  let preferredProvider: string | undefined;
   let provider = 'unknown';
 
   for (let i = 0; i < chunks.length; i++) {
     const userPrompt = `${titlePrefix}This is part ${i + 1} of ${chunks.length} of the source.\n\nSource part:\n\n${chunks[i]}`;
-    const result = await chatCompletion(partialPrompt, userPrompt, {
-      temperature: 0.3,
-      maxTokens: 1400,
+    try {
+      const result = await chatCompletion(partialPrompt, userPrompt, {
+        temperature: 0.3,
+        maxTokens: 1400,
+        preferredProvider,
+      });
+      preferredProvider = result.provider;
+      provider = result.provider;
+      partialNotes.push(`### Part ${i + 1} of ${chunks.length}\n\n${result.text.trim()}`);
+      // Pace map calls so free-tier TPM budgets (esp. Groq) are not burned in a burst.
+      if (i < chunks.length - 1) {
+        await sleep(2_000);
+      }
+    } catch (err) {
+      failedParts.push(i + 1);
+      logger.warn('Smart Notes chunk failed; continuing with remaining parts', {
+        part: i + 1,
+        total: chunks.length,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      // Still pace after a failure so a 429 cooldown can elapse before the next part.
+      if (i < chunks.length - 1) {
+        await sleep(1_000);
+      }
+    }
+  }
+
+  if (partialNotes.length === 0) {
+    throw new ApiError(
+      'AI could not generate Smart Notes for this source right now. Please wait a moment and try again.',
+      503
+    );
+  }
+
+  if (failedParts.length > 0) {
+    logger.warn('Smart Notes completed with partial coverage', {
+      succeeded: partialNotes.length,
+      failedParts,
+      total: chunks.length,
     });
-    provider = result.provider;
-    partialNotes.push(`### Part ${i + 1} of ${chunks.length}\n\n${result.text.trim()}`);
+  }
+
+  // Single surviving part: return as-is (skip merge call to avoid extra TPM burn).
+  if (partialNotes.length === 1) {
+    const only = partialNotes[0].replace(/^### Part \d+ of \d+\n\n/, '').trim();
+    const coverageNote =
+      failedParts.length > 0
+        ? `\n\n_Note: Some sections of this long source could not be processed due to temporary AI limits. Regenerate later for fuller coverage._`
+        : '';
+    return { summary: `${only}${coverageNote}`, provider };
   }
 
   const mergePrompt = buildSmartNotesSystemPrompt(options.sourceType, 'merge');
-  const mergeUser = `${titlePrefix}Partial notes to merge (${chunks.length} parts; source was long so coverage may omit some middle detail beyond the chunk budget):\n\n${partialNotes.join('\n\n---\n\n')}`;
-  const merged = await chatCompletion(mergePrompt, mergeUser, {
-    temperature: 0.3,
-    maxTokens: 3200,
-  });
+  const coverageHint =
+    failedParts.length > 0
+      ? `\n\nNote: parts ${failedParts.join(', ')} failed during extraction — merge what is available and mention incomplete coverage briefly at the end.`
+      : '';
+  const mergeUser = `${titlePrefix}Partial notes to merge (${partialNotes.length} of ${chunks.length} parts succeeded; source was long so coverage may omit some middle detail beyond the chunk budget):${coverageHint}\n\n${partialNotes.join('\n\n---\n\n')}`;
 
-  return { summary: merged.text.trim(), provider: merged.provider || provider };
+  try {
+    const merged = await chatCompletion(mergePrompt, mergeUser, {
+      temperature: 0.3,
+      maxTokens: 3200,
+      preferredProvider,
+    });
+    return { summary: merged.text.trim(), provider: merged.provider || provider };
+  } catch (err) {
+    // Merge is best-effort: if rate-limited after successful maps, return concatenated partials.
+    logger.warn('Smart Notes merge failed; returning concatenated partial notes', {
+      message: err instanceof Error ? err.message : String(err),
+      parts: partialNotes.length,
+    });
+    const joined = partialNotes.join('\n\n---\n\n');
+    const coverageNote =
+      failedParts.length > 0
+        ? `\n\n_Note: Some sections could not be processed due to temporary AI limits. Regenerate later for fuller coverage._`
+        : '';
+    return { summary: `${joined}${coverageNote}`, provider };
+  }
 }
 
 export async function generateDailyQuiz(
