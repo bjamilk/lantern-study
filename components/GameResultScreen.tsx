@@ -26,7 +26,9 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
   const isDraw = !session.winnerId;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const opponent = session.user.id === currentUser.id ? session.opponent : session.user;
+  const opponent =
+    (session.user?.id === currentUser.id ? session.opponent : session.user) ||
+    ({ id: 'unknown', name: 'Opponent' } as User);
 
   // Sound and Confetti trigger
   useEffect(() => {

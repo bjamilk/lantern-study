@@ -321,10 +321,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   </button>
                 </div>
 
-                 {showOpponent && (
+                 {showOpponent && session.opponent && (
                  <div className="flex items-center min-w-0">
                     <div className="mr-3 flex flex-col items-end">
-                      <span className="leading-tight">{session.opponent.name}</span>
+                      <span className="leading-tight">{session.opponent.name || 'Opponent'}</span>
                       {session.opponentStreak && session.opponentStreak > 0 ? (
                         <div className="flex items-center space-x-1 bg-lantern-background-secondary dark:bg-lantern-surface text-lantern-text-secondary px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5 shadow-sm">
                           <span>🔥 {session.opponentStreak} Streak</span>
@@ -332,7 +332,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                       ) : null}
                     </div>
                     {session.opponent.avatarUrl ? (
-                        <img src={session.opponent.avatarUrl} alt={session.opponent.name} className="w-10 h-10 rounded-full border-2 border-lantern-border" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}/>
+                        <img src={session.opponent.avatarUrl} alt={session.opponent.name || 'Opponent'} className="w-10 h-10 rounded-full border-2 border-lantern-border" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}/>
                     ) : (
                         <div className="w-10 h-10 rounded-full border-2 border-lantern-border bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex items-center justify-center text-lantern-text-secondary dark:text-lantern-text-tertiary font-bold text-lg">
                             {session.opponent.name?.charAt(0)?.toUpperCase() || 'O'}

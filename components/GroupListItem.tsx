@@ -37,8 +37,17 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
 }) => {
   const { lowDataMode } = useUIStore();
   const isGroup = chat.chatType === 'group';
-  const name = isGroup ? chat.name : (chat.participantIds.find(id => id !== currentUser.id) ? chat.participants[chat.participantIds.find(id => id !== currentUser.id)!].name : 'Unknown');
-  const avatarUrl = isGroup ? chat.avatarUrl : (chat.participantIds.find(id => id !== currentUser.id) ? chat.participants[chat.participantIds.find(id => id !== currentUser.id)!].avatarUrl : undefined);
+  // DM threads can list a peer id before (or without) a hydrated participants map entry.
+  const otherParticipantId = !isGroup
+    ? chat.participantIds?.find((id) => id !== currentUser.id)
+    : undefined;
+  const otherParticipant = otherParticipantId
+    ? chat.participants?.[otherParticipantId]
+    : undefined;
+  const name = isGroup
+    ? chat.name
+    : (otherParticipant?.name || otherParticipant?.username || 'Direct message');
+  const avatarUrl = isGroup ? chat.avatarUrl : otherParticipant?.avatarUrl;
   const unreadCount = chat.unreadCount || 0;
   const isArchived = isGroup ? chat.isArchived : (chat as any).isArchived;
   const isMessageRequest =

@@ -96,7 +96,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
     );
   }
 
-  const shopName = profile.shop?.shopName || profile.user.name || 'Shop';
+  const shopName = profile.shop?.shopName || profile.user?.name || 'Shop';
   const coverUrl = profile.shop?.coverImageUrl
     ? normalizeStorageUrl(profile.shop.coverImageUrl)
     : null;
@@ -176,7 +176,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                 </span>
               )}
             </div>
-            {shopName !== profile.user.name ? (
+            {profile.user?.name && shopName !== profile.user.name ? (
               <p className="text-xs text-lantern-text-secondary truncate">by {profile.user.name}</p>
             ) : null}
           </div>
