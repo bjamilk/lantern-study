@@ -26,6 +26,17 @@ import {
 import { resolvePlatformAdmin } from '../utils/platformAdmin';
 import { setSentryUser } from '../services/sentry';
 
+function displayNameFromMeta(
+  meta: Record<string, unknown> | undefined,
+  email: string | undefined,
+  fallback = 'User',
+): string {
+  const raw = meta?.name;
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  const fromEmail = email?.split('@')[0];
+  return fromEmail || fallback;
+}
+
 function getInitialAuthState(): {
   currentUser: User | null;
   isAuthenticated: boolean;
@@ -173,9 +184,7 @@ export const useAuthStore = create<AuthState>()(
               try {
                 profile = await apiCreateUserProfile({
                   id: authUser.id,
-                  name:
-                    (typeof meta.name === 'string' && meta.name.trim()) ||
-                    email.split('@')[0],
+                  name: displayNameFromMeta(meta, email),
                   username: typeof meta.username === 'string' ? meta.username : undefined,
                   first_name: typeof meta.first_name === 'string' ? meta.first_name : undefined,
                   last_name: typeof meta.last_name === 'string' ? meta.last_name : undefined,
@@ -194,16 +203,16 @@ export const useAuthStore = create<AuthState>()(
               name: profile.name || 'User',
               email: email,
               isAdmin: authUser.app_metadata?.is_platform_admin === true,
-              avatarUrl: profile.avatarUrl || profile.avatar_url || '',
+              avatarUrl: profile.avatarUrl || '',
               points: profile.points || 0,
               badges: profile.badges || [],
               stats: profile.stats || initialUserStats,
               username: profile.username || undefined,
-              firstName: profile.firstName || profile.first_name || undefined,
-              lastName: profile.lastName || profile.last_name || undefined,
+              firstName: profile.firstName || undefined,
+              lastName: profile.lastName || undefined,
             } : {
               id: authUser.id,
-              name: (authUser.user_metadata?.name as string) || email.split('@')[0],
+              name: displayNameFromMeta(authUser.user_metadata, email),
               email: email,
               isAdmin: authUser.app_metadata?.is_platform_admin === true,
               avatarUrl: '',
@@ -328,13 +337,13 @@ export const useAuthStore = create<AuthState>()(
               currentUser: {
                 ...currentUser,
                 name: profile.name || currentUser.name,
-                avatarUrl: profile.avatarUrl || profile.avatar_url || currentUser.avatarUrl,
+                avatarUrl: profile.avatarUrl || currentUser.avatarUrl,
                 points: profile.points ?? currentUser.points,
                 badges: profile.badges || currentUser.badges,
                 stats: profile.stats || currentUser.stats,
                 username: profile.username || currentUser.username,
-                firstName: profile.firstName || profile.first_name || currentUser.firstName,
-                lastName: profile.lastName || profile.last_name || currentUser.lastName,
+                firstName: profile.firstName || currentUser.firstName,
+                lastName: profile.lastName || currentUser.lastName,
                 isAdmin,
               }
             });
@@ -440,7 +449,10 @@ export const useAuthStore = create<AuthState>()(
               try {
                 profile = await apiCreateUserProfile({
                   id: session.user.id,
-                  name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+                  name: displayNameFromMeta(
+                    session.user.user_metadata as Record<string, unknown> | undefined,
+                    session.user.email,
+                  ),
                   points: 0,
                   badges: [],
                   stats: initialUserStats,
@@ -455,16 +467,19 @@ export const useAuthStore = create<AuthState>()(
               name: profile.name || 'User',
               email: session.user.email || '',
               isAdmin: session.user.app_metadata?.is_platform_admin === true,
-              avatarUrl: profile.avatarUrl || profile.avatar_url || '',
+              avatarUrl: profile.avatarUrl || '',
               points: profile.points || 0,
               badges: profile.badges || [],
               stats: profile.stats || initialUserStats,
               username: profile.username || undefined,
-              firstName: profile.firstName || profile.first_name || undefined,
-              lastName: profile.lastName || profile.last_name || undefined,
+              firstName: profile.firstName || undefined,
+              lastName: profile.lastName || undefined,
             } : {
               id: session.user.id,
-              name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+              name: displayNameFromMeta(
+                session.user.user_metadata as Record<string, unknown> | undefined,
+                session.user.email,
+              ),
               email: session.user.email || '',
               isAdmin: session.user.app_metadata?.is_platform_admin === true,
               avatarUrl: '',

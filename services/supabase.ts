@@ -28,13 +28,12 @@ import {
   fetchCookieSession,
   logoutCookieSession,
   restoreCookieSession,
-  type CookieSessionResolveResult,
 } from './authCookieSession'
 
 // Use shared config for URLs
 const supabaseUrl = getSupabaseUrl()
 const supabaseAnonKey = getSupabaseAnonKey()
-const getApiRoot = () => (getApiBaseUrl() || "").replace(/\/$/, "")
+export const getApiRoot = () => (getApiBaseUrl() || "").replace(/\/$/, "")
 const cookieAuthEnabled = typeof window !== 'undefined' && isCookieAuthEnabled()
 
 async function createDeliveryResponseError(
@@ -322,9 +321,8 @@ export const bootstrapAuthFromStorage = (): { token: string; userId: string } | 
   return { token, userId };
 };
 
-export type SessionResolveFailure = CookieSessionResolveResult extends { ok: false; reason: infer R }
-  ? R
-  : never;
+/** Keep explicit — inferring from CookieSessionResolveResult collapses to `never` under the authCookieSession ↔ supabase cycle. */
+export type SessionResolveFailure = 'revoked' | 'missing' | 'network';
 
 export type SessionResolveResult =
   | { ok: true; session: NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']> }
@@ -662,7 +660,7 @@ export function mapGroupListFromApi(
   }));
 }
 
-export const fetchGroups = async (userId: string) => {
+export const fetchGroups = async (userId: string): Promise<Group[]> => {
   console.log('Fetching groups for user:', userId);
 
   if (!(await hasValidSession())) {
@@ -1417,7 +1415,8 @@ export const createFlashcard = async (flashcardData: {
     console.log('Flashcard created:', result.data);
     return result.data;
   } catch (error) {
-    console.error('Error creating flashcard:', error.message || JSON.stringify(error));
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
+    console.error('Error creating flashcard:', message);
     throw error;
   }
 };
@@ -2812,8 +2811,10 @@ export const fetchMarketplaceListingsPage = async (filters: {
     total: 0,
   };
 
+  type ListingsPage = { data: any[]; pagination: { page: number; limit: number; total: number } };
+
   try {
-    return await marketplaceListingsCache.get(cacheKey, async () => {
+    return await marketplaceListingsCache.get(cacheKey, async (): Promise<ListingsPage> => {
       const queryParams = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
@@ -2849,7 +2850,7 @@ export const fetchMarketplaceListingsPage = async (filters: {
           total: (result.data || []).length,
         },
       };
-    });
+    }) as Promise<ListingsPage>;
   } catch (error) {
     if (error instanceof RateLimitError) throw error;
     console.error('Error fetching listings:', error);
