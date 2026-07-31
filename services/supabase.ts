@@ -4469,16 +4469,19 @@ export const uploadChatAudio = async (payload: {
   return result.data;
 };
 
-// Delete a DM thread
-export const deleteDmThread = async (threadId: string, userId: string): Promise<boolean> => {
+// Delete a DM thread (pair ids are two UUIDs joined by "-", so encode the path segment)
+export const deleteDmThread = async (threadId: string, _userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}`,
+      withApiCredentials({
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+      })
+    );
 
     if (!response.ok) {
-      console.error('Failed to delete DM thread');
+      console.error('Failed to delete DM thread', response.status);
       return false;
     }
 
@@ -4490,14 +4493,17 @@ export const deleteDmThread = async (threadId: string, userId: string): Promise<
 };
 
 // Archive a DM thread
-export const archiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
+export const archiveDmThread = async (threadId: string, _userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/archive`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/archive`,
+      withApiCredentials({
+        method: 'PUT',
+        headers: await getAuthHeaders(),
+      })
+    );
     if (!response.ok) {
-      console.error('Failed to archive DM thread');
+      console.error('Failed to archive DM thread', response.status);
       return false;
     }
     return true;
@@ -4508,14 +4514,17 @@ export const archiveDmThread = async (threadId: string, userId: string): Promise
 };
 
 // Unarchive a DM thread
-export const unarchiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
+export const unarchiveDmThread = async (threadId: string, _userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/unarchive`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/unarchive`,
+      withApiCredentials({
+        method: 'PUT',
+        headers: await getAuthHeaders(),
+      })
+    );
     if (!response.ok) {
-      console.error('Failed to unarchive DM thread');
+      console.error('Failed to unarchive DM thread', response.status);
       return false;
     }
     return true;

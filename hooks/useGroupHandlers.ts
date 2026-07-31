@@ -790,15 +790,21 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         // from client merge caches after the same thread_id is reused.
         markDmHistoryCleared(threadId);
         removeDmThread(threadId);
-        
+
         try {
+            await ensureAuthTokenReady();
             const success = await deleteDmThread(threadId, currentUser.id);
             if (!success) {
                 console.error('Failed to delete DM thread on server');
-                // Could re-fetch threads here, but deletion is destructive anyway
+                useToastStore
+                    .getState()
+                    .showToast('Failed to delete conversation on the server. Please try again.', 'error');
             }
         } catch (error) {
             console.error('Failed to delete DM thread:', error);
+            useToastStore
+                .getState()
+                .showToast('Failed to delete conversation on the server. Please try again.', 'error');
         }
     }, [currentUser]);
 
@@ -807,10 +813,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         const { archiveDmThread: archiveInStore } = useGroupStore.getState();
         archiveInStore(threadId);
         try {
+            await ensureAuthTokenReady();
             const success = await archiveDmThread(threadId, currentUser.id);
-            if (!success) console.error('Failed to archive DM thread on server');
+            if (!success) {
+                console.error('Failed to archive DM thread on server');
+                useToastStore
+                    .getState()
+                    .showToast('Failed to archive conversation on the server. Please try again.', 'error');
+            }
         } catch (error) {
             console.error('Failed to archive DM thread:', error);
+            useToastStore
+                .getState()
+                .showToast('Failed to archive conversation on the server. Please try again.', 'error');
         }
     }, [currentUser]);
 
@@ -819,10 +834,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         const { unarchiveDmThread: unarchiveInStore } = useGroupStore.getState();
         unarchiveInStore(threadId);
         try {
+            await ensureAuthTokenReady();
             const success = await unarchiveDmThread(threadId, currentUser.id);
-            if (!success) console.error('Failed to unarchive DM thread on server');
+            if (!success) {
+                console.error('Failed to unarchive DM thread on server');
+                useToastStore
+                    .getState()
+                    .showToast('Failed to unarchive conversation on the server. Please try again.', 'error');
+            }
         } catch (error) {
             console.error('Failed to unarchive DM thread:', error);
+            useToastStore
+                .getState()
+                .showToast('Failed to unarchive conversation on the server. Please try again.', 'error');
         }
     }, [currentUser]);
 

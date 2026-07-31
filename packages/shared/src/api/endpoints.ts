@@ -1051,10 +1051,16 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<Record<string, number>>("/messages/dm/unread/all"),
 
     archiveDmThread: (threadId: string, _userId: string) =>
-      apiRequest<void>(`/messages/dm/${threadId}/archive`, { method: "PUT" }),
+      apiRequest<void>(
+        `/messages/dm/${encodeURIComponent(threadId)}/archive`,
+        { method: "PUT" },
+      ),
 
     unarchiveDmThread: (threadId: string, _userId: string) =>
-      apiRequest<void>(`/messages/dm/${threadId}/unarchive`, { method: "PUT" }),
+      apiRequest<void>(
+        `/messages/dm/${encodeURIComponent(threadId)}/unarchive`,
+        { method: "PUT" },
+      ),
 
     getDmMuteStatus: (threadId: string) =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
@@ -1106,7 +1112,9 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     deleteDmThread: (threadId: string, _userId: string) =>
-      apiRequest<void>(`/messages/dm/${threadId}`, { method: "DELETE" }),
+      apiRequest<void>(`/messages/dm/${encodeURIComponent(threadId)}`, {
+        method: "DELETE",
+      }),
 
     // ========== TESTS API ==========
 
