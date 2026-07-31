@@ -4,7 +4,9 @@
  * Leave /api/* alone — the same-origin proxy owns those responses (incl. Set-Cookie).
  *
  * Also refuse HTML bodies for hashed module/style assets so a SPA rewrite cannot
- * be executed as JavaScript (strict MIME checking).
+ * be executed as JavaScript (strict MIME checking). Note: public/_routes.json
+ * currently excludes /assets/*, so the primary fix is public/assets/404.html;
+ * this guard applies if that exclude is removed.
  */
 function isHashedStaticAsset(pathname: string): boolean {
   if (!pathname.startsWith('/assets/')) return false;
