@@ -28,6 +28,13 @@ import {
 import { processJobSavedSearchAlerts } from "../../services/jobAlerts";
 import { processJobDeadlineReminders } from "../../services/jobReminders";
 import { logAIInference } from "../../services/aiInferenceLog";
+import { buildTrustedCompanionContext } from "../../services/companionContext";
+import {
+  ensureConversationTitle,
+  parseCompanionUuid,
+  resolveConversationForSend,
+  touchConversation,
+} from "../../services/companionConversations";
 
 let supabaseService: SupabaseService;
 
@@ -100,20 +107,38 @@ async function processAiJob(job: Job): Promise<unknown> {
       return result;
     }
     case "ai.companion.message": {
-      const { message, context } = job.data as {
+      const { message, context, conversationId, newConversation } = job.data as {
         message: string;
         context?: Record<string, unknown>;
+        conversationId?: string | null;
+        newConversation?: boolean;
       };
       if (!userId || !supabaseService) {
         throw new Error(
           "Companion message job requires userId and supabase service",
         );
       }
-      const { data: historyRows } = await supabaseService
-        .getClient()
+      const client = supabaseService.getClient();
+      const trustedContext = await buildTrustedCompanionContext(
+        supabaseService,
+        userId,
+        (context || {}) as Parameters<typeof buildTrustedCompanionContext>[2],
+      );
+      const threadNoteId = trustedContext.noteId || null;
+      const conversation = await resolveConversationForSend(
+        client,
+        userId,
+        parseCompanionUuid(conversationId ?? context?.conversationId),
+        threadNoteId,
+        { forceNew: newConversation === true || context?.newConversation === true },
+      );
+      const effectiveNoteId = conversation.note_context_id ?? threadNoteId;
+
+      const { data: historyRows } = await client
         .from("ai_companion_messages")
         .select("role, content")
         .eq("user_id", userId)
+        .eq("conversation_id", conversation.id)
         .order("created_at", { ascending: false })
         .limit(20);
 
@@ -121,34 +146,38 @@ async function processAiJob(job: Job): Promise<unknown> {
         role: "user" | "assistant";
         content: string;
       }>;
+      const trimmed = String(message).trim();
       const { reply, actions, provider } = await companionChat(
-        String(message).trim(),
+        trimmed,
         history,
-        (context || {}) as Parameters<typeof companionChat>[2],
+        { ...trustedContext, noteId: effectiveNoteId || undefined },
       );
       await recordInference(userId, "companion-message", { provider });
 
       const now = new Date().toISOString();
-      await supabaseService
-        .getClient()
-        .from("ai_companion_messages")
-        .insert([
-          {
-            user_id: userId,
-            role: "user",
-            content: String(message).trim(),
-            created_at: now,
-          },
-          {
-            user_id: userId,
-            role: "assistant",
-            content: reply,
-            actions: actions.length ? actions : null,
-            created_at: new Date(Date.now() + 1).toISOString(),
-          },
-        ]);
+      await client.from("ai_companion_messages").insert([
+        {
+          user_id: userId,
+          role: "user",
+          content: trimmed,
+          created_at: now,
+          note_context_id: effectiveNoteId,
+          conversation_id: conversation.id,
+        },
+        {
+          user_id: userId,
+          role: "assistant",
+          content: reply,
+          actions: actions.length ? actions : null,
+          created_at: new Date(Date.now() + 1).toISOString(),
+          note_context_id: effectiveNoteId,
+          conversation_id: conversation.id,
+        },
+      ]);
+      await touchConversation(client, userId, conversation.id);
+      await ensureConversationTitle(client, userId, conversation, trimmed);
 
-      return { reply, actions, provider };
+      return { reply, actions, provider, conversationId: conversation.id };
     }
     case "notes.ai.summarize": {
       const { content, title, noteId, sourceType } = job.data as {

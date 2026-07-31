@@ -8,9 +8,21 @@ import {
   parseGlobalAIUsageFromHeaders,
   xhrHeaderReader,
 } from '@lantern/shared/api';
+import type {
+  CompanionAction,
+  CompanionConversation,
+  CompanionUserContext,
+} from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { getAuthHeaders, ensureAuthTokenReady } from './supabase';
 import { pollApiJob } from './jobPoll';
+
+export type {
+  CompanionUserContext,
+  CompanionAction,
+  CompanionConversation,
+  CompanionMessage,
+} from '../types';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -243,23 +255,6 @@ export async function aiEnhanceFlashcard(
 
 // ─── AI Companion ────────────────────────────────────────────
 
-export interface CompanionUserContext {
-  userName?: string;
-  groups?: string[];
-  weakTopics?: string[];
-  dueCardsCount?: number;
-  recentTestSummary?: string;
-  budgetSummary?: string;
-  currentScreen?: string;
-  activeSessionSummary?: string;
-}
-
-export interface CompanionAction {
-  type: 'navigate_to_flashcards' | 'open_test_config' | 'open_create_flashcard' | 'navigate_to_dashboard' | 'navigate_to_chat';
-  label: string;
-  payload?: Record<string, string>;
-}
-
 async function companionRequest<T>(
   endpoint: string,
   method: 'GET' | 'POST' | 'DELETE',
@@ -297,14 +292,52 @@ async function companionRequest<T>(
   return json as T;
 }
 
+function companionHistoryQuery(opts?: {
+  conversationId?: string | null;
+  noteContextId?: string | null;
+}): string {
+  const params = new URLSearchParams();
+  if (opts?.conversationId?.trim()) {
+    params.set('conversationId', opts.conversationId.trim());
+  } else if (opts?.noteContextId?.trim()) {
+    params.set('noteContextId', opts.noteContextId.trim());
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
 export async function companionSendMessage(
   message: string,
   context?: CompanionUserContext
-): Promise<{ reply: string; actions: CompanionAction[]; provider: string }> {
+): Promise<{
+  reply: string;
+  actions: CompanionAction[];
+  provider: string;
+  conversationId?: string;
+}> {
   return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
 }
 
-export async function fetchCompanionHistory(noteContextId?: string | null): Promise<{
+export async function fetchCompanionConversations(): Promise<{
+  conversations: CompanionConversation[];
+}> {
+  return companionRequest('/conversations', 'GET', undefined, { trackUsage: false });
+}
+
+export async function createCompanionConversation(noteContextId?: string | null): Promise<{
+  conversation: CompanionConversation;
+}> {
+  return companionRequest(
+    '/conversations',
+    'POST',
+    noteContextId?.trim() ? { noteContextId: noteContextId.trim() } : {},
+    { trackUsage: false }
+  );
+}
+
+export async function fetchCompanionHistory(
+  opts?: { conversationId?: string | null; noteContextId?: string | null } | string | null
+): Promise<{
   messages: Array<{
     id: string;
     role: 'user' | 'assistant';
@@ -313,30 +346,45 @@ export async function fetchCompanionHistory(noteContextId?: string | null): Prom
     feedback?: 'up' | 'down' | null;
     created_at: string;
   }>;
+  conversationId: string | null;
   noteContextId: string | null;
 }> {
-  const qs =
-    noteContextId && noteContextId.trim()
-      ? `?noteContextId=${encodeURIComponent(noteContextId.trim())}`
-      : '';
-  return companionRequest(`/history${qs}`, 'GET', undefined, { trackUsage: false });
+  const normalized =
+    typeof opts === 'string' || opts === null || opts === undefined
+      ? { noteContextId: opts ?? null }
+      : opts;
+  return companionRequest(
+    `/history${companionHistoryQuery(normalized)}`,
+    'GET',
+    undefined,
+    { trackUsage: false }
+  );
 }
 
-export async function clearCompanionHistory(noteContextId?: string | null): Promise<{
+export async function clearCompanionHistory(
+  opts?: { conversationId?: string | null; noteContextId?: string | null } | string | null
+): Promise<{
   success: boolean;
+  conversationId: string | null;
   noteContextId: string | null;
 }> {
-  const qs =
-    noteContextId && noteContextId.trim()
-      ? `?noteContextId=${encodeURIComponent(noteContextId.trim())}`
-      : '';
-  return companionRequest(`/history${qs}`, 'DELETE', undefined, { trackUsage: false });
+  const normalized =
+    typeof opts === 'string' || opts === null || opts === undefined
+      ? { noteContextId: opts ?? null }
+      : opts;
+  return companionRequest(
+    `/history${companionHistoryQuery(normalized)}`,
+    'DELETE',
+    undefined,
+    { trackUsage: false }
+  );
 }
 
 export type CompanionStreamDone = {
   actions: CompanionAction[];
   messageId?: string;
   userMessageId?: string;
+  conversationId?: string;
 };
 
 /**
@@ -397,6 +445,8 @@ export async function companionSendMessageStream(
               actions: (data.actions as CompanionAction[]) || [],
               messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
               userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
+              conversationId:
+                typeof data.conversationId === 'string' ? data.conversationId : undefined,
             });
           }
         } catch { /* malformed chunk — skip */ }

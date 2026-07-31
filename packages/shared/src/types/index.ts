@@ -1145,6 +1145,17 @@ export interface CompanionMessage {
   created_at: string;
 }
 
+/** One companion chat thread (general or note-linked). */
+export interface CompanionConversation {
+  id: string;
+  title: string;
+  preview: string;
+  noteContextId: string | null;
+  noteTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CompanionUserContext {
   userName?: string;
   groups?: string[];
@@ -1158,6 +1169,10 @@ export interface CompanionUserContext {
   noteTitle?: string;
   noteId?: string;
   studyGoal?: StudyGoalMode;
+  /** Active companion thread; omit / null + newConversation to start fresh. */
+  conversationId?: string;
+  /** When true, create a new thread instead of continuing the latest for this note scope. */
+  newConversation?: boolean;
 }
 
 export interface UserPreferences {

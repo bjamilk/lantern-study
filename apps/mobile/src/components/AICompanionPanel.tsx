@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
-import type { CompanionUserContext } from '@lantern/shared';
+import type { CompanionConversation, CompanionUserContext } from '@lantern/shared';
 import { useCompanionStore } from '../stores/companionStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
@@ -24,6 +24,24 @@ import { useAppTheme } from '../theme';
 import { Button } from './ui';
 import { transcribeAudioForNote } from '../services/notes';
 import { trackAIAnalyticsEvent } from '../services/ai';
+
+function formatRelativeTime(iso: string): string {
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return '';
+  const diffMs = Date.now() - ts;
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  try {
+    return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
 
 const QUICK_PROMPTS = [
   'What should I study today?',
@@ -67,6 +85,12 @@ export function AICompanionPanel({ context }: Props) {
     activeNoteContext,
     setActiveNoteContext,
     hydrateNoteContext,
+    activeConversationId,
+    conversations,
+    isLoadingConversations,
+    loadConversations,
+    openConversation,
+    startNewChat,
   } = useCompanionStore();
   const notes = useNotesStore((s) => s.notes);
   const notesLoading = useNotesStore((s) => s.isLoading);
@@ -77,6 +101,7 @@ export function AICompanionPanel({ context }: Props) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [showNotePicker, setShowNotePicker] = useState(false);
+  const [showHistoryList, setShowHistoryList] = useState(false);
   const [noteSearch, setNoteSearch] = useState('');
   const hasLoaded = useRef(false);
   const didAutoAttachRef = useRef(false);
@@ -119,16 +144,28 @@ export function AICompanionPanel({ context }: Props) {
           id: context.noteId,
           title: context.noteTitle || 'Untitled note',
         });
+        void loadConversations();
         return;
       }
       await loadHistory();
+      void loadConversations();
     })();
-  }, [isOpen, user?.id, hydrateNoteContext, loadHistory, setActiveNoteContext, context?.noteId, context?.noteTitle]);
+  }, [
+    isOpen,
+    user?.id,
+    hydrateNoteContext,
+    loadHistory,
+    loadConversations,
+    setActiveNoteContext,
+    context?.noteId,
+    context?.noteTitle,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
       hasLoaded.current = false;
       didAutoAttachRef.current = false;
+      setShowHistoryList(false);
     }
   }, [isOpen]);
 
@@ -373,6 +410,46 @@ export function AICompanionPanel({ context }: Props) {
   const isBusy = isLoading || isStreaming || isLoadingHistory;
   const dictationBusy = isRecording || isTranscribing;
 
+  const handleOpenHistory = useCallback(() => {
+    setShowHistoryList(true);
+    setShowNotePicker(false);
+    void loadConversations();
+    trackAIAnalyticsEvent('companion_history_opened');
+  }, [loadConversations]);
+
+  const handleSelectConversation = useCallback(
+    async (conversation: CompanionConversation) => {
+      setShowHistoryList(false);
+      await openConversation(conversation.id);
+      trackAIAnalyticsEvent('companion_history_resumed', {
+        conversationId: conversation.id,
+        hasNote: Boolean(conversation.noteContextId),
+      });
+    },
+    [openConversation]
+  );
+
+  const handleNewChat = useCallback(() => {
+    setShowHistoryList(false);
+    startNewChat();
+    trackAIAnalyticsEvent('companion_new_chat');
+  }, [startNewChat]);
+
+  const handleDeleteChat = useCallback(() => {
+    Alert.alert(
+      'Delete this chat?',
+      'Past chats stay in history. This only removes the current conversation.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => void clearHistory(),
+        },
+      ]
+    );
+  }, [clearHistory]);
+
   if (!isOpen) {
     return null;
   }
@@ -384,9 +461,15 @@ export function AICompanionPanel({ context }: Props) {
         edges={['top', 'bottom']}
       >
         <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
-          <Ionicons name="sparkles" size={22} color="#6366f1" />
+          <Ionicons name="sparkles" size={22} color="#c45c26" />
           <Text className="flex-1 ml-2 text-lg font-bold text-lantern-text dark:text-white">Lantern AI</Text>
-          <Pressable onPress={() => void clearHistory()} className="p-2 mr-1">
+          <Pressable onPress={handleOpenHistory} className="p-2" accessibilityLabel="Past chats">
+            <Ionicons name="time-outline" size={20} color={showHistoryList ? '#c45c26' : '#94a3b8'} />
+          </Pressable>
+          <Pressable onPress={handleNewChat} className="p-2" accessibilityLabel="New chat">
+            <Ionicons name="create-outline" size={20} color="#94a3b8" />
+          </Pressable>
+          <Pressable onPress={handleDeleteChat} className="p-2" accessibilityLabel="Delete this chat">
             <Ionicons name="trash-outline" size={20} color="#94a3b8" />
           </Pressable>
           <Pressable onPress={close} className="p-2">
@@ -394,9 +477,79 @@ export function AICompanionPanel({ context }: Props) {
           </Pressable>
         </View>
         <View className="px-4 pb-2">
-          <AIDisclaimer compact textColor="#64748b" linkColor="#6366f1" />
+          <AIDisclaimer compact textColor="#64748b" linkColor="#c45c26" />
         </View>
 
+        {showHistoryList ? (
+          <FlatList
+            data={conversations}
+            keyExtractor={(item) => item.id}
+            className="flex-1 px-3"
+            contentContainerStyle={{ paddingVertical: 12, gap: 8, flexGrow: 1 }}
+            ListHeaderComponent={
+              <View className="flex-row items-center justify-between px-1 mb-2">
+                <Text className="text-xs font-semibold uppercase text-lantern-text-secondary">
+                  Past chats
+                </Text>
+                <Pressable onPress={handleNewChat}>
+                  <Text className="text-xs font-medium text-lantern-primary">New chat</Text>
+                </Pressable>
+              </View>
+            }
+            ListEmptyComponent={
+              isLoadingConversations ? (
+                <View className="py-8 items-center gap-2">
+                  <ActivityIndicator color="#c45c26" />
+                  <Text className="text-lantern-text-secondary text-center">Loading chats…</Text>
+                </View>
+              ) : (
+                <Text className="text-lantern-text-secondary text-center py-8 px-4">
+                  No past chats yet. Start a conversation and it will show up here.
+                </Text>
+              )
+            }
+            renderItem={({ item }) => {
+              const isActive = item.id === activeConversationId;
+              return (
+                <Pressable
+                  onPress={() => void handleSelectConversation(item)}
+                  className={`rounded-xl px-3 py-3 border ${
+                    isActive
+                      ? 'border-lantern-primary/30 bg-lantern-primary-background'
+                      : 'border-transparent bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
+                  }`}
+                >
+                  <View className="flex-row items-start justify-between gap-2">
+                    <Text
+                      className="flex-1 text-sm font-medium text-lantern-text dark:text-white"
+                      numberOfLines={1}
+                    >
+                      {item.title}
+                    </Text>
+                    <Text className="text-[11px] text-lantern-text-secondary">
+                      {formatRelativeTime(item.updatedAt)}
+                    </Text>
+                  </View>
+                  {item.noteTitle ? (
+                    <Text className="mt-0.5 text-[11px] text-lantern-primary" numberOfLines={1}>
+                      {item.noteTitle}
+                    </Text>
+                  ) : null}
+                  {item.preview ? (
+                    <Text className="mt-0.5 text-xs text-lantern-text-secondary" numberOfLines={2}>
+                      {item.preview}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            }}
+            ListFooterComponent={
+              <Pressable onPress={() => setShowHistoryList(false)} className="py-3">
+                <Text className="text-xs text-center text-lantern-text-secondary">Back to chat</Text>
+              </Pressable>
+            }
+          />
+        ) : (
         <FlatList
           ref={listRef}
           data={messages}
@@ -407,7 +560,7 @@ export function AICompanionPanel({ context }: Props) {
           ListEmptyComponent={
             isLoadingHistory ? (
               <View className="py-8 items-center gap-2">
-                <ActivityIndicator color="#6366f1" />
+                <ActivityIndicator color="#c45c26" />
                 <Text className="text-lantern-text-secondary text-center">
                   Loading conversation…
                 </Text>
@@ -452,11 +605,12 @@ export function AICompanionPanel({ context }: Props) {
           ListFooterComponent={
             isBusy || isTranscribing ? (
               <View className="py-2 items-start">
-                <ActivityIndicator color="#6366f1" />
+                <ActivityIndicator color="#c45c26" />
               </View>
             ) : null
           }
         />
+        )}
 
         {error ? (
           <Pressable onPress={clearError} className="mx-4 mb-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
@@ -464,11 +618,12 @@ export function AICompanionPanel({ context }: Props) {
           </Pressable>
         ) : null}
 
+        {!showHistoryList && (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View className="px-4 py-3 border-t border-lantern-border">
             {activeNoteContext ? (
               <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
-                <Ionicons name="document-text-outline" size={14} color="#6366f1" />
+                <Ionicons name="document-text-outline" size={14} color="#c45c26" />
                 <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary" numberOfLines={1}>
                   {activeNoteContext.title}
                 </Text>
@@ -480,7 +635,7 @@ export function AICompanionPanel({ context }: Props) {
                   hitSlop={8}
                   accessibilityLabel="Remove note context"
                 >
-                  <Ionicons name="close" size={14} color="#6366f1" />
+                  <Ionicons name="close" size={14} color="#c45c26" />
                 </Pressable>
               </View>
             ) : null}
@@ -605,6 +760,7 @@ export function AICompanionPanel({ context }: Props) {
             )}
           </View>
         </KeyboardAvoidingView>
+        )}
       </SafeAreaView>
     </Modal>
   );

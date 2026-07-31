@@ -1,16 +1,22 @@
 /**
  * AI Companion Store
  * Manages conversation state for the Lantern AI companion panel.
- * Note-attached chats use a separate server thread keyed by noteId.
+ * Threads are server-backed (conversation_id); note-attached chats keep
+ * note_context_id so history can list general + note-linked chats.
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { CompanionMessage, CompanionUserContext } from '@lantern/shared';
+import type {
+  CompanionConversation,
+  CompanionMessage,
+  CompanionUserContext,
+} from '@lantern/shared';
 import {
   companionSendMessage,
   companionSendMessageStream,
   fetchCompanionHistory,
   clearCompanionHistory,
+  fetchCompanionConversations,
 } from '../services/ai';
 
 export type CompanionNoteContext = {
@@ -19,6 +25,7 @@ export type CompanionNoteContext = {
 };
 
 const NOTE_CONTEXT_STORAGE_KEY = 'lantern_companion_note_context';
+const CONVERSATION_STORAGE_KEY = 'lantern_companion_conversation_id';
 
 async function readPersistedNoteContext(): Promise<CompanionNoteContext | null> {
   try {
@@ -44,6 +51,25 @@ async function persistNoteContext(ctx: CompanionNoteContext | null) {
   }
 }
 
+async function readPersistedConversationId(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CONVERSATION_STORAGE_KEY);
+    if (!raw || !raw.trim()) return null;
+    return raw.trim();
+  } catch {
+    return null;
+  }
+}
+
+async function persistConversationId(id: string | null) {
+  try {
+    if (!id) await AsyncStorage.removeItem(CONVERSATION_STORAGE_KEY);
+    else await AsyncStorage.setItem(CONVERSATION_STORAGE_KEY, id);
+  } catch {
+    /* ignore */
+  }
+}
+
 interface CompanionState {
   isOpen: boolean;
   open: () => void;
@@ -56,6 +82,14 @@ interface CompanionState {
   activeNoteContext: CompanionNoteContext | null;
   hydrateNoteContext: () => Promise<void>;
   setActiveNoteContext: (ctx: CompanionNoteContext | null) => Promise<void>;
+
+  activeConversationId: string | null;
+  pendingNewConversation: boolean;
+  conversations: CompanionConversation[];
+  isLoadingConversations: boolean;
+  loadConversations: () => Promise<void>;
+  openConversation: (conversationId: string) => Promise<void>;
+  startNewChat: () => void;
 
   messages: CompanionMessage[];
   isLoading: boolean;
@@ -72,6 +106,23 @@ interface CompanionState {
   clearError: () => void;
 }
 
+function mergeThreadContext(
+  get: () => CompanionState,
+  context?: CompanionUserContext
+): CompanionUserContext {
+  const noteCtx = get().activeNoteContext;
+  const conversationId = get().activeConversationId;
+  const pendingNew = get().pendingNewConversation;
+  return {
+    ...context,
+    ...(noteCtx
+      ? { noteId: noteCtx.id, noteTitle: noteCtx.title, noteContext: undefined }
+      : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
+    ...(conversationId ? { conversationId } : { conversationId: undefined }),
+    ...(pendingNew && !conversationId ? { newConversation: true } : {}),
+  };
+}
+
 export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isOpen: false,
   messages: [],
@@ -82,6 +133,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   error: null,
   pendingMessage: null,
   activeNoteContext: null,
+  activeConversationId: null,
+  pendingNewConversation: false,
+  conversations: [],
+  isLoadingConversations: false,
 
   open: () => set({ isOpen: true }),
   close: () => set({ isOpen: false }),
@@ -91,7 +146,13 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   openWithMessage: (msg) => set({ isOpen: true, pendingMessage: msg }),
 
   hydrateNoteContext: async () => {
-    const ctx = await readPersistedNoteContext();
+    const [ctx, conversationId] = await Promise.all([
+      readPersistedNoteContext(),
+      readPersistedConversationId(),
+    ]);
+    if (conversationId && get().activeConversationId !== conversationId) {
+      set({ activeConversationId: conversationId });
+    }
     if (!ctx) return;
     if (get().activeNoteContext?.id === ctx.id) return;
     set({ activeNoteContext: ctx });
@@ -105,13 +166,72 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       return;
     }
     await persistNoteContext(ctx);
+    await persistConversationId(null);
     set({
       activeNoteContext: ctx,
+      activeConversationId: null,
+      pendingNewConversation: false,
       messages: [],
       historyLoaded: false,
       error: null,
     });
     await get().loadHistory();
+  },
+
+  loadConversations: async () => {
+    set({ isLoadingConversations: true });
+    try {
+      const { conversations } = await fetchCompanionConversations();
+      set({ conversations, isLoadingConversations: false });
+    } catch {
+      set({ isLoadingConversations: false });
+    }
+  },
+
+  openConversation: async (conversationId) => {
+    const target = get().conversations.find((c) => c.id === conversationId);
+    await persistConversationId(conversationId);
+    if (target?.noteContextId) {
+      await persistNoteContext({
+        id: target.noteContextId,
+        title: target.noteTitle || 'Untitled note',
+      });
+      set({
+        activeConversationId: conversationId,
+        pendingNewConversation: false,
+        activeNoteContext: {
+          id: target.noteContextId,
+          title: target.noteTitle || 'Untitled note',
+        },
+        messages: [],
+        historyLoaded: false,
+        error: null,
+      });
+    } else {
+      if (target && !target.noteContextId) {
+        await persistNoteContext(null);
+      }
+      set({
+        activeConversationId: conversationId,
+        pendingNewConversation: false,
+        ...(target && !target.noteContextId ? { activeNoteContext: null } : {}),
+        messages: [],
+        historyLoaded: false,
+        error: null,
+      });
+    }
+    await get().loadHistory();
+  },
+
+  startNewChat: () => {
+    void persistConversationId(null);
+    set({
+      activeConversationId: null,
+      pendingNewConversation: true,
+      messages: [],
+      historyLoaded: true,
+      error: null,
+    });
   },
 
   setMessageFeedback: (messageId, rating) => {
@@ -125,18 +245,32 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   loadHistory: async () => {
     set({ isLoadingHistory: true, error: null });
     const noteContextId = get().activeNoteContext?.id ?? null;
+    const conversationId = get().activeConversationId;
+    const pendingNew = get().pendingNewConversation;
+    if (pendingNew && !conversationId) {
+      set({ isLoadingHistory: false, historyLoaded: true, messages: [] });
+      return;
+    }
     try {
-      const { messages } = await fetchCompanionHistory(noteContextId);
+      const result = await fetchCompanionHistory(
+        conversationId ? { conversationId } : { noteContextId }
+      );
       const previousFeedback = new Map(
         get()
           .messages.filter((m) => m.feedback === 'up' || m.feedback === 'down')
           .map((m) => [m.id, m.feedback as 'up' | 'down'])
       );
-      if ((get().activeNoteContext?.id ?? null) !== noteContextId) {
+      if (conversationId && (get().activeConversationId ?? null) !== conversationId) {
         return;
       }
+      if (!conversationId && (get().activeNoteContext?.id ?? null) !== noteContextId) {
+        return;
+      }
+      if (result.conversationId) {
+        await persistConversationId(result.conversationId);
+      }
       set({
-        messages: messages.map((m) => ({
+        messages: result.messages.map((m) => ({
           id: m.id,
           role: m.role,
           content: m.content,
@@ -144,11 +278,16 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           feedback: m.feedback ?? previousFeedback.get(m.id) ?? null,
           created_at: m.created_at,
         })),
+        activeConversationId: result.conversationId ?? get().activeConversationId,
+        pendingNewConversation: false,
         isLoadingHistory: false,
         historyLoaded: true,
       });
     } catch {
-      if ((get().activeNoteContext?.id ?? null) !== noteContextId) {
+      if (conversationId && (get().activeConversationId ?? null) !== conversationId) {
+        return;
+      }
+      if (!conversationId && (get().activeNoteContext?.id ?? null) !== noteContextId) {
         return;
       }
       set({ isLoadingHistory: false, historyLoaded: true });
@@ -156,13 +295,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   sendMessage: async (text: string, context?: CompanionUserContext) => {
-    const noteCtx = get().activeNoteContext;
-    const mergedContext: CompanionUserContext = {
-      ...context,
-      ...(noteCtx
-        ? { noteId: noteCtx.id, noteTitle: noteCtx.title, noteContext: undefined }
-        : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
-    };
+    const mergedContext = mergeThreadContext(get, context);
 
     const tempUserMsg: CompanionMessage = {
       id: `tmp-user-${Date.now()}`,
@@ -178,7 +311,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }));
 
     try {
-      const { reply, actions } = await companionSendMessage(text, mergedContext);
+      const { reply, actions, conversationId } = await companionSendMessage(text, mergedContext);
+      if (conversationId) {
+        await persistConversationId(conversationId);
+      }
       const assistantMsg: CompanionMessage = {
         id: `tmp-ai-${Date.now()}`,
         role: 'assistant',
@@ -186,7 +322,13 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         actions: actions?.length ? actions : undefined,
         created_at: new Date().toISOString(),
       };
-      set((s) => ({ messages: [...s.messages, assistantMsg], isLoading: false }));
+      set((s) => ({
+        messages: [...s.messages, assistantMsg],
+        isLoading: false,
+        activeConversationId: conversationId || s.activeConversationId,
+        pendingNewConversation: false,
+      }));
+      void get().loadConversations();
     } catch (err: unknown) {
       set((s) => ({
         messages: s.messages.filter((m) => m.id !== tempUserMsg.id),
@@ -197,13 +339,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   sendMessageStreaming: async (text: string, context?: CompanionUserContext) => {
-    const noteCtx = get().activeNoteContext;
-    const mergedContext: CompanionUserContext = {
-      ...context,
-      ...(noteCtx
-        ? { noteId: noteCtx.id, noteTitle: noteCtx.title, noteContext: undefined }
-        : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
-    };
+    const mergedContext = mergeThreadContext(get, context);
 
     const tempUserMsg: CompanionMessage = {
       id: `tmp-user-${Date.now()}`,
@@ -236,7 +372,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           ),
         }));
       },
-      ({ actions, messageId, userMessageId }) => {
+      ({ actions, messageId, userMessageId, conversationId }) => {
+        if (conversationId) {
+          void persistConversationId(conversationId);
+        }
         set((s) => ({
           messages: s.messages.map((m) => {
             if (m.id === tempAiId) {
@@ -252,7 +391,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
             return m;
           }),
           isStreaming: false,
+          activeConversationId: conversationId || s.activeConversationId,
+          pendingNewConversation: false,
         }));
+        void get().loadConversations();
       },
       (err) => {
         set((s) => ({
@@ -265,10 +407,19 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   clearHistory: async () => {
+    const conversationId = get().activeConversationId;
     const noteContextId = get().activeNoteContext?.id ?? null;
     try {
-      await clearCompanionHistory(noteContextId);
-      set({ messages: [] });
+      await clearCompanionHistory(
+        conversationId ? { conversationId } : { noteContextId }
+      );
+      await persistConversationId(null);
+      set({
+        messages: [],
+        activeConversationId: null,
+        pendingNewConversation: true,
+      });
+      void get().loadConversations();
     } catch (err: unknown) {
       set({
         error: err instanceof Error ? err.message : 'Failed to clear conversation.',
