@@ -463,7 +463,11 @@ export type UserAnswerRecord = {
   isBookmarked?: boolean;
 };
 
+export type TestSessionStatus = 'in_progress' | 'paused' | 'completed' | 'abandoned';
+export type TestSessionKind = 'test' | 'study';
+
 export interface TestSessionData {
+  id?: string;
   config: TestConfig;
   questions: TestQuestion[];
   userAnswers: Record<string, UserAnswerRecord>;
@@ -472,6 +476,27 @@ export interface TestSessionData {
   endTime?: Date;
   remainingTime?: number;
   isOffline?: boolean;
+  sessionKind?: TestSessionKind;
+  status?: TestSessionStatus;
+  title?: string;
+  updatedAt?: string;
+  pausedAt?: string;
+}
+
+/** Lean row for Saved sessions list (paused / in-progress drafts). */
+export interface PausedSessionSummary {
+  id: string;
+  sessionKind: TestSessionKind;
+  status: 'in_progress' | 'paused';
+  title: string;
+  answeredCount: number;
+  totalQuestions: number;
+  currentQuestionIndex: number;
+  remainingTimeSeconds?: number | null;
+  startTime: string;
+  updatedAt: string;
+  pausedAt?: string | null;
+  groupId?: string;
 }
 
 export interface GameSession {

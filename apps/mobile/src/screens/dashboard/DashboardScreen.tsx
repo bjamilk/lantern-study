@@ -169,6 +169,11 @@ export function DashboardScreen({ navigation }: Props) {
   const { stats, leanTestResults, selectedPeriod, isLoading: statsLoading, error: statsError, fetchStats, setSelectedPeriod } = useStatsStore();
 
   const activeTest = useTestStore(s => s.activeTest);
+  const pausedSessions = useTestStore(s => s.pausedSessions);
+  const refreshPausedSessions = useTestStore(s => s.refreshPausedSessions);
+  const resumePausedSession = useTestStore(s => s.resumePausedSession);
+  const abandonPausedSession = useTestStore(s => s.abandonPausedSession);
+  const pauseActiveTest = useTestStore(s => s.pauseActiveTest);
 
   const {
 
@@ -545,6 +550,29 @@ export function DashboardScreen({ navigation }: Props) {
 
   };
 
+  React.useEffect(() => {
+    void refreshPausedSessions();
+  }, [refreshPausedSessions, user?.id]);
+
+  const handleResumePaused = async (sessionId: string) => {
+    try {
+      await resumePausedSession(sessionId);
+      const resumed = useTestStore.getState().activeTest;
+      if (!resumed) return;
+      parent?.navigate('StudyTab', {
+        screen: 'TestTaking',
+        params: {
+          testId: resumed.test.id,
+          testName: resumed.test.name,
+          mode: resumed.mode,
+        },
+      });
+    } catch {
+      // refresh list if resume failed
+      void refreshPausedSessions();
+    }
+  };
+
 
 
   const formatDuration = (seconds: number) => {
@@ -611,7 +639,35 @@ export function DashboardScreen({ navigation }: Props) {
           }}
         />
 
-        {activeTest ? (
+        {pausedSessions.length > 0 ? (
+          <Card className="mb-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+            <Text className="font-semibold text-amber-900 dark:text-amber-100 mb-2">
+              Saved sessions ({pausedSessions.length})
+            </Text>
+            {pausedSessions.map((session) => (
+              <View
+                key={session.id}
+                className="flex-row items-center justify-between gap-2 py-2 border-t border-amber-200/60 dark:border-amber-800/60"
+              >
+                <View className="flex-1 min-w-0">
+                  <Text className="font-medium text-amber-900 dark:text-amber-100" numberOfLines={1}>
+                    {session.title}
+                  </Text>
+                  <Text className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                    {session.sessionKind === 'study' ? 'Study' : 'Test'} · {session.answeredCount}/
+                    {session.totalQuestions} answered
+                  </Text>
+                </View>
+                <Button size="sm" variant="secondary" onPress={() => void abandonPausedSession(session.id)}>
+                  Discard
+                </Button>
+                <Button size="sm" onPress={() => void handleResumePaused(session.id)}>
+                  Resume
+                </Button>
+              </View>
+            ))}
+          </Card>
+        ) : activeTest ? (
           <Card className="mb-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
 
             <View className="flex-row items-center justify-between gap-3">
@@ -629,6 +685,10 @@ export function DashboardScreen({ navigation }: Props) {
                 </Text>
 
               </View>
+
+              <Button size="sm" variant="secondary" onPress={() => void pauseActiveTest()}>
+                Pause
+              </Button>
 
               <Button size="sm" onPress={handleResumeTest}>
 

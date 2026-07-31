@@ -1,9 +1,10 @@
 
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
-import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, AppMode, OfflineSessionBundle, DailyQuizSession, StudyGoalMode, TestSessionData, StudySessionData } from '../types';
+import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, AppMode, OfflineSessionBundle, DailyQuizSession, StudyGoalMode, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
 import DailyQuizWidget from './DailyQuizWidget';
 import { DailyGoalsProgress } from './DailyGoalsProgress';
+import SavedSessionsList from './SavedSessionsList';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import { ChartBarIcon, CalendarDaysIcon, CheckCircleIcon, InformationCircleIcon, UsersIcon, ClockIcon, ArrowLeftIcon, PresentationChartLineIcon, ChevronUpIcon, ChevronDownIcon, FunnelIcon, SparklesIcon, TrophyIcon, RocketLaunchIcon, ClockIcon as ClockOutline, AcademicCapIcon as AcademicCapOutline, TagIcon, PresentationChartBarIcon, ExclamationTriangleIcon, RectangleStackIcon, ShoppingBagIcon, PlusCircleIcon, FireIcon, BoltIcon, BellIcon, XMarkIcon, DocumentTextIcon, PlayIcon } from '@heroicons/react/24/solid';
 import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
@@ -207,6 +208,9 @@ interface DashboardScreenProps {
   activeTestSession?: TestSessionData | null;
   activeStudySession?: StudySessionData | null;
   onResumeSession?: () => void;
+  pausedSessions?: PausedSessionSummary[];
+  onResumePausedSession?: (sessionId: string) => void;
+  onAbandonPausedSession?: (sessionId: string) => void;
   studyActivityDays?: StudyActivityDay[];
 }
 
@@ -354,6 +358,9 @@ export default function DashboardScreen({
   activeTestSession,
   activeStudySession,
   onResumeSession,
+  pausedSessions = [],
+  onResumePausedSession,
+  onAbandonPausedSession,
   studyActivityDays = [],
 }: DashboardScreenProps) {
   const setUserQuestionStats = useTestStore(s => s.setUserQuestionStats);
@@ -1208,14 +1215,20 @@ export default function DashboardScreen({
           ]}
         />
 
-        {(activeTestSession || activeStudySession) && onResumeSession && (
+        {pausedSessions.length > 0 && onResumePausedSession && onAbandonPausedSession ? (
+          <SavedSessionsList
+            sessions={pausedSessions}
+            onResume={onResumePausedSession}
+            onDiscard={onAbandonPausedSession}
+          />
+        ) : (activeTestSession || activeStudySession) && onResumeSession ? (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 flex items-center justify-between gap-3">
             <div>
               <p className="font-semibold text-amber-800 dark:text-amber-300">
                 {activeTestSession ? 'Test in progress' : 'Study session in progress'}
               </p>
               <p className="text-sm text-amber-700 dark:text-amber-400">
-                Pick up where you left off — your answers are saved.
+                Pick up where you left off — progress is saved to your account when online.
               </p>
             </div>
             <Button onClick={onResumeSession}>
@@ -1223,7 +1236,7 @@ export default function DashboardScreen({
               Resume
             </Button>
           </div>
-        )}
+        ) : null}
 
         {onStartDailyQuiz && onDailyQuizAnswer && onCompleteDailyQuiz && onStudyGoalChange && (
           <DailyQuizWidget

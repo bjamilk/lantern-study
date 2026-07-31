@@ -147,7 +147,7 @@ export const App: React.FC = () => {
     const isPlatformAdmin = usePlatformAdmin();
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
         const { testResults, offlineBundles, pendingSyncResults, userQuestionStats, studyActivityDays,
-            activeTestSession, activeStudySession, activeGameSession, setActiveGameSession } = useTestStore();
+            activeTestSession, activeStudySession, activeGameSession, setActiveGameSession, pausedSessions } = useTestStore();
     const { folders, notes, selectedNote, comments, isLoading: notesLoading, isSaving: notesSaving, error: notesError, selectedFolderId, setSelectedFolderId } = useNotesStore();
     const { toast, showToast, dismissToast } = useToastStore();
     const globalConfirm = useConfirmStore();
@@ -300,9 +300,16 @@ export const App: React.FC = () => {
         handleTestSubmit, handleUpdateAnswer, handleChangeQuestion,
         handleToggleBookmark, handleSubmitTest, handleEndStudySession,
         handleCancelActiveSession, handlePauseSession, handleResumeSession,
+        handleResumePausedSession, handleAbandonPausedSession, refreshPausedSessions,
         handleRetakeTest, handlePracticeFailedQuestions,
         isSubmittingTest,
     } = useTestHandlers({ addNotification });
+
+    React.useEffect(() => {
+        if (!currentUser?.id) return;
+        void refreshPausedSessions();
+    }, [currentUser?.id, refreshPausedSessions]);
+
     const {
         handleSendChallenge,
         handleStartSoloPractice,
@@ -1116,6 +1123,9 @@ export const App: React.FC = () => {
                     activeTestSession={activeTestSession}
                     activeStudySession={activeStudySession}
                     onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
+                    pausedSessions={pausedSessions}
+                    onResumePausedSession={handleResumePausedSession}
+                    onAbandonPausedSession={handleAbandonPausedSession}
                 />;
             case AppMode.LIBRARY:
                 return (
@@ -1143,6 +1153,9 @@ export const App: React.FC = () => {
                         activeTestSession={activeTestSession}
                         activeStudySession={activeStudySession}
                         onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
+                        pausedSessions={pausedSessions}
+                        onResumePausedSession={handleResumePausedSession}
+                        onAbandonPausedSession={handleAbandonPausedSession}
                         recentTestCount={testResults.length}
                         onViewRecentTests={() => navigateTo(AppMode.DASHBOARD)}
                     />

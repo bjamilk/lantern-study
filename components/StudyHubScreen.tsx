@@ -6,9 +6,10 @@ import {
   SparklesIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline';
-import { Deck, Flashcard, TestSessionData, StudySessionData } from '../types';
+import { Deck, Flashcard, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
 import { getStudyAllDueLabel, getStudyCtaLabel, FLASHCARD_MODE_LABELS, isCardDue } from '@lantern/shared';
 import { ScreenHeader, Card, Button, StatPill } from './ui';
+import SavedSessionsList from './SavedSessionsList';
 
 interface StudyHubScreenProps {
   dueCardsCount: number;
@@ -22,6 +23,9 @@ interface StudyHubScreenProps {
   activeTestSession?: TestSessionData | null;
   activeStudySession?: StudySessionData | null;
   onResumeSession?: () => void;
+  pausedSessions?: PausedSessionSummary[];
+  onResumePausedSession?: (sessionId: string) => void;
+  onAbandonPausedSession?: (sessionId: string) => void;
   recentTestCount?: number;
   onViewRecentTests?: () => void;
 }
@@ -38,6 +42,9 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   activeTestSession,
   activeStudySession,
   onResumeSession,
+  pausedSessions = [],
+  onResumePausedSession,
+  onAbandonPausedSession,
   recentTestCount = 0,
   onViewRecentTests,
 }) => {
@@ -59,7 +66,14 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           subtitle="Review due cards, resume sessions, and jump back in"
         />
 
-        {hasPausedSession && onResumeSession && (
+        {pausedSessions.length > 0 && onResumePausedSession && onAbandonPausedSession ? (
+          <SavedSessionsList
+            sessions={pausedSessions}
+            onResume={onResumePausedSession}
+            onDiscard={onAbandonPausedSession}
+            compact
+          />
+        ) : hasPausedSession && onResumeSession ? (
           <Card padding="md" className="border-l-4 border-l-amber-500">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -70,7 +84,9 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                   <p className="font-semibold text-lantern-text">
                     {activeTestSession ? 'Test paused' : 'Study session paused'}
                   </p>
-                  <p className="text-sm text-lantern-text-secondary">Pick up where you left off</p>
+                  <p className="text-sm text-lantern-text-secondary">
+                    Pick up where you left off — progress is saved to your account when online
+                  </p>
                 </div>
               </div>
               <Button variant="accent" onClick={onResumeSession}>
@@ -79,7 +95,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
               </Button>
             </div>
           </Card>
-        )}
+        ) : null}
 
         <Card padding="lg" className="border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/5 to-lantern-accent/5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

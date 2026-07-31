@@ -13,6 +13,12 @@ import {
     createTestSession, createTestResult, upsertUserQuestionStat,
     createNotification
 } from '../services/supabase';
+import {
+    abandonTestDraft,
+    completeTestDraft,
+    fetchPausedSessions,
+    fetchTestDraft,
+} from '../services/testDrafts';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import {
     formatActivityLocalDate,
@@ -23,6 +29,12 @@ import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
 import { trackTestStarted, trackTestCompleted } from '../services/productAnalytics';
 import { normalizeUserSettings } from '@lantern/shared/settings';
+import {
+    cancelScheduledSessionDraftAutosave,
+    ensureSessionDraft,
+    flushActiveSessionDraft,
+    scheduleSessionDraftAutosave,
+} from '../utils/sessionDraftSync';
 
 
 interface UseTestHandlersParams {
@@ -43,25 +55,24 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         activeStudySession, setActiveStudySession,
         userQuestionStats, setUserQuestionStats, updateTestResults,
         addPendingSyncResult,
+        setPausedSessions, removePausedSession,
     } = useTestStore();
 
     const isSubmittingTestRef = useRef(false);
     const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
     const handleTestSubmit = useCallback((config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
-        if (activeTestSession || activeStudySession) {
-            if (window.confirm("You have a paused session. Would you like to resume it instead of starting a new one?")) {
-                const pausedMode = activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE;
-                setAppMode(pausedMode);
-                if (activeTestSession?.remainingTime) {
-                    const newEndTime = new Date(Date.now() + activeTestSession.remainingTime * 1000);
-                    setActiveTestSession({ ...activeTestSession, endTime: newEndTime, remainingTime: undefined });
-                }
+        // Only block when a session is already open in the runner (not merely paused in the list).
+        if (
+            (appMode === AppMode.TEST_ACTIVE && activeTestSession) ||
+            (appMode === AppMode.STUDY_ACTIVE && activeStudySession)
+        ) {
+            if (window.confirm("You already have an active session open. Pause or finish it first, or discard it to start a new one. Discard active session?")) {
+                setActiveTestSession(null);
+                setActiveStudySession(null);
+            } else {
                 return;
             }
-            // User declined resume — clear paused session and continue starting a new one.
-            setActiveTestSession(null);
-            setActiveStudySession(null);
         }
 
         if (!selectedChat || selectedChat.chatType !== 'group') return;
@@ -167,6 +178,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             endTime = new Date(startTime.getTime() + config.timerDuration * 1000);
         }
     
+        const sessionKind = mode === 'study' ? 'study' as const : 'test' as const;
         const sessionData: TestSessionData = {
             config: sessionConfig,
             questions: testQuestions,
@@ -174,8 +186,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             currentQuestionIndex: 0,
             startTime,
             endTime,
+            sessionKind,
+            status: 'in_progress',
+            title: sessionConfig.groupName || (sessionKind === 'study' ? 'Study session' : 'Test'),
         };
-    
+
         if (mode === 'test') {
             setActiveTestSession(sessionData);
             setAppMode(AppMode.TEST_ACTIVE);
@@ -184,6 +199,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             setAppMode(AppMode.STUDY_ACTIVE);
         }
 
+        void ensureSessionDraft(sessionData, sessionKind).then((drafted) => {
+            if (mode === 'test') setActiveTestSession(drafted);
+            else setActiveStudySession(drafted);
+        });
+
         trackTestStarted({
             mode,
             questionCount: testQuestions.length,
@@ -191,7 +211,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         });
 
         closeModal('testConfig');
-    }, [activeTestSession, activeStudySession, selectedChat, messages, userQuestionStats, setActiveTestSession, setActiveStudySession, setAppMode, closeModal]);
+    }, [appMode, activeTestSession, activeStudySession, selectedChat, messages, userQuestionStats, currentUser, setActiveTestSession, setActiveStudySession, setAppMode, closeModal]);
     
     const handleUpdateAnswer = useCallback((questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>> & { revealAnswer?: boolean }) => {
         const { revealAnswer, ...answerFields } = answerData;
@@ -252,25 +272,29 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
     
         if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
             const updated = updateSession(activeTestSession);
-            if (updated) setActiveTestSession(updated);
+            if (updated) {
+                setActiveTestSession(updated);
+                scheduleSessionDraftAutosave();
+            }
         } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
             const updated = updateSession(activeStudySession);
-            if (updated) setActiveStudySession(updated as StudySessionData);
+            if (updated) {
+                setActiveStudySession(updated as StudySessionData);
+                scheduleSessionDraftAutosave();
+            }
         }
     }, [appMode, activeTestSession, activeStudySession, currentUser, userQuestionStats, setActiveTestSession, setActiveStudySession, setUserQuestionStats]);
     
     const handleChangeQuestion = useCallback((newIndex: number) => {
-        console.log('[TestHandlers] handleChangeQuestion', { newIndex, appMode, activeTestSession });
         if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
             if (newIndex >= 0 && newIndex < activeTestSession.questions.length) {
-                const updated = { ...activeTestSession, currentQuestionIndex: newIndex };
-                console.log('[TestHandlers] updating session index to', newIndex);
-                setActiveTestSession(updated);
+                setActiveTestSession({ ...activeTestSession, currentQuestionIndex: newIndex });
+                scheduleSessionDraftAutosave();
             }
         } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
             if (newIndex >= 0 && newIndex < activeStudySession.questions.length) {
-                const updated = { ...activeStudySession, currentQuestionIndex: newIndex };
-                setActiveStudySession(updated);
+                setActiveStudySession({ ...activeStudySession, currentQuestionIndex: newIndex });
+                scheduleSessionDraftAutosave();
             }
         }
     }, [appMode, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession]);
@@ -359,24 +383,42 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 addNotification(`Offline test complete! Score: ${Math.round(score)}%. Your result will sync when you go online.`);
             } else {
                 // ── ONLINE PATH ───────────────────────────────────────────
-                const sessionData = {
-                    config: finalSessionData.config,
-                    questions: finalSessionData.questions,
-                    user_answers: finalUserAnswers,
-                    start_time: finalSessionData.startTime.toISOString(),
-                    end_time: finalSessionData.endTime?.toISOString(),
-                    is_offline: false
-                };
-                const savedSession = await createTestSession(sessionData, currentUser.id);
-            
-            const resultData = {
-                session_id: savedSession.id,
-                score,
-                correct_answers_count: correctAnswersCount,
-                total_questions: finalSessionData.questions.length,
-                activityDate: formatActivityLocalDate(new Date()),
-            };
-            const saved = await createTestResult(resultData);
+                cancelScheduledSessionDraftAutosave();
+                let savedSessionId = finalSessionData.id;
+                let saved: any;
+
+                if (savedSessionId && !String(savedSessionId).startsWith('local-')) {
+                    saved = await completeTestDraft(savedSessionId, {
+                        userAnswers: finalUserAnswers,
+                        score,
+                        correctAnswersCount,
+                        totalQuestions: finalSessionData.questions.length,
+                        activityDate: formatActivityLocalDate(new Date()),
+                    });
+                    savedSessionId = saved?.session?.id || savedSessionId;
+                } else {
+                    const sessionData = {
+                        config: finalSessionData.config,
+                        questions: finalSessionData.questions,
+                        user_answers: finalUserAnswers,
+                        start_time: finalSessionData.startTime.toISOString(),
+                        end_time: finalSessionData.endTime?.toISOString(),
+                        is_offline: false,
+                        session_kind: 'test' as const,
+                        status: 'completed' as const,
+                    };
+                    const created = await createTestSession(sessionData, currentUser.id);
+                    savedSessionId = created.id;
+                    saved = await createTestResult({
+                        session_id: created.id,
+                        score,
+                        correct_answers_count: correctAnswersCount,
+                        total_questions: finalSessionData.questions.length,
+                        activityDate: formatActivityLocalDate(new Date()),
+                    });
+                }
+
+                if (savedSessionId) removePausedSession(savedSessionId);
             
             updateTestResults(prev => [result, ...prev]);
 
@@ -385,7 +427,8 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 useBudgetStore.getState().setWalletBalance(walletBalance);
             }
 
-            const gamification = (saved as { gamification?: { points: number; badges: typeof currentUser.badges; stats: UserStats; awardedBadges?: typeof currentUser.badges } })?.gamification;
+            const gamification = (saved as { gamification?: { points: number; badges: typeof currentUser.badges; stats: UserStats; awardedBadges?: typeof currentUser.badges } })?.gamification
+                || (saved as { result?: { gamification?: { points: number; badges: typeof currentUser.badges; stats: UserStats; awardedBadges?: typeof currentUser.badges } } })?.result?.gamification;
             if (gamification) {
                 setCurrentUser({
                     ...currentUser,
@@ -477,38 +520,131 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             isSubmittingTestRef.current = false;
             setIsSubmittingTest(false);
         }
-    }, [activeTestSession, currentUser, userQuestionStats, isOnline, setCurrentUser, updateTestResults, addPendingSyncResult, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification]);
+    }, [activeTestSession, currentUser, userQuestionStats, isOnline, setCurrentUser, updateTestResults, addPendingSyncResult, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification, removePausedSession]);
     
-    const handleEndStudySession = useCallback(() => {
+    const handleEndStudySession = useCallback(async () => {
+        cancelScheduledSessionDraftAutosave();
+        const session = activeStudySession;
+        if (session?.id && !String(session.id).startsWith('local-') && isOnline) {
+            try {
+                await completeTestDraft(session.id, {
+                    userAnswers: session.userAnswers,
+                    activityDate: formatActivityLocalDate(new Date()),
+                });
+                removePausedSession(session.id);
+            } catch (error) {
+                console.error('Failed to complete study draft', error);
+            }
+        }
         setActiveStudySession(null);
         setAppMode(AppMode.CHAT);
-    }, [setActiveStudySession, setAppMode]);
+    }, [activeStudySession, isOnline, setActiveStudySession, setAppMode, removePausedSession]);
 
     const handleCancelActiveSession = useCallback(() => {
         if (window.confirm("Are you sure you want to cancel this session? Your progress will be lost and this session will not be recorded.")) {
+            cancelScheduledSessionDraftAutosave();
+            const session = activeTestSession || activeStudySession;
+            if (session?.id && !String(session.id).startsWith('local-')) {
+                void abandonTestDraft(session.id).then(() => removePausedSession(session.id!));
+            } else if (session?.id) {
+                removePausedSession(session.id);
+            }
             setActiveTestSession(null);
             setActiveStudySession(null);
             setAppMode(AppMode.CHAT);
         }
-    }, [setActiveTestSession, setActiveStudySession, setAppMode]);
+    }, [activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession]);
 
     const handlePauseSession = useCallback(() => {
+        cancelScheduledSessionDraftAutosave();
+        let remaining: number | undefined;
         if (appMode === AppMode.TEST_ACTIVE && activeTestSession?.endTime) {
             const now = new Date().getTime();
             const endTimeMs = new Date(activeTestSession.endTime).getTime();
-            const remaining = Math.round((endTimeMs - now) / 1000);
-            setActiveTestSession({ ...activeTestSession, remainingTime: remaining > 0 ? remaining : 0 });
+            remaining = Math.max(0, Math.round((endTimeMs - now) / 1000));
+            setActiveTestSession({ ...activeTestSession, remainingTime: remaining, status: 'paused' });
+        } else if (activeStudySession) {
+            setActiveStudySession({ ...activeStudySession, status: 'paused' });
         }
-        setAppMode(AppMode.CHAT);
-    }, [appMode, activeTestSession, setActiveTestSession, setAppMode]);
+        void flushActiveSessionDraft({ status: 'paused', remainingTime: remaining }).finally(() => {
+            setAppMode(AppMode.CHAT);
+        });
+    }, [appMode, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode]);
 
     const handleResumeSession = useCallback((mode: AppMode) => {
-        if (mode === AppMode.TEST_ACTIVE && activeTestSession?.remainingTime) {
+        if (mode === AppMode.TEST_ACTIVE && activeTestSession?.remainingTime != null) {
             const newEndTime = new Date(Date.now() + activeTestSession.remainingTime * 1000);
-            setActiveTestSession({ ...activeTestSession, endTime: newEndTime, remainingTime: undefined });
+            setActiveTestSession({
+                ...activeTestSession,
+                endTime: newEndTime,
+                remainingTime: undefined,
+                status: 'in_progress',
+            });
+            if (activeTestSession.id) removePausedSession(activeTestSession.id);
+        } else if (mode === AppMode.STUDY_ACTIVE && activeStudySession) {
+            setActiveStudySession({ ...activeStudySession, status: 'in_progress' });
+            if (activeStudySession.id) removePausedSession(activeStudySession.id);
         }
         setAppMode(mode);
-    }, [activeTestSession, setActiveTestSession, setAppMode]);
+        void flushActiveSessionDraft({ status: 'in_progress' });
+    }, [activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession]);
+
+    const refreshPausedSessions = useCallback(async () => {
+        if (!currentUser?.id || !isOnline) return;
+        try {
+            const list = await fetchPausedSessions({ limit: 100 });
+            setPausedSessions(list);
+        } catch (error) {
+            console.error('Failed to load paused sessions', error);
+        }
+    }, [currentUser?.id, isOnline, setPausedSessions]);
+
+    const handleResumePausedSession = useCallback(async (sessionId: string) => {
+        try {
+            let session = await fetchTestDraft(sessionId);
+            const kind = session.sessionKind === 'study' ? 'study' : 'test';
+            if (typeof session.remainingTime === 'number' && kind === 'test') {
+                session = {
+                    ...session,
+                    endTime: new Date(Date.now() + session.remainingTime * 1000),
+                    remainingTime: undefined,
+                    status: 'in_progress',
+                };
+            } else {
+                session = { ...session, status: 'in_progress' };
+            }
+            if (kind === 'test') {
+                setActiveTestSession(session);
+                setActiveStudySession(null);
+                setAppMode(AppMode.TEST_ACTIVE);
+            } else {
+                setActiveStudySession(session);
+                setActiveTestSession(null);
+                setAppMode(AppMode.STUDY_ACTIVE);
+            }
+            removePausedSession(sessionId);
+            void flushActiveSessionDraft({ status: 'in_progress' });
+        } catch (error) {
+            console.error('Failed to resume session', error);
+            alert('Could not resume that session. It may have been completed or discarded.');
+            void refreshPausedSessions();
+        }
+    }, [setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession, refreshPausedSessions]);
+
+    const handleAbandonPausedSession = useCallback(async (sessionId: string) => {
+        if (!window.confirm('Discard this saved session? Progress will not be recorded.')) return;
+        try {
+            if (!String(sessionId).startsWith('local-')) {
+                await abandonTestDraft(sessionId);
+            }
+            removePausedSession(sessionId);
+            if (activeTestSession?.id === sessionId) setActiveTestSession(null);
+            if (activeStudySession?.id === sessionId) setActiveStudySession(null);
+        } catch (error) {
+            console.error('Failed to abandon session', error);
+            alert('Could not discard that session. Please try again.');
+        }
+    }, [removePausedSession, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession]);
 
     const handleRetakeTest = useCallback((sessionData: TestSessionData) => {
         const shuffledQuestions = createShuffledQuestionSet(sessionData.questions);
@@ -523,10 +659,14 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             endTime: sessionData.config.timerDuration 
                 ? new Date(Date.now() + sessionData.config.timerDuration * 1000) 
                 : undefined,
+            sessionKind: 'test',
+            status: 'in_progress',
+            title: sessionData.config?.groupName || 'Test',
         };
         setActiveTestSession(newSession);
         setActiveTestResult(null);
         setAppMode(AppMode.TEST_ACTIVE);
+        void ensureSessionDraft(newSession, 'test').then(setActiveTestSession);
     }, [setActiveTestSession, setActiveTestResult, setAppMode]);
     
     const handlePracticeFailedQuestions = useCallback((failedQuestions: TestQuestion[]) => {
@@ -537,6 +677,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             numberOfQuestions: failedQuestions.length,
             questionIds: failedQuestions.map(q => q.id),
             allowedQuestionTypes: [],
+            groupName: selectedChat.name,
         };
     
         const shuffledFailedQuestions = createShuffledQuestionSet(failedQuestions);
@@ -547,11 +688,15 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             userAnswers: {},
             currentQuestionIndex: 0,
             startTime: new Date(),
+            sessionKind: 'study',
+            status: 'in_progress',
+            title: selectedChat.name || 'Study session',
         };
     
         setActiveStudySession(sessionData);
         setActiveTestResult(null);
         setAppMode(AppMode.STUDY_ACTIVE);
+        void ensureSessionDraft(sessionData, 'study').then(setActiveStudySession);
     }, [selectedChat, setActiveStudySession, setActiveTestResult, setAppMode]);
 
     return {
@@ -564,6 +709,10 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         handleCancelActiveSession,
         handlePauseSession,
         handleResumeSession,
+        handleResumePausedSession,
+        handleAbandonPausedSession,
+        refreshPausedSessions,
+        flushActiveSessionDraft,
         handleRetakeTest,
         handlePracticeFailedQuestions,
         isSubmittingTest,

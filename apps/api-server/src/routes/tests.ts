@@ -169,6 +169,153 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     })
   );
 
+  // POST /api/v1/tests/drafts - Create an in-progress test/study draft
+  router.post(
+    '/drafts',
+    authMiddleware,
+    handleValidationErrors,
+    asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
+      const body = req.body || {};
+      const questions = Array.isArray(body.questions) ? body.questions : [];
+      if (!body.config || questions.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'config and questions are required',
+        });
+      }
+
+      const draft = await supabaseService.createTestDraft(
+        {
+          config: body.config,
+          questions,
+          user_answers: body.user_answers || body.userAnswers || {},
+          start_time: body.start_time || body.startTime,
+          session_kind: body.session_kind || body.sessionKind || 'test',
+          title: body.title,
+          current_question_index:
+            body.current_question_index ?? body.currentQuestionIndex ?? 0,
+          remaining_time_seconds:
+            body.remaining_time_seconds ?? body.remainingTime ?? null,
+          is_offline: body.is_offline || body.isOffline || false,
+          client_id: body.client_id || body.clientId,
+        },
+        userId,
+      );
+
+      await cacheService.deletePattern(`tests:${userId}:*`);
+      res.status(201).json({ success: true, data: draft });
+    })
+  );
+
+  // PATCH /api/v1/tests/drafts/:id - Autosave / pause progress
+  router.patch(
+    '/drafts/:id',
+    authMiddleware,
+    handleValidationErrors,
+    asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+      const draftId = String(req.params.id || '');
+      const body = req.body || {};
+
+      try {
+        const updated = await supabaseService.updateTestDraft(draftId, userId, {
+          user_answers: body.user_answers ?? body.userAnswers,
+          current_question_index:
+            body.current_question_index ?? body.currentQuestionIndex,
+          remaining_time_seconds:
+            body.remaining_time_seconds ?? body.remainingTime,
+          status: body.status,
+          title: body.title,
+        });
+        if (!updated) {
+          return res.status(404).json({
+            success: false,
+            error: 'Draft not found or access denied',
+          });
+        }
+        res.json({ success: true, data: updated });
+      } catch (error: any) {
+        if (String(error?.message || '').includes('finished')) {
+          return res.status(400).json({ success: false, error: error.message });
+        }
+        throw error;
+      }
+    })
+  );
+
+  // POST /api/v1/tests/drafts/:id/complete
+  router.post(
+    '/drafts/:id/complete',
+    authMiddleware,
+    handleValidationErrors,
+    asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+      const draftId = String(req.params.id || '');
+      const body = req.body || {};
+
+      try {
+        const completed = await supabaseService.completeTestDraft(draftId, userId, {
+          user_answers: body.user_answers ?? body.userAnswers,
+          activityDate: body.activityDate,
+          score: body.score,
+          correctAnswersCount: body.correct_answers_count ?? body.correctAnswersCount,
+          totalQuestions: body.total_questions ?? body.totalQuestions,
+        });
+
+        let walletBalance: number | undefined;
+        if (
+          completed.sessionKind === 'test' &&
+          typeof completed.score === 'number'
+        ) {
+          const award = await awardTestPassCoins(userId, draftId, completed.score);
+          walletBalance = award.walletBalance;
+        }
+
+        res.json({
+          success: true,
+          data: {
+            ...completed,
+            walletBalance,
+          },
+        });
+      } catch (error: any) {
+        const msg = String(error?.message || '');
+        if (msg.includes('not found')) {
+          return res.status(404).json({ success: false, error: msg });
+        }
+        if (msg.includes('already') || msg.includes('abandoned')) {
+          return res.status(400).json({ success: false, error: msg });
+        }
+        throw error;
+      }
+    })
+  );
+
+  // POST /api/v1/tests/drafts/:id/abandon
+  router.post(
+    '/drafts/:id/abandon',
+    authMiddleware,
+    handleValidationErrors,
+    asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+      const draftId = String(req.params.id || '');
+      const abandoned = await supabaseService.abandonTestDraft(draftId, userId);
+      if (!abandoned) {
+        return res.status(404).json({
+          success: false,
+          error: 'Draft not found or already finished',
+        });
+      }
+      res.json({ success: true, abandoned: true });
+    })
+  );
+
   // GET /api/v1/tests/:testId - Get test by ID
   router.get(
     '/:testId',
@@ -202,9 +349,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         return;
       }
 
+      const mapped =
+        test && typeof test === 'object' && 'user_id' in (test as object)
+          ? supabaseService.mapTestSessionRowToClient(test)
+          : test;
+
       res.json({
         success: true,
-        data: test,
+        data: mapped,
       });
     })
   );
