@@ -3,7 +3,11 @@
  * Uses the same auth headers and base URL as the main supabase service.
  */
 import { getApiBaseUrl, DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared';
-import { parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
+import {
+  parseGlobalAIUsageFromHeaderReader,
+  parseGlobalAIUsageFromHeaders,
+  xhrHeaderReader,
+} from '@lantern/shared/api';
 import { useAuthStore } from '../stores/authStore';
 import { getAuthHeaders, ensureAuthTokenReady } from './supabase';
 import { pollApiJob } from './jobPoll';
@@ -26,6 +30,10 @@ let _latestUsage: AIUsageInfo = {
   resetsAt: '',
 };
 const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
+const USAGE_FETCH_TTL_MS = 60_000;
+let _usageLastFetchAt = 0;
+let _usageInFlight: Promise<AIUsageInfo> | null = null;
+let _usageBackoffUntil = 0;
 
 export function getLatestAIUsage(): AIUsageInfo {
   return _latestUsage;
@@ -38,13 +46,31 @@ export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () =
 
 function updateUsage(usage: AIUsageInfo) {
   _latestUsage = usage;
+  // Treat header-driven updates as fresh so a TTL'd GET /usage cannot stale-overwrite them.
+  _usageLastFetchAt = Date.now();
   _usageListeners.forEach(fn => fn(usage));
 }
 
-const USAGE_FETCH_TTL_MS = 60_000;
-let _usageLastFetchAt = 0;
-let _usageInFlight: Promise<AIUsageInfo> | null = null;
-let _usageBackoffUntil = 0;
+/** Apply global AI quota headers from a fetch Response (notes + AI clients). */
+export function applyAIUsageFromResponse(response: Response): void {
+  parseGlobalAIUsageFromHeaders(response, updateUsage);
+}
+
+/** Apply global AI quota headers from an XHR response (notes AI long-poll path). */
+export function applyAIUsageFromXhr(xhr: XMLHttpRequest): void {
+  parseGlobalAIUsageFromHeaderReader(xhrHeaderReader(xhr), updateUsage);
+}
+
+/** Bypass the client TTL and re-fetch global usage from GET /ai/usage. */
+export async function forceRefreshAIUsage(): Promise<AIUsageInfo> {
+  _usageLastFetchAt = 0;
+  _usageInFlight = null;
+  try {
+    return await fetchAIUsageFromApi();
+  } catch {
+    return _latestUsage;
+  }
+}
 
 async function fetchAIUsageFromApi(): Promise<AIUsageInfo> {
   const ready = await ensureAuthTokenReady();
@@ -108,7 +134,8 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
   };
 
   if (response.status === 202 && typeof json.jobId === 'string') {
-    if (hadFeatureQuota) void fetchAIUsage();
+    // Feature quotas use a separate counter; refresh global so the badge stays accurate.
+    if (hadFeatureQuota) void forceRefreshAIUsage();
     return pollApiJob<T>(json.jobId);
   }
 
@@ -136,7 +163,7 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
     throw new Error(message);
   }
 
-  if (hadFeatureQuota) void fetchAIUsage();
+  if (hadFeatureQuota) void forceRefreshAIUsage();
   return json as T;
 }
 
@@ -254,17 +281,7 @@ async function companionRequest<T>(
   const response = await fetch(url, fetchOptions);
 
   if (options?.trackUsage !== false) {
-    const featureHeader = response.headers.get('X-AI-Feature');
-    if (!featureHeader) {
-      const usedHeader = response.headers.get('X-AI-Usage-Used');
-      const limitHeader = response.headers.get('X-AI-Usage-Limit');
-      const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-      if (usedHeader && limitHeader) {
-        const used = parseInt(usedHeader, 10);
-        const limit = parseInt(limitHeader, 10);
-        updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
-      }
-    }
+    parseGlobalAIUsageFromHeaders(response, updateUsage);
   }
 
   const json = await response.json().catch(() => ({}));
@@ -350,17 +367,8 @@ export async function companionSendMessageStream(
     return;
   }
 
-  // Companion messages use feature-scoped quota — do not update the global badge.
-  if (!response.headers.get('X-AI-Feature')) {
-    const usedHeader = response.headers.get('X-AI-Usage-Used');
-    const limitHeader = response.headers.get('X-AI-Usage-Limit');
-    const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-    if (usedHeader && limitHeader) {
-      const used = parseInt(usedHeader, 10);
-      const limit = parseInt(limitHeader, 10);
-      updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
-    }
-  }
+  // Companion uses feature-scoped quota; skip when X-AI-Feature is visible (CORS-exposed).
+  parseGlobalAIUsageFromHeaders(response, updateUsage);
 
   if (!response.ok || !response.body) {
     onError(new Error(`Stream request failed (${response.status})`));

@@ -84,6 +84,12 @@ export function createAIClient(config: AIClientConfig) {
   let usageBackoffUntil = 0;
   let cachedUsage: AIUsageInfo | null = null;
 
+  const notifyUsage = (usage: AIUsageInfo) => {
+    cachedUsage = usage;
+    usageLastFetchAt = Date.now();
+    config.onUsageUpdate?.(usage);
+  };
+
   const refreshGlobalUsage = () => {
     void (async () => {
       try {
@@ -91,15 +97,12 @@ export function createAIClient(config: AIClientConfig) {
         const res = await fetch(`${config.getBaseUrl()}/api/v1/ai/usage`, { headers });
         if (!res.ok) return;
         const data = await res.json();
-        const usage: AIUsageInfo = {
+        notifyUsage({
           used: data.used,
           limit: data.limit,
           remaining: data.limit - data.used,
           resetsAt: data.resetsAt,
-        };
-        cachedUsage = usage;
-        usageLastFetchAt = Date.now();
-        config.onUsageUpdate?.(usage);
+        });
       } catch {
         // non-fatal
       }
@@ -127,7 +130,7 @@ export function createAIClient(config: AIClientConfig) {
       clearTimeout(timeoutId);
 
       const hadFeatureQuota = Boolean(response.headers.get('X-AI-Feature'));
-      parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
+      parseGlobalAIUsageFromHeaders(response, notifyUsage);
 
       const json = (await response.json().catch(() => ({}))) as T & {
         jobId?: string;
@@ -150,7 +153,7 @@ export function createAIClient(config: AIClientConfig) {
           json.used !== undefined &&
           json.limit !== undefined
         ) {
-          config.onUsageUpdate?.({
+          notifyUsage({
             used: json.used,
             limit: json.limit,
             remaining: 0,
@@ -195,9 +198,7 @@ export function createAIClient(config: AIClientConfig) {
           remaining: data.limit - data.used,
           resetsAt: data.resetsAt,
         };
-        cachedUsage = usage;
-        usageLastFetchAt = Date.now();
-        config.onUsageUpdate?.(usage);
+        notifyUsage(usage);
         return usage;
       })()
         .catch(

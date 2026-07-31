@@ -4,6 +4,7 @@ import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
+import { applyAIUsageFromResponse } from './ai';
 
 async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -37,6 +38,9 @@ async function notesRequest<T>(path: string, options: RequestInit = {}): Promise
     },
   });
   const data = await response.json().catch(() => ({}));
+  if (response.ok || response.status === 202) {
+    applyAIUsageFromResponse(response);
+  }
   if (response.status === 202 && typeof data.jobId === 'string') {
     return pollApiJob<T>(data.jobId);
   }

@@ -1,7 +1,7 @@
 /**
  * Mobile AI Service — thin wrapper around @lantern/shared/api AI + companion clients
  */
-import { createLanternAI } from '@lantern/shared/api';
+import { createLanternAI, parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
 import type { AIUsageInfo } from '@lantern/shared';
 import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
 import { getAuthHeaders, API_BASE_URL, supabase } from './supabase';
@@ -30,6 +30,11 @@ const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
 function updateUsage(usage: AIUsageInfo) {
   _latestUsage = usage;
   _usageListeners.forEach((fn) => fn(usage));
+}
+
+/** Apply global AI quota headers from a fetch Response (notes AI paths). */
+export function applyAIUsageFromResponse(response: Response): void {
+  parseGlobalAIUsageFromHeaders(response, updateUsage);
 }
 
 async function getCurrentUserId(): Promise<string | undefined> {

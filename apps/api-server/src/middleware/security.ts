@@ -112,6 +112,9 @@ export const corsConfig = cors({
     'X-Request-ID',
     'X-RateLimit-Limit',
     'X-RateLimit-Remaining',
+    // Clients must see X-AI-Feature so feature quotas (companion, quiz, etc.)
+    // do not overwrite the global daily AI badge with the wrong limit.
+    'X-AI-Feature',
     'X-AI-Usage-Used',
     'X-AI-Usage-Limit',
     'X-AI-Usage-Resets-At',

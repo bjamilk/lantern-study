@@ -18,7 +18,12 @@ export {
   type AIStudyRecommendation,
 } from './ai';
 export { createCompanionClient, type LanternCompanionClient } from './companion';
-export { parseGlobalAIUsageFromHeaders } from './usageHeaders';
+export {
+  parseGlobalAIUsageFromHeaders,
+  parseGlobalAIUsageFromHeaderReader,
+  xhrHeaderReader,
+  type AIUsageHeaderReader,
+} from './usageHeaders';
 
 import { createApiClient, type ApiClientConfig } from './client';
 import { createApiEndpoints } from './endpoints';

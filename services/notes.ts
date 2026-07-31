@@ -8,6 +8,7 @@ import type {
   StudyGoalMode,
   StudyNote,
 } from '../types';
+import { applyAIUsageFromResponse, applyAIUsageFromXhr } from './ai';
 import { getAuthHeaders, supabase } from './supabase';
 import { pollApiJob } from './jobPoll';
 import { applyJsonXhrHeaders } from '../utils/xhrHeaders';
@@ -170,6 +171,10 @@ async function notesLongRequest<T>(
     xhr.onload = () => {
       if (signal) signal.removeEventListener('abort', onAbort);
       const data = xhr.response ?? {};
+      // Rate-limit middleware sets usage headers on the enqueue/sync response.
+      if (xhr.status >= 200 && xhr.status < 300) {
+        applyAIUsageFromXhr(xhr);
+      }
       if (xhr.status === 202 && typeof data.jobId === 'string') {
         void pollApiJob<T>(data.jobId)
           .then(resolve)
@@ -213,6 +218,9 @@ async function notesRequest<T>(
   });
 
   const data = await response.json().catch(() => ({}));
+  if (response.ok || response.status === 202) {
+    applyAIUsageFromResponse(response);
+  }
   if (response.status === 202 && typeof data.jobId === 'string') {
     return pollApiJob<T>(data.jobId);
   }
