@@ -9,10 +9,16 @@
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
 
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
 
 /sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/theme-init.js
   Cache-Control: no-cache, no-store, must-revalidate
 
 /manifest.json
