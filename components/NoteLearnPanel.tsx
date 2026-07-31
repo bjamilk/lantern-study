@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import { getNoteStudyContent, hasEnoughNoteStudyContent, MIN_NOTE_STUDY_CONTENT_CHARS } from '@lantern/shared';
+import {
+  getNoteStudyContent,
+  hasEnoughNoteStudyContent,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+  MarkdownRenderer,
+} from '@lantern/shared';
 import {
   SparklesIcon,
   ChatBubbleLeftRightIcon,
@@ -64,8 +69,16 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
 
       {note.summary && (
         <div className={`mb-5 p-4 rounded-lg text-sm leading-relaxed ${isDark ? 'bg-lantern-background text-lantern-text-tertiary' : 'bg-lantern-surface text-lantern-text'}`}>
-          <p className="font-medium mb-1 text-lantern-primary">Smart Notes</p>
-          <p className="whitespace-pre-wrap">{note.summary}</p>
+          <p className="font-medium mb-2 text-lantern-primary">Smart Notes</p>
+          <div
+            className={`smart-notes-md prose prose-sm max-w-none ${
+              isDark
+                ? 'prose-invert prose-headings:text-lantern-text prose-p:text-lantern-text-tertiary prose-li:text-lantern-text-tertiary prose-strong:text-lantern-text'
+                : 'prose-slate prose-headings:text-lantern-text prose-p:text-lantern-text prose-li:text-lantern-text'
+            }`}
+          >
+            <MarkdownRenderer content={note.summary} enableMath={false} />
+          </div>
         </div>
       )}
 

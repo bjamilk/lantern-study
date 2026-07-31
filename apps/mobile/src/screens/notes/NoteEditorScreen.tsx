@@ -17,8 +17,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, hasEnoughNoteStudyContent, MarkdownRenderer } from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
+import { useTheme } from '../../theme';
+
 
 import {
   copyNote,
@@ -69,6 +71,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const noteId = route.params.noteId;
   const { user } = useAuthStore();
+  const { colors } = useTheme();
   const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote, setSelectedNote } = useNotesStore();
 
   const { handleAIGenerateFlashcards, isAILoading } = useAIHandlers();
@@ -522,13 +525,21 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
       const result = await summarizeNote(noteId);
 
-      const newSummary = result.summary || '';
+      const newSummary = result.summary || result.note?.summary || '';
 
       setSummary(newSummary);
 
-      if (result.note?.summary) setSummary(result.note.summary);
+      if (result.note?.body != null) {
+        setBody(result.note.body);
+        pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
+      }
 
-      await saveNote(noteId, { summary: newSummary });
+      if (result.note) {
+        const prev = useNotesStore.getState().selectedNote;
+        if (prev?.id === noteId) {
+          setSelectedNote({ ...prev, ...result.note, summary: newSummary });
+        }
+      }
 
     } catch (e: unknown) {
 
@@ -955,9 +966,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             <Card className="mb-4 border-lantern-primary/30 dark:border-lantern-primary/30 bg-lantern-primary-background/50 dark:bg-lantern-primary-background/20">
 
-              <Text className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light mb-2">Summary</Text>
+              <Text className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light mb-2">Smart Notes</Text>
 
-              <Text className="text-sm text-lantern-text leading-relaxed">{summary}</Text>
+              <MarkdownRenderer
+                content={summary}
+                enableMath={false}
+                style={{ color: colors.text, fontSize: 14, lineHeight: 22 }}
+              />
 
             </Card>
 

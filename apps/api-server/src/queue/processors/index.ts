@@ -13,6 +13,7 @@ import {
   generateDailyQuiz,
   companionChat,
 } from "../../services/aiService";
+import { upsertSmartNotesSection } from "@lantern/shared/utils/smartNotes";
 import { SupabaseService } from "../../services/supabase";
 import { parseApkgBuffer } from "../../services/apkgImport";
 import { runPresentationPreviewJob } from "../../services/presentationPreview";
@@ -150,18 +151,21 @@ async function processAiJob(job: Job): Promise<unknown> {
       return { reply, actions, provider };
     }
     case "notes.ai.summarize": {
-      const { content, title, noteId } = job.data as {
+      const { content, title, noteId, sourceType } = job.data as {
         content: string;
         title?: string;
         noteId?: string;
+        sourceType?: string;
       };
-      const result = await summarizeNoteContent(content, title);
+      const result = await summarizeNoteContent(content, { title, sourceType });
       await recordInference(userId, "summarize-note", result);
       if (noteId && userId && supabaseService) {
+        const latest = await supabaseService.getNote(noteId, userId);
+        const nextBody = upsertSmartNotesSection(latest.body || "", result.summary);
         const note = await supabaseService.updateNote(
           userId,
           noteId,
-          { summary: result.summary },
+          { summary: result.summary, body: nextBody },
           { allowRetryOnConflict: true },
         );
         return { ...result, note };

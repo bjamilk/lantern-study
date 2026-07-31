@@ -1,5 +1,10 @@
 import { useCallback, useRef } from 'react';
-import { getNoteStudyContent, hasEnoughNoteStudyContent, MIN_NOTE_STUDY_CONTENT_CHARS } from '@lantern/shared';
+import {
+  getNoteStudyContent,
+  getNoteStudyContentForSmartNotes,
+  hasEnoughNoteStudyContent,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+} from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -133,7 +138,8 @@ export function useNoteHandlers(currentUserId?: string) {
       await loadNote(noteId);
       const note = useNotesStore.getState().selectedNote;
       if (!note) throw new Error('Note not found.');
-      if (!hasEnoughNoteStudyContent(note) && getNoteStudyContent(note).length < 30) {
+      const smartNotesSource = getNoteStudyContentForSmartNotes(note);
+      if (smartNotesSource.length < 30) {
         throw new Error(
           'Need at least 30 characters of study content. Add notes or wait for import/extraction.'
         );

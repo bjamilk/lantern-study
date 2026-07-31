@@ -6,6 +6,12 @@
  * All providers use their free tiers — zero cost.
  */
 
+import {
+  SMART_NOTES_CHUNK_OVERLAP,
+  SMART_NOTES_CHUNK_SIZE,
+  SMART_NOTES_MAX_CHUNKS,
+  chunkTextForSmartNotes,
+} from '@lantern/shared/utils/smartNotes';
 import { ApiError } from '../middleware/errorHandler';
 import {
   incrementProviderDailyUsage,
@@ -901,50 +907,176 @@ Keep the summary to 3–5 bullet points. Be specific and useful to a student who
   return { summary: text.trim(), provider };
 }
 
-export async function summarizeNoteContent(
-  content: string,
-  title?: string
-): Promise<{ summary: string; provider: string }> {
-  return generateSmartNoteContent(content, title);
-}
+export type SmartNoteGenerationOptions = {
+  title?: string;
+  /** Note sourceType — enables YouTube timestamp guidance when "youtube". */
+  sourceType?: string;
+};
 
-/** Structured study notes optimized for learning (replaces plain summarize). */
-export async function generateSmartNoteContent(
-  content: string,
-  title?: string
-): Promise<{ summary: string; provider: string }> {
-  const systemPrompt = `You are an expert study coach. Transform raw study material into "Smart Notes" optimized for learning and retention.
+function buildSmartNotesSystemPrompt(sourceType?: string, mode: 'full' | 'partial' | 'merge' = 'full'): string {
+  const youtubeHint =
+    sourceType === 'youtube'
+      ? `\n- Source is a YouTube transcript: include timestamps like [MM:SS] or [H:MM:SS] when they appear in the source, especially for key claims and examples.`
+      : '';
+
+  if (mode === 'partial') {
+    return `You are an expert study coach extracting lecture-quality notes from ONE PART of a longer source.
+
+Produce markdown notes for this part only (do not invent missing context):
+
+### Topics / Claims
+- Key claims with brief explanation
+- Examples / applications called out explicitly
+- Definitions as **Term** — meaning
+
+### Exam traps / Remember this
+- Common pitfalls, easy-to-confuse points, must-remember details
+
+Rules:
+- Be accurate; do not invent facts not in this part
+- Prefer scannable bullets; denser when the part is dense
+- Keep useful detail — this is not a tiny blurb${youtubeHint}`;
+  }
+
+  if (mode === 'merge') {
+    return `You are an expert study coach. Merge partial study notes from consecutive parts of the same source into ONE coherent set of lecture-style Smart Notes.
 
 Use this structure (markdown):
 
-## Core Idea
-2–3 sentences capturing the big picture.
+## Overview
+3–6 sentences: big picture, how sections fit together, what a student should walk away knowing.
 
-## Key Topics
-For each major topic use:
+## Key Claims & Topics
+For each major topic:
 ### [Topic name]
-- **Concept:** clear explanation
-- **Why it matters:** one line
-- **Remember:** mnemonic or hook when helpful
+- **Claim / concept:** clear explanation (2–5 sentences or tight bullets)
+- **Example / application:** when present in the source
+- **Why it matters:** exam or real-world relevance
+- **Remember:** mnemonic, trap, or hook when helpful${sourceType === 'youtube' ? '\n- **Timestamp:** [MM:SS] when available' : ''}
 
-## Terms to Know
-Bullet list: **Term** — definition
+## Definitions
+Bullet list: **Term** — definition (from the source)
+
+## Examples & Applications
+Notable worked examples, case studies, or applications — with enough detail to restudy without the original.
+
+## Exam Traps / Remember This
+Bullet list of pitfalls, easy mix-ups, and high-yield facts.
 
 ## Quick Checks
-3–5 short self-test questions with brief answer hints.
+5–8 short self-test questions with brief answer hints.
+
+Rules:
+- Deduplicate overlapping partial notes; reconcile contradictions by preferring clearer/more specific wording
+- Preserve important detail; do NOT collapse into a short "Core Idea + 3 bullets"
+- Be accurate to the source; do not invent facts
+- Target substantial study notes (roughly 800–1800 words when the source is long; shorter only if the source is short)${youtubeHint}`;
+  }
+
+  return `You are an expert study coach. Transform raw study material (lecture transcripts, PDFs, typed notes) into substantial, lecture-quality "Smart Notes" a student can actually study from.
+
+Use this structure (markdown):
+
+## Overview
+3–6 sentences: big picture, how sections fit together, what a student should walk away knowing.
+
+## Key Claims & Topics
+For each major topic:
+### [Topic name]
+- **Claim / concept:** clear explanation (2–5 sentences or tight bullets)
+- **Example / application:** when present in the source
+- **Why it matters:** exam or real-world relevance
+- **Remember:** mnemonic, trap, or hook when helpful${sourceType === 'youtube' ? '\n- **Timestamp:** [MM:SS] when available' : ''}
+
+## Definitions
+Bullet list: **Term** — definition (from the source)
+
+## Examples & Applications
+Notable worked examples, case studies, or applications — with enough detail to restudy without the original.
+
+## Exam Traps / Remember This
+Bullet list of pitfalls, easy mix-ups, and high-yield facts.
+
+## Quick Checks
+5–8 short self-test questions with brief answer hints.
 
 Rules:
 - Be accurate to the source; do not invent facts
-- Prefer scannable bullets over long paragraphs
-- Highlight exam-relevant details and common pitfalls
-- Stay under 700 words unless the material is very dense`;
+- Prefer scannable structure, but keep enough depth to be useful for exams
+- Do NOT produce a thin "Core Idea + 3 bullets" blurb — write real study notes
+- Scale length to the source (roughly 400–1800 words); denser sources get denser notes${youtubeHint}`;
+}
 
-  const userPrompt = `${title ? `Title: ${title}\n\n` : ''}${content.substring(0, 8000)}`;
-  const { text, provider } = await chatCompletion(systemPrompt, userPrompt, {
-    temperature: 0.35,
-    maxTokens: 1200,
+export async function summarizeNoteContent(
+  content: string,
+  titleOrOptions?: string | SmartNoteGenerationOptions
+): Promise<{ summary: string; provider: string }> {
+  const options =
+    typeof titleOrOptions === 'string' || titleOrOptions === undefined
+      ? { title: titleOrOptions }
+      : titleOrOptions;
+  return generateSmartNoteContent(content, options);
+}
+
+/**
+ * Structured lecture-style study notes.
+ * Long sources use bounded map-reduce (max SMART_NOTES_MAX_CHUNKS internal calls)
+ * under a single user-facing summarize action.
+ */
+export async function generateSmartNoteContent(
+  content: string,
+  titleOrOptions?: string | SmartNoteGenerationOptions
+): Promise<{ summary: string; provider: string }> {
+  const options: SmartNoteGenerationOptions =
+    typeof titleOrOptions === 'string' || titleOrOptions === undefined
+      ? { title: titleOrOptions }
+      : titleOrOptions;
+
+  const cleaned = content.replace(/\r\n/g, '\n').trim();
+  if (!cleaned) {
+    throw new Error('No content available to generate Smart Notes.');
+  }
+
+  const chunks = chunkTextForSmartNotes(cleaned, {
+    chunkSize: SMART_NOTES_CHUNK_SIZE,
+    maxChunks: SMART_NOTES_MAX_CHUNKS,
+    overlap: SMART_NOTES_CHUNK_OVERLAP,
   });
-  return { summary: text.trim(), provider };
+
+  const titlePrefix = options.title ? `Title: ${options.title}\n\n` : '';
+
+  if (chunks.length <= 1) {
+    const systemPrompt = buildSmartNotesSystemPrompt(options.sourceType, 'full');
+    const userPrompt = `${titlePrefix}Source material:\n\n${chunks[0] || cleaned}`;
+    const { text, provider } = await chatCompletion(systemPrompt, userPrompt, {
+      temperature: 0.35,
+      maxTokens: 2800,
+    });
+    return { summary: text.trim(), provider };
+  }
+
+  const partialPrompt = buildSmartNotesSystemPrompt(options.sourceType, 'partial');
+  const partialNotes: string[] = [];
+  let provider = 'unknown';
+
+  for (let i = 0; i < chunks.length; i++) {
+    const userPrompt = `${titlePrefix}This is part ${i + 1} of ${chunks.length} of the source.\n\nSource part:\n\n${chunks[i]}`;
+    const result = await chatCompletion(partialPrompt, userPrompt, {
+      temperature: 0.3,
+      maxTokens: 1400,
+    });
+    provider = result.provider;
+    partialNotes.push(`### Part ${i + 1} of ${chunks.length}\n\n${result.text.trim()}`);
+  }
+
+  const mergePrompt = buildSmartNotesSystemPrompt(options.sourceType, 'merge');
+  const mergeUser = `${titlePrefix}Partial notes to merge (${chunks.length} parts; source was long so coverage may omit some middle detail beyond the chunk budget):\n\n${partialNotes.join('\n\n---\n\n')}`;
+  const merged = await chatCompletion(mergePrompt, mergeUser, {
+    temperature: 0.3,
+    maxTokens: 3200,
+  });
+
+  return { summary: merged.text.trim(), provider: merged.provider || provider };
 }
 
 export async function generateDailyQuiz(
