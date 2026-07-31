@@ -101,6 +101,45 @@ describe('resolveDirectMessageAccess', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('group_members');
   });
 
+  it('creates a message request for private profiles even when DMs are everyone', async () => {
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
+      if (table === 'dm_threads') return mockThreadState(null);
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await resolveDirectMessageAccess(
+      supabase as any,
+      'sender',
+      'recipient',
+      parseUserSettings({
+        privacy: { profileVisibility: 'private', allowDirectMessages: 'everyone' },
+      })
+    );
+    expect(result).toEqual({ mode: 'request' });
+    expect(supabase.from).not.toHaveBeenCalledWith('group_members');
+  });
+
+  it('keeps open threads open for private profiles', async () => {
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
+      if (table === 'dm_threads') {
+        return mockThreadState({ status: 'open', requested_by: null });
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await resolveDirectMessageAccess(
+      supabase as any,
+      'sender',
+      'recipient',
+      parseUserSettings({
+        privacy: { profileVisibility: 'private', allowDirectMessages: 'none' },
+      })
+    );
+    expect(result).toEqual({ mode: 'allow' });
+  });
+
   it('allows everyone policy without group lookup', async () => {
     supabase.from.mockImplementation((table: string) => {
       if (table === 'user_blocks') return mockBlockLookup(false);

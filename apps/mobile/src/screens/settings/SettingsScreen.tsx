@@ -920,8 +920,13 @@ export default function SettingsScreen() {
               icon="eye-outline"
               iconColor="#6366f1"
               title="Profile Visibility"
-              subtitle={settings.privacy.profileVisibility === 'public' ? 'Visible to everyone' : 
-                       settings.privacy.profileVisibility === 'groups' ? 'Visible to group members' : 'Private'}
+              subtitle={
+                settings.privacy.profileVisibility === 'public'
+                  ? 'Visible to everyone'
+                  : settings.privacy.profileVisibility === 'groups'
+                    ? 'Visible to group members'
+                    : 'Full profile only you — still findable in search'
+              }
               onPress={() => setShowPrivacyModal(true)}
             />
             <SettingItem
@@ -943,7 +948,7 @@ export default function SettingsScreen() {
               icon="search-outline"
               iconColor="#6366f1"
               title="Discoverable for Invites"
-              subtitle="Let others find you by name or @username when adding group or deck members"
+              subtitle="Let others find you by name or @username in people search and invites"
               rightElement={
                 <Switch
                   value={settings.privacy.discoverableForInvites !== false}
@@ -1624,9 +1629,11 @@ export default function SettingsScreen() {
                     {option === 'public' ? 'Public' : option === 'groups' ? 'Group Members Only' : 'Private'}
                   </Text>
                   <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
-                    {option === 'public' ? 'Anyone can see your profile' : 
-                     option === 'groups' ? 'Only members of your groups can see' : 
-                     'Only you can see your profile'}
+                    {option === 'public'
+                      ? 'Anyone can see your full profile'
+                      : option === 'groups'
+                        ? 'Only members of your groups can see your full profile'
+                        : 'Only you can open your full profile. Others can still find you in search and send a message request.'}
                   </Text>
                 </View>
                 {settings.privacy.profileVisibility === option && (

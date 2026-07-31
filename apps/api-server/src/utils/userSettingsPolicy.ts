@@ -5,6 +5,7 @@ import {
 } from "@lantern/shared/settings";
 import {
   canViewStudyActivity,
+  privateProfileForcesMessageRequest,
   resolvePublicOnlineStatus,
   shouldSendEmailNotifications,
   shouldSendWeeklyDigest,
@@ -265,21 +266,23 @@ export async function resolveDirectMessageAccess(
     };
   }
 
+  const settings = parseUserSettings(recipientSettingsRaw);
   const policy = getDirectMessagePolicy(recipientSettingsRaw);
 
-  // DM privacy never hides users from search — that is profileVisibility /
-  // discoverableForInvites. Privacy only controls whether cold outreach opens
-  // two-way immediately or arrives as a message request.
+  // Search discoverability is separate (discoverableForInvites). Messaging only
+  // controls whether cold outreach opens two-way immediately or arrives as a
+  // message request:
   //
+  // profileVisibility private → always message request (still searchable)
   // everyone → open immediately
   // groups   → open if they share a group; otherwise message request
   // none     → always message request (not deny / not invisible)
-  if (policy === "everyone") {
-    return { mode: "allow" };
+  if (privateProfileForcesMessageRequest(settings.privacy) || policy === "none") {
+    return { mode: "request" };
   }
 
-  if (policy === "none") {
-    return { mode: "request" };
+  if (policy === "everyone") {
+    return { mode: "allow" };
   }
 
   // policy === 'groups'

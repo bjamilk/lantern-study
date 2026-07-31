@@ -516,8 +516,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text">
                         <option value="public">Public — all signed-in users</option>
                         <option value="groups">Groups — group members only</option>
-                        <option value="private">Private — only you</option>
+                        <option value="private">Private — full profile only you</option>
                       </select>
+                        <p className="mt-1 text-xs text-lantern-text-secondary">
+                          Private hides your full profile page. Others can still find you in people search (unless you turn off search below) and send a message request.
+                        </p>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Direct messages</label>
@@ -529,10 +532,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <option value="none">Message requests only</option>
                         </select>
                         <p className="mt-1 text-xs text-lantern-text-secondary">
-                          Anyone can still find you and send a first message. Restrictive settings turn cold outreach into a request you can accept or decline — they do not hide you from search. Use profile visibility or “Allow search for invites” to control discoverability, and Block to stop messaging.
+                          Restrictive settings turn cold outreach into a request you can accept or decline — they do not hide you from search. A private profile also receives cold messages as requests. Use “Allow search for invites” to control discoverability, and Block to stop messaging.
                         </p>
                     </div>
-                    <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow search for invites" description="Let others find you by name or @username when adding group or deck members. Profile visibility still controls who can view your full profile." />
+                    <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow search for invites" description="Let others find you by name or @username in people search and when adding group or deck members. Turn off to hide from search entirely." />
                     <ToggleSwitch enabled={privacy.showOnlineStatus} onChange={(val) => onUpdateSettingsCategory('privacy', { showOnlineStatus: val })} label="Show online status" description="Let others see when you are active." />
                     <ToggleSwitch enabled={privacy.showStudyActivity} onChange={(val) => onUpdateSettingsCategory('privacy', { showStudyActivity: val })} label="Show study activity" description="Share study streaks and activity." />
                     <div className="rounded-lg border border-lantern-border bg-lantern-background-secondary p-3 space-y-2">

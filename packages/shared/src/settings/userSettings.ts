@@ -42,8 +42,13 @@ export interface AppearanceSettings {
 }
 
 export interface PrivacySettings {
+  /**
+   * Full profile page visibility (RLS). Does not hide users from people search.
+   * private = others cannot open the full profile; basic identity still appears in search
+   * when discoverableForInvites is true. Cold DMs to private profiles become message requests.
+   */
   profileVisibility: 'public' | 'groups' | 'private';
-  /** When false, username does not appear in invite/member search (profile RLS unchanged). */
+  /** When false, username does not appear in people/invite search (profile RLS unchanged). */
   discoverableForInvites: boolean;
   showOnlineStatus: boolean;
   showStudyActivity: boolean;
@@ -51,6 +56,7 @@ export interface PrivacySettings {
    * Cold-DM acceptance — does not affect search/discoverability.
    * everyone = open immediately; groups = open for shared groups else request;
    * none = message requests only (anyone may still attempt a first message).
+   * Note: profileVisibility private also forces cold outreach into a message request.
    */
   allowDirectMessages: 'everyone' | 'groups' | 'none';
 }
