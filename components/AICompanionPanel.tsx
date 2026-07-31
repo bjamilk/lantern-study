@@ -144,9 +144,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
   }, [showNotePicker, currentUser, notes.length, loadNotes]);
 
   const filteredNotes = useMemo(() => {
+    const active = notes.filter((n) => !n.isArchived);
     const q = noteSearch.trim().toLowerCase();
-    if (!q) return notes;
-    return notes.filter((n) => (n.title || '').toLowerCase().includes(q));
+    if (!q) return active;
+    return active.filter((n) => (n.title || '').toLowerCase().includes(q));
   }, [notes, noteSearch]);
 
   const handleSelectNote = useCallback(
