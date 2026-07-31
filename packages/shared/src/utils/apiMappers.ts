@@ -31,6 +31,17 @@ import { normalizeSrsData } from './srs';
 // USER MAPPERS
 // ============================================
 
+/** Normalize profile test presets from camelCase or snake_case API/DB shapes. */
+export const normalizeTestPresets = (data: unknown): NonNullable<User['testPresets']> => {
+  if (Array.isArray(data)) {
+    return data as NonNullable<User['testPresets']>;
+  }
+  if (!data || typeof data !== 'object') return [];
+  const row = data as Record<string, unknown>;
+  const presets = row.testPresets ?? row.test_presets;
+  return Array.isArray(presets) ? (presets as NonNullable<User['testPresets']>) : [];
+};
+
 export const mapUserFromApi = (data: any): User => {
   if (!data) return data;
 
@@ -51,7 +62,7 @@ export const mapUserFromApi = (data: any): User => {
     badges: (data.badges || []).map(mapBadgeFromApi),
     stats: mapUserStatsFromApi(data.stats || {}),
     settings: data.settings,
-    testPresets: data.test_presets || data.testPresets,
+    testPresets: normalizeTestPresets(data),
     decks: data.decks,
     flashcards: data.flashcards,
     username: data.username || undefined,

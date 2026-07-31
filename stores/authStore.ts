@@ -25,6 +25,8 @@ import {
 } from '../services/authCookieSession';
 import { resolvePlatformAdmin } from '../utils/platformAdmin';
 import { setSentryUser } from '../services/sentry';
+import { normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
+import { normalizeUserSettings } from '@lantern/shared/settings';
 
 function displayNameFromMeta(
   meta: Record<string, unknown> | undefined,
@@ -207,6 +209,8 @@ export const useAuthStore = create<AuthState>()(
               points: profile.points || 0,
               badges: profile.badges || [],
               stats: profile.stats || initialUserStats,
+              settings: normalizeUserSettings(profile.settings),
+              testPresets: normalizeTestPresets(profile),
               username: profile.username || undefined,
               firstName: profile.firstName || undefined,
               lastName: profile.lastName || undefined,
@@ -219,6 +223,7 @@ export const useAuthStore = create<AuthState>()(
               points: 0,
               badges: [],
               stats: initialUserStats,
+              testPresets: [],
             };
 
             // Cache the access token so subsequent API calls are instant
@@ -341,6 +346,10 @@ export const useAuthStore = create<AuthState>()(
                 points: profile.points ?? currentUser.points,
                 badges: profile.badges || currentUser.badges,
                 stats: profile.stats || currentUser.stats,
+                settings: profile.settings
+                  ? normalizeUserSettings(profile.settings)
+                  : currentUser.settings,
+                testPresets: normalizeTestPresets(profile),
                 username: profile.username || currentUser.username,
                 firstName: profile.firstName || currentUser.firstName,
                 lastName: profile.lastName || currentUser.lastName,
@@ -372,6 +381,7 @@ export const useAuthStore = create<AuthState>()(
           if (updates.points !== undefined) apiUpdates.points = updates.points;
           if (updates.badges) apiUpdates.badges = updates.badges;
           if (updates.stats) apiUpdates.stats = updates.stats;
+          if (updates.testPresets !== undefined) apiUpdates.test_presets = updates.testPresets;
           if (updates.username) apiUpdates.username = updates.username;
           if (updates.firstName) apiUpdates.first_name = updates.firstName;
           if (updates.lastName) apiUpdates.last_name = updates.lastName;
@@ -471,6 +481,8 @@ export const useAuthStore = create<AuthState>()(
               points: profile.points || 0,
               badges: profile.badges || [],
               stats: profile.stats || initialUserStats,
+              settings: normalizeUserSettings(profile.settings),
+              testPresets: normalizeTestPresets(profile),
               username: profile.username || undefined,
               firstName: profile.firstName || undefined,
               lastName: profile.lastName || undefined,
@@ -486,6 +498,7 @@ export const useAuthStore = create<AuthState>()(
               points: 0,
               badges: [],
               stats: initialUserStats,
+              testPresets: [],
             };
 
             set({

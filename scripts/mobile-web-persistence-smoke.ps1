@@ -181,15 +181,28 @@ $freshCards = $fresh.body.data.settings.study.srsNewCardsPerDay
 $freshTheme = $fresh.body.data.settings.appearance.theme
 $results['settings_patch_preserves'] = if ($freshCards -eq 30 -and $freshTheme -eq 'dark') { 200 } else { 404 }
 
-# Test presets must not wipe settings (dedicated column)
+# Test presets must not wipe settings (dedicated column) and must round-trip on GET
+$presetId = "preset-$ts"
 $presetSave = Invoke-JsonApi 'PUT' "$ApiBaseUrl/api/v1/users/$userId" $headers @{
-  test_presets = @(@{ id = "preset-$ts"; name = 'Smoke'; config = @{ mode = 'study' } })
+  test_presets = @(@{ id = $presetId; name = 'Smoke'; config = @{ mode = 'study' } })
 }
 $results['test_presets_save'] = $presetSave.status
 $afterPreset = Invoke-JsonApi 'GET' "$ApiBaseUrl/api/v1/users/$userId/settings" $headers $null
 $results['test_presets_preserve_settings'] = if (
   $afterPreset.body.data.settings.appearance.theme -eq 'dark' -and
   $afterPreset.body.data.settings.study.srsNewCardsPerDay -eq 30
+) { 200 } else { 404 }
+$profileAfterPreset = Invoke-JsonApi 'GET' "$ApiBaseUrl/api/v1/users/$userId" $headers $null
+$profileData = $profileAfterPreset.body.data
+$loadedPresets = if ($null -ne $profileData.testPresets) {
+  @($profileData.testPresets)
+} elseif ($null -ne $profileData.test_presets) {
+  @($profileData.test_presets)
+} else {
+  @()
+}
+$results['test_presets_roundtrip'] = if (
+  ($loadedPresets | Where-Object { $_.id -eq $presetId -and $_.name -eq 'Smoke' }).Count -gt 0
 ) { 200 } else { 404 }
 
 Write-Host "`n=== Mobile-Web Persistence Smoke Results ==="

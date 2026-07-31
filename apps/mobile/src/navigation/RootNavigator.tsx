@@ -41,6 +41,8 @@ import { useGroupStore } from '../stores/groupStore';
 
 import { useSettingsStore } from '../stores/settingsStore';
 
+import { useTestStore } from '../stores/testStore';
+
 import { useCompanionStore } from '../stores/companionStore';
 import { useNotificationStore } from '../stores/notificationStore';
 
@@ -776,6 +778,8 @@ function RootNavigatorInner() {
   const loadSettings = useSettingsStore(s => s.loadSettings);
   const syncSettings = useSettingsStore(s => s.syncSettings);
   const pushEnabled = useSettingsStore(s => s.settings.notifications.pushEnabled);
+  const loadTestPresets = useTestStore(s => s.loadTestPresets);
+  const clearTestPresets = useTestStore(s => s.clearTestPresets);
 
   const [onboardingChecked, setOnboardingChecked] = useState(false);
 
@@ -830,6 +834,8 @@ function RootNavigatorInner() {
 
     if (!user?.id) {
 
+      clearTestPresets();
+
       setOnboardingChecked(true);
 
       setShowOnboarding(false);
@@ -853,6 +859,8 @@ function RootNavigatorInner() {
           void syncSettings(userId, { force: true });
         }
       });
+      // Hydrate account-scoped test presets on bootstrap (not only when opening TestConfig).
+      void loadTestPresets(userId);
       void fetchDecks(userId);
       void fetchGroups(userId);
       void fetchDmThreads(userId);
@@ -889,7 +897,7 @@ function RootNavigatorInner() {
       appStateSub.remove();
     };
 
-  }, [user?.id, pushEnabled, loadSettings, syncSettings, fetchDecks, fetchGroups, fetchDmThreads, loadUnreadCount]);
+  }, [user?.id, pushEnabled, loadSettings, syncSettings, loadTestPresets, clearTestPresets, fetchDecks, fetchGroups, fetchDmThreads, loadUnreadCount]);
 
 
 

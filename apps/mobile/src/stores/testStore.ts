@@ -346,6 +346,7 @@ interface TestState {
   updateTimeRemaining: (seconds: number) => void;
   loadUserQuestionStats: (userId: string) => Promise<void>;
   loadTestPresets: (userId: string) => Promise<void>;
+  clearTestPresets: () => void;
   saveTestPreset: (userId: string, name: string, config: TestPresetConfig) => Promise<void>;
   deleteTestPreset: (userId: string, presetId: string) => Promise<void>;
   deleteAttempt: (userId: string, sessionId: string) => Promise<void>;
@@ -1411,14 +1412,26 @@ export const useTestStore = create<TestState>((set, get) => ({
   },
 
   loadTestPresets: async (userId: string) => {
-    if (!userId || DEMO_MODE) return;
+    if (!userId) {
+      set({ testPresets: [] });
+      return;
+    }
+    if (DEMO_MODE) return;
     try {
       const profile = await api.fetchUserProfile(userId);
-      const presets = ((profile as any).test_presets || (profile as any).testPresets || []) as TestPreset[];
-      set({ testPresets: Array.isArray(presets) ? presets : [] });
+      const presets = Array.isArray((profile as any)?.testPresets)
+        ? ((profile as any).testPresets as TestPreset[])
+        : Array.isArray((profile as any)?.test_presets)
+          ? ((profile as any).test_presets as TestPreset[])
+          : [];
+      set({ testPresets: presets });
     } catch (error) {
       console.warn('Failed to load test presets:', error);
     }
+  },
+
+  clearTestPresets: () => {
+    set({ testPresets: [] });
   },
 
   saveTestPreset: async (userId: string, name: string, config: TestPresetConfig) => {

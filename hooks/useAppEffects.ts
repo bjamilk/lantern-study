@@ -42,7 +42,7 @@ import {
 } from '../services/authCookieSession';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
 import { mapMessageFromApi, computeStudyStreak, getCardsDue, mergeChatMessagesById } from '@lantern/shared/utils';
-import { mapUserStatsFromApi } from '@lantern/shared/utils/apiMappers';
+import { mapUserStatsFromApi, normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
@@ -284,6 +284,8 @@ export function useAppEffects({
             badges: (profile.badges as User['badges']) || [],
             stats: mapUserStatsFromApi(profile.stats || {}),
             settings: normalizeUserSettings(profile.settings),
+            // Account-scoped presets live on profiles.test_presets — must survive bootstrap.
+            testPresets: normalizeTestPresets(profile),
             username: (profile.username as string) || undefined,
             firstName: (profile.firstName as string) || (profile.first_name as string) || undefined,
             lastName: (profile.lastName as string) || (profile.last_name as string) || undefined,
