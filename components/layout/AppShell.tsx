@@ -159,7 +159,7 @@ const AppShell: React.FC<AppShellProps> = ({
     ].includes(appMode) || isCompanionOpen;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-lantern-background text-lantern-text transition-colors">
+    <div className="fixed inset-0 flex overflow-hidden overscroll-none bg-lantern-background text-lantern-text transition-colors">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[200] focus:rounded-lg focus:bg-lantern-primary focus:px-4 focus:py-2 focus:text-white focus:outline-none"

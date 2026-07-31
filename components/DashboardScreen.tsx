@@ -1058,7 +1058,7 @@ export default function DashboardScreen({
       onScroll={(e) => {
         dashboardScrollTopRef.current = e.currentTarget.scrollTop;
       }}
-      className="flex-1 min-h-0 flex flex-col bg-transparent text-lantern-text overflow-y-auto overscroll-y-contain"
+      className="flex-1 min-h-0 flex flex-col bg-transparent text-lantern-text overflow-y-auto overscroll-y-none"
       style={{ overflowAnchor: 'none' }}
     >
       {/* ─── Daily Login Bonus Banner ─── */}
@@ -1161,7 +1161,7 @@ export default function DashboardScreen({
       </div>
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
-      <div className="flex-1 px-4 md:px-8 py-6 w-full space-y-6">
+      <div className="px-4 md:px-8 py-6 w-full space-y-6">
 
         {!questsLoaded && dailyQuests.length === 0 && <SkeletonStatRow />}
 
