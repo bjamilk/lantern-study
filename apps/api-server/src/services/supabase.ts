@@ -5472,6 +5472,9 @@ export class SupabaseService {
     return cacheService.cached(
       cacheKey,
       async () => {
+        // Completed lean history only needs scores + config for charts; omit
+        // questions/user_answers so all-time pagination stays payload-light.
+        const completedLean = lean && status === "completed";
         const selectCols = lean
           ? `
           id,
@@ -5486,8 +5489,8 @@ export class SupabaseService {
           paused_at,
           updated_at,
           title,
-          questions,
-          user_answers,
+          ${completedLean ? "" : "questions,"}
+          ${completedLean ? "" : "user_answers,"}
           test_results (
             score,
             correct_answers_count,

@@ -398,18 +398,19 @@ export default function DashboardScreen({
     setQuickActionPicker(null);
   }, [quickActionPicker, onOpenQuickTest, onOpenQuickStudy]);
 
-  // Filter out invalid test results and normalize date fields
+  // Filter out invalid test results and normalize date fields.
+  // Lean history omits question payloads — charts only need startTime/config/score.
   const initialTestResults = useMemo(() => {
     return rawTestResults
       .filter(result => 
         result?.session?.startTime && 
-        result?.session?.config &&
-        Array.isArray(result?.session?.questions)
+        result?.session?.config
       )
       .map(result => ({
         ...result,
         session: {
           ...result.session,
+          questions: Array.isArray(result.session.questions) ? result.session.questions : [],
           startTime: result.session.startTime instanceof Date 
             ? result.session.startTime 
             : new Date(result.session.startTime),

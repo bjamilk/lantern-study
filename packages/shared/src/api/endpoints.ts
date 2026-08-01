@@ -1213,7 +1213,7 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify(result),
       }),
 
-    fetchTestResults: (
+    fetchTestResults: async (
       userId: string,
       options?: {
         limit?: number;
@@ -1224,37 +1224,69 @@ export function createApiEndpoints(client: ApiClient) {
         to?: string;
       },
     ) => {
-      const params = new URLSearchParams({
-        userId,
-        status: "completed",
-        limit: String(options?.limit ?? 500),
-        page: String(options?.page ?? 1),
-        sort: options?.sort ?? "newest",
-      });
-      if (options?.lean !== false) params.set("lean", "1");
-      if (options?.from) params.set("from", options.from);
-      if (options?.to) params.set("to", options.to);
-      return apiRequest<
-        Array<{
+      type TestResultRow = {
+        id?: string;
+        session: {
           id?: string;
-          session: {
-            id?: string;
-            config?: {
-              groupId?: string;
-              groupName?: string;
-              name?: string;
-              passingScore?: number;
-            };
-            questions?: unknown[];
-            userAnswers?: Record<string, unknown>;
-            startTime?: string;
-            endTime?: string;
+          config?: {
+            groupId?: string;
+            groupName?: string;
+            name?: string;
+            passingScore?: number;
           };
-          score: number;
-          totalQuestions: number;
-          correctAnswersCount: number;
-        }>
-      >(`/tests?${params.toString()}`);
+          questions?: unknown[];
+          userAnswers?: Record<string, unknown>;
+          startTime?: string;
+          endTime?: string;
+        };
+        score: number;
+        totalQuestions: number;
+        correctAnswersCount: number;
+      };
+
+      const pageSize = options?.limit ?? 500;
+      const buildParams = (page: number) => {
+        const params = new URLSearchParams({
+          userId,
+          status: "completed",
+          limit: String(pageSize),
+          page: String(page),
+          sort: options?.sort ?? "newest",
+        });
+        if (options?.lean !== false) params.set("lean", "1");
+        if (options?.from) params.set("from", options.from);
+        if (options?.to) params.set("to", options.to);
+        return params;
+      };
+
+      // Explicit page => single page; otherwise walk all pages for full history.
+      if (options?.page != null) {
+        return apiRequest<TestResultRow[]>(
+          `/tests?${buildParams(options.page).toString()}`,
+        );
+      }
+
+      const all: TestResultRow[] = [];
+      let page = 1;
+      let hasMore = true;
+      const maxPages = 100;
+      while (hasMore && page <= maxPages) {
+        const result = await apiRequestRaw<{
+          success: boolean;
+          data: TestResultRow[];
+          pagination?: {
+            page: number;
+            limit: number;
+            total: number;
+            hasMore: boolean;
+          };
+        }>(`/tests?${buildParams(page).toString()}`);
+        const chunk = Array.isArray(result?.data) ? result.data : [];
+        all.push(...chunk);
+        hasMore = Boolean(result?.pagination?.hasMore) && chunk.length > 0;
+        page += 1;
+      }
+      return all;
     },
 
     fetchTestResultsPage: (

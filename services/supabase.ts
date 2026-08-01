@@ -1926,15 +1926,42 @@ export const fetchTestResultsPage = async (
 export const fetchTestResults = async (userId: string, options?: FetchTestResultsOptions) => {
   console.log('Fetching test results for user:', userId);
   try {
-    const { data } = await fetchTestResultsPage(userId, {
-      ...options,
-      page: options?.page ?? 1,
-      limit: options?.limit ?? 500,
-      lean: options?.lean !== false,
-      sort: options?.sort ?? 'newest',
-    });
-    console.log('Fetched test results count:', data.length);
-    return data;
+    const pageSize = options?.limit ?? 500;
+    const lean = options?.lean !== false;
+    const sort = options?.sort ?? 'newest';
+
+    // Explicit page => single page (callers that need paging use fetchTestResultsPage).
+    if (options?.page != null) {
+      const { data } = await fetchTestResultsPage(userId, {
+        ...options,
+        page: options.page,
+        limit: pageSize,
+        lean,
+        sort,
+      });
+      console.log('Fetched test results count:', data.length);
+      return data;
+    }
+
+    // Default: walk all lean pages so all-time charts include full history.
+    const all: any[] = [];
+    let page = 1;
+    let hasMore = true;
+    const maxPages = 100;
+    while (hasMore && page <= maxPages) {
+      const { data, pagination } = await fetchTestResultsPage(userId, {
+        ...options,
+        page,
+        limit: pageSize,
+        lean,
+        sort,
+      });
+      all.push(...data);
+      hasMore = Boolean(pagination?.hasMore) && data.length > 0;
+      page += 1;
+    }
+    console.log('Fetched test results count:', all.length);
+    return all;
   } catch (error) {
     console.error('Error fetching test results:', error);
     throw error;
