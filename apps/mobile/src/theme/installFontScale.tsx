@@ -62,5 +62,24 @@ const ScaledTextInput = React.forwardRef(function ScaledTextInput(
 ScaledTextInput.displayName = 'TextInput';
 
 const reactNativeModule = require('react-native') as typeof import('react-native');
-reactNativeModule.Text = ScaledText;
-reactNativeModule.TextInput = ScaledTextInput;
+
+// React Native 0.81 exposes `Text`/`TextInput` as getter-only module exports, so a
+// direct assignment (`reactNativeModule.Text = ...`) throws
+// "Cannot assign to property 'Text' which has only a getter" at import time and crashes
+// the app before it can register. They are configurable accessors, so redefine them via
+// Object.defineProperty instead. Guard so global font scaling degrades gracefully rather
+// than ever blocking startup.
+function patchReactNativeExport(name: 'Text' | 'TextInput', component: React.ComponentType<never>) {
+  try {
+    Object.defineProperty(reactNativeModule, name, {
+      configurable: true,
+      enumerable: true,
+      get: () => component,
+    });
+  } catch {
+    // If the export can't be redefined, skip global font scaling for it instead of crashing.
+  }
+}
+
+patchReactNativeExport('Text', ScaledText as unknown as React.ComponentType<never>);
+patchReactNativeExport('TextInput', ScaledTextInput as unknown as React.ComponentType<never>);
