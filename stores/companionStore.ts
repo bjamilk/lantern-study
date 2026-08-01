@@ -365,10 +365,14 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       error: null,
     }));
 
+    let streamCompleted = false;
+    let receivedTokens = false;
+    let streamError: Error | null = null;
     await companionSendMessageStream(
       text,
       mergedContext,
       (token) => {
+        receivedTokens = true;
         set(s => ({
           messages: s.messages.map(m =>
             m.id === tempAiId ? { ...m, content: m.content + token } : m
@@ -376,6 +380,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         }));
       },
       ({ actions, messageId, userMessageId, conversationId }) => {
+        streamCompleted = true;
         if (conversationId) {
           persistConversationId(conversationId);
         }
@@ -400,13 +405,58 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         void get().loadConversations();
       },
       (err) => {
-        set(s => ({
-          messages: s.messages.filter(m => m.id !== tempUserMsg.id && m.id !== tempAiId),
-          isStreaming: false,
-          error: err.message || 'Failed to reach Lantern. Please try again.',
-        }));
+        streamError = err;
       }
     );
+
+    if (streamCompleted || !streamError) return;
+
+    // Avoid double-send if the stream already persisted and started emitting tokens.
+    if (receivedTokens) {
+      set(s => ({
+        isStreaming: false,
+        error: streamError.message || 'Failed to reach Lantern. Please try again.',
+      }));
+      return;
+    }
+
+    // Non-stream fallback when SSE is blocked or body streaming is unavailable.
+    try {
+      const { reply, actions, conversationId } = await companionSendMessage(
+        text,
+        mergedContext
+      );
+      if (conversationId) {
+        persistConversationId(conversationId);
+      }
+      set(s => ({
+        messages: s.messages.map(m => {
+          if (m.id === tempAiId) {
+            return {
+              ...m,
+              content: reply,
+              actions: actions?.length ? actions : undefined,
+            };
+          }
+          return m;
+        }),
+        isStreaming: false,
+        activeConversationId: conversationId || s.activeConversationId,
+        pendingNewConversation: false,
+        error: null,
+      }));
+      void get().loadConversations();
+    } catch (fallbackErr: unknown) {
+      const message =
+        (fallbackErr instanceof Error && fallbackErr.message) ||
+        streamError.message ||
+        'Failed to reach Lantern. Please try again.';
+      set(s => ({
+        messages: s.messages.filter(m => m.id !== tempUserMsg.id && m.id !== tempAiId),
+        isStreaming: false,
+        error: message,
+      }));
+    }
   },
 
   clearHistory: async () => {

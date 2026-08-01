@@ -8,6 +8,10 @@ import type {
   CompanionUserContext,
 } from '../types';
 import type { AIClientConfig } from './ai';
+import {
+  consumeCompanionSseBuffer,
+  readCompanionStreamError,
+} from './companionSse';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 
 type CompanionRequestOptions = {
@@ -62,6 +66,8 @@ function historyQuery(opts?: {
 }
 
 export function createCompanionClient(config: AIClientConfig) {
+  const doFetch = config.fetchImpl ?? fetch;
+
   const companionRequest = async <T>(
     endpoint: string,
     method: 'GET' | 'POST' | 'DELETE',
@@ -75,7 +81,7 @@ export function createCompanionClient(config: AIClientConfig) {
       fetchOptions.body = JSON.stringify(body || {});
     }
 
-    const response = await fetch(
+    const response = await doFetch(
       `${config.getBaseUrl()}/api/v1/ai/companion${endpoint}`,
       fetchOptions
     );
@@ -176,14 +182,18 @@ export function createCompanionClient(config: AIClientConfig) {
       onError: (err: Error) => void
     ): Promise<void> => {
       const headers = await config.getAuthHeaders();
+      const handlers = { onToken, onDone, onError };
 
       let response: Response;
       try {
-        response = await fetch(`${config.getBaseUrl()}/api/v1/ai/companion/message/stream`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ message, context }),
-        });
+        response = await doFetch(
+          `${config.getBaseUrl()}/api/v1/ai/companion/message/stream`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ message, context }),
+          }
+        );
       } catch (e: unknown) {
         onError(new Error(e instanceof Error ? e.message : 'Network error'));
         return;
@@ -191,12 +201,30 @@ export function createCompanionClient(config: AIClientConfig) {
 
       parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
 
-      if (!response.ok || !response.body) {
-        onError(new Error(`Stream request failed (${response.status})`));
+      if (!response.ok) {
+        onError(await readCompanionStreamError(response));
         return;
       }
 
-      const reader = response.body.getReader();
+      const reader = response.body?.getReader?.();
+      if (!reader) {
+        // React Native's default fetch often omits response.body even on 200.
+        // Fall back to reading the full buffered SSE payload.
+        try {
+          const text = await response.text();
+          const { stopped } = consumeCompanionSseBuffer(
+            text.endsWith('\n\n') ? text : `${text}\n\n`,
+            handlers
+          );
+          if (!stopped) {
+            onError(new Error('Stream ended without a complete response'));
+          }
+        } catch (e: unknown) {
+          onError(new Error(e instanceof Error ? e.message : 'Stream read error'));
+        }
+        return;
+      }
+
       const decoder = new TextDecoder();
       let buffer = '';
 
@@ -205,32 +233,18 @@ export function createCompanionClient(config: AIClientConfig) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split('\n\n');
-          buffer = parts.pop() ?? '';
-          for (const part of parts) {
-            if (!part.startsWith('data: ')) continue;
-            try {
-              const data = JSON.parse(part.slice(6));
-              if (data.error) {
-                onError(new Error(data.error));
-                return;
-              }
-              if (data.token !== undefined) onToken(data.token as string);
-              if (data.done) {
-                onDone({
-                  actions: (data.actions as CompanionAction[]) || [],
-                  messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
-                  userMessageId:
-                    typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
-                  conversationId:
-                    typeof data.conversationId === 'string' ? data.conversationId : undefined,
-                });
-              }
-            } catch {
-              /* malformed chunk — skip */
-            }
-          }
+          const consumed = consumeCompanionSseBuffer(buffer, handlers);
+          buffer = consumed.rest;
+          if (consumed.stopped) return;
         }
+        if (buffer.trim()) {
+          const consumed = consumeCompanionSseBuffer(
+            buffer.endsWith('\n\n') ? buffer : `${buffer}\n\n`,
+            handlers
+          );
+          if (consumed.stopped) return;
+        }
+        onError(new Error('Stream ended without a complete response'));
       } catch (e: unknown) {
         onError(new Error(e instanceof Error ? e.message : 'Stream read error'));
       }
@@ -246,7 +260,7 @@ export function createCompanionClient(config: AIClientConfig) {
         throw new Error('Message is still saving; try feedback again in a moment');
       }
       const headers = await config.getAuthHeaders();
-      const response = await fetch(`${config.getBaseUrl()}/api/v1/ai/companion/feedback`, {
+      const response = await doFetch(`${config.getBaseUrl()}/api/v1/ai/companion/feedback`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ messageId, rating }),
@@ -263,7 +277,7 @@ export function createCompanionClient(config: AIClientConfig) {
     ): Promise<void> => {
       try {
         const headers = await config.getAuthHeaders();
-        await fetch(`${config.getBaseUrl()}/api/v1/ai/companion/analytics`, {
+        await doFetch(`${config.getBaseUrl()}/api/v1/ai/companion/analytics`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ event, metadata }),

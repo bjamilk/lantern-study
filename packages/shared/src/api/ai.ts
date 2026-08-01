@@ -11,12 +11,22 @@ import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
+export type FetchLike = (
+  input: RequestInfo | URL,
+  init?: RequestInit
+) => Promise<Response>;
+
 export interface AIClientConfig {
   getBaseUrl: () => string;
   getAuthHeaders: AuthHeadersProvider;
   getUserId?: () => Promise<string | undefined>;
   onUsageUpdate?: (usage: AIUsageInfo) => void;
   defaultTimeoutMs?: number;
+  /**
+   * Optional fetch implementation. Mobile should pass `expo/fetch` so SSE
+   * streams expose `response.body` (React Native's default fetch often does not).
+   */
+  fetchImpl?: FetchLike;
 }
 
 async function pollAiJob<T>(
