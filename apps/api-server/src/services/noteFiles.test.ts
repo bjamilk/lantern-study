@@ -96,3 +96,16 @@ describe('noteFiles extraction status builders', () => {
     expect(merged).toContain('photosynthesis');
   });
 });
+
+describe('noteFiles presentation OCR defaults', () => {
+  it('does not enable OCR unless explicitly requested', async () => {
+    const { extractPresentationTextDetailsFromBuffer } = await import('./noteFiles');
+    // Invalid buffer should fail fast without spinning up Tesseract workers.
+    const result = await extractPresentationTextDetailsFromBuffer(
+      Buffer.from('not-a-pptx'),
+      'broken.pptx'
+    );
+    expect(result.usedOcr).toBe(false);
+    expect(result.text).toBe('');
+  });
+});

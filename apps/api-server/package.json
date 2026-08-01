@@ -23,6 +23,7 @@
   "description": "Scalable API server for Lantern Study app",
   "dependencies": {
     "@lantern/shared": "*",
+    "@napi-rs/canvas": "^0.1.100",
     "@sentry/node": "^9.1.0",
     "@supabase/supabase-js": "^2.81.1",
     "adm-zip": "^0.5.16",
@@ -44,11 +45,13 @@
     "morgan": "^1.10.0",
     "officeparser": "^7.2.1",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^5.6.205",
     "pg": "^8.20.0",
     "rate-limit-redis": "^4.3.1",
     "redis": "^5.9.0",
     "sharp": "^0.35.3",
     "sql.js": "^1.12.0",
+    "tesseract.js": "^7.0.0",
     "winston": "^3.17.0"
   },
   "devDependencies": {

@@ -259,7 +259,7 @@ async function startNoteOcrJob(params: {
   attachmentId: string;
   storagePath: string;
   fileName: string;
-  sourceKind: 'pdf' | 'presentation' | 'preview_pdf';
+  sourceKind: 'pdf' | 'presentation' | 'preview_pdf' | 'image';
   meta: Record<string, unknown>;
   userId: string;
   buffer?: Buffer;
@@ -509,8 +509,9 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
   });
 
   const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
+  // Never run Tesseract on the sync upload path — it can OOM/timeout and block open.
   const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, safeName, {
-    enableOcr: true,
+    enableOcr: false,
   });
   const { studyText, extractionStatus } = buildPresentationStudyText(
     safeName,
@@ -526,8 +527,8 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
     extractionStatus,
     slideCount: presentationExtract.slideCount,
     ocrMaxSlides: MAX_OCR_SLIDES,
-    presentationOcrUsed: presentationExtract.usedOcr,
-    presentationOcrTimedOut: presentationExtract.timedOut,
+    presentationOcrUsed: false,
+    presentationOcrTimedOut: false,
   };
 
   let note;
@@ -611,7 +612,7 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
   const contentType = presentationContentType(safeName);
   const fileUrl = await supabaseService.createSignedNoteFileUrl(ownedPath);
   const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, safeName, {
-    enableOcr: true,
+    enableOcr: false,
   });
   const { studyText, extractionStatus } = buildPresentationStudyText(
     safeName,
@@ -627,8 +628,8 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
     extractionStatus,
     slideCount: presentationExtract.slideCount,
     ocrMaxSlides: MAX_OCR_SLIDES,
-    presentationOcrUsed: presentationExtract.usedOcr,
-    presentationOcrTimedOut: presentationExtract.timedOut,
+    presentationOcrUsed: false,
+    presentationOcrTimedOut: false,
   };
 
   let note;
@@ -2112,7 +2113,7 @@ router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId
   }
 
   const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, fileName, {
-    enableOcr: true,
+    enableOcr: false,
   });
   const { studyText, extractionStatus } = buildPresentationStudyText(
     fileName,
@@ -2179,8 +2180,21 @@ router.post(
       typeof meta.previewStoragePath === 'string' ? meta.previewStoragePath : null;
     const storagePath =
       typeof meta.storagePath === 'string' ? meta.storagePath : null;
-    const usePreviewPdf =
-      note.sourceType === 'presentation' && Boolean(previewPath);
+    // Presentations must OCR the Gotenberg preview PDF (page rasters). Running OCR on the
+    // raw .ppt/.pptx while preview is still processing races and can wipe preview metadata.
+    if (note.sourceType === 'presentation' && !previewPath) {
+      if (meta.previewProcessing === true) {
+        res.status(409).json({
+          error: 'Slide preview is still generating. Wait for preview, then run OCR.',
+        });
+        return;
+      }
+      res.status(409).json({
+        error: 'Slide preview is required before OCR. Use Retry preview, then run OCR.',
+      });
+      return;
+    }
+    const usePreviewPdf = note.sourceType === 'presentation' && Boolean(previewPath);
     const pathForOcr = usePreviewPdf ? previewPath! : storagePath;
     if (!pathForOcr) {
       res.status(404).json({ error: 'Source file is missing from storage.' });

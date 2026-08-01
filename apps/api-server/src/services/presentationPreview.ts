@@ -9,6 +9,7 @@ import {
   mergeExtractionTexts,
 } from './noteFiles';
 import { runNoteOcrJob, shouldAutoEnqueueOcr } from './noteOcr';
+import { runSyncOrEnqueue } from '../queue/enqueue';
 import { logger } from '../utils/logger';
 
 export interface PresentationPreviewJobParams {
@@ -39,7 +40,8 @@ export async function runPresentationPreviewJob(
     }
 
     let extractedText =
-      params.extractedText ?? (await extractPresentationTextFromBuffer(buffer, fileName));
+      params.extractedText ??
+      (await extractPresentationTextFromBuffer(buffer, fileName, { enableOcr: false }));
     let { studyText, extractionStatus } = buildPresentationStudyText(fileName, extractedText);
 
     const { pdf: pdfBuffer, error: conversionError, wakeMs, convertMs, totalMs } =
@@ -124,18 +126,35 @@ export async function runPresentationPreviewJob(
       success: true,
     });
 
-    // Phase B: if shape + preview PDF text are still thin, OCR the preview PDF locally.
+    // Phase B: if shape + preview PDF text are still thin, OCR the preview PDF on the worker.
+    // Do not pass the PDF buffer through Redis — worker re-downloads from storage.
     if (shouldOcr) {
-      void runNoteOcrJob(supabaseService, {
-        noteId,
-        attachmentId,
-        storagePath: previewStoragePath,
-        fileName: fileName.replace(/\.[^.]+$/, '') + '-preview.pdf',
-        sourceKind: 'preview_pdf',
-        meta: finalMeta,
-        buffer: pdfBuffer,
-      }).catch((ocrErr) => {
-        logger.error('Auto OCR after presentation preview failed', { noteId, err: ocrErr });
+      void runSyncOrEnqueue(
+        'notes.ocr.extract',
+        {
+          noteId,
+          attachmentId,
+          storagePath: previewStoragePath,
+          fileName: fileName.replace(/\.[^.]+$/, '') + '-preview.pdf',
+          sourceKind: 'preview_pdf',
+          meta: finalMeta,
+        },
+        undefined,
+        () =>
+          runNoteOcrJob(supabaseService, {
+            noteId,
+            attachmentId,
+            storagePath: previewStoragePath,
+            fileName: fileName.replace(/\.[^.]+$/, '') + '-preview.pdf',
+            sourceKind: 'preview_pdf',
+            meta: finalMeta,
+            buffer: pdfBuffer,
+          })
+      ).catch((ocrErr) => {
+        logger.error('Auto OCR after presentation preview failed', {
+          noteId,
+          error: ocrErr instanceof Error ? ocrErr.message : String(ocrErr),
+        });
       });
     }
   } catch (err) {

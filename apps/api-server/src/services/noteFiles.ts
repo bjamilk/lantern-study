@@ -140,9 +140,27 @@ async function astToPlainText(ast: {
   return '';
 }
 
+async function parsePresentationWithoutOcr(
+  buffer: Buffer
+): Promise<{ text: string; slideCount?: number }> {
+  const { parseOffice } = require('officeparser') as typeof import('officeparser');
+  const parsed = await parseOffice(buffer, {
+    extractAttachments: false,
+    ocr: false,
+  });
+  const text = await astToPlainText(parsed);
+  const slideCount =
+    typeof parsed.metadata?.slides === 'number'
+      ? parsed.metadata.slides
+      : typeof parsed.metadata?.pages === 'number'
+        ? parsed.metadata.pages
+        : undefined;
+  return { text, slideCount };
+}
+
 /**
- * Extract PPT/PPTX text. Optionally runs local Tesseract via officeparser for image slides.
- * Soft-caps runtime with AbortSignal; does not hard-fail the upload on OCR timeout.
+ * Extract PPT/PPTX text. OCR is opt-in and never blocks the non-OCR open path.
+ * Soft-caps runtime with AbortSignal; failures always fall back to shape text.
  */
 export async function extractPresentationTextFromBuffer(
   buffer: Buffer,
@@ -158,17 +176,31 @@ export async function extractPresentationTextDetailsFromBuffer(
   fileName: string,
   options?: { enableOcr?: boolean; timeoutMs?: number }
 ): Promise<PresentationTextExtractionResult> {
-  const enableOcr = options?.enableOcr !== false;
+  // Default OFF: sync upload/finalize must stay fast and must not depend on Tesseract.
+  const enableOcr = options?.enableOcr === true;
   const timeoutMs = options?.timeoutMs ?? PRESENTATION_OCR_TIMEOUT_MS;
+
+  if (!enableOcr) {
+    try {
+      const parsed = await parsePresentationWithoutOcr(buffer);
+      return { text: parsed.text, slideCount: parsed.slideCount, usedOcr: false, timedOut: false };
+    } catch (err) {
+      logger.warn('Presentation text extraction failed', {
+        fileName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { text: '', usedOcr: false, timedOut: false };
+    }
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let timedOut = false;
 
   try {
     const { parseOffice } = require('officeparser') as typeof import('officeparser');
     const parsed = await parseOffice(buffer, {
-      extractAttachments: enableOcr,
-      ocr: enableOcr,
+      extractAttachments: true,
+      ocr: true,
       ocrConfig: {
         language: 'eng',
         timeout: {
@@ -186,33 +218,35 @@ export async function extractPresentationTextDetailsFromBuffer(
         : typeof parsed.metadata?.pages === 'number'
           ? parsed.metadata.pages
           : undefined;
-    return { text, slideCount, usedOcr: enableOcr, timedOut: false };
+    return { text, slideCount, usedOcr: true, timedOut: false };
   } catch (err) {
-    const aborted = err instanceof Error && (err.name === 'AbortError' || /aborted/i.test(err.message));
-    if (aborted) {
-      timedOut = true;
-      logger.warn('Presentation OCR/extraction timed out; retrying without OCR', {
+    const aborted =
+      err instanceof Error && (err.name === 'AbortError' || /aborted/i.test(err.message));
+    logger.warn(
+      aborted
+        ? 'Presentation OCR timed out; falling back to shape text'
+        : 'Presentation OCR failed; falling back to shape text',
+      {
         fileName,
         timeoutMs,
-      });
-      try {
-        const { parseOffice } = require('officeparser') as typeof import('officeparser');
-        const parsed = await parseOffice(buffer, {
-          extractAttachments: false,
-          ocr: false,
-        });
-        const text = await astToPlainText(parsed);
-        return { text, usedOcr: false, timedOut: true };
-      } catch (fallbackErr) {
-        logger.warn('Presentation text extraction failed after OCR timeout', {
-          err: fallbackErr,
-          fileName,
-        });
-        return { text: '', usedOcr: false, timedOut: true };
+        error: err instanceof Error ? err.message : String(err),
       }
+    );
+    try {
+      const parsed = await parsePresentationWithoutOcr(buffer);
+      return {
+        text: parsed.text,
+        slideCount: parsed.slideCount,
+        usedOcr: false,
+        timedOut: aborted,
+      };
+    } catch (fallbackErr) {
+      logger.warn('Presentation text extraction failed after OCR fallback', {
+        fileName,
+        error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+      });
+      return { text: '', usedOcr: false, timedOut: aborted };
     }
-    logger.warn('Presentation text extraction failed', { err, fileName });
-    return { text: '', usedOcr: enableOcr, timedOut };
   } finally {
     clearTimeout(timer);
   }

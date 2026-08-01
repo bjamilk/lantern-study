@@ -316,7 +316,7 @@ async function processFileJob(job: Job): Promise<unknown> {
       attachmentId: string;
       storagePath: string;
       fileName: string;
-      sourceKind: "pdf" | "presentation" | "preview_pdf";
+      sourceKind: "pdf" | "presentation" | "preview_pdf" | "image";
       meta?: Record<string, unknown>;
       bufferBase64?: string;
     };

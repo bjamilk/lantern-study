@@ -33,6 +33,43 @@ declare module 'pdf-parse' {
   export = pdfParse;
 }
 
+declare module 'pdfjs-dist/legacy/build/pdf.mjs' {
+  export const GlobalWorkerOptions: { workerSrc: string };
+  export function getDocument(src: Record<string, unknown>): {
+    promise: Promise<{
+      numPages: number;
+      getPage: (n: number) => Promise<{
+        getViewport: (p: { scale: number }) => { width: number; height: number };
+        render: (p: Record<string, unknown>) => { promise: Promise<void> };
+      }>;
+      destroy?: () => Promise<void> | void;
+    }>;
+  };
+}
+
+declare module '@napi-rs/canvas' {
+  export function createCanvas(
+    width: number,
+    height: number
+  ): {
+    width: number;
+    height: number;
+    getContext: (type: '2d') => unknown;
+    toBuffer: (mime?: string) => Buffer;
+  };
+}
+
+declare module 'tesseract.js' {
+  export function createWorker(
+    langs?: string,
+    oem?: number,
+    options?: Record<string, unknown>
+  ): Promise<{
+    recognize: (image: Buffer | string) => Promise<{ data: { text: string } }>;
+    terminate: () => Promise<void>;
+  }>;
+}
+
 declare module 'officeparser' {
   export interface OfficeParserAst {
     toText(): string;
