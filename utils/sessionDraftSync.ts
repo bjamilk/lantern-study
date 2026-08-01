@@ -1,6 +1,7 @@
 import type { PausedSessionSummary, TestSessionData, TestSessionKind } from '../types';
 import {
   createTestDraft,
+  getSessionRemainingSeconds,
   patchTestDraft,
   writeLocalSessionMirror,
 } from '../services/testDrafts';
@@ -12,6 +13,29 @@ let flushInFlight: Promise<void> | null = null;
 
 function answeredCount(session: TestSessionData): number {
   return Object.keys(session.userAnswers || {}).length;
+}
+
+/**
+ * Merge a server draft onto local session state without wiping the live countdown.
+ * mapDraftToSession always sets endTime (often undefined) which would overwrite a Date.
+ */
+function mergeDraftOntoSession(
+  local: TestSessionData,
+  remote: TestSessionData,
+  kind: TestSessionKind,
+  status?: TestSessionData['status'],
+): TestSessionData {
+  return {
+    ...local,
+    ...remote,
+    endTime: remote.endTime ?? local.endTime,
+    remainingTime: remote.remainingTime ?? local.remainingTime,
+    config: remote.config?.questionIds?.length ? remote.config : local.config || remote.config,
+    questions: remote.questions?.length ? remote.questions : local.questions,
+    userAnswers: remote.userAnswers || local.userAnswers,
+    sessionKind: kind,
+    status: status ?? remote.status ?? local.status,
+  };
 }
 
 export function toPausedSummary(
@@ -31,8 +55,7 @@ export function toPausedSummary(
     answeredCount: answeredCount(session),
     totalQuestions: session.questions.length,
     currentQuestionIndex: session.currentQuestionIndex || 0,
-    remainingTimeSeconds:
-      typeof session.remainingTime === 'number' ? session.remainingTime : null,
+    remainingTimeSeconds: getSessionRemainingSeconds(session),
     startTime:
       session.startTime instanceof Date
         ? session.startTime.toISOString()
@@ -65,7 +88,7 @@ export async function ensureSessionDraft(
   }
   try {
     const created = await createTestDraft({ ...session, sessionKind: kind }, kind);
-    return { ...session, ...created, sessionKind: kind, status: 'in_progress' };
+    return mergeDraftOntoSession(session, created, kind, 'in_progress');
   } catch (error) {
     console.error('[sessionDraftSync] create draft failed', error);
     const localId = `local-${Date.now()}`;
@@ -101,16 +124,26 @@ export async function flushActiveSessionDraft(options?: {
     working = await ensureSessionDraft(working, kind);
 
     const status = options?.status || 'in_progress';
+    const remainingForPatch =
+      typeof options?.remainingTime === 'number'
+        ? options.remainingTime
+        : getSessionRemainingSeconds(working);
+
     if (working.id && !String(working.id).startsWith('local-') && navigator.onLine) {
       try {
         const patched = await patchTestDraft(working.id, {
           userAnswers: working.userAnswers,
           currentQuestionIndex: working.currentQuestionIndex,
-          remainingTime:
-            typeof working.remainingTime === 'number' ? working.remainingTime : null,
+          remainingTime: remainingForPatch,
           status,
         });
-        working = { ...working, ...patched, status };
+        working = mergeDraftOntoSession(working, patched, kind, status);
+        // Live countdown uses endTime; keep remainingTime only while paused.
+        if (status !== 'paused') {
+          working = { ...working, remainingTime: undefined };
+        } else if (typeof remainingForPatch === 'number') {
+          working = { ...working, remainingTime: remainingForPatch };
+        }
       } catch (error) {
         console.error('[sessionDraftSync] patch draft failed', error);
         working = { ...working, status };

@@ -10,6 +10,17 @@ function toIso(value: Date | string | undefined): string | undefined {
   return value;
 }
 
+/** Seconds left for a timed session — prefer explicit remainingTime, else endTime clock. */
+export function getSessionRemainingSeconds(session: TestSessionData): number | null {
+  if (typeof session.remainingTime === 'number' && Number.isFinite(session.remainingTime)) {
+    return Math.max(0, Math.round(session.remainingTime));
+  }
+  if (session.endTime) {
+    return Math.max(0, Math.round((new Date(session.endTime).getTime() - Date.now()) / 1000));
+  }
+  return null;
+}
+
 export function sessionToDraftPayload(session: TestSessionData, kind: TestSessionKind) {
   return {
     config: session.config,
@@ -22,8 +33,8 @@ export function sessionToDraftPayload(session: TestSessionData, kind: TestSessio
       session.config?.groupName ||
       (kind === 'study' ? 'Study session' : 'Test'),
     current_question_index: session.currentQuestionIndex || 0,
-    remaining_time_seconds:
-      typeof session.remainingTime === 'number' ? session.remainingTime : null,
+    // Persist countdown from endTime when remainingTime was never snapshotted (fresh start).
+    remaining_time_seconds: getSessionRemainingSeconds(session),
     is_offline: !!session.isOffline,
   };
 }
