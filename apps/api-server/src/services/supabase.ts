@@ -10329,7 +10329,7 @@ export class SupabaseService {
           id: dmThreadId,
           participant_ids: sortedIds,
           participants: {},
-          last_message: initialMessage,
+          last_message: formatChatMessagePreview(initialMessage) || initialMessage,
           last_message_time: new Date().toISOString(),
           status: "open",
           requested_by: null,
