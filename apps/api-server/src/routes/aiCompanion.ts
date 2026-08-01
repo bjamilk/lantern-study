@@ -17,6 +17,16 @@ import {
   fetchAuthorizedGroupSummaryMessages,
 } from '../services/companionContext';
 import { companionStreamGate } from '../utils/concurrencyGate';
+import {
+  createCompanionConversation,
+  ensureConversationTitle,
+  findLatestConversationForNoteScope,
+  getOwnedConversation,
+  listCompanionConversations,
+  parseCompanionUuid,
+  resolveConversationForSend,
+  touchConversation,
+} from '../services/companionConversations';
 
 let supabaseService: SupabaseService;
 
@@ -29,18 +39,110 @@ const router = Router();
 router.use(authMiddleware as any);
 router.use(requirePermission('ai'));
 
-router.get('/history', async (req: Request, res: Response) => {
+type CompanionRequestContext = CompanionContext & {
+  conversationId?: string;
+  newConversation?: boolean;
+};
+
+function parseNoteContextId(value: unknown): string | null {
+  return parseCompanionUuid(value);
+}
+
+router.get('/conversations', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
   try {
-    const { data, error } = await supabaseService.getClient()
+    const conversations = await listCompanionConversations(
+      supabaseService.getClient(),
+      userId
+    );
+    res.json({ conversations });
+  } catch (err: any) {
+    console.error('Companion conversations list error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
+
+router.post('/conversations', async (req: Request, res: Response) => {
+  const userId = (req as any).user.id;
+  const noteContextId = parseNoteContextId(
+    (req.body as { noteContextId?: string } | undefined)?.noteContextId
+  );
+  try {
+    // Only attach a note the user owns (same trust boundary as message send).
+    let trustedNoteId: string | null = null;
+    if (noteContextId) {
+      const trusted = await buildTrustedCompanionContext(supabaseService, userId, {
+        noteId: noteContextId,
+      });
+      trustedNoteId = trusted.noteId || null;
+    }
+    const row = await createCompanionConversation(
+      supabaseService.getClient(),
+      userId,
+      trustedNoteId
+    );
+    res.status(201).json({
+      conversation: {
+        id: row.id,
+        title: row.title || 'New chat',
+        preview: '',
+        noteContextId: row.note_context_id,
+        noteTitle: null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    });
+  } catch (err: any) {
+    console.error('Companion create conversation error:', err.message);
+    res.status(500).json({ error: 'Failed to create conversation' });
+  }
+});
+
+router.get('/history', async (req: Request, res: Response) => {
+  const userId = (req as any).user.id;
+  const conversationId = parseCompanionUuid(req.query.conversationId);
+  const noteContextId = parseNoteContextId(req.query.noteContextId);
+  try {
+    const client = supabaseService.getClient();
+    let resolvedConversationId = conversationId;
+    let resolvedNoteContextId: string | null = noteContextId;
+
+    if (resolvedConversationId) {
+      const owned = await getOwnedConversation(client, userId, resolvedConversationId);
+      if (!owned) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      resolvedNoteContextId = owned.note_context_id;
+    } else {
+      const latest = await findLatestConversationForNoteScope(client, userId, noteContextId);
+      resolvedConversationId = latest?.id ?? null;
+      if (latest) resolvedNoteContextId = latest.note_context_id;
+    }
+
+    if (!resolvedConversationId) {
+      res.json({
+        messages: [],
+        conversationId: null,
+        noteContextId: resolvedNoteContextId,
+      });
+      return;
+    }
+
+    const { data, error } = await client
       .from('ai_companion_messages')
-      .select('id, role, content, actions, feedback, created_at')
+      .select('id, role, content, actions, feedback, created_at, note_context_id, conversation_id')
       .eq('user_id', userId)
+      .eq('conversation_id', resolvedConversationId)
       .order('created_at', { ascending: true })
       .limit(50);
 
     if (error) throw error;
-    res.json({ messages: data || [] });
+    res.json({
+      messages: data || [],
+      conversationId: resolvedConversationId,
+      noteContextId: resolvedNoteContextId,
+    });
   } catch (err: any) {
     console.error('Companion history error:', err.message);
     res.status(500).json({ error: 'Failed to fetch conversation history' });
@@ -49,14 +151,46 @@ router.get('/history', async (req: Request, res: Response) => {
 
 router.delete('/history', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
+  const conversationId = parseCompanionUuid(
+    req.query.conversationId ??
+      (req.body as { conversationId?: string } | undefined)?.conversationId
+  );
+  const noteContextId = parseNoteContextId(
+    req.query.noteContextId ?? (req.body as { noteContextId?: string } | undefined)?.noteContextId
+  );
   try {
-    const { error } = await supabaseService.getClient()
-      .from('ai_companion_messages')
-      .delete()
-      .eq('user_id', userId);
+    const client = supabaseService.getClient();
 
-    if (error) throw error;
-    res.json({ success: true });
+    if (conversationId) {
+      const owned = await getOwnedConversation(client, userId, conversationId);
+      if (!owned) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      const { error } = await client
+        .from('ai_companion_conversations')
+        .delete()
+        .eq('id', conversationId)
+        .eq('user_id', userId);
+      if (error) throw error;
+      res.json({ success: true, conversationId, noteContextId: owned.note_context_id });
+      return;
+    }
+
+    // Legacy: clear latest (or all matching) note-scoped messages + their conversations.
+    const latest = await findLatestConversationForNoteScope(client, userId, noteContextId);
+    if (latest) {
+      const { error } = await client
+        .from('ai_companion_conversations')
+        .delete()
+        .eq('id', latest.id)
+        .eq('user_id', userId);
+      if (error) throw error;
+      res.json({ success: true, conversationId: latest.id, noteContextId });
+      return;
+    }
+
+    res.json({ success: true, conversationId: null, noteContextId });
   } catch (err: any) {
     console.error('Companion clear history error:', err.message);
     res.status(500).json({ error: 'Failed to clear conversation history' });
@@ -172,11 +306,67 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
 router.use(aiPostBurstRateLimit);
 router.use(aiRateLimitForFeature('companion'));
 
+async function persistCompanionExchange(params: {
+  userId: string;
+  message: string;
+  reply: string;
+  actions: unknown[];
+  conversationId: string;
+  noteContextId: string | null;
+  selectIds?: boolean;
+}) {
+  const {
+    userId,
+    message,
+    reply,
+    actions,
+    conversationId,
+    noteContextId,
+    selectIds = false,
+  } = params;
+  const client = supabaseService.getClient();
+  const now = new Date().toISOString();
+  const rows = [
+    {
+      user_id: userId,
+      role: 'user' as const,
+      content: message,
+      created_at: now,
+      note_context_id: noteContextId,
+      conversation_id: conversationId,
+    },
+    {
+      user_id: userId,
+      role: 'assistant' as const,
+      content: reply,
+      actions: actions.length ? actions : null,
+      created_at: new Date(Date.now() + 1).toISOString(),
+      note_context_id: noteContextId,
+      conversation_id: conversationId,
+    },
+  ];
+
+  if (selectIds) {
+    const { data, error } = await client
+      .from('ai_companion_messages')
+      .insert(rows)
+      .select('id, role');
+    if (error) throw error;
+    await touchConversation(client, userId, conversationId);
+    return (data || []) as Array<{ id: string; role: string }>;
+  }
+
+  const { error } = await client.from('ai_companion_messages').insert(rows);
+  if (error) throw error;
+  await touchConversation(client, userId, conversationId);
+  return [];
+}
+
 router.post('/message', validateAICompanionMessage, handleValidationErrors, async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
   const { message, context } = req.body as {
     message: string;
-    context?: CompanionContext;
+    context?: CompanionRequestContext;
   };
 
   if (!message || typeof message !== 'string' || message.trim().length < 1) {
@@ -187,23 +377,48 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
   try {
     const outcome = await runSyncOrEnqueue(
       'ai.companion.message',
-      { message: message.trim(), context: context || {} },
+      {
+        message: message.trim(),
+        context: context || {},
+        conversationId: parseCompanionUuid(context?.conversationId),
+        newConversation: context?.newConversation === true,
+      },
       userId,
       async () => {
-        const { data: historyRows } = await supabaseService.getClient()
-          .from('ai_companion_messages')
-          .select('role, content')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
         const trustedContext = await buildTrustedCompanionContext(
           supabaseService,
           userId,
           context || {}
         );
-        const { reply, actions, provider } = await companionChat(message.trim(), history, trustedContext);
+        const threadNoteId = trustedContext.noteId || null;
+        const client = supabaseService.getClient();
+        const conversation = await resolveConversationForSend(
+          client,
+          userId,
+          parseCompanionUuid(context?.conversationId),
+          threadNoteId,
+          { forceNew: context?.newConversation === true }
+        );
+        // Conversation's note scope wins over client once the thread exists.
+        const effectiveNoteId = conversation.note_context_id ?? threadNoteId;
+
+        const { data: historyRows } = await client
+          .from('ai_companion_messages')
+          .select('role, content')
+          .eq('user_id', userId)
+          .eq('conversation_id', conversation.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        const history = (historyRows || []).reverse() as Array<{
+          role: 'user' | 'assistant';
+          content: string;
+        }>;
+        const { reply, actions, provider } = await companionChat(
+          message.trim(),
+          history,
+          { ...trustedContext, noteId: effectiveNoteId || undefined }
+        );
 
         await logAIInference(supabaseService.getClient(), {
           userId,
@@ -212,15 +427,22 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           requestId: (req as any).requestId,
         });
 
-        const now = new Date().toISOString();
-        await supabaseService.getClient()
-          .from('ai_companion_messages')
-          .insert([
-            { user_id: userId, role: 'user', content: message.trim(), created_at: now },
-            { user_id: userId, role: 'assistant', content: reply, actions: actions.length ? actions : null, created_at: new Date(Date.now() + 1).toISOString() },
-          ]);
+        await persistCompanionExchange({
+          userId,
+          message: message.trim(),
+          reply,
+          actions,
+          conversationId: conversation.id,
+          noteContextId: effectiveNoteId,
+        });
+        await ensureConversationTitle(
+          client,
+          userId,
+          conversation,
+          message.trim()
+        );
 
-        return { reply, actions, provider };
+        return { reply, actions, provider, conversationId: conversation.id };
       }
     );
 
@@ -240,7 +462,7 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
   const userId = (req as any).user.id;
   const { message, context } = req.body as {
     message: string;
-    context?: CompanionContext;
+    context?: CompanionRequestContext;
   };
 
   if (!message || typeof message !== 'string' || message.trim().length < 1) {
@@ -273,33 +495,52 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
   };
 
   try {
-    const { data: historyRows } = await supabaseService.getClient()
-      .from('ai_companion_messages')
-      .select('role, content')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
     const trustedContext = await buildTrustedCompanionContext(
       supabaseService,
       userId,
       context || {}
     );
-    const { reply, actions } = await companionChat(message.trim(), history, trustedContext);
+    const threadNoteId = trustedContext.noteId || null;
+    const client = supabaseService.getClient();
+    const conversation = await resolveConversationForSend(
+      client,
+      userId,
+      parseCompanionUuid(context?.conversationId),
+      threadNoteId,
+      { forceNew: context?.newConversation === true }
+    );
+    const effectiveNoteId = conversation.note_context_id ?? threadNoteId;
 
-    const now = new Date().toISOString();
-    const { data: inserted, error: insertError } = await supabaseService.getClient()
+    const { data: historyRows } = await client
       .from('ai_companion_messages')
-      .insert([
-        { user_id: userId, role: 'user', content: message.trim(), created_at: now },
-        { user_id: userId, role: 'assistant', content: reply, actions: actions.length ? actions : null, created_at: new Date(Date.now() + 1).toISOString() },
-      ])
-      .select('id, role');
+      .select('role, content')
+      .eq('user_id', userId)
+      .eq('conversation_id', conversation.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
 
-    if (insertError) throw insertError;
-    const assistantMessageId = inserted?.find((row) => row.role === 'assistant')?.id as string | undefined;
-    const userMessageId = inserted?.find((row) => row.role === 'user')?.id as string | undefined;
+    const history = (historyRows || []).reverse() as Array<{
+      role: 'user' | 'assistant';
+      content: string;
+    }>;
+    const { reply, actions } = await companionChat(message.trim(), history, {
+      ...trustedContext,
+      noteId: effectiveNoteId || undefined,
+    });
+
+    const inserted = await persistCompanionExchange({
+      userId,
+      message: message.trim(),
+      reply,
+      actions,
+      conversationId: conversation.id,
+      noteContextId: effectiveNoteId,
+      selectIds: true,
+    });
+    await ensureConversationTitle(client, userId, conversation, message.trim());
+
+    const assistantMessageId = inserted.find((row) => row.role === 'assistant')?.id;
+    const userMessageId = inserted.find((row) => row.role === 'user')?.id;
 
     const tokens = reply.split(/(\s+)/);
     for (const token of tokens) {
@@ -310,7 +551,13 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       }
     }
 
-    sendEvent({ done: true, actions, messageId: assistantMessageId, userMessageId });
+    sendEvent({
+      done: true,
+      actions,
+      messageId: assistantMessageId,
+      userMessageId,
+      conversationId: conversation.id,
+    });
     res.end();
   } catch (err: any) {
     console.error('Companion stream error:', err.message);

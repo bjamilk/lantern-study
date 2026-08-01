@@ -71,6 +71,7 @@ export function useGroupHandlers() {
           [user.id]: { name: user.user_metadata?.full_name || user.email || 'You' },
           [otherUserId]: { name: otherUserName },
         },
+        clientPending: true,
       };
       useGroupStore.setState(state => ({
         dmThreads: [...state.dmThreads, newThread],

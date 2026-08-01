@@ -1,15 +1,25 @@
-import { AppMode, ChatItem } from '../types';
+import { AppMode, ChatItem, DMThread } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useUIStore } from '../stores/uiStore';
-import { fetchDecks, fetchGroups } from '../services/supabase';
+import { fetchDecks, fetchDmThreads, fetchGroups } from '../services/supabase';
+import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
 import { ParsedAppRoute } from '../utils/appRoutes';
 
 export interface HydrationResult {
   mode: AppMode | null;
   redirect?: string;
+}
+
+/** Thread ids are `${sortedUuidA}-${sortedUuidB}` — recover the peer when list race loses. */
+function otherParticipantFromThreadId(threadId: string, userId: string): string | null {
+  const prefix = `${userId}-`;
+  const suffix = `-${userId}`;
+  if (threadId.startsWith(prefix)) return threadId.slice(prefix.length) || null;
+  if (threadId.endsWith(suffix)) return threadId.slice(0, -suffix.length) || null;
+  return null;
 }
 
 export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<HydrationResult> {
@@ -52,8 +62,45 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
         const chat: ChatItem = { ...group, chatType: 'group' };
         ui.setSelectedChat(chat);
       } else if (params.threadId) {
-        const { dmThreads } = useGroupStore.getState();
-        const thread = dmThreads.find((t) => t.id === params.threadId);
+        const userId = useAuthStore.getState().currentUser?.id;
+        let thread = useGroupStore.getState().dmThreads.find((t) => t.id === params.threadId);
+
+        // Deep links often race the bootstrap threads fetch — load once before redirecting.
+        if (!thread && userId) {
+          try {
+            const fetched = await fetchDmThreads(userId);
+            if (Array.isArray(fetched)) {
+              const mapped = fetched.map((t: any) => mapDmThreadFromApi(t));
+              useGroupStore.getState().updateDmThreads((prev) =>
+                mergeDmThreadLists(prev, mapped, 'server')
+              );
+              thread = useGroupStore
+                .getState()
+                .dmThreads.find((t) => t.id === params.threadId);
+            }
+          } catch {
+            // fall through — may still open from optimistic/local cache below
+          }
+        }
+
+        // Last resort: open from composite thread id so message fetch can proceed
+        // while the threads list catches up.
+        if (!thread && userId && typeof params.threadId === 'string') {
+          const otherUserId = otherParticipantFromThreadId(params.threadId, userId);
+          if (otherUserId && otherUserId !== userId) {
+            const synthesized: DMThread = {
+              id: params.threadId,
+              participantIds: [userId, otherUserId].sort() as [string, string],
+              participants: {},
+              clientPending: true,
+            };
+            useGroupStore.getState().updateDmThreads((prev) =>
+              prev.some((t) => t.id === params.threadId) ? prev : [...prev, synthesized]
+            );
+            thread = synthesized;
+          }
+        }
+
         if (!thread) {
           return { mode: AppMode.CHAT, redirect: '/chat' };
         }

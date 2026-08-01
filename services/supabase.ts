@@ -28,13 +28,12 @@ import {
   fetchCookieSession,
   logoutCookieSession,
   restoreCookieSession,
-  type CookieSessionResolveResult,
 } from './authCookieSession'
 
 // Use shared config for URLs
 const supabaseUrl = getSupabaseUrl()
 const supabaseAnonKey = getSupabaseAnonKey()
-const getApiRoot = () => (getApiBaseUrl() || "").replace(/\/$/, "")
+export const getApiRoot = () => (getApiBaseUrl() || "").replace(/\/$/, "")
 const cookieAuthEnabled = typeof window !== 'undefined' && isCookieAuthEnabled()
 
 async function createDeliveryResponseError(
@@ -195,6 +194,17 @@ export function withApiCredentials(init: RequestInit = {}): RequestInit {
   return { ...next, credentials: 'include' };
 }
 
+/** Module-scoped CAS version for settings PUTs — reset on logout to avoid cross-user leaks. */
+let lastKnownSettingsVersion: number | undefined;
+/** Serialize settings PUTs so checklist / tips / theme syncs don't race the same CAS version. */
+let settingsSaveQueue: Promise<unknown> = Promise.resolve();
+
+/** Reset module-scoped CAS version cache (call on logout to avoid cross-user PC leaks). */
+export function clearLastKnownSettingsVersion(): void {
+  lastKnownSettingsVersion = undefined;
+  settingsSaveQueue = Promise.resolve();
+}
+
 /** Server-side session invalidation + Supabase global sign-out + local cleanup. */
 export async function apiLogoutSession(): Promise<void> {
   try {
@@ -217,6 +227,7 @@ export async function apiLogoutSession(): Promise<void> {
   } catch (e) {
     console.warn('Supabase signOut failed:', e);
   }
+  clearLastKnownSettingsVersion();
   clearAllClientAuthStorage();
 }
 
@@ -310,9 +321,8 @@ export const bootstrapAuthFromStorage = (): { token: string; userId: string } | 
   return { token, userId };
 };
 
-export type SessionResolveFailure = CookieSessionResolveResult extends { ok: false; reason: infer R }
-  ? R
-  : never;
+/** Keep explicit — inferring from CookieSessionResolveResult collapses to `never` under the authCookieSession ↔ supabase cycle. */
+export type SessionResolveFailure = 'revoked' | 'missing' | 'network';
 
 export type SessionResolveResult =
   | { ok: true; session: NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']> }
@@ -650,7 +660,7 @@ export function mapGroupListFromApi(
   }));
 }
 
-export const fetchGroups = async (userId: string) => {
+export const fetchGroups = async (userId: string): Promise<Group[]> => {
   console.log('Fetching groups for user:', userId);
 
   if (!(await hasValidSession())) {
@@ -1405,7 +1415,8 @@ export const createFlashcard = async (flashcardData: {
     console.log('Flashcard created:', result.data);
     return result.data;
   } catch (error) {
-    console.error('Error creating flashcard:', error.message || JSON.stringify(error));
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
+    console.error('Error creating flashcard:', message);
     throw error;
   }
 };
@@ -1915,15 +1926,42 @@ export const fetchTestResultsPage = async (
 export const fetchTestResults = async (userId: string, options?: FetchTestResultsOptions) => {
   console.log('Fetching test results for user:', userId);
   try {
-    const { data } = await fetchTestResultsPage(userId, {
-      ...options,
-      page: options?.page ?? 1,
-      limit: options?.limit ?? 500,
-      lean: options?.lean !== false,
-      sort: options?.sort ?? 'newest',
-    });
-    console.log('Fetched test results count:', data.length);
-    return data;
+    const pageSize = options?.limit ?? 500;
+    const lean = options?.lean !== false;
+    const sort = options?.sort ?? 'newest';
+
+    // Explicit page => single page (callers that need paging use fetchTestResultsPage).
+    if (options?.page != null) {
+      const { data } = await fetchTestResultsPage(userId, {
+        ...options,
+        page: options.page,
+        limit: pageSize,
+        lean,
+        sort,
+      });
+      console.log('Fetched test results count:', data.length);
+      return data;
+    }
+
+    // Default: walk all lean pages so all-time charts include full history.
+    const all: any[] = [];
+    let page = 1;
+    let hasMore = true;
+    const maxPages = 100;
+    while (hasMore && page <= maxPages) {
+      const { data, pagination } = await fetchTestResultsPage(userId, {
+        ...options,
+        page,
+        limit: pageSize,
+        lean,
+        sort,
+      });
+      all.push(...data);
+      hasMore = Boolean(pagination?.hasMore) && data.length > 0;
+      page += 1;
+    }
+    console.log('Fetched test results count:', all.length);
+    return all;
   } catch (error) {
     console.error('Error fetching test results:', error);
     throw error;
@@ -2800,8 +2838,10 @@ export const fetchMarketplaceListingsPage = async (filters: {
     total: 0,
   };
 
+  type ListingsPage = { data: any[]; pagination: { page: number; limit: number; total: number } };
+
   try {
-    return await marketplaceListingsCache.get(cacheKey, async () => {
+    return await marketplaceListingsCache.get(cacheKey, async (): Promise<ListingsPage> => {
       const queryParams = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
@@ -2837,7 +2877,7 @@ export const fetchMarketplaceListingsPage = async (filters: {
           total: (result.data || []).length,
         },
       };
-    });
+    }) as Promise<ListingsPage>;
   } catch (error) {
     if (error instanceof RateLimitError) throw error;
     console.error('Error fetching listings:', error);
@@ -3627,11 +3667,18 @@ export const boostMarketplaceListing = async (listingId: string, durationHours: 
   return result.data;
 };
 
-export const buyMarketplaceListingNow = async (listingId: string, couponCode?: string) => {
+export const buyMarketplaceListingNow = async (
+  listingId: string,
+  couponCode?: string,
+  quantity?: number
+) => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/buy-now`, {
     method: 'POST',
     headers: await getAuthHeaders(),
-    body: JSON.stringify(couponCode ? { couponCode } : {}),
+    body: JSON.stringify({
+      ...(couponCode ? { couponCode } : {}),
+      ...(quantity != null && quantity > 0 ? { quantity } : {}),
+    }),
   });
 
   if (!response.ok) {
@@ -3639,6 +3686,90 @@ export const buyMarketplaceListingNow = async (listingId: string, couponCode?: s
     throw new Error(err.error || 'Failed to complete purchase');
   }
 
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchMarketplaceCart = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const addToMarketplaceCart = async (listingId: string, quantity?: number) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({
+      listingId,
+      ...(quantity != null && quantity > 0 ? { quantity } : {}),
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to add to cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const updateMarketplaceCartItem = async (listingId: string, quantity: number) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/${listingId}`, {
+    method: 'PATCH',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ quantity }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const removeMarketplaceCartItem = async (listingId: string) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/${listingId}`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to remove cart item');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const clearMarketplaceCart = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to clear cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const checkoutMarketplaceCart = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/checkout`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Checkout failed');
+  }
   const result = await response.json();
   return result.data;
 };
@@ -3813,6 +3944,56 @@ export const fetchSellerProfile = async (userId: string) => {
   }
 };
 
+export const updateMyShop = async (data: {
+  shopName?: string;
+  bio?: string | null;
+  coverImageUrl?: string | null;
+}) => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/sellers/me/shop`,
+    {
+      method: 'PATCH',
+      headers: { ...(await getAuthHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    },
+    10000,
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update shop');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchMarketplaceShops = async (params?: {
+  campus?: string;
+  q?: string;
+  page?: number;
+  limit?: number;
+}) => {
+  const search = new URLSearchParams();
+  if (params?.campus) search.set('campus', params.campus);
+  if (params?.q) search.set('q', params.q);
+  if (params?.page) search.set('page', String(params.page));
+  if (params?.limit) search.set('limit', String(params.limit));
+  const qs = search.toString();
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/shops${qs ? `?${qs}` : ''}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    8000,
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load shops');
+  }
+  const result = await response.json();
+  return {
+    shops: (result.data || []) as import('../types').MarketplaceShopCard[],
+    meta: result.meta as { total: number; page: number; limit: number } | undefined,
+  };
+};
+
 // --- Recently Viewed (localStorage) ---
 
 const RECENTLY_VIEWED_KEY = 'lantern_recently_viewed';
@@ -3982,44 +4163,60 @@ export const deleteMarketplaceImage = async (filePath: string) => {
 
 export const fetchDirectMessages = async (userId: string, otherUserId: string, options: { page?: number; limit?: number } = {}) => {
   console.log('Fetching direct messages between:', userId, 'and:', otherUserId);
-  try {
+  const run = async () => {
     const { page = 1, limit = 50 } = options;
     const queryParams = new URLSearchParams({
       otherUserId,
       page: page.toString(),
       limit: limit.toString(),
     });
-    
+
     const response = await fetch(`${getApiRoot()}/api/v1/messages/user/${userId}?${queryParams}`, {
       method: 'GET',
-      headers: await getAuthHeaders(),
+      headers: await getRequiredAuthHeaders(),
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch direct messages');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || error.error || 'Failed to fetch direct messages');
     }
 
     const result = await response.json();
-    console.log('Fetched direct messages count:', result.data.length);
-    return result.data;
+    const data = Array.isArray(result.data) ? result.data : [];
+    console.log('Fetched direct messages count:', data.length);
+    return data;
+  };
+
+  try {
+    return await run();
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // One retry for auth bootstrap / transient network failures.
+    if (/Authentication required|Failed to fetch|NetworkError|timeout|503|502|504/i.test(message)) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      try {
+        return await run();
+      } catch (retryError) {
+        console.error('Error fetching direct messages:', retryError);
+        throw retryError;
+      }
+    }
     console.error('Error fetching direct messages:', error);
     throw error;
   }
 };
 
 export const fetchDmThreads = async (_userId: string) => {
+  // Never return [] for auth/bootstrap failure — callers treat [] as "no threads"
+  // and would wipe a previously loaded (or optimistic) inbox.
   const isAuthenticated = await hasValidSession();
   if (!isAuthenticated) {
-    // Auth can still be initializing during startup; treat as empty until token is ready.
-    return [];
+    throw new Error('AUTH_NOT_READY');
   }
 
   const authHeaders = await getAuthHeaders();
   if (!authHeaders.Authorization) {
-    // Avoid unauthenticated requests during auth bootstrap races.
-    return [];
+    throw new Error('AUTH_NOT_READY');
   }
 
   try {
@@ -4033,7 +4230,7 @@ export const fetchDmThreads = async (_userId: string) => {
     );
 
     if (response.status === 401 || response.status === 403) {
-      return [];
+      throw new Error('AUTH_UNAUTHORIZED');
     }
 
     if (!response.ok) {
@@ -4042,10 +4239,9 @@ export const fetchDmThreads = async (_userId: string) => {
     }
 
     const result = await response.json();
-    return result.data || [];
+    return Array.isArray(result.data) ? result.data : [];
   } catch (error) {
     console.error('Error fetching DM threads:', error);
-    // Do not return [] on network/server failure — callers would wipe local threads.
     throw error;
   }
 };
@@ -4301,16 +4497,19 @@ export const uploadChatAudio = async (payload: {
   return result.data;
 };
 
-// Delete a DM thread
-export const deleteDmThread = async (threadId: string, userId: string): Promise<boolean> => {
+// Delete a DM thread (pair ids are two UUIDs joined by "-", so encode the path segment)
+export const deleteDmThread = async (threadId: string, _userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}`,
+      withApiCredentials({
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+      })
+    );
 
     if (!response.ok) {
-      console.error('Failed to delete DM thread');
+      console.error('Failed to delete DM thread', response.status);
       return false;
     }
 
@@ -4322,14 +4521,17 @@ export const deleteDmThread = async (threadId: string, userId: string): Promise<
 };
 
 // Archive a DM thread
-export const archiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
+export const archiveDmThread = async (threadId: string, _userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/archive`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/archive`,
+      withApiCredentials({
+        method: 'PUT',
+        headers: await getAuthHeaders(),
+      })
+    );
     if (!response.ok) {
-      console.error('Failed to archive DM thread');
+      console.error('Failed to archive DM thread', response.status);
       return false;
     }
     return true;
@@ -4340,14 +4542,17 @@ export const archiveDmThread = async (threadId: string, userId: string): Promise
 };
 
 // Unarchive a DM thread
-export const unarchiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
+export const unarchiveDmThread = async (threadId: string, _userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/unarchive`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/unarchive`,
+      withApiCredentials({
+        method: 'PUT',
+        headers: await getAuthHeaders(),
+      })
+    );
     if (!response.ok) {
-      console.error('Failed to unarchive DM thread');
+      console.error('Failed to unarchive DM thread', response.status);
       return false;
     }
     return true;
@@ -4590,6 +4795,20 @@ export const syncOfflineBundles = async (
 // USER SETTINGS (nested schema — web + mobile)
 // ============================================
 
+export type SaveUserSettingsResult = {
+  ok: boolean;
+  settings?: UserSettings;
+  settingsVersion?: number;
+  /** True when the failure was a CAS conflict after retries (another device wrote). */
+  conflict?: boolean;
+};
+
+function noteSettingsVersion(version: unknown): void {
+  if (typeof version === 'number' && Number.isFinite(version)) {
+    lastKnownSettingsVersion = version;
+  }
+}
+
 export const fetchUserSettings = async (userId: string): Promise<UserSettings | null> => {
   try {
     if (!(await hasValidSession())) return null;
@@ -4608,6 +4827,7 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
     }
 
     const result = await response.json();
+    noteSettingsVersion(result.data?.settingsVersion);
     return normalizeUserSettings(result.data?.settings);
   } catch (error) {
     console.error('Error fetching user settings:', error);
@@ -4615,62 +4835,114 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
   }
 };
 
-let lastKnownSettingsVersion: number | undefined;
-
+/**
+ * Persist a category patch (preferred) or full settings blob.
+ * On 409, reloads server state and retries the same patch so concurrent
+ * category changes from other writers are not overwritten.
+ */
 export const saveUserSettings = async (
   userId: string,
-  settings: UserSettings,
+  settingsOrPatch: UserSettings | Record<string, unknown>,
   expectedSettingsVersion?: number
 ): Promise<boolean> => {
-  try {
-    const headers = await getRequiredAuthHeaders();
-    const version =
-      expectedSettingsVersion ?? lastKnownSettingsVersion;
-    const response = await fetch(`${getApiRoot()}/api/v1/users/settings`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({
-        settings,
-        ...(version != null ? { expectedSettingsVersion: version } : {}),
-      }),
-    });
+  const result = await saveUserSettingsDetailed(userId, settingsOrPatch, expectedSettingsVersion);
+  return result.ok;
+};
 
-    if (response.status === 409) {
-      // Refetch authoritative settings version; do not blind-overwrite.
-      try {
-        const refresh = await fetch(
-          `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
-          { headers }
-        );
-        if (refresh.ok) {
-          const body = await refresh.json();
-          if (typeof body?.data?.settingsVersion === 'number') {
-            lastKnownSettingsVersion = body.data.settingsVersion;
+export const saveUserSettingsDetailed = async (
+  userId: string,
+  settingsOrPatch: UserSettings | Record<string, unknown>,
+  expectedSettingsVersion?: number
+): Promise<SaveUserSettingsResult> => {
+  const run = async (): Promise<SaveUserSettingsResult> => {
+    const maxAttempts = 3;
+    try {
+      const headers = await getRequiredAuthHeaders();
+      let version = expectedSettingsVersion ?? lastKnownSettingsVersion;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const response = await fetch(`${getApiRoot()}/api/v1/users/settings`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            settings: settingsOrPatch,
+            ...(version != null ? { expectedSettingsVersion: version } : {}),
+          }),
+        });
+
+        if (response.status === 409) {
+          const conflictBody = await response.json().catch(() => ({}));
+          const conflictData = conflictBody?.data;
+          if (typeof conflictData?.settingsVersion === 'number') {
+            noteSettingsVersion(conflictData.settingsVersion);
+            version = conflictData.settingsVersion;
+          } else {
+            // Fallback: refresh from GET
+            const refresh = await fetch(
+              `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
+              { headers }
+            );
+            if (refresh.ok) {
+              const body = await refresh.json().catch(() => ({}));
+              noteSettingsVersion(body?.data?.settingsVersion);
+              version = lastKnownSettingsVersion;
+            }
           }
+          // Retry the same patch — server deep-merges categories onto latest.
+          if (attempt + 1 < maxAttempts) continue;
+          console.warn(
+            'Settings version conflict after retries; latest version reloaded.'
+          );
+          return {
+            ok: false,
+            conflict: true,
+            settings: conflictData?.settings
+              ? normalizeUserSettings(conflictData.settings)
+              : undefined,
+            settingsVersion:
+              typeof conflictData?.settingsVersion === 'number'
+                ? conflictData.settingsVersion
+                : lastKnownSettingsVersion,
+          };
         }
-      } catch {
-        /* ignore */
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.message || error.error || 'Failed to save user settings');
+        }
+
+        const body = await response.json().catch(() => ({}));
+        const nextVersion =
+          typeof body?.data?.settingsVersion === 'number'
+            ? body.data.settingsVersion
+            : version != null
+              ? version + 1
+              : undefined;
+        noteSettingsVersion(nextVersion);
+        const authoritative = body?.data?.settings
+          ? normalizeUserSettings(body.data.settings)
+          : undefined;
+
+        return {
+          ok: true,
+          settings: authoritative,
+          settingsVersion: nextVersion,
+        };
       }
-      throw new Error('Settings were updated elsewhere. Refresh and try again.');
-    }
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to save user settings');
+      return { ok: false };
+    } catch (error) {
+      console.error('Error saving user settings:', error);
+      return { ok: false };
     }
+  };
 
-    const body = await response.json().catch(() => ({}));
-    if (typeof body?.data?.settingsVersion === 'number') {
-      lastKnownSettingsVersion = body.data.settingsVersion;
-    } else if (version != null) {
-      lastKnownSettingsVersion = version + 1;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error saving user settings:', error);
-    return false;
-  }
+  const queued = settingsSaveQueue.then(run, run);
+  settingsSaveQueue = queued.then(
+    () => undefined,
+    () => undefined
+  );
+  return queued;
 };
 
 // ============================================

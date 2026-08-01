@@ -56,6 +56,7 @@ export const validateUpdateUser = [
   body('points').optional().isInt({ min: 0 }).withMessage('Points must be a non-negative integer'),
   body('stats').optional().isObject().withMessage('Stats must be an object'),
   body('badges').optional().isArray().withMessage('Badges must be an array'),
+  // settings updates must use PUT /users/settings (merge + CAS); rejected in route.
   body('settings').optional().isObject().withMessage('Settings must be an object'),
   body('test_presets').optional().isArray().withMessage('Test presets must be an array'),
 ];
@@ -210,7 +211,11 @@ export const validateNoteUpdate = [
   body('title').optional().trim().isLength({ max: 500 }).withMessage('Title must be at most 500 characters'),
   body('body').optional().isString().isLength({ max: 500000 }).withMessage('Body is too large'),
   body('summary').optional().isString().isLength({ max: 10000 }).withMessage('Summary is too large'),
-  body('folderId').optional().isUUID().withMessage('folderId must be a valid UUID'),
+  // null clears folder (unfiled / All notes)
+  body('folderId')
+    .optional({ values: 'null' })
+    .isUUID()
+    .withMessage('folderId must be a valid UUID'),
   body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
   body('isPinned').optional().isBoolean().withMessage('isPinned must be a boolean'),
 ];

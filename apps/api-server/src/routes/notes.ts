@@ -54,8 +54,10 @@ import {
 import { detectImageMime } from '../utils/fileValidation';
 import {
   getNoteStudyContent,
+  getNoteStudyContentForSmartNotes,
   hasEnoughNoteStudyContent,
 } from '@lantern/shared/utils/noteStudyContent';
+import { upsertSmartNotesSection } from '@lantern/shared/utils/smartNotes';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/youtube';
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
@@ -76,15 +78,20 @@ export const initializeNotesRoutes = (supabase: SupabaseService, cache: CacheSer
 
 async function resolveNoteStudyContent(
   noteId: string,
-  note: { body?: string; summary?: string; sourceType?: string }
+  note: { body?: string; summary?: string; sourceType?: string },
+  options?: { forSmartNotes?: boolean }
 ): Promise<string> {
   const attachments = await supabaseService.getNoteAttachments(noteId);
-  return getNoteStudyContent({
+  const input = {
     sourceType: note.sourceType,
     body: note.body,
     summary: note.summary,
     attachments,
-  });
+  };
+  if (options?.forSmartNotes) {
+    return getNoteStudyContentForSmartNotes(input);
+  }
+  return getNoteStudyContent(input);
 }
 
 type ValidatedNoteImage = {
@@ -1658,26 +1665,37 @@ router.post(
   })
 );
 
-// AI-powered learn actions
+// AI-powered learn actions (Smart Notes). Counts as one daily AI credit via aiRateLimit;
+// long sources may use multiple internal model calls under this single route.
 router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
-  const content = await resolveNoteStudyContent(note.id, note);
+  const content = await resolveNoteStudyContent(note.id, note, { forSmartNotes: true });
   if (!content || content.length < 30) {
     res.status(400).json({ error: 'Note needs at least 30 characters to summarize.' });
     return;
   }
   const outcome = await runSyncOrEnqueue(
     'notes.ai.summarize',
-    { content, title: note.title, noteId: note.id },
+    {
+      content,
+      title: note.title,
+      noteId: note.id,
+      sourceType: note.sourceType,
+    },
     userId,
     async () => {
-      const result = await summarizeNoteContent(content, note.title);
+      const result = await summarizeNoteContent(content, {
+        title: note.title,
+        sourceType: note.sourceType,
+      });
+      const latest = await supabaseService.getNote(note.id, userId);
+      const nextBody = upsertSmartNotesSection(latest.body || '', result.summary);
       const updated = await supabaseService.updateNote(
         userId,
         note.id,
-        { summary: result.summary },
+        { summary: result.summary, body: nextBody },
         { allowRetryOnConflict: true }
       );
       return { summary: result.summary, provider: result.provider, note: updated };
@@ -1780,6 +1798,92 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
   }
   res.json({ success: true, data: outcome.result });
 }));
+
+router.post(
+  '/:noteId/retry-youtube-transcript',
+  requireNoteEdit('noteId'),
+  validateNoteId,
+  handleValidationErrors,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const videoId =
+      note.youtubeVideoId ||
+      parseYoutubeVideoId(typeof note.youtubeUrl === 'string' ? note.youtubeUrl : '');
+    if (!videoId) {
+      res.status(400).json({ error: 'This note is not linked to a YouTube video.' });
+      return;
+    }
+
+    const canonicalUrl = canonicalYoutubeUrl(videoId);
+    const attachments = await supabaseService.getNoteAttachments(note.id);
+    let attachment = attachments.find((a) => a.type === 'youtube');
+    const priorMeta = (attachment?.metadata || {}) as Record<string, unknown>;
+    const attachmentMeta: Record<string, unknown> = {
+      ...priorMeta,
+      videoId,
+      transcriptStatus: 'processing',
+      transcriptStartedAt: new Date().toISOString(),
+      transcriptError: null,
+      transcriptFailedAt: null,
+    };
+
+    if (!attachment) {
+      attachment = await supabaseService.addNoteAttachment(note.id, {
+        type: 'youtube',
+        fileUrl: note.youtubeUrl || canonicalUrl,
+        fileName: note.title || 'YouTube video',
+        metadata: attachmentMeta,
+      });
+    } else {
+      attachment = await supabaseService.updateNoteAttachment(attachment.id, {
+        metadata: attachmentMeta,
+      });
+    }
+
+    const outcome = await runSyncOrEnqueue(
+      'notes.youtube.transcript',
+      {
+        noteId: note.id,
+        attachmentId: attachment.id,
+        videoId,
+        meta: attachmentMeta,
+      },
+      userId,
+      () =>
+        runYoutubeTranscriptJob(supabaseService, {
+          noteId: note.id,
+          attachmentId: attachment!.id,
+          videoId,
+          meta: attachmentMeta,
+        })
+    );
+
+    if (outcome.mode === 'async') {
+      res.status(202).json({
+        success: true,
+        data: { note, attachment, status: 'processing' },
+        jobId: outcome.jobId,
+      });
+      return;
+    }
+
+    const jobResult = outcome.result;
+    const refreshed = await supabaseService.getNoteAttachments(note.id);
+    const updatedAttachment = refreshed.find((a) => a.id === attachment!.id) || attachment;
+    res.json({
+      success: true,
+      data: {
+        note,
+        attachment: updatedAttachment,
+        status: jobResult.status,
+        ...(jobResult.status === 'failed' ? { transcriptError: jobResult.error } : {}),
+      },
+    });
+  })
+);
 
 router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);

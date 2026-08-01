@@ -4,6 +4,7 @@ import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
+import { applyAIUsageFromResponse } from './ai';
 
 async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -37,6 +38,9 @@ async function notesRequest<T>(path: string, options: RequestInit = {}): Promise
     },
   });
   const data = await response.json().catch(() => ({}));
+  if (response.ok || response.status === 202) {
+    applyAIUsageFromResponse(response);
+  }
   if (response.status === 202 && typeof data.jobId === 'string') {
     return pollApiJob<T>(data.jobId);
   }
@@ -100,7 +104,10 @@ export const fetchNote = (noteId: string) =>
   notesRequest<StudyNote & { attachments?: NoteAttachment[] }>(`/${noteId}`);
 export const createNote = (payload: Partial<StudyNote>) =>
   notesRequest<StudyNote>('/', { method: 'POST', body: JSON.stringify(payload) });
-export const updateNote = (noteId: string, updates: Partial<StudyNote>) => {
+export const updateNote = (
+  noteId: string,
+  updates: Partial<Omit<StudyNote, 'folderId'>> & { folderId?: string | null }
+) => {
   const { version, ...rest } = updates;
   return notesRequest<StudyNote>(`/${noteId}`, {
     method: 'PATCH',
@@ -563,6 +570,37 @@ export interface YoutubeNoteImportResult {
   transcriptError?: string;
 }
 
+async function resolveYoutubeImportAfterJob(
+  noteId: string,
+  attachmentId: string | undefined,
+  jobResult: { status?: 'ready' | 'failed'; error?: string }
+): Promise<YoutubeNoteImportResult> {
+  const note = await fetchNote(noteId);
+  const attachment =
+    note.attachments?.find((a) => a.id === attachmentId) ||
+    note.attachments?.find((a) => a.type === 'youtube');
+  if (!attachment) {
+    throw new Error('YouTube note was created, but the transcript attachment is missing.');
+  }
+  const metaStatus = attachment.metadata?.transcriptStatus;
+  const status: YoutubeNoteImportResult['status'] =
+    jobResult.status === 'ready' || metaStatus === 'ready'
+      ? 'ready'
+      : jobResult.status === 'failed' || metaStatus === 'failed'
+        ? 'failed'
+        : 'processing';
+  const transcriptError =
+    typeof attachment.metadata?.transcriptError === 'string'
+      ? attachment.metadata.transcriptError
+      : jobResult.error;
+  return {
+    note,
+    attachment,
+    status,
+    ...(status === 'failed' && transcriptError ? { transcriptError } : {}),
+  };
+}
+
 export const createNoteFromYoutube = async (
   url: string,
   folderId?: string
@@ -585,17 +623,49 @@ export const createNoteFromYoutube = async (
   }
 
   if (response.status === 202 && typeof data.jobId === 'string') {
-    // Queue mode: the note already exists; wait for the transcript job to finish.
+    // Queue mode: wait for the job, then reload so the editor has extractedText.
     const jobResult = await pollApiJob<{ status?: 'ready' | 'failed'; error?: string }>(
       data.jobId,
       120_000
     );
-    return {
-      note: base.note,
-      attachment: base.attachment,
-      status: jobResult.status === 'ready' ? 'ready' : 'failed',
-      transcriptError: jobResult.error,
-    };
+    return resolveYoutubeImportAfterJob(base.note.id, base.attachment?.id, jobResult);
+  }
+
+  return base;
+};
+
+export const retryYoutubeTranscript = async (
+  noteId: string
+): Promise<YoutubeNoteImportResult> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/notes/${noteId}/retry-youtube-transcript`,
+    {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }
+  );
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok && response.status !== 202) {
+    throw new Error(data.message || data.error || `Transcript retry failed (${response.status})`);
+  }
+
+  const base = (data.data ?? {}) as YoutubeNoteImportResult;
+  if (response.status === 202 && typeof data.jobId === 'string') {
+    const jobResult = await pollApiJob<{ status?: 'ready' | 'failed'; error?: string }>(
+      data.jobId,
+      120_000
+    );
+    return resolveYoutubeImportAfterJob(noteId, base.attachment?.id, jobResult);
+  }
+
+  if (!base.attachment) {
+    return resolveYoutubeImportAfterJob(noteId, undefined, {
+      status: base.status,
+      error: base.transcriptError,
+    });
   }
 
   return base;

@@ -87,7 +87,11 @@ function mapSellerFromRemote(l: RemoteListing): MarketplaceListing['seller'] {
 }
 
 export function mapRemoteListing(l: RemoteListing): MarketplaceListing {
-  const status = (l.status === 'sold' || l.status === 'inactive' ? l.status : 'active') as MarketplaceListing['status'];
+  const status = (
+    l.status === 'sold' || l.status === 'inactive' || l.status === 'reserved'
+      ? l.status
+      : 'active'
+  ) as MarketplaceListing['status'];
   return {
     id: l.id,
     user_id: l.user_id,
@@ -178,7 +182,7 @@ export interface MarketplaceListing {
   currency?: string;
   campus?: MarketplaceListingCampus;
   images?: string[];
-  status: 'active' | 'sold' | 'inactive';
+  status: 'active' | 'sold' | 'inactive' | 'reserved';
   views_count?: number;
   favorites_count?: number;
   created_at: string;
@@ -230,6 +234,8 @@ export interface MarketplaceOffer {
   amount: number;
   message?: string;
   status: 'pending' | 'accepted' | 'declined' | 'countered' | 'withdrawn';
+  proposed_by?: 'buyer' | 'seller';
+  parent_offer_id?: string;
   created_at: string;
   updated_at?: string;
   buyer?: {
@@ -251,6 +257,9 @@ export interface SellerProfile {
   id: string;
   name: string;
   avatarUrl?: string;
+  shopName?: string;
+  shopBio?: string | null;
+  coverImageUrl?: string | null;
   total_listings?: number;
   active_listings?: number;
   sold_listings?: number;
@@ -260,6 +269,22 @@ export interface SellerProfile {
   total_favorites?: number;
   average_rating?: number;
   review_count?: number;
+  is_verified?: boolean;
+  badges?: Array<{ id: string; label: string }>;
+}
+
+export interface MarketplaceShopCard {
+  sellerId: string;
+  shopName: string;
+  bio: string | null;
+  coverImageUrl: string | null;
+  avatarUrl: string | null;
+  activeListingCount: number;
+  avgRating: number;
+  totalReviews: number;
+  campusId: string | null;
+  campusLabel: string | null;
+  lastListingAt: string | null;
 }
 
 const refreshMarketplaceBudget = async (userId: string) => {
@@ -285,7 +310,7 @@ export type MarketplaceCategory =
   | 'campus_services' 
   | 'events_social';
 
-export type MarketplaceTab = 'academic' | 'student-life';
+export type MarketplaceTab = 'academic' | 'student-life' | 'shops';
 
 export const ACADEMIC_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] = [
   { id: 'textbook_exchange', name: 'Textbooks', icon: 'book' },
@@ -467,6 +492,8 @@ interface MarketplaceState {
   offers: MarketplaceOffer[];
   savedSearches: SavedSearch[];
   sellerProfile: SellerProfile | null;
+  shops: MarketplaceShopCard[];
+  shopsLoading: boolean;
   isLoading: boolean;
   error: string | null;
   searchQuery: string;
@@ -511,13 +538,21 @@ interface MarketplaceState {
   buyNowListing: (
     listingId: string,
     userId: string,
-    couponCode?: string
+    couponCode?: string,
+    quantity?: number
   ) => Promise<{ order: import('@lantern/shared/types').MarketplaceOrder } | void>;
+  addToCart: (listingId: string, quantity?: number) => Promise<void>;
   boostListing: (listingId: string, userId: string) => Promise<void>;
   fetchSavedSearches: () => Promise<void>;
   createSavedSearch: (filters: Record<string, unknown>, name?: string) => Promise<SavedSearch>;
   deleteSavedSearch: (id: string) => Promise<void>;
   fetchSellerProfile: (sellerId: string) => Promise<void>;
+  updateMyShop: (data: {
+    shopName?: string;
+    bio?: string | null;
+    coverImageUrl?: string | null;
+  }) => Promise<void>;
+  fetchShops: (params?: { campus?: string; q?: string }) => Promise<void>;
   fetchSellerStats: () => Promise<void>;
   createListing: (listing: MarketplaceListingCreateInput, userId: string) => Promise<{ listing: MarketplaceListing; queued: boolean }>;
   updateListing: (listingId: string, updates: Partial<MarketplaceListing>, userId: string) => Promise<void>;
@@ -557,6 +592,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   offers: [],
   savedSearches: [],
   sellerProfile: null,
+  shops: [],
+  shopsLoading: false,
   isLoading: false,
   error: null,
   searchQuery: '',
@@ -637,6 +674,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       offers: [],
       savedSearches: [],
       sellerProfile: null,
+      shops: [],
+      shopsLoading: false,
       isLoading: false,
       error: null,
       searchQuery: '',
@@ -657,6 +696,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
   
   fetchListings: async (filters) => {
+    if (get().activeTab === 'shops') {
+      set({ isLoading: false });
+      return;
+    }
     const requestId = ++listingsRequestSeq;
     try {
       const page = filters?.page ?? 1;
@@ -1079,11 +1122,17 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     set({
       activeTab: tab,
       selectedCategory: null,
-      listings: [],
+      listings: tab === 'shops' ? get().listings : [],
       listingsPage: 1,
       listingsHasMore: true,
-      isLoading: true,
+      isLoading: tab !== 'shops',
     });
+    if (tab === 'shops') {
+      void get().fetchShops({
+        campus: get().campusIdFilter || undefined,
+        q: get().searchQuery || undefined,
+      });
+    }
   },
   
   sendInquiry: async (listingId: string, message: string) => {
@@ -1180,6 +1229,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         amount: o.amount,
         message: o.message,
         status: o.status as MarketplaceOffer['status'],
+        proposed_by: o.proposed_by === 'seller' || o.proposed_by === 'buyer' ? o.proposed_by : undefined,
+        parent_offer_id: o.parent_offer_id ?? undefined,
         created_at: o.created_at,
         updated_at: o.updated_at,
       }));
@@ -1404,7 +1455,12 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
 
-  buyNowListing: async (listingId: string, userId: string, couponCode?: string) => {
+  buyNowListing: async (
+    listingId: string,
+    userId: string,
+    couponCode?: string,
+    quantity?: number
+  ) => {
     try {
       set({ isLoading: true, error: null });
 
@@ -1418,13 +1474,25 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         return;
       }
 
-      const result = await api.buyNowListing(listingId, couponCode);
+      const result = await api.buyNowListing(listingId, couponCode, undefined, quantity);
       await get().fetchMyListings(userId);
       set({ isLoading: false });
       return result;
     } catch (error: any) {
       console.error('Failed to buy listing:', error);
       set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  addToCart: async (listingId: string, quantity?: number) => {
+    try {
+      set({ error: null });
+      if (DEMO_MODE) return;
+      await api.addToMarketplaceCart(listingId, quantity);
+    } catch (error: any) {
+      console.error('Failed to add to cart:', error);
+      set({ error: error.message });
       throw error;
     }
   },
@@ -1547,6 +1615,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       const profile = await api.fetchSellerProfile(sellerId);
       const data = profile as {
         user?: { id: string; name: string; avatar_url?: string };
+        shop?: { shopName?: string; bio?: string | null; coverImageUrl?: string | null };
         stats?: {
           totalListings: number;
           activeListings: number;
@@ -1562,6 +1631,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           id: data.user?.id || sellerId,
           name: data.user?.name || 'Seller',
           avatarUrl: data.user?.avatar_url,
+          shopName: data.shop?.shopName || data.user?.name || 'Shop',
+          shopBio: data.shop?.bio ?? null,
+          coverImageUrl: data.shop?.coverImageUrl ?? null,
           total_listings: data.stats?.totalListings || 0,
           active_listings: data.stats?.activeListings || 0,
           sold_listings: data.stats?.soldListings || 0,
@@ -1575,6 +1647,48 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to fetch seller profile:', error);
       set({ error: error.message, isLoading: false });
+    }
+  },
+
+  updateMyShop: async (data) => {
+    const updated = await api.updateMyShop(data);
+    const current = get().sellerProfile;
+    if (!current) return;
+    set({
+      sellerProfile: {
+        ...current,
+        shopName: updated.shopName,
+        shopBio: updated.bio,
+        coverImageUrl: updated.coverImageUrl,
+      },
+    });
+  },
+
+  fetchShops: async (params) => {
+    try {
+      set({ shopsLoading: true, error: null });
+      if (DEMO_MODE) {
+        set({ shops: [], shopsLoading: false });
+        return;
+      }
+      const rows = await api.fetchMarketplaceShops(params);
+      const shops: MarketplaceShopCard[] = (Array.isArray(rows) ? rows : []).map((s: any) => ({
+        sellerId: s.sellerId,
+        shopName: s.shopName,
+        bio: s.bio ?? null,
+        coverImageUrl: s.coverImageUrl ?? null,
+        avatarUrl: s.avatarUrl ?? null,
+        activeListingCount: s.activeListingCount ?? 0,
+        avgRating: s.avgRating ?? 0,
+        totalReviews: s.totalReviews ?? 0,
+        campusId: s.campusId ?? null,
+        campusLabel: s.campusLabel ?? null,
+        lastListingAt: s.lastListingAt ?? null,
+      }));
+      set({ shops, shopsLoading: false });
+    } catch (error: any) {
+      console.error('Failed to fetch shops:', error);
+      set({ shops: [], shopsLoading: false, error: error.message });
     }
   },
   

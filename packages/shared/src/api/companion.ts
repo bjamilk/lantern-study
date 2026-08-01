@@ -2,7 +2,11 @@
 // Lantern Study - Shared AI Companion Client
 // ===========================================
 
-import type { CompanionAction, CompanionUserContext } from '../types';
+import type {
+  CompanionAction,
+  CompanionConversation,
+  CompanionUserContext,
+} from '../types';
 import type { AIClientConfig } from './ai';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 
@@ -41,6 +45,20 @@ async function pollCompanionJob<T>(
     await new Promise((r) => setTimeout(r, 1500));
   }
   throw new Error('Companion request timed out. Try again.');
+}
+
+function historyQuery(opts?: {
+  conversationId?: string | null;
+  noteContextId?: string | null;
+}): string {
+  const params = new URLSearchParams();
+  if (opts?.conversationId?.trim()) {
+    params.set('conversationId', opts.conversationId.trim());
+  } else if (opts?.noteContextId?.trim()) {
+    params.set('noteContextId', opts.noteContextId.trim());
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
 }
 
 export function createCompanionClient(config: AIClientConfig) {
@@ -84,15 +102,39 @@ export function createCompanionClient(config: AIClientConfig) {
 
   return {
     companionSendMessage: (message: string, context?: CompanionUserContext) =>
-      companionRequest<{ reply: string; actions: CompanionAction[]; provider: string }>(
-        '/message',
-        'POST',
-        { message, context },
+      companionRequest<{
+        reply: string;
+        actions: CompanionAction[];
+        provider: string;
+        conversationId?: string;
+      }>('/message', 'POST', { message, context }, { trackUsage: false }),
+
+    fetchCompanionConversations: () =>
+      companionRequest<{ conversations: CompanionConversation[] }>(
+        '/conversations',
+        'GET',
+        undefined,
         { trackUsage: false }
       ),
 
-    fetchCompanionHistory: () =>
-      companionRequest<{
+    createCompanionConversation: (noteContextId?: string | null) =>
+      companionRequest<{ conversation: CompanionConversation }>(
+        '/conversations',
+        'POST',
+        noteContextId?.trim() ? { noteContextId: noteContextId.trim() } : {},
+        { trackUsage: false }
+      ),
+
+    fetchCompanionHistory: (opts?: {
+      conversationId?: string | null;
+      noteContextId?: string | null;
+    } | string | null) => {
+      // Back-compat: string arg = noteContextId
+      const normalized =
+        typeof opts === 'string' || opts === null || opts === undefined
+          ? { noteContextId: opts ?? null }
+          : opts;
+      return companionRequest<{
         messages: Array<{
           id: string;
           role: 'user' | 'assistant';
@@ -101,10 +143,25 @@ export function createCompanionClient(config: AIClientConfig) {
           feedback?: 'up' | 'down' | null;
           created_at: string;
         }>;
-      }>('/history', 'GET', undefined, { trackUsage: false }),
+        conversationId: string | null;
+        noteContextId: string | null;
+      }>(`/history${historyQuery(normalized)}`, 'GET', undefined, { trackUsage: false });
+    },
 
-    clearCompanionHistory: () =>
-      companionRequest<{ success: boolean }>('/history', 'DELETE', undefined, { trackUsage: false }),
+    clearCompanionHistory: (opts?: {
+      conversationId?: string | null;
+      noteContextId?: string | null;
+    } | string | null) => {
+      const normalized =
+        typeof opts === 'string' || opts === null || opts === undefined
+          ? { noteContextId: opts ?? null }
+          : opts;
+      return companionRequest<{
+        success: boolean;
+        conversationId: string | null;
+        noteContextId: string | null;
+      }>(`/history${historyQuery(normalized)}`, 'DELETE', undefined, { trackUsage: false });
+    },
 
     companionSendMessageStream: async (
       message: string,
@@ -114,6 +171,7 @@ export function createCompanionClient(config: AIClientConfig) {
         actions: CompanionAction[];
         messageId?: string;
         userMessageId?: string;
+        conversationId?: string;
       }) => void,
       onError: (err: Error) => void
     ): Promise<void> => {
@@ -162,7 +220,10 @@ export function createCompanionClient(config: AIClientConfig) {
                 onDone({
                   actions: (data.actions as CompanionAction[]) || [],
                   messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
-                  userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
+                  userMessageId:
+                    typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
+                  conversationId:
+                    typeof data.conversationId === 'string' ? data.conversationId : undefined,
                 });
               }
             } catch {
@@ -179,7 +240,9 @@ export function createCompanionClient(config: AIClientConfig) {
       messageId: string,
       rating: 'up' | 'down' | null
     ): Promise<void> => {
-      if (messageId.startsWith('tmp-')) {
+      const persistedId =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!persistedId.test(messageId)) {
         throw new Error('Message is still saving; try feedback again in a moment');
       }
       const headers = await config.getAuthHeaders();

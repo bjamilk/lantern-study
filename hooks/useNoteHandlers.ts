@@ -1,5 +1,10 @@
 import { useCallback, useRef } from 'react';
-import { getNoteStudyContent, hasEnoughNoteStudyContent, MIN_NOTE_STUDY_CONTENT_CHARS } from '@lantern/shared';
+import {
+  getNoteStudyContent,
+  getNoteStudyContentForSmartNotes,
+  hasEnoughNoteStudyContent,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+} from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -15,6 +20,7 @@ import { trackQuestProgress } from '../services/questProgress';
 import { trackNoteCreated } from '../services/productAnalytics';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { useToastStore } from '../stores/toastStore';
+import { useLectureRecordingStore } from '../stores/lectureRecordingStore';
 
 const INSUFFICIENT_STUDY_CONTENT_MESSAGE = `Note needs at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content. For presentations, wait for slide text extraction or add your own notes.`;
 
@@ -28,7 +34,9 @@ export function useNoteHandlers(currentUserId?: string) {
     updateFolder,
     removeFolder,
     saveNote,
+    moveNotesToFolder,
     removeNote,
+    removeNotes,
     selectedNote,
     setSelectedNote,
     loadComments,
@@ -130,7 +138,8 @@ export function useNoteHandlers(currentUserId?: string) {
       await loadNote(noteId);
       const note = useNotesStore.getState().selectedNote;
       if (!note) throw new Error('Note not found.');
-      if (!hasEnoughNoteStudyContent(note) && getNoteStudyContent(note).length < 30) {
+      const smartNotesSource = getNoteStudyContentForSmartNotes(note);
+      if (smartNotesSource.length < 30) {
         throw new Error(
           'Need at least 30 characters of study content. Add notes or wait for import/extraction.'
         );
@@ -377,6 +386,31 @@ export function useNoteHandlers(currentUserId?: string) {
     [cancelAutoSave, removeNote, setSelectedNote]
   );
 
+  const handleDeleteNotes = useCallback(
+    async (noteIds: string[]) => {
+      cancelAutoSave();
+      const uniqueIds = [...new Set(noteIds)].filter(Boolean);
+      if (uniqueIds.length === 0) return;
+
+      const lecture = useLectureRecordingStore.getState();
+      if (
+        lecture.noteId &&
+        uniqueIds.includes(lecture.noteId) &&
+        lecture.status !== 'idle'
+      ) {
+        lecture.discard();
+      }
+
+      const selectedId = useNotesStore.getState().selectedNote?.id;
+      if (selectedId && uniqueIds.includes(selectedId)) {
+        setSelectedNote(null);
+      }
+
+      await removeNotes(uniqueIds);
+    },
+    [cancelAutoSave, removeNotes, setSelectedNote],
+  );
+
   const handleRenameFolder = useCallback(
     async (folderId: string, name: string) => {
       await updateFolder(folderId, { name });
@@ -405,6 +439,13 @@ export function useNoteHandlers(currentUserId?: string) {
     [saveNote],
   );
 
+  const handleMoveNotesToFolder = useCallback(
+    async (noteIds: string[], folderId: string | null) => {
+      await moveNotesToFolder(noteIds, folderId);
+    },
+    [moveNotesToFolder],
+  );
+
   return {
     navigateToNotes,
     openNote,
@@ -414,6 +455,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleDeleteFolder,
     handleTogglePinNote,
     handleArchiveNote,
+    handleMoveNotesToFolder,
     handleAutoSave,
     cancelAutoSave,
     handleSmartNote,
@@ -430,6 +472,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleShareWithGroup,
     handleAddCollaborator,
     handleDeleteNote,
+    handleDeleteNotes,
     handlePostComment: postComment,
     setStudyGoal,
     studyGoal,

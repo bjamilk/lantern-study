@@ -18,7 +18,31 @@ export type SellerPreferencesRow = {
   boost_credits: number;
   require_payment_confirmation: boolean;
   favorite_alert_threshold: number;
+  shop_name?: string | null;
+  shop_bio?: string | null;
+  cover_image_url?: string | null;
+  shop_updated_at?: string | null;
   updated_at: string;
+};
+
+export type SellerShopPublic = {
+  shopName: string;
+  bio: string | null;
+  coverImageUrl: string | null;
+};
+
+export type MarketplaceShopCard = {
+  sellerId: string;
+  shopName: string;
+  bio: string | null;
+  coverImageUrl: string | null;
+  avatarUrl: string | null;
+  activeListingCount: number;
+  avgRating: number;
+  totalReviews: number;
+  campusId: string | null;
+  campusLabel: string | null;
+  lastListingAt: string | null;
 };
 
 export type PickupNudge = {
@@ -36,6 +60,23 @@ export class MarketplaceSellerToolsService {
     return this.supabaseService.getClient();
   }
 
+  private defaultPreferences(sellerId: string): SellerPreferencesRow {
+    return {
+      seller_id: sellerId,
+      hall_dropoff_enabled: false,
+      hall_dropoff_min_amount: null,
+      onboarding_completed_at: null,
+      boost_credits: 1,
+      require_payment_confirmation: false,
+      favorite_alert_threshold: 3,
+      shop_name: null,
+      shop_bio: null,
+      cover_image_url: null,
+      shop_updated_at: null,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
   async getPreferences(sellerId: string): Promise<SellerPreferencesRow> {
     const { data } = await this.db
       .from('marketplace_seller_preferences')
@@ -43,18 +84,38 @@ export class MarketplaceSellerToolsService {
       .eq('seller_id', sellerId)
       .maybeSingle();
 
-    return (
-      data || {
-        seller_id: sellerId,
-        hall_dropoff_enabled: false,
-        hall_dropoff_min_amount: null,
-        onboarding_completed_at: null,
-        boost_credits: 1,
-        require_payment_confirmation: false,
-        favorite_alert_threshold: 3,
-        updated_at: new Date().toISOString(),
-      }
-    );
+    return (data as SellerPreferencesRow) || this.defaultPreferences(sellerId);
+  }
+
+  private prefsUpsertPayload(current: SellerPreferencesRow, overrides: Partial<SellerPreferencesRow> = {}) {
+    return {
+      seller_id: current.seller_id,
+      hall_dropoff_enabled: overrides.hall_dropoff_enabled ?? current.hall_dropoff_enabled,
+      hall_dropoff_min_amount:
+        overrides.hall_dropoff_min_amount !== undefined
+          ? overrides.hall_dropoff_min_amount
+          : current.hall_dropoff_min_amount,
+      onboarding_completed_at:
+        overrides.onboarding_completed_at !== undefined
+          ? overrides.onboarding_completed_at
+          : current.onboarding_completed_at,
+      boost_credits: overrides.boost_credits ?? current.boost_credits,
+      require_payment_confirmation:
+        overrides.require_payment_confirmation ?? current.require_payment_confirmation,
+      favorite_alert_threshold:
+        overrides.favorite_alert_threshold ?? current.favorite_alert_threshold,
+      shop_name: overrides.shop_name !== undefined ? overrides.shop_name : current.shop_name,
+      shop_bio: overrides.shop_bio !== undefined ? overrides.shop_bio : current.shop_bio,
+      cover_image_url:
+        overrides.cover_image_url !== undefined
+          ? overrides.cover_image_url
+          : current.cover_image_url,
+      shop_updated_at:
+        overrides.shop_updated_at !== undefined
+          ? overrides.shop_updated_at
+          : current.shop_updated_at,
+      updated_at: new Date().toISOString(),
+    };
   }
 
   async updatePreferences(
@@ -67,21 +128,17 @@ export class MarketplaceSellerToolsService {
     }
   ): Promise<SellerPreferencesRow> {
     const current = await this.getPreferences(sellerId);
-    const next = {
-      seller_id: sellerId,
+    const next = this.prefsUpsertPayload(current, {
       hall_dropoff_enabled: patch.hallDropoffEnabled ?? current.hall_dropoff_enabled,
       hall_dropoff_min_amount:
         patch.hallDropoffMinAmount !== undefined
           ? patch.hallDropoffMinAmount
           : current.hall_dropoff_min_amount,
-      onboarding_completed_at: current.onboarding_completed_at,
-      boost_credits: current.boost_credits,
       require_payment_confirmation:
         patch.requirePaymentConfirmation ?? current.require_payment_confirmation,
       favorite_alert_threshold:
         patch.favoriteAlertThreshold ?? current.favorite_alert_threshold,
-      updated_at: new Date().toISOString(),
-    };
+    });
 
     const { data, error } = await this.db
       .from('marketplace_seller_preferences')
@@ -91,6 +148,228 @@ export class MarketplaceSellerToolsService {
 
     if (error) throw error;
     return data as SellerPreferencesRow;
+  }
+
+  async resolveProfileName(sellerId: string): Promise<string> {
+    const { data } = await this.db
+      .from('profiles')
+      .select('name')
+      .eq('id', sellerId)
+      .maybeSingle();
+    const name = typeof data?.name === 'string' ? data.name.trim() : '';
+    return name || 'Shop';
+  }
+
+  toShopPublic(prefs: SellerPreferencesRow, fallbackName: string): SellerShopPublic {
+    const shopName = (prefs.shop_name || '').trim() || fallbackName || 'Shop';
+    return {
+      shopName,
+      bio: prefs.shop_bio?.trim() ? prefs.shop_bio.trim() : null,
+      coverImageUrl: prefs.cover_image_url?.trim() ? prefs.cover_image_url.trim() : null,
+    };
+  }
+
+  /** Ensure a prefs row exists with shop_name defaulted from profile name. */
+  async ensureSellerShop(sellerId: string): Promise<SellerPreferencesRow> {
+    const current = await this.getPreferences(sellerId);
+    if ((current.shop_name || '').trim()) {
+      // Row may be virtual default — still upsert if missing in DB
+      const { data: existing } = await this.db
+        .from('marketplace_seller_preferences')
+        .select('seller_id')
+        .eq('seller_id', sellerId)
+        .maybeSingle();
+      if (existing) return current;
+    }
+
+    const profileName = await this.resolveProfileName(sellerId);
+    const shopName = (current.shop_name || '').trim() || profileName;
+    const next = this.prefsUpsertPayload(current, {
+      shop_name: shopName,
+      shop_updated_at: current.shop_updated_at || new Date().toISOString(),
+    });
+
+    const { data, error } = await this.db
+      .from('marketplace_seller_preferences')
+      .upsert(next)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return data as SellerPreferencesRow;
+  }
+
+  async updateShop(
+    sellerId: string,
+    patch: { shopName?: string; bio?: string | null; coverImageUrl?: string | null }
+  ): Promise<SellerShopPublic> {
+    const current = await this.ensureSellerShop(sellerId);
+    const profileName = await this.resolveProfileName(sellerId);
+
+    let shopName = current.shop_name;
+    if (patch.shopName !== undefined) {
+      const trimmed = patch.shopName.trim();
+      if (!trimmed) throw new Error('Shop name is required');
+      if (trimmed.length > 80) throw new Error('Shop name must be 80 characters or fewer');
+      shopName = trimmed;
+    }
+
+    let shopBio = current.shop_bio;
+    if (patch.bio !== undefined) {
+      if (patch.bio === null || patch.bio === '') {
+        shopBio = null;
+      } else {
+        const trimmed = patch.bio.trim();
+        if (trimmed.length > 500) throw new Error('Shop bio must be 500 characters or fewer');
+        shopBio = trimmed;
+      }
+    }
+
+    let cover = current.cover_image_url;
+    if (patch.coverImageUrl !== undefined) {
+      cover = patch.coverImageUrl?.trim() ? patch.coverImageUrl.trim() : null;
+    }
+
+    const next = this.prefsUpsertPayload(current, {
+      shop_name: shopName,
+      shop_bio: shopBio,
+      cover_image_url: cover,
+      shop_updated_at: new Date().toISOString(),
+    });
+
+    const { data, error } = await this.db
+      .from('marketplace_seller_preferences')
+      .upsert(next)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return this.toShopPublic(data as SellerPreferencesRow, profileName);
+  }
+
+  async listShops(input: {
+    campusId?: string | null;
+    q?: string | null;
+    page?: number;
+    limit?: number;
+  }): Promise<{ shops: MarketplaceShopCard[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, Number(input.page) || 1);
+    const limit = Math.min(48, Math.max(1, Number(input.limit) || 24));
+    const from = (page - 1) * limit;
+    const q = (input.q || '').trim().toLowerCase();
+    const campusId = input.campusId || null;
+
+    // Include reserved (sale in progress) so shops stay discoverable while a deal is open.
+    let listingsQuery = this.db
+      .from('marketplace_listings')
+      .select('id, user_id, campus_id, location, created_at, status')
+      .in('status', ['active', 'reserved'])
+      .order('created_at', { ascending: false })
+      .limit(2000);
+
+    if (campusId) {
+      listingsQuery = listingsQuery.eq('campus_id', campusId);
+    }
+
+    const { data: listings, error: listingsErr } = await listingsQuery;
+    if (listingsErr) throw listingsErr;
+
+    const bySeller = new Map<
+      string,
+      { count: number; lastListingAt: string; campusId: string | null; campusLabel: string | null }
+    >();
+    for (const row of listings || []) {
+      const sellerId = row.user_id as string;
+      if (!sellerId) continue;
+      const existing = bySeller.get(sellerId);
+      if (!existing) {
+        bySeller.set(sellerId, {
+          count: 1,
+          lastListingAt: row.created_at,
+          campusId: row.campus_id || null,
+          campusLabel: row.location || null,
+        });
+      } else {
+        existing.count += 1;
+      }
+    }
+
+    const sellerIds = Array.from(bySeller.keys());
+    if (sellerIds.length === 0) {
+      return { shops: [], total: 0, page, limit };
+    }
+
+    const activeListingIds = (listings || []).map((l: any) => l.id).filter(Boolean);
+    const listingOwnerById = new Map(
+      (listings || []).map((l: any) => [l.id as string, l.user_id as string])
+    );
+
+    const [{ data: profiles }, { data: prefs }, reviewsResult] = await Promise.all([
+      this.db.from('profiles').select('id, name, avatar_url').in('id', sellerIds),
+      this.db
+        .from('marketplace_seller_preferences')
+        .select('seller_id, shop_name, shop_bio, cover_image_url')
+        .in('seller_id', sellerIds),
+      activeListingIds.length > 0
+        ? this.db
+            .from('marketplace_reviews')
+            .select('rating, listing_id')
+            .in('listing_id', activeListingIds.slice(0, 1000))
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+    const prefsMap = new Map((prefs || []).map((p: any) => [p.seller_id, p]));
+    const ratingMap = new Map<string, { sum: number; count: number }>();
+    for (const r of reviewsResult.data || []) {
+      const sid = listingOwnerById.get((r as any).listing_id);
+      if (!sid) continue;
+      const cur = ratingMap.get(sid) || { sum: 0, count: 0 };
+      cur.sum += Number((r as any).rating) || 0;
+      cur.count += 1;
+      ratingMap.set(sid, cur);
+    }
+
+    let cards: MarketplaceShopCard[] = sellerIds.map((sellerId) => {
+      const meta = bySeller.get(sellerId)!;
+      const profile = profileMap.get(sellerId);
+      const pref = prefsMap.get(sellerId);
+      const fallbackName = (profile?.name || '').trim() || 'Shop';
+      const shopName = (pref?.shop_name || '').trim() || fallbackName;
+      const rating = ratingMap.get(sellerId);
+      return {
+        sellerId,
+        shopName,
+        bio: pref?.shop_bio?.trim() ? pref.shop_bio.trim() : null,
+        coverImageUrl: pref?.cover_image_url?.trim() ? pref.cover_image_url.trim() : null,
+        avatarUrl: profile?.avatar_url || null,
+        activeListingCount: meta.count,
+        avgRating: rating && rating.count > 0 ? Math.round((rating.sum / rating.count) * 10) / 10 : 0,
+        totalReviews: rating?.count || 0,
+        campusId: meta.campusId,
+        campusLabel: meta.campusLabel,
+        lastListingAt: meta.lastListingAt,
+      };
+    });
+
+    if (q) {
+      cards = cards.filter(
+        (c) =>
+          c.shopName.toLowerCase().includes(q) ||
+          (c.bio || '').toLowerCase().includes(q) ||
+          (c.campusLabel || '').toLowerCase().includes(q)
+      );
+    }
+
+    cards.sort((a, b) => {
+      const at = a.lastListingAt ? new Date(a.lastListingAt).getTime() : 0;
+      const bt = b.lastListingAt ? new Date(b.lastListingAt).getTime() : 0;
+      return bt - at;
+    });
+
+    const total = cards.length;
+    const shops = cards.slice(from, from + limit);
+    return { shops, total, page, limit };
   }
 
   async getPickupNudge(sellerId: string, buyerId?: string): Promise<PickupNudge> {
@@ -291,6 +570,7 @@ export class MarketplaceSellerToolsService {
       boostCredits: prefs.boost_credits ?? 1,
       listingCount: count ?? 0,
       tips: [
+        'Add a shop name and bio so buyers recognize you.',
         'Add clear photos — listings with 3+ images get more views.',
         'Set a campus meetup location buyers recognize.',
         'Enable offers so buyers can negotiate fairly.',
@@ -301,18 +581,14 @@ export class MarketplaceSellerToolsService {
 
   async completeOnboarding(sellerId: string): Promise<SellerPreferencesRow> {
     const current = await this.getPreferences(sellerId);
+    const next = this.prefsUpsertPayload(current, {
+      onboarding_completed_at: new Date().toISOString(),
+      boost_credits: Math.max(current.boost_credits ?? 0, 3),
+      favorite_alert_threshold: current.favorite_alert_threshold ?? 3,
+    });
     const { data, error } = await this.db
       .from('marketplace_seller_preferences')
-      .upsert({
-        seller_id: sellerId,
-        hall_dropoff_enabled: current.hall_dropoff_enabled,
-        hall_dropoff_min_amount: current.hall_dropoff_min_amount,
-        onboarding_completed_at: new Date().toISOString(),
-        boost_credits: Math.max(current.boost_credits ?? 0, 3),
-        require_payment_confirmation: current.require_payment_confirmation,
-        favorite_alert_threshold: current.favorite_alert_threshold ?? 3,
-        updated_at: new Date().toISOString(),
-      })
+      .upsert(next)
       .select('*')
       .single();
 

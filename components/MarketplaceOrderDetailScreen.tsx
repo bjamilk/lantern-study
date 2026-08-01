@@ -21,16 +21,31 @@ interface MarketplaceOrderDetailScreenProps {
   onOrderUpdated?: () => void;
 }
 
-const STEPS = ['paid', 'ready_for_pickup', 'completed'];
+const TIMELINE_STEPS = [
+  { key: 'accepted', label: 'Accepted' },
+  { key: 'paid', label: 'Paid' },
+  { key: 'ready_for_pickup', label: 'Ready for pickup' },
+  { key: 'completed', label: 'Completed' },
+] as const;
+
 const STATUS_LABELS: Record<string, string> = {
-  pending_payment: 'Awaiting payment',
-  paid: 'Paid — arrange fulfillment',
-  ready_for_pickup: 'Ready for pickup or delivery',
-  buyer_confirmed: 'Buyer confirmed',
-  completed: 'Completed',
+  pending_payment: 'Sale in progress — awaiting payment',
+  paid: 'Sale in progress — arrange fulfillment',
+  ready_for_pickup: 'Sale in progress — ready for pickup',
+  buyer_confirmed: 'Sale in progress — buyer confirmed',
+  completed: 'Completed — receipt available',
   cancelled: 'Cancelled',
   disputed: 'Disputed',
 };
+
+function timelineIndexForStatus(status: string): number {
+  if (status === 'cancelled' || status === 'disputed') return -1;
+  if (status === 'pending_payment') return 0;
+  if (status === 'paid') return 1;
+  if (status === 'ready_for_pickup' || status === 'buyer_confirmed') return 2;
+  if (status === 'completed') return 3;
+  return 0;
+}
 
 const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> = ({
   orderId,
@@ -127,7 +142,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
     );
   }
 
-  const stepIndex = order.status === 'completed' ? 3 : STEPS.indexOf(order.status);
+  const stepIndex = timelineIndexForStatus(order.status);
 
   return (
     <div className="flex flex-col h-full bg-lantern-background">
@@ -143,9 +158,19 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           <p className="text-2xl font-bold text-lantern-primary">
             ₦{Number(order.amount).toLocaleString()}
           </p>
+          {(order.quantity || 1) > 1 ? (
+            <p className="text-sm text-lantern-text-secondary mt-1">
+              Qty {order.quantity} · ₦
+              {(Number(order.amount) / Math.max(1, Number(order.quantity) || 1)).toLocaleString()}{' '}
+              each
+            </p>
+          ) : null}
           <p className="text-sm text-lantern-text-secondary mt-1">
             {STATUS_LABELS[order.status] || order.status.replace(/_/g, ' ')}
           </p>
+          {order.source === 'offer_accept' ? (
+            <p className="text-xs text-lantern-text-tertiary mt-1">Started from an accepted offer</p>
+          ) : null}
           {order.status === 'completed' && order.completed_at && (
             <p className="text-xs text-lantern-text-tertiary mt-2">
               Completed {new Date(order.completed_at).toLocaleString()}
@@ -154,22 +179,33 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         </div>
 
         <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border">
-          <h2 className="text-sm font-semibold mb-3">Progress</h2>
+          <h2 className="text-sm font-semibold mb-3">Sale progress</h2>
           <div className="flex gap-2">
-            {STEPS.map((step, i) => (
+            {TIMELINE_STEPS.map((step, i) => (
               <div
-                key={step}
+                key={step.key}
                 className={`flex-1 h-2 rounded-full ${
-                  stepIndex > i ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
+                  stepIndex >= i ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
                 }`}
               />
             ))}
           </div>
           <ul className="mt-3 space-y-1 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
-            <li>Paid {order.created_at ? '✓' : ''}</li>
-            <li>Ready for pickup or delivery {order.seller_confirmed_at ? '✓' : '—'}</li>
+            <li>Accepted {order.created_at ? '✓' : '—'}</li>
+            <li>
+              Paid{' '}
+              {order.status !== 'pending_payment' && order.status !== 'cancelled'
+                ? '✓'
+                : '—'}
+            </li>
+            <li>Ready for pickup {order.seller_confirmed_at || order.status === 'ready_for_pickup' || order.status === 'completed' ? '✓' : '—'}</li>
             <li>Completed {order.completed_at ? '✓' : '—'}</li>
           </ul>
+          {order.status !== 'completed' && order.status !== 'cancelled' ? (
+            <p className="mt-3 text-xs text-lantern-text-tertiary">
+              Receipt unlocks when both sides finish and the order is completed.
+            </p>
+          ) : null}
         </div>
 
         {order.status === 'pending_payment' && (
@@ -276,10 +312,11 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border space-y-3">
             <h2 className="font-semibold flex items-center gap-2">
               <CheckCircleIcon className="w-5 h-5 text-green-500" />
-              Receipt
+              Transaction receipt
             </h2>
             <p className="text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
-              You paid ₦{Number(order.amount).toLocaleString()} for {order.listing?.title}.
+              Logged for your records — {isBuyer ? 'you paid' : 'you received'}{' '}
+              ₦{Number(order.amount).toLocaleString()} for {order.listing?.title}.
             </p>
             <OrderReceipt order={order} />
           </div>

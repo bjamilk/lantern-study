@@ -16,7 +16,8 @@ import {
   TestResult,
   GameSession,
   UserQuestionStats,
-  OfflineSessionBundle
+  OfflineSessionBundle,
+  PausedSessionSummary,
 } from '../types';
 import type { StudyActivityDay } from '@lantern/shared';
 
@@ -25,6 +26,7 @@ interface TestState {
   activeTestSession: TestSessionData | null;
   activeStudySession: StudySessionData | null;
   activeGameSession: GameSession | null;
+  pausedSessions: PausedSessionSummary[];
   testResults: TestResult[];
   userQuestionStats: UserQuestionStats;
   studyActivityDays: StudyActivityDay[];
@@ -39,6 +41,9 @@ interface TestState {
   
   // Actions - Study Session
   setActiveStudySession: (session: StudySessionData | null) => void;
+  setPausedSessions: (sessions: PausedSessionSummary[]) => void;
+  upsertPausedSessionSummary: (summary: PausedSessionSummary) => void;
+  removePausedSession: (sessionId: string) => void;
   
   // Actions - Game Session
   setActiveGameSession: (session: GameSession | null) => void;
@@ -90,6 +95,7 @@ export const useTestStore = create<TestState>()((set, get) => ({
   activeTestSession: null,
   activeStudySession: null,
   activeGameSession: null,
+  pausedSessions: [],
   testResults: [],
   userQuestionStats: {},
   studyActivityDays: [],
@@ -119,6 +125,23 @@ export const useTestStore = create<TestState>()((set, get) => ({
   
   // Study Session
   setActiveStudySession: (session) => set({ activeStudySession: session }),
+
+  setPausedSessions: (sessions) => set({ pausedSessions: sessions }),
+
+  upsertPausedSessionSummary: (summary) =>
+    set((state) => {
+      const others = state.pausedSessions.filter((s) => s.id !== summary.id);
+      return {
+        pausedSessions: [summary, ...others].sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        ),
+      };
+    }),
+
+  removePausedSession: (sessionId) =>
+    set((state) => ({
+      pausedSessions: state.pausedSessions.filter((s) => s.id !== sessionId),
+    })),
   
   // Game Session
   setActiveGameSession: (session) => set({ activeGameSession: session }),
@@ -245,6 +268,7 @@ export const useTestStore = create<TestState>()((set, get) => ({
     activeTestSession: null,
     activeStudySession: null,
     activeGameSession: null,
+    pausedSessions: [],
     testResults: [],
     userQuestionStats: {},
     studyActivityDays: [],
@@ -253,4 +277,4 @@ export const useTestStore = create<TestState>()((set, get) => ({
     isLoading: false,
     error: null,
   }),
-}));;
+}));

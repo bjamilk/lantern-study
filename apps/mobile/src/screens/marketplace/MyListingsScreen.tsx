@@ -7,6 +7,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  Share,
   Text,
   View,
 } from 'react-native';
@@ -93,7 +94,12 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
   );
 
   const filtered = useMemo(
-    () => myListings.filter(l => l.status === activeTab),
+    () =>
+      myListings.filter(l =>
+        activeTab === 'active'
+          ? l.status === 'active' || l.status === 'reserved'
+          : l.status === activeTab
+      ),
     [myListings, activeTab]
   );
 
@@ -139,6 +145,13 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
   };
 
   const openListingActions = (item: (typeof filtered)[number]) => {
+    if (item.status === 'reserved') {
+      Alert.alert(item.title, 'Sale in progress', [
+        { text: 'View orders', onPress: () => navigation.navigate('Orders') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
     const options: string[] = ['Edit'];
     if (activeTab === 'active') {
       options.push('Mark sold', 'Deactivate');
@@ -271,6 +284,30 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
               )}
             </View>
           </View>
+          {user?.id ? (
+            <View className="flex-row gap-2">
+              <Pressable
+                onPress={() => navigation.navigate('SellerProfile', { sellerId: user.id })}
+                className="px-2.5 py-1.5 rounded-lg border border-lantern-border"
+                accessibilityRole="button"
+                accessibilityLabel="View my shop"
+              >
+                <Ionicons name="storefront-outline" size={18} color="#6366f1" />
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  void Share.share({
+                    message: `Check out my shop on Lantern: https://lanternstudy.com/marketplace/seller/${user.id}`,
+                  })
+                }
+                className="px-2.5 py-1.5 rounded-lg border border-lantern-border"
+                accessibilityRole="button"
+                accessibilityLabel="Share my shop"
+              >
+                <Ionicons name="share-outline" size={18} color="#64748b" />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
 
         <MarketplaceWorkspaceBar
@@ -355,6 +392,13 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
                   <Text className="text-[11px] text-lantern-text-secondary mt-0.5">
                     {category.name} · {item.views_count ?? 0} views
                   </Text>
+                  {item.status === 'reserved' ? (
+                    <Pressable onPress={() => navigation.navigate('Orders')} className="mt-1 self-start">
+                      <Text className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                        Sale in progress · View orders
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
                 <Pressable
                   onPress={e => {

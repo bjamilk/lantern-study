@@ -324,9 +324,24 @@ export default function SettingsScreen() {
   }, []);
 
   const handleManualSync = useCallback(async () => {
-    if (user?.id) {
-      await syncSettings(user.id);
+    if (!user?.id) return;
+    const result = await syncSettings(user.id, { force: true });
+    if (result === 'synced') {
       Alert.alert('Synced', 'Settings synced successfully!');
+    } else if (result === 'deferred') {
+      Alert.alert('Waiting for Wi‑Fi', 'Sync on Wi‑Fi only is enabled. Connect to Wi‑Fi to sync.');
+    } else if (result === 'conflict') {
+      Alert.alert(
+        'Updated elsewhere',
+        'Settings were changed on another device. Latest values were reloaded; review and sync again if needed.'
+      );
+    } else if (result === 'skipped') {
+      Alert.alert('Sync', 'Nothing to sync right now.');
+    } else {
+      Alert.alert(
+        'Sync failed',
+        'Could not reach the server. Your changes are saved on this device and will retry later.'
+      );
     }
   }, [user?.id, syncSettings]);
 
@@ -341,10 +356,24 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             await resetToDefaults();
-            if (user?.id) {
-              await syncSettings(user.id);
+            if (!user?.id) {
+              Alert.alert('Reset', 'Settings reset on this device.');
+              return;
             }
-            Alert.alert('Reset', 'Settings have been reset to defaults.');
+            const result = await syncSettings(user.id, { force: true });
+            if (result === 'synced') {
+              Alert.alert('Reset', 'Settings have been reset to defaults.');
+            } else if (result === 'deferred') {
+              Alert.alert(
+                'Reset locally',
+                'Defaults applied on this device. Connect to Wi‑Fi to sync.'
+              );
+            } else {
+              Alert.alert(
+                'Reset locally',
+                'Defaults applied on this device, but sync failed. They will retry later.'
+              );
+            }
           },
         },
       ]
@@ -891,8 +920,13 @@ export default function SettingsScreen() {
               icon="eye-outline"
               iconColor="#6366f1"
               title="Profile Visibility"
-              subtitle={settings.privacy.profileVisibility === 'public' ? 'Visible to everyone' : 
-                       settings.privacy.profileVisibility === 'groups' ? 'Visible to group members' : 'Private'}
+              subtitle={
+                settings.privacy.profileVisibility === 'public'
+                  ? 'Visible to everyone'
+                  : settings.privacy.profileVisibility === 'groups'
+                    ? 'Visible to group members'
+                    : 'Full profile only you — still findable in search'
+              }
               onPress={() => setShowPrivacyModal(true)}
             />
             <SettingItem
@@ -902,10 +936,10 @@ export default function SettingsScreen() {
               title="Direct Messages"
               subtitle={
                 settings.privacy.allowDirectMessages === 'everyone'
-                  ? 'Anyone can message you'
+                  ? 'Anyone can message you directly'
                   : settings.privacy.allowDirectMessages === 'groups'
-                    ? 'Group members only'
-                    : 'No direct messages'
+                    ? 'Group members open; others send requests'
+                    : 'Message requests only'
               }
               onPress={() => setShowDirectMessagesModal(true)}
             />
@@ -914,7 +948,7 @@ export default function SettingsScreen() {
               icon="search-outline"
               iconColor="#6366f1"
               title="Discoverable for Invites"
-              subtitle="Let others find you by name or @username when adding group or deck members"
+              subtitle="Let others find you by name or @username in people search and invites"
               rightElement={
                 <Switch
                   value={settings.privacy.discoverableForInvites !== false}
@@ -1595,9 +1629,11 @@ export default function SettingsScreen() {
                     {option === 'public' ? 'Public' : option === 'groups' ? 'Group Members Only' : 'Private'}
                   </Text>
                   <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
-                    {option === 'public' ? 'Anyone can see your profile' : 
-                     option === 'groups' ? 'Only members of your groups can see' : 
-                     'Only you can see your profile'}
+                    {option === 'public'
+                      ? 'Anyone can see your full profile'
+                      : option === 'groups'
+                        ? 'Only members of your groups can see your full profile'
+                        : 'Only you can open your full profile. Others can still find you in search and send a message request.'}
                   </Text>
                 </View>
                 {settings.privacy.profileVisibility === option && (
@@ -1641,14 +1677,18 @@ export default function SettingsScreen() {
               >
                 <View>
                   <Text style={[styles.optionTitle, modalTheme.optionTitle]}>
-                    {option === 'everyone' ? 'Everyone' : option === 'groups' ? 'Group Members Only' : 'No One'}
+                    {option === 'everyone'
+                      ? 'Everyone'
+                      : option === 'groups'
+                        ? 'Group members open'
+                        : 'Message requests only'}
                   </Text>
                   <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
                     {option === 'everyone'
-                      ? 'Any signed-in user can message you'
+                      ? 'Any signed-in user can open a chat with you immediately'
                       : option === 'groups'
-                        ? 'Only people in your shared groups'
-                        : 'Block all new direct messages'}
+                        ? 'Shared group members open chats; others send a message request'
+                        : 'Anyone can still message you — new chats arrive as requests you accept or decline'}
                   </Text>
                 </View>
                 {settings.privacy.allowDirectMessages === option && (

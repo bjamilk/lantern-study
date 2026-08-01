@@ -1,1 +1,5 @@
+# SPA fallback for client-side routes only.
+# Missing hashed files under /assets/ must NOT fall through here — that returns
+# index.html as text/html for .js module requests (browser MIME error) and can
+# inherit /assets/* immutable Cache-Control. Closest 404: public/assets/404.html
 /*    /index.html   200

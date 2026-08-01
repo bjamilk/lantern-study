@@ -1,4 +1,8 @@
-import { normalizeUserSettings } from '@lantern/shared/settings';
+import {
+  applySettingsPatch,
+  normalizeUserSettings,
+  type UserSettingsPatch,
+} from '@lantern/shared/settings';
 
 /**
  * Privileged settings keys that must never be writable by end users.
@@ -14,6 +18,17 @@ export const PRIVILEGED_SETTINGS_KEYS = new Set([
   'suspended_until',
   'moderation_flags',
 ]);
+
+const SETTINGS_CATEGORY_KEYS = [
+  'notifications',
+  'study',
+  'appearance',
+  'privacy',
+  'accessibility',
+  'sync',
+  'marketplace',
+  'featureTips',
+] as const;
 
 export function stripPrivilegedSettings(
   incoming: Record<string, unknown> | null | undefined
@@ -44,7 +59,64 @@ function preservePrivilegedKeys(
 }
 
 /**
- * Deep-merge user settings into canonical nested schema while preserving privileged keys.
+ * Convert an arbitrary incoming settings body into a deep category patch.
+ * Supports nested categories and a small set of legacy flat keys.
+ */
+export function toSettingsPatch(
+  incoming: Record<string, unknown> | null | undefined
+): UserSettingsPatch {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+    return {};
+  }
+  const safe = stripPrivilegedSettings(incoming);
+  delete (safe as { test_presets?: unknown }).test_presets;
+
+  const patch: UserSettingsPatch = {};
+  for (const key of SETTINGS_CATEGORY_KEYS) {
+    const value = safe[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      (patch as Record<string, unknown>)[key] = value;
+    }
+  }
+
+  // Legacy flat theme (pre-nested schema).
+  if (
+    !patch.appearance &&
+    (safe.theme === 'light' || safe.theme === 'dark' || safe.theme === 'system')
+  ) {
+    patch.appearance = { theme: safe.theme };
+  }
+
+  // Legacy flat notification toggles.
+  const legacyNotifKeys = [
+    'dailyReminder',
+    'groupActivity',
+    'marketplaceUpdates',
+    'badgeUnlocks',
+    'srsReminders',
+    'testResults',
+    'pushEnabled',
+    'emailEnabled',
+    'weeklyDigest',
+    'groupInvites',
+    'reminderTime',
+  ] as const;
+  if (!patch.notifications) {
+    const legacyNotif: Record<string, unknown> = {};
+    for (const key of legacyNotifKeys) {
+      if (key in safe) legacyNotif[key] = safe[key];
+    }
+    if (Object.keys(legacyNotif).length > 0) {
+      patch.notifications = legacyNotif as UserSettingsPatch['notifications'];
+    }
+  }
+
+  return patch;
+}
+
+/**
+ * Deep-merge user settings category patches into canonical nested schema
+ * while preserving privileged keys and validating ranges/enums.
  */
 export function mergeUserSettings(
   existing: Record<string, unknown> | null | undefined,
@@ -54,8 +126,10 @@ export function mergeUserSettings(
     existing && typeof existing === 'object' && !Array.isArray(existing)
       ? { ...existing }
       : {};
-  const safeIncoming = stripPrivilegedSettings(incoming);
-  const normalized = normalizeUserSettings({ ...base, ...safeIncoming });
+  delete (base as { test_presets?: unknown }).test_presets;
+
+  const patch = toSettingsPatch(incoming);
+  const normalized = applySettingsPatch(normalizeUserSettings(base), patch);
   return preservePrivilegedKeys(
     normalized as unknown as Record<string, unknown>,
     base

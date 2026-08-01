@@ -4,6 +4,7 @@ import { Audio } from 'expo-av';
 import { parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
+import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
 
@@ -53,11 +54,12 @@ export function DmBubble({
     minute: '2-digit',
   });
   const audioUrl = parseChatAudioUrl(message.text);
+  const resolvedAudioUrl = useResolvedStorageUrl(audioUrl);
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
 
   const toggleAudio = async () => {
-    if (!audioUrl) return;
+    if (!resolvedAudioUrl) return;
     try {
       if (playing && soundRef.current) {
         await soundRef.current.pauseAsync();
@@ -65,7 +67,7 @@ export function DmBubble({
         return;
       }
       if (!soundRef.current) {
-        const { sound } = await Audio.Sound.createAsync({ uri: audioUrl });
+        const { sound } = await Audio.Sound.createAsync({ uri: resolvedAudioUrl });
         soundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((status) => {
           if (!status.isLoaded) return;
@@ -171,21 +173,31 @@ export function DmBubble({
           ) : null}
 
           {audioUrl ? (
-            <Pressable onPress={() => void toggleAudio()} className="flex-row items-center gap-2">
-              <Text
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg"
-                style={{
-                  backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : colors.primaryBackground,
-                  color: isOwn ? colors.textInverse : colors.primary,
-                  overflow: 'hidden',
-                }}
-              >
-                {playing ? 'Pause' : 'Play'}
-              </Text>
+            resolvedAudioUrl === null ? (
               <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
-                Voice note
+                Voice note unavailable
               </Text>
-            </Pressable>
+            ) : !resolvedAudioUrl ? (
+              <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
+                Loading voice note…
+              </Text>
+            ) : (
+              <Pressable onPress={() => void toggleAudio()} className="flex-row items-center gap-2">
+                <Text
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+                  style={{
+                    backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : colors.primaryBackground,
+                    color: isOwn ? colors.textInverse : colors.primary,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {playing ? 'Pause' : 'Play'}
+                </Text>
+                <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
+                  Voice note
+                </Text>
+              </Pressable>
+            )
           ) : (
             <Text className="text-sm leading-relaxed" style={{ color: isOwn ? colors.textInverse : colors.text }}>
               {segments.map((seg, i) =>

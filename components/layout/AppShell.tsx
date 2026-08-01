@@ -87,6 +87,45 @@ const AppShell: React.FC<AppShellProps> = ({
         return () => window.removeEventListener('beforeunload', onBeforeUnload);
     }, [lectureActive]);
 
+    // Flush active test/study draft on hide/unload so refresh keeps progress.
+    useEffect(() => {
+        const hasActiveRunner =
+            (appMode === AppMode.TEST_ACTIVE && !!activeTestSession) ||
+            (appMode === AppMode.STUDY_ACTIVE && !!activeStudySession);
+        if (!hasActiveRunner) return;
+
+        const flush = () => {
+            void import('../../utils/sessionDraftSync').then(({ flushActiveSessionDraft }) => {
+                let remaining: number | undefined;
+                if (activeTestSession?.endTime) {
+                    remaining = Math.max(
+                        0,
+                        Math.round((new Date(activeTestSession.endTime).getTime() - Date.now()) / 1000),
+                    );
+                }
+                void flushActiveSessionDraft({
+                    status: 'paused',
+                    remainingTime: remaining,
+                });
+            });
+        };
+
+        const onVisibility = () => {
+            if (document.visibilityState === 'hidden') flush();
+        };
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            flush();
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('beforeunload', onBeforeUnload);
+        };
+    }, [appMode, activeTestSession, activeStudySession]);
+
     useEffect(() => {
         if (!importProgress) return;
         const timer = window.setTimeout(() => {
@@ -120,7 +159,7 @@ const AppShell: React.FC<AppShellProps> = ({
     ].includes(appMode) || isCompanionOpen;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-lantern-background text-lantern-text transition-colors">
+    <div className="fixed inset-0 flex overflow-hidden overscroll-none bg-lantern-background text-lantern-text transition-colors">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[200] focus:rounded-lg focus:bg-lantern-primary focus:px-4 focus:py-2 focus:text-white focus:outline-none"

@@ -1,3 +1,4 @@
+import { mapFlashcardFromApi } from '@lantern/shared/utils';
 import { reviewFlashcard } from './supabase';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { isVersionConflictError } from '@lantern/shared/api';
@@ -25,16 +26,16 @@ export async function syncPendingFlashcardReviews(): Promise<FlashcardReviewSync
         review.rating,
         card?.version
       );
-      const newSrsData = updated?.srs_data ?? updated?.srsData;
-      const newVersion = updated?.version;
-      if (newSrsData || newVersion != null) {
+      const mapped = updated ? mapFlashcardFromApi(updated) : null;
+      if (mapped?.srsData || mapped?.version != null) {
+        store.clearPendingLocalReview(review.flashcardId);
         store.updateFlashcards(prev =>
           prev.map(fc =>
             fc.id === review.flashcardId
               ? {
                   ...fc,
-                  ...(newSrsData ? { srsData: newSrsData } : {}),
-                  ...(newVersion != null ? { version: Number(newVersion) } : {}),
+                  ...(mapped.srsData ? { srsData: mapped.srsData } : {}),
+                  ...(mapped.version != null ? { version: Number(mapped.version) } : {}),
                 }
               : fc
           )
@@ -44,6 +45,7 @@ export async function syncPendingFlashcardReviews(): Promise<FlashcardReviewSync
     } catch (error) {
       if (isVersionConflictError(error)) {
         // Drop stale review; server already has a newer schedule.
+        store.clearPendingLocalReview(review.flashcardId);
         syncedIds.push(review.id);
         continue;
       }

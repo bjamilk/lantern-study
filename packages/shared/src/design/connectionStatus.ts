@@ -87,7 +87,16 @@ export function getConnectionStatus(input: ConnectionStatusInput): ConnectionSta
 }
 
 export const syncCopy = {
+  /** Mobile / offline offline queue — changes are kept locally until reconnect. */
   savedLocally: 'Saved on this device — will sync when online',
+  /**
+   * Web settings are persisted to the account when online (no offline settings queue).
+   * Offline study still uses downloaded bundles.
+   */
+  webSettingsPersistHint:
+    'Settings save to your account when you are online. Download Offline Mode bundles to study without a connection.',
+  updatedOnAnotherDevice: 'Updated on another device. Showing the latest settings.',
+  settingsSaved: 'Settings saved',
   pendingSync: (count: number) =>
     `${count} change${count === 1 ? '' : 's'} waiting to sync`,
   lastSynced: (date: Date) => {

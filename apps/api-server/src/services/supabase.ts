@@ -43,6 +43,13 @@ import {
   computeDmReceiptStatus,
   computeGroupReceipt,
 } from "@lantern/shared/utils/chatMedia";
+import {
+  clearDmHistoryClearedAtForUser,
+  effectiveDmUnreadFloor,
+  filterMessagesAfterDmHistoryCutoff,
+  readDmHistoryClearedAt,
+  withDmHistoryClearedAt,
+} from "@lantern/shared/utils/dmHistoryCutoff";
 
 function extractMentionUsernames(text?: string | null): string[] {
   if (!text) return [];
@@ -141,6 +148,8 @@ function mapProfileRowToUser(
       typeof row.settings_version === "number"
         ? row.settings_version
         : Number(row.settings_version) || 1,
+    testPresets: Array.isArray(row.test_presets) ? row.test_presets : [],
+    test_presets: Array.isArray(row.test_presets) ? row.test_presets : [],
     // Aliases for clients that still read snake_case from GET /users/:id
     avatar_url: avatarUrl,
     phone: (row.phone as string | undefined) || undefined,
@@ -1058,12 +1067,29 @@ export class SupabaseService {
     if (updates.points !== undefined) updateData.points = updates.points;
     if (updates.stats !== undefined) updateData.stats = updates.stats;
     if (updates.badges !== undefined) updateData.badges = updates.badges;
-    if (updates.settings !== undefined) updateData.settings = updates.settings;
-    if (updates.test_presets !== undefined)
-      updateData.settings = {
-        ...(updateData.settings || {}),
-        test_presets: updates.test_presets,
-      };
+    if (updates.settings !== undefined) {
+      // Never nest test_presets into the settings JSONB blob.
+      const settingsPayload =
+        updates.settings &&
+        typeof updates.settings === "object" &&
+        !Array.isArray(updates.settings)
+          ? { ...(updates.settings as Record<string, unknown>) }
+          : updates.settings;
+      if (
+        settingsPayload &&
+        typeof settingsPayload === "object" &&
+        !Array.isArray(settingsPayload)
+      ) {
+        delete (settingsPayload as { test_presets?: unknown }).test_presets;
+      }
+      updateData.settings = settingsPayload;
+    }
+    // Dedicated column — do not merge into settings JSONB (would wipe other categories).
+    if (updates.test_presets !== undefined) {
+      updateData.test_presets = Array.isArray(updates.test_presets)
+        ? updates.test_presets
+        : [];
+    }
 
     let expectedSettingsVersion = options.expectedSettingsVersion;
     if (updateData.settings !== undefined && expectedSettingsVersion == null) {
@@ -4493,7 +4519,17 @@ export class SupabaseService {
     const threadId = sortedIds.join("-");
 
     try {
-      const { data, error } = await this.supabase
+      const { data: threadMeta } = await this.supabase
+        .from("dm_threads")
+        .select("history_cleared_at")
+        .eq("id", threadId)
+        .maybeSingle();
+      const historyClearedAt = readDmHistoryClearedAt(
+        threadMeta?.history_cleared_at,
+        userId,
+      );
+
+      let query = this.supabase
         .from("dm_messages")
         .select(
           `
@@ -4504,6 +4540,7 @@ export class SupabaseService {
           timestamp,
           edited_at,
           removed_at,
+          client_message_id,
           reply_to_message_id,
           thread_root_id,
           profiles:sender_id (
@@ -4516,6 +4553,13 @@ export class SupabaseService {
         .eq("thread_id", threadId)
         .order("timestamp", { ascending: false })
         .range(offset, offset + limit - 1);
+
+      // Delete-for-me: never return pre-cutoff history to the deleter.
+      if (historyClearedAt) {
+        query = query.gt("timestamp", historyClearedAt);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         logger.error("Error fetching DM messages from database", {
@@ -4553,6 +4597,7 @@ export class SupabaseService {
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
+        clientMessageId: msg.client_message_id || undefined,
         replyToMessageId: msg.reply_to_message_id || undefined,
         replyTo: msg.replyTo || undefined,
         threadRootId: msg.thread_root_id || undefined,
@@ -4625,7 +4670,7 @@ export class SupabaseService {
     try {
       const { data: existingThread } = await this.supabase
         .from("dm_threads")
-        .select("id, status, requested_by, archived_by")
+        .select("id, status, requested_by, archived_by, history_cleared_at")
         .eq("id", threadId)
         .maybeSingle();
 
@@ -4751,6 +4796,8 @@ export class SupabaseService {
               upvotes: 0,
               downvotes: 0,
               flaggedAsSimilarUserIds: [],
+              clientMessageId:
+                withReply.client_message_id || options?.clientMessageId || undefined,
               replyToMessageId: withReply.reply_to_message_id || undefined,
               replyTo: withReply.replyTo || undefined,
               threadRootId: withReply.thread_root_id || undefined,
@@ -4763,13 +4810,19 @@ export class SupabaseService {
         throw new Error(`Failed to send DM: ${error.message}`);
       }
 
-      // Un-archive for recipient, un-hide for everyone, and update the
-      // thread's last message. A new message resurrects a "deleted" thread.
+      // Un-archive for recipient, un-hide for inbox resurrection, and update
+      // last message. Clearing hidden_by resurfaces the thread. Clear the *sender's*
+      // history_cleared_at so their first message after delete-for-me is visible;
+      // the recipient's cutoff is preserved.
       const archivedBy: string[] = Array.isArray(existingThread?.archived_by)
         ? existingThread.archived_by
         : [];
       const updatedArchivedBy = archivedBy.filter(
         (id: string) => id !== recipientId,
+      );
+      const nextHistoryClearedAt = clearDmHistoryClearedAtForUser(
+        existingThread?.history_cleared_at,
+        senderId,
       );
 
       await this.supabase
@@ -4781,6 +4834,7 @@ export class SupabaseService {
           hidden_by: [],
           status: nextStatus,
           requested_by: nextRequestedBy,
+          history_cleared_at: nextHistoryClearedAt,
         })
         .eq("id", threadId);
 
@@ -4831,6 +4885,8 @@ export class SupabaseService {
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
+        clientMessageId:
+          withReply.client_message_id || options?.clientMessageId || undefined,
         replyToMessageId: withReply.reply_to_message_id || undefined,
         replyTo: withReply.replyTo || undefined,
         threadRootId: withReply.thread_root_id || undefined,
@@ -5416,6 +5472,9 @@ export class SupabaseService {
     return cacheService.cached(
       cacheKey,
       async () => {
+        // Completed lean history only needs scores + config for charts; omit
+        // questions/user_answers so all-time pagination stays payload-light.
+        const completedLean = lean && status === "completed";
         const selectCols = lean
           ? `
           id,
@@ -5423,6 +5482,15 @@ export class SupabaseService {
           end_time,
           is_offline,
           config,
+          status,
+          session_kind,
+          current_question_index,
+          remaining_time_seconds,
+          paused_at,
+          updated_at,
+          title,
+          ${completedLean ? "" : "questions,"}
+          ${completedLean ? "" : "user_answers,"}
           test_results (
             score,
             correct_answers_count,
@@ -5444,11 +5512,15 @@ export class SupabaseService {
           .eq("user_id", userId);
 
         if (status === "completed") {
-          query = query.not("end_time", "is", null);
+          query = query.eq("status", "completed");
+        } else if (status === "paused") {
+          query = query.eq("status", "paused");
         } else if (status === "in_progress") {
-          query = query.is("end_time", null).not("start_time", "is", null);
+          query = query.in("status", ["in_progress", "paused"]);
         } else if (status === "not_started") {
           query = query.is("start_time", null);
+        } else if (status === "abandoned") {
+          query = query.eq("status", "abandoned");
         }
 
         if (subject) {
@@ -5462,8 +5534,13 @@ export class SupabaseService {
           query = query.lte("start_time", to);
         }
 
+        const orderByUpdated =
+          status === "paused" || status === "in_progress";
         if (sortKey === "oldest") {
-          query = query.order("start_time", { ascending: true });
+          query = query.order(
+            orderByUpdated ? "updated_at" : "start_time",
+            { ascending: true },
+          );
         } else if (sortKey === "highestScore") {
           // Prefer score from joined test_results; fall back below if PostgREST rejects the order.
           query = query
@@ -5474,7 +5551,10 @@ export class SupabaseService {
             })
             .order("start_time", { ascending: false });
         } else {
-          query = query.order("start_time", { ascending: false });
+          query = query.order(
+            orderByUpdated ? "updated_at" : "start_time",
+            { ascending: false },
+          );
         }
 
         let { data, error, count } = await query.range(
@@ -5490,14 +5570,14 @@ export class SupabaseService {
             .from("test_sessions")
             .select(selectCols, { count: "exact" })
             .eq("user_id", userId);
-          if (status === "completed")
-            fallback = fallback.not("end_time", "is", null);
+          if (status === "completed") fallback = fallback.eq("status", "completed");
+          else if (status === "paused") fallback = fallback.eq("status", "paused");
           else if (status === "in_progress") {
-            fallback = fallback
-              .is("end_time", null)
-              .not("start_time", "is", null);
+            fallback = fallback.in("status", ["in_progress", "paused"]);
           } else if (status === "not_started")
             fallback = fallback.is("start_time", null);
+          else if (status === "abandoned")
+            fallback = fallback.eq("status", "abandoned");
           if (subject) fallback = fallback.eq("config->>subject", subject);
           if (from) fallback = fallback.gte("start_time", from);
           if (to) fallback = fallback.lte("start_time", to);
@@ -5526,15 +5606,50 @@ export class SupabaseService {
           const result = Array.isArray(session.test_results)
             ? session.test_results[0]
             : session.test_results;
+          const questions = Array.isArray(session.questions)
+            ? session.questions
+            : [];
+          const answers =
+            session.user_answers && typeof session.user_answers === "object"
+              ? session.user_answers
+              : {};
+          const answeredCount = Array.isArray(answers)
+            ? answers.length
+            : Object.keys(answers).length;
+          const sessionStatus = session.status ||
+            (session.end_time ? "completed" : "in_progress");
+
+          if (
+            lean &&
+            (sessionStatus === "paused" || sessionStatus === "in_progress")
+          ) {
+            return {
+              id: session.id,
+              sessionKind: session.session_kind || "test",
+              status: sessionStatus,
+              title:
+                session.title ||
+                session.config?.groupName ||
+                (session.session_kind === "study" ? "Study session" : "Test"),
+              answeredCount,
+              totalQuestions: questions.length,
+              currentQuestionIndex: session.current_question_index || 0,
+              remainingTimeSeconds: session.remaining_time_seconds ?? null,
+              startTime: session.start_time || new Date().toISOString(),
+              updatedAt: session.updated_at || session.start_time || new Date().toISOString(),
+              pausedAt: session.paused_at ?? null,
+              groupId: session.config?.groupId,
+            };
+          }
 
           return {
             id: session.id,
             session: {
               id: session.id,
               config: session.config || {},
-              questions: lean ? [] : session.questions || [],
-              userAnswers: lean ? {} : session.user_answers || {},
-              currentQuestionIndex: 0,
+              questions: lean ? [] : questions,
+              userAnswers: lean ? {} : answers,
+              currentQuestionIndex: session.current_question_index || 0,
               startTime: session.start_time
                 ? new Date(session.start_time)
                 : new Date(),
@@ -5542,11 +5657,17 @@ export class SupabaseService {
                 ? new Date(session.end_time)
                 : undefined,
               isOffline: session.is_offline || false,
+              sessionKind: session.session_kind || "test",
+              status: sessionStatus,
+              title: session.title || undefined,
+              updatedAt: session.updated_at || undefined,
+              pausedAt: session.paused_at || undefined,
+              remainingTime: session.remaining_time_seconds ?? undefined,
             },
             score: result?.score || 0,
             totalQuestions:
               result?.total_questions ||
-              (lean ? 0 : session.questions?.length) ||
+              questions.length ||
               0,
             correctAnswersCount: result?.correct_answers_count || 0,
           };
@@ -5608,11 +5729,22 @@ export class SupabaseService {
       insertData.start_time = testConfig.start_time;
       insertData.end_time = testConfig.end_time;
       insertData.is_offline = testConfig.is_offline || false;
+      insertData.status = "completed";
+      insertData.session_kind = testConfig.session_kind || testConfig.sessionKind || "test";
+      insertData.title = testConfig.title || null;
+      insertData.current_question_index =
+        typeof testConfig.current_question_index === "number"
+          ? testConfig.current_question_index
+          : 0;
+      insertData.updated_at = new Date().toISOString();
     } else {
       // This is a new test configuration
       insertData.config = testConfig;
       insertData.questions = [];
       insertData.user_answers = {};
+      insertData.status = "in_progress";
+      insertData.session_kind = "test";
+      insertData.updated_at = new Date().toISOString();
     }
 
     const { data, error } = await this.supabase
@@ -5627,6 +5759,238 @@ export class SupabaseService {
     await cacheService.deletePattern(`tests:${userId}:*`);
 
     return data;
+  }
+
+  mapTestSessionRowToClient(session: any) {
+    const answers =
+      session.user_answers && typeof session.user_answers === "object" && !Array.isArray(session.user_answers)
+        ? session.user_answers
+        : {};
+    return {
+      id: session.id,
+      config: session.config || {},
+      questions: Array.isArray(session.questions) ? session.questions : [],
+      userAnswers: answers,
+      currentQuestionIndex: session.current_question_index || 0,
+      startTime: session.start_time ? new Date(session.start_time) : new Date(),
+      endTime: session.end_time ? new Date(session.end_time) : undefined,
+      remainingTime:
+        typeof session.remaining_time_seconds === "number"
+          ? session.remaining_time_seconds
+          : undefined,
+      isOffline: session.is_offline || false,
+      sessionKind: session.session_kind || "test",
+      status: session.status || "in_progress",
+      title: session.title || undefined,
+      updatedAt: session.updated_at || undefined,
+      pausedAt: session.paused_at || undefined,
+      userId: session.user_id,
+    };
+  }
+
+  async createTestDraft(
+    payload: {
+      config: any;
+      questions: any[];
+      user_answers?: Record<string, any>;
+      start_time?: string;
+      session_kind?: "test" | "study";
+      title?: string;
+      current_question_index?: number;
+      remaining_time_seconds?: number | null;
+      is_offline?: boolean;
+      client_id?: string;
+    },
+    userId: string,
+  ): Promise<any> {
+    const now = new Date().toISOString();
+    const insertData: any = {
+      user_id: userId,
+      config: payload.config || {},
+      questions: Array.isArray(payload.questions) ? payload.questions : [],
+      user_answers: payload.user_answers || {},
+      start_time: payload.start_time || now,
+      end_time: null,
+      is_offline: payload.is_offline || false,
+      status: "in_progress",
+      session_kind: payload.session_kind === "study" ? "study" : "test",
+      current_question_index: Math.max(0, payload.current_question_index || 0),
+      remaining_time_seconds:
+        typeof payload.remaining_time_seconds === "number"
+          ? payload.remaining_time_seconds
+          : null,
+      title: payload.title || null,
+      updated_at: now,
+      paused_at: null,
+    };
+
+    const { data, error } = await this.supabase
+      .from("test_sessions")
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (error) throw error;
+    await cacheService.deletePattern(`tests:${userId}:*`);
+    return this.mapTestSessionRowToClient(data);
+  }
+
+  async updateTestDraft(
+    draftId: string,
+    userId: string,
+    updates: {
+      user_answers?: Record<string, any>;
+      current_question_index?: number;
+      remaining_time_seconds?: number | null;
+      status?: "in_progress" | "paused";
+      title?: string;
+    },
+  ): Promise<any | null> {
+    const existing = await this.getTestById(draftId, userId);
+    if (!existing) return null;
+    if (existing.status === "completed" || existing.status === "abandoned") {
+      throw new Error("Cannot update a finished session");
+    }
+    if (existing.end_time) {
+      throw new Error("Cannot update a finished session");
+    }
+
+    const now = new Date().toISOString();
+    const patch: any = { updated_at: now };
+    if (updates.user_answers !== undefined) patch.user_answers = updates.user_answers;
+    if (typeof updates.current_question_index === "number") {
+      patch.current_question_index = Math.max(0, updates.current_question_index);
+    }
+    if (updates.remaining_time_seconds !== undefined) {
+      patch.remaining_time_seconds = updates.remaining_time_seconds;
+    }
+    if (updates.title !== undefined) patch.title = updates.title;
+    if (updates.status === "paused") {
+      patch.status = "paused";
+      patch.paused_at = now;
+    } else if (updates.status === "in_progress") {
+      patch.status = "in_progress";
+      patch.paused_at = null;
+    }
+
+    const { data, error } = await this.supabase
+      .from("test_sessions")
+      .update(patch)
+      .eq("id", draftId)
+      .eq("user_id", userId)
+      .in("status", ["in_progress", "paused"])
+      .is("end_time", null)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    await cacheService.delete(`test:${draftId}`);
+    await cacheService.delete(`test:${draftId}:user:${userId}`);
+    await cacheService.deletePattern(`tests:${userId}:*`);
+    return this.mapTestSessionRowToClient(data);
+  }
+
+  async completeTestDraft(
+    draftId: string,
+    userId: string,
+    options?: {
+      user_answers?: Record<string, any>;
+      activityDate?: string;
+      score?: number;
+      correctAnswersCount?: number;
+      totalQuestions?: number;
+    },
+  ): Promise<any> {
+    const existing = await this.getTestById(draftId, userId);
+    if (!existing) throw new Error("Session not found");
+    if (existing.status === "completed") {
+      throw new Error("Session already completed");
+    }
+    if (existing.status === "abandoned") {
+      throw new Error("Session was abandoned");
+    }
+
+    const now = new Date().toISOString();
+    const answers = options?.user_answers ?? existing.user_answers ?? {};
+    const sessionKind = existing.session_kind === "study" ? "study" : "test";
+
+    const { data, error } = await this.supabase
+      .from("test_sessions")
+      .update({
+        user_answers: answers,
+        end_time: now,
+        status: "completed",
+        updated_at: now,
+        remaining_time_seconds: null,
+        paused_at: null,
+      })
+      .eq("id", draftId)
+      .eq("user_id", userId)
+      .in("status", ["in_progress", "paused"])
+      .is("end_time", null)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new Error("Session already completed");
+
+    await cacheService.delete(`test:${draftId}`);
+    await cacheService.delete(`test:${draftId}:user:${userId}`);
+    await cacheService.deletePattern(`tests:${userId}:*`);
+
+    if (sessionKind === "study") {
+      return {
+        session: this.mapTestSessionRowToClient(data),
+        sessionKind: "study",
+        score: null,
+        totalQuestions: Array.isArray(data.questions) ? data.questions.length : 0,
+        correctAnswersCount: null,
+      };
+    }
+
+    const result = await this.createTestResult(
+      draftId,
+      {
+        score: options?.score ?? 0,
+        correctAnswersCount: options?.correctAnswersCount ?? 0,
+        totalQuestions:
+          options?.totalQuestions ??
+          (Array.isArray(data.questions) ? data.questions.length : 0),
+        activityDate: options?.activityDate,
+      },
+      userId,
+    );
+
+    return {
+      session: this.mapTestSessionRowToClient(data),
+      sessionKind: "test",
+      ...result,
+    };
+  }
+
+  async abandonTestDraft(draftId: string, userId: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    const { data, error } = await this.supabase
+      .from("test_sessions")
+      .update({
+        status: "abandoned",
+        updated_at: now,
+        remaining_time_seconds: null,
+      })
+      .eq("id", draftId)
+      .eq("user_id", userId)
+      .in("status", ["in_progress", "paused"])
+      .is("end_time", null)
+      .select("id")
+      .maybeSingle();
+
+    if (error) throw error;
+    await cacheService.delete(`test:${draftId}`);
+    await cacheService.delete(`test:${draftId}:user:${userId}`);
+    await cacheService.deletePattern(`tests:${userId}:*`);
+    return !!data;
   }
 
   async startTest(testId: string, userId: string): Promise<any | null> {
@@ -5695,6 +6059,10 @@ export class SupabaseService {
       .update({
         end_time: new Date().toISOString(),
         user_answers: answers,
+        status: "completed",
+        updated_at: new Date().toISOString(),
+        remaining_time_seconds: null,
+        paused_at: null,
       })
       .eq("id", testId)
       .eq("user_id", userId)
@@ -7462,7 +7830,7 @@ export class SupabaseService {
   ): Promise<Message[]> {
     const { data: thread, error: threadError } = await this.supabase
       .from("dm_threads")
-      .select("participant_ids")
+      .select("participant_ids, history_cleared_at")
       .eq("id", threadId)
       .maybeSingle();
     if (threadError) throw threadError;
@@ -7476,6 +7844,10 @@ export class SupabaseService {
     if (!peerUserId) {
       throw new Error("Invalid DM thread");
     }
+    const historyClearedAt = readDmHistoryClearedAt(
+      thread?.history_cleared_at,
+      viewerUserId,
+    );
 
     const selectClause = `
       id,
@@ -7516,7 +7888,11 @@ export class SupabaseService {
     if (repliesError) throw repliesError;
     if (!root) return [];
 
-    const combined = [root, ...(replies || [])];
+    const combined = filterMessagesAfterDmHistoryCutoff(
+      [root, ...(replies || [])],
+      historyClearedAt,
+    );
+    if (!combined.length) return [];
     const withReplies = await this.attachReplyPreviewsBatch(
       combined,
       "dm_messages",
@@ -8416,7 +8792,8 @@ export class SupabaseService {
     let query = this.supabase
       .from("marketplace_listings")
       .select(selectClause, { count: "exact" })
-      .eq("status", "active")
+      // Reserved stays visible (sale in progress) but purchase APIs still require active.
+      .in("status", ["active", "reserved"])
       .range(offset, offset + limit - 1);
 
     if (countryCode) {
@@ -8617,7 +8994,8 @@ export class SupabaseService {
     const listing = await this.getMarketplaceListingById(listingId);
     if (!listing) return null;
 
-    if (listing.status === "active") return listing;
+    // Reserved = sale in progress: visible (read-only), but buy/offer paths still require active.
+    if (listing.status === "active" || listing.status === "reserved") return listing;
 
     if (!viewerId) return null;
 
@@ -8840,12 +9218,14 @@ export class SupabaseService {
     listingId: string,
     buyerId: string,
     couponCode?: string,
+    quantity?: number,
   ): Promise<{ order: Record<string, unknown>; budgetLogged?: boolean }> {
     const { getMarketplaceOrdersService } = await import("./marketplaceOrders");
     const order = await getMarketplaceOrdersService(this).createOrderFromBuyNow(
       listingId,
       buyerId,
       couponCode,
+      quantity,
     );
     return { order, budgetLogged: false };
   }
@@ -9228,24 +9608,36 @@ export class SupabaseService {
   async getDMUnreadCount(threadId: string, userId: string): Promise<number> {
     try {
       // Get user's last read timestamp for this thread
-      const { data: readStatus, error: readError } = await this.supabase
-        .from("dm_read_status")
-        .select("last_read_at")
-        .eq("thread_id", threadId)
-        .eq("user_id", userId)
-        .single();
+      const [{ data: readStatus }, { data: threadMeta }] = await Promise.all([
+        this.supabase
+          .from("dm_read_status")
+          .select("last_read_at")
+          .eq("thread_id", threadId)
+          .eq("user_id", userId)
+          .maybeSingle(),
+        this.supabase
+          .from("dm_threads")
+          .select("history_cleared_at")
+          .eq("id", threadId)
+          .maybeSingle(),
+      ]);
 
       // If no read status exists, count all messages not from this user
       const lastReadAt = readStatus?.last_read_at || new Date(0).toISOString();
+      const historyClearedAt = readDmHistoryClearedAt(
+        threadMeta?.history_cleared_at,
+        userId,
+      );
+      const unreadFloor = effectiveDmUnreadFloor(lastReadAt, historyClearedAt);
 
-      // Count messages after last read that were not sent by the user
+      // Count messages after last read (and after delete cutoff) not sent by the user
       const { count, error: countError } = await this.supabase
         .from("dm_messages")
         .select("id", { count: "exact", head: true })
         .eq("thread_id", threadId)
         .neq("sender_id", userId)
         .is("removed_at", null)
-        .gt("timestamp", lastReadAt);
+        .gt("timestamp", unreadFloor);
 
       if (countError) {
         console.error("Error counting unread DMs:", countError);
@@ -9380,15 +9772,16 @@ export class SupabaseService {
     }
   }
 
-  // "Delete" a DM thread for one user: soft-delete via hidden_by so the other
-  // participant keeps their history and marketplace inquiries aren't cascaded.
-  // A new message in the thread clears hidden_by and resurrects it.
+  // "Delete for me": hide from inbox (hidden_by) and set a history cutoff so
+  // pre-delete messages never resurface for this user. The other participant
+  // keeps their full history; marketplace inquiry FKs are preserved.
+  // A new message clears hidden_by (thread resurrects) but keeps history_cleared_at.
   async deleteDmThread(threadId: string, userId: string): Promise<boolean> {
     try {
       // Verify the user is a participant of this thread
       const { data: thread, error: fetchError } = await this.supabase
         .from("dm_threads")
-        .select("participant_ids, hidden_by")
+        .select("participant_ids, hidden_by, history_cleared_at")
         .eq("id", threadId)
         .single();
 
@@ -9408,17 +9801,39 @@ export class SupabaseService {
       const hiddenBy: string[] = Array.isArray(thread.hidden_by)
         ? thread.hidden_by
         : [];
-      if (hiddenBy.includes(userId)) return true; // Already hidden
+      const clearedAt = new Date().toISOString();
+      const nextHiddenBy = hiddenBy.includes(userId)
+        ? hiddenBy
+        : [...hiddenBy, userId];
+      const nextHistoryClearedAt = withDmHistoryClearedAt(
+        thread.history_cleared_at,
+        userId,
+        clearedAt,
+      );
 
       const { error: updateError } = await this.supabase
         .from("dm_threads")
-        .update({ hidden_by: [...hiddenBy, userId] })
+        .update({
+          hidden_by: nextHiddenBy,
+          history_cleared_at: nextHistoryClearedAt,
+        })
         .eq("id", threadId);
 
       if (updateError) {
         console.error("Error hiding DM thread:", updateError);
         return false;
       }
+
+      // Anchor read cursor at delete time so unread math cannot revive old rows
+      // before history_cleared_at is applied everywhere.
+      await this.supabase.from("dm_read_status").upsert(
+        {
+          thread_id: threadId,
+          user_id: userId,
+          last_read_at: clearedAt,
+        },
+        { onConflict: "thread_id,user_id" },
+      );
 
       return true;
     } catch (error) {
@@ -9661,7 +10076,10 @@ export class SupabaseService {
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-    if (status) {
+    if (status === "active") {
+      // Active shelf includes reserved (sale in progress) for seller inventory.
+      query = query.in("status", ["active", "reserved"]);
+    } else if (status) {
       query = query.eq("status", status);
     }
 
@@ -9798,7 +10216,8 @@ export class SupabaseService {
     return {
       totalListings: listings?.length || 0,
       activeListings:
-        listings?.filter((l) => l.status === "active").length || 0,
+        listings?.filter((l) => l.status === "active" || l.status === "reserved")
+          .length || 0,
       soldListings: listings?.filter((l) => l.status === "sold").length || 0,
       completedOrders: ordersRes.count || 0,
       totalViews:

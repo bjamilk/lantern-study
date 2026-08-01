@@ -3,13 +3,15 @@ import { resolveStorageDisplayUrl } from '../services/storageUrls';
 
 /**
  * Resolve private storage paths (question-images, flashcard-images, …)
- * to signed URLs safe for React Native <Image>.
+ * to signed URLs safe for React Native Image / Audio.
+ *
+ * `undefined` = loading / no src; `null` = failed; `string` = ready.
  */
 export function useResolvedStorageUrl(
   src?: string | null,
   options?: { variant?: 'thumb' | 'original' },
-): string | undefined {
-  const [resolved, setResolved] = useState<string | undefined>(undefined);
+): string | null | undefined {
+  const [resolved, setResolved] = useState<string | null | undefined>(undefined);
   const variant = options?.variant || 'original';
 
   useEffect(() => {
@@ -23,10 +25,10 @@ export function useResolvedStorageUrl(
 
     void resolveStorageDisplayUrl(src, { variant })
       .then(url => {
-        if (!cancelled) setResolved(url);
+        if (!cancelled) setResolved(url ?? null);
       })
       .catch(() => {
-        if (!cancelled) setResolved(undefined);
+        if (!cancelled) setResolved(null);
       });
 
     return () => {

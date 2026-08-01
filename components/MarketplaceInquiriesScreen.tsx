@@ -3,6 +3,7 @@ import { useToastStore } from '../stores/toastStore';
 import { fetchMyInquiries, updateInquiryStatus, fetchOffers, respondToOffer } from '../services/supabase';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { MarketplaceInquiry, MarketplaceOffer } from '../types';
+import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared/utils';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import {
   ChatBubbleLeftIcon,
@@ -442,10 +443,10 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                             </p>
                           </div>
 
-                          {/* Actions */}
+                          {/* Actions — turn-based on proposed_by */}
                           {offer.status === 'pending' && !isExpired && (
                             <div className="flex flex-row sm:flex-col gap-2 mt-3 sm:mt-0 sm:ml-4">
-                              {!isBuyer ? (
+                              {canRespondToOffer(offer, userId) ? (
                                 <>
                                   <button
                                     onClick={() => handleOfferAction(offer.id, 'accept')}
@@ -453,7 +454,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                     className="px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors disabled:opacity-50"
                                   >
                                     <CheckCircleIcon className="w-4 h-4 mr-1" />
-                                    Accept
+                                    {getOfferProposedBy(offer) === 'seller' ? 'Accept Counter' : 'Accept'}
                                   </button>
                                   <button
                                     onClick={() => handleOfferAction(offer.id, 'decline')}
@@ -461,7 +462,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                     className="px-3 sm:px-4 py-1.5 sm:py-2 border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-xs sm:text-sm font-medium transition-colors disabled:opacity-50"
                                   >
                                     <XCircleIcon className="w-4 h-4 mr-1 inline" />
-                                    Decline
+                                    {getOfferProposedBy(offer) === 'seller' ? 'Decline Counter' : 'Decline'}
                                   </button>
                                   <div className="flex gap-1">
                                     <input
@@ -480,7 +481,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                     </button>
                                   </div>
                                 </>
-                              ) : (
+                              ) : canWithdrawOffer(offer, userId) ? (
                                 <button
                                   onClick={() => handleOfferAction(offer.id, 'withdraw')}
                                   disabled={respondingTo === offer.id}
@@ -488,6 +489,10 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                 >
                                   Withdraw
                                 </button>
+                              ) : (
+                                <p className="text-xs text-lantern-text-secondary font-medium sm:text-right">
+                                  {isBuyer ? 'Waiting for seller…' : 'Waiting for buyer…'}
+                                </p>
                               )}
                             </div>
                           )}

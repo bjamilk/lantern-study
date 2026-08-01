@@ -59,9 +59,12 @@ function studyToDraft(study: UserSettings['study']): StudyDraft {
     };
 }
 
-function parseStudyNumber(raw: string, fallback: number): number {
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : fallback;
+function parseStudyNumber(raw: string, fallback: number, min: number, max: number): number {
+    const trimmed = String(raw ?? '').trim();
+    if (trimmed === '') return fallback;
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
 }
 
 interface SettingsModalProps {
@@ -75,7 +78,7 @@ interface SettingsModalProps {
   ) => void;
   onUpdateProfile: (name: string, phone: string) => void | Promise<boolean>;
   onUpdateAvatar: (avatarUrl: string) => void;
-  onUpdatePassword: (current: string, newPass: string) => boolean;
+  onUpdatePassword: (current: string, newPass: string) => boolean | Promise<boolean>;
   onLogout: () => void;
   onPauseAccount: () => Promise<void>;
   onDeleteAccountImmediate: (password: string) => Promise<void>;
@@ -104,7 +107,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onPauseAccount, onDeleteAccountImmediate, onImportAccount,
     onExportAccount, onResetSettings,
 }) => {
-    const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
+    const { lowDataMode } = useLowDataModeToggle();
     const activeTab = useUIStore((s) => s.settingsTab);
     const setActiveTab = useUIStore((s) => s.setSettingsTab);
     const [deletionOpen, setDeletionOpen] = useState(false);
@@ -138,6 +141,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [settingsTabOrientation, setSettingsTabOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
     const [studyDraft, setStudyDraft] = useState<StudyDraft>(() => studyToDraft(userSettings.study));
+    const studyDraftRef = useRef<StudyDraft>(studyToDraft(userSettings.study));
     const studySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
@@ -166,27 +170,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setShowPasswordChange(false);
         setPasswordData({ current: '', newPass: '', confirmPass: '' });
         setAvatarPreview(null);
-        setStudyDraft(studyToDraft(userSettingsRef.current.study));
+        const draft = studyToDraft(userSettingsRef.current.study);
+        studyDraftRef.current = draft;
+        setStudyDraft(draft);
     }, [isOpen]);
 
     useEffect(() => () => {
         if (studySaveTimerRef.current) clearTimeout(studySaveTimerRef.current);
     }, []);
 
-    const commitStudyDraft = (draft: StudyDraft) => {
-        onUpdateSettingsCategory('study', {
-            dailyCardGoal: parseStudyNumber(draft.dailyCardGoal, study.dailyCardGoal),
-            dailyTestGoal: parseStudyNumber(draft.dailyTestGoal, study.dailyTestGoal),
-            srsNewCardsPerDay: parseStudyNumber(draft.srsNewCardsPerDay, study.srsNewCardsPerDay),
-            srsMaxInterval: parseStudyNumber(draft.srsMaxInterval, study.srsMaxInterval),
-        });
+    const commitStudyDraft = (draft: StudyDraft = studyDraftRef.current) => {
+        if (studySaveTimerRef.current) {
+            clearTimeout(studySaveTimerRef.current);
+            studySaveTimerRef.current = null;
+        }
+        const nextStudy = {
+            dailyCardGoal: parseStudyNumber(draft.dailyCardGoal, study.dailyCardGoal, 5, 100),
+            dailyTestGoal: parseStudyNumber(draft.dailyTestGoal, study.dailyTestGoal, 0, 10),
+            srsNewCardsPerDay: parseStudyNumber(draft.srsNewCardsPerDay, study.srsNewCardsPerDay, 5, 50),
+            srsMaxInterval: parseStudyNumber(draft.srsMaxInterval, study.srsMaxInterval, 30, 365),
+        };
+        // Keep draft strings in sync with clamped values.
+        const clampedDraft = studyToDraft({ ...study, ...nextStudy });
+        studyDraftRef.current = clampedDraft;
+        setStudyDraft(clampedDraft);
+        onUpdateSettingsCategory('study', nextStudy);
     };
 
     const handleStudyDraftChange = (field: keyof StudyDraft, value: string) => {
         setStudyDraft((prev) => {
             const next = { ...prev, [field]: value };
+            studyDraftRef.current = next;
             if (studySaveTimerRef.current) clearTimeout(studySaveTimerRef.current);
-            studySaveTimerRef.current = setTimeout(() => commitStudyDraft(next), 450);
+            studySaveTimerRef.current = setTimeout(() => commitStudyDraft(studyDraftRef.current), 450);
             return next;
         });
     };    
@@ -247,7 +263,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
-    const handlePasswordChange = (e: React.FormEvent) => {
+    const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
         if (passwordData.newPass !== passwordData.confirmPass) {
             useToastStore.getState().showToast("New passwords do not match.", 'info');
@@ -257,7 +273,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             useToastStore.getState().showToast("New password must be at least 6 characters long.", 'error');
             return;
         }
-        const success = onUpdatePassword(passwordData.current, passwordData.newPass);
+        const result = onUpdatePassword(passwordData.current, passwordData.newPass);
+        const success = result instanceof Promise ? await result : result;
         if (success) {
             setPasswordData({ current: '', newPass: '', confirmPass: '' });
             setShowPasswordChange(false);
@@ -265,7 +282,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     
     const handleLowDataToggle = () => {
-        toggleLowDataMode();
+        // Single writer: settings category save also syncs preferences + uiStore via handlers.
         onUpdateSettingsCategory('appearance', { lowDataMode: !lowDataMode });
     };
 
@@ -404,28 +421,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <label className="block text-sm font-medium text-lantern-text mb-1">Daily card goal</label>
                             <input type="number" min={5} max={100} step={5} value={studyDraft.dailyCardGoal}
                                 onChange={(e) => handleStudyDraftChange('dailyCardGoal', e.target.value)}
-                                onBlur={() => commitStudyDraft(studyDraft)}
+                                onBlur={() => commitStudyDraft()}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-lantern-text mb-1">Daily test goal</label>
                             <input type="number" min={0} max={10} value={studyDraft.dailyTestGoal}
                                 onChange={(e) => handleStudyDraftChange('dailyTestGoal', e.target.value)}
-                                onBlur={() => commitStudyDraft(studyDraft)}
+                                onBlur={() => commitStudyDraft()}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-lantern-text mb-1">New cards per day</label>
                             <input type="number" min={5} max={50} step={5} value={studyDraft.srsNewCardsPerDay}
                                 onChange={(e) => handleStudyDraftChange('srsNewCardsPerDay', e.target.value)}
-                                onBlur={() => commitStudyDraft(studyDraft)}
+                                onBlur={() => commitStudyDraft()}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-lantern-text mb-1">Longest gap between reviews (days)</label>
                             <input type="number" min={30} max={365} step={30} value={studyDraft.srsMaxInterval}
                                 onChange={(e) => handleStudyDraftChange('srsMaxInterval', e.target.value)}
-                                onBlur={() => commitStudyDraft(studyDraft)}
+                                onBlur={() => commitStudyDraft()}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                     </div>
@@ -499,20 +516,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text">
                         <option value="public">Public — all signed-in users</option>
                         <option value="groups">Groups — group members only</option>
-                        <option value="private">Private — only you</option>
+                        <option value="private">Private — full profile only you</option>
                       </select>
+                        <p className="mt-1 text-xs text-lantern-text-secondary">
+                          Private hides your full profile page. Others can still find you in people search (unless you turn off search below) and send a message request.
+                        </p>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Direct messages</label>
                         <select value={privacy.allowDirectMessages}
                             onChange={(e) => onUpdateSettingsCategory('privacy', { allowDirectMessages: e.target.value as UserSettings['privacy']['allowDirectMessages'] })}
                             className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text">
-                            <option value="everyone">Everyone</option>
-                            <option value="groups">Group members only</option>
-                            <option value="none">Nobody</option>
+                            <option value="everyone">Everyone — open chats immediately</option>
+                            <option value="groups">Group members open; others send requests</option>
+                            <option value="none">Message requests only</option>
                         </select>
+                        <p className="mt-1 text-xs text-lantern-text-secondary">
+                          Restrictive settings turn cold outreach into a request you can accept or decline — they do not hide you from search. A private profile also receives cold messages as requests. Use “Allow search for invites” to control discoverability, and Block to stop messaging.
+                        </p>
                     </div>
-                    <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow search for invites" description="Let others find you by name or @username when adding group or deck members. Profile visibility still controls who can view your full profile." />
+                    <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow search for invites" description="Let others find you by name or @username in people search and when adding group or deck members. Turn off to hide from search entirely." />
                     <ToggleSwitch enabled={privacy.showOnlineStatus} onChange={(val) => onUpdateSettingsCategory('privacy', { showOnlineStatus: val })} label="Show online status" description="Let others see when you are active." />
                     <ToggleSwitch enabled={privacy.showStudyActivity} onChange={(val) => onUpdateSettingsCategory('privacy', { showStudyActivity: val })} label="Show study activity" description="Share study streaks and activity." />
                     <div className="rounded-lg border border-lantern-border bg-lantern-background-secondary p-3 space-y-2">
@@ -602,7 +625,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     {userSettings.sync.lastSyncTime && (
                         <p className="text-sm text-lantern-text-secondary">Last synced: {new Date(userSettings.sync.lastSyncTime).toLocaleString()}</p>
                     )}
-                    <p className="text-sm text-lantern-text-secondary">{syncCopy.savedLocally}</p>
+                    <p className="text-sm text-lantern-text-secondary">{syncCopy.webSettingsPersistHint}</p>
                     <p className="text-sm text-lantern-text-secondary">Use Offline Mode from the Study menu to download bundles for offline tests.</p>
                 </div>
             );

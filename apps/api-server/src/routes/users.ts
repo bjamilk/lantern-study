@@ -36,7 +36,7 @@ const NON_ADMIN_UPDATABLE_FIELDS = new Set([
   'phone',
   'avatarUrl',
   'avatar_url',
-  'settings',
+  // settings must go through PUT /users/settings (merge + CAS).
   'test_presets',
 ]);
 
@@ -392,11 +392,19 @@ router.put(
       );
     } catch (error: any) {
       if (error?.code === 'version_conflict' || error?.status === 409) {
+        const current = error.current as
+          | { settings?: unknown; settingsVersion?: number }
+          | null;
         return res.status(409).json({
           success: false,
           error: error.message || 'Settings were updated elsewhere',
           code: 'version_conflict',
-          data: error.current ?? null,
+          data: current
+            ? {
+                settings: parseUserSettings(current.settings || null),
+                settingsVersion: current.settingsVersion ?? 1,
+              }
+            : null,
         });
       }
       throw error;
@@ -409,15 +417,22 @@ router.put(
       });
     }
 
-    // Invalidate settings cache
-    await cacheService.delete(`user:settings:${userId}`);
-    await cacheService.delete(`user:${userId}`);
+    const settingsVersion =
+      (updatedUser as { settingsVersion?: number }).settingsVersion ?? 1;
+    const authoritativeSettings = parseUserSettings(updatedUser.settings || null);
+
+    await cacheService.invalidateUserCache(userId);
+    await cacheService.set(
+      `user:settings:${userId}`,
+      { settings: authoritativeSettings, settingsVersion },
+      600
+    );
 
     res.json({
       success: true,
       data: {
-        settings: updatedUser.settings,
-        settingsVersion: (updatedUser as { settingsVersion?: number }).settingsVersion,
+        settings: authoritativeSettings,
+        settingsVersion,
       },
       message: 'Settings synced successfully',
     });
@@ -514,9 +529,30 @@ router.put(
       });
     }
 
+    // Reject settings writes on the profile path — use PUT /users/settings.
+    if (updateData.settings !== undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Update settings via PUT /api/v1/users/settings',
+      });
+    }
+
     logger.debug('Updating user', { userId, updateData, requestingUserId });
 
-    const updatedUser = await supabaseService.updateUser(userId, updateData);
+    let updatedUser;
+    try {
+      updatedUser = await supabaseService.updateUser(userId, updateData);
+    } catch (error: any) {
+      if (error?.code === 'version_conflict' || error?.status === 409) {
+        return res.status(409).json({
+          success: false,
+          error: error.message || 'Profile was updated elsewhere',
+          code: 'version_conflict',
+          data: error.current ?? null,
+        });
+      }
+      throw error;
+    }
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -525,8 +561,8 @@ router.put(
       });
     }
 
-    // Invalidate user cache
-    await cacheService.delete(`user:${userId}`);
+    // Invalidate user + settings caches
+    await cacheService.invalidateUserCache(userId);
     await cacheService.deletePattern('users:list:*');
 
     res.json({
@@ -942,7 +978,25 @@ router.get(
     }
 
     const cacheKey = `user:settings:${userId}`;
-    let settings = await cacheService.get(cacheKey);
+    const cached = await cacheService.get(cacheKey) as
+      | { settings: unknown; settingsVersion: number }
+      | null;
+
+    if (
+      cached &&
+      typeof cached === 'object' &&
+      'settings' in cached &&
+      typeof cached.settingsVersion === 'number'
+    ) {
+      return res.json({
+        success: true,
+        data: {
+          settings: cached.settings,
+          settingsVersion: cached.settingsVersion,
+        },
+      });
+    }
+
     const user = await supabaseService.getUserById(userId);
 
     if (!user) {
@@ -952,20 +1006,21 @@ router.get(
       });
     }
 
-    if (!settings) {
-      settings = user.settings || null;
+    const settings = parseUserSettings(user.settings || null);
+    const settingsVersion =
+      (user as { settingsVersion?: number }).settingsVersion ?? 1;
 
-      if (settings) {
-        settings = parseUserSettings(settings) as unknown as typeof settings;
-        await cacheService.set(cacheKey, settings, 600);
-      }
-    }
+    await cacheService.set(
+      cacheKey,
+      { settings, settingsVersion },
+      600
+    );
 
     res.json({
       success: true,
       data: {
         settings,
-        settingsVersion: (user as { settingsVersion?: number }).settingsVersion ?? 1,
+        settingsVersion,
       },
     });
   })
@@ -1030,11 +1085,19 @@ router.put(
       );
     } catch (error: any) {
       if (error?.code === 'version_conflict' || error?.status === 409) {
+        const current = error.current as
+          | { settings?: unknown; settingsVersion?: number }
+          | null;
         return res.status(409).json({
           success: false,
           error: error.message || 'Settings were updated elsewhere',
           code: 'version_conflict',
-          data: error.current ?? null,
+          data: current
+            ? {
+                settings: parseUserSettings(current.settings || null),
+                settingsVersion: current.settingsVersion ?? 1,
+              }
+            : null,
         });
       }
       throw error;
@@ -1047,15 +1110,22 @@ router.put(
       });
     }
 
-    // Invalidate settings cache
-    await cacheService.delete(`user:settings:${userId}`);
-    await cacheService.delete(`user:${userId}`);
+    const settingsVersion =
+      (updatedUser as { settingsVersion?: number }).settingsVersion ?? 1;
+    const authoritativeSettings = parseUserSettings(updatedUser.settings || null);
+
+    await cacheService.invalidateUserCache(userId);
+    await cacheService.set(
+      `user:settings:${userId}`,
+      { settings: authoritativeSettings, settingsVersion },
+      600
+    );
 
     res.json({
       success: true,
       data: {
-        settings: updatedUser.settings,
-        settingsVersion: (updatedUser as { settingsVersion?: number }).settingsVersion,
+        settings: authoritativeSettings,
+        settingsVersion,
       },
       message: 'Settings updated successfully',
     });

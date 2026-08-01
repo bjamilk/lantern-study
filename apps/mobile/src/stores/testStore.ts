@@ -4,7 +4,16 @@
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { PausedSessionSummary } from '@lantern/shared';
 import * as api from '../services/api';
+import {
+  abandonMobileTestDraft,
+  completeMobileTestDraft,
+  createMobileTestDraft,
+  fetchMobilePausedSessions,
+  fetchMobileTestDraft,
+  patchMobileTestDraft,
+} from '../services/testDrafts';
 import { trackStudyActivity } from '../services/gamification';
 import { trackTestCompleted } from '../services/productAnalytics';
 import { syncService } from '../services/syncService';
@@ -98,6 +107,55 @@ function buildSessionPayload(
       numberOfQuestions: activeTest.questions.length,
     },
   };
+}
+
+function buildDraftPayloadFromActive(activeTest: ActiveTest) {
+  const canonicalQuestions = activeTest.questions.map((q, index) =>
+    normalizeTestQuestionForSession(q as unknown as Record<string, unknown>, index),
+  );
+  const userAnswers: Record<string, ReturnType<typeof toUserAnswerRecord>> = {};
+  for (const [questionId, answer] of Object.entries(activeTest.answers)) {
+    const question = activeTest.questions.find((q) => q.id === questionId);
+    if (!question) continue;
+    userAnswers[questionId] = toUserAnswerRecord(
+      question as unknown as Record<string, unknown>,
+      answer,
+      { timeSpentSeconds: activeTest.answerTimings?.[questionId] },
+    );
+  }
+  return {
+    config: {
+      groupId: activeTest.test.deckId || activeTest.test.id,
+      groupName: activeTest.test.name,
+      numberOfQuestions: activeTest.questions.length,
+      questionIds: activeTest.questions.map((q) => q.id),
+      timerDuration: (activeTest.test.timeLimit || 0) * 60,
+      allowedQuestionTypes: [],
+    },
+    questions: canonicalQuestions,
+    user_answers: userAnswers,
+    session_kind: (activeTest.mode === 'study' ? 'study' : 'test') as 'test' | 'study',
+    title: activeTest.test.name,
+    current_question_index: activeTest.currentQuestionIndex,
+    remaining_time_seconds: activeTest.mode === 'test' ? activeTest.timeRemaining : null,
+    start_time: new Date(activeTest.startTime).toISOString(),
+  };
+}
+
+async function ensureMobileDraft(activeTest: ActiveTest): Promise<ActiveTest> {
+  if (activeTest.draftId && !activeTest.draftId.startsWith('local-')) {
+    return activeTest;
+  }
+  try {
+    const created = await createMobileTestDraft(buildDraftPayloadFromActive(activeTest));
+    return { ...activeTest, draftId: String(created.id) };
+  } catch (error) {
+    console.warn('Failed to create test draft', error);
+    return {
+      ...activeTest,
+      draftId: activeTest.draftId || `local-${Date.now()}`,
+    };
+  }
 }
 
 // Storage keys
@@ -216,6 +274,8 @@ export interface ActiveTest {
   // For study mode - track which questions have been answered and revealed
   revealedAnswers: Set<string>;
   flaggedQuestions: Set<string>;
+  /** Server draft id for durable pause/resume */
+  draftId?: string;
 }
 
 export interface StartTestConfig {
@@ -254,6 +314,7 @@ interface TestState {
   tests: Test[];
   attempts: TestAttempt[];
   activeTest: ActiveTest | null;
+  pausedSessions: PausedSessionSummary[];
   testQuestionsById: Record<string, TestQuestion[]>;
   userQuestionStats: Record<string, UserQuestionStatEntry>;
   testPresets: TestPreset[];
@@ -278,9 +339,14 @@ interface TestState {
   previousQuestion: () => void;
   submitTest: (userId: string, options?: { isOffline?: boolean; groupName?: string; groupId?: string }) => Promise<TestAttempt>;
   exitStudyMode: () => void; // Exit without submitting (study or test)
+  pauseActiveTest: () => Promise<void>;
+  refreshPausedSessions: () => Promise<void>;
+  resumePausedSession: (sessionId: string) => Promise<void>;
+  abandonPausedSession: (sessionId: string) => Promise<void>;
   updateTimeRemaining: (seconds: number) => void;
   loadUserQuestionStats: (userId: string) => Promise<void>;
   loadTestPresets: (userId: string) => Promise<void>;
+  clearTestPresets: () => void;
   saveTestPreset: (userId: string, name: string, config: TestPresetConfig) => Promise<void>;
   deleteTestPreset: (userId: string, presetId: string) => Promise<void>;
   deleteAttempt: (userId: string, sessionId: string) => Promise<void>;
@@ -501,6 +567,7 @@ export const useTestStore = create<TestState>((set, get) => ({
   tests: [],
   attempts: [],
   activeTest: null,
+  pausedSessions: [],
   testQuestionsById: {},
   userQuestionStats: {},
   testPresets: [],
@@ -755,20 +822,29 @@ export const useTestStore = create<TestState>((set, get) => ({
       questionCount: questions.length,
     };
 
-    set({
-      activeTest: {
-        test: effectiveTest,
-        questions,
-        currentQuestionIndex: 0,
-        answers: {},
-        answerTimings: {},
-        startTime: Date.now(),
-        timeRemaining: mode === 'test' && effectiveTest.timeLimit > 0 ? effectiveTest.timeLimit * 60 : 0,
-        mode,
-        revealedAnswers: new Set(),
-        flaggedQuestions: new Set(),
-      },
-    });
+    const started: ActiveTest = {
+      test: effectiveTest,
+      questions,
+      currentQuestionIndex: 0,
+      answers: {},
+      answerTimings: {},
+      startTime: Date.now(),
+      timeRemaining: mode === 'test' && effectiveTest.timeLimit > 0 ? effectiveTest.timeLimit * 60 : 0,
+      mode,
+      revealedAnswers: new Set(),
+      flaggedQuestions: new Set(),
+    };
+    set({ activeTest: started });
+    const drafted = await ensureMobileDraft(started);
+    const current = get().activeTest;
+    if (current?.test.id === started.test.id) {
+      set({
+        activeTest: {
+          ...current,
+          draftId: drafted.draftId || current.draftId,
+        },
+      });
+    }
     await get().saveToStorage();
   },
 
@@ -794,19 +870,30 @@ export const useTestStore = create<TestState>((set, get) => ({
       createdAt: new Date().toISOString(),
     };
 
-    set({
-      activeTest: {
-        test: generatedTest,
-        questions,
-        currentQuestionIndex: 0,
-        answers: {},
-        answerTimings: {},
-        startTime: Date.now(),
-        timeRemaining: mode === 'test' && timeLimit > 0 ? timeLimit * 60 : 0,
-        mode,
-        revealedAnswers: new Set(),
-        flaggedQuestions: new Set(),
-      },
+    const started: ActiveTest = {
+      test: generatedTest,
+      questions,
+      currentQuestionIndex: 0,
+      answers: {},
+      answerTimings: {},
+      startTime: Date.now(),
+      timeRemaining: mode === 'test' && timeLimit > 0 ? timeLimit * 60 : 0,
+      mode,
+      revealedAnswers: new Set(),
+      flaggedQuestions: new Set(),
+    };
+    set({ activeTest: started });
+    void ensureMobileDraft(started).then((drafted) => {
+      const current = get().activeTest;
+      // Only bind draftId — never replace answers/index chosen during create latency.
+      if (current?.test.id === drafted.test.id) {
+        set({
+          activeTest: {
+            ...current,
+            draftId: drafted.draftId || current.draftId,
+          },
+        });
+      }
     });
   },
 
@@ -818,17 +905,26 @@ export const useTestStore = create<TestState>((set, get) => ({
     if (timeSpentSeconds !== undefined) {
       nextTimings[questionId] = timeSpentSeconds;
     }
-    
-    set({
-      activeTest: {
-        ...activeTest,
-        answers: {
-          ...activeTest.answers,
-          [questionId]: answer,
-        },
-        answerTimings: nextTimings,
+
+    const next: ActiveTest = {
+      ...activeTest,
+      answers: {
+        ...activeTest.answers,
+        [questionId]: answer,
       },
-    });
+      answerTimings: nextTimings,
+    };
+    set({ activeTest: next });
+
+    if (next.draftId && !next.draftId.startsWith('local-')) {
+      const payload = buildDraftPayloadFromActive(next);
+      void patchMobileTestDraft(next.draftId, {
+        user_answers: payload.user_answers,
+        current_question_index: next.currentQuestionIndex,
+        remaining_time_seconds: payload.remaining_time_seconds,
+        status: 'in_progress',
+      }).catch((err) => console.warn('Draft autosave failed', err));
+    }
   },
 
   // For study mode - reveal the correct answer for a question
@@ -909,7 +1005,141 @@ export const useTestStore = create<TestState>((set, get) => ({
 
   // Exit study/test mode without submitting (abandon session)
   exitStudyMode: () => {
+    const active = get().activeTest;
+    if (active?.draftId && !active.draftId.startsWith('local-')) {
+      void abandonMobileTestDraft(active.draftId).catch(() => undefined);
+      set((state) => ({
+        pausedSessions: state.pausedSessions.filter((s) => s.id !== active.draftId),
+      }));
+    }
     set({ activeTest: null });
+  },
+
+  pauseActiveTest: async () => {
+    const active = get().activeTest;
+    if (!active) return;
+    const drafted = await ensureMobileDraft(active);
+    const payload = buildDraftPayloadFromActive(drafted);
+    if (drafted.draftId && !drafted.draftId.startsWith('local-')) {
+      try {
+        await patchMobileTestDraft(drafted.draftId, {
+          user_answers: payload.user_answers,
+          current_question_index: drafted.currentQuestionIndex,
+          remaining_time_seconds: payload.remaining_time_seconds,
+          status: 'paused',
+        });
+      } catch (error) {
+        console.warn('Failed to pause draft', error);
+      }
+    }
+    const summary: PausedSessionSummary = {
+      id: drafted.draftId || `local-${Date.now()}`,
+      sessionKind: drafted.mode === 'study' ? 'study' : 'test',
+      status: 'paused',
+      title: drafted.test.name,
+      answeredCount: Object.keys(drafted.answers).length,
+      totalQuestions: drafted.questions.length,
+      currentQuestionIndex: drafted.currentQuestionIndex,
+      remainingTimeSeconds: drafted.mode === 'test' ? drafted.timeRemaining : null,
+      startTime: new Date(drafted.startTime).toISOString(),
+      updatedAt: new Date().toISOString(),
+      pausedAt: new Date().toISOString(),
+    };
+    set((state) => ({
+      activeTest: null,
+      pausedSessions: [summary, ...state.pausedSessions.filter((s) => s.id !== summary.id)],
+    }));
+  },
+
+  refreshPausedSessions: async () => {
+    try {
+      const list = await fetchMobilePausedSessions();
+      set({ pausedSessions: list });
+    } catch (error) {
+      console.warn('Failed to refresh paused sessions', error);
+    }
+  },
+
+  resumePausedSession: async (sessionId: string) => {
+    const draft = await fetchMobileTestDraft(sessionId);
+    const questions = normalizeApiQuestions(
+      Array.isArray(draft.questions) ? draft.questions : [],
+    );
+    const answersRaw =
+      (draft.userAnswers as Record<string, any>) ||
+      (draft.user_answers as Record<string, any>) ||
+      {};
+    const answers: ActiveTest['answers'] = {};
+    for (const [qid, record] of Object.entries(answersRaw)) {
+      if (record && typeof record === 'object') {
+        if (Array.isArray(record.selectedOptionIds)) {
+          answers[qid] =
+            record.selectedOptionIds.length === 1
+              ? record.selectedOptionIds[0]
+              : record.selectedOptionIds;
+        } else if (typeof record.fillText === 'string') {
+          answers[qid] = record.fillText;
+        } else if (record.matchingAnswers) {
+          const map: Record<string, string> = {};
+          for (const pair of record.matchingAnswers) {
+            map[pair.promptItemId] = pair.answerItemId;
+          }
+          answers[qid] = map;
+        }
+      }
+    }
+    const remaining =
+      typeof draft.remainingTime === 'number'
+        ? draft.remainingTime
+        : typeof draft.remaining_time_seconds === 'number'
+          ? draft.remaining_time_seconds
+          : 0;
+    const mode = (draft.sessionKind || draft.session_kind) === 'study' ? 'study' : 'test';
+    const title =
+      (draft.title as string) ||
+      (draft.config as any)?.groupName ||
+      (mode === 'study' ? 'Study session' : 'Test');
+    const resumed: ActiveTest = {
+      test: {
+        id: String(draft.id),
+        name: title,
+        description: 'Resumed session',
+        questionCount: questions.length,
+        timeLimit: Math.ceil((remaining || 0) / 60),
+        passingScore: 70,
+        createdAt: String(draft.startTime || draft.start_time || new Date().toISOString()),
+      },
+      questions,
+      currentQuestionIndex:
+        (draft.currentQuestionIndex as number) ??
+        (draft.current_question_index as number) ??
+        0,
+      answers,
+      answerTimings: {},
+      startTime: Date.parse(String(draft.startTime || draft.start_time || Date.now())) || Date.now(),
+      timeRemaining: mode === 'test' ? remaining : 0,
+      mode,
+      revealedAnswers: new Set(),
+      flaggedQuestions: new Set(),
+      draftId: String(draft.id),
+    };
+    set((state) => ({
+      activeTest: resumed,
+      pausedSessions: state.pausedSessions.filter((s) => s.id !== sessionId),
+    }));
+    if (resumed.draftId) {
+      void patchMobileTestDraft(resumed.draftId, { status: 'in_progress' }).catch(() => undefined);
+    }
+  },
+
+  abandonPausedSession: async (sessionId: string) => {
+    if (!sessionId.startsWith('local-')) {
+      await abandonMobileTestDraft(sessionId);
+    }
+    set((state) => ({
+      pausedSessions: state.pausedSessions.filter((s) => s.id !== sessionId),
+      activeTest: state.activeTest?.draftId === sessionId ? null : state.activeTest,
+    }));
   },
 
   updateTimeRemaining: (seconds: number) => {
@@ -1132,23 +1362,34 @@ export const useTestStore = create<TestState>((set, get) => ({
       });
     } else if (!DEMO_MODE && userId) {
       try {
-        const savedSession = await api.saveTestResult(userId, sessionPayload);
-        const sessionId = savedSession.id;
-        await api.submitTestResult(sessionId, {
-          score: percentage,
-          correctAnswersCount: correctCount,
-          totalQuestions: activeTest.questions.length,
-        });
+        let sessionId = activeTest.draftId;
+        if (sessionId && !sessionId.startsWith('local-')) {
+          await completeMobileTestDraft(sessionId, {
+            user_answers: sessionPayload.userAnswers,
+            score: percentage,
+            correct_answers_count: correctCount,
+            total_questions: activeTest.questions.length,
+          });
+        } else {
+          const savedSession = await api.saveTestResult(userId, sessionPayload);
+          sessionId = savedSession.id;
+          await api.submitTestResult(sessionId, {
+            score: percentage,
+            correctAnswersCount: correctCount,
+            totalQuestions: activeTest.questions.length,
+          });
+        }
 
         set(state => ({
           attempts: state.attempts.map(a =>
             a.id === attempt.id
-              ? { ...a, id: sessionId, testId: sessionId, groupName: options?.groupName || a.groupName, groupId: options?.groupId || a.groupId }
+              ? { ...a, id: sessionId!, testId: sessionId!, groupName: options?.groupName || a.groupName, groupId: options?.groupId || a.groupId }
               : a
           ),
+          pausedSessions: state.pausedSessions.filter((s) => s.id !== sessionId),
         }));
-        attempt.id = sessionId;
-        attempt.testId = sessionId;
+        attempt.id = sessionId!;
+        attempt.testId = sessionId!;
         await get().saveToStorage();
       } catch (error) {
         console.warn('Failed to save test result to API:', error);
@@ -1186,43 +1427,59 @@ export const useTestStore = create<TestState>((set, get) => ({
   },
 
   loadTestPresets: async (userId: string) => {
-    if (!userId || DEMO_MODE) return;
+    if (!userId) {
+      set({ testPresets: [] });
+      return;
+    }
+    if (DEMO_MODE) return;
     try {
       const profile = await api.fetchUserProfile(userId);
-      const presets = ((profile as any).test_presets || (profile as any).testPresets || []) as TestPreset[];
-      set({ testPresets: Array.isArray(presets) ? presets : [] });
+      const presets = Array.isArray((profile as any)?.testPresets)
+        ? ((profile as any).testPresets as TestPreset[])
+        : Array.isArray((profile as any)?.test_presets)
+          ? ((profile as any).test_presets as TestPreset[])
+          : [];
+      set({ testPresets: presets });
     } catch (error) {
       console.warn('Failed to load test presets:', error);
     }
   },
 
+  clearTestPresets: () => {
+    set({ testPresets: [] });
+  },
+
   saveTestPreset: async (userId: string, name: string, config: TestPresetConfig) => {
     if (!userId) return;
+    const previous = get().testPresets;
     const newPreset: TestPreset = {
       id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: name.trim(),
       config,
     };
-    const updated = [...get().testPresets, newPreset].slice(-5);
+    const updated = [...previous, newPreset].slice(-5);
     set({ testPresets: updated });
     if (DEMO_MODE) return;
     try {
       await api.updateUserProfile(userId, { test_presets: updated } as any);
     } catch (error) {
       console.warn('Failed to save test preset:', error);
+      set({ testPresets: previous });
       throw error;
     }
   },
 
   deleteTestPreset: async (userId: string, presetId: string) => {
     if (!userId) return;
-    const updated = get().testPresets.filter(p => p.id !== presetId);
+    const previous = get().testPresets;
+    const updated = previous.filter(p => p.id !== presetId);
     set({ testPresets: updated });
     if (DEMO_MODE) return;
     try {
       await api.updateUserProfile(userId, { test_presets: updated } as any);
     } catch (error) {
       console.warn('Failed to delete test preset:', error);
+      set({ testPresets: previous });
       throw error;
     }
   },

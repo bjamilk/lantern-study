@@ -43,12 +43,24 @@ export class MarketplaceOrdersService {
     return this.supabaseService.getClient();
   }
 
-  private assertListingInStock(listing: { quantity?: number | null; status: string }): void {
+  private assertListingInStock(
+    listing: { quantity?: number | null; status: string },
+    requestedQty = 1
+  ): void {
     if (listing.status !== 'active') {
       throw new Error('Listing is not available for purchase');
     }
-    if (listing.quantity != null && listing.quantity <= 0) {
+    if (listing.quantity == null) {
+      if (requestedQty !== 1) {
+        throw new Error('This listing can only be purchased as a single item');
+      }
+      return;
+    }
+    if (listing.quantity <= 0) {
       throw new Error('This listing is out of stock');
+    }
+    if (listing.quantity < requestedQty) {
+      throw new Error('Not enough stock for the requested quantity');
     }
   }
 
@@ -116,6 +128,15 @@ export class MarketplaceOrdersService {
   `;
 
   async assertNoOpenOrderForListing(listingId: string): Promise<void> {
+    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    if (!listing) throw new Error('Listing not found');
+    // Multi-qty: remaining quantity is the stock; unique (null qty) allows one open order.
+    if (listing.quantity != null) {
+      if (listing.status !== 'active' || listing.quantity <= 0) {
+        throw new Error('This listing is out of stock');
+      }
+      return;
+    }
     const { data, error } = await this.db
       .from('marketplace_orders')
       .select('id')
@@ -203,18 +224,21 @@ export class MarketplaceOrdersService {
   async createOrderFromBuyNow(
     listingId: string,
     buyerId: string,
-    couponCode?: string
+    couponCode?: string,
+    quantityInput?: number
   ): Promise<MarketplaceOrderRow> {
+    const quantity = Math.max(1, Math.floor(Number(quantityInput) || 1));
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
     if (!listing) throw new Error('Listing not found');
     if (listing.user_id === buyerId) throw new Error('Cannot buy your own listing');
-    this.assertListingInStock(listing);
+    this.assertListingInStock(listing, quantity);
 
     await this.assertNoOpenOrderForListing(listingId);
 
-    let amount = resolveEffectivePrice(listing);
+    const unitPrice = resolveEffectivePrice(listing);
+    let unitAmount = unitPrice;
     let couponId: string | null = null;
-    let discountAmount = 0;
+    let unitDiscount = 0;
 
     if (couponCode) {
       const { getMarketplaceCouponsService } = await import('./marketplaceCoupons');
@@ -223,10 +247,13 @@ export class MarketplaceOrdersService {
         listing,
         buyerId
       );
-      amount = validated.finalAmount;
+      unitAmount = validated.finalAmount;
       couponId = validated.coupon.id;
-      discountAmount = validated.discountAmount;
+      unitDiscount = validated.discountAmount;
     }
+
+    const amount = Math.round(unitAmount * quantity * 100) / 100;
+    const discountAmount = Math.round(unitDiscount * quantity * 100) / 100;
 
     const inquiryId = await this.findInquiryForDeal(listingId, buyerId);
     const initialStatus = await this.resolveInitialOrderStatus(listing.user_id);
@@ -239,6 +266,7 @@ export class MarketplaceOrdersService {
       p_initial_status: initialStatus,
       p_coupon_id: couponId,
       p_discount_amount: discountAmount,
+      p_quantity: quantity,
     });
 
     if (rpcError) {
@@ -269,22 +297,28 @@ export class MarketplaceOrdersService {
 
     await this.notifyOrderParty(listing.user_id, {
       type: 'marketplace_purchase',
-      message: `New order on "${listing.title}" for ₦${amount.toLocaleString()}${discountAmount > 0 ? ` (₦${discountAmount.toLocaleString()} coupon applied)` : ''}`,
+      message: `New order on "${listing.title}"${quantity > 1 ? ` ×${quantity}` : ''} for ₦${amount.toLocaleString()}${discountAmount > 0 ? ` (₦${discountAmount.toLocaleString()} coupon applied)` : ''}`,
       link: `marketplace:order:${row.id}`,
-      data: { orderId: row.id, listingId },
+      data: { orderId: row.id, listingId, quantity },
     });
 
     await this.notifyOrderParty(buyerId, {
       type: 'marketplace_order_update',
       message:
         initialStatus === 'pending_payment'
-          ? `Order created for "${listing.title}". Upload payment proof after you pay the seller.`
-          : `Order placed for "${listing.title}". Arrange campus pickup with the seller.`,
+          ? `Order created for "${listing.title}"${quantity > 1 ? ` ×${quantity}` : ''}. Upload payment proof after you pay the seller.`
+          : `Order placed for "${listing.title}"${quantity > 1 ? ` ×${quantity}` : ''}. Arrange campus pickup with the seller.`,
       link: `marketplace:order:${row.id}`,
-      data: { orderId: row.id, listingId },
+      data: { orderId: row.id, listingId, quantity },
     });
 
     await invalidateSellerAnalyticsCache(listing.user_id);
+    try {
+      const { invalidateListingCaches } = await import('../utils/marketplaceCache');
+      await invalidateListingCaches(cacheService, listingId);
+    } catch {
+      // best-effort
+    }
     return row;
   }
 
@@ -342,16 +376,22 @@ export class MarketplaceOrdersService {
 
     const amount = Number(row.amount) || Number(offer.counter_amount ?? offer.amount) || 0;
     const title = listingRaw.title || 'listing';
+    const buyerAccepted = actor === offer.buyer_id;
     await this.notifyOrderParty(sellerId, {
       type: 'marketplace_purchase',
-      message: `Offer accepted — order for "${title}" at ₦${amount.toLocaleString()}`,
+      message: buyerAccepted
+        ? `Buyer accepted your counter — order for "${title}" at ₦${amount.toLocaleString()}`
+        : `Offer accepted — order for "${title}" at ₦${amount.toLocaleString()}`,
       link: `marketplace:order:${row.id}`,
       data: { orderId: row.id, offerId },
     });
     await this.notifyOrderParty(offer.buyer_id, {
       type: 'marketplace_order_update',
-      message:
-        initialStatus === 'pending_payment'
+      message: buyerAccepted
+        ? initialStatus === 'pending_payment'
+          ? `You accepted the counter for "${title}". Upload payment proof after paying.`
+          : `You accepted the counter for "${title}". View order to arrange pickup.`
+        : initialStatus === 'pending_payment'
           ? `Your offer was accepted for "${title}". Upload payment proof after paying.`
           : `Your offer was accepted for "${title}". View order to arrange pickup.`,
       link: `marketplace:order:${row.id}`,
@@ -359,6 +399,12 @@ export class MarketplaceOrdersService {
     });
 
     await invalidateSellerAnalyticsCache(sellerId);
+    try {
+      const { invalidateListingCaches } = await import('../utils/marketplaceCache');
+      await invalidateListingCaches(cacheService, offer.listing_id as string);
+    } catch {
+      // best-effort
+    }
     return row;
   }
 
@@ -457,6 +503,7 @@ export class MarketplaceOrdersService {
         }
         nextStatus = 'cancelled';
         await this.refundEscrow(order);
+        await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
         break;
       case 'open_dispute':
         if (!isBuyer && !isSeller) throw new Error('Unauthorized');
@@ -634,6 +681,42 @@ export class MarketplaceOrdersService {
       .from('marketplace_transactions')
       .update({ status: 'refunded' })
       .eq('id', order.transaction_id);
+  }
+
+  /** Cancel/refund: return held units (multi-qty) and/or un-reserve a unique listing. */
+  private async restoreListingAfterCancelledOrder(
+    listingId: string,
+    heldQuantity = 1
+  ): Promise<void> {
+    if (!listingId) return;
+    const restoreQty = Math.max(1, Math.floor(Number(heldQuantity) || 1));
+    const now = new Date().toISOString();
+    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    if (!listing) return;
+
+    if (listing.quantity != null) {
+      await this.db
+        .from('marketplace_listings')
+        .update({
+          quantity: Number(listing.quantity) + restoreQty,
+          status: 'active',
+          updated_at: now,
+        })
+        .eq('id', listingId);
+    } else {
+      await this.db
+        .from('marketplace_listings')
+        .update({ status: 'active', updated_at: now })
+        .eq('id', listingId)
+        .eq('status', 'reserved');
+    }
+
+    try {
+      const { invalidateListingCaches } = await import('../utils/marketplaceCache');
+      await invalidateListingCaches(cacheService, listingId);
+    } catch {
+      // best-effort cache bust
+    }
   }
 
   async createPaymentLinkOrder(
@@ -1200,10 +1283,7 @@ export class MarketplaceOrdersService {
 
     await this.refundEscrow(order);
 
-    await this.db
-      .from('marketplace_listings')
-      .update({ status: 'active', updated_at: now })
-      .eq('id', order.listing_id);
+    await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
 
     const { data, error } = await this.db
       .from('marketplace_orders')

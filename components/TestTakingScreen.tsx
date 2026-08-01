@@ -31,6 +31,23 @@ const formatTime = (totalSeconds: number): string => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
+/** Resolve countdown deadline — recovers when draft sync wiped endTime. */
+function resolveSessionEndTime(
+  session: TestSessionData | StudySessionData,
+): Date | null {
+  if (session.endTime) return new Date(session.endTime);
+  // Prefer wall-clock recovery from start + duration so question changes / autosave
+  // cannot re-anchor on a stale remainingTime snapshot.
+  const duration = session.config?.timerDuration;
+  if (duration && duration > 0 && session.startTime) {
+    return new Date(new Date(session.startTime).getTime() + duration * 1000);
+  }
+  if (typeof session.remainingTime === 'number' && Number.isFinite(session.remainingTime)) {
+    return new Date(Date.now() + Math.max(0, session.remainingTime) * 1000);
+  }
+  return null;
+}
+
 // FIX: Added a trailing comma to the generic type parameter to avoid being parsed as a JSX tag.
 const shuffleArray = <T,>(array: T[]): T[] => {
   const newArray = [...array];
@@ -171,51 +188,72 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
 
   useEffect(() => {
-    if (mode === 'test' && session.endTime && (onSubmitTest || onSubmitOfflineTest)) {
-      const totalDuration = session.config.timerDuration;
-      const calculateTimeLeft = () => {
-        const now = new Date().getTime();
-        const endTimeMs = new Date(session.endTime!).getTime(); 
-        const diff = Math.round((endTimeMs - now) / 1000);
-        
-        if (totalDuration && diff > 0 && diff <= totalDuration * 0.1) {
-          setIsTimeLow(true);
-        } else {
-          setIsTimeLow(false);
-        }
+    const endAt = resolveSessionEndTime(session);
+    const isTimedSession = Boolean(endAt);
+    // Auto-submit only applies to test mode (study is feedback-oriented / untimed by design).
+    const canAutoSubmit =
+      mode === 'test' && Boolean(onSubmitTest || onSubmitOfflineTest);
 
-        if (diff <= 0) {
-          setTimeLeftDisplay(formatTime(0));
-          if (session.isOffline && onSubmitOfflineTest) onSubmitOfflineTest();
-          else if (!session.isOffline && onSubmitTest) onSubmitTest();
-          return 0; 
-        }
-        setTimeLeftDisplay(formatTime(diff));
-        return diff;
-      };
-
-      if (calculateTimeLeft() <= 0) return; 
-
-      const timerId = setInterval(() => {
-        if (calculateTimeLeft() <= 0) {
-          clearInterval(timerId);
-        }
-      }, 1000);
-
-      return () => clearInterval(timerId);
-    } else {
+    if (!isTimedSession) {
       setTimeLeftDisplay(null);
       setIsTimeLow(false);
+      return;
     }
-  }, [mode, session.endTime, session.config.timerDuration, onSubmitTest, onSubmitOfflineTest, session.isOffline, session.currentQuestionIndex]);
+
+    const totalDuration = session.config.timerDuration;
+    const calculateTimeLeft = () => {
+      const endTimeMs = endAt!.getTime();
+      const diff = Math.round((endTimeMs - Date.now()) / 1000);
+
+      if (totalDuration && diff > 0 && diff <= totalDuration * 0.1) {
+        setIsTimeLow(true);
+      } else {
+        setIsTimeLow(false);
+      }
+
+      if (diff <= 0) {
+        setTimeLeftDisplay(formatTime(0));
+        if (canAutoSubmit) {
+          if (session.isOffline && onSubmitOfflineTest) onSubmitOfflineTest();
+          else if (!session.isOffline && onSubmitTest) onSubmitTest();
+        }
+        return 0;
+      }
+      setTimeLeftDisplay(formatTime(diff));
+      return diff;
+    };
+
+    if (calculateTimeLeft() <= 0) return;
+
+    const timerId = setInterval(() => {
+      if (calculateTimeLeft() <= 0) {
+        clearInterval(timerId);
+      }
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [
+    mode,
+    session.endTime,
+    session.remainingTime,
+    session.startTime,
+    session.config.timerDuration,
+    onSubmitTest,
+    onSubmitOfflineTest,
+    session.isOffline,
+    session.currentQuestionIndex,
+  ]);
   
   useEffect(() => {
-    if (paletteRef.current) {
-      const currentButton = paletteRef.current.querySelector(`[data-qindex="${session.currentQuestionIndex}"]`) as HTMLElement;
-      if (currentButton) {
-        currentButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-      }
-    }
+    const container = paletteRef.current;
+    if (!container) return;
+    const currentButton = container.querySelector(`[data-qindex="${session.currentQuestionIndex}"]`) as HTMLElement | null;
+    if (!currentButton) return;
+    // Horizontal-only scroll — avoid scrollIntoView, which can scroll overflow-hidden
+    // AppShell ancestors and clip the timer / pause / cancel header out of view.
+    const targetLeft =
+      currentButton.offsetLeft - container.clientWidth / 2 + currentButton.offsetWidth / 2;
+    container.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
   }, [session.currentQuestionIndex]);
 
   const handleInitiateSubmit = () => {
@@ -666,7 +704,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
       };
 
   return (
-    <div className={`flex-1 flex flex-col ${modeTheme.bgGradient} text-lantern-text relative`}>
+    <div className={`flex-1 min-h-0 flex flex-col ${modeTheme.bgGradient} text-lantern-text relative`}>
 
       {/* ── Answer Streak Badge (study mode) ── */}
       {mode === 'study' && showStreakBadge && answerStreak >= 3 && (
@@ -694,7 +732,8 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         </div>
       )}
 
-      <div className="flex-1 p-2 sm:p-4 md:p-6 overflow-y-auto">
+      {/* Sticky session chrome — stays visible above AppShell overflow clipping */}
+      <div className="shrink-0 z-20 p-2 sm:p-4 md:px-6 md:pt-6 md:pb-0 bg-inherit">
         {/* Mode Info Banner */}
         <div className={`mb-2 sm:mb-4 p-2 sm:p-3 rounded-lg border flex items-center ${modeTheme.infoBanner}`}>
           <span className="text-lg sm:text-2xl mr-2 sm:mr-3">{mode === 'study' ? '📚' : '📝'}</span>
@@ -703,29 +742,45 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               {mode === 'study' ? 'Study Mode' : 'Test Mode'}
             </span>
             <span className={`hidden sm:inline text-sm ml-2 ${modeTheme.infoBannerSubtext}`}>
-              {mode === 'study' 
-                ? '• No timer • Instant feedback • Not recorded' 
+              {mode === 'study'
+                ? timeLeftDisplay
+                  ? '• Timed • Instant feedback • Not recorded'
+                  : '• No timer • Instant feedback • Not recorded'
                 : '• Timed • Results recorded • Answers at end'}
             </span>
             <p className={`sm:hidden text-[10px] mt-0.5 ${modeTheme.infoBannerSubtext}`}>
-              {mode === 'study' ? 'No timer · Instant feedback' : 'Timed · Results recorded'}
+              {mode === 'study'
+                ? timeLeftDisplay
+                  ? 'Timed · Instant feedback'
+                  : 'No timer · Instant feedback'
+                : 'Timed · Results recorded'}
             </p>
           </div>
-          {mode === 'test' && timeLeftDisplay && (
-            <div className={`flex items-center text-sm font-medium px-3 py-1 rounded-full transition-colors ${isTimeLow ? 'text-white bg-red-600 animate-pulse' : 'text-purple-800 dark:text-purple-200 bg-purple-200 dark:bg-purple-800'}`}>
-              <ClockIcon className="w-5 h-5 mr-1.5" />
-              {timeLeftDisplay}
-            </div>
-          )}
         </div>
 
-        <div className={`mb-3 sm:mb-6 pb-2 sm:pb-4 border-b ${modeTheme.headerBorder}`}>
+        <div className={`pb-2 sm:pb-4 border-b ${modeTheme.headerBorder}`}>
           <div className="flex items-center justify-between gap-2">
               <div className={`flex items-center text-base sm:text-xl md:text-2xl font-semibold min-w-0 ${mode === 'study' ? 'text-blue-700 dark:text-blue-300' : 'text-purple-700 dark:text-purple-300'}`}> 
                   {headerIcon} <span className="truncate">{headerText}</span>
               </div>
-              <div className="flex items-center shrink-0 gap-1 sm:gap-2">
+              <div className="flex items-center shrink-0 gap-2 sm:gap-3">
+                {timeLeftDisplay && (
+                  <div
+                    className={`flex items-center tabular-nums text-base sm:text-lg font-bold px-3 py-1.5 rounded-md border-2 shadow-sm ${
+                      isTimeLow
+                        ? 'text-white bg-red-600 border-red-700 animate-pulse'
+                        : 'text-lantern-text bg-lantern-surface border-lantern-primary dark:bg-lantern-surface-secondary dark:text-lantern-text dark:border-lantern-primary'
+                    }`}
+                    aria-live="polite"
+                    aria-label={`Time remaining ${timeLeftDisplay}`}
+                    title="Time remaining"
+                  >
+                    <ClockIcon className={`w-5 h-5 sm:w-6 sm:h-6 mr-1.5 shrink-0 ${isTimeLow ? 'text-white' : 'text-lantern-primary'}`} />
+                    <span>{timeLeftDisplay}</span>
+                  </div>
+                )}
                 <button 
+                    type="button"
                     onClick={onPauseSession}
                     className="p-1.5 sm:p-2 rounded-full hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary text-lantern-text-secondary"
                     aria-label="Pause Session"
@@ -734,6 +789,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     <PauseIcon className="w-5 h-5 sm:w-6 sm:h-6"/>
                 </button>
                 <button 
+                    type="button"
                     onClick={onCancelSession}
                     className="p-1.5 sm:p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400"
                     aria-label="Cancel Session"
@@ -747,7 +803,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             Question {session.currentQuestionIndex + 1} of {totalQuestions}
           </p>
         </div>
+      </div>
 
+      <div className="flex-1 min-h-0 p-2 sm:p-4 md:p-6 pt-3 sm:pt-4 overflow-y-auto overscroll-y-contain">
         {/* ── Utility Toolbar ── */}
         <TestUtilityToolbar
           activeTool={activeTool}

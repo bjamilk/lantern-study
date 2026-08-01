@@ -128,6 +128,8 @@ interface UIState {
   setMarketplaceListingCategory: (category: 'academic' | 'student-life') => void;
   selectedMarketplaceListingId: string | null;
   setSelectedMarketplaceListingId: (id: string | null) => void;
+  selectedMarketplaceListingInitialQuantity: number | null;
+  setSelectedMarketplaceListingInitialQuantity: (qty: number | null) => void;
   selectedMarketplaceOrderId: string | null;
   setSelectedMarketplaceOrderId: (id: string | null) => void;
   editingMarketplaceListing: any | null;
@@ -295,6 +297,9 @@ export const useUIStore = create<UIState>()(
       setMarketplaceListingCategory: (category) => set({ marketplaceListingCategory: category }),
       selectedMarketplaceListingId: null,
       setSelectedMarketplaceListingId: (id) => set({ selectedMarketplaceListingId: id }),
+      selectedMarketplaceListingInitialQuantity: null,
+      setSelectedMarketplaceListingInitialQuantity: (qty) =>
+        set({ selectedMarketplaceListingInitialQuantity: qty }),
       selectedMarketplaceOrderId: null,
       setSelectedMarketplaceOrderId: (id) => set({ selectedMarketplaceOrderId: id }),
       editingMarketplaceListing: null,

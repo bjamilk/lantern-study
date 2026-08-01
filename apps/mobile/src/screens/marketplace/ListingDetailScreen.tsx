@@ -38,7 +38,7 @@ type NavigationProp = {
 
 interface Props {
   navigation: NavigationProp;
-  route: { params?: { listingId?: string } };
+  route: { params?: { listingId?: string; quantity?: number } };
 }
 
 const REPORT_REASONS = [
@@ -67,6 +67,7 @@ function StarRow({ rating }: { rating: number }) {
 
 export function ListingDetailScreen({ navigation, route }: Props) {
   const listingId = route.params?.listingId ?? '';
+  const initialQuantity = route.params?.quantity;
   const { user } = useAuthStore();
   const {
     currentListing,
@@ -82,11 +83,13 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     addReview,
     reportListing,
     buyNowListing,
+    addToCart,
     boostListing,
     updateListing,
     deleteListing,
   } = useMarketplaceStore();
 
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [imageIndex, setImageIndex] = useState(0);
   const [showContact, setShowContact] = useState(false);
   const [showReview, setShowReview] = useState(false);
@@ -111,6 +114,13 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     await addRecentlyViewedListing(listingId);
     const listing = useMarketplaceStore.getState().currentListing;
     if (listing) {
+      if (listing.quantity == null) {
+        setSelectedQuantity(1);
+      } else {
+        const stock = Math.max(1, Number(listing.quantity) || 1);
+        const pref = Math.max(1, Math.floor(Number(initialQuantity) || 1));
+        setSelectedQuantity(Math.min(pref, stock));
+      }
       const sellerId = listing.seller_id || listing.user_id;
       if (sellerId && sellerId !== user?.id) {
         try {
@@ -129,7 +139,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         }
       }
     }
-  }, [listingId, fetchListing, fetchListingReviews, fetchSimilar, user?.id]);
+  }, [listingId, fetchListing, fetchListingReviews, fetchSimilar, user?.id, initialQuantity]);
 
   useEffect(() => {
     void load();
@@ -195,10 +205,12 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const handleBuyNow = () => {
     if (!listing || !user?.id || !listing.price) return;
     const pricing = resolveListingDisplayPrice(listing);
-    const payAmount = couponPreview?.finalAmount ?? pricing.effective;
+    const qty = listing.quantity == null ? 1 : selectedQuantity;
+    const unitPay = couponPreview?.finalAmount ?? pricing.effective;
+    const payAmount = Math.round(unitPay * qty * 100) / 100;
     Alert.alert(
       'Buy Now',
-      `Purchase "${listing.title}" for ${formatPrice(payAmount)}?`,
+      `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''} for ${formatPrice(payAmount)}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -212,7 +224,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               const result = await buyNowListing(
                 listing.id,
                 user.id,
-                couponPreview ? couponCode.trim() : undefined
+                couponPreview ? couponCode.trim() : undefined,
+                qty
               );
               const orderId = result?.order?.id;
               if (orderId) {
@@ -233,6 +246,20 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         },
       ]
     );
+  };
+
+  const handleAddToCart = async () => {
+    if (!listing || !user?.id || !listing.price) return;
+    const qty = listing.quantity == null ? 1 : selectedQuantity;
+    setActionLoading(true);
+    try {
+      await addToCart(listing.id, qty);
+      Alert.alert('Added to cart', qty > 1 ? `${qty} items added.` : 'Item added to cart.');
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not add to cart');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleApplyCoupon = async () => {
@@ -575,6 +602,30 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       {!own && listing.status === 'active' ? (
         <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
+          {listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 ? (
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-xs text-lantern-text-secondary">
+                Qty · {listing.quantity} available
+              </Text>
+              <View className="flex-row items-center rounded-lg border border-lantern-border overflow-hidden">
+                <Pressable
+                  className="px-3 py-2"
+                  onPress={() => setSelectedQuantity((q) => Math.max(1, q - 1))}
+                >
+                  <Text className="text-lantern-text">−</Text>
+                </Pressable>
+                <Text className="px-3 py-2 font-semibold text-lantern-text">{selectedQuantity}</Text>
+                <Pressable
+                  className="px-3 py-2"
+                  onPress={() =>
+                    setSelectedQuantity((q) => Math.min(Number(listing.quantity), q + 1))
+                  }
+                >
+                  <Text className="text-lantern-text">+</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           {listing.price && listing.price > 0 ? (
             <View className="flex-row gap-2 mb-2">
               <TextInput
@@ -596,10 +647,15 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           ) : null}
           {couponPreview ? (
             <Text className="text-xs text-emerald-600 mb-2">
-              Coupon applied — {formatPrice(couponPreview.discountAmount)} off
+              Coupon applied —{' '}
+              {formatPrice(
+                couponPreview.discountAmount *
+                  (listing.quantity == null ? 1 : selectedQuantity)
+              )}{' '}
+              off
             </Text>
           ) : null}
-          <View className="flex-row gap-2">
+          <View className="flex-row gap-2 mb-2">
             <Button variant="secondary" className="flex-1" onPress={() => setShowContact(true)}>
               Contact
             </Button>
@@ -610,12 +666,22 @@ export function ListingDetailScreen({ navigation, route }: Props) {
             >
               Offer
             </Button>
-            {listing.price ? (
+          </View>
+          {listing.price ? (
+            <View className="flex-row gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                loading={actionLoading}
+                onPress={() => void handleAddToCart()}
+              >
+                Cart
+              </Button>
               <Button className="flex-1" loading={actionLoading} onPress={handleBuyNow}>
                 Buy Now
               </Button>
-            ) : null}
-          </View>
+            </View>
+          ) : null}
         </View>
       ) : null}
 

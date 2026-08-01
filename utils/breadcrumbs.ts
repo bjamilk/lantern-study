@@ -74,7 +74,12 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
     case AppMode.MARKETPLACE_ORDERS:
       return [
         { label: 'Marketplace', onClick: () => navigateTo(AppMode.MARKETPLACE) },
-        { label: 'Orders' },
+        { label: 'Purchase history' },
+      ];
+    case AppMode.MARKETPLACE_CART:
+      return [
+        { label: 'Marketplace', onClick: () => navigateTo(AppMode.MARKETPLACE) },
+        { label: 'Cart' },
       ];
     case AppMode.MARKETPLACE_ORDER_DETAIL:
       return [

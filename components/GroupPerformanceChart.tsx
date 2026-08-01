@@ -64,7 +64,9 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
         const tooltipBackgroundColor = theme === 'dark' ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)';
         const tooltipTitleColor = theme === 'dark' ? '#f1f5f9' : '#1e293b';
         const tooltipBodyColor = theme === 'dark' ? '#e2e8f0' : '#334155';
-        const uniqueLabels = [...new Set(currentDatasets.flatMap(d => d.data.map(p => p.x)))].sort();
+        // Preserve series order (chronological for timeline; pre-sorted weeks for multi-group).
+        // Lexicographic sort would scramble "Test 10" before "Test 2".
+        const uniqueLabels = [...new Set(currentDatasets.flatMap(d => d.data.map(p => p.x)))];
         const chartColors = COLORS[theme];
 
         // Dynamic import

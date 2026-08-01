@@ -259,6 +259,8 @@ export interface Message {
   receiptStatus?: 'sent' | 'read';
   seenByCount?: number;
   seenByTotal?: number;
+  /** Optimistic reconcile key from messages.client_message_id. */
+  clientMessageId?: string;
 }
 
 export type ChatItem = (Group & { chatType: 'group' }) | (DMThread & { chatType: 'dm' });
@@ -286,6 +288,7 @@ export enum AppMode {
   MY_LISTINGS = 'MY_LISTINGS',
   MARKETPLACE_INQUIRIES = 'MARKETPLACE_INQUIRIES',
   MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
+  MARKETPLACE_CART = 'MARKETPLACE_CART',
   MARKETPLACE_ORDER_DETAIL = 'MARKETPLACE_ORDER_DETAIL',
   SELLER_CUSTOMERS = 'SELLER_CUSTOMERS',
   SELLER_PROFILE = 'SELLER_PROFILE',
@@ -460,7 +463,11 @@ export type UserAnswerRecord = {
   isBookmarked?: boolean;
 };
 
+export type TestSessionStatus = 'in_progress' | 'paused' | 'completed' | 'abandoned';
+export type TestSessionKind = 'test' | 'study';
+
 export interface TestSessionData {
+  id?: string;
   config: TestConfig;
   questions: TestQuestion[];
   userAnswers: Record<string, UserAnswerRecord>;
@@ -469,6 +476,27 @@ export interface TestSessionData {
   endTime?: Date;
   remainingTime?: number;
   isOffline?: boolean;
+  sessionKind?: TestSessionKind;
+  status?: TestSessionStatus;
+  title?: string;
+  updatedAt?: string;
+  pausedAt?: string;
+}
+
+/** Lean row for Saved sessions list (paused / in-progress drafts). */
+export interface PausedSessionSummary {
+  id: string;
+  sessionKind: TestSessionKind;
+  status: 'in_progress' | 'paused';
+  title: string;
+  answeredCount: number;
+  totalQuestions: number;
+  currentQuestionIndex: number;
+  remainingTimeSeconds?: number | null;
+  startTime: string;
+  updatedAt: string;
+  pausedAt?: string | null;
+  groupId?: string;
 }
 
 export interface GameSession {
@@ -593,6 +621,16 @@ export interface DMThread {
   lastMessageTimestamp?: Date | string;
   unreadCount?: number;
   isArchived?: boolean;
+  /**
+   * ISO timestamp when the current user deleted this chat ("delete for me").
+   * Messages at or before this time must stay hidden even after the thread resurfaces.
+   */
+  historyClearedAt?: string | null;
+  /**
+   * Local-only: thread was opened/created on the client before the server row exists.
+   * Cleared when a threads fetch returns this id.
+   */
+  clientPending?: boolean;
   /** open = two-way; pending = message request; declined = rejected request */
   status?: DmThreadStatus;
   /** User who initiated a pending/declined message request */
@@ -749,7 +787,7 @@ export interface MarketplaceListing {
     geopolitical_zone?: string | null;
   };
   images?: string[];
-  status: 'active' | 'sold' | 'inactive' | 'suspended_by_admin' | 'removed_by_admin';
+  status: 'active' | 'sold' | 'inactive' | 'reserved' | 'suspended_by_admin' | 'removed_by_admin';
   categorySpecificFields?: Record<string, unknown>;
   category_specific_fields?: Record<string, unknown>;
   views_count?: number;
@@ -818,6 +856,8 @@ export interface MarketplaceOrder {
   buyer_id: string;
   seller_id: string;
   amount: number;
+  /** Units purchased; offers stay 1. */
+  quantity?: number;
   offer_id?: string;
   inquiry_id?: string;
   transaction_id?: string;
@@ -839,6 +879,16 @@ export interface MarketplaceOrder {
   buyer?: { id: string; name: string; avatar_url?: string };
   seller?: { id: string; name: string; avatar_url?: string };
   transaction?: MarketplaceTransaction;
+}
+
+export interface MarketplaceCartItem {
+  id: string;
+  buyer_id: string;
+  listing_id: string;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
+  listing?: MarketplaceListing | null;
 }
 
 export interface SellerAnalytics {
@@ -939,7 +989,31 @@ export interface MarketplaceSellerPreferences {
   boost_credits?: number;
   require_payment_confirmation?: boolean;
   favorite_alert_threshold?: number;
+  shop_name?: string | null;
+  shop_bio?: string | null;
+  cover_image_url?: string | null;
+  shop_updated_at?: string | null;
   updated_at: string;
+}
+
+export interface SellerShop {
+  shopName: string;
+  bio: string | null;
+  coverImageUrl: string | null;
+}
+
+export interface MarketplaceShopCard {
+  sellerId: string;
+  shopName: string;
+  bio: string | null;
+  coverImageUrl: string | null;
+  avatarUrl: string | null;
+  activeListingCount: number;
+  avgRating: number;
+  totalReviews: number;
+  campusId: string | null;
+  campusLabel: string | null;
+  lastListingAt: string | null;
 }
 
 export interface SellerOnboardingStatus {
@@ -1004,6 +1078,8 @@ export interface MarketplaceOffer {
   seller_id: string;
   amount: number;
   status: OfferStatus;
+  /** Whose proposal this row is; the other party may accept/decline/counter. */
+  proposed_by?: 'buyer' | 'seller';
   counter_amount?: number;
   message?: string;
   parent_offer_id?: string;
@@ -1036,6 +1112,7 @@ export interface SavedSearch {
 
 export interface SellerProfile {
   user: { id: string; name: string; avatar_url?: string; created_at: string };
+  shop?: SellerShop;
   stats: SellerStats & { avgRating: number; totalReviews: number };
   badges: Badge[];
   recentListings: MarketplaceListing[];
@@ -1068,6 +1145,17 @@ export interface CompanionMessage {
   created_at: string;
 }
 
+/** One companion chat thread (general or note-linked). */
+export interface CompanionConversation {
+  id: string;
+  title: string;
+  preview: string;
+  noteContextId: string | null;
+  noteTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CompanionUserContext {
   userName?: string;
   groups?: string[];
@@ -1081,6 +1169,10 @@ export interface CompanionUserContext {
   noteTitle?: string;
   noteId?: string;
   studyGoal?: StudyGoalMode;
+  /** Active companion thread; omit / null + newConversation to start fresh. */
+  conversationId?: string;
+  /** When true, create a new thread instead of continuing the latest for this note scope. */
+  newConversation?: boolean;
 }
 
 export interface UserPreferences {

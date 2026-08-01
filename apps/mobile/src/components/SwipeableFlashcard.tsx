@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Dimensions, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -29,7 +29,7 @@ interface Props {
   showBack: boolean;
   reduceMotion?: boolean;
   onToggleBack: () => void;
-  onGrade: (rating: PerformanceRating) => void;
+  onGrade: (rating: PerformanceRating, cardId: string) => void;
 }
 
 function resolveSwipeGrade(
@@ -68,8 +68,12 @@ export function SwipeableFlashcard({
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const flipProgress = useSharedValue(showBack ? 1 : 0);
+  const gradedForCardRef = useRef(false);
+  const cardKeyRef = useRef(cardKey);
+  cardKeyRef.current = cardKey;
 
   useEffect(() => {
+    gradedForCardRef.current = false;
     translateX.value = 0;
     translateY.value = 0;
     flipProgress.value = showBack ? 1 : 0;
@@ -81,8 +85,11 @@ export function SwipeableFlashcard({
       : withTiming(showBack ? 1 : 0, { duration: 280 });
   }, [showBack, flipProgress, reduceMotion]);
 
-  const finishGrade = (rating: PerformanceRating) => {
-    onGrade(rating);
+  const finishGrade = (rating: PerformanceRating, gradedCardId: string) => {
+    // Ignore stale swipe animation completions after the visible card changed.
+    if (cardKeyRef.current !== gradedCardId || gradedForCardRef.current) return;
+    gradedForCardRef.current = true;
+    onGrade(rating, gradedCardId);
   };
 
   const pan = Gesture.Pan()
@@ -105,6 +112,7 @@ export function SwipeableFlashcard({
         return;
       }
 
+      const gradedCardId = cardKey;
       const exitX =
         rating === 'again'
           ? -SCREEN_WIDTH * 1.2
@@ -121,12 +129,12 @@ export function SwipeableFlashcard({
       translateX.value = reduceMotion ? exitX : withTiming(exitX, { duration: 220 });
       if (reduceMotion) {
         translateY.value = exitY;
-        runOnJS(finishGrade)(rating);
+        runOnJS(finishGrade)(rating, gradedCardId);
         return;
       }
       translateY.value = withTiming(exitY, { duration: 220 }, finished => {
         if (finished) {
-          runOnJS(finishGrade)(rating);
+          runOnJS(finishGrade)(rating, gradedCardId);
         }
       });
     });
@@ -214,45 +222,59 @@ export function SwipeableFlashcard({
 
         <View style={styles.flipContainer}>
           <Animated.View style={[styles.face, frontFaceStyle]}>
-            <Card className="min-h-[260px] items-center justify-center border-lantern-primary/20 dark:border-lantern-primary/30/50">
-              <Text style={styles.sideLabel}>Question</Text>
-              {isImageOcclusion ? (
-                <View style={styles.occlusionWrap}>
-                  {front ? (
-                    <Text className="text-base font-medium text-lantern-text text-center px-2 mb-3">
+            <Card className="min-h-[260px] border-lantern-primary/20 dark:border-lantern-primary/30/50">
+              <ScrollView
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={isImageOcclusion}
+                contentContainerStyle={styles.cardScrollContent}
+                bounces={isImageOcclusion}
+              >
+                <Text style={styles.sideLabel}>Question</Text>
+                {isImageOcclusion ? (
+                  <View style={styles.occlusionWrap}>
+                    {front ? (
+                      <Text className="text-base font-medium text-lantern-text text-center px-2 mb-3">
+                        {front}
+                      </Text>
+                    ) : null}
+                    <ImageOcclusionView card={card} showAnswer={false} />
+                  </View>
+                ) : (
+                  <>
+                    <Text className="text-xl font-medium text-lantern-text text-center px-2">
                       {front}
                     </Text>
-                  ) : null}
-                  <ImageOcclusionView card={card} showAnswer={false} />
-                </View>
-              ) : (
-                <>
-                  <Text className="text-xl font-medium text-lantern-text text-center px-2">
-                    {front}
-                  </Text>
-                  <Text style={styles.hintText}>Tap to reveal answer</Text>
-                </>
-              )}
+                    <Text style={styles.hintText}>Tap to reveal answer</Text>
+                  </>
+                )}
+              </ScrollView>
             </Card>
           </Animated.View>
 
           <Animated.View style={[styles.face, styles.faceBack, backFaceStyle]}>
-            <Card className="min-h-[260px] items-center justify-center border-lantern-primary/20 dark:border-lantern-primary/30/50">
-              <Text style={styles.sideLabel}>Answer</Text>
-              {isImageOcclusion ? (
-                <View style={styles.occlusionWrap}>
-                  {front ? (
-                    <Text className="text-base font-medium text-lantern-text text-center px-2 mb-3">
-                      {front}
-                    </Text>
-                  ) : null}
-                  <ImageOcclusionView card={card} showAnswer />
-                </View>
-              ) : (
-                <Text className="text-xl font-medium text-lantern-text text-center px-2">
-                  {back || front}
-                </Text>
-              )}
+            <Card className="min-h-[260px] border-lantern-primary/20 dark:border-lantern-primary/30/50">
+              <ScrollView
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={isImageOcclusion}
+                contentContainerStyle={styles.cardScrollContent}
+                bounces={isImageOcclusion}
+              >
+                <Text style={styles.sideLabel}>Answer</Text>
+                {isImageOcclusion ? (
+                  <View style={styles.occlusionWrap}>
+                    {front ? (
+                      <Text className="text-base font-medium text-lantern-text text-center px-2 mb-3">
+                        {front}
+                      </Text>
+                    ) : null}
+                    <ImageOcclusionView card={card} showAnswer />
+                  </View>
+                ) : (
+                  <Text className="text-xl font-medium text-lantern-text text-center px-2">
+                    {back || front}
+                  </Text>
+                )}
+              </ScrollView>
             </Card>
           </Animated.View>
         </View>
@@ -290,6 +312,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6366f1',
     marginTop: 24,
+  },
+  cardScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 4,
   },
   occlusionWrap: {
     width: '100%',

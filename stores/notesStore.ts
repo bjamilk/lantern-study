@@ -37,7 +37,11 @@ interface NotesState {
   removeFolder: (folderId: string) => Promise<void>;
   createNote: (payload?: Partial<StudyNote>) => Promise<StudyNote>;
   saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
+  /** Move notes into a folder, or `null` for All notes (unfiled). */
+  moveNotesToFolder: (noteIds: string[], folderId: string | null) => Promise<void>;
   removeNote: (noteId: string) => Promise<void>;
+  /** Permanently delete notes via the same DELETE path as single-note delete. */
+  removeNotes: (noteIds: string[]) => Promise<void>;
   loadComments: (noteId: string) => Promise<void>;
   postComment: (noteId: string, comment: string) => Promise<void>;
   reset: () => void;
@@ -226,12 +230,119 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     return next;
   },
 
+  moveNotesToFolder: async (noteIds, folderId) => {
+    const uniqueIds = [...new Set(noteIds)].filter(Boolean);
+    if (uniqueIds.length === 0) return;
+
+    const results = await Promise.allSettled(
+      uniqueIds.map((noteId) => notesApi.updateNote(noteId, { folderId })),
+    );
+
+    const savedById = new Map<string, StudyNote>();
+    const failures: string[] = [];
+    results.forEach((result, index) => {
+      const noteId = uniqueIds[index];
+      if (result.status === 'fulfilled') {
+        savedById.set(noteId, result.value);
+      } else {
+        failures.push(
+          result.reason instanceof Error ? result.reason.message : 'Failed to move note',
+        );
+      }
+    });
+
+    if (savedById.size > 0) {
+      const resolvedFolderId = folderId === null ? undefined : folderId;
+      set({
+        notes: get().notes.map((n) => {
+          const saved = savedById.get(n.id);
+          if (!saved) return n;
+          return {
+            ...n,
+            ...saved,
+            folderId: resolvedFolderId,
+            accessRole: saved.accessRole ?? n.accessRole,
+            owner: saved.owner ?? n.owner,
+          };
+        }),
+        selectedNote: (() => {
+          const current = get().selectedNote;
+          if (!current || !savedById.has(current.id)) return current;
+          const saved = savedById.get(current.id)!;
+          return {
+            ...current,
+            ...saved,
+            folderId: resolvedFolderId,
+            accessRole: saved.accessRole ?? current.accessRole,
+            owner: saved.owner ?? current.owner,
+            attachments: current.attachments,
+          };
+        })(),
+        error: failures.length > 0 ? failures[0] : null,
+      });
+    }
+
+    if (failures.length > 0 && savedById.size === 0) {
+      set({ error: failures[0] });
+      throw new Error(failures[0]);
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        savedById.size > 0
+          ? `Moved ${savedById.size} note(s); ${failures.length} failed.`
+          : failures[0],
+      );
+    }
+  },
+
   removeNote: async (noteId) => {
     await notesApi.deleteNote(noteId);
     set({
       notes: get().notes.filter(n => n.id !== noteId),
       selectedNote: get().selectedNote?.id === noteId ? null : get().selectedNote,
     });
+  },
+
+  removeNotes: async (noteIds) => {
+    const uniqueIds = [...new Set(noteIds)].filter(Boolean);
+    if (uniqueIds.length === 0) return;
+
+    const results = await Promise.allSettled(
+      uniqueIds.map((noteId) => notesApi.deleteNote(noteId)),
+    );
+
+    const deletedIds = new Set<string>();
+    const failures: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        deletedIds.add(uniqueIds[index]);
+      } else {
+        failures.push(
+          result.reason instanceof Error ? result.reason.message : 'Failed to delete note',
+        );
+      }
+    });
+
+    if (deletedIds.size > 0) {
+      const selected = get().selectedNote;
+      set({
+        notes: get().notes.filter((n) => !deletedIds.has(n.id)),
+        selectedNote: selected && deletedIds.has(selected.id) ? null : selected,
+        error: failures.length > 0 ? failures[0] : null,
+      });
+    }
+
+    if (failures.length > 0 && deletedIds.size === 0) {
+      set({ error: failures[0] });
+      throw new Error(failures[0]);
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        deletedIds.size > 0
+          ? `Deleted ${deletedIds.size} note(s); ${failures.length} failed.`
+          : failures[0],
+      );
+    }
   },
 
   loadComments: async (noteId) => {

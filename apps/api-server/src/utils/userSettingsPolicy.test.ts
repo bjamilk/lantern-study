@@ -84,7 +84,7 @@ describe('resolveDirectMessageAccess', () => {
     supabase.from.mockReset();
   });
 
-  it('denies when recipient policy is none and no open thread exists', async () => {
+  it('creates a message request when recipient policy is none (not deny)', async () => {
     supabase.from.mockImplementation((table: string) => {
       if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') return mockThreadState(null);
@@ -97,10 +97,47 @@ describe('resolveDirectMessageAccess', () => {
       'recipient',
       parseUserSettings({ privacy: { allowDirectMessages: 'none' } })
     );
-    expect(result).toEqual({
-      mode: 'deny',
-      reason: 'This user does not accept direct messages',
+    expect(result).toEqual({ mode: 'request' });
+    expect(supabase.from).not.toHaveBeenCalledWith('group_members');
+  });
+
+  it('creates a message request for private profiles even when DMs are everyone', async () => {
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
+      if (table === 'dm_threads') return mockThreadState(null);
+      throw new Error(`unexpected table ${table}`);
     });
+
+    const result = await resolveDirectMessageAccess(
+      supabase as any,
+      'sender',
+      'recipient',
+      parseUserSettings({
+        privacy: { profileVisibility: 'private', allowDirectMessages: 'everyone' },
+      })
+    );
+    expect(result).toEqual({ mode: 'request' });
+    expect(supabase.from).not.toHaveBeenCalledWith('group_members');
+  });
+
+  it('keeps open threads open for private profiles', async () => {
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
+      if (table === 'dm_threads') {
+        return mockThreadState({ status: 'open', requested_by: null });
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await resolveDirectMessageAccess(
+      supabase as any,
+      'sender',
+      'recipient',
+      parseUserSettings({
+        privacy: { profileVisibility: 'private', allowDirectMessages: 'none' },
+      })
+    );
+    expect(result).toEqual({ mode: 'allow' });
   });
 
   it('allows everyone policy without group lookup', async () => {

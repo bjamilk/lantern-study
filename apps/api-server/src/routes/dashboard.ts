@@ -31,12 +31,17 @@ export const initializeDashboardRoutes = (supabase: SupabaseService, cache: Cach
   cacheService = cache;
 };
 
-/** Lean completed-history window for charts / group performance. */
-const TESTS_LIMIT = 500;
+/** Lean page size for completed-history charts / group performance. */
+const TESTS_PAGE_SIZE = 500;
+/** Safety cap so a pathological account cannot unboundedly fan out DB pages. */
+const TESTS_MAX_PAGES = 100;
 
-/** Reuses the same cache keys as the individual routes so existing write-path invalidation applies. */
+/**
+ * Load the full lean completed-test history (paginated).
+ * Reuses per-page `tests:${userId}:...` cache entries from getUserTests via deletePattern invalidation.
+ */
 async function getCompletedTests(userId: string) {
-  const cacheKey = `tests:${userId}:1:${TESTS_LIMIT}:completed::lean:newest::`;
+  const cacheKey = `tests:${userId}:all:${TESTS_PAGE_SIZE}:completed::lean:newest::`;
   const cached = await cacheService.get(cacheKey);
   if (cached) {
     if (Array.isArray(cached)) return cached;
@@ -45,15 +50,35 @@ async function getCompletedTests(userId: string) {
     }
   }
 
-  const page = await supabaseService.getUserTests(userId, {
-    page: 1,
-    limit: TESTS_LIMIT,
-    status: 'completed',
-    lean: true,
-    sort: 'newest',
-  });
-  await cacheService.set(cacheKey, page, 300);
-  return page.tests;
+  const all: unknown[] = [];
+  let page = 1;
+  let hasMore = true;
+  while (hasMore && page <= TESTS_MAX_PAGES) {
+    const result = await supabaseService.getUserTests(userId, {
+      page,
+      limit: TESTS_PAGE_SIZE,
+      status: 'completed',
+      lean: true,
+      sort: 'newest',
+    });
+    const tests = Array.isArray(result?.tests) ? result.tests : [];
+    all.push(...tests);
+    const total = typeof result?.total === 'number' ? result.total : all.length;
+    hasMore = page * TESTS_PAGE_SIZE < total && tests.length > 0;
+    page += 1;
+  }
+
+  if (hasMore) {
+    logger.warn('Dashboard completed-test history hit page cap', {
+      userId,
+      loaded: all.length,
+      maxPages: TESTS_MAX_PAGES,
+      pageSize: TESTS_PAGE_SIZE,
+    });
+  }
+
+  await cacheService.set(cacheKey, all, 300);
+  return all;
 }
 
 async function getQuestionStats(userId: string) {

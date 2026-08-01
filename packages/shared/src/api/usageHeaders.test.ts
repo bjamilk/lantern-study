@@ -1,4 +1,8 @@
-import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
+import {
+  parseGlobalAIUsageFromHeaderReader,
+  parseGlobalAIUsageFromHeaders,
+  xhrHeaderReader,
+} from './usageHeaders';
 
 describe('parseGlobalAIUsageFromHeaders', () => {
   it('ignores feature-scoped companion quota headers', () => {
@@ -37,5 +41,24 @@ describe('parseGlobalAIUsageFromHeaders', () => {
     });
 
     expect(updates).toEqual([{ used: 5, limit: 20, remaining: 15 }]);
+  });
+
+  it('reads usage from an XHR-style header reader', () => {
+    const updates: Array<{ used: number; remaining: number }> = [];
+    const xhr = {
+      getResponseHeader(name: string) {
+        const map: Record<string, string> = {
+          'X-AI-Usage-Used': '7',
+          'X-AI-Usage-Limit': '100',
+        };
+        return map[name] ?? null;
+      },
+    };
+
+    parseGlobalAIUsageFromHeaderReader(xhrHeaderReader(xhr), (usage) => {
+      updates.push({ used: usage.used, remaining: usage.remaining });
+    });
+
+    expect(updates).toEqual([{ used: 7, remaining: 93 }]);
   });
 });

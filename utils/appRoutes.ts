@@ -56,6 +56,8 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
         : '/marketplace';
     case AppMode.MARKETPLACE_ORDERS:
       return '/marketplace/orders';
+    case AppMode.MARKETPLACE_CART:
+      return '/marketplace/cart';
     case AppMode.MARKETPLACE_ORDER_DETAIL:
       return params.orderId
         ? `/marketplace/orders/${encodeURIComponent(params.orderId)}`
@@ -131,6 +133,7 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/flashcards') return { mode: AppMode.FLASHCARDS, params: {}, clearDeck: true };
   if (path === '/marketplace') return { mode: AppMode.MARKETPLACE, params: {} };
   if (path === '/marketplace/orders') return { mode: AppMode.MARKETPLACE_ORDERS, params: {} };
+  if (path === '/marketplace/cart') return { mode: AppMode.MARKETPLACE_CART, params: {} };
   if (path === '/marketplace/my-listings') return { mode: AppMode.MY_LISTINGS, params: {} };
   if (path === '/marketplace/inquiries') return { mode: AppMode.MARKETPLACE_INQUIRIES, params: {} };
   if (path === '/marketplace/new') return { mode: AppMode.CREATE_MARKETPLACE_LISTING, params: {} };

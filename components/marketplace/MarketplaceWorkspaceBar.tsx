@@ -2,6 +2,7 @@ import React from 'react';
 import {
   MagnifyingGlassIcon,
   ShoppingBagIcon,
+  ShoppingCartIcon,
   ChatBubbleLeftIcon,
   ReceiptPercentIcon,
   PlusIcon,
@@ -13,6 +14,7 @@ import { Menu, MenuTrigger, MenuContent, MenuItem } from '../ui';
 export type MarketplaceWorkspaceSection =
   | 'browse'
   | 'orders'
+  | 'cart'
   | 'selling'
   | 'inquiries'
   | 'favorites';
@@ -112,6 +114,15 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
         >
           <ReceiptPercentIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Orders</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate('MarketplaceCart')}
+          className={navBtn(active === 'cart')}
+          aria-current={active === 'cart' ? 'page' : undefined}
+        >
+          <ShoppingCartIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <span>Cart</span>
         </button>
         <button
           type="button"

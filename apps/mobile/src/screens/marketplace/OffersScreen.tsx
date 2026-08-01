@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared';
 import { useMarketplaceStore, useAuthStore, type MarketplaceOffer } from '../../stores';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
@@ -83,9 +84,15 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   const renderOffer = ({ item }: { item: MarketplaceOffer }) => {
-    const isSeller = tab === 'seller';
     const pending = item.status === 'pending';
     const busy = busyOfferId === item.id;
+    const userId = user?.id || '';
+    const canRespond = !!userId && canRespondToOffer(item as any, userId);
+    const canWithdraw = !!userId && canWithdrawOffer(item as any, userId);
+    const proposedBy = getOfferProposedBy(item as any);
+    const acceptLabel = proposedBy === 'seller' ? 'Accept Counter' : 'Accept';
+    const declineLabel = proposedBy === 'seller' ? 'Decline Counter' : 'Decline';
+
     return (
       <Pressable
         onPress={() => navigation.navigate('ListingDetail', { listingId: item.listing_id })}
@@ -98,13 +105,14 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
         </Text>
         <Text className="text-xs text-lantern-text-secondary mt-1 capitalize">
           Status: {item.status}
+          {proposedBy ? ` · from ${proposedBy}` : ''}
         </Text>
         {item.message ? (
           <Text className="text-sm text-lantern-text-secondary mt-2">{item.message}</Text>
         ) : null}
         {pending ? (
           <View className="flex-row flex-wrap gap-2 mt-3">
-            {isSeller ? (
+            {canRespond ? (
               <>
                 <Button
                   className="px-3 py-1"
@@ -112,7 +120,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
                   disabled={!!busyOfferId}
                   onPress={() => void handleAction(item, 'accept')}
                 >
-                  Accept
+                  {acceptLabel}
                 </Button>
                 <Button
                   variant="secondary"
@@ -120,7 +128,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
                   disabled={!!busyOfferId}
                   onPress={() => void handleAction(item, 'decline')}
                 >
-                  Decline
+                  {declineLabel}
                 </Button>
                 <Button
                   variant="secondary"
@@ -131,7 +139,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
                   Counter
                 </Button>
               </>
-            ) : (
+            ) : canWithdraw ? (
               <Button
                 variant="secondary"
                 className="px-3 py-1"
@@ -141,6 +149,10 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
               >
                 Withdraw
               </Button>
+            ) : (
+              <Text className="text-xs text-lantern-text-secondary">
+                Waiting for the other party…
+              </Text>
             )}
           </View>
         ) : null}

@@ -20,4 +20,104 @@ describe('sanitizeSettings', () => {
     expect(merged.is_banned).toBe(true);
     expect(merged.account_status).toBe('banned');
   });
+
+  it('deep-merges a single category without clobbering sibling categories', () => {
+    const merged = mergeUserSettings(
+      {
+        notifications: {
+          pushEnabled: true,
+          dailyReminder: true,
+          reminderTime: '20:00',
+          groupActivity: true,
+          marketplaceUpdates: true,
+          badgeUnlocks: true,
+          srsReminders: true,
+          testResults: true,
+          emailEnabled: true,
+          weeklyDigest: true,
+          groupInvites: true,
+        },
+        study: {
+          dailyCardGoal: 20,
+          dailyTestGoal: 1,
+          srsNewCardsPerDay: 10,
+          srsEasyBonus: 1.3,
+          srsIntervalModifier: 100,
+          srsMaxInterval: 365,
+          defaultTestMode: 'study',
+          showExplanationsImmediately: true,
+          autoAdvanceDelay: 0,
+          shuffleQuestions: true,
+          shuffleOptions: true,
+          autoPlayAudio: false,
+          showCardProgress: true,
+        },
+      },
+      {
+        study: { srsNewCardsPerDay: 25, dailyCardGoal: 40 },
+      }
+    );
+    expect(merged.study).toEqual(
+      expect.objectContaining({
+        srsNewCardsPerDay: 25,
+        dailyCardGoal: 40,
+        srsMaxInterval: 365,
+        shuffleQuestions: true,
+      })
+    );
+    expect(merged.notifications).toEqual(
+      expect.objectContaining({
+        pushEnabled: true,
+        reminderTime: '20:00',
+      })
+    );
+  });
+
+  it('deep-merges featureTips.checklist keys across devices', () => {
+    const merged = mergeUserSettings(
+      {
+        featureTips: {
+          version: 2,
+          dismissed: {},
+          skippedAll: false,
+          dontShowAgain: false,
+          checklistDismissed: false,
+          checklist: { explore_groups: true },
+        },
+      },
+      {
+        featureTips: {
+          checklist: { try_srs: true },
+        },
+      }
+    );
+    const tips = merged.featureTips as { checklist?: Record<string, boolean> } | undefined;
+    expect(tips?.checklist).toEqual({
+      explore_groups: true,
+      try_srs: true,
+    });
+  });
+
+  it('clamps out-of-range study values', () => {
+    const merged = mergeUserSettings(
+      {},
+      { study: { dailyCardGoal: 0, srsNewCardsPerDay: 999, srsMaxInterval: 1 } }
+    );
+    expect(merged.study).toEqual(
+      expect.objectContaining({
+        dailyCardGoal: 5,
+        srsNewCardsPerDay: 50,
+        srsMaxInterval: 30,
+      })
+    );
+  });
+
+  it('strips nested test_presets from settings blob', () => {
+    const merged = mergeUserSettings(
+      { notifications: { pushEnabled: true } },
+      { test_presets: [{ id: 'x' }], study: { dailyCardGoal: 30 } }
+    );
+    expect(merged.test_presets).toBeUndefined();
+    expect(merged.study).toEqual(expect.objectContaining({ dailyCardGoal: 30 }));
+  });
 });

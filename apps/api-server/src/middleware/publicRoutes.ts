@@ -6,6 +6,7 @@ export const PUBLIC_MARKETPLACE_READ_PATHS = [
   '/campuses',
   '/analytics/categories',
   '/categories/custom',
+  '/shops',
 ] as const;
 
 const PUBLIC_MARKETPLACE_READ_PATTERNS: RegExp[] = [

@@ -353,6 +353,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { useMarketplaceStore, LEGACY_MARKETPLACE_STORAGE_KEYS } = await import('./marketplaceStore');
       await useMarketplaceStore.getState().reset();
 
+      // Drop user-scoped settings cache so pending patches cannot leak across accounts.
+      try {
+        const { clearLocalSettings } = await import('./settingsStore');
+        await clearLocalSettings(userId);
+      } catch {
+        // continue with local sign-out
+      }
+
       if (!DEMO_MODE) {
         try {
           const { API_BASE_URL, getAuthHeaders } = await import('../services/supabase');
@@ -380,6 +388,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         'lantern_test_questions',
         'budgetTransactions',
         'monthlyBudget',
+        'lantern-settings',
         ...LEGACY_MARKETPLACE_STORAGE_KEYS,
       ];
 
@@ -388,6 +397,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           `walletBalance_${userId}`,
           `savingsGoals_${userId}`,
           `expenseSplits_${userId}`,
+          `lantern-settings:${userId}`,
         );
       }
 

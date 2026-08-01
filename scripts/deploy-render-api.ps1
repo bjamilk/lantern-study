@@ -154,6 +154,10 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
         @{ key = 'ENABLE_DATA_RETENTION_JOBS'; value = 'true' },
         @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
+    # Optional AI fallbacks (without these, Groq TPM 429s fail the whole cascade)
+    foreach ($k in @('GEMINI_API_KEY', 'CF_ACCOUNT_ID', 'CF_API_TOKEN', 'HF_API_TOKEN')) {
+        if ($ApiEnv[$k]) { $vars += @{ key = $k; value = $ApiEnv[$k] } }
+    }
     # Optional: YouTube transcript managed fallback (set in apps/api-server/.env or Render dashboard)
     if ($ApiEnv['SUPADATA_API_KEY']) {
         $vars += @{ key = 'SUPADATA_API_KEY'; value = $ApiEnv['SUPADATA_API_KEY'] }
@@ -198,6 +202,9 @@ function Build-WorkerEnvVars([hashtable]$ApiEnv) {
         @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = 'true' },
         @{ key = 'ENABLE_DATA_RETENTION_JOBS'; value = 'true' }
     )
+    foreach ($k in @('GEMINI_API_KEY', 'CF_ACCOUNT_ID', 'CF_API_TOKEN', 'HF_API_TOKEN')) {
+        if ($ApiEnv[$k]) { $vars += @{ key = $k; value = $ApiEnv[$k] } }
+    }
     if ($ApiEnv['SUPADATA_API_KEY']) {
         $vars += @{ key = 'SUPADATA_API_KEY'; value = $ApiEnv['SUPADATA_API_KEY'] }
     }

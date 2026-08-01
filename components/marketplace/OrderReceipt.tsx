@@ -56,6 +56,14 @@ export function buildOrderReceiptHtml(order: MarketplaceOrder, appName = 'Lanter
   <p class="amount">₦${Number(order.amount).toLocaleString()}</p>
   <table>
     <tr><td>Item</td><td>${listingTitle}</td></tr>
+    <tr><td>Quantity</td><td>${Math.max(1, Number(order.quantity) || 1)}</td></tr>
+    ${
+      (Number(order.quantity) || 1) > 1
+        ? `<tr><td>Unit price</td><td>₦${(
+            Number(order.amount) / Math.max(1, Number(order.quantity) || 1)
+          ).toLocaleString()}</td></tr>`
+        : ''
+    }
     <tr><td>Buyer</td><td>${buyerName}</td></tr>
     <tr><td>Seller</td><td>${sellerName}</td></tr>
     <tr><td>Status</td><td>${status}</td></tr>

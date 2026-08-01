@@ -22,7 +22,7 @@ export function initSentry(): void {
       isProd ? 0.01 : 0
     ),
     beforeSend(event) {
-      return scrubSentryEvent(event as unknown as Record<string, unknown>) as typeof event;
+      return scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event;
     },
   });
   initialized = true;

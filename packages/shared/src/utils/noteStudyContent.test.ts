@@ -1,9 +1,11 @@
 import {
   getNoteStudyContent,
+  getNoteStudyContentForSmartNotes,
   hasEnoughNoteStudyContent,
   isPlaceholderExtractedText,
   MIN_NOTE_STUDY_CONTENT_CHARS,
 } from './noteStudyContent';
+import { upsertSmartNotesSection } from './smartNotes';
 
 describe('getNoteStudyContent', () => {
   it('prefers body for typed notes', () => {
@@ -107,5 +109,43 @@ describe('getNoteStudyContent', () => {
         body: 'x'.repeat(50),
       })
     ).toBe(true);
+  });
+
+  it('excludes prior summary and Smart Notes section for regeneration input', () => {
+    const body = upsertSmartNotesSection('my notes', 'Old thin Core Idea');
+    expect(
+      getNoteStudyContentForSmartNotes({
+        sourceType: 'youtube',
+        body,
+        attachments: [{ extractedText: 'full transcript text here' }],
+        summary: 'Old thin Core Idea',
+      })
+    ).toBe('full transcript text here\n\nmy notes');
+  });
+
+  it('can omit summary via options while keeping body smart notes for other tools', () => {
+    const body = upsertSmartNotesSection('annotation', 'Generated notes');
+    expect(
+      getNoteStudyContent(
+        {
+          sourceType: 'pdf',
+          body,
+          attachments: [{ extractedText: 'pdf text' }],
+          summary: 'dup',
+        },
+        { includeSummary: false }
+      )
+    ).toContain('Generated notes');
+    expect(
+      getNoteStudyContent(
+        {
+          sourceType: 'pdf',
+          body,
+          attachments: [{ extractedText: 'pdf text' }],
+          summary: 'dup',
+        },
+        { includeSummary: false }
+      )
+    ).not.toContain('dup');
   });
 });

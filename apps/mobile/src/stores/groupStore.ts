@@ -11,6 +11,11 @@ import {
   formatChatSenderLabel,
   resolveThreadRootId,
   computeDmReceiptStatus,
+  mergeChatMessagesById,
+  mergeDmThreadLists,
+  filterMessagesAfterDmHistoryCutoff,
+  createOptimisticClientMessageId,
+  withTransientRetry,
   DeliveryIntentRegistry,
   isUncertainDeliveryError,
   reconcileDeliveredItem,
@@ -210,7 +215,11 @@ interface GroupState {
   messagesCache: Record<string, Message[]>;
   messagePagination: Record<string, MessagePagination>;
   dmThreads: DMThread[];
+  /** Currently open DM thread (for foreground resync). */
+  activeDmThreadId: string | null;
   directMessages: Record<string, DirectMessage[]>;
+  /** Local delete-for-me cutoffs keyed by thread id (survives inbox removal). */
+  dmHistoryClearedAtByThread: Record<string, string>;
   dmUnreadCounts: Record<string, number>;
   groupUnreadCounts: Record<string, number>;
   userVotes: Record<string, 'up' | 'down' | undefined>;
@@ -240,6 +249,7 @@ interface GroupState {
   createGroup: (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => Promise<Group>;
   leaveGroup: (groupId: string, userId: string) => Promise<void>;
 
+  setActiveDmThreadId: (threadId: string | null) => void;
   fetchDmThreads: (userId: string) => Promise<void>;
   fetchDMUnreadCounts: (userId: string) => Promise<void>;
   fetchDirectMessagesForThread: (userId: string, otherUserId: string, threadId: string) => Promise<void>;
@@ -474,6 +484,17 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
   };
 }
 
+function resolveDmHistoryClearedAt(
+  threadId: string,
+  dmThreads: DMThread[],
+  dmHistoryClearedAtByThread: Record<string, string>,
+): string | null {
+  const fromMap = dmHistoryClearedAtByThread[threadId];
+  if (typeof fromMap === 'string' && fromMap) return fromMap;
+  const fromThread = dmThreads.find((t) => t.id === threadId)?.historyClearedAt;
+  return typeof fromThread === 'string' && fromThread ? fromThread : null;
+}
+
 function mapDmThread(t: any, unreadCounts: Record<string, number>): DMThread {
   const participants: DMThread['participants'] = {};
   const rawParticipants = t.participants || {};
@@ -497,6 +518,7 @@ function mapDmThread(t: any, unreadCounts: Record<string, number>): DMThread {
     lastMessageTimestamp: t.last_message_timestamp || t.lastMessageTimestamp,
     unreadCount: unreadCounts[t.id] ?? t.unread_count ?? 0,
     isArchived: t.is_archived ?? t.isArchived ?? false,
+    historyClearedAt: t.historyClearedAt ?? t.history_cleared_at ?? null,
     status,
     requestedBy: t.requested_by ?? t.requestedBy ?? null,
   };
@@ -584,7 +606,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   messagesCache: {},
   messagePagination: {},
   dmThreads: [],
+  activeDmThreadId: null,
   directMessages: {},
+  dmHistoryClearedAtByThread: {},
   dmUnreadCounts: {},
   groupUnreadCounts: {},
   userVotes: {},
@@ -763,11 +787,15 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         (get().currentGroup?.id === groupId ? get().currentGroup?.members : undefined);
       const mapped = apiMessages.map((m: any) => mapApiMessage(m, groupId, roster));
 
-      const existing = refresh ? [] : (get().messagesCache[groupId] || []);
-      const existingIds = new Set(existing.map(m => m.id));
-      const merged = refresh
-        ? mapped
-        : [...mapped.filter((m: Message) => !existingIds.has(m.id)), ...existing];
+      const existing = get().messagesCache[groupId] || [];
+      // Always merge by id so a late fetch cannot wipe realtime/optimistic rows.
+      const merged = mergeChatMessagesById(
+        refresh ? [] : existing,
+        mapped as any
+      ) as Message[];
+      const withLocalOptimistic = refresh
+        ? mergeChatMessagesById(merged as any, existing as any) as Message[]
+        : merged;
 
       const hasMore = pagination?.hasMore ?? mapped.length >= limit;
 
@@ -775,8 +803,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
       const isActiveGroup = get().activeGroupId === groupId;
       set({
-        messages: isActiveGroup ? merged : get().messages,
-        messagesCache: { ...get().messagesCache, [groupId]: merged },
+        messages: isActiveGroup ? withLocalOptimistic : get().messages,
+        messagesCache: { ...get().messagesCache, [groupId]: withLocalOptimistic },
         messagePagination: {
           ...get().messagePagination,
           [groupId]: { page, hasMore },
@@ -1392,14 +1420,42 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     return get().dmThreads.filter(t => !t.isArchived);
   },
 
+  setActiveDmThreadId: (threadId) => {
+    set({ activeDmThreadId: threadId });
+  },
+
   fetchDmThreads: async (userId: string) => {
     try {
       const [threads, unreadCounts] = await Promise.all([
-        api.fetchDMThreads(userId),
+        withTransientRetry(() => api.fetchDMThreads(userId), { delayMs: 400 }),
         api.fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
       ]);
-      const dmThreads = threads.map(t => mapDmThread(t, unreadCounts));
-      set({ dmThreads, dmUnreadCounts: unreadCounts });
+      const mapped = (Array.isArray(threads) ? threads : []).map((t) =>
+        mapDmThread(t, unreadCounts)
+      );
+      set((state) => {
+        const nextCutoffs = { ...state.dmHistoryClearedAtByThread };
+        for (const thread of mapped) {
+          if (thread.historyClearedAt) {
+            nextCutoffs[thread.id] = thread.historyClearedAt;
+          }
+        }
+        const nextDirectMessages = { ...state.directMessages };
+        for (const [threadId, messages] of Object.entries(nextDirectMessages)) {
+          const cutoff = resolveDmHistoryClearedAt(threadId, mapped, nextCutoffs);
+          if (cutoff) {
+            nextDirectMessages[threadId] = filterMessagesAfterDmHistoryCutoff(messages, cutoff);
+          }
+        }
+        return {
+          // Server-authoritative merge keeps optimistic locals; never blank the inbox
+          // when the network returns a transient empty/error (errors are caught below).
+          dmThreads: mergeDmThreadLists(state.dmThreads, mapped, 'server'),
+          dmHistoryClearedAtByThread: nextCutoffs,
+          directMessages: nextDirectMessages,
+          dmUnreadCounts: unreadCounts,
+        };
+      });
     } catch (error) {
       console.warn('[GroupStore] Failed to fetch DM threads:', error);
     }
@@ -1420,13 +1476,37 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   fetchDirectMessagesForThread: async (userId: string, otherUserId: string, threadId: string) => {
     const requestId = (dmFetchSeqByThread[threadId] = (dmFetchSeqByThread[threadId] || 0) + 1);
     try {
-      const result = await api.fetchDirectMessages(userId, otherUserId);
+      const result = await withTransientRetry(
+        () => api.fetchDirectMessages(userId, otherUserId),
+        { delayMs: 400 }
+      );
       if (requestId !== dmFetchSeqByThread[threadId]) return;
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const mapped = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
-      set(state => ({
-        directMessages: { ...state.directMessages, [threadId]: mapped },
-      }));
+      set(state => {
+        const historyClearedAt = resolveDmHistoryClearedAt(
+          threadId,
+          state.dmThreads,
+          state.dmHistoryClearedAtByThread,
+        );
+        const existing = filterMessagesAfterDmHistoryCutoff(
+          state.directMessages[threadId] || [],
+          historyClearedAt,
+        );
+        const incoming = filterMessagesAfterDmHistoryCutoff(mapped, historyClearedAt);
+        // Empty fetch must not wipe last-known / optimistic messages — unless this
+        // user deleted the chat (cutoff set), in which case empty is authoritative.
+        if (!incoming.length && existing.length && !historyClearedAt) {
+          return state;
+        }
+        const merged = filterMessagesAfterDmHistoryCutoff(
+          mergeChatMessagesById(existing as any, incoming as any) as DirectMessage[],
+          historyClearedAt,
+        );
+        return {
+          directMessages: { ...state.directMessages, [threadId]: merged },
+        };
+      });
     } catch (error) {
       if (requestId !== dmFetchSeqByThread[threadId]) return;
       console.warn('[GroupStore] Failed to fetch direct messages:', error);
@@ -1450,7 +1530,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const clientMessageId = deliveryIntents.resolve(
       deliveryScope,
       deliveryFingerprint,
-      Crypto.randomUUID
+      () => createOptimisticClientMessageId(() => Crypto.randomUUID())
     );
     const existing = get().directMessages[threadId] || [];
     const parent = options?.replyToMessageId
@@ -1473,6 +1553,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       threadRootId,
       replyCount: 0,
       receiptStatus: 'sent',
+      clientMessageId,
     };
 
     const withOptimistic = [...existing, optimistic];
@@ -1484,23 +1565,39 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         })
       : withOptimistic;
 
-    set(state => ({
-      directMessages: {
-        ...state.directMessages,
-        [threadId]: updatedList,
-      },
-      dmThreads: state.dmThreads.map(t =>
-        t.id === threadId
-          ? { ...t, lastMessage: text, lastMessageTimestamp: new Date().toISOString() }
-          : t
-      ),
-    }));
+    set(state => {
+      const { [threadId]: _cleared, ...restCutoffs } = state.dmHistoryClearedAtByThread;
+      return {
+        directMessages: {
+          ...state.directMessages,
+          [threadId]: updatedList,
+        },
+        dmHistoryClearedAtByThread: restCutoffs,
+        dmThreads: state.dmThreads.map(t =>
+          t.id === threadId
+            ? {
+                ...t,
+                lastMessage: text,
+                lastMessageTimestamp: new Date().toISOString(),
+                ...(t.clientPending ? { clientPending: true } : {}),
+                historyClearedAt: null,
+              }
+            : t
+        ),
+      };
+    });
 
     try {
       const sent = await api.sendDirectMessage(senderId, recipientId, text, clientMessageId, {
         replyToMessageId: options?.replyToMessageId,
       });
-      const confirmed = mapDirectMessage(sent, threadId);
+      const confirmed = {
+        ...mapDirectMessage(sent, threadId),
+        clientMessageId:
+          (sent as { clientMessageId?: string; client_message_id?: string }).clientMessageId
+          || (sent as { client_message_id?: string }).client_message_id
+          || clientMessageId,
+      };
       set(state => ({
         directMessages: {
           ...state.directMessages,
@@ -1512,8 +1609,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         },
       }));
       deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
-      // Refresh thread status in the background so send stays snappy.
+      // Refresh thread + messages so the first bubble survives empty open-fetch races.
       void get().fetchDmThreads(senderId).catch(() => undefined);
+      void get().fetchDirectMessagesForThread(senderId, recipientId, threadId).catch(() => undefined);
     } catch (error) {
       if (isUncertainDeliveryError(error)) {
         deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);
@@ -1621,6 +1719,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   deleteDmThread: async (threadId: string, userId: string) => {
+    const clearedAt = new Date().toISOString();
+    set((state) => ({
+      dmHistoryClearedAtByThread: {
+        ...state.dmHistoryClearedAtByThread,
+        [threadId]: clearedAt,
+      },
+    }));
     get().removeDmThread(threadId);
     try {
       await api.deleteDmThread(threadId, userId);
@@ -1643,7 +1748,20 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   addDirectMessage: (threadId: string, message: DirectMessage) => {
     set(state => {
-      const existing = state.directMessages[threadId] || [];
+      const historyClearedAt = resolveDmHistoryClearedAt(
+        threadId,
+        state.dmThreads,
+        state.dmHistoryClearedAtByThread,
+      );
+      if (
+        filterMessagesAfterDmHistoryCutoff([message], historyClearedAt).length === 0
+      ) {
+        return state;
+      }
+      const existing = filterMessagesAfterDmHistoryCutoff(
+        state.directMessages[threadId] || [],
+        historyClearedAt,
+      );
       if (existing.some(m => m.id === message.id)) return state;
       return {
         directMessages: { ...state.directMessages, [threadId]: [...existing, message] },

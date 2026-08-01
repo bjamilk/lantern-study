@@ -8,6 +8,7 @@ import {
   deleteMarketplaceListing,
   fetchSellerPreferences,
   fetchSellerOnboarding,
+  fetchMarketplaceOrders,
 } from '../services/supabase';
 import { MarketplaceListing, SellerStats, SellerAnalytics, SellerOnboardingStatus } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -18,6 +19,7 @@ import SellerCouponsPanel from './marketplace/SellerCouponsPanel';
 import SellerOnboardingWizard from './marketplace/SellerOnboardingWizard';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
 import SellerInsightsDrawer from './marketplace/SellerInsightsDrawer';
+import { shareShopLink } from '../utils/shareShop';
 import {
   PlusIcon,
   PencilIcon,
@@ -35,6 +37,8 @@ import {
   TicketIcon,
   GiftIcon,
   MegaphoneIcon,
+  BuildingStorefrontIcon,
+  ShareIcon,
 } from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from './ui';
 
@@ -46,6 +50,8 @@ interface MyListingsScreenProps {
 
 const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack, refreshKey = 0 }) => {
   const { currentUser } = useAuthStore();
+  const showToast = useToastStore((s) => s.showToast);
+  const userId = currentUser?.id;
   const [activeTab, setActiveTab] = useState<'active' | 'sold' | 'inactive'>('active');
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [stats, setStats] = useState<SellerStats | null>(null);
@@ -64,6 +70,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
   const [boostCredits, setBoostCredits] = useState<number | null>(null);
   const [onboardingStatus, setOnboardingStatus] = useState<SellerOnboardingStatus | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [openOrderByListingId, setOpenOrderByListingId] = useState<Record<string, string>>({});
   const { refreshBudgetTransactions } = useBudgetHandlers();
 
   useEffect(() => {
@@ -109,8 +116,29 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
     setLoading(true);
     const timeoutId = setTimeout(() => setLoading(false), 5000);
     try {
-      const listingsData = await fetchMyListings(activeTab).catch(() => []);
+      const [listingsData, sellerOrders] = await Promise.all([
+        fetchMyListings(activeTab).catch(() => []),
+        activeTab === 'active'
+          ? fetchMarketplaceOrders('seller').catch(() => [])
+          : Promise.resolve([]),
+      ]);
       setListings(listingsData || []);
+      if (activeTab === 'active') {
+        const openStatuses = new Set([
+          'pending_payment',
+          'paid',
+          'ready_for_pickup',
+          'buyer_confirmed',
+          'disputed',
+        ]);
+        const map: Record<string, string> = {};
+        for (const order of sellerOrders || []) {
+          if (order?.listing_id && openStatuses.has(order.status) && !map[order.listing_id]) {
+            map[order.listing_id] = order.id;
+          }
+        }
+        setOpenOrderByListingId(map);
+      }
     } catch {
       setListings([]);
     } finally {
@@ -188,6 +216,16 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
     onNavigate('CreateMarketplaceListing', { category });
   };
 
+  const handleShareShop = async () => {
+    if (!userId) return;
+    try {
+      const result = await shareShopLink(userId);
+      if (result === 'copied') showToast('Shop link copied', 'success');
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') showToast('Could not share shop link', 'error');
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background">
       <div className="shrink-0 bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-3 space-y-3">
@@ -215,6 +253,28 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
           </div>
 
           <div className="relative flex items-center gap-2 shrink-0">
+            {userId ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('SellerProfile', { userId })}
+                  className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
+                  aria-label="View my shop"
+                >
+                  <BuildingStorefrontIcon className="w-4 h-4" />
+                  <span className="hidden sm:inline">My shop</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShareShop()}
+                  className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
+                  aria-label="Share my shop"
+                >
+                  <ShareIcon className="w-4 h-4" />
+                  <span className="hidden md:inline">Share</span>
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={() => setShowInsights(true)}
@@ -419,11 +479,17 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                               onClick={() => onNavigate('MarketplaceListingDetail', { listingId: listing.id })}
                               className="min-w-0 text-left flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"
                             >
-                              <div className="flex items-center gap-2 mb-0.5">
+                              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                                 <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-lantern-primary-background text-lantern-primary rounded">
                                   {getCategoryName(listing.category)}
                                 </span>
-                                <span className="text-[10px] capitalize text-lantern-text-tertiary">{listing.status}</span>
+                                {listing.status === 'reserved' ? (
+                                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 rounded">
+                                    Sale in progress
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] capitalize text-lantern-text-tertiary">{listing.status}</span>
+                                )}
                               </div>
                               <h3 className="text-sm sm:text-base font-semibold text-lantern-text truncate">
                                 {listing.title}
@@ -450,6 +516,29 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                               </div>
                             </button>
 
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              {listing.status === 'reserved' && openOrderByListingId[listing.id] ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onNavigate('MarketplaceOrderDetail', {
+                                      orderId: openOrderByListingId[listing.id],
+                                    })
+                                  }
+                                  className="text-[11px] font-semibold text-lantern-primary hover:underline px-1 py-0.5"
+                                >
+                                  Open order
+                                </button>
+                              ) : listing.status === 'reserved' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onNavigate('MarketplaceOrders')}
+                                  className="text-[11px] font-semibold text-lantern-primary hover:underline px-1 py-0.5"
+                                >
+                                  View orders
+                                </button>
+                              ) : null}
+
                             <Menu
                               open={actionMenuOpen === listing.id}
                               onOpenChange={open => setActionMenuOpen(open ? listing.id : null)}
@@ -461,10 +550,24 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                 <EllipsisVerticalIcon className="w-5 h-5 text-lantern-text-secondary" />
                               </MenuTrigger>
                               <MenuContent align="end" className="w-48">
-                                <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
-                                  Edit Listing
-                                </MenuItem>
-                                {listing.status !== 'active' && (
+                                {listing.status === 'reserved' && openOrderByListingId[listing.id] ? (
+                                  <MenuItem
+                                    onSelect={() =>
+                                      onNavigate('MarketplaceOrderDetail', {
+                                        orderId: openOrderByListingId[listing.id],
+                                      })
+                                    }
+                                    icon={<ShoppingBagIcon className="w-4 h-4" />}
+                                  >
+                                    Open order
+                                  </MenuItem>
+                                ) : null}
+                                {listing.status !== 'reserved' ? (
+                                  <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
+                                    Edit Listing
+                                  </MenuItem>
+                                ) : null}
+                                {listing.status !== 'active' && listing.status !== 'reserved' && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'active')}
                                     icon={<CheckCircleIcon className="w-4 h-4" />}
@@ -473,7 +576,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     Mark Active
                                   </MenuItem>
                                 )}
-                                {listing.status !== 'sold' && (
+                                {listing.status !== 'sold' && listing.status !== 'reserved' && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'sold')}
                                     icon={<ShoppingBagIcon className="w-4 h-4" />}
@@ -482,7 +585,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     Mark as Sold
                                   </MenuItem>
                                 )}
-                                {listing.status !== 'inactive' && (
+                                {listing.status !== 'inactive' && listing.status !== 'reserved' && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'inactive')}
                                     icon={<XCircleIcon className="w-4 h-4" />}
@@ -491,16 +594,21 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     Deactivate
                                   </MenuItem>
                                 )}
-                                <MenuSeparator />
-                                <MenuItem
-                                  onSelect={() => handleDelete(listing.id)}
-                                  icon={<TrashIcon className="w-4 h-4" />}
-                                  className="text-red-600"
-                                >
-                                  Delete
-                                </MenuItem>
+                                {listing.status !== 'reserved' ? (
+                                  <>
+                                    <MenuSeparator />
+                                    <MenuItem
+                                      onSelect={() => handleDelete(listing.id)}
+                                      icon={<TrashIcon className="w-4 h-4" />}
+                                      className="text-red-600"
+                                    >
+                                      Delete
+                                    </MenuItem>
+                                  </>
+                                ) : null}
                               </MenuContent>
                             </Menu>
+                            </div>
                           </div>
                         </div>
                       </article>

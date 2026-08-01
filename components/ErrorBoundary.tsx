@@ -18,7 +18,9 @@ function isChunkLoadError(error: Error | null): boolean {
   return (
     msg.includes('Failed to fetch dynamically imported module') ||
     msg.includes('Importing a module script failed') ||
-    msg.includes('error loading dynamically imported module')
+    msg.includes('error loading dynamically imported module') ||
+    msg.includes('Expected a JavaScript-or-Wasm module script') ||
+    msg.includes('Failed to load module script')
   );
 }
 

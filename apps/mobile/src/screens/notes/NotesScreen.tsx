@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import {
@@ -137,10 +138,14 @@ function NoteCard({
   note,
   onPress,
   onLongPress,
+  selectMode,
+  selected,
 }: {
   note: StudyNote;
   onPress: () => void;
   onLongPress?: () => void;
+  selectMode?: boolean;
+  selected?: boolean;
 }) {
   const isShared = note.accessRole && note.accessRole !== 'owner';
   return (
@@ -149,10 +154,19 @@ function NoteCard({
       onLongPress={onLongPress}
       delayLongPress={350}
       className="mb-3 active:opacity-90"
+      accessibilityState={selectMode ? { selected: Boolean(selected) } : undefined}
     >
-      <Card className="border-lantern-border">
+      <Card className={selected ? 'border-lantern-primary' : 'border-lantern-border'}>
         <View className="flex-row items-start justify-between gap-2 mb-2">
           <View className="flex-1 flex-row items-start gap-1.5 min-w-0">
+            {selectMode ? (
+              <Ionicons
+                name={selected ? 'checkbox' : 'square-outline'}
+                size={20}
+                color={selected ? '#6366f1' : '#94a3b8'}
+                style={{ marginTop: 1 }}
+              />
+            ) : null}
             {note.isPinned ? (
               <Ionicons name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
             ) : null}
@@ -205,6 +219,8 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     updateFolder,
     removeFolder,
     saveNote,
+    moveNotesToFolder,
+    removeNotes,
     setSelectedFolderId,
     setError,
   } = useNotesStore();
@@ -220,6 +236,12 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [renameFolder, setRenameFolder] = useState<NoteFolder | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renamingFolder, setRenamingFolder] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [movePickerOpen, setMovePickerOpen] = useState(false);
+  const [movingNotes, setMovingNotes] = useState(false);
+  const [deletingNotes, setDeletingNotes] = useState(false);
+  const selectionBusy = movingNotes || deletingNotes;
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
 
   const loadData = useCallback(async () => {
@@ -233,6 +255,13 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   useEffect(() => {
     loadNotes(selectedFolderId || undefined);
   }, [selectedFolderId, loadNotes]);
+
+  // Recover collaborator/share updates missed while another screen was focused.
+  useFocusEffect(
+    useCallback(() => {
+      void loadData();
+    }, [loadData])
+  );
 
   const filteredNotes = useMemo(() => {
     let list = notes;
@@ -263,13 +292,104 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
 
+  const canDeleteNote = (note: StudyNote) =>
+    !note.accessRole || note.accessRole === 'owner';
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedNoteIds([]);
+    setMovePickerOpen(false);
+  };
+
+  const toggleNoteSelected = (noteId: string) => {
+    setSelectedNoteIds((prev) =>
+      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId],
+    );
+  };
+
+  const openMovePickerForNotes = (noteIds: string[]) => {
+    if (noteIds.length === 0) return;
+    setSelectedNoteIds(noteIds);
+    setSelectMode(true);
+    setMovePickerOpen(true);
+  };
+
+  const handleMoveToFolder = async (folderId: string | null) => {
+    if (selectedNoteIds.length === 0) return;
+    setMovingNotes(true);
+    try {
+      await moveNotesToFolder(selectedNoteIds, folderId);
+      exitSelectMode();
+    } catch (e: unknown) {
+      Alert.alert('Could not move notes', e instanceof Error ? e.message : 'Try again.');
+    } finally {
+      setMovingNotes(false);
+    }
+  };
+
+  const handleDeleteNotesByIds = async (noteIds: string[]) => {
+    if (noteIds.length === 0 || deletingNotes) return;
+    const ownedIds = noteIds.filter((id) => {
+      const note = notes.find((n) => n.id === id);
+      return note ? canDeleteNote(note) : false;
+    });
+    if (ownedIds.length === 0) {
+      Alert.alert(
+        'Cannot delete',
+        'Only notes you own can be deleted. Shared notes stay with their owner.',
+      );
+      return;
+    }
+    const confirmed = await confirmSheet({
+      title: ownedIds.length === 1 ? 'Delete note' : 'Delete notes',
+      message:
+        ownedIds.length === 1
+          ? 'Delete this note? This cannot be undone.'
+          : `Delete ${ownedIds.length} notes? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!confirmed) return;
+    setDeletingNotes(true);
+    try {
+      await removeNotes(ownedIds);
+      exitSelectMode();
+    } catch (e: unknown) {
+      Alert.alert('Could not delete notes', e instanceof Error ? e.message : 'Try again.');
+    } finally {
+      setDeletingNotes(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    await handleDeleteNotesByIds(selectedNoteIds);
+  };
+
   const handleNoteOptions = (note: StudyNote) => {
     if (!canManageNote(note)) return;
+    if (selectMode) {
+      toggleNoteSelected(note.id);
+      return;
+    }
     const buttons: {
       text: string;
       style?: 'cancel' | 'destructive' | 'default';
       onPress?: () => void;
-    }[] = [];
+    }[] = [
+      {
+        text: 'Move to folder',
+        onPress: () => {
+          setTimeout(() => openMovePickerForNotes([note.id]), 50);
+        },
+      },
+      {
+        text: 'Select',
+        onPress: () => {
+          setSelectMode(true);
+          setSelectedNoteIds([note.id]);
+        },
+      },
+    ];
     if (!note.isArchived) {
       buttons.push({
         text: note.isPinned ? 'Unpin' : 'Pin',
@@ -288,8 +408,19 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         });
       },
     });
+    if (canDeleteNote(note)) {
+      buttons.push({
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          setTimeout(() => {
+            void handleDeleteNotesByIds([note.id]);
+          }, 50);
+        },
+      });
+    }
     buttons.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert(note.title, 'Pin keeps a note at the top. Archive hides it from Active.', buttons);
+    Alert.alert(note.title, undefined, buttons);
   };
 
   const onRefresh = async () => {
@@ -597,8 +728,82 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         </Pressable>
       </Modal>
 
+      <Modal
+        visible={movePickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !movingNotes && setMovePickerOpen(false)}
+      >
+        <Pressable
+          className="flex-1 bg-black/40 justify-center px-6"
+          onPress={() => !movingNotes && setMovePickerOpen(false)}
+        >
+          <Pressable onPress={(e) => e.stopPropagation?.()}>
+            <Card className="border-0 shadow-lg max-h-[70%]">
+              <Text className="text-lg font-bold text-lantern-text mb-1">Move to folder</Text>
+              <Text className="text-sm text-lantern-text-secondary mb-3">
+                {selectedNoteIds.length === 1
+                  ? 'Choose a folder for this note.'
+                  : `Choose a folder for ${selectedNoteIds.length} notes.`}
+              </Text>
+              <ScrollView className="max-h-72">
+                <Pressable
+                  disabled={movingNotes}
+                  onPress={() => void handleMoveToFolder(null)}
+                  className="flex-row items-center gap-2 py-3 border-b border-lantern-border"
+                  accessibilityRole="button"
+                  accessibilityLabel="Move to All notes"
+                >
+                  <Ionicons name="folder-outline" size={18} color="#64748b" />
+                  <Text className="flex-1 text-sm font-medium text-lantern-text">All notes</Text>
+                  <Text className="text-xs text-lantern-text-tertiary">Unfiled</Text>
+                </Pressable>
+                {folders.map((folder) => (
+                  <Pressable
+                    key={folder.id}
+                    disabled={movingNotes}
+                    onPress={() => void handleMoveToFolder(folder.id)}
+                    className="flex-row items-center gap-2 py-3 border-b border-lantern-border"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Move to ${folder.name}`}
+                  >
+                    <View
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: folder.color || '#6366f1' }}
+                    />
+                    <Text className="flex-1 text-sm font-medium text-lantern-text" numberOfLines={1}>
+                      {folder.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              {folders.length === 0 ? (
+                <Text className="text-xs text-lantern-text-secondary mt-3">
+                  No folders yet. Create one from the Folder button, then move notes here.
+                </Text>
+              ) : null}
+              <Button
+                variant="secondary"
+                className="mt-4"
+                disabled={movingNotes}
+                onPress={() => setMovePickerOpen(false)}
+              >
+                Cancel
+              </Button>
+            </Card>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {embedded && (
         <View className="flex-row gap-1.5 justify-end px-4 pt-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+          >
+            {selectMode ? 'Cancel' : 'Select'}
+          </Button>
           <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
             Folder
           </Button>
@@ -614,6 +819,13 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         className="pb-2"
         right={
           <View className="flex-row gap-1.5">
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            >
+              {selectMode ? 'Cancel' : 'Select'}
+            </Button>
             <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
               Folder
             </Button>
@@ -624,6 +836,36 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         }
       />
       )}
+
+      {selectMode ? (
+        <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2">
+          <Text className="flex-1 text-sm text-lantern-text">
+            {selectedNoteIds.length === 0
+              ? 'Select notes'
+              : `${selectedNoteIds.length} selected`}
+          </Text>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={selectedNoteIds.length === 0 || selectionBusy}
+            loading={movingNotes}
+            onPress={() => setMovePickerOpen(true)}
+          >
+            Move
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={selectedNoteIds.length === 0 || selectionBusy}
+            loading={deletingNotes}
+            onPress={() => {
+              void handleDeleteSelected();
+            }}
+          >
+            Delete
+          </Button>
+        </View>
+      ) : null}
 
       <View className="px-4 mb-1.5 flex-row items-center gap-1.5">
         <Pressable
@@ -866,13 +1108,25 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
               ) : null}
             </Card>
           }
-          renderItem={({ item }) => (
-            <NoteCard
-              note={item}
-              onPress={() => navigation.navigate('NoteEditor', { noteId: item.id })}
-              onLongPress={canManageNote(item) ? () => handleNoteOptions(item) : undefined}
-            />
-          )}
+          renderItem={({ item }) => {
+            const manageable = canManageNote(item);
+            const selected = selectedNoteIds.includes(item.id);
+            return (
+              <NoteCard
+                note={item}
+                selectMode={selectMode && manageable}
+                selected={selected}
+                onPress={() => {
+                  if (selectMode) {
+                    if (manageable) toggleNoteSelected(item.id);
+                    return;
+                  }
+                  navigation.navigate('NoteEditor', { noteId: item.id });
+                }}
+                onLongPress={manageable ? () => handleNoteOptions(item) : undefined}
+              />
+            );
+          }}
         />
       )}
     </Wrapper>

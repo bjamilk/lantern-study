@@ -25,32 +25,56 @@ import type {
   Budget,
 } from '../types';
 import { normalizeStorageUrl } from './storageUrl';
+import { normalizeSrsData } from './srs';
 
 // ============================================
 // USER MAPPERS
 // ============================================
 
+/** Normalize profile test presets from camelCase or snake_case API/DB shapes. */
+export const normalizeTestPresets = (data: unknown): NonNullable<User['testPresets']> => {
+  if (Array.isArray(data)) {
+    return data as NonNullable<User['testPresets']>;
+  }
+  if (!data || typeof data !== 'object') return [];
+  const row = data as Record<string, unknown>;
+  const presets = row.testPresets ?? row.test_presets;
+  return Array.isArray(presets) ? (presets as NonNullable<User['testPresets']>) : [];
+};
+
 export const mapUserFromApi = (data: any): User => {
   if (!data) return data;
-  
+
+  // Prefer camelCase from API User shape; fall back to snake_case DB aliases.
+  const avatarUrl = data.avatarUrl || data.avatar_url || undefined;
+  const phoneNumber = data.phoneNumber || data.phone_number || data.phone || undefined;
+  const firstName = data.firstName || data.first_name || undefined;
+  const lastName = data.lastName || data.last_name || undefined;
+
   return {
     id: data.id,
     name: data.name || data.full_name || '',
-    avatarUrl: data.avatar_url || data.avatarUrl,
+    avatarUrl,
     email: data.email,
     password: data.password,
-    phoneNumber: data.phone_number || data.phone,
+    phoneNumber,
     points: data.points || 0,
     badges: (data.badges || []).map(mapBadgeFromApi),
     stats: mapUserStatsFromApi(data.stats || {}),
     settings: data.settings,
-    testPresets: data.test_presets || data.testPresets,
+    testPresets: normalizeTestPresets(data),
     decks: data.decks,
     flashcards: data.flashcards,
     username: data.username || undefined,
-    firstName: data.first_name || data.firstName || undefined,
-    lastName: data.last_name || data.lastName || undefined,
-  };
+    firstName,
+    lastName,
+    // Preserve snake_case aliases — login/restore paths still read these.
+    // Matches API mapProfileRowToUser dual-shape contract.
+    avatar_url: avatarUrl,
+    phone: phoneNumber,
+    first_name: firstName,
+    last_name: lastName,
+  } as User;
 };
 
 export const mapBadgeFromApi = (data: any): Badge => {
@@ -226,6 +250,7 @@ export const mapMessageFromApi = (data: any): Message => {
     receiptStatus: data.receiptStatus || data.receipt_status || undefined,
     seenByCount: typeof data.seenByCount === 'number' ? data.seenByCount : data.seen_by_count,
     seenByTotal: typeof data.seenByTotal === 'number' ? data.seenByTotal : data.seen_by_total,
+    clientMessageId: data.client_message_id || data.clientMessageId || undefined,
   };
 };
 
@@ -269,19 +294,8 @@ export const mapDiagramLabelFromApi = (data: any): DiagramLabel => {
 // ============================================
 
 export const mapSrsDataFromApi = (data: any): SrsData | undefined => {
-  if (!data) return undefined;
-  
-  return {
-    interval: data.interval || 0,
-    easeFactor: data.ease_factor || data.easeFactor || 2.5,
-    repetitions: data.repetitions || 0,
-    nextReviewDate: data.next_review_date || data.nextReviewDate || data.next_review,
-    failedAttempts: data.failed_attempts || data.failedAttempts || 0,
-    isLeech: data.is_leech || data.isLeech || false,
-    scheduler: data.scheduler,
-    difficulty: data.difficulty,
-    stability: data.stability,
-  };
+  // Prefer shared normalizer so snake_case JSONB and camelCase FSRS stay consistent.
+  return normalizeSrsData(data);
 };
 
 export const mapFlashcardFromApi = (data: any): Flashcard => {

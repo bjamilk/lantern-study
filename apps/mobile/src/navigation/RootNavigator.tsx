@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -40,6 +40,8 @@ import { useFlashcardStore } from '../stores/flashcardStore';
 import { useGroupStore } from '../stores/groupStore';
 
 import { useSettingsStore } from '../stores/settingsStore';
+
+import { useTestStore } from '../stores/testStore';
 
 import { useCompanionStore } from '../stores/companionStore';
 import { useNotificationStore } from '../stores/notificationStore';
@@ -126,6 +128,8 @@ import {
   FavoritesScreen,
 
   OrdersScreen,
+
+  CartScreen,
 
   OrderDetailScreen,
 
@@ -352,6 +356,8 @@ function MarketNavigator() {
       <MarketStack.Screen name="Favorites" component={FavoritesScreen} />
 
       <MarketStack.Screen name="Orders" component={OrdersScreen} />
+
+      <MarketStack.Screen name="Cart" component={CartScreen} />
 
       <MarketStack.Screen name="OrderDetail" component={OrderDetailScreen} />
 
@@ -770,7 +776,10 @@ function RootNavigatorInner() {
   const loadUnreadCount = useNotificationStore(s => s.loadUnreadCount);
 
   const loadSettings = useSettingsStore(s => s.loadSettings);
+  const syncSettings = useSettingsStore(s => s.syncSettings);
   const pushEnabled = useSettingsStore(s => s.settings.notifications.pushEnabled);
+  const loadTestPresets = useTestStore(s => s.loadTestPresets);
+  const clearTestPresets = useTestStore(s => s.clearTestPresets);
 
   const [onboardingChecked, setOnboardingChecked] = useState(false);
 
@@ -825,6 +834,8 @@ function RootNavigatorInner() {
 
     if (!user?.id) {
 
+      clearTestPresets();
+
       setOnboardingChecked(true);
 
       setShowOnboarding(false);
@@ -842,7 +853,14 @@ function RootNavigatorInner() {
       const headers = await getAuthHeaders();
       if (cancelled || !headers.Authorization) return;
 
-      void loadSettings(userId);
+      void loadSettings(userId).then(() => {
+        const { hasUnsyncedChanges } = useSettingsStore.getState();
+        if (!cancelled && hasUnsyncedChanges) {
+          void syncSettings(userId, { force: true });
+        }
+      });
+      // Hydrate account-scoped test presets on bootstrap (not only when opening TestConfig).
+      void loadTestPresets(userId);
       void fetchDecks(userId);
       void fetchGroups(userId);
       void fetchDmThreads(userId);
@@ -858,6 +876,14 @@ function RootNavigatorInner() {
 
     void bootstrapAuthenticatedData();
 
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active' || cancelled) return;
+      const { hasUnsyncedChanges } = useSettingsStore.getState();
+      if (hasUnsyncedChanges) {
+        void syncSettings(userId, { force: true });
+      }
+    });
+
     AsyncStorage.getItem('lantern_onboarding_complete').then(v => {
       if (cancelled) return;
       const complete = v === 'true';
@@ -868,9 +894,10 @@ function RootNavigatorInner() {
 
     return () => {
       cancelled = true;
+      appStateSub.remove();
     };
 
-  }, [user?.id, pushEnabled, loadSettings, fetchDecks, fetchGroups, fetchDmThreads, loadUnreadCount]);
+  }, [user?.id, pushEnabled, loadSettings, syncSettings, loadTestPresets, clearTestPresets, fetchDecks, fetchGroups, fetchDmThreads, loadUnreadCount]);
 
 
 

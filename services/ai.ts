@@ -3,10 +3,26 @@
  * Uses the same auth headers and base URL as the main supabase service.
  */
 import { getApiBaseUrl, DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared';
-import { parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
+import {
+  parseGlobalAIUsageFromHeaderReader,
+  parseGlobalAIUsageFromHeaders,
+  xhrHeaderReader,
+} from '@lantern/shared/api';
+import type {
+  CompanionAction,
+  CompanionConversation,
+  CompanionUserContext,
+} from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { getAuthHeaders, ensureAuthTokenReady } from './supabase';
 import { pollApiJob } from './jobPoll';
+
+export type {
+  CompanionUserContext,
+  CompanionAction,
+  CompanionConversation,
+  CompanionMessage,
+} from '../types';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -26,6 +42,10 @@ let _latestUsage: AIUsageInfo = {
   resetsAt: '',
 };
 const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
+const USAGE_FETCH_TTL_MS = 60_000;
+let _usageLastFetchAt = 0;
+let _usageInFlight: Promise<AIUsageInfo> | null = null;
+let _usageBackoffUntil = 0;
 
 export function getLatestAIUsage(): AIUsageInfo {
   return _latestUsage;
@@ -38,13 +58,31 @@ export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () =
 
 function updateUsage(usage: AIUsageInfo) {
   _latestUsage = usage;
+  // Treat header-driven updates as fresh so a TTL'd GET /usage cannot stale-overwrite them.
+  _usageLastFetchAt = Date.now();
   _usageListeners.forEach(fn => fn(usage));
 }
 
-const USAGE_FETCH_TTL_MS = 60_000;
-let _usageLastFetchAt = 0;
-let _usageInFlight: Promise<AIUsageInfo> | null = null;
-let _usageBackoffUntil = 0;
+/** Apply global AI quota headers from a fetch Response (notes + AI clients). */
+export function applyAIUsageFromResponse(response: Response): void {
+  parseGlobalAIUsageFromHeaders(response, updateUsage);
+}
+
+/** Apply global AI quota headers from an XHR response (notes AI long-poll path). */
+export function applyAIUsageFromXhr(xhr: XMLHttpRequest): void {
+  parseGlobalAIUsageFromHeaderReader(xhrHeaderReader(xhr), updateUsage);
+}
+
+/** Bypass the client TTL and re-fetch global usage from GET /ai/usage. */
+export async function forceRefreshAIUsage(): Promise<AIUsageInfo> {
+  _usageLastFetchAt = 0;
+  _usageInFlight = null;
+  try {
+    return await fetchAIUsageFromApi();
+  } catch {
+    return _latestUsage;
+  }
+}
 
 async function fetchAIUsageFromApi(): Promise<AIUsageInfo> {
   const ready = await ensureAuthTokenReady();
@@ -108,7 +146,8 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
   };
 
   if (response.status === 202 && typeof json.jobId === 'string') {
-    if (hadFeatureQuota) void fetchAIUsage();
+    // Feature quotas use a separate counter; refresh global so the badge stays accurate.
+    if (hadFeatureQuota) void forceRefreshAIUsage();
     return pollApiJob<T>(json.jobId);
   }
 
@@ -136,7 +175,7 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
     throw new Error(message);
   }
 
-  if (hadFeatureQuota) void fetchAIUsage();
+  if (hadFeatureQuota) void forceRefreshAIUsage();
   return json as T;
 }
 
@@ -216,23 +255,6 @@ export async function aiEnhanceFlashcard(
 
 // ─── AI Companion ────────────────────────────────────────────
 
-export interface CompanionUserContext {
-  userName?: string;
-  groups?: string[];
-  weakTopics?: string[];
-  dueCardsCount?: number;
-  recentTestSummary?: string;
-  budgetSummary?: string;
-  currentScreen?: string;
-  activeSessionSummary?: string;
-}
-
-export interface CompanionAction {
-  type: 'navigate_to_flashcards' | 'open_test_config' | 'open_create_flashcard' | 'navigate_to_dashboard' | 'navigate_to_chat';
-  label: string;
-  payload?: Record<string, string>;
-}
-
 async function companionRequest<T>(
   endpoint: string,
   method: 'GET' | 'POST' | 'DELETE',
@@ -254,17 +276,7 @@ async function companionRequest<T>(
   const response = await fetch(url, fetchOptions);
 
   if (options?.trackUsage !== false) {
-    const featureHeader = response.headers.get('X-AI-Feature');
-    if (!featureHeader) {
-      const usedHeader = response.headers.get('X-AI-Usage-Used');
-      const limitHeader = response.headers.get('X-AI-Usage-Limit');
-      const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-      if (usedHeader && limitHeader) {
-        const used = parseInt(usedHeader, 10);
-        const limit = parseInt(limitHeader, 10);
-        updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
-      }
-    }
+    parseGlobalAIUsageFromHeaders(response, updateUsage);
   }
 
   const json = await response.json().catch(() => ({}));
@@ -280,14 +292,52 @@ async function companionRequest<T>(
   return json as T;
 }
 
+function companionHistoryQuery(opts?: {
+  conversationId?: string | null;
+  noteContextId?: string | null;
+}): string {
+  const params = new URLSearchParams();
+  if (opts?.conversationId?.trim()) {
+    params.set('conversationId', opts.conversationId.trim());
+  } else if (opts?.noteContextId?.trim()) {
+    params.set('noteContextId', opts.noteContextId.trim());
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
 export async function companionSendMessage(
   message: string,
   context?: CompanionUserContext
-): Promise<{ reply: string; actions: CompanionAction[]; provider: string }> {
+): Promise<{
+  reply: string;
+  actions: CompanionAction[];
+  provider: string;
+  conversationId?: string;
+}> {
   return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
 }
 
-export async function fetchCompanionHistory(): Promise<{
+export async function fetchCompanionConversations(): Promise<{
+  conversations: CompanionConversation[];
+}> {
+  return companionRequest('/conversations', 'GET', undefined, { trackUsage: false });
+}
+
+export async function createCompanionConversation(noteContextId?: string | null): Promise<{
+  conversation: CompanionConversation;
+}> {
+  return companionRequest(
+    '/conversations',
+    'POST',
+    noteContextId?.trim() ? { noteContextId: noteContextId.trim() } : {},
+    { trackUsage: false }
+  );
+}
+
+export async function fetchCompanionHistory(
+  opts?: { conversationId?: string | null; noteContextId?: string | null } | string | null
+): Promise<{
   messages: Array<{
     id: string;
     role: 'user' | 'assistant';
@@ -296,18 +346,45 @@ export async function fetchCompanionHistory(): Promise<{
     feedback?: 'up' | 'down' | null;
     created_at: string;
   }>;
+  conversationId: string | null;
+  noteContextId: string | null;
 }> {
-  return companionRequest('/history', 'GET', undefined, { trackUsage: false });
+  const normalized =
+    typeof opts === 'string' || opts === null || opts === undefined
+      ? { noteContextId: opts ?? null }
+      : opts;
+  return companionRequest(
+    `/history${companionHistoryQuery(normalized)}`,
+    'GET',
+    undefined,
+    { trackUsage: false }
+  );
 }
 
-export async function clearCompanionHistory(): Promise<{ success: boolean }> {
-  return companionRequest('/history', 'DELETE', undefined, { trackUsage: false });
+export async function clearCompanionHistory(
+  opts?: { conversationId?: string | null; noteContextId?: string | null } | string | null
+): Promise<{
+  success: boolean;
+  conversationId: string | null;
+  noteContextId: string | null;
+}> {
+  const normalized =
+    typeof opts === 'string' || opts === null || opts === undefined
+      ? { noteContextId: opts ?? null }
+      : opts;
+  return companionRequest(
+    `/history${companionHistoryQuery(normalized)}`,
+    'DELETE',
+    undefined,
+    { trackUsage: false }
+  );
 }
 
 export type CompanionStreamDone = {
   actions: CompanionAction[];
   messageId?: string;
   userMessageId?: string;
+  conversationId?: string;
 };
 
 /**
@@ -338,17 +415,8 @@ export async function companionSendMessageStream(
     return;
   }
 
-  // Companion messages use feature-scoped quota — do not update the global badge.
-  if (!response.headers.get('X-AI-Feature')) {
-    const usedHeader = response.headers.get('X-AI-Usage-Used');
-    const limitHeader = response.headers.get('X-AI-Usage-Limit');
-    const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-    if (usedHeader && limitHeader) {
-      const used = parseInt(usedHeader, 10);
-      const limit = parseInt(limitHeader, 10);
-      updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
-    }
-  }
+  // Companion uses feature-scoped quota; skip when X-AI-Feature is visible (CORS-exposed).
+  parseGlobalAIUsageFromHeaders(response, updateUsage);
 
   if (!response.ok || !response.body) {
     onError(new Error(`Stream request failed (${response.status})`));
@@ -377,6 +445,8 @@ export async function companionSendMessageStream(
               actions: (data.actions as CompanionAction[]) || [],
               messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
               userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
+              conversationId:
+                typeof data.conversationId === 'string' ? data.conversationId : undefined,
             });
           }
         } catch { /* malformed chunk — skip */ }
@@ -387,13 +457,22 @@ export async function companionSendMessageStream(
   }
 }
 
+const PERSISTED_COMPANION_MESSAGE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isPersistedCompanionMessageId(messageId: string): boolean {
+  return PERSISTED_COMPANION_MESSAGE_ID.test(messageId);
+}
+
 export async function submitCompanionFeedback(
   messageId: string,
   rating: 'up' | 'down' | null
 ): Promise<void> {
   const userId = useAuthStore.getState().currentUser?.id;
-  if (!userId) return;
-  if (messageId.startsWith('tmp-')) {
+  if (!userId) {
+    throw new Error('Not authenticated');
+  }
+  if (!isPersistedCompanionMessageId(messageId)) {
     throw new Error('Message is still saving; try feedback again in a moment');
   }
   const headers = await getAuthHeaders();

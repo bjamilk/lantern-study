@@ -9,6 +9,7 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
+import { getMarketplaceCartService } from '../services/marketplaceCart';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
@@ -357,6 +358,13 @@ router.post(
           cacheService.deletePattern('marketplace:custom_categories');
         }
 
+        try {
+          const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+          await getMarketplaceSellerToolsService(supabaseService).ensureSellerShop(userId);
+        } catch (e) {
+          logger.warn('Failed to ensure seller shop on listing create', e);
+        }
+
         await cacheService.deletePattern('marketplace:listings:*');
         return { listing: created as Record<string, unknown> };
       });
@@ -582,9 +590,18 @@ router.post(
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
+    const quantityRaw = req.body?.quantity;
+    const quantity =
+      quantityRaw == null || quantityRaw === ''
+        ? 1
+        : Math.max(1, Math.floor(Number(quantityRaw)));
+    if (!Number.isFinite(quantity) || quantity < 1) {
+      return res.status(400).json({ success: false, error: 'Invalid quantity' });
+    }
+
     const idempotencyKey =
       normalizeIdempotencyKey(req.headers['idempotency-key']) ||
-      `${buyerId}:buy_now:${id}:${Math.floor(Date.now() / 300_000)}`;
+      `${buyerId}:buy_now:${id}:q${quantity}:${Math.floor(Date.now() / 300_000)}`;
 
     const result = await withIdempotency(
       supabaseService.getClient(),
@@ -592,12 +609,134 @@ router.post(
       'marketplace_buy_now',
       idempotencyKey,
       async () =>
-        supabaseService.buyMarketplaceListingNow(id, buyerId, req.body?.couponCode)
+        supabaseService.buyMarketplaceListingNow(
+          id,
+          buyerId,
+          req.body?.couponCode,
+          quantity
+        )
     );
 
     await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
     await invalidateSellerAnalyticsCache(String(result.order?.seller_id || ''));
+
+    res.json({ success: true, data: result });
+  })
+);
+
+// GET /api/v1/marketplace/cart - Buyer cart lines
+router.get(
+  '/cart',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const items = await getMarketplaceCartService(supabaseService).listCart(buyerId);
+    res.json({ success: true, data: items });
+  })
+);
+
+// POST /api/v1/marketplace/cart - Add / merge cart line
+router.post(
+  '/cart',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const listingId = typeof req.body?.listingId === 'string' ? req.body.listingId.trim() : '';
+    if (!listingId) {
+      return res.status(400).json({ success: false, error: 'listingId is required' });
+    }
+    const item = await getMarketplaceCartService(supabaseService).addToCart(
+      buyerId,
+      listingId,
+      req.body?.quantity
+    );
+    res.json({ success: true, data: item });
+  })
+);
+
+// PATCH /api/v1/marketplace/cart/:listingId - Update line quantity
+router.patch(
+  '/cart/:listingId',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const listingId = req.params.listingId;
+    const item = await getMarketplaceCartService(supabaseService).updateCartItem(
+      buyerId,
+      listingId,
+      req.body?.quantity
+    );
+    res.json({ success: true, data: item });
+  })
+);
+
+// DELETE /api/v1/marketplace/cart/:listingId - Remove one line
+router.delete(
+  '/cart/:listingId',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    await getMarketplaceCartService(supabaseService).removeCartItem(buyerId, req.params.listingId);
+    res.json({ success: true, data: { removed: true } });
+  })
+);
+
+// DELETE /api/v1/marketplace/cart - Clear cart
+router.delete(
+  '/cart',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    await getMarketplaceCartService(supabaseService).clearCart(buyerId);
+    res.json({ success: true, data: { cleared: true } });
+  })
+);
+
+// POST /api/v1/marketplace/cart/checkout - One order per cart line
+router.post(
+  '/cart/checkout',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const idempotencyKey =
+      normalizeIdempotencyKey(req.headers['idempotency-key']) ||
+      `${buyerId}:cart_checkout:${Math.floor(Date.now() / 300_000)}`;
+
+    const result = await withIdempotency(
+      supabaseService.getClient(),
+      buyerId,
+      'marketplace_cart_checkout',
+      idempotencyKey,
+      async () => getMarketplaceCartService(supabaseService).checkout(buyerId)
+    );
+
+    for (const order of result.orders || []) {
+      if (order?.listing_id) {
+        await invalidateListingCaches(cacheService, String(order.listing_id));
+        await invalidateSellerAnalyticsCache(String(order.seller_id || ''));
+      }
+    }
+    await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({ success: true, data: result });
   })
@@ -1080,6 +1219,7 @@ router.post(
           amount,
           message: message || null,
           status: 'pending',
+          proposed_by: 'buyer',
           expires_at: expiresAt,
         })
         .select('*')
@@ -1174,12 +1314,34 @@ router.put(
       return res.status(404).json({ success: false, error: 'Offer not found' });
     }
 
-    // Authorization checks
-    if (action === 'withdraw' && offer.buyer_id !== userId) {
-      return res.status(403).json({ success: false, error: 'Only the buyer can withdraw an offer' });
+    const proposedBy: 'buyer' | 'seller' =
+      offer.proposed_by === 'seller' || offer.proposed_by === 'buyer'
+        ? offer.proposed_by
+        : offer.parent_offer_id
+          ? 'seller'
+          : 'buyer';
+    const responderId = proposedBy === 'seller' ? offer.buyer_id : offer.seller_id;
+    const actorIsBuyer = offer.buyer_id === userId;
+    const actorRole: 'buyer' | 'seller' = actorIsBuyer ? 'buyer' : 'seller';
+
+    // Authorization: only the non-proposing party may accept/decline/counter.
+    // Buyer may withdraw only their own pending proposal.
+    if (action === 'withdraw') {
+      if (!actorIsBuyer) {
+        return res.status(403).json({ success: false, error: 'Only the buyer can withdraw an offer' });
+      }
+      if (proposedBy !== 'buyer') {
+        return res.status(403).json({
+          success: false,
+          error: 'Withdraw your own offer, or accept/decline/counter the seller\'s counter-offer',
+        });
+      }
     }
-    if (['accept', 'decline', 'counter'].includes(action) && offer.seller_id !== userId) {
-      return res.status(403).json({ success: false, error: 'Only the seller can accept, decline, or counter an offer' });
+    if (['accept', 'decline', 'counter'].includes(action) && userId !== responderId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the other party can accept, decline, or counter this offer',
+      });
     }
     if (offer.status !== 'pending') {
       return res.status(400).json({ success: false, error: `Cannot ${action} an offer with status "${offer.status}"` });
@@ -1192,12 +1354,12 @@ router.put(
         return res.status(400).json({ success: false, error: 'counterAmount is required for counter offers' });
       }
 
-      // REL-04: atomic parent→countered + child insert (single RPC transaction).
+      // Atomic parent→countered + child insert (single RPC transaction).
       const { data: rpcRows, error: counterRpcErr } = await supabaseService.getClient().rpc(
         'marketplace_counter_offer',
         {
           p_offer_id: id,
-          p_seller_id: userId,
+          p_actor_id: userId,
           p_counter_amount: counterAmount,
         }
       );
@@ -1208,6 +1370,12 @@ router.put(
           return res.status(409).json({
             success: false,
             error: 'Cannot counter an offer that is no longer pending',
+          });
+        }
+        if (/only the other party can counter/i.test(msg)) {
+          return res.status(403).json({
+            success: false,
+            error: 'Only the other party can counter this offer',
           });
         }
         throw counterRpcErr;
@@ -1228,11 +1396,12 @@ router.put(
       if (counterFetchErr || !counterOffer) throw counterFetchErr || new Error('Counter offer not found');
       updatedOffer = counterOffer;
 
-      // Notify buyer of counter
+      const notifyUserId = actorIsBuyer ? offer.seller_id : offer.buyer_id;
+      const counterLabel = actorRole === 'buyer' ? 'Buyer' : 'Seller';
       try {
-        await supabaseService.createNotification(offer.buyer_id, {
+        await supabaseService.createNotification(notifyUserId, {
           type: 'marketplace_order_update',
-          message: `Seller countered with ₦${Number(counterAmount).toLocaleString()} on "${offer.listing?.title || 'listing'}"`,
+          message: `${counterLabel} countered with ₦${Number(counterAmount).toLocaleString()} on "${offer.listing?.title || 'listing'}"`,
           link: `marketplace:offer:${counterOffer.id}`,
           data: { offerId: counterOffer.id },
         });
@@ -1298,7 +1467,7 @@ router.put(
       }
       updatedOffer = data;
 
-      const notifyUserId = action === 'withdraw' ? offer.seller_id : offer.buyer_id;
+      const notifyUserId = actorIsBuyer ? offer.seller_id : offer.buyer_id;
       const actionText = action === 'decline' ? 'declined' : 'withdrawn';
       try {
         await supabaseService.createNotification(notifyUserId, {
@@ -1707,9 +1876,11 @@ router.get(
 
     const listings = allListings || [];
     const activeListings = listings.filter((l) => l.status === 'active');
+    const reservedListings = listings.filter((l) => l.status === 'reserved');
     const soldCount = listings.filter((l) => l.status === 'sold').length;
-    // Public: active listings only. Owner: full inventory for private dashboard stats.
-    const visibleListings = isOwner ? listings : activeListings;
+    // Shop shelf: active + reserved (reserved shown as sale-in-progress, not buyable).
+    const shopShelfListings = [...reservedListings, ...activeListings];
+    const visibleListings = isOwner ? listings : shopShelfListings;
 
     // Reviews only on listings the viewer is allowed to know about
     const reviewListingIds = isOwner
@@ -1746,6 +1917,11 @@ router.get(
         : []),
     ];
 
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const sellerTools = getMarketplaceSellerToolsService(supabaseService);
+    const prefs = await sellerTools.getPreferences(userId);
+    const shop = sellerTools.toShopPublic(prefs, profile.name || 'Shop');
+
     let stats: Record<string, number | boolean>;
     if (isOwner) {
       let totalFavorites = 0;
@@ -1769,6 +1945,7 @@ router.get(
       stats = {
         totalListings: listings.length,
         activeListings: activeListings.length,
+        reservedListings: reservedListings.length,
         soldListings: soldCount,
         totalViews,
         totalInquiries,
@@ -1780,7 +1957,7 @@ router.get(
     } else {
       // Public: no inquiries, favorites, views, or sold/inventory internals
       stats = {
-        activeListings: activeListings.length,
+        activeListings: activeListings.length + reservedListings.length,
         avgRating: roundedAvg,
         totalReviews: allReviews.length,
         isVerified,
@@ -1789,9 +1966,10 @@ router.get(
 
     const responseData = {
       user: profile,
+      shop,
       stats,
       badges,
-      recentListings: activeListings.slice(0, 6),
+      recentListings: shopShelfListings.slice(0, 8),
       recentReviews: reviewsWithTitle,
     };
 
@@ -1801,6 +1979,48 @@ router.get(
       success: true,
       data: responseData,
     });
+  })
+);
+
+// PATCH /api/v1/marketplace/sellers/me/shop - Update own light shop branding
+router.patch(
+  '/sellers/me/shop',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = req.user.id;
+    const { shopName, bio, coverImageUrl } = req.body || {};
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    try {
+      const shop = await getMarketplaceSellerToolsService(supabaseService).updateShop(userId, {
+        shopName,
+        bio,
+        coverImageUrl,
+      });
+      await cacheService.delete(CacheKeys.sellerProfile(userId, 'public'));
+      await cacheService.delete(CacheKeys.sellerProfile(userId, 'owner'));
+      res.json({ success: true, data: shop });
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : 'Failed to update shop';
+      if (/required|characters or fewer/i.test(msg)) {
+        return res.status(400).json({ success: false, error: msg });
+      }
+      throw err;
+    }
+  })
+);
+
+// GET /api/v1/marketplace/shops - Browse active seller shops
+router.get(
+  '/shops',
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const result = await getMarketplaceSellerToolsService(supabaseService).listShops({
+      campusId: typeof req.query.campus === 'string' ? req.query.campus : null,
+      q: typeof req.query.q === 'string' ? req.query.q : null,
+      page: req.query.page ? Number(req.query.page) : 1,
+      limit: req.query.limit ? Number(req.query.limit) : 24,
+    });
+    res.json({ success: true, data: result.shops, meta: { total: result.total, page: result.page, limit: result.limit } });
   })
 );
 

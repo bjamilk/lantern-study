@@ -19,6 +19,24 @@ export function userDiscoverableForInvites(
   return settings.discoverableForInvites !== false;
 }
 
+/**
+ * Whether a user should appear in people / invite search.
+ * profileVisibility private does NOT hide search results — only discoverableForInvites does
+ * (blocks are enforced separately in search_users / messaging).
+ */
+export function userAppearsInPeopleSearch(
+  settings: Pick<PrivacySettings, 'discoverableForInvites' | 'profileVisibility'>
+): boolean {
+  return userDiscoverableForInvites(settings);
+}
+
+/** Cold DMs to private profiles always arrive as message requests. */
+export function privateProfileForcesMessageRequest(
+  settings: Pick<PrivacySettings, 'profileVisibility'>
+): boolean {
+  return settings.profileVisibility === 'private';
+}
+
 export function canViewStudyActivity(rawTargetSettings: unknown): boolean {
   const settings = normalizeUserSettings(rawTargetSettings);
   return userSharesStudyActivity(settings.privacy);

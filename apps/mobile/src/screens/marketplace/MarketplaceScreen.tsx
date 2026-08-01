@@ -65,7 +65,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     listingsHasMore,
     listingsPage,
     showFavoritesOnly,
+    shops,
+    shopsLoading,
     fetchListings,
+    fetchShops,
     fetchServerFavorites,
     fetchSavedSearches,
     createSavedSearch,
@@ -419,7 +422,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
       <View className="bg-lantern-surface border-b border-lantern-border">
         <View className="flex-row px-4 items-center">
-          {(['academic', 'student-life'] as const).map(tab => (
+          {(['academic', 'student-life', 'shops'] as const).map(tab => (
             <Pressable
               key={tab}
               onPress={() => {
@@ -431,12 +434,13 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               }`}
             >
               <Text className={`text-sm font-medium ${activeTab === tab ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}>
-                {tab === 'academic' ? 'Academic' : 'Student Life'}
+                {tab === 'academic' ? 'Academic' : tab === 'student-life' ? 'Student Life' : 'Shops'}
               </Text>
             </Pressable>
           ))}
         </View>
 
+        {activeTab !== 'shops' ? (
         <View className="flex-row px-3 pb-2 gap-2 flex-wrap">
           <Pressable
             onPress={() => setShowCategories(v => !v)}
@@ -470,8 +474,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             <Text className="text-[11px] font-medium text-lantern-primary">Save</Text>
           </Pressable>
         </View>
+        ) : null}
 
-        {showFilters ? (
+        {activeTab !== 'shops' && showFilters ? (
           <View className="px-3 pb-3 gap-2">
             <View className="flex-row items-center justify-between">
               <Text className="text-xs font-semibold text-lantern-text">Browse area</Text>
@@ -535,7 +540,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           </View>
         ) : null}
 
-        {showCategories ? (
+        {activeTab !== 'shops' && showCategories ? (
           <View className="px-3 pb-3 flex-row flex-wrap gap-2">
             <Pressable
               onPress={() => setSelectedCategory(null)}
@@ -585,7 +590,78 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         ) : null}
       </View>
 
-      {isLoading && !displayListings.length ? (
+      {activeTab === 'shops' ? (
+        shopsLoading && !shops.length ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator color="#6366f1" />
+          </View>
+        ) : (
+          <FlatList
+            data={shops}
+            keyExtractor={(item) => item.sellerId}
+            contentContainerStyle={{ padding: 12, paddingBottom: tabBarClearance }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={async () => {
+                  setRefreshing(true);
+                  await fetchShops({
+                    campus: campusIdFilter || undefined,
+                    q: searchQuery || undefined,
+                  });
+                  setRefreshing(false);
+                }}
+                tintColor="#6366f1"
+              />
+            }
+            ListEmptyComponent={
+              <View className="items-center py-16 px-6">
+                <Ionicons name="storefront-outline" size={48} color="#cbd5e1" />
+                <Text className="text-lg font-semibold text-lantern-text mt-4">No shops yet</Text>
+                <Text className="text-sm text-lantern-text-secondary mt-2 text-center">
+                  Sellers with active listings show up here automatically.
+                </Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <Pressable
+                onPress={() => navigation.navigate('SellerProfile', { sellerId: item.sellerId })}
+                className="mb-3 rounded-2xl overflow-hidden border border-lantern-border bg-lantern-surface"
+              >
+                <View className="h-16 bg-indigo-600">
+                  {item.coverImageUrl ? (
+                    <ListingImage uri={item.coverImageUrl} className="w-full h-full" />
+                  ) : null}
+                </View>
+                <View className="px-3 pb-3 -mt-4">
+                  <View className="w-12 h-12 rounded-xl bg-lantern-background-secondary border-2 border-lantern-surface overflow-hidden items-center justify-center">
+                    {item.avatarUrl ? (
+                      <ListingImage uri={item.avatarUrl} className="w-full h-full" />
+                    ) : (
+                      <Text className="font-bold text-lantern-primary">
+                        {item.shopName.charAt(0).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <Text className="mt-2 text-sm font-bold text-lantern-text" numberOfLines={1}>
+                    {item.shopName}
+                  </Text>
+                  {item.bio ? (
+                    <Text className="text-xs text-lantern-text-secondary mt-0.5" numberOfLines={2}>
+                      {item.bio}
+                    </Text>
+                  ) : null}
+                  <Text className="text-[11px] text-lantern-text-tertiary mt-1">
+                    {item.activeListingCount} active
+                    {item.avgRating > 0 ? ` · ★ ${item.avgRating.toFixed(1)}` : ''}
+                    {item.campusLabel ? ` · ${item.campusLabel}` : ''}
+                  </Text>
+                </View>
+              </Pressable>
+            )}
+          />
+        )
+      ) : isLoading && !displayListings.length ? (
         <View className="flex-1 flex-row flex-wrap p-2">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <View key={i} className="w-1/2 p-1">
