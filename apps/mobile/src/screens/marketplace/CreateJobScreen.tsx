@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useNavigation,
   useRoute,
@@ -269,7 +270,7 @@ export function CreateJobScreen() {
     `text-xs ${active ? "text-white" : "text-lantern-text"}`;
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={["top"]}>
       <ScreenHeader
         title={isEdit ? "Edit job" : "Post a job"}
         onBack={() => navigation.goBack()}
@@ -592,7 +593,7 @@ export function CreateJobScreen() {
           </Pressable>
         </Card>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -218,7 +219,7 @@ export function JobsHomeScreen() {
   );
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={["top"]}>
       <ScreenHeader
         title="Jobs"
         subtitle="Explore opportunities"
@@ -389,25 +390,34 @@ export function JobsHomeScreen() {
         <View className="mx-4 mb-4 flex-row gap-2">
           <Pressable
             onPress={() => navigation.navigate("MyJobApplications")}
-            className="flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
+            className="min-w-0 flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
           >
-            <Text className="text-xs font-semibold text-lantern-primary">
+            <Text
+              className="text-center text-xs font-semibold text-lantern-primary"
+              numberOfLines={2}
+            >
               My applications
             </Text>
           </Pressable>
           <Pressable
             onPress={() => navigation.navigate("MyJobPostings")}
-            className="flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
+            className="min-w-0 flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
           >
-            <Text className="text-xs font-semibold text-lantern-primary">
+            <Text
+              className="text-center text-xs font-semibold text-lantern-primary"
+              numberOfLines={2}
+            >
               My job posts
             </Text>
           </Pressable>
           <Pressable
             onPress={() => navigation.navigate("JobEmployer")}
-            className="flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
+            className="min-w-0 flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
           >
-            <Text className="text-xs font-semibold text-lantern-primary">
+            <Text
+              className="text-center text-xs font-semibold text-lantern-primary"
+              numberOfLines={2}
+            >
               Employer hub
             </Text>
           </Pressable>
@@ -596,7 +606,7 @@ export function JobsHomeScreen() {
           </Text>
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

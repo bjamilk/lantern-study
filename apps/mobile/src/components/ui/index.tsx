@@ -101,15 +101,32 @@ export function ScreenHeader({
   return (
     <View className={`px-4 pt-2 pb-3 flex-row items-start ${className}`}>
       {onBack ? (
-        <Pressable onPress={onBack} className="p-1 mr-2 mt-1">
+        <Pressable
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          className="p-1 mr-2 mt-1 min-w-[44px] min-h-[44px] items-center justify-center"
+        >
           <Text className="text-lantern-primary text-lg">←</Text>
         </Pressable>
       ) : null}
       <View className="flex-1 min-w-0 pr-3">
-        <Text className="text-2xl font-bold text-lantern-text tracking-tight">{title}</Text>
-        {subtitle ? <Text className="text-sm text-lantern-text-secondary mt-0.5">{subtitle}</Text> : null}
+        <Text
+          className="text-2xl font-bold text-lantern-text tracking-tight"
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text
+            className="text-sm text-lantern-text-secondary mt-0.5"
+            numberOfLines={1}
+          >
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
-      {right}
+      {right ? <View className="shrink-0">{right}</View> : null}
     </View>
   );
 }

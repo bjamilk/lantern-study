@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import {
   useNavigation,
@@ -101,7 +102,7 @@ export function JobDetailScreen() {
   }
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={["top"]}>
       <ScreenHeader title="Job" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
@@ -494,7 +495,7 @@ export function JobDetailScreen() {
           </Card>
         ) : null}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
