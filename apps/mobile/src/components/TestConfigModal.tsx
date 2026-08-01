@@ -379,13 +379,21 @@ export default function TestConfigModal({
             contentContainerStyle={styles.contentContainer}
           >
             {/* Mode Description */}
-            <View style={[styles.infoBox, isStudyMode && styles.infoBoxStudy]}>
+            <View
+              style={[
+                styles.infoBox,
+                {
+                  backgroundColor: isStudyMode ? colors.successBackground : colors.primaryBackground,
+                  borderColor: isStudyMode ? `${colors.success}55` : `${colors.primary}55`,
+                },
+              ]}
+            >
               <Ionicons 
                 name={isStudyMode ? 'bulb' : 'timer'} 
                 size={20} 
-                color={isStudyMode ? '#10b981' : '#10b981'} 
+                color={isStudyMode ? colors.success : colors.primary} 
               />
-              <Text style={styles.infoText}>
+              <Text style={[styles.infoText, { color: colors.text }]}>
                 {isStudyMode 
                   ? 'Study at your own pace with immediate feedback and explanations.'
                   : 'Timed assessment with scoring. Submit when ready or when time runs out.'
@@ -898,20 +906,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     padding: 14,
-    backgroundColor: '#10b98115',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#10b98130',
     marginBottom: 24,
-  },
-  infoBoxStudy: {
-    backgroundColor: '#10b98115',
-    borderColor: '#10b98130',
   },
   infoText: {
     flex: 1,
     fontSize: 13,
-    color: '#d1d5db',
     lineHeight: 20,
   },
   section: {
