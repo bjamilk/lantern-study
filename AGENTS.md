@@ -70,3 +70,6 @@ triggered from here (they compile on Expo's cloud macOS builders). Notes:
   that `@lantern/shared` (`MarkdownRenderer.tsx`) imports, or Metro bundling fails to resolve them.
 - The `ios-simulator` profile builds a standalone (non-dev-client) simulator app pointing at the
   cloud backend; the artifact is a `.tar.gz` containing a `.app` to install on a Mac Simulator.
+- **Chat voice notes cannot be recorded in the iOS Simulator** (Apple/`expo-av` limitation). On
+  Simulator the mic alerts and offers a silent **Send test note** to verify upload/playback. Real
+  mic recording requires a physical iPhone (TestFlight / device development build).

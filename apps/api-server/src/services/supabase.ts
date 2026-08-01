@@ -3638,12 +3638,13 @@ export class SupabaseService {
       throw new Error(error.message);
     }
 
+    // Persist a durable object URL in chat markdown; clients re-sign for playback.
+    // Embedding a week-long signed URL makes notes expire / break after TTL.
+    const base = process.env.SUPABASE_URL?.replace(/\/$/, "") || "";
+    const durableUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
+
     return {
-      url: await this.createSignedStorageUrl(
-        bucket,
-        filePath,
-        60 * 60 * 24 * 7,
-      ),
+      url: durableUrl,
       path: filePath,
     };
   }

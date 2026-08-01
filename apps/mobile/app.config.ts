@@ -64,7 +64,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     infoPlist: {
       UIBackgroundModes: ['audio'],
       NSMicrophoneUsageDescription:
-        'Lantern Study needs the microphone to record lectures and transcribe them into notes.',
+        'Lantern Study needs the microphone to record voice notes in chat and lecture audio for notes.',
     },
   },
 

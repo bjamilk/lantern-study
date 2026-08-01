@@ -67,6 +67,11 @@ export function DmBubble({
         return;
       }
       if (!soundRef.current) {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          playThroughEarpieceAndroid: false,
+        });
         const { sound } = await Audio.Sound.createAsync({ uri: resolvedAudioUrl });
         soundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((status) => {

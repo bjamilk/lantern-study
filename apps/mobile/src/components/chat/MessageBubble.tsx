@@ -114,6 +114,11 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
 
     const load = async () => {
       try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          playThroughEarpieceAndroid: false,
+        });
         const { sound } = await Audio.Sound.createAsync(
           { uri: resolvedUrl },
           { shouldPlay: false, progressUpdateIntervalMillis: 100 },
