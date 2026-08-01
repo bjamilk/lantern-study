@@ -10,7 +10,6 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Image,
   Alert,
   TextInput,
   ActivityIndicator,
@@ -19,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
+import { ResolvedAvatar } from './ResolvedAvatar';
 import { useTheme } from '../theme';
 
 type TabType = 'details' | 'members' | 'danger';
@@ -238,9 +238,14 @@ export default function GroupInfoModal({
     <View style={styles.tabContent}>
       {/* Group Avatar */}
       <View style={styles.avatarSection}>
-        <Image
-          source={{ uri: avatarPreview || group.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=6366f1&color=fff&size=100` }}
-          style={styles.groupAvatar}
+        <ResolvedAvatar
+          name={group.name}
+          uri={
+            avatarPreview ||
+            group.avatarUrl ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=6366f1&color=fff&size=100`
+          }
+          size={80}
         />
         {isAdmin && (
           <TouchableOpacity
@@ -348,9 +353,13 @@ export default function GroupInfoModal({
       {group.members.map((member) => (
         <View key={member.id} style={styles.memberItem}>
           <View style={styles.memberInfo}>
-            <Image
-              source={{ uri: member.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=6366f1&color=fff` }}
-              style={styles.memberAvatar}
+            <ResolvedAvatar
+              name={member.name}
+              uri={
+                member.avatarUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=6366f1&color=fff`
+              }
+              size={40}
             />
             <View>
               <View style={styles.memberNameRow}>
