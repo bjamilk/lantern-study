@@ -181,6 +181,16 @@ export function ChatComposer({
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       recordingRef.current = null;
+      // Leave recording mode so voice-note playback can use the speaker on iOS.
+      try {
+        const { Audio } = await import('expo-av');
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+        });
+      } catch {
+        // Non-fatal — upload/send can still proceed.
+      }
       const elapsed = Date.now() - startedAtRef.current;
       if (!uri || elapsed < 400) {
         Alert.alert('Voice note', 'Recording was too short. Hold a bit longer.');
@@ -206,6 +216,15 @@ export function ChatComposer({
       }
     } catch {
       recordingRef.current = null;
+      try {
+        const { Audio } = await import('expo-av');
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+        });
+      } catch {
+        // ignore
+      }
       Alert.alert('Voice note', 'Could not finish recording.');
     }
   };
