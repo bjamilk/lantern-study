@@ -34,15 +34,39 @@ declare module 'pdf-parse' {
 }
 
 declare module 'officeparser' {
+  export interface OfficeParserAst {
+    toText(): string;
+    to(format: 'text' | 'md' | 'html' | string, options?: Record<string, unknown>): Promise<{
+      value: string | Uint8Array;
+      messages?: unknown[];
+    }>;
+    metadata?: { pages?: number; slides?: number; [key: string]: unknown };
+    attachments?: Array<{ ocrText?: string; name?: string }>;
+  }
+
+  export interface OfficeParserConfig {
+    extractAttachments?: boolean;
+    ocr?: boolean;
+    ocrLanguage?: string;
+    ocrConfig?: {
+      language?: string;
+      timeout?: {
+        workerLoad?: number;
+        recognition?: number;
+        autoTerminate?: number;
+      };
+      [key: string]: unknown;
+    };
+    abortSignal?: AbortSignal | null;
+    [key: string]: unknown;
+  }
+
   export function parseOffice(
-    file: Buffer,
-    callback: (err: Error | null, data?: string) => void
-  ): void;
-  export function parseOffice(
-    file: Buffer,
-    config: Record<string, unknown>,
-    callback: (err: Error | null, data?: string) => void
-  ): void;
+    file: Buffer | string,
+    config?: OfficeParserConfig
+  ): Promise<OfficeParserAst>;
+
+  export function terminateOcr(): Promise<void>;
 }
 
 declare module 'libreoffice-convert' {

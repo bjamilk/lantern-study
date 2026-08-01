@@ -17,7 +17,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import { getNoteStudyContent, hasEnoughNoteStudyContent, MarkdownRenderer } from '@lantern/shared';
+import {
+  getAttachmentExtractionStatus,
+  getExtractionStatusMessage,
+  getNoteStudyContent,
+  hasEnoughNoteStudyContent,
+  MarkdownRenderer,
+} from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTheme } from '../../theme';
 
@@ -29,6 +35,8 @@ import {
   generateNoteQuiz,
   addImagesToPhotoNote,
   retryYoutubeTranscript,
+  runNoteOcr,
+  waitForNoteOcr,
 } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
@@ -169,6 +177,20 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     [selectedNote?.attachments]
   );
 
+  const documentSourceAttachment = useMemo(
+    () =>
+      selectedNote?.attachments?.find((a) => a.type === 'pdf') || presentationAttachment,
+    [selectedNote?.attachments, presentationAttachment]
+  );
+
+  const extractionStatus = getAttachmentExtractionStatus(documentSourceAttachment);
+  const extractionMessage = getExtractionStatusMessage(
+    extractionStatus,
+    selectedNote?.sourceType
+  );
+  const [runningOcr, setRunningOcr] = useState(false);
+  const ocrPollAttemptedRef = useRef<Set<string>>(new Set());
+
   const studyContent = useMemo(
     () =>
       selectedNote
@@ -286,6 +308,43 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   useEffect(() => {
     loadNote(noteId);
   }, [noteId, loadNote]);
+
+  // Poll while local OCR is processing after a scanned upload.
+  useEffect(() => {
+    if (!selectedNote) return;
+    if (selectedNote.sourceType !== 'pdf' && selectedNote.sourceType !== 'presentation') return;
+    if (extractionStatus !== 'ocr_processing') return;
+    if (ocrPollAttemptedRef.current.has(noteId)) return;
+    ocrPollAttemptedRef.current.add(noteId);
+    let cancelled = false;
+    setRunningOcr(true);
+    void waitForNoteOcr(noteId)
+      .then((result) => {
+        if (cancelled) return;
+        const prev = useNotesStore.getState().selectedNote;
+        if (!prev || prev.id !== noteId) return;
+        setSelectedNote({
+          ...prev,
+          attachments:
+            prev.attachments?.map((a) =>
+              a.id === result.attachment.id ? result.attachment : a
+            ) ?? [result.attachment],
+        });
+        if (result.status === 'failed') {
+          Alert.alert('OCR failed', result.ocrError || 'Local OCR failed.');
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        Alert.alert('OCR failed', err instanceof Error ? err.message : 'OCR timed out');
+      })
+      .finally(() => {
+        if (!cancelled) setRunningOcr(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [noteId, selectedNote?.sourceType, extractionStatus, setSelectedNote, selectedNote]);
 
   // Poll while YouTube transcript is processing so Smart Notes unlocks in-session.
   useEffect(() => {
@@ -906,10 +965,59 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </View>
           ) : null}
 
+          {extractionMessage &&
+          (selectedNote?.sourceType === 'pdf' || selectedNote?.sourceType === 'presentation') ? (
+            <View className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+              <Text className="text-sm text-lantern-text mb-2">
+                {runningOcr || extractionStatus === 'ocr_processing'
+                  ? 'Running local OCR…'
+                  : extractionMessage}
+              </Text>
+              {(extractionStatus === 'needs_ocr' ||
+                extractionStatus === 'empty' ||
+                extractionStatus === 'ocr_failed') &&
+              canEdit ? (
+                <Button
+                  onPress={() => {
+                    if (!selectedNote || runningOcr) return;
+                    setRunningOcr(true);
+                    void runNoteOcr(selectedNote.id)
+                      .then((result) => {
+                        const prev = useNotesStore.getState().selectedNote;
+                        if (!prev || prev.id !== selectedNote.id) return;
+                        setSelectedNote({
+                          ...prev,
+                          attachments:
+                            prev.attachments?.map((a) =>
+                              a.id === result.attachment.id ? result.attachment : a
+                            ) ?? [result.attachment],
+                        });
+                        if (result.status === 'failed') {
+                          Alert.alert('OCR failed', result.ocrError || 'Local OCR failed.');
+                        }
+                      })
+                      .catch((err: unknown) => {
+                        Alert.alert(
+                          'OCR failed',
+                          err instanceof Error ? err.message : 'Failed to run OCR'
+                        );
+                      })
+                      .finally(() => setRunningOcr(false));
+                  }}
+                  disabled={runningOcr}
+                >
+                  {runningOcr ? 'Running OCR…' : 'Run OCR (local)'}
+                </Button>
+              ) : null}
+            </View>
+          ) : null}
+
           {isDocumentNote && !documentAttachment ? (
             <Text className="text-sm text-lantern-text-secondary mb-4">
               {selectedNote?.sourceType === 'presentation'
-                ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
+                ? extractionStatus === 'ok'
+                  ? 'Slide preview is unavailable. Extracted text is available for AI tools.'
+                  : 'Slide preview is unavailable. Extracted text may be missing — run OCR or add notes.'
                 : 'Document preview is unavailable.'}
               {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
             </Text>

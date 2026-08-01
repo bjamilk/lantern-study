@@ -5,7 +5,13 @@ import {
   SparklesIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
+import {
+  getExtractionStatusMessage,
+  getNoteStudyContent,
+  hasEnoughNoteStudyContent,
+  isThinOrUnusableStudyContent,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+} from '@lantern/shared';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { Button } from './ui';
@@ -79,10 +85,21 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       let quizQuestionCount = 0;
       const warnings: string[] = [];
 
-      if (hasEnoughNoteStudyContent(studyInput) || studyText.length >= 30) {
+      const extractionMessage = getExtractionStatusMessage(
+        (note.attachments?.[0]?.metadata?.extractionStatus as
+          | 'ok'
+          | 'needs_ocr'
+          | 'empty'
+          | 'ocr_processing'
+          | 'ocr_failed'
+          | undefined) || null,
+        note.sourceType
+      );
+
+      if (hasEnoughNoteStudyContent(studyInput) && !isThinOrUnusableStudyContent(studyInput)) {
         try {
           const { summary, note: updated } = await notesApi.summarizeNote(note.id);
-          summarized = Boolean(summary?.trim());
+          summarized = Boolean(summary?.trim()) && (summary?.trim().length || 0) >= MIN_NOTE_STUDY_CONTENT_CHARS;
           const notesState = useNotesStore.getState();
           notesState.setNotes(
             notesState.notes.map((n) =>
@@ -97,17 +114,18 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
               attachments: note.attachments ?? notesState.selectedNote.attachments,
             });
           }
-          if (!summarized) warnings.push('Summary generation returned empty content.');
+          if (!summarized) warnings.push('Summary generation returned empty or thin content.');
         } catch {
           warnings.push('Summary generation failed. You can retry Smart Notes from the note.');
         }
       } else {
         warnings.push(
-          'Could not extract enough text to summarize. Try a text-based PDF, or open the note and use Smart Notes after adding content.'
+          extractionMessage ||
+            `Could not extract enough text to summarize (need ${MIN_NOTE_STUDY_CONTENT_CHARS}+ characters). For scanned PDFs, wait for OCR or open the note and add content.`
         );
       }
 
-      if (generateCards && studyText.length >= 50) {
+      if (generateCards && hasEnoughNoteStudyContent(studyInput) && !isThinOrUnusableStudyContent(studyInput)) {
         try {
           const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
             count: normalizeFlashcardCount(),
@@ -119,7 +137,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         }
       }
 
-      if (generateQuiz && studyText.length >= 50) {
+      if (generateQuiz && hasEnoughNoteStudyContent(studyInput) && !isThinOrUnusableStudyContent(studyInput)) {
         try {
           const { questions } = await notesApi.generateDailyQuizFromContent(
             studyText.slice(0, 8000),

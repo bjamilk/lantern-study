@@ -36,7 +36,8 @@ export type AIJobName =
 export type FileJobName =
   | "deck.importApkg"
   | "notes.presentation.preview"
-  | "notes.youtube.transcript";
+  | "notes.youtube.transcript"
+  | "notes.ocr.extract";
 
 export type ExportJobName = "export.userData";
 

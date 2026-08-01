@@ -1,9 +1,14 @@
 import type { SupabaseService } from './supabase';
 import {
   assertValidOfficeZip,
+  buildPresentationStudyText,
   convertPresentationToPdf,
+  extractPdfTextFromBuffer,
   extractPresentationTextFromBuffer,
+  isThinExtractedStudyText,
+  mergeExtractionTexts,
 } from './noteFiles';
+import { runNoteOcrJob, shouldAutoEnqueueOcr } from './noteOcr';
 import { logger } from '../utils/logger';
 
 export interface PresentationPreviewJobParams {
@@ -33,11 +38,9 @@ export async function runPresentationPreviewJob(
       assertValidOfficeZip(buffer, fileName);
     }
 
-    const extractedText =
+    let extractedText =
       params.extractedText ?? (await extractPresentationTextFromBuffer(buffer, fileName));
-    const studyText =
-      extractedText ||
-      `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
+    let { studyText, extractionStatus } = buildPresentationStudyText(fileName, extractedText);
 
     const { pdf: pdfBuffer, error: conversionError, wakeMs, convertMs, totalMs } =
       await convertPresentationToPdf(buffer, fileName, { noteId });
@@ -47,6 +50,7 @@ export async function runPresentationPreviewJob(
         extractedText: studyText,
         metadata: {
           ...meta,
+          extractionStatus,
           previewProcessing: false,
           previewError: conversionError || 'Could not generate slide preview.',
           previewFailedAt: new Date().toISOString(),
@@ -63,6 +67,23 @@ export async function runPresentationPreviewJob(
       return;
     }
 
+    // Phase A: when shape text is empty/thin, harvest text layer from the Gotenberg PDF.
+    if (isThinExtractedStudyText(extractedText)) {
+      const pdfText = await extractPdfTextFromBuffer(pdfBuffer);
+      if (pdfText && !isThinExtractedStudyText(pdfText)) {
+        extractedText = mergeExtractionTexts(extractedText, pdfText);
+        ({ studyText, extractionStatus } = buildPresentationStudyText(fileName, extractedText));
+        logger.info('Merged preview PDF text into presentation extraction', {
+          noteId,
+          fileName,
+          pdfTextLength: pdfText.length,
+        });
+      } else if (pdfText) {
+        extractedText = mergeExtractionTexts(extractedText, pdfText);
+        ({ studyText, extractionStatus } = buildPresentationStudyText(fileName, extractedText));
+      }
+    }
+
     const previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
     await supabaseService.uploadNoteFile({
       storagePath: previewStoragePath,
@@ -70,16 +91,27 @@ export async function runPresentationPreviewJob(
       contentType: 'application/pdf',
     });
     const previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
+
+    const shouldOcr = shouldAutoEnqueueOcr(extractionStatus);
+    const finalMeta: Record<string, unknown> = {
+      ...meta,
+      extractionStatus: shouldOcr ? 'ocr_processing' : extractionStatus,
+      previewStoragePath,
+      previewUrl,
+      previewProcessing: false,
+      previewError: undefined,
+      previewFailedAt: undefined,
+      ...(shouldOcr
+        ? {
+            ocrProvider: 'tesseract',
+            ocrStartedAt: new Date().toISOString(),
+          }
+        : {}),
+    };
+
     await supabaseService.updateNoteAttachment(attachmentId, {
       extractedText: studyText,
-      metadata: {
-        ...meta,
-        previewStoragePath,
-        previewUrl,
-        previewProcessing: false,
-        previewError: undefined,
-        previewFailedAt: undefined,
-      },
+      metadata: finalMeta,
     });
     logger.info('Presentation preview ready', {
       noteId,
@@ -87,8 +119,25 @@ export async function runPresentationPreviewJob(
       wakeMs,
       convertMs,
       totalMs,
+      extractionStatus,
+      ocrQueued: shouldOcr,
       success: true,
     });
+
+    // Phase B: if shape + preview PDF text are still thin, OCR the preview PDF locally.
+    if (shouldOcr) {
+      void runNoteOcrJob(supabaseService, {
+        noteId,
+        attachmentId,
+        storagePath: previewStoragePath,
+        fileName: fileName.replace(/\.[^.]+$/, '') + '-preview.pdf',
+        sourceKind: 'preview_pdf',
+        meta: finalMeta,
+        buffer: pdfBuffer,
+      }).catch((ocrErr) => {
+        logger.error('Auto OCR after presentation preview failed', { noteId, err: ocrErr });
+      });
+    }
   } catch (err) {
     logger.error('Presentation preview job error', { noteId, attachmentId, err });
     await supabaseService

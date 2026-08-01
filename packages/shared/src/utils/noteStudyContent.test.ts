@@ -1,9 +1,14 @@
 import {
+  assessPdfTextExtraction,
+  getAttachmentExtractionStatus,
+  getExtractionStatusMessage,
   getNoteStudyContent,
   getNoteStudyContentForSmartNotes,
   hasEnoughNoteStudyContent,
   isPlaceholderExtractedText,
+  isThinOrUnusableStudyContent,
   MIN_NOTE_STUDY_CONTENT_CHARS,
+  PDF_SCAN_MAX_CHARS_PER_PAGE,
 } from './noteStudyContent';
 import { upsertSmartNotesSection } from './smartNotes';
 
@@ -83,6 +88,12 @@ describe('getNoteStudyContent', () => {
     ).toBe('cached summary');
   });
 
+  it('ignores OCR processing and scanned placeholders', () => {
+    expect(isPlaceholderExtractedText('[Running OCR on scanned pages…]')).toBe(true);
+    expect(isPlaceholderExtractedText('[Scanned PDF: chapter.pdf]')).toBe(true);
+    expect(isPlaceholderExtractedText('[OCR failed: timeout]')).toBe(true);
+  });
+
   it('detects placeholder extracted text', () => {
     expect(isPlaceholderExtractedText('[Extracting text from slides…]')).toBe(true);
     expect(isPlaceholderExtractedText('[Extracting text from slides...]')).toBe(true);
@@ -147,5 +158,73 @@ describe('getNoteStudyContent', () => {
         { includeSummary: false }
       )
     ).not.toContain('dup');
+  });
+});
+
+describe('assessPdfTextExtraction', () => {
+  it('marks empty / near-empty text as empty', () => {
+    expect(assessPdfTextExtraction('', 10).status).toBe('empty');
+    expect(assessPdfTextExtraction('page 1', 5).status).toBe('empty');
+  });
+
+  it('flags sparse multi-page PDFs as needs_ocr', () => {
+    const sparse = 'header\n'.repeat(8); // ~56 chars across many pages
+    const result = assessPdfTextExtraction(sparse, 10);
+    expect(result.status).toBe('needs_ocr');
+    expect(result.charsPerPage).toBeLessThan(PDF_SCAN_MAX_CHARS_PER_PAGE);
+  });
+
+  it('accepts dense digital PDFs as ok', () => {
+    const dense = 'This is a real paragraph of lecture notes. '.repeat(20);
+    expect(assessPdfTextExtraction(dense, 3).status).toBe('ok');
+  });
+
+  it('treats single-page short-but-usable text as ok when above empty threshold', () => {
+    const text = 'x'.repeat(80);
+    expect(assessPdfTextExtraction(text, 1).status).toBe('ok');
+  });
+});
+
+describe('extraction status helpers', () => {
+  it('reads extractionStatus from attachment metadata', () => {
+    expect(
+      getAttachmentExtractionStatus({
+        metadata: { extractionStatus: 'needs_ocr' },
+        extractedText: '[Scanned PDF: x.pdf]',
+      })
+    ).toBe('needs_ocr');
+    expect(
+      getAttachmentExtractionStatus({
+        extractedText: '[PDF uploaded: x.pdf. Text extraction unavailable.]',
+      })
+    ).toBe('empty');
+  });
+
+  it('returns clear UX messages per status', () => {
+    expect(getExtractionStatusMessage('needs_ocr', 'pdf')).toMatch(/Scanned PDF/i);
+    expect(getExtractionStatusMessage('ocr_failed', 'pdf')).toMatch(/Local OCR/i);
+    expect(getExtractionStatusMessage('ok')).toBeNull();
+  });
+
+  it('treats OCR-pending notes without body content as thin', () => {
+    expect(
+      isThinOrUnusableStudyContent({
+        sourceType: 'pdf',
+        body: '',
+        attachments: [
+          {
+            extractedText: 'x'.repeat(60),
+            metadata: { extractionStatus: 'needs_ocr' },
+          },
+        ],
+      })
+    ).toBe(true);
+    expect(
+      isThinOrUnusableStudyContent({
+        sourceType: 'pdf',
+        body: 'x'.repeat(60),
+        attachments: [{ metadata: { extractionStatus: 'needs_ocr' } }],
+      })
+    ).toBe(false);
   });
 });

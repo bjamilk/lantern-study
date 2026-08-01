@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getNoteStudyContent, hasEnoughNoteStudyContent, isPlaceholderExtractedText } from '@lantern/shared';
+import {
+  getAttachmentExtractionStatus,
+  getExtractionStatusMessage,
+  getNoteStudyContent,
+  hasEnoughNoteStudyContent,
+  isPlaceholderExtractedText,
+} from '@lantern/shared';
 import {
   ArrowLeftIcon,
   TrashIcon,
@@ -164,6 +170,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     !presentationPreviewPath &&
     !previewBannerDismissed &&
     (generatingPreview || isPreviewProcessing);
+  const documentSourceAttachment =
+    note.attachments?.find((a) => a.type === 'pdf') || presentationAttachment;
+  const extractionStatus = getAttachmentExtractionStatus(documentSourceAttachment);
+  const extractionMessage = getExtractionStatusMessage(extractionStatus, note.sourceType);
+  const [runningOcr, setRunningOcr] = useState(false);
+  const ocrPollAttemptedRef = useRef<Set<string>>(new Set());
   const studyContentLength = getNoteStudyContent({
     sourceType: note.sourceType,
     body,
@@ -293,11 +305,11 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   ]);
 
   useEffect(() => {
-    if (note.sourceType !== 'presentation') return;
-    if (!presentationAttachment) return;
+    if (note.sourceType !== 'presentation' && note.sourceType !== 'pdf') return;
+    if (!documentSourceAttachment) return;
     if (reextractAttemptedRef.current.has(note.id)) return;
 
-    const extracted = presentationAttachment.extractedText;
+    const extracted = documentSourceAttachment.extractedText;
     const needsReextract = isPlaceholderExtractedText(extracted);
     const studyReady = hasEnoughNoteStudyContent({
       sourceType: note.sourceType,
@@ -306,6 +318,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       attachments: note.attachments,
     });
     if (!needsReextract || studyReady) return;
+    if (extractionStatus === 'ocr_processing') return;
 
     reextractAttemptedRef.current.add(note.id);
     let cancelled = false;
@@ -330,7 +343,81 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [note.id, note.sourceType, note.summary, note.attachments, presentationAttachment, body, setSelectedNote]);
+  }, [
+    note.id,
+    note.sourceType,
+    note.summary,
+    note.attachments,
+    documentSourceAttachment,
+    body,
+    setSelectedNote,
+    extractionStatus,
+  ]);
+
+  useEffect(() => {
+    if (note.sourceType !== 'pdf' && note.sourceType !== 'presentation') return;
+    if (extractionStatus !== 'ocr_processing') return;
+    if (ocrPollAttemptedRef.current.has(note.id)) return;
+    ocrPollAttemptedRef.current.add(note.id);
+    let cancelled = false;
+    setRunningOcr(true);
+    void notesApi
+      .waitForNoteOcr(note.id)
+      .then((result) => {
+        if (cancelled) return;
+        const prev = useNotesStore.getState().selectedNote;
+        if (!prev || prev.id !== note.id) return;
+        setSelectedNote({
+          ...prev,
+          attachments:
+            prev.attachments?.map((a) =>
+              a.id === result.attachment.id ? result.attachment : a
+            ) ?? [result.attachment],
+        });
+        if (result.status === 'failed') {
+          showToast(result.ocrError || 'Local OCR failed', 'error');
+        } else if (result.status === 'ready') {
+          showToast('OCR finished — text is ready for Smart Notes', 'success');
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        showToast(err instanceof Error ? err.message : 'OCR timed out', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setRunningOcr(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id, note.sourceType, extractionStatus, setSelectedNote]);
+
+  const handleRunOcr = async () => {
+    if (runningOcr) return;
+    setRunningOcr(true);
+    try {
+      const result = await notesApi.runNoteOcr(note.id);
+      const prev = useNotesStore.getState().selectedNote;
+      if (prev?.id === note.id) {
+        setSelectedNote({
+          ...prev,
+          attachments:
+            prev.attachments?.map((a) =>
+              a.id === result.attachment.id ? result.attachment : a
+            ) ?? [result.attachment],
+        });
+      }
+      if (result.status === 'ready') {
+        showToast('OCR finished — text is ready for Smart Notes', 'success');
+      } else if (result.status === 'failed') {
+        showToast(result.ocrError || 'Local OCR failed', 'error');
+      }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to run OCR', 'error');
+    } finally {
+      setRunningOcr(false);
+    }
+  };
 
   useEffect(() => {
     if (note.sourceType !== 'presentation') return;
@@ -699,6 +786,27 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             </>
           )}
 
+          {extractionMessage && (note.sourceType === 'pdf' || note.sourceType === 'presentation') && (
+            <div
+              className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${
+                isDark
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+                  : 'border-amber-500/40 bg-amber-50 text-amber-950'
+              }`}
+              role="status"
+            >
+              <p>{runningOcr || extractionStatus === 'ocr_processing' ? 'Running local OCR…' : extractionMessage}</p>
+              {(extractionStatus === 'needs_ocr' ||
+                extractionStatus === 'empty' ||
+                extractionStatus === 'ocr_failed') &&
+                canEdit && (
+                  <Button size="sm" variant="secondary" onClick={() => void handleRunOcr()} disabled={runningOcr}>
+                    {runningOcr ? 'Running OCR…' : 'Run OCR (local)'}
+                  </Button>
+                )}
+            </div>
+          )}
+
           {showPreviewBanner && (
             <div
               className={`text-sm rounded-lg border px-3 py-2 flex items-start justify-between gap-3 ${
@@ -708,7 +816,10 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             >
               <div className="space-y-1">
                 <p>
-                  Slide preview is being prepared — your notes and AI tools are ready now.
+                  Slide preview is being prepared
+                  {extractionStatus === 'ok'
+                    ? ' — extracted text is available for AI tools.'
+                    : ' — AI tools need readable text (wait for extraction/OCR if this deck is image-based).'}
                 </p>
                 {presentationAttachment && (
                   <button
@@ -735,7 +846,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <p>
                 {previewError ||
                   (note.sourceType === 'presentation'
-                    ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
+                    ? extractionStatus === 'ok'
+                      ? 'Slide preview is unavailable. Extracted text is available for AI tools.'
+                      : 'Slide preview is unavailable. Extracted text may be missing — run OCR or add notes.'
                     : 'Document preview is unavailable.')}
                 {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
               </p>

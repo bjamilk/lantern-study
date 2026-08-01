@@ -150,6 +150,46 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
   next();
 }
 
+/** Soft credit cost for local OCR imports (default 2). Set NOTE_OCR_CREDIT_COST=0 to disable. */
+export const NOTE_OCR_CREDIT_COST = Math.max(
+  0,
+  Math.min(10, parseInt(process.env.NOTE_OCR_CREDIT_COST || '2', 10) || 2)
+);
+
+/**
+ * Charge multiple daily AI credits (used for OCR imports). Returns null when allowed,
+ * or a 429 payload when the user would exceed the daily limit.
+ */
+export async function chargeAiCredits(
+  userId: string,
+  amount: number
+): Promise<null | { error: string; limit: number; used: number; resetsAt: string }> {
+  const credits = Math.max(0, Math.floor(amount));
+  if (credits <= 0) return null;
+
+  let lastCount = 0;
+  let lastReset = Date.now();
+  for (let i = 0; i < credits; i++) {
+    const result = await incrementUsage(userId, AI_DAILY_LIMIT);
+    lastCount = result.count;
+    lastReset = result.resetTime;
+    if (!result.allowed) {
+      return {
+        error:
+          credits > 1
+            ? `Daily AI limit reached. OCR needs ${credits} credits; try again tomorrow.`
+            : 'Daily AI limit reached. Try again tomorrow.',
+        limit: AI_DAILY_LIMIT,
+        used: result.count,
+        resetsAt: toResetsAt(result.resetTime),
+      };
+    }
+  }
+  void lastCount;
+  void lastReset;
+  return null;
+}
+
 function resolveFeatureLimit(featureKey?: string): number {
   if (featureKey && FEATURE_LIMITS[featureKey] !== undefined) {
     return FEATURE_LIMITS[featureKey];

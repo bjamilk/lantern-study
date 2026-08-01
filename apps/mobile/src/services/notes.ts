@@ -546,6 +546,87 @@ async function readLocalFileAsBase64(fileUri: string, fileName: string): Promise
   return { base64Data, byteLength };
 }
 
+export type NoteOcrStatus = 'ready' | 'processing' | 'failed' | 'none' | 'needs_ocr';
+
+export const fetchNoteOcrStatus = (noteId: string) =>
+  notesRequest<{
+    status: NoteOcrStatus;
+    attachment?: NoteAttachment | null;
+    extractionStatus?: string;
+    ocrError?: string;
+    ocrPageCount?: number;
+  }>(`/${noteId}/ocr-status`);
+
+async function pollNoteOcrUntilReady(noteId: string): Promise<{
+  status: NoteOcrStatus;
+  attachment: NoteAttachment;
+  ocrError?: string;
+}> {
+  const deadline = Date.now() + 240_000;
+  while (Date.now() < deadline) {
+    const status = await fetchNoteOcrStatus(noteId);
+    if (status.status === 'ready' && status.attachment) {
+      return { status: 'ready', attachment: status.attachment };
+    }
+    if (status.status === 'failed' && status.attachment) {
+      return {
+        status: 'failed',
+        attachment: status.attachment,
+        ocrError: status.ocrError,
+      };
+    }
+    if (status.status === 'needs_ocr' && status.attachment) {
+      return { status: 'needs_ocr', attachment: status.attachment };
+    }
+    if (status.status === 'none') {
+      throw new Error('No document attachment found for OCR.');
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error('OCR timed out. Try again from the note, or add your own notes.');
+}
+
+export const waitForNoteOcr = (noteId: string) => pollNoteOcrUntilReady(noteId);
+
+export const runNoteOcr = async (noteId: string) => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/v1/notes/${noteId}/ocr`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (response.ok || response.status === 202) {
+    applyAIUsageFromResponse(response);
+  }
+  if (response.status === 429) {
+    throw new Error(data.error || data.message || 'Daily AI limit reached for OCR.');
+  }
+  if (!response.ok && response.status !== 202) {
+    throw new Error(data.message || data.error || `OCR failed (${response.status})`);
+  }
+  if (response.status === 202 && typeof data.jobId === 'string') {
+    await pollApiJob(data.jobId, 240_000);
+    return pollNoteOcrUntilReady(noteId);
+  }
+  const payload = (data.data ?? data) as {
+    status?: NoteOcrStatus;
+    attachment?: NoteAttachment;
+    ocrError?: string;
+  };
+  if (payload.status === 'ready' && payload.attachment) {
+    return { status: 'ready' as const, attachment: payload.attachment };
+  }
+  if (payload.status === 'failed' && payload.attachment) {
+    return {
+      status: 'failed' as const,
+      attachment: payload.attachment,
+      ocrError: payload.ocrError,
+    };
+  }
+  return pollNoteOcrUntilReady(noteId);
+};
+
 export const uploadNotePdfViaApi = async (
   fileUri: string,
   fileName: string,
@@ -557,10 +638,34 @@ export const uploadNotePdfViaApi = async (
   }
 
   const { base64Data } = await readLocalFileAsBase64(fileUri, fileName);
-  return notesRequest<{ note: StudyNote; attachment: NoteAttachment }>('/upload-pdf', {
+  const result = await notesRequest<{
+    note: StudyNote;
+    attachment: NoteAttachment;
+    ocrQueued?: boolean;
+    extractionStatus?: string;
+  }>('/upload-pdf', {
     method: 'POST',
     body: JSON.stringify({ fileName, base64Data, folderId }),
   });
+
+  const needsOcrWait =
+    result.ocrQueued ||
+    result.extractionStatus === 'ocr_processing' ||
+    result.attachment?.metadata?.extractionStatus === 'ocr_processing';
+
+  if (needsOcrWait && result.note?.id) {
+    try {
+      const ocr = await waitForNoteOcr(result.note.id);
+      return {
+        note: result.note,
+        attachment: ocr.attachment || result.attachment,
+      };
+    } catch {
+      return { note: result.note, attachment: result.attachment };
+    }
+  }
+
+  return { note: result.note, attachment: result.attachment };
 };
 
 export interface YoutubeNoteImportResult {

@@ -6,7 +6,12 @@ import {
   requireNoteOwner,
 } from '../middleware/authorizeResource';
 import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
-import { aiRateLimit, aiRateLimitForFeature } from '../middleware/aiRateLimit';
+import {
+  aiRateLimit,
+  aiRateLimitForFeature,
+  chargeAiCredits,
+  NOTE_OCR_CREDIT_COST,
+} from '../middleware/aiRateLimit';
 import {
   aiPostBurstRateLimit,
   collaboratorInviteRateLimit,
@@ -41,8 +46,10 @@ import {
   assertPdfSize,
   assertPresentationSize,
   buildNoteStoragePath,
-  extractPdfTextFromBuffer,
-  extractPresentationTextFromBuffer,
+  buildPdfStudyText,
+  buildPresentationStudyText,
+  extractPdfTextDetailsFromBuffer,
+  extractPresentationTextDetailsFromBuffer,
   assertPresentationFileName,
   assertUserOwnedNoteStoragePath,
   assertValidOfficeZip,
@@ -50,18 +57,22 @@ import {
   imageContentTypeFromFileName,
   assertNoteImageUpload,
   warmGotenberg,
+  MAX_OCR_PDF_PAGES,
+  MAX_OCR_SLIDES,
 } from '../services/noteFiles';
 import { detectImageMime } from '../utils/fileValidation';
 import {
   getNoteStudyContent,
   getNoteStudyContentForSmartNotes,
   hasEnoughNoteStudyContent,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared/utils/noteStudyContent';
 import { upsertSmartNotesSection } from '@lantern/shared/utils/smartNotes';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/youtube';
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
 import { runYoutubeTranscriptJob } from '../services/youtubeNote';
+import { ocrPlaceholder, runNoteOcrJob, shouldAutoEnqueueOcr } from '../services/noteOcr';
 import { logger } from '../utils/logger';
 import { processImageForUpload } from '../services/imageProcessing';
 import { storageThumbPath } from '@lantern/shared/utils/storageUrl';
@@ -243,6 +254,55 @@ async function startPresentationPreviewJob(params: {
   });
 }
 
+async function startNoteOcrJob(params: {
+  noteId: string;
+  attachmentId: string;
+  storagePath: string;
+  fileName: string;
+  sourceKind: 'pdf' | 'presentation' | 'preview_pdf';
+  meta: Record<string, unknown>;
+  userId: string;
+  buffer?: Buffer;
+}): Promise<{ mode: 'sync' | 'async'; jobId?: string }> {
+  const payload = {
+    noteId: params.noteId,
+    attachmentId: params.attachmentId,
+    storagePath: params.storagePath,
+    fileName: params.fileName,
+    sourceKind: params.sourceKind,
+    meta: params.meta,
+    // Avoid huge Redis payloads — worker re-downloads from storage.
+  };
+  const outcome = await runSyncOrEnqueue('notes.ocr.extract', payload, params.userId, () =>
+    runNoteOcrJob(supabaseService, {
+      ...params,
+      buffer: params.buffer,
+    })
+  );
+  if (outcome.mode === 'async') {
+    return { mode: 'async', jobId: outcome.jobId };
+  }
+  return { mode: 'sync' };
+}
+
+const OCR_PROCESSING_STALE_MS = 10 * 60 * 1000;
+
+function resolveOcrStatus(meta: Record<string, unknown>): 'ready' | 'processing' | 'failed' | 'none' | 'needs_ocr' {
+  const status = meta.extractionStatus;
+  if (status === 'ocr_processing') {
+    const started = typeof meta.ocrStartedAt === 'string' ? Date.parse(meta.ocrStartedAt) : NaN;
+    if (Number.isFinite(started) && Date.now() - started > OCR_PROCESSING_STALE_MS) {
+      return 'failed';
+    }
+    return 'processing';
+  }
+  if (status === 'ocr_failed') return 'failed';
+  if (status === 'needs_ocr' || status === 'empty') return 'needs_ocr';
+  if (status === 'ok' && meta.ocrProvider === 'tesseract') return 'ready';
+  if (status === 'ok') return 'ready';
+  return 'none';
+}
+
 const PREVIEW_PROCESSING_STALE_MS = 5 * 60 * 1000;
 
 function parsePreviewStartedAt(meta: Record<string, unknown>): number | null {
@@ -350,9 +410,23 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
     contentType: 'application/pdf',
   });
   const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
-  const extractedText = await extractPdfTextFromBuffer(buffer);
-  const studyText = extractedText || `[PDF uploaded: ${fileName}. Text extraction unavailable.]`;
+  const extraction = await extractPdfTextDetailsFromBuffer(buffer);
+  const { studyText, extractionStatus } = buildPdfStudyText(String(fileName), extraction);
   const noteTitle = String(fileName).replace(/\.pdf$/i, '') || 'Imported PDF';
+  const willOcr = shouldAutoEnqueueOcr(extractionStatus);
+  const attachmentMeta: Record<string, unknown> = {
+    storagePath,
+    extractionStatus: willOcr ? 'ocr_processing' : extractionStatus,
+    pageCount: extraction.pageCount,
+    charsPerPage: extraction.assessment.charsPerPage,
+    ocrMaxPages: MAX_OCR_PDF_PAGES,
+    ...(willOcr
+      ? {
+          ocrProvider: 'tesseract',
+          ocrStartedAt: new Date().toISOString(),
+        }
+      : {}),
+  };
 
   let note;
   let attachment;
@@ -367,14 +441,37 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
       type: 'pdf',
       fileUrl,
       fileName,
-      extractedText: studyText,
-      metadata: { storagePath },
+      extractedText: willOcr ? ocrPlaceholder(String(fileName)) : studyText,
+      metadata: attachmentMeta,
     });
   } catch (err) {
     await supabaseService.deleteNoteFile(storagePath).catch(() => {});
     throw err;
   }
-  res.json({ success: true, data: { note, attachment } });
+
+  if (willOcr) {
+    void startNoteOcrJob({
+      noteId: note.id,
+      attachmentId: attachment.id,
+      storagePath,
+      fileName: String(fileName),
+      sourceKind: 'pdf',
+      meta: attachmentMeta,
+      userId,
+    }).catch((err) => {
+      logger.error('Failed to start PDF OCR job', { noteId: note.id, err });
+    });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      note,
+      attachment,
+      extractionStatus: willOcr ? 'ocr_processing' : extractionStatus,
+      ocrQueued: willOcr,
+    },
+  });
 }));
 
 router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
@@ -412,10 +509,13 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
   });
 
   const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
-  const extractedText = await extractPresentationTextFromBuffer(buffer, safeName);
-  const studyText =
-    extractedText ||
-    `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
+  const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, safeName, {
+    enableOcr: true,
+  });
+  const { studyText, extractionStatus } = buildPresentationStudyText(
+    safeName,
+    presentationExtract.text
+  );
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
 
   const processingMeta = {
@@ -423,6 +523,11 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
     originalMime: contentType,
     previewProcessing: true,
     previewStartedAt: new Date().toISOString(),
+    extractionStatus,
+    slideCount: presentationExtract.slideCount,
+    ocrMaxSlides: MAX_OCR_SLIDES,
+    presentationOcrUsed: presentationExtract.usedOcr,
+    presentationOcrTimedOut: presentationExtract.timedOut,
   };
 
   let note;
@@ -458,7 +563,13 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
 
   res.json({
     success: true,
-    data: { note, attachment, previewAvailable: false, status: 'processing' },
+    data: {
+      note,
+      attachment,
+      previewAvailable: false,
+      status: 'processing',
+      extractionStatus,
+    },
   });
 }));
 
@@ -499,11 +610,26 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
 
   const contentType = presentationContentType(safeName);
   const fileUrl = await supabaseService.createSignedNoteFileUrl(ownedPath);
-  const extractedText = await extractPresentationTextFromBuffer(buffer, safeName);
-  const studyText =
-    extractedText ||
-    `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
+  const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, safeName, {
+    enableOcr: true,
+  });
+  const { studyText, extractionStatus } = buildPresentationStudyText(
+    safeName,
+    presentationExtract.text
+  );
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
+
+  const processingMeta = {
+    storagePath: ownedPath,
+    originalMime: contentType,
+    previewProcessing: true,
+    previewStartedAt: new Date().toISOString(),
+    extractionStatus,
+    slideCount: presentationExtract.slideCount,
+    ocrMaxSlides: MAX_OCR_SLIDES,
+    presentationOcrUsed: presentationExtract.usedOcr,
+    presentationOcrTimedOut: presentationExtract.timedOut,
+  };
 
   let note;
   let attachment;
@@ -514,12 +640,6 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
       folderId,
       sourceType: 'presentation',
     });
-    const processingMeta = {
-      storagePath: ownedPath,
-      originalMime: contentType,
-      previewProcessing: true,
-      previewStartedAt: new Date().toISOString(),
-    };
     attachment = await supabaseService.addNoteAttachment(note.id, {
       type: 'presentation',
       fileUrl,
@@ -537,12 +657,7 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
     attachmentId: attachment.id,
     storagePath: ownedPath,
     fileName: safeName,
-    meta: {
-      storagePath: ownedPath,
-      originalMime: contentType,
-      previewProcessing: true,
-      previewStartedAt: new Date().toISOString(),
-    },
+    meta: processingMeta,
     buffer,
     extractedText: studyText,
   });
@@ -552,11 +667,18 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
     fileName: safeName,
     bytes: buffer.length,
     durationMs: Date.now() - startedAt,
+    extractionStatus,
   });
 
   res.json({
     success: true,
-    data: { note, attachment, previewAvailable: false, status: 'processing' },
+    data: {
+      note,
+      attachment,
+      previewAvailable: false,
+      status: 'processing',
+      extractionStatus,
+    },
   });
 }));
 
@@ -598,9 +720,23 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   }
 
   const fileUrl = await supabaseService.createSignedNoteFileUrl(ownedPath);
-  const extractedText = await extractPdfTextFromBuffer(buffer);
-  const studyText = extractedText || `[PDF uploaded: ${safeName}. Text extraction unavailable.]`;
+  const extraction = await extractPdfTextDetailsFromBuffer(buffer);
+  const { studyText, extractionStatus } = buildPdfStudyText(safeName, extraction);
   const noteTitle = safeName.replace(/\.pdf$/i, '') || 'Imported PDF';
+  const willOcr = shouldAutoEnqueueOcr(extractionStatus);
+  const attachmentMeta: Record<string, unknown> = {
+    storagePath: ownedPath,
+    extractionStatus: willOcr ? 'ocr_processing' : extractionStatus,
+    pageCount: extraction.pageCount,
+    charsPerPage: extraction.assessment.charsPerPage,
+    ocrMaxPages: MAX_OCR_PDF_PAGES,
+    ...(willOcr
+      ? {
+          ocrProvider: 'tesseract',
+          ocrStartedAt: new Date().toISOString(),
+        }
+      : {}),
+  };
 
   let note;
   let attachment;
@@ -615,12 +751,26 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
       type: 'pdf',
       fileUrl,
       fileName: safeName,
-      extractedText: studyText,
-      metadata: { storagePath: ownedPath },
+      extractedText: willOcr ? ocrPlaceholder(safeName) : studyText,
+      metadata: attachmentMeta,
     });
   } catch (err) {
     await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
     throw err;
+  }
+
+  if (willOcr) {
+    void startNoteOcrJob({
+      noteId: note.id,
+      attachmentId: attachment.id,
+      storagePath: ownedPath,
+      fileName: safeName,
+      sourceKind: 'pdf',
+      meta: attachmentMeta,
+      userId,
+    }).catch((err) => {
+      logger.error('Failed to start PDF OCR job', { noteId: note.id, err });
+    });
   }
 
   logger.info('PDF upload finalized', {
@@ -628,9 +778,19 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
     fileName: safeName,
     bytes: buffer.length,
     durationMs: Date.now() - startedAt,
+    extractionStatus,
+    ocrQueued: willOcr,
   });
 
-  res.json({ success: true, data: { note, attachment } });
+  res.json({
+    success: true,
+    data: {
+      note,
+      attachment,
+      extractionStatus: willOcr ? 'ocr_processing' : extractionStatus,
+      ocrQueued: willOcr,
+    },
+  });
 }));
 
 router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
@@ -1672,8 +1832,10 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
   const content = await resolveNoteStudyContent(note.id, note, { forSmartNotes: true });
-  if (!content || content.length < 30) {
-    res.status(400).json({ error: 'Note needs at least 30 characters to summarize.' });
+  if (!content || content.length < MIN_NOTE_STUDY_CONTENT_CHARS) {
+    res.status(400).json({
+      error: `Note needs at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content to summarize. For scanned PDFs, wait for OCR or add your own notes.`,
+    });
     return;
   }
   const outcome = await runSyncOrEnqueue(
@@ -1889,38 +2051,83 @@ router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
-  if (note.sourceType !== 'presentation') {
-    res.status(400).json({ error: 'Text re-extraction is only available for presentation notes.' });
+  if (note.sourceType !== 'presentation' && note.sourceType !== 'pdf') {
+    res.status(400).json({ error: 'Text re-extraction is only available for PDF and presentation notes.' });
     return;
   }
 
   const attachments = await supabaseService.getNoteAttachments(note.id);
-  const presentation = attachments.find((a) => a.type === 'presentation');
-  if (!presentation) {
-    res.status(404).json({ error: 'No presentation attachment found for this note.' });
+  const attachment =
+    note.sourceType === 'pdf'
+      ? attachments.find((a) => a.type === 'pdf')
+      : attachments.find((a) => a.type === 'presentation');
+  if (!attachment) {
+    res.status(404).json({
+      error:
+        note.sourceType === 'pdf'
+          ? 'No PDF attachment found for this note.'
+          : 'No presentation attachment found for this note.',
+    });
     return;
   }
 
   const storagePath =
-    typeof presentation.metadata?.storagePath === 'string' ? presentation.metadata.storagePath : null;
-  const fileName = presentation.fileName || 'slides.pptx';
+    typeof attachment.metadata?.storagePath === 'string' ? attachment.metadata.storagePath : null;
+  const fileName =
+    attachment.fileName || (note.sourceType === 'pdf' ? 'document.pdf' : 'slides.pptx');
   if (!storagePath) {
-    res.status(404).json({ error: 'Presentation file is missing from storage.' });
+    res.status(404).json({ error: 'Source file is missing from storage.' });
     return;
   }
 
   const { buffer } = await supabaseService.downloadNoteFile(storagePath);
+  const prevMeta = (attachment.metadata || {}) as Record<string, unknown>;
+
+  if (note.sourceType === 'pdf') {
+    const extraction = await extractPdfTextDetailsFromBuffer(buffer);
+    const { studyText, extractionStatus } = buildPdfStudyText(fileName, extraction);
+    const updatedAttachment = await supabaseService.updateNoteAttachment(attachment.id, {
+      extractedText: studyText,
+      metadata: {
+        ...prevMeta,
+        extractionStatus,
+        pageCount: extraction.pageCount,
+        charsPerPage: extraction.assessment.charsPerPage,
+      },
+    });
+    res.json({
+      success: true,
+      data: {
+        attachment: updatedAttachment,
+        extractedText: studyText,
+        contentLength: studyText.trim().length,
+        extractionStatus,
+      },
+    });
+    return;
+  }
+
   if (/\.pptx$/i.test(fileName)) {
     assertValidOfficeZip(buffer, fileName);
   }
 
-  const extractedText = await extractPresentationTextFromBuffer(buffer, fileName);
-  const studyText =
-    extractedText ||
-    `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
+  const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, fileName, {
+    enableOcr: true,
+  });
+  const { studyText, extractionStatus } = buildPresentationStudyText(
+    fileName,
+    presentationExtract.text
+  );
 
-  const updatedAttachment = await supabaseService.updateNoteAttachment(presentation.id, {
+  const updatedAttachment = await supabaseService.updateNoteAttachment(attachment.id, {
     extractedText: studyText,
+    metadata: {
+      ...prevMeta,
+      extractionStatus,
+      slideCount: presentationExtract.slideCount,
+      presentationOcrUsed: presentationExtract.usedOcr,
+      presentationOcrTimedOut: presentationExtract.timedOut,
+    },
   });
 
   res.json({
@@ -1929,9 +2136,182 @@ router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId
       attachment: updatedAttachment,
       extractedText: studyText,
       contentLength: studyText.trim().length,
+      extractionStatus,
     },
   });
 }));
+
+router.post(
+  '/:noteId/ocr',
+  requireNoteEdit('noteId'),
+  validateNoteId,
+  handleValidationErrors,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const note = await supabaseService.getNote(req.params.noteId, userId);
+    if (note.sourceType !== 'pdf' && note.sourceType !== 'presentation') {
+      res.status(400).json({ error: 'OCR is only available for PDF and presentation notes.' });
+      return;
+    }
+
+    const attachments = await supabaseService.getNoteAttachments(note.id);
+    const attachment =
+      note.sourceType === 'pdf'
+        ? attachments.find((a) => a.type === 'pdf')
+        : attachments.find((a) => a.type === 'presentation');
+    if (!attachment) {
+      res.status(404).json({ error: 'No document attachment found for this note.' });
+      return;
+    }
+
+    const meta = (attachment.metadata || {}) as Record<string, unknown>;
+    const ocrStatus = resolveOcrStatus(meta);
+    if (ocrStatus === 'processing') {
+      res.status(202).json({
+        success: true,
+        data: { status: 'processing', attachment },
+      });
+      return;
+    }
+
+    const previewPath =
+      typeof meta.previewStoragePath === 'string' ? meta.previewStoragePath : null;
+    const storagePath =
+      typeof meta.storagePath === 'string' ? meta.storagePath : null;
+    const usePreviewPdf =
+      note.sourceType === 'presentation' && Boolean(previewPath);
+    const pathForOcr = usePreviewPdf ? previewPath! : storagePath;
+    if (!pathForOcr) {
+      res.status(404).json({ error: 'Source file is missing from storage.' });
+      return;
+    }
+
+    if (NOTE_OCR_CREDIT_COST > 0) {
+      const denied = await chargeAiCredits(userId, NOTE_OCR_CREDIT_COST);
+      if (denied) {
+        res.status(429).json(denied);
+        return;
+      }
+    }
+
+    const fileName =
+      attachment.fileName ||
+      (note.sourceType === 'pdf' ? 'document.pdf' : usePreviewPdf ? 'preview.pdf' : 'slides.pptx');
+    const sourceKind: 'pdf' | 'presentation' | 'preview_pdf' = usePreviewPdf
+      ? 'preview_pdf'
+      : note.sourceType === 'pdf'
+        ? 'pdf'
+        : 'presentation';
+
+    const processingMeta = {
+      ...meta,
+      extractionStatus: 'ocr_processing',
+      ocrProvider: 'tesseract',
+      ocrStartedAt: new Date().toISOString(),
+      ocrError: undefined,
+      ocrFailedAt: undefined,
+      ocrMaxPages: MAX_OCR_PDF_PAGES,
+      ocrMaxSlides: MAX_OCR_SLIDES,
+      ocrCreditCost: NOTE_OCR_CREDIT_COST,
+    };
+
+    const updated = await supabaseService.updateNoteAttachment(attachment.id, {
+      extractedText: ocrPlaceholder(fileName),
+      metadata: processingMeta,
+    });
+
+    const outcome = await startNoteOcrJob({
+      noteId: note.id,
+      attachmentId: attachment.id,
+      storagePath: pathForOcr,
+      fileName,
+      sourceKind,
+      meta: processingMeta,
+      userId,
+    });
+
+    if (outcome.mode === 'async') {
+      res.status(202).json({
+        success: true,
+        data: {
+          status: 'processing',
+          attachment: updated,
+          ocrMaxPages: MAX_OCR_PDF_PAGES,
+          ocrMaxSlides: MAX_OCR_SLIDES,
+          creditCost: NOTE_OCR_CREDIT_COST,
+        },
+        jobId: outcome.jobId,
+      });
+      return;
+    }
+
+    const refreshed = await supabaseService.getNoteAttachments(note.id);
+    const finalAttachment = refreshed.find((a) => a.id === attachment.id) || updated;
+    const finalStatus = resolveOcrStatus((finalAttachment.metadata || {}) as Record<string, unknown>);
+    res.json({
+      success: true,
+      data: {
+        status: finalStatus === 'ready' ? 'ready' : finalStatus,
+        attachment: finalAttachment,
+        ocrMaxPages: MAX_OCR_PDF_PAGES,
+        ocrMaxSlides: MAX_OCR_SLIDES,
+        creditCost: NOTE_OCR_CREDIT_COST,
+      },
+    });
+  })
+);
+
+router.get(
+  '/:noteId/ocr-status',
+  validateNoteId,
+  handleValidationErrors,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const note = await supabaseService.getNote(req.params.noteId, userId);
+    if (note.sourceType !== 'pdf' && note.sourceType !== 'presentation') {
+      res.status(400).json({ error: 'OCR status is only available for PDF and presentation notes.' });
+      return;
+    }
+
+    const attachments = await supabaseService.getNoteAttachments(note.id);
+    const attachment =
+      note.sourceType === 'pdf'
+        ? attachments.find((a) => a.type === 'pdf')
+        : attachments.find((a) => a.type === 'presentation');
+    if (!attachment) {
+      res.json({
+        success: true,
+        data: { status: 'none', attachment: null },
+      });
+      return;
+    }
+
+    const meta = (attachment.metadata || {}) as Record<string, unknown>;
+    const status = resolveOcrStatus(meta);
+    const ocrError =
+      status === 'failed'
+        ? typeof meta.ocrError === 'string'
+          ? meta.ocrError
+          : 'Local OCR failed.'
+        : undefined;
+
+    res.json({
+      success: true,
+      data: {
+        status,
+        attachment,
+        extractionStatus: meta.extractionStatus,
+        ocrProvider: meta.ocrProvider,
+        ocrPageCount: meta.ocrPageCount,
+        ocrError,
+        ocrMaxPages: MAX_OCR_PDF_PAGES,
+        ocrMaxSlides: MAX_OCR_SLIDES,
+      },
+    });
+  })
+);
 
 // Collaboration + secure share links (owner-managed)
 router.get('/:noteId/collaborators', asyncHandler(async (req: Request, res: Response) => {

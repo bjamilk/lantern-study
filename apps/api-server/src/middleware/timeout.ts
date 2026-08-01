@@ -62,7 +62,7 @@ export const presentationTimeout = requestTimeout(180000);
 
 /** Routes that need no default timeout cap (upload, transcribe, PPT preview, AI companion). */
 export const LONG_RUNNING_NOTE_PATH =
-  /^\/api\/v1\/notes\/(transcribe-audio|upload-lecture-audio|upload-pdf|upload-presentation|upload-images|finalize-pdf|finalize-presentation|finalize-images|warm-preview|daily-quiz|[^/]+\/(summarize|generate-flashcards|regenerate-preview|quiz)|[^/]+\/attachments\/(finalize-image|upload-images))$/;
+  /^\/api\/v1\/notes\/(transcribe-audio|upload-lecture-audio|upload-pdf|upload-presentation|upload-images|finalize-pdf|finalize-presentation|finalize-images|warm-preview|daily-quiz|[^/]+\/(summarize|generate-flashcards|regenerate-preview|reextract-text|ocr|ocr-status|quiz)|[^/]+\/attachments\/(finalize-image|upload-images))$/;
 
 export const LONG_RUNNING_AI_PATH =
   /^\/api\/v1\/ai(\/|$)/;

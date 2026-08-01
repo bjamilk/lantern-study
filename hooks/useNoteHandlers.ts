@@ -139,9 +139,9 @@ export function useNoteHandlers(currentUserId?: string) {
       const note = useNotesStore.getState().selectedNote;
       if (!note) throw new Error('Note not found.');
       const smartNotesSource = getNoteStudyContentForSmartNotes(note);
-      if (smartNotesSource.length < 30) {
+      if (smartNotesSource.length < MIN_NOTE_STUDY_CONTENT_CHARS) {
         throw new Error(
-          'Need at least 30 characters of study content. Add notes or wait for import/extraction.'
+          `Need at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content. For scanned PDFs, wait for OCR or add your own notes.`
         );
       }
       const result = await notesApi.summarizeNote(noteId);

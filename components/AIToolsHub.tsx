@@ -7,7 +7,13 @@ import {
   RectangleStackIcon,
   AcademicCapIcon,
 } from '@heroicons/react/24/outline';
-import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
+import {
+  getExtractionStatusMessage,
+  getNoteStudyContent,
+  hasEnoughNoteStudyContent,
+  isThinOrUnusableStudyContent,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+} from '@lantern/shared';
 import { ScreenHeader, Button, Card } from './ui';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
@@ -53,11 +59,22 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       const warnings: string[] = [];
       const studyText = getNoteStudyContent(note);
 
+      const extractionMessage = getExtractionStatusMessage(
+        (note.attachments?.[0]?.metadata?.extractionStatus as
+          | 'ok'
+          | 'needs_ocr'
+          | 'empty'
+          | 'ocr_processing'
+          | 'ocr_failed'
+          | undefined) || null,
+        note.sourceType
+      );
+
       // PDF Summarizer and import flows must call summarize — previously only flashcards/quiz ran.
-      if (hasEnoughNoteStudyContent(note) || studyText.length >= 30) {
+      if (hasEnoughNoteStudyContent(note) && !isThinOrUnusableStudyContent(note)) {
         try {
           const { summary, note: updated } = await notesApi.summarizeNote(note.id);
-          summarized = Boolean(summary?.trim());
+          summarized = Boolean(summary?.trim()) && (summary?.trim().length || 0) >= MIN_NOTE_STUDY_CONTENT_CHARS;
           const notesState = useNotesStore.getState();
           notesState.setNotes(
             notesState.notes.map((n) =>
@@ -74,17 +91,18 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
               attachments: note.attachments ?? notesState.selectedNote.attachments,
             });
           }
-          if (!summarized) warnings.push('Summary generation returned empty content.');
+          if (!summarized) warnings.push('Summary generation returned empty or thin content.');
         } catch {
           warnings.push('Summary generation failed. You can retry Smart Notes from the note.');
         }
       } else {
         warnings.push(
-          'Could not extract enough text to summarize. Try a text-based PDF, or open the note and use Smart Notes after adding content.'
+          extractionMessage ||
+            `Could not extract enough text to summarize (need ${MIN_NOTE_STUDY_CONTENT_CHARS}+ characters). For scanned PDFs, wait for OCR or open the note and add content.`
         );
       }
 
-      if (generateCards && hasEnoughNoteStudyContent(note)) {
+      if (generateCards && hasEnoughNoteStudyContent(note) && !isThinOrUnusableStudyContent(note)) {
         try {
           const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
             count: normalizeFlashcardCount(),
@@ -96,7 +114,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
         }
       }
 
-      if (generateQuiz && hasEnoughNoteStudyContent(note)) {
+      if (generateQuiz && hasEnoughNoteStudyContent(note) && !isThinOrUnusableStudyContent(note)) {
         try {
           const { questions } = await notesApi.generateDailyQuizFromContent(
             studyText.slice(0, 8000),

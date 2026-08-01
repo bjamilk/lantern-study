@@ -421,7 +421,7 @@ async function pollPresentationPreviewUntilReady(noteId: string): Promise<{
         previewAvailable: false,
         previewError:
           status.previewError ||
-          'Slide preview is unavailable, but AI can still use extracted text from your deck.',
+          'Slide preview is unavailable. AI tools need readable extracted text — check extraction status on the note.',
       };
     }
     await sleep(3000);
@@ -529,6 +529,121 @@ export async function reextractNoteText(
     method: 'POST',
     body: JSON.stringify({}),
   });
+}
+
+export type NoteOcrStatus = 'ready' | 'processing' | 'failed' | 'none' | 'needs_ocr';
+
+export async function fetchNoteOcrStatus(noteId: string): Promise<{
+  status: NoteOcrStatus;
+  attachment?: NoteAttachment | null;
+  extractionStatus?: string;
+  ocrProvider?: string;
+  ocrPageCount?: number;
+  ocrError?: string;
+  ocrMaxPages?: number;
+  ocrMaxSlides?: number;
+}> {
+  return notesRequest(`/${noteId}/ocr-status`);
+}
+
+const OCR_POLL_DEADLINE_MS = 240_000;
+const ocrPollsInFlight = new Set<string>();
+
+async function pollNoteOcrUntilReady(noteId: string): Promise<{
+  status: NoteOcrStatus;
+  attachment: NoteAttachment;
+  ocrError?: string;
+}> {
+  const deadline = Date.now() + OCR_POLL_DEADLINE_MS;
+  while (Date.now() < deadline) {
+    const status = await fetchNoteOcrStatus(noteId);
+    if (status.status === 'ready' && status.attachment) {
+      return { status: 'ready', attachment: status.attachment };
+    }
+    if (status.status === 'failed') {
+      return {
+        status: 'failed',
+        attachment: status.attachment!,
+        ocrError:
+          status.ocrError ||
+          'Local OCR could not read this file. Add notes manually, or try a text-based export.',
+      };
+    }
+    if (status.status === 'none') {
+      throw new Error('No document attachment found for OCR.');
+    }
+    if (status.status === 'needs_ocr' && status.attachment) {
+      // Not started / idle — caller should POST /ocr first.
+      return { status: 'needs_ocr', attachment: status.attachment };
+    }
+    await sleep(3000);
+  }
+  throw new Error('OCR timed out. Try again from the note, or add your own notes.');
+}
+
+/** Start OCR (if needed) and poll until ready/failed. */
+export async function runNoteOcr(
+  noteId: string
+): Promise<{ status: NoteOcrStatus; attachment: NoteAttachment; ocrError?: string }> {
+  if (ocrPollsInFlight.has(noteId)) {
+    return pollNoteOcrUntilReady(noteId);
+  }
+  ocrPollsInFlight.add(noteId);
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/notes/${noteId}/ocr`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    const data = (await response.json().catch(() => ({}))) as {
+      data?: {
+        status?: NoteOcrStatus;
+        attachment?: NoteAttachment;
+        ocrError?: string;
+      };
+      error?: string;
+      message?: string;
+    };
+    if (response.status === 429) {
+      throw new Error(data.error || data.message || 'Daily AI limit reached for OCR.');
+    }
+    if (!response.ok && response.status !== 202) {
+      throw new Error(data.error || data.message || 'Failed to start OCR.');
+    }
+    const payload = data.data;
+    if (payload?.status === 'ready' && payload.attachment) {
+      return { status: 'ready', attachment: payload.attachment };
+    }
+    if (payload?.status === 'failed' && payload.attachment) {
+      return {
+        status: 'failed',
+        attachment: payload.attachment,
+        ocrError: payload.ocrError,
+      };
+    }
+    return pollNoteOcrUntilReady(noteId);
+  } finally {
+    ocrPollsInFlight.delete(noteId);
+  }
+}
+
+/** Poll only — use when upload already queued OCR. */
+export async function waitForNoteOcr(
+  noteId: string
+): Promise<{ status: NoteOcrStatus; attachment: NoteAttachment; ocrError?: string }> {
+  if (ocrPollsInFlight.has(noteId)) {
+    return pollNoteOcrUntilReady(noteId);
+  }
+  ocrPollsInFlight.add(noteId);
+  try {
+    return await pollNoteOcrUntilReady(noteId);
+  } finally {
+    ocrPollsInFlight.delete(noteId);
+  }
 }
 
 export async function generateDailyQuizFromContent(
@@ -1124,11 +1239,40 @@ export async function uploadNotePdfViaApi(
   });
 
   const base64Data = await fileToBase64(file);
-  return notesUploadRequest<{ note: StudyNote; attachment: NoteAttachment }>(
-    '/upload-pdf',
-    { fileName: file.name, base64Data, folderId },
-    { onProgress, processingLabel: 'Extracting text from PDF…' }
-  );
+  const result = await notesUploadRequest<{
+    note: StudyNote;
+    attachment: NoteAttachment;
+    ocrQueued?: boolean;
+    extractionStatus?: string;
+  }>('/upload-pdf', { fileName: file.name, base64Data, folderId }, {
+    onProgress,
+    processingLabel: 'Extracting text from PDF…',
+  });
+
+  const needsOcrWait =
+    result.ocrQueued ||
+    result.extractionStatus === 'ocr_processing' ||
+    result.attachment?.metadata?.extractionStatus === 'ocr_processing';
+
+  if (needsOcrWait && result.note?.id) {
+    onProgress?.({
+      stage: 'processing',
+      percent: null,
+      label: 'Running OCR on scanned pages…',
+      fileName: file.name,
+    });
+    try {
+      const ocr = await waitForNoteOcr(result.note.id);
+      return {
+        note: result.note,
+        attachment: ocr.attachment || result.attachment,
+      };
+    } catch {
+      return { note: result.note, attachment: result.attachment };
+    }
+  }
+
+  return { note: result.note, attachment: result.attachment };
 }
 
 export async function uploadPresentationViaApi(

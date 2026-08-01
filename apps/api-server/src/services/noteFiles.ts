@@ -1,9 +1,35 @@
+import {
+  assessPdfTextExtraction,
+  isPlaceholderExtractedText,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+  type NoteExtractionStatus,
+  type PdfTextExtractionAssessment,
+} from '@lantern/shared/utils/noteStudyContent';
 import { logger } from '../utils/logger';
 import { assertImageMagicBytes, assertPdfMagicBytes } from '../utils/fileValidation';
 
 const NOTE_FILES_BUCKET = 'note-files';
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const MAX_PRESENTATION_BYTES = 25 * 1024 * 1024;
+
+/** Hard caps for local Tesseract OCR (memory / latency on Render). */
+export const MAX_OCR_PDF_PAGES = Math.max(
+  1,
+  parseInt(process.env.NOTE_OCR_MAX_PDF_PAGES || '15', 10) || 15
+);
+export const MAX_OCR_SLIDES = Math.max(
+  1,
+  parseInt(process.env.NOTE_OCR_MAX_SLIDES || '20', 10) || 20
+);
+/** Soft timeout for sync officeparser OCR during upload/finalize. */
+export const PRESENTATION_OCR_TIMEOUT_MS = Math.max(
+  5_000,
+  parseInt(process.env.NOTE_PRESENTATION_OCR_TIMEOUT_MS || '45000', 10) || 45_000
+);
+export const PDF_OCR_TIMEOUT_MS = Math.max(
+  10_000,
+  parseInt(process.env.NOTE_PDF_OCR_TIMEOUT_MS || '120000', 10) || 120_000
+);
 
 export function sanitizeNoteFileName(name: string): string {
   const base = String(name || 'file').replace(/^.*[\\/]/, '');
@@ -44,31 +70,203 @@ export function assertUserOwnedNoteStoragePath(storagePath: string, userId: stri
   }
 }
 
-export async function extractPdfTextFromBuffer(buffer: Buffer): Promise<string> {
+export type PdfTextExtractionResult = {
+  text: string;
+  pageCount: number;
+  assessment: PdfTextExtractionAssessment;
+};
+
+export type PresentationTextExtractionResult = {
+  text: string;
+  slideCount?: number;
+  usedOcr: boolean;
+  timedOut: boolean;
+};
+
+function isThinStudyText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || isPlaceholderExtractedText(trimmed)) return true;
+  return trimmed.length < MIN_NOTE_STUDY_CONTENT_CHARS;
+}
+
+export async function extractPdfTextDetailsFromBuffer(
+  buffer: Buffer
+): Promise<PdfTextExtractionResult> {
   try {
-    const pdfParse = require('pdf-parse') as (data: Buffer) => Promise<{ text: string }>;
+    const pdfParse = require('pdf-parse') as (
+      data: Buffer
+    ) => Promise<{ text: string; numpages: number }>;
     const result = await pdfParse(buffer);
-    return (result.text || '').trim();
+    const text = (result.text || '').trim();
+    const pageCount =
+      typeof result.numpages === 'number' && result.numpages > 0 ? result.numpages : 1;
+    return {
+      text,
+      pageCount,
+      assessment: assessPdfTextExtraction(text, pageCount),
+    };
   } catch (err) {
     logger.warn('PDF text extraction failed', { err });
-    return '';
+    return {
+      text: '',
+      pageCount: 1,
+      assessment: assessPdfTextExtraction('', 1),
+    };
   }
 }
 
+export async function extractPdfTextFromBuffer(buffer: Buffer): Promise<string> {
+  const { text } = await extractPdfTextDetailsFromBuffer(buffer);
+  return text;
+}
+
+async function astToPlainText(ast: {
+  toText?: () => string;
+  to?: (format: string) => Promise<{ value: string | Uint8Array }>;
+}): Promise<string> {
+  if (typeof ast.to === 'function') {
+    try {
+      const converted = await ast.to('text');
+      if (typeof converted.value === 'string') {
+        return converted.value.trim();
+      }
+    } catch {
+      // fall through to deprecated toText()
+    }
+  }
+  if (typeof ast.toText === 'function') {
+    return (ast.toText() || '').trim();
+  }
+  return '';
+}
+
+/**
+ * Extract PPT/PPTX text. Optionally runs local Tesseract via officeparser for image slides.
+ * Soft-caps runtime with AbortSignal; does not hard-fail the upload on OCR timeout.
+ */
 export async function extractPresentationTextFromBuffer(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
+  options?: { enableOcr?: boolean; timeoutMs?: number }
 ): Promise<string> {
+  const details = await extractPresentationTextDetailsFromBuffer(buffer, fileName, options);
+  return details.text;
+}
+
+export async function extractPresentationTextDetailsFromBuffer(
+  buffer: Buffer,
+  fileName: string,
+  options?: { enableOcr?: boolean; timeoutMs?: number }
+): Promise<PresentationTextExtractionResult> {
+  const enableOcr = options?.enableOcr !== false;
+  const timeoutMs = options?.timeoutMs ?? PRESENTATION_OCR_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+
   try {
-    const { parseOffice } = require('officeparser') as {
-      parseOffice: (file: Buffer) => Promise<{ toText: () => string }>;
-    };
-    const parsed = await parseOffice(buffer);
-    return parsed.toText().trim();
+    const { parseOffice } = require('officeparser') as typeof import('officeparser');
+    const parsed = await parseOffice(buffer, {
+      extractAttachments: enableOcr,
+      ocr: enableOcr,
+      ocrConfig: {
+        language: 'eng',
+        timeout: {
+          workerLoad: 30_000,
+          recognition: 15_000,
+          autoTerminate: 10_000,
+        },
+      },
+      abortSignal: controller.signal,
+    });
+    const text = await astToPlainText(parsed);
+    const slideCount =
+      typeof parsed.metadata?.slides === 'number'
+        ? parsed.metadata.slides
+        : typeof parsed.metadata?.pages === 'number'
+          ? parsed.metadata.pages
+          : undefined;
+    return { text, slideCount, usedOcr: enableOcr, timedOut: false };
   } catch (err) {
+    const aborted = err instanceof Error && (err.name === 'AbortError' || /aborted/i.test(err.message));
+    if (aborted) {
+      timedOut = true;
+      logger.warn('Presentation OCR/extraction timed out; retrying without OCR', {
+        fileName,
+        timeoutMs,
+      });
+      try {
+        const { parseOffice } = require('officeparser') as typeof import('officeparser');
+        const parsed = await parseOffice(buffer, {
+          extractAttachments: false,
+          ocr: false,
+        });
+        const text = await astToPlainText(parsed);
+        return { text, usedOcr: false, timedOut: true };
+      } catch (fallbackErr) {
+        logger.warn('Presentation text extraction failed after OCR timeout', {
+          err: fallbackErr,
+          fileName,
+        });
+        return { text: '', usedOcr: false, timedOut: true };
+      }
+    }
     logger.warn('Presentation text extraction failed', { err, fileName });
-    return '';
+    return { text: '', usedOcr: enableOcr, timedOut };
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+export function buildPdfStudyText(
+  fileName: string,
+  extraction: PdfTextExtractionResult
+): { studyText: string; extractionStatus: NoteExtractionStatus } {
+  const { text, assessment } = extraction;
+  if (assessment.status === 'ok' && text) {
+    return { studyText: text, extractionStatus: 'ok' };
+  }
+  if (assessment.status === 'needs_ocr') {
+    return {
+      studyText: text || `[Scanned PDF: ${fileName}]`,
+      extractionStatus: 'needs_ocr',
+    };
+  }
+  return {
+    studyText: text || `[PDF uploaded: ${fileName}. Text extraction unavailable.]`,
+    extractionStatus: 'empty',
+  };
+}
+
+export function buildPresentationStudyText(
+  fileName: string,
+  text: string
+): { studyText: string; extractionStatus: NoteExtractionStatus } {
+  if (text && !isThinStudyText(text)) {
+    return { studyText: text, extractionStatus: 'ok' };
+  }
+  if (text && text.trim().length > 0 && !isPlaceholderExtractedText(text)) {
+    return { studyText: text, extractionStatus: 'needs_ocr' };
+  }
+  return {
+    studyText: `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`,
+    extractionStatus: text ? 'needs_ocr' : 'empty',
+  };
+}
+
+export function mergeExtractionTexts(primary: string, fallback: string): string {
+  const a = (primary || '').trim();
+  const b = (fallback || '').trim();
+  if (!a || isPlaceholderExtractedText(a)) return b || a;
+  if (!b || isPlaceholderExtractedText(b)) return a;
+  if (a.includes(b)) return a;
+  if (b.includes(a)) return b;
+  if (b.length > a.length * 1.25) return b;
+  return `${a}\n\n${b}`;
+}
+
+export function isThinExtractedStudyText(text: string | null | undefined): boolean {
+  return isThinStudyText(text || '');
 }
 
 export function assertPresentationSize(buffer: Buffer): void {

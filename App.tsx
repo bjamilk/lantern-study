@@ -1218,8 +1218,15 @@ export const App: React.FC = () => {
                         }}
                         onSmartNote={async (editorState) => {
                             try {
-                                await noteHandlers.handleSmartNote(selectedNote.id, editorState);
-                                showToast('Smart notes ready!', 'success');
+                                const summary = await noteHandlers.handleSmartNote(selectedNote.id, editorState);
+                                if (summary && String(summary).trim().length >= 50) {
+                                    showToast('Smart notes ready!', 'success');
+                                } else {
+                                    showToast(
+                                      'Smart Notes returned thin content. Add more source text or wait for OCR.',
+                                      'error'
+                                    );
+                                }
                             } catch (e: any) {
                                 showToast(e?.message || 'Smart note failed', 'error');
                             }

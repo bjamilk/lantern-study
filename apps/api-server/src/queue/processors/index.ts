@@ -18,6 +18,7 @@ import { SupabaseService } from "../../services/supabase";
 import { parseApkgBuffer } from "../../services/apkgImport";
 import { runPresentationPreviewJob } from "../../services/presentationPreview";
 import { runYoutubeTranscriptJob } from "../../services/youtubeNote";
+import { runNoteOcrJob } from "../../services/noteOcr";
 import { runDataRetentionPurge } from "../../services/dataRetention";
 import {
   processAbandonedCheckoutReminders,
@@ -300,6 +301,35 @@ async function processFileJob(job: Job): Promise<unknown> {
       meta: meta || {},
     });
     return { success: result.status === "ready", ...result };
+  }
+  if (job.name === "notes.ocr.extract") {
+    const {
+      noteId,
+      attachmentId,
+      storagePath,
+      fileName,
+      sourceKind,
+      meta,
+      bufferBase64,
+    } = job.data as {
+      noteId: string;
+      attachmentId: string;
+      storagePath: string;
+      fileName: string;
+      sourceKind: "pdf" | "presentation" | "preview_pdf";
+      meta?: Record<string, unknown>;
+      bufferBase64?: string;
+    };
+    const result = await runNoteOcrJob(supabaseService, {
+      noteId,
+      attachmentId,
+      storagePath,
+      fileName,
+      sourceKind,
+      meta: meta || {},
+      buffer: bufferBase64 ? Buffer.from(bufferBase64, "base64") : undefined,
+    });
+    return { success: result.status === "ok", ...result };
   }
   throw new Error(`Unknown file job: ${job.name}`);
 }

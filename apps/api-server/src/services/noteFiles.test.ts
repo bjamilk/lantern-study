@@ -2,8 +2,13 @@ import {
   assertPresentationFileName,
   assertUserOwnedNoteStoragePath,
   assertValidOfficeZip,
+  buildPdfStudyText,
+  buildPresentationStudyText,
+  isThinExtractedStudyText,
+  mergeExtractionTexts,
   presentationContentType,
 } from './noteFiles';
+import { assessPdfTextExtraction } from '@lantern/shared/utils/noteStudyContent';
 
 describe('noteFiles presentation helpers', () => {
   it('accepts ppt and pptx extensions', () => {
@@ -51,5 +56,43 @@ describe('noteFiles presentation helpers', () => {
     expect(() =>
       assertUserOwnedNoteStoragePath(`${userId}/../other/deck.pptx`, userId)
     ).toThrow(/invalid storage path/i);
+  });
+});
+
+describe('noteFiles extraction status builders', () => {
+  it('marks sparse multi-page PDFs as needs_ocr', () => {
+    const text = 'pg\n'.repeat(12);
+    const assessment = assessPdfTextExtraction(text, 8);
+    const built = buildPdfStudyText('scan.pdf', {
+      text,
+      pageCount: 8,
+      assessment,
+    });
+    expect(built.extractionStatus).toBe('needs_ocr');
+  });
+
+  it('marks empty PDF extraction as empty with placeholder', () => {
+    const assessment = assessPdfTextExtraction('', 3);
+    const built = buildPdfStudyText('blank.pdf', {
+      text: '',
+      pageCount: 3,
+      assessment,
+    });
+    expect(built.extractionStatus).toBe('empty');
+    expect(built.studyText).toMatch(/Text extraction unavailable/);
+  });
+
+  it('builds presentation placeholders when text is missing', () => {
+    const built = buildPresentationStudyText('deck.pptx', '');
+    expect(built.extractionStatus).toBe('empty');
+    expect(isThinExtractedStudyText(built.studyText)).toBe(true);
+  });
+
+  it('merges preview PDF text when shape text is thin', () => {
+    const merged = mergeExtractionTexts(
+      '[Presentation uploaded: deck.pptx. Text extraction unavailable.]',
+      'Slide 1: photosynthesis overview with details'
+    );
+    expect(merged).toContain('photosynthesis');
   });
 });
