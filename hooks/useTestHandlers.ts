@@ -30,6 +30,7 @@ import { trackStudyActivity } from '../services/studyActivity';
 import { trackTestStarted, trackTestCompleted } from '../services/productAnalytics';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import {
+    bindDraftIdToActiveSession,
     cancelScheduledSessionDraftAutosave,
     ensureSessionDraft,
     flushActiveSessionDraft,
@@ -200,8 +201,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         }
 
         void ensureSessionDraft(sessionData, sessionKind).then((drafted) => {
-            if (mode === 'test') setActiveTestSession(drafted);
-            else setActiveStudySession(drafted);
+            // Merge onto latest store state — never clobber answers/index chosen during create latency.
+            const bound = bindDraftIdToActiveSession(sessionKind, drafted);
+            if (!bound) return;
+            if (sessionKind === 'test') setActiveTestSession(bound);
+            else setActiveStudySession(bound);
         });
 
         trackTestStarted({
@@ -218,86 +222,92 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         const showExplanationsImmediately = normalizeUserSettings(currentUser?.settings).study.showExplanationsImmediately;
         const shouldReveal = revealAnswer === true || showExplanationsImmediately;
 
-        const updateSession = (session: TestSessionData | null): TestSessionData | null => {
-            if (!session) return null;
-            const existingAnswer = session.userAnswers[questionId] || { questionId };
-            const updatedAnswer = { ...existingAnswer, ...answerFields };
-            
-            if (appMode === AppMode.STUDY_ACTIVE) {
-                const question = session.questions.find(q => q.id === questionId);
-                if (question) {
-                    const hasAnswerData = answerFields.selectedOptionIds || answerFields.fillText || 
-                                          answerFields.matchingAnswers || answerFields.diagramAnswers;
-                    const alreadyAnswered = existingAnswer.isCorrect !== undefined;
+        // Read latest store state so answer + Next in the same tick cannot clobber each other.
+        const store = useTestStore.getState();
+        const session =
+            appMode === AppMode.TEST_ACTIVE
+                ? store.activeTestSession
+                : appMode === AppMode.STUDY_ACTIVE
+                    ? store.activeStudySession
+                    : null;
+        if (!session) return;
 
-                    if (shouldReveal) {
-                        updatedAnswer.isCorrect = checkAnswerIsCorrect(question, updatedAnswer);
-                    } else if (!alreadyAnswered) {
-                        delete updatedAnswer.isCorrect;
-                    }
-                    
-                    if (shouldReveal && hasAnswerData && !alreadyAnswered && currentUser) {
-                        const currentStats = userQuestionStats[questionId] || { 
-                            correctAttempts: 0, 
-                            incorrectAttempts: 0, 
-                            lastAttempted: '' 
-                        };
-                        const newStats = {
-                            correctAttempts: updatedAnswer.isCorrect ? currentStats.correctAttempts + 1 : currentStats.correctAttempts,
-                            incorrectAttempts: !updatedAnswer.isCorrect ? currentStats.incorrectAttempts + 1 : currentStats.incorrectAttempts,
-                            lastAttempted: new Date().toISOString()
-                        };
-                        
-                        setUserQuestionStats({
-                            ...userQuestionStats,
-                            [questionId]: newStats
-                        });
-                        
-                        upsertUserQuestionStat(currentUser.id, questionId, newStats).catch(error => {
-                            console.error('Error saving study mode question stat:', error);
-                        });
-                        trackStudyActivity('study_question', 1);
-                    }
+        const existingAnswer = session.userAnswers[questionId] || { questionId };
+        const updatedAnswer = { ...existingAnswer, ...answerFields };
+
+        if (appMode === AppMode.STUDY_ACTIVE) {
+            const question = session.questions.find(q => q.id === questionId);
+            if (question) {
+                const hasAnswerData = answerFields.selectedOptionIds || answerFields.fillText ||
+                                      answerFields.matchingAnswers || answerFields.diagramAnswers;
+                const alreadyAnswered = existingAnswer.isCorrect !== undefined;
+
+                if (shouldReveal) {
+                    updatedAnswer.isCorrect = checkAnswerIsCorrect(question, updatedAnswer);
+                } else if (!alreadyAnswered) {
+                    delete updatedAnswer.isCorrect;
+                }
+
+                if (shouldReveal && hasAnswerData && !alreadyAnswered && currentUser) {
+                    const latestStats = useTestStore.getState().userQuestionStats;
+                    const currentStats = latestStats[questionId] || {
+                        correctAttempts: 0,
+                        incorrectAttempts: 0,
+                        lastAttempted: ''
+                    };
+                    const newStats = {
+                        correctAttempts: updatedAnswer.isCorrect ? currentStats.correctAttempts + 1 : currentStats.correctAttempts,
+                        incorrectAttempts: !updatedAnswer.isCorrect ? currentStats.incorrectAttempts + 1 : currentStats.incorrectAttempts,
+                        lastAttempted: new Date().toISOString()
+                    };
+
+                    setUserQuestionStats({
+                        ...latestStats,
+                        [questionId]: newStats
+                    });
+
+                    upsertUserQuestionStat(currentUser.id, questionId, newStats).catch(error => {
+                        console.error('Error saving study mode question stat:', error);
+                    });
+                    trackStudyActivity('study_question', 1);
                 }
             }
-
-            return {
-                ...session,
-                userAnswers: {
-                    ...session.userAnswers,
-                    [questionId]: updatedAnswer,
-                },
-            };
-        };
-    
-        if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
-            const updated = updateSession(activeTestSession);
-            if (updated) {
-                setActiveTestSession(updated);
-                scheduleSessionDraftAutosave();
-            }
-        } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
-            const updated = updateSession(activeStudySession);
-            if (updated) {
-                setActiveStudySession(updated as StudySessionData);
-                scheduleSessionDraftAutosave();
-            }
         }
-    }, [appMode, activeTestSession, activeStudySession, currentUser, userQuestionStats, setActiveTestSession, setActiveStudySession, setUserQuestionStats]);
+
+        const updated: TestSessionData = {
+            ...session,
+            userAnswers: {
+                ...session.userAnswers,
+                [questionId]: updatedAnswer,
+            },
+        };
+
+        if (appMode === AppMode.TEST_ACTIVE) {
+            setActiveTestSession(updated);
+            scheduleSessionDraftAutosave();
+        } else if (appMode === AppMode.STUDY_ACTIVE) {
+            setActiveStudySession(updated as StudySessionData);
+            scheduleSessionDraftAutosave();
+        }
+    }, [appMode, currentUser, setActiveTestSession, setActiveStudySession, setUserQuestionStats]);
     
     const handleChangeQuestion = useCallback((newIndex: number) => {
-        if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
-            if (newIndex >= 0 && newIndex < activeTestSession.questions.length) {
-                setActiveTestSession({ ...activeTestSession, currentQuestionIndex: newIndex });
+        // Always base navigation on the latest store session (answers may have just been written).
+        const store = useTestStore.getState();
+        if (appMode === AppMode.TEST_ACTIVE && store.activeTestSession) {
+            const session = store.activeTestSession;
+            if (newIndex >= 0 && newIndex < session.questions.length) {
+                setActiveTestSession({ ...session, currentQuestionIndex: newIndex });
                 scheduleSessionDraftAutosave();
             }
-        } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
-            if (newIndex >= 0 && newIndex < activeStudySession.questions.length) {
-                setActiveStudySession({ ...activeStudySession, currentQuestionIndex: newIndex });
+        } else if (appMode === AppMode.STUDY_ACTIVE && store.activeStudySession) {
+            const session = store.activeStudySession;
+            if (newIndex >= 0 && newIndex < session.questions.length) {
+                setActiveStudySession({ ...session, currentQuestionIndex: newIndex });
                 scheduleSessionDraftAutosave();
             }
         }
-    }, [appMode, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession]);
+    }, [appMode, setActiveTestSession, setActiveStudySession]);
     
     const handleToggleBookmark = useCallback((questionId: string) => {
         const toggleBookmark = (session: TestSessionData | null): TestSessionData | null => {
@@ -666,7 +676,10 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         setActiveTestSession(newSession);
         setActiveTestResult(null);
         setAppMode(AppMode.TEST_ACTIVE);
-        void ensureSessionDraft(newSession, 'test').then(setActiveTestSession);
+        void ensureSessionDraft(newSession, 'test').then((drafted) => {
+            const bound = bindDraftIdToActiveSession('test', drafted);
+            if (bound) setActiveTestSession(bound);
+        });
     }, [setActiveTestSession, setActiveTestResult, setAppMode]);
     
     const handlePracticeFailedQuestions = useCallback((failedQuestions: TestQuestion[]) => {
@@ -696,7 +709,10 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         setActiveStudySession(sessionData);
         setActiveTestResult(null);
         setAppMode(AppMode.STUDY_ACTIVE);
-        void ensureSessionDraft(sessionData, 'study').then(setActiveStudySession);
+        void ensureSessionDraft(sessionData, 'study').then((drafted) => {
+            const bound = bindDraftIdToActiveSession('study', drafted);
+            if (bound) setActiveStudySession(bound);
+        });
     }, [selectedChat, setActiveStudySession, setActiveTestResult, setAppMode]);
 
     return {

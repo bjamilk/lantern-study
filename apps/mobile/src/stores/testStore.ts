@@ -836,7 +836,15 @@ export const useTestStore = create<TestState>((set, get) => ({
     };
     set({ activeTest: started });
     const drafted = await ensureMobileDraft(started);
-    set({ activeTest: drafted });
+    const current = get().activeTest;
+    if (current?.test.id === started.test.id) {
+      set({
+        activeTest: {
+          ...current,
+          draftId: drafted.draftId || current.draftId,
+        },
+      });
+    }
     await get().saveToStorage();
   },
 
@@ -876,8 +884,15 @@ export const useTestStore = create<TestState>((set, get) => ({
     };
     set({ activeTest: started });
     void ensureMobileDraft(started).then((drafted) => {
-      if (get().activeTest?.test.id === drafted.test.id) {
-        set({ activeTest: drafted });
+      const current = get().activeTest;
+      // Only bind draftId — never replace answers/index chosen during create latency.
+      if (current?.test.id === drafted.test.id) {
+        set({
+          activeTest: {
+            ...current,
+            draftId: drafted.draftId || current.draftId,
+          },
+        });
       }
     });
   },

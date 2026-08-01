@@ -10,16 +10,32 @@ import { useAuthStore } from '../stores/authStore';
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<void> | null = null;
+/** Bumps whenever a new flush starts; stale in-flight flushes must not clobber newer local UI state. */
+let flushEpoch = 0;
 
 function answeredCount(session: TestSessionData): number {
   return Object.keys(session.userAnswers || {}).length;
 }
 
 /**
- * Merge a server draft onto local session state without wiping the live countdown.
- * mapDraftToSession always sets endTime (often undefined) which would overwrite a Date.
+ * Prefer local answers for overlapping question ids (active session is source of truth),
+ * while keeping any remote-only keys.
  */
-function mergeDraftOntoSession(
+export function mergeUserAnswersPreferLocal(
+  local: TestSessionData['userAnswers'] | undefined,
+  remote: TestSessionData['userAnswers'] | undefined,
+): TestSessionData['userAnswers'] {
+  return { ...(remote || {}), ...(local || {}) };
+}
+
+/**
+ * Merge a server/draft snapshot onto the live local session without regressing
+ * navigation, answers, or the live countdown.
+ *
+ * Draft create/patch responses (and stale flush snapshots) must never bounce the
+ * UI back to an older currentQuestionIndex or wipe newer userAnswers.
+ */
+export function mergeDraftOntoSession(
   local: TestSessionData,
   remote: TestSessionData,
   kind: TestSessionKind,
@@ -28,14 +44,68 @@ function mergeDraftOntoSession(
   return {
     ...local,
     ...remote,
-    endTime: remote.endTime ?? local.endTime,
+    // Durable identity / metadata from remote when present
+    id: remote.id || local.id,
+    updatedAt: remote.updatedAt || local.updatedAt,
+    pausedAt: remote.pausedAt ?? local.pausedAt,
+    // Never let a stale draft response wipe the live timer
+    endTime: local.endTime ?? remote.endTime,
     remainingTime: remote.remainingTime ?? local.remainingTime,
-    config: remote.config?.questionIds?.length ? remote.config : local.config || remote.config,
-    questions: remote.questions?.length ? remote.questions : local.questions,
-    userAnswers: remote.userAnswers || local.userAnswers,
+    config: local.config?.questionIds?.length
+      ? local.config
+      : remote.config?.questionIds?.length
+        ? remote.config
+        : local.config || remote.config,
+    questions: local.questions?.length ? local.questions : remote.questions,
+    // Local navigation + answers win during an active attempt
+    currentQuestionIndex: local.currentQuestionIndex ?? remote.currentQuestionIndex ?? 0,
+    userAnswers: mergeUserAnswersPreferLocal(local.userAnswers, remote.userAnswers),
     sessionKind: kind,
-    status: status ?? remote.status ?? local.status,
+    status: status ?? local.status ?? remote.status,
+    title: local.title || remote.title,
   };
+}
+
+function readActiveSession(): {
+  kind: TestSessionKind | null;
+  session: TestSessionData | null;
+  setActiveTestSession: (s: TestSessionData | null) => void;
+  setActiveStudySession: (s: TestSessionData | null) => void;
+  upsertPausedSessionSummary: (summary: PausedSessionSummary) => void;
+} {
+  const state = useTestStore.getState();
+  const kind: TestSessionKind | null = state.activeTestSession
+    ? 'test'
+    : state.activeStudySession
+      ? 'study'
+      : null;
+  return {
+    kind,
+    session: state.activeTestSession || state.activeStudySession,
+    setActiveTestSession: state.setActiveTestSession,
+    setActiveStudySession: state.setActiveStudySession,
+    upsertPausedSessionSummary: state.upsertPausedSessionSummary,
+  };
+}
+
+function writeActiveSession(kind: TestSessionKind, session: TestSessionData): void {
+  const { setActiveTestSession, setActiveStudySession } = useTestStore.getState();
+  if (kind === 'test') setActiveTestSession(session);
+  else setActiveStudySession(session);
+}
+
+/**
+ * Apply a draft network result onto whatever is currently in the store.
+ * Returns null if the user already left the session (nothing to write).
+ */
+export function applyDraftResultToLatestLocal(
+  kind: TestSessionKind,
+  remote: TestSessionData,
+  status?: TestSessionData['status'],
+): TestSessionData | null {
+  const { kind: currentKind, session: local } = readActiveSession();
+  if (!local || currentKind !== kind) return null;
+  return mergeDraftOntoSession(local, remote, kind, status);
 }
 
 export function toPausedSummary(
@@ -88,12 +158,24 @@ export async function ensureSessionDraft(
   }
   try {
     const created = await createTestDraft({ ...session, sessionKind: kind }, kind);
+    // Prefer the caller's session for answers/index; only take server id/metadata.
     return mergeDraftOntoSession(session, created, kind, 'in_progress');
   } catch (error) {
     console.error('[sessionDraftSync] create draft failed', error);
     const localId = `local-${Date.now()}`;
     return { ...session, id: localId, sessionKind: kind, status: 'in_progress' };
   }
+}
+
+/**
+ * Persist draft id (and only non-regressive fields) onto the latest active session.
+ * Safe to call after async create — will not wipe newer local answers/index.
+ */
+export function bindDraftIdToActiveSession(
+  kind: TestSessionKind,
+  drafted: TestSessionData,
+): TestSessionData | null {
+  return applyDraftResultToLatestLocal(kind, drafted, drafted.status || 'in_progress');
 }
 
 export async function flushActiveSessionDraft(options?: {
@@ -103,15 +185,9 @@ export async function flushActiveSessionDraft(options?: {
   if (flushInFlight) {
     await flushInFlight;
   }
+  const epoch = ++flushEpoch;
   flushInFlight = (async () => {
-    const { activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, upsertPausedSessionSummary } =
-      useTestStore.getState();
-    const kind: TestSessionKind | null = activeTestSession
-      ? 'test'
-      : activeStudySession
-        ? 'study'
-        : null;
-    const session = activeTestSession || activeStudySession;
+    let { kind, session } = readActiveSession();
     if (!kind || !session) {
       mirrorLocalState();
       return;
@@ -121,7 +197,27 @@ export async function flushActiveSessionDraft(options?: {
     if (typeof options?.remainingTime === 'number') {
       working.remainingTime = options.remainingTime;
     }
-    working = await ensureSessionDraft(working, kind);
+
+    // Create draft if needed; always bind the server id onto latest local state
+    // (even if a newer flush superseded us — otherwise the id is lost).
+    if (!working.id) {
+      working = await ensureSessionDraft(working, kind);
+      const bound = bindDraftIdToActiveSession(kind, working);
+      if (!bound) return;
+      writeActiveSession(kind, bound);
+      if (epoch !== flushEpoch) return;
+      working = bound;
+    }
+
+    // Re-read immediately before PATCH so we never send a stale index/answers.
+    const beforePatch = readActiveSession();
+    if (!beforePatch.kind || !beforePatch.session || beforePatch.kind !== kind) return;
+    if (epoch !== flushEpoch) return;
+
+    working = { ...beforePatch.session };
+    if (typeof options?.remainingTime === 'number') {
+      working.remainingTime = options.remainingTime;
+    }
 
     const status = options?.status || 'in_progress';
     const remainingForPatch =
@@ -137,7 +233,13 @@ export async function flushActiveSessionDraft(options?: {
           remainingTime: remainingForPatch,
           status,
         });
-        working = mergeDraftOntoSession(working, patched, kind, status);
+        if (epoch !== flushEpoch) return;
+
+        // Re-read again before apply — user may have advanced during the network round-trip.
+        const merged = applyDraftResultToLatestLocal(kind, patched, status);
+        if (!merged) return;
+        working = merged;
+
         // Live countdown uses endTime; keep remainingTime only while paused.
         if (status !== 'paused') {
           working = { ...working, remainingTime: undefined };
@@ -146,16 +248,43 @@ export async function flushActiveSessionDraft(options?: {
         }
       } catch (error) {
         console.error('[sessionDraftSync] patch draft failed', error);
-        working = { ...working, status };
+        if (epoch !== flushEpoch) return;
+        const latest = applyDraftResultToLatestLocal(
+          kind,
+          { ...working, status },
+          status,
+        );
+        if (!latest) return;
+        working = latest;
       }
     } else {
-      working = { ...working, status };
+      if (epoch !== flushEpoch) return;
+      const latest = applyDraftResultToLatestLocal(
+        kind,
+        { ...working, status },
+        status,
+      );
+      if (!latest) return;
+      working = latest;
     }
 
-    if (kind === 'test') setActiveTestSession(working);
-    else setActiveStudySession(working);
+    if (epoch !== flushEpoch) return;
 
-    const summary = toPausedSummary(working, kind, status === 'paused' ? 'paused' : 'in_progress');
+    // Final CAS: merge onto whatever is newest right now, never regress index/answers.
+    const finalWrite = applyDraftResultToLatestLocal(kind, working, status);
+    if (!finalWrite) return;
+
+    let toWrite = finalWrite;
+    if (status !== 'paused') {
+      toWrite = { ...toWrite, remainingTime: undefined };
+    } else if (typeof remainingForPatch === 'number') {
+      toWrite = { ...toWrite, remainingTime: remainingForPatch };
+    }
+
+    writeActiveSession(kind, toWrite);
+
+    const { upsertPausedSessionSummary } = useTestStore.getState();
+    const summary = toPausedSummary(toWrite, kind, status === 'paused' ? 'paused' : 'in_progress');
     if (summary && status === 'paused') {
       upsertPausedSessionSummary(summary);
     }
