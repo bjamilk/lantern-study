@@ -1,10 +1,27 @@
 import {
   CHAT_MESSAGE_MUTATION_WINDOW_MS,
+  CHAT_VOICE_NOTE_PREVIEW,
   canEditChatMessage,
   canRemoveChatMessage,
+  formatChatMessagePreview,
   isChatMessageMutationWindowOpen,
   shouldRenderRemovedMessage,
 } from './chatMedia';
+
+describe('formatChatMessagePreview', () => {
+  it('labels voice notes instead of exposing the audio URL', () => {
+    expect(
+      formatChatMessagePreview('[audio](https://example.com/note.m4a)')
+    ).toBe(CHAT_VOICE_NOTE_PREVIEW);
+  });
+
+  it('passes through ordinary text and empty values', () => {
+    expect(formatChatMessagePreview('Hello there')).toBe('Hello there');
+    expect(formatChatMessagePreview('')).toBe('');
+    expect(formatChatMessagePreview(null)).toBe('');
+    expect(formatChatMessagePreview(undefined)).toBe('');
+  });
+});
 
 describe('chat message mutation rules', () => {
   const now = Date.parse('2026-07-23T12:30:00.000Z');

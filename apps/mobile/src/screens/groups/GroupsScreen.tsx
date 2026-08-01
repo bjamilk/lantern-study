@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
+import { formatChatMessagePreview } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type Group } from '../../stores/groupStore';
 import { Button, ScreenHeader } from '../../components/ui';
@@ -112,7 +113,7 @@ function ChatRow({
         ) : null}
         {preview ? (
           <Text className="text-sm text-lantern-text-secondary mt-0.5" numberOfLines={1}>
-            {preview}
+            {formatChatMessagePreview(preview)}
           </Text>
         ) : null}
       </View>

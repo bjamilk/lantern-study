@@ -34,6 +34,20 @@ export function buildChatAudioMarkdown(url: string): string {
   return `[audio](${url})`;
 }
 
+/** Label for list/reply/notification snippets (matches in-thread "Voice note"). */
+export const CHAT_VOICE_NOTE_PREVIEW = 'Voice note';
+
+/**
+ * Human-readable preview for chat snippets outside the message bubble
+ * (conversation list, reply quotes, notifications). Voice notes are stored
+ * as `[audio](url)` TEXT and must not show the raw URL.
+ */
+export function formatChatMessagePreview(text?: string | null): string {
+  if (!text) return '';
+  if (isChatAudioMessage(text)) return CHAT_VOICE_NOTE_PREVIEW;
+  return text;
+}
+
 export function isChatMessageMutationWindowOpen(
   timestamp: Date | string,
   nowMs = Date.now()
