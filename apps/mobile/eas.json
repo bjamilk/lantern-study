@@ -33,6 +33,36 @@
         "buildType": "apk"
       }
     },
+    "ios-simulator": {
+      "distribution": "internal",
+      "node": "20.19.4",
+      "env": {
+        "APP_VARIANT": "development",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tiizkjhbrnaibaagmurl.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXpramhicm5haWJhYWdtdXJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjMyMjMsImV4cCI6MjA5NjQzOTIyM30.dzI3L5Blbao5DItW3xgMIUzAi9LBijZncFaNBLTMvoE",
+        "EXPO_PUBLIC_API_URL": "https://lantern-study-api.onrender.com"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
+    "ios-simulator-dev": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "node": "20.19.4",
+      "env": {
+        "APP_VARIANT": "development",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
