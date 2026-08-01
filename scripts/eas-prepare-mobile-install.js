@@ -20,8 +20,24 @@ const lockPath = path.join(root, 'package-lock.json');
 
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 pkg.workspaces = ['apps/mobile', 'packages/*'];
-// Drop root web-only deps so install stays light even if lockfile drifts.
+// Drop root web-only deps so install stays light even if lockfile drifts, but
+// retain the markdown/math libs that @lantern/shared (bundled into the mobile
+// app via packages/shared/src/components/MarkdownRenderer.tsx) imports —
+// without them Metro fails to resolve `remark-math` etc. during the EAS
+// "Bundle JavaScript" phase.
+const SHARED_BUNDLED_DEPS = [
+  'katex',
+  'react-markdown',
+  'rehype-katex',
+  'rehype-sanitize',
+  'remark-gfm',
+  'remark-math',
+];
+const originalDependencies = pkg.dependencies || {};
 pkg.dependencies = {};
+for (const dep of SHARED_BUNDLED_DEPS) {
+  if (originalDependencies[dep]) pkg.dependencies[dep] = originalDependencies[dep];
+}
 pkg.devDependencies = { typescript: pkg.devDependencies?.typescript || '~5.8.2' };
 fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 console.log('[eas-prepare-mobile-install] Trimmed root package.json to mobile + packages.');
