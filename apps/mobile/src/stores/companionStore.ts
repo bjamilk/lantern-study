@@ -406,7 +406,16 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       }
     );
 
-    if (streamCompleted || !streamError) return;
+    if (streamCompleted) return;
+
+    if (!streamError) {
+      // Defensive: stream client returned without done/error (should not happen).
+      set((s) => ({
+        isStreaming: false,
+        error: 'Failed to reach Lantern. Please try again.',
+      }));
+      return;
+    }
 
     // Avoid double-send if the stream already persisted and started emitting tokens.
     if (receivedTokens) {

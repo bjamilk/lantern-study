@@ -24,10 +24,11 @@ async function pollCompanionJob<T>(
   jobId: string,
   timeoutMs = 180_000
 ): Promise<T> {
+  const doFetch = config.fetchImpl ?? fetch;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const headers = await config.getAuthHeaders();
-    const response = await fetch(`${config.getBaseUrl()}/api/v1/jobs/${jobId}`, { headers });
+    const response = await doFetch(`${config.getBaseUrl()}/api/v1/jobs/${jobId}`, { headers });
     const payload = (await response.json().catch(() => ({}))) as {
       data?: { status?: string; result?: T; error?: string };
       error?: string;
