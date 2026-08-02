@@ -961,22 +961,26 @@ export function DashboardScreen({ navigation }: Props) {
                       </Text>
                     </View>
                     <View
-                      className={`px-2 py-1 rounded-full ${
-                        test.percentage >= 80
-                          ? 'bg-emerald-100 dark:bg-emerald-900/40'
-                          : test.percentage >= 60
-                            ? 'bg-amber-100 dark:bg-amber-900/40'
-                            : 'bg-red-100 dark:bg-red-900/40'
-                      }`}
+                      className="px-2 py-1 rounded-full"
+                      style={{
+                        backgroundColor:
+                          test.percentage >= 80
+                            ? colors.successBackground
+                            : test.percentage >= 60
+                              ? colors.warningBackground
+                              : colors.errorBackground,
+                      }}
                     >
                       <Text
-                        className={`text-sm font-bold ${
-                          test.percentage >= 80
-                            ? 'text-emerald-700 dark:text-emerald-300'
-                            : test.percentage >= 60
-                              ? 'text-amber-700 dark:text-amber-300'
-                              : 'text-red-700 dark:text-red-300'
-                        }`}
+                        className="text-sm font-bold"
+                        style={{
+                          color:
+                            test.percentage >= 80
+                              ? colors.success
+                              : test.percentage >= 60
+                                ? colors.warning
+                                : colors.error,
+                        }}
                       >
                         {test.percentage}%
                       </Text>

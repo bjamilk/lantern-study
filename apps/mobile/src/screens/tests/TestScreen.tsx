@@ -640,7 +640,6 @@ export default function TestScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
   },
   header: {
     paddingHorizontal: 20,
@@ -702,7 +701,6 @@ const styles = StyleSheet.create({
   testCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
