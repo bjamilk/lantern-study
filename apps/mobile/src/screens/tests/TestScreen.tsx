@@ -262,12 +262,14 @@ export default function TestScreen() {
       >
         <View style={[
           styles.attemptIcon,
-          { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
+          {
+            backgroundColor: item.passed ? colors.successBackground : colors.errorBackground,
+          }
         ]}>
           <Ionicons 
             name={item.passed ? 'checkmark-circle' : 'close-circle'} 
             size={24} 
-            color={item.passed ? '#10b981' : '#ef4444'} 
+            color={item.passed ? colors.success : colors.error} 
           />
         </View>
         
@@ -283,11 +285,13 @@ export default function TestScreen() {
           <View style={styles.attemptStats}>
             <View style={[
               styles.scoreBadge,
-              { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
+              {
+                backgroundColor: item.passed ? colors.successBackground : colors.errorBackground,
+              }
             ]}>
               <Text style={[
                 styles.scoreText,
-                { color: item.passed ? '#10b981' : '#ef4444' }
+                { color: item.passed ? colors.success : colors.error }
               ]}>
                 {item.percentage}%
               </Text>
@@ -315,8 +319,8 @@ export default function TestScreen() {
           onPress={() => handleDeleteAttempt(item)}
           activeOpacity={0.7}
         >
-          <Ionicons name="trash-outline" size={16} color="#ef4444" />
-          <Text style={styles.deleteHistoryButtonText}>Delete</Text>
+          <Ionicons name="trash-outline" size={16} color={colors.error} />
+          <Text style={[styles.deleteHistoryButtonText, { color: colors.error }]}>Delete</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -351,7 +355,7 @@ export default function TestScreen() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>Tests</Text>
           {activeTab === 'history' && attempts.length > 0 ? (
             <TouchableOpacity onPress={handleClearHistory} style={styles.clearHistoryButton}>
-              <Text style={[styles.clearHistoryText, { color: '#ef4444' }]}>Clear History</Text>
+              <Text style={[styles.clearHistoryText, { color: colors.error }]}>Clear History</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -363,7 +367,7 @@ export default function TestScreen() {
       {/* Tabs */}
       <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'tests' && [styles.activeTab, { backgroundColor: colors.primary + '20' }]]}
+          style={[styles.tab, activeTab === 'tests' && { backgroundColor: colors.primary + '20' }]}
           onPress={() => setActiveTab('tests')}
         >
           <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'tests' && { color: colors.primary }]}>
@@ -371,7 +375,7 @@ export default function TestScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'history' && [styles.activeTab, { backgroundColor: colors.primary + '20' }]]}
+          style={[styles.tab, activeTab === 'history' && { backgroundColor: colors.primary + '20' }]}
           onPress={() => setActiveTab('history')}
         >
           <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'history' && { color: colors.primary }]}>
@@ -394,8 +398,8 @@ export default function TestScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#6366f1"
-              colors={['#6366f1']}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
         />
@@ -412,8 +416,8 @@ export default function TestScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#6366f1"
-              colors={['#6366f1']}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
         />
@@ -461,7 +465,7 @@ export default function TestScreen() {
                         <Ionicons 
                           name="timer" 
                           size={28} 
-                          color={selectedMode === 'test' ? '#ffffff' : colors.primary} 
+                          color={selectedMode === 'test' ? colors.textInverse : colors.primary} 
                         />
                       </View>
                       <Text style={[
@@ -483,7 +487,10 @@ export default function TestScreen() {
                       style={[
                         styles.modeOption,
                         { backgroundColor: colors.background, borderColor: colors.border },
-                        selectedMode === 'study' && { borderColor: '#10b981', backgroundColor: '#10b98110' }
+                        selectedMode === 'study' && {
+                          borderColor: colors.success,
+                          backgroundColor: colors.successBackground,
+                        }
                       ]}
                       onPress={() => setSelectedMode('study')}
                       activeOpacity={0.7}
@@ -491,32 +498,32 @@ export default function TestScreen() {
                       <View style={[
                         styles.modeIconContainer,
                         { backgroundColor: colors.card },
-                        selectedMode === 'study' && { backgroundColor: '#10b981' }
+                        selectedMode === 'study' && { backgroundColor: colors.success }
                       ]}>
                         <Ionicons 
                           name="book" 
                           size={28} 
-                          color={selectedMode === 'study' ? '#ffffff' : '#10b981'} 
+                          color={selectedMode === 'study' ? colors.textInverse : colors.success} 
                         />
                       </View>
                       <Text style={[
                         styles.modeTitle,
                         { color: colors.text },
-                        selectedMode === 'study' && { color: '#10b981' }
+                        selectedMode === 'study' && { color: colors.success }
                       ]}>Study Mode</Text>
                       <Text style={[styles.modeDescription, { color: colors.textSecondary }]}>
                         Untimed • Feedback{'\n'}Learn as you go
                       </Text>
                       {selectedMode === 'study' && (
                         <View style={styles.modeCheck}>
-                          <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                          <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                         </View>
                       )}
                     </TouchableOpacity>
                   </View>
                 </View>
 
-                <View style={styles.modalStats}>
+                <View style={[styles.modalStats, { backgroundColor: colors.backgroundSecondary }]}>
                   <View style={styles.modalStatItem}>
                     <Ionicons name="help-circle" size={24} color={colors.primary} />
                     <Text style={[styles.modalStatValue, { color: colors.text }]}>{selectedTest.questionCount}</Text>
@@ -526,7 +533,7 @@ export default function TestScreen() {
                     <Ionicons 
                       name={selectedMode === 'test' ? 'time' : 'infinite'} 
                       size={24} 
-                      color="#f97316" 
+                      color={colors.warning} 
                     />
                     <Text style={[styles.modalStatValue, { color: colors.text }]}>
                       {selectedMode === 'test' 
@@ -542,7 +549,7 @@ export default function TestScreen() {
                     <Ionicons 
                       name={selectedMode === 'test' ? 'trophy' : 'bulb'} 
                       size={24} 
-                      color="#10b981" 
+                      color={colors.success} 
                     />
                     <Text style={[styles.modalStatValue, { color: colors.text }]}>
                       {selectedMode === 'test' ? `${selectedTest.passingScore}%` : 'Learn'}
@@ -566,7 +573,10 @@ export default function TestScreen() {
                   <TouchableOpacity
                     style={[
                       styles.startButton,
-                      selectedMode === 'study' && styles.startButtonStudy
+                      {
+                        backgroundColor:
+                          selectedMode === 'study' ? colors.success : colors.primary,
+                      },
                     ]}
                     onPress={() => {
                       const test = selectedTest;
@@ -579,9 +589,9 @@ export default function TestScreen() {
                     <Ionicons 
                       name={selectedMode === 'test' ? 'play' : 'book'} 
                       size={20} 
-                      color="#ffffff" 
+                      color={colors.textInverse} 
                     />
-                    <Text style={styles.startButtonText}>
+                    <Text style={[styles.startButtonText, { color: colors.textInverse }]}>
                       {selectedMode === 'test' ? 'Start Test' : 'Start Study'}
                     </Text>
                   </TouchableOpacity>
@@ -597,8 +607,10 @@ export default function TestScreen() {
                     setSelectedTest(null);
                   }}
                 >
-                  <Ionicons name="settings-outline" size={16} color="#6366f1" />
-                  <Text style={styles.advancedLinkText}>Advanced Configuration</Text>
+                  <Ionicons name="settings-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.advancedLinkText, { color: colors.primary }]}>
+                    Advanced Configuration
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -628,7 +640,6 @@ export default function TestScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
   },
   header: {
     paddingHorizontal: 20,
@@ -651,7 +662,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   headerSubtitle: {
     fontSize: 14,
@@ -662,7 +672,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 4,
   },
@@ -672,16 +681,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 10,
   },
-  activeTab: {
-    backgroundColor: '#6366f1',
-  },
   tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
-  },
-  activeTabText: {
-    color: '#ffffff',
   },
   listContent: {
     paddingHorizontal: 20,
@@ -690,7 +692,6 @@ const styles = StyleSheet.create({
   testCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -699,7 +700,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -710,12 +710,10 @@ const styles = StyleSheet.create({
   testName: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 4,
   },
   testDescription: {
     fontSize: 14,
-    color: '#9ca3af',
     marginBottom: 8,
   },
   testMeta: {
@@ -730,10 +728,8 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: '#6b7280',
   },
   attemptCard: {
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -756,7 +752,6 @@ const styles = StyleSheet.create({
   attemptName: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 2,
   },
   attemptSource: {
@@ -765,7 +760,6 @@ const styles = StyleSheet.create({
   },
   attemptDate: {
     fontSize: 13,
-    color: '#6b7280',
     marginBottom: 8,
   },
   attemptStats: {
@@ -784,7 +778,6 @@ const styles = StyleSheet.create({
   },
   attemptMeta: {
     fontSize: 13,
-    color: '#9ca3af',
   },
   attemptActions: {
     flexDirection: 'row',
@@ -817,7 +810,6 @@ const styles = StyleSheet.create({
   deleteHistoryButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ef4444',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -828,7 +820,6 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -836,12 +827,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: '#9ca3af',
     textAlign: 'center',
   },
   // Modal styles
@@ -851,7 +840,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#1e293b',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -865,7 +853,6 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 16,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -873,13 +860,11 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#ffffff',
     marginBottom: 8,
     textAlign: 'center',
   },
   modalDescription: {
     fontSize: 14,
-    color: '#9ca3af',
     textAlign: 'center',
   },
   modalStats: {
@@ -887,7 +872,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     marginBottom: 24,
     paddingVertical: 16,
-    backgroundColor: '#0f172a',
     borderRadius: 16,
   },
   modalStatItem: {
@@ -896,12 +880,10 @@ const styles = StyleSheet.create({
   modalStatValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#ffffff',
     marginTop: 8,
   },
   modalStatLabel: {
     fontSize: 12,
-    color: '#6b7280',
     marginTop: 4,
   },
   modalButtons: {
@@ -912,31 +894,24 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#334155',
     alignItems: 'center',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
   },
   startButton: {
     flex: 1,
     flexDirection: 'row',
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
-  startButtonStudy: {
-    backgroundColor: '#10b981',
-  },
   startButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
   },
   // Mode selection styles
   modeSection: {
@@ -945,7 +920,6 @@ const styles = StyleSheet.create({
   modeSectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 12,
   },
   modeOptions: {
@@ -954,7 +928,6 @@ const styles = StyleSheet.create({
   },
   modeOption: {
     flex: 1,
-    backgroundColor: '#0f172a',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
@@ -962,34 +935,21 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     position: 'relative',
   },
-  modeOptionActive: {
-    borderColor: '#6366f1',
-    backgroundColor: '#1e293b',
-  },
   modeIconContainer: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
   },
-  modeIconContainerActive: {
-    backgroundColor: '#6366f1',
-  },
   modeTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#9ca3af',
     marginBottom: 6,
-  },
-  modeTitleActive: {
-    color: '#ffffff',
   },
   modeDescription: {
     fontSize: 12,
-    color: '#6b7280',
     textAlign: 'center',
     lineHeight: 18,
   },
@@ -1008,7 +968,6 @@ const styles = StyleSheet.create({
   },
   advancedLinkText: {
     fontSize: 14,
-    color: '#6366f1',
     fontWeight: '500',
   },
 });

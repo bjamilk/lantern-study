@@ -216,20 +216,29 @@ const TrueFalseComponent = ({
 const FillBlankComponent = ({ 
   question, 
   answer, 
-  onAnswer 
+  onAnswer,
+  colors,
 }: { 
   question: TestQuestion; 
   answer?: string; 
   onAnswer: (answer: string) => void;
+  colors: ThemeColors;
 }) => (
   <View style={styles.fillBlankContainer}>
-    <Text style={styles.fillBlankHint}>Type your answer below:</Text>
+    <Text style={[styles.fillBlankHint, { color: colors.textSecondary }]}>Type your answer below:</Text>
     <TextInput
-      style={styles.fillBlankInput}
+      style={[
+        styles.fillBlankInput,
+        {
+          backgroundColor: colors.inputBackground,
+          borderColor: colors.border,
+          color: colors.text,
+        },
+      ]}
       value={answer || ''}
       onChangeText={onAnswer}
       placeholder="Enter your answer..."
-      placeholderTextColor="#64748b"
+      placeholderTextColor={colors.inputPlaceholder}
       autoCapitalize="none"
       autoCorrect={false}
     />
@@ -240,11 +249,13 @@ const FillBlankComponent = ({
 const MatchingComponent = ({ 
   question, 
   matches, 
-  onAnswer 
+  onAnswer,
+  colors,
 }: { 
   question: TestQuestion; 
   matches?: Record<string, string>; 
   onAnswer: (matches: Record<string, string>) => void;
+  colors: ThemeColors;
 }) => {
   const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
   const pairs = question.matchingPairs || [];
@@ -267,14 +278,14 @@ const MatchingComponent = ({
 
   return (
     <View style={styles.matchingContainer}>
-      <Text style={styles.matchingHint}>
+      <Text style={[styles.matchingHint, { color: colors.textSecondary }]}>
         {selectedLeft ? `Now select a match for "${selectedLeft}"` : 'Tap an item on the left, then its match on the right'}
       </Text>
       
       <View style={styles.matchingColumns}>
         {/* Left Column */}
         <View style={styles.matchingColumn}>
-          <Text style={styles.matchingColumnTitle}>Items</Text>
+          <Text style={[styles.matchingColumnTitle, { color: colors.primary }]}>Items</Text>
           {pairs.map((pair) => {
             const matched = getMatchedRight(pair.left);
             return (
@@ -282,15 +293,27 @@ const MatchingComponent = ({
                 key={pair.id}
                 style={[
                   styles.matchingItem,
-                  selectedLeft === pair.left && styles.matchingItemSelected,
-                  matched && styles.matchingItemMatched,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: 'transparent',
+                  },
+                  selectedLeft === pair.left && {
+                    borderColor: colors.primary,
+                    backgroundColor: colors.primaryBackground,
+                  },
+                  matched
+                    ? {
+                        borderColor: colors.success,
+                        backgroundColor: colors.successBackground,
+                      }
+                    : null,
                 ]}
                 onPress={() => handleLeftSelect(pair.left)}
               >
-                <Text style={styles.matchingItemText}>{pair.left}</Text>
+                <Text style={[styles.matchingItemText, { color: colors.text }]}>{pair.left}</Text>
                 {matched && (
                   <View style={styles.matchBadge}>
-                    <Ionicons name="link" size={14} color="#10b981" />
+                    <Ionicons name="link" size={14} color={colors.success} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -300,7 +323,7 @@ const MatchingComponent = ({
         
         {/* Right Column */}
         <View style={styles.matchingColumn}>
-          <Text style={styles.matchingColumnTitle}>Matches</Text>
+          <Text style={[styles.matchingColumnTitle, { color: colors.primary }]}>Matches</Text>
           {rightOptions.map((right, index) => {
             const isUsed = isRightUsed(right);
             return (
@@ -308,7 +331,14 @@ const MatchingComponent = ({
                 key={index}
                 style={[
                   styles.matchingItem,
-                  isUsed && styles.matchingItemUsed,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: 'transparent',
+                  },
+                  isUsed && {
+                    opacity: 0.5,
+                    backgroundColor: colors.successBackground,
+                  },
                   !selectedLeft && styles.matchingItemDisabled,
                 ]}
                 onPress={() => handleRightSelect(right)}
@@ -316,7 +346,8 @@ const MatchingComponent = ({
               >
                 <Text style={[
                   styles.matchingItemText,
-                  isUsed && styles.matchingItemTextUsed,
+                  { color: colors.text },
+                  isUsed && { color: colors.success },
                 ]}>
                   {right}
                 </Text>
@@ -332,8 +363,8 @@ const MatchingComponent = ({
           style={styles.clearMatchesButton}
           onPress={() => onAnswer({})}
         >
-          <Ionicons name="refresh" size={16} color="#f59e0b" />
-          <Text style={styles.clearMatchesText}>Clear all matches</Text>
+          <Ionicons name="refresh" size={16} color={colors.warning} />
+          <Text style={[styles.clearMatchesText, { color: colors.warning }]}>Clear all matches</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -345,10 +376,12 @@ const DiagramLabelingComponent = ({
   question,
   labels,
   onAnswer,
+  colors,
 }: {
   question: TestQuestion;
   labels?: Record<string, string>;
   onAnswer: (labels: Record<string, string>) => void;
+  colors: ThemeColors;
 }) => {
   const shuffledOptions = useMemo(
     () => shuffleArray(question.diagramLabels || []),
@@ -372,7 +405,13 @@ const DiagramLabelingComponent = ({
 
   return (
     <View style={styles.diagramContainer}>
-      <View style={[styles.diagramImageWrapper, imageUri ? { aspectRatio } : null]}>
+      <View
+        style={[
+          styles.diagramImageWrapper,
+          { backgroundColor: colors.inputBackground },
+          imageUri ? { aspectRatio } : null,
+        ]}
+      >
         {imageUri ? (
           <Image
             source={{ uri: imageUri }}
@@ -384,9 +423,9 @@ const DiagramLabelingComponent = ({
             }}
           />
         ) : (
-          <View style={styles.diagramImagePlaceholder}>
-            <Ionicons name="image-outline" size={48} color="#64748b" />
-            <Text style={styles.diagramPlaceholderText}>
+          <View style={[styles.diagramImagePlaceholder, { backgroundColor: colors.backgroundSecondary }]}>
+            <Ionicons name="image-outline" size={48} color={colors.textTertiary} />
+            <Text style={[styles.diagramPlaceholderText, { color: colors.textSecondary }]}>
               {imagePending ? 'Loading diagram…' : 'Diagram will appear here'}
             </Text>
           </View>
@@ -410,31 +449,39 @@ const DiagramLabelingComponent = ({
           : null}
       </View>
 
-      <Text style={styles.diagramHint}>Match each numbered point to the correct label:</Text>
+      <Text style={[styles.diagramHint, { color: colors.textSecondary }]}>
+        Match each numbered point to the correct label:
+      </Text>
 
       <View style={styles.labelInputsContainer}>
         {question.diagramLabels?.map((label, index) => (
           <View key={label.id} style={styles.labelInputRow}>
-            <View style={styles.labelNumber}>
-              <Text style={styles.labelNumberText}>{index + 1}</Text>
+            <View style={[styles.labelNumber, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.labelNumberText, { color: colors.textInverse }]}>{index + 1}</Text>
             </View>
             <TouchableOpacity
               style={[
                 styles.labelPicker,
-                labels?.[label.id] ? styles.labelPickerSelected : null,
+                {
+                  backgroundColor: colors.inputBackground,
+                  borderColor: colors.border,
+                },
+                labels?.[label.id]
+                  ? { borderColor: colors.primary, backgroundColor: colors.primaryBackground }
+                  : null,
               ]}
               onPress={() => setPickerLabelId(label.id)}
             >
               <Text
                 style={[
                   styles.labelPickerText,
-                  !labels?.[label.id] ? styles.labelPickerPlaceholder : null,
+                  { color: labels?.[label.id] ? colors.text : colors.inputPlaceholder },
                 ]}
                 numberOfLines={1}
               >
                 {selectedOptionText(labels?.[label.id])}
               </Text>
-              <Ionicons name="chevron-down" size={16} color="#94a3b8" />
+              <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
             </TouchableOpacity>
           </View>
         ))}
@@ -442,8 +489,11 @@ const DiagramLabelingComponent = ({
 
       <Modal visible={pickerLabelId !== null} transparent animationType="fade">
         <Pressable style={styles.pickerOverlay} onPress={() => setPickerLabelId(null)}>
-          <Pressable style={styles.pickerSheet} onPress={e => e.stopPropagation?.()}>
-            <Text style={styles.pickerTitle}>Select label</Text>
+          <Pressable
+            style={[styles.pickerSheet, { backgroundColor: colors.modalBackground }]}
+            onPress={e => e.stopPropagation?.()}
+          >
+            <Text style={[styles.pickerTitle, { color: colors.text }]}>Select label</Text>
             <ScrollView
               style={styles.pickerScroll}
               contentContainerStyle={styles.pickerScrollContent}
@@ -453,10 +503,10 @@ const DiagramLabelingComponent = ({
               {shuffledOptions.map((opt: DiagramLabel) => (
                 <TouchableOpacity
                   key={opt.id}
-                  style={styles.pickerOption}
+                  style={[styles.pickerOption, { borderBottomColor: colors.border }]}
                   onPress={() => pickerLabelId && handleSelect(pickerLabelId, opt.id)}
                 >
-                  <Text style={styles.pickerOptionText}>
+                  <Text style={[styles.pickerOptionText, { color: colors.text }]}>
                     {opt.label || (opt as { text?: string }).text}
                   </Text>
                 </TouchableOpacity>
@@ -473,32 +523,41 @@ const DiagramLabelingComponent = ({
 const OpenEndedComponent = ({ 
   question, 
   answer, 
-  onAnswer 
+  onAnswer,
+  colors,
 }: { 
   question: TestQuestion; 
   answer?: string; 
   onAnswer: (answer: string) => void;
+  colors: ThemeColors;
 }) => {
   const wordCount = answer ? answer.trim().split(/\s+/).filter(w => w).length : 0;
 
   return (
     <View style={styles.openEndedContainer}>
-      <Text style={styles.openEndedHint}>
+      <Text style={[styles.openEndedHint, { color: colors.textSecondary }]}>
         Write your answer in detail. Include relevant examples where applicable.
       </Text>
       <TextInput
-        style={styles.openEndedInput}
+        style={[
+          styles.openEndedInput,
+          {
+            backgroundColor: colors.inputBackground,
+            borderColor: colors.border,
+            color: colors.text,
+          },
+        ]}
         value={answer || ''}
         onChangeText={onAnswer}
         placeholder="Type your answer here..."
-        placeholderTextColor="#64748b"
+        placeholderTextColor={colors.inputPlaceholder}
         multiline
         textAlignVertical="top"
       />
       <View style={styles.openEndedFooter}>
-        <Text style={styles.wordCount}>{wordCount} words</Text>
+        <Text style={[styles.wordCount, { color: colors.textTertiary }]}>{wordCount} words</Text>
         {question.keywords && (
-          <Text style={styles.keywordsHint}>
+          <Text style={[styles.keywordsHint, { color: colors.textSecondary }]}>
             Hint: Consider these concepts: {question.keywords.slice(0, 2).join(', ')}...
           </Text>
         )}
@@ -804,6 +863,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             answer={answer as string}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -813,6 +873,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             matches={answer as Record<string, string>}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -822,6 +883,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             labels={answer as Record<string, string>}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -831,6 +893,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             answer={answer as string}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -871,21 +934,27 @@ export default function TestTakingScreen() {
           <View style={styles.headerTitleRow}>
             <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{testName}</Text>
             {isStudyMode && (
-              <View style={styles.studyBadge}>
-                <Ionicons name="book" size={12} color="#10b981" />
-                <Text style={styles.studyBadgeText}>Study</Text>
+              <View style={[styles.studyBadge, { backgroundColor: colors.successBackground }]}>
+                <Ionicons name="book" size={12} color={colors.success} />
+                <Text style={[styles.studyBadgeText, { color: colors.success }]}>Study</Text>
               </View>
             )}
           </View>
           {!isStudyMode && activeTest.test.timeLimit > 0 && (
             <View style={[
               styles.timerBadge,
-              timeRemaining < 60 && styles.timerWarning
+              {
+                backgroundColor: timeRemaining < 60 ? colors.errorBackground : colors.primary,
+              },
             ]}>
-              <Ionicons name="time" size={14} color={timeRemaining < 60 ? '#ef4444' : '#ffffff'} />
+              <Ionicons
+                name="time"
+                size={14}
+                color={timeRemaining < 60 ? colors.error : colors.textInverse}
+              />
               <Text style={[
                 styles.timerText,
-                timeRemaining < 60 && styles.timerTextWarning
+                { color: timeRemaining < 60 ? colors.error : colors.textInverse },
               ]}>
                 {formatTime(timeRemaining)}
               </Text>
@@ -894,12 +963,17 @@ export default function TestTakingScreen() {
         </View>
         
         {!isStudyMode ? (
-          <TouchableOpacity onPress={() => handleSubmit()} style={styles.submitButton}>
-            <Text style={styles.submitButtonText}>Submit</Text>
+          <TouchableOpacity
+            onPress={() => handleSubmit()}
+            style={[styles.submitButton, { backgroundColor: colors.primary }]}
+          >
+            <Text style={[styles.submitButtonText, { color: colors.textInverse }]}>Submit</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.studyProgress}>
-            <Text style={styles.studyProgressText}>{answeredCount}/{activeTest.questions.length}</Text>
+            <Text style={[styles.studyProgressText, { color: colors.textSecondary }]}>
+              {answeredCount}/{activeTest.questions.length}
+            </Text>
           </View>
         )}
       </View>
@@ -907,15 +981,25 @@ export default function TestTakingScreen() {
       {!isStudyMode && currentQuestion && (
         <View style={styles.flagRow}>
           <TouchableOpacity
-            style={[styles.flagButton, isCurrentFlagged && styles.flagButtonActive]}
+            style={[
+              styles.flagButton,
+              {
+                backgroundColor: isCurrentFlagged ? colors.warningBackground : colors.backgroundSecondary,
+              },
+            ]}
             onPress={() => toggleFlag(currentQuestion.id)}
           >
             <Ionicons
               name={isCurrentFlagged ? 'flag' : 'flag-outline'}
               size={18}
-              color={isCurrentFlagged ? '#f97316' : '#94a3b8'}
+              color={isCurrentFlagged ? colors.warning : colors.textTertiary}
             />
-            <Text style={[styles.flagButtonText, isCurrentFlagged && styles.flagButtonTextActive]}>
+            <Text
+              style={[
+                styles.flagButtonText,
+                { color: isCurrentFlagged ? colors.warning : colors.textSecondary },
+              ]}
+            >
               {isCurrentFlagged ? 'Flagged' : 'Flag for review'}
             </Text>
           </TouchableOpacity>
@@ -983,28 +1067,36 @@ export default function TestTakingScreen() {
         {isStudyMode && showFeedback && feedbackResult && (
           <View style={[
             styles.feedbackContainer,
-            feedbackResult.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect
+            {
+              backgroundColor: feedbackResult.isCorrect
+                ? colors.successBackground
+                : colors.errorBackground,
+            },
           ]}>
             <View style={styles.feedbackHeader}>
               <Ionicons 
                 name={feedbackResult.isCorrect ? 'checkmark-circle' : 'close-circle'} 
                 size={28} 
-                color={feedbackResult.isCorrect ? '#10b981' : '#ef4444'} 
+                color={feedbackResult.isCorrect ? colors.success : colors.error} 
               />
               <Text style={[
                 styles.feedbackTitle,
-                feedbackResult.isCorrect ? styles.feedbackTitleCorrect : styles.feedbackTitleIncorrect
+                { color: feedbackResult.isCorrect ? colors.success : colors.error },
               ]}>
                 {feedbackResult.isCorrect ? 'Correct!' : 'Incorrect'}
               </Text>
             </View>
             {feedbackResult.explanation && (
-              <Text style={styles.feedbackExplanation}>{feedbackResult.explanation}</Text>
+              <Text style={[styles.feedbackExplanation, { color: colors.text }]}>
+                {feedbackResult.explanation}
+              </Text>
             )}
             {!feedbackResult.isCorrect && (
-              <View style={styles.correctAnswerBox}>
-                <Text style={styles.correctAnswerLabel}>Correct answer:</Text>
-                <Text style={styles.correctAnswerText}>
+              <View style={[styles.correctAnswerBox, { backgroundColor: colors.card }]}>
+                <Text style={[styles.correctAnswerLabel, { color: colors.textSecondary }]}>
+                  Correct answer:
+                </Text>
+                <Text style={[styles.correctAnswerText, { color: colors.success }]}>
                   {formatCorrectAnswerDisplay(currentQuestion)}
                 </Text>
               </View>
@@ -1015,12 +1107,12 @@ export default function TestTakingScreen() {
         {/* Study Mode Check Answer Button */}
         {isStudyMode && hasAnsweredCurrent && !isAnswerRevealed && (
           <TouchableOpacity
-            style={styles.checkAnswerButton}
+            style={[styles.checkAnswerButton, { backgroundColor: colors.primary }]}
             onPress={handleCheckAnswer}
             activeOpacity={0.8}
           >
-            <Ionicons name="eye" size={20} color="#ffffff" />
-            <Text style={styles.checkAnswerText}>Check Answer</Text>
+            <Ionicons name="eye" size={20} color={colors.textInverse} />
+            <Text style={[styles.checkAnswerText, { color: colors.textInverse }]}>Check Answer</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -1127,10 +1219,18 @@ export default function TestTakingScreen() {
         animationType="slide"
         onRequestClose={() => setShowReviewModal(false)}
       >
-        <View style={styles.reviewOverlay}>
-          <View style={[styles.reviewModal, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
-            <Text style={styles.reviewTitle}>Review & Submit</Text>
-            <Text style={styles.reviewSubtitle}>
+        <View style={[styles.reviewOverlay, { backgroundColor: colors.modalOverlay }]}>
+          <View
+            style={[
+              styles.reviewModal,
+              {
+                backgroundColor: colors.modalBackground,
+                paddingBottom: Math.max(insets.bottom, 16) + 8,
+              },
+            ]}
+          >
+            <Text style={[styles.reviewTitle, { color: colors.text }]}>Review & Submit</Text>
+            <Text style={[styles.reviewSubtitle, { color: colors.textSecondary }]}>
               {answeredCount} answered · {activeTest.questions.length - answeredCount} skipped · {flaggedCount} flagged
             </Text>
 
@@ -1143,15 +1243,23 @@ export default function TestTakingScreen() {
                     key={q.id}
                     style={[
                       styles.reviewCell,
-                      isAnswered && styles.reviewCellAnswered,
-                      isFlagged && styles.reviewCellFlagged,
+                      { backgroundColor: colors.backgroundSecondary },
+                      isAnswered && {
+                        backgroundColor: colors.successBackground,
+                        borderWidth: 1,
+                        borderColor: colors.success,
+                      },
+                      isFlagged && {
+                        borderWidth: 1,
+                        borderColor: colors.warning,
+                      },
                     ]}
                     onPress={() => {
                       setShowReviewModal(false);
                       goToQuestion(index);
                     }}
                   >
-                    <Text style={styles.reviewCellText}>{index + 1}</Text>
+                    <Text style={[styles.reviewCellText, { color: colors.text }]}>{index + 1}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -1159,17 +1267,23 @@ export default function TestTakingScreen() {
 
             <View style={styles.reviewActions}>
               <TouchableOpacity
-                style={styles.reviewCancelButton}
+                style={[styles.reviewCancelButton, { backgroundColor: colors.backgroundSecondary }]}
                 onPress={() => setShowReviewModal(false)}
               >
-                <Text style={styles.reviewCancelText}>Continue Test</Text>
+                <Text style={[styles.reviewCancelText, { color: colors.text }]}>Continue Test</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.reviewSubmitButton, isSubmitting && { opacity: 0.6 }]}
+                style={[
+                  styles.reviewSubmitButton,
+                  { backgroundColor: colors.primary },
+                  isSubmitting && { opacity: 0.6 },
+                ]}
                 disabled={isSubmitting}
                 onPress={() => void finalizeSubmit()}
               >
-                <Text style={styles.reviewSubmitText}>{isSubmitting ? 'Submitting...' : 'Submit Test'}</Text>
+                <Text style={[styles.reviewSubmitText, { color: colors.textInverse }]}>
+                  {isSubmitting ? 'Submitting...' : 'Submit Test'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1182,7 +1296,6 @@ export default function TestTakingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
   },
   header: {
     flexDirection: 'row',
@@ -1190,9 +1303,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#1e293b',
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
   },
   exitButton: {
     padding: 4,
@@ -1205,31 +1316,25 @@ const styles = StyleSheet.create({
   testName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 4,
   },
   timerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#334155',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   timerWarning: {
-    backgroundColor: '#ef444420',
   },
   timerText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
   },
   timerTextWarning: {
-    color: '#ef4444',
   },
   submitButton: {
-    backgroundColor: '#6366f1',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -1237,7 +1342,6 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
   },
   progressContainer: {
     flexDirection: 'row',
@@ -1249,7 +1353,6 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 6,
-    backgroundColor: '#334155',
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -1261,7 +1364,6 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
     minWidth: 50,
     textAlign: 'right',
   },
@@ -1273,7 +1375,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   questionCard: {
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
@@ -1285,7 +1386,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   questionTypeBadge: {
-    backgroundColor: '#6366f120',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -1293,17 +1393,14 @@ const styles = StyleSheet.create({
   questionTypeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6366f1',
   },
   pointsText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
   },
   questionText: {
     fontSize: 18,
     fontWeight: '500',
-    color: '#ffffff',
     lineHeight: 28,
   },
   questionImageWrapper: {
@@ -1311,9 +1408,7 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
     borderWidth: 1,
-    borderColor: '#334155',
   },
   questionImage: {
     width: '100%',
@@ -1327,14 +1422,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   tag: {
-    backgroundColor: '#334155',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   tagText: {
     fontSize: 11,
-    color: '#9ca3af',
   },
   
   // MCQ Single styles
@@ -1344,22 +1437,18 @@ const styles = StyleSheet.create({
   optionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   optionSelected: {
-    borderColor: '#6366f1',
-    backgroundColor: '#6366f110',
   },
   optionRadio: {
     width: 24,
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#4b5563',
     marginRight: 16,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1376,7 +1465,6 @@ const styles = StyleSheet.create({
   optionText: {
     flex: 1,
     fontSize: 16,
-    color: '#e2e8f0',
   },
   optionTextSelected: {
     color: '#ffffff',
@@ -1386,7 +1474,6 @@ const styles = StyleSheet.create({
   // MCQ Multiple styles
   multiSelectHint: {
     fontSize: 14,
-    color: '#9ca3af',
     marginBottom: 8,
     fontStyle: 'italic',
   },
@@ -1395,7 +1482,6 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#4b5563',
     marginRight: 16,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1419,23 +1505,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   trueButton: {
-    backgroundColor: '#10b98110',
-    borderColor: '#10b98140',
   },
   falseButton: {
-    backgroundColor: '#ef444410',
-    borderColor: '#ef444440',
   },
   trueFalseSelected: {
     borderWidth: 3,
   },
   trueButtonSelected: {
-    backgroundColor: '#10b981',
-    borderColor: '#10b981',
   },
   falseButtonSelected: {
-    backgroundColor: '#ef4444',
-    borderColor: '#ef4444',
   },
   trueFalseText: {
     fontSize: 18,
@@ -1449,16 +1527,12 @@ const styles = StyleSheet.create({
   },
   fillBlankHint: {
     fontSize: 14,
-    color: '#9ca3af',
   },
   fillBlankInput: {
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#ffffff',
     borderWidth: 2,
-    borderColor: '#334155',
   },
   
   // Matching styles
@@ -1467,7 +1541,6 @@ const styles = StyleSheet.create({
   },
   matchingHint: {
     fontSize: 14,
-    color: '#9ca3af',
     textAlign: 'center',
     fontStyle: 'italic',
   },
@@ -1482,12 +1555,10 @@ const styles = StyleSheet.create({
   matchingColumnTitle: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6366f1',
     textAlign: 'center',
     marginBottom: 4,
   },
   matchingItem: {
-    backgroundColor: '#1e293b',
     borderRadius: 10,
     padding: 12,
     borderWidth: 2,
@@ -1497,27 +1568,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   matchingItemSelected: {
-    borderColor: '#6366f1',
-    backgroundColor: '#6366f120',
   },
   matchingItemMatched: {
-    borderColor: '#10b981',
-    backgroundColor: '#10b98110',
   },
   matchingItemUsed: {
     opacity: 0.5,
-    backgroundColor: '#10b98120',
   },
   matchingItemDisabled: {
     opacity: 0.7,
   },
   matchingItemText: {
     fontSize: 14,
-    color: '#e2e8f0',
     flex: 1,
   },
   matchingItemTextUsed: {
-    color: '#10b981',
   },
   matchBadge: {
     marginLeft: 8,
@@ -1531,7 +1595,6 @@ const styles = StyleSheet.create({
   },
   clearMatchesText: {
     fontSize: 14,
-    color: '#f59e0b',
   },
   
   // Diagram Labeling styles
@@ -1540,13 +1603,11 @@ const styles = StyleSheet.create({
   },
   diagramImageWrapper: {
     position: 'relative',
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     overflow: 'hidden',
     width: '100%',
   },
   diagramImagePlaceholder: {
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     height: 200,
     justifyContent: 'center',
@@ -1578,12 +1639,10 @@ const styles = StyleSheet.create({
   },
   diagramPlaceholderText: {
     fontSize: 14,
-    color: '#64748b',
     marginTop: 8,
   },
   diagramHint: {
     fontSize: 14,
-    color: '#9ca3af',
   },
   labelInputsContainer: {
     gap: 10,
@@ -1597,38 +1656,31 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#dc2626',
     justifyContent: 'center',
     alignItems: 'center',
   },
   labelNumberText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
   },
   labelPicker: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1e293b',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#334155',
   },
   labelPickerSelected: {
-    borderColor: '#6366f1',
   },
   labelPickerText: {
     flex: 1,
     fontSize: 14,
-    color: '#ffffff',
     marginRight: 8,
   },
   labelPickerPlaceholder: {
-    color: '#64748b',
   },
   pickerOverlay: {
     flex: 1,
@@ -1636,7 +1688,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   pickerSheet: {
-    backgroundColor: '#1e293b',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingHorizontal: 16,
@@ -1653,17 +1704,14 @@ const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 12,
   },
   pickerOption: {
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
   },
   pickerOptionText: {
     fontSize: 15,
-    color: '#e2e8f0',
   },
   
   // Open Ended styles
@@ -1672,16 +1720,12 @@ const styles = StyleSheet.create({
   },
   openEndedHint: {
     fontSize: 14,
-    color: '#9ca3af',
   },
   openEndedInput: {
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#ffffff',
     borderWidth: 2,
-    borderColor: '#334155',
     minHeight: 180,
   },
   openEndedFooter: {
@@ -1691,11 +1735,9 @@ const styles = StyleSheet.create({
   },
   wordCount: {
     fontSize: 12,
-    color: '#64748b',
   },
   keywordsHint: {
     fontSize: 11,
-    color: '#6366f1',
     fontStyle: 'italic',
     flex: 1,
     textAlign: 'right',
@@ -1709,9 +1751,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
-    backgroundColor: '#1e293b',
     borderTopWidth: 1,
-    borderTopColor: '#334155',
   },
   navButton: {
     flexDirection: 'row',
@@ -1737,26 +1777,20 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#334155',
   },
   dotAnswered: {
-    backgroundColor: '#10b981',
   },
   dotCurrent: {
-    backgroundColor: '#6366f1',
     width: 12,
   },
   dotRevealed: {
-    backgroundColor: '#f59e0b',
   },
   dotFlagged: {
     borderWidth: 1,
-    borderColor: '#f97316',
   },
   flagRow: {
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: '#1e293b',
   },
   flagButton: {
     flexDirection: 'row',
@@ -1768,15 +1802,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   flagButtonActive: {
-    backgroundColor: '#f9731620',
   },
   flagButtonText: {
-    color: '#94a3b8',
     fontSize: 13,
     fontWeight: '500',
   },
   flagButtonTextActive: {
-    color: '#f97316',
   },
   reviewOverlay: {
     flex: 1,
@@ -1784,20 +1815,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   reviewModal: {
-    backgroundColor: '#1e293b',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     maxHeight: '80%',
   },
   reviewTitle: {
-    color: '#ffffff',
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 4,
   },
   reviewSubtitle: {
-    color: '#94a3b8',
     fontSize: 14,
     marginBottom: 16,
   },
@@ -1814,21 +1842,16 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 8,
-    backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
   },
   reviewCellAnswered: {
-    backgroundColor: '#10b98130',
     borderWidth: 1,
-    borderColor: '#10b981',
   },
   reviewCellFlagged: {
     borderWidth: 1,
-    borderColor: '#f97316',
   },
   reviewCellText: {
-    color: '#ffffff',
     fontWeight: '600',
   },
   reviewActions: {
@@ -1840,28 +1863,23 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#334155',
     alignItems: 'center',
   },
   reviewCancelText: {
-    color: '#ffffff',
     fontWeight: '600',
   },
   reviewSubmitButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#6366f1',
     alignItems: 'center',
   },
   reviewSubmitText: {
-    color: '#ffffff',
     fontWeight: '700',
   },
   
   // Study Mode styles
   headerStudy: {
-    borderBottomColor: '#10b98140',
   },
   headerTitleRow: {
     flexDirection: 'row',
@@ -1872,7 +1890,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#10b98120',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
@@ -1880,7 +1897,6 @@ const styles = StyleSheet.create({
   studyBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#10b981',
   },
   studyProgress: {
     paddingHorizontal: 12,
@@ -1889,16 +1905,13 @@ const styles = StyleSheet.create({
   studyProgressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
   },
   progressBarStudy: {
-    backgroundColor: '#10b98130',
   },
   progressFillStudy: {
     backgroundColor: '#10b981',
   },
   navigationStudy: {
-    borderTopColor: '#10b98140',
   },
   feedbackContainer: {
     marginTop: 20,
@@ -1907,12 +1920,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   feedbackCorrect: {
-    backgroundColor: '#10b98115',
-    borderColor: '#10b981',
   },
   feedbackIncorrect: {
-    backgroundColor: '#ef444415',
-    borderColor: '#ef4444',
   },
   feedbackHeader: {
     flexDirection: 'row',
@@ -1925,30 +1934,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   feedbackTitleCorrect: {
-    color: '#10b981',
   },
   feedbackTitleIncorrect: {
-    color: '#ef4444',
   },
   feedbackExplanation: {
     fontSize: 14,
-    color: '#d1d5db',
     lineHeight: 22,
   },
   correctAnswerBox: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#1e293b',
     borderRadius: 8,
   },
   correctAnswerLabel: {
     fontSize: 12,
-    color: '#9ca3af',
     marginBottom: 4,
   },
   correctAnswerText: {
     fontSize: 15,
-    color: '#10b981',
     fontWeight: '600',
   },
   checkAnswerButton: {
@@ -1958,16 +1961,13 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 20,
     padding: 16,
-    backgroundColor: '#10b981',
     borderRadius: 12,
   },
   checkAnswerText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
   },
   finishStudyButton: {
-    backgroundColor: '#10b98120',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -1975,7 +1975,6 @@ const styles = StyleSheet.create({
   finishStudyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#10b981',
   },
   
   // Error styles
@@ -1986,12 +1985,10 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#9ca3af',
     marginBottom: 16,
   },
   errorLink: {
     fontSize: 16,
-    color: '#6366f1',
     fontWeight: '600',
   },
 });

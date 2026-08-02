@@ -16,6 +16,7 @@ import {
   type LeanTestResultLike,
 } from '@lantern/shared/utils';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { ThemeScope } from '../../theme';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
@@ -488,6 +489,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       )}
 
       <Modal visible={pickerOpen} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
+        <ThemeScope className="flex-1">
         <Pressable className="flex-1 bg-black/40 justify-end" onPress={() => setPickerOpen(false)}>
           <Pressable
             className="bg-lantern-surface rounded-t-2xl max-h-[70%] border-t border-lantern-border"
@@ -539,6 +541,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
             </Pressable>
           </Pressable>
         </Pressable>
+        </ThemeScope>
       </Modal>
     </Card>
   );

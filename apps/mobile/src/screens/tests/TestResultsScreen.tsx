@@ -18,7 +18,6 @@ import { useTestStore, type TestQuestion } from '../../stores/testStore';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { useTheme } from '../../theme';
 import AIExplainModal from '../../components/AIExplainModal';
-import AIUsageBadge from '../../components/AIUsageBadge';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -91,9 +90,9 @@ export default function TestResultsScreen() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString([], { 
-      month: 'short', 
-      day: 'numeric', 
+    return date.toLocaleDateString([], {
+      month: 'short',
+      day: 'numeric',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -115,6 +114,8 @@ export default function TestResultsScreen() {
 
   const correctCount = attempt.answers.filter(a => a.isCorrect).length;
   const incorrectCount = attempt.answers.length - correctCount;
+  const passColor = attempt.passed ? colors.success : colors.error;
+  const passBackground = attempt.passed ? colors.successBackground : colors.errorBackground;
 
   const handlePracticeFailed = async () => {
     if (!failedQuestions.length) return;
@@ -130,7 +131,7 @@ export default function TestResultsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
@@ -138,7 +139,7 @@ export default function TestResultsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
@@ -146,88 +147,95 @@ export default function TestResultsScreen() {
         {/* Result Card */}
         <View style={[
           styles.resultCard,
-          { borderColor: attempt.passed ? '#10b981' : '#ef4444' }
+          {
+            backgroundColor: colors.card,
+            borderColor: passColor,
+          }
         ]}>
-          <View style={[
-            styles.resultIcon,
-            { backgroundColor: attempt.passed ? '#10b98120' : '#ef444420' }
-          ]}>
-            <Ionicons 
-              name={attempt.passed ? 'trophy' : 'close-circle'} 
-              size={48} 
-              color={attempt.passed ? '#10b981' : '#ef4444'} 
+          <View style={[styles.resultIcon, { backgroundColor: passBackground }]}>
+            <Ionicons
+              name={attempt.passed ? 'trophy' : 'close-circle'}
+              size={48}
+              color={passColor}
             />
           </View>
-          
-          <Text style={styles.testName}>{attempt.testName}</Text>
-          
-          <Text style={[
-            styles.resultStatus,
-            { color: attempt.passed ? '#10b981' : '#ef4444' }
-          ]}>
+
+          <Text style={[styles.testName, { color: colors.text }]}>{attempt.testName}</Text>
+
+          <Text style={[styles.resultStatus, { color: passColor }]}>
             {attempt.passed ? 'PASSED!' : 'NOT PASSED'}
           </Text>
-          
-          <View style={styles.scoreCircle}>
-            <Text style={styles.scorePercentage}>{attempt.percentage}%</Text>
-            <Text style={styles.scoreLabel}>Score</Text>
+
+          <View style={[styles.scoreCircle, { backgroundColor: colors.backgroundSecondary }]}>
+            <Text style={[styles.scorePercentage, { color: colors.text }]}>{attempt.percentage}%</Text>
+            <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>Score</Text>
           </View>
-          
-          <Text style={styles.dateText}>
+
+          <Text style={[styles.dateText, { color: colors.textSecondary }]}>
             Completed {formatDate(attempt.completedAt || attempt.startedAt)}
           </Text>
         </View>
 
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Ionicons name="checkmark-circle" size={24} color="#10b981" />
-            <Text style={styles.statValue}>{correctCount}</Text>
-            <Text style={styles.statLabel}>Correct</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+            <Ionicons name="checkmark-circle" size={24} color={colors.success} />
+            <Text style={[styles.statValue, { color: colors.text }]}>{correctCount}</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Correct</Text>
           </View>
-          <View style={styles.statCard}>
-            <Ionicons name="close-circle" size={24} color="#ef4444" />
-            <Text style={styles.statValue}>{incorrectCount}</Text>
-            <Text style={styles.statLabel}>Incorrect</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+            <Ionicons name="close-circle" size={24} color={colors.error} />
+            <Text style={[styles.statValue, { color: colors.text }]}>{incorrectCount}</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Incorrect</Text>
           </View>
-          <View style={styles.statCard}>
-            <Ionicons name="star" size={24} color="#fbbf24" />
-            <Text style={styles.statValue}>{attempt.score}/{attempt.totalPoints}</Text>
-            <Text style={styles.statLabel}>Points</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+            <Ionicons name="star" size={24} color={colors.warning} />
+            <Text style={[styles.statValue, { color: colors.text }]}>{attempt.score}/{attempt.totalPoints}</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Points</Text>
           </View>
-          <View style={styles.statCard}>
-            <Ionicons name="time" size={24} color="#6366f1" />
-            <Text style={styles.statValue}>{formatTime(attempt.timeSpent)}</Text>
-            <Text style={styles.statLabel}>Time</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+            <Ionicons name="time" size={24} color={colors.primary} />
+            <Text style={[styles.statValue, { color: colors.text }]}>{formatTime(attempt.timeSpent)}</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Time</Text>
           </View>
         </View>
 
         {/* Progress Bar */}
         <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>Performance</Text>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBar}>
-              <View 
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Performance</Text>
+          <View style={[styles.progressBarContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.progressBar, { backgroundColor: colors.borderLight }]}>
+              <View
                 style={[
-                  styles.progressFillCorrect, 
-                  { width: `${(correctCount / attempt.answers.length) * 100}%` }
-                ]} 
+                  styles.progressFillCorrect,
+                  {
+                    width: `${(correctCount / attempt.answers.length) * 100}%`,
+                    backgroundColor: colors.success,
+                  }
+                ]}
               />
-              <View 
+              <View
                 style={[
-                  styles.progressFillIncorrect, 
-                  { width: `${(incorrectCount / attempt.answers.length) * 100}%` }
-                ]} 
+                  styles.progressFillIncorrect,
+                  {
+                    width: `${(incorrectCount / attempt.answers.length) * 100}%`,
+                    backgroundColor: colors.error,
+                  }
+                ]}
               />
             </View>
             <View style={styles.progressLabels}>
               <View style={styles.progressLabel}>
-                <View style={[styles.progressDot, { backgroundColor: '#10b981' }]} />
-                <Text style={styles.progressLabelText}>Correct ({correctCount})</Text>
+                <View style={[styles.progressDot, { backgroundColor: colors.success }]} />
+                <Text style={[styles.progressLabelText, { color: colors.textSecondary }]}>
+                  Correct ({correctCount})
+                </Text>
               </View>
               <View style={styles.progressLabel}>
-                <View style={[styles.progressDot, { backgroundColor: '#ef4444' }]} />
-                <Text style={styles.progressLabelText}>Incorrect ({incorrectCount})</Text>
+                <View style={[styles.progressDot, { backgroundColor: colors.error }]} />
+                <Text style={[styles.progressLabelText, { color: colors.textSecondary }]}>
+                  Incorrect ({incorrectCount})
+                </Text>
               </View>
             </View>
           </View>
@@ -235,32 +243,43 @@ export default function TestResultsScreen() {
 
         {/* Question Review */}
         <View style={styles.reviewSection}>
-          <Text style={styles.sectionTitle}>Question Review</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Question Review</Text>
           {attempt.answers.map((answer, index) => (
-            <View key={answer.questionId} style={styles.questionReview}>
+            <View
+              key={answer.questionId}
+              style={[styles.questionReview, { backgroundColor: colors.card }]}
+            >
               <View style={[
                 styles.questionStatus,
-                { backgroundColor: answer.isCorrect ? '#10b98120' : '#ef444420' }
+                {
+                  backgroundColor: answer.isCorrect
+                    ? colors.successBackground
+                    : colors.errorBackground,
+                }
               ]}>
-                <Ionicons 
-                  name={answer.isCorrect ? 'checkmark' : 'close'} 
-                  size={16} 
-                  color={answer.isCorrect ? '#10b981' : '#ef4444'} 
+                <Ionicons
+                  name={answer.isCorrect ? 'checkmark' : 'close'}
+                  size={16}
+                  color={answer.isCorrect ? colors.success : colors.error}
                 />
               </View>
               <View style={styles.questionInfo}>
-                <Text style={styles.questionNumber}>Question {index + 1}</Text>
+                <Text style={[styles.questionNumber, { color: colors.text }]}>
+                  Question {index + 1}
+                </Text>
                 {(answer as any).questionText ? (
-                  <Text style={styles.questionStem}>{(answer as any).questionText}</Text>
+                  <Text style={[styles.questionStem, { color: colors.text }]}>
+                    {(answer as any).questionText}
+                  </Text>
                 ) : null}
                 <Text style={[
                   styles.questionAnswer,
-                  !answer.isCorrect && styles.questionAnswerWrong,
+                  { color: answer.isCorrect ? colors.textSecondary : colors.error },
                 ]}>
                   Your answer: {formatAnswer(answer.userAnswer, answer.questionSnapshot)}
                 </Text>
                 {!answer.isCorrect && answer.correctAnswer !== undefined && (
-                  <Text style={styles.questionCorrectAnswer}>
+                  <Text style={[styles.questionCorrectAnswer, { color: colors.success }]}>
                     Correct answer: {formatAnswer(
                       answer.correctAnswer,
                       answer.questionSnapshot
@@ -268,12 +287,14 @@ export default function TestResultsScreen() {
                   </Text>
                 )}
                 {!answer.isCorrect && (answer as any).explanation ? (
-                  <Text style={styles.questionExplanation}>{(answer as any).explanation}</Text>
+                  <Text style={[styles.questionExplanation, { color: colors.textSecondary }]}>
+                    {(answer as any).explanation}
+                  </Text>
                 ) : null}
               </View>
               {!answer.isCorrect && (
                 <TouchableOpacity
-                  style={styles.explainButton}
+                  style={[styles.explainButton, { backgroundColor: colors.primaryBackground }]}
                   onPress={() => {
                     setExplainData({
                       question: (answer as any).questionText || `Question ${index + 1}`,
@@ -285,13 +306,13 @@ export default function TestResultsScreen() {
                     setShowExplain(true);
                   }}
                 >
-                  <Ionicons name="sparkles" size={14} color="#6366f1" />
-                  <Text style={styles.explainButtonText}>Explain</Text>
+                  <Ionicons name="sparkles" size={14} color={colors.primary} />
+                  <Text style={[styles.explainButtonText, { color: colors.primary }]}>Explain</Text>
                 </TouchableOpacity>
               )}
               <Text style={[
                 styles.questionPoints,
-                { color: answer.isCorrect ? '#10b981' : '#ef4444' }
+                { color: answer.isCorrect ? colors.success : colors.error }
               ]}>
                 {answer.isCorrect ? `+${answer.points}` : '0'}
               </Text>
@@ -316,30 +337,33 @@ export default function TestResultsScreen() {
       )}
 
       {/* Bottom Actions */}
-      <View style={styles.bottomActions}>
+      <View style={[
+        styles.bottomActions,
+        { backgroundColor: colors.card, borderTopColor: colors.border },
+      ]}>
         {failedQuestions.length > 0 ? (
           <TouchableOpacity
-            style={styles.practiceFailedButton}
+            style={[styles.practiceFailedButton, { backgroundColor: colors.successBackground }]}
             onPress={() => void handlePracticeFailed()}
           >
-            <Ionicons name="school" size={20} color="#10b981" />
-            <Text style={styles.practiceFailedButtonText}>
+            <Ionicons name="school" size={20} color={colors.success} />
+            <Text style={[styles.practiceFailedButtonText, { color: colors.success }]}>
               Practice Failed ({failedQuestions.length})
             </Text>
           </TouchableOpacity>
         ) : null}
-        <TouchableOpacity 
-          style={styles.retryButton}
+        <TouchableOpacity
+          style={[styles.retryButton, { backgroundColor: colors.primaryBackground }]}
           onPress={() => navigation.navigate('TestsList')}
         >
-          <Ionicons name="refresh" size={20} color="#6366f1" />
-          <Text style={styles.retryButtonText}>Try Again</Text>
+          <Ionicons name="refresh" size={20} color={colors.primary} />
+          <Text style={[styles.retryButtonText, { color: colors.primary }]}>Try Again</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.doneButton}
+        <TouchableOpacity
+          style={[styles.doneButton, { backgroundColor: colors.primary }]}
           onPress={() => navigation.navigate('TestsList')}
         >
-          <Text style={styles.doneButtonText}>Done</Text>
+          <Text style={[styles.doneButtonText, { color: colors.textInverse }]}>Done</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -349,7 +373,6 @@ export default function TestResultsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
   },
   header: {
     flexDirection: 'row',
@@ -357,9 +380,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#1e293b',
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
   },
   backButton: {
     padding: 4,
@@ -367,7 +388,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
   },
   content: {
     flex: 1,
@@ -377,7 +397,6 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   resultCard: {
-    backgroundColor: '#1e293b',
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
@@ -395,7 +414,6 @@ const styles = StyleSheet.create({
   testName: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -408,7 +426,6 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#0f172a',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -416,15 +433,12 @@ const styles = StyleSheet.create({
   scorePercentage: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   scoreLabel: {
     fontSize: 14,
-    color: '#9ca3af',
   },
   dateText: {
     fontSize: 14,
-    color: '#6b7280',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -435,7 +449,6 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: (SCREEN_WIDTH - 52) / 2,
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
@@ -443,12 +456,10 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
     marginTop: 8,
   },
   statLabel: {
     fontSize: 12,
-    color: '#9ca3af',
     marginTop: 4,
   },
   progressSection: {
@@ -457,29 +468,24 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 16,
   },
   progressBarContainer: {
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
   },
   progressBar: {
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#334155',
     flexDirection: 'row',
     overflow: 'hidden',
     marginBottom: 12,
   },
   progressFillCorrect: {
     height: '100%',
-    backgroundColor: '#10b981',
   },
   progressFillIncorrect: {
     height: '100%',
-    backgroundColor: '#ef4444',
   },
   progressLabels: {
     flexDirection: 'row',
@@ -498,7 +504,6 @@ const styles = StyleSheet.create({
   },
   progressLabelText: {
     fontSize: 14,
-    color: '#9ca3af',
   },
   reviewSection: {
     marginBottom: 24,
@@ -506,7 +511,6 @@ const styles = StyleSheet.create({
   questionReview: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -525,29 +529,21 @@ const styles = StyleSheet.create({
   questionNumber: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 2,
   },
   questionAnswer: {
     fontSize: 12,
-    color: '#9ca3af',
   },
   questionStem: {
     fontSize: 13,
-    color: '#e2e8f0',
     marginBottom: 4,
-  },
-  questionAnswerWrong: {
-    color: '#fca5a5',
   },
   questionCorrectAnswer: {
     fontSize: 12,
-    color: '#86efac',
     marginTop: 2,
   },
   questionExplanation: {
     fontSize: 12,
-    color: '#94a3b8',
     marginTop: 4,
     fontStyle: 'italic',
   },
@@ -562,13 +558,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#6366f120',
     marginRight: 8,
   },
   explainButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6366f1',
   },
   bottomActions: {
     flexDirection: 'row',
@@ -576,9 +570,7 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 20,
     paddingBottom: 32,
-    backgroundColor: '#1e293b',
     borderTopWidth: 1,
-    borderTopColor: '#334155',
   },
   practiceFailedButton: {
     width: '100%',
@@ -588,13 +580,11 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 14,
     borderRadius: 12,
-    backgroundColor: '#10b98120',
     marginBottom: 4,
   },
   practiceFailedButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#10b981',
   },
   retryButton: {
     flex: 1,
@@ -604,24 +594,20 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#6366f120',
   },
   retryButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6366f1',
   },
   doneButton: {
     flex: 1,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
     alignItems: 'center',
   },
   doneButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
   },
   errorContainer: {
     flex: 1,
@@ -630,12 +616,10 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#9ca3af',
     marginBottom: 16,
   },
   errorLink: {
     fontSize: 16,
-    color: '#6366f1',
     fontWeight: '600',
   },
 });

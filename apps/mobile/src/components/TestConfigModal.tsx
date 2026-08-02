@@ -379,13 +379,21 @@ export default function TestConfigModal({
             contentContainerStyle={styles.contentContainer}
           >
             {/* Mode Description */}
-            <View style={[styles.infoBox, isStudyMode && styles.infoBoxStudy]}>
-              <Ionicons 
-                name={isStudyMode ? 'bulb' : 'timer'} 
-                size={20} 
-                color={isStudyMode ? '#10b981' : '#10b981'} 
+            <View
+              style={[
+                styles.infoBox,
+                {
+                  backgroundColor: colors.successBackground,
+                  borderColor: colors.success,
+                },
+              ]}
+            >
+              <Ionicons
+                name={isStudyMode ? 'bulb' : 'timer'}
+                size={20}
+                color={colors.success}
               />
-              <Text style={styles.infoText}>
+              <Text style={[styles.infoText, { color: colors.text }]}>
                 {isStudyMode 
                   ? 'Study at your own pace with immediate feedback and explanations.'
                   : 'Timed assessment with scoring. Submit when ready or when time runs out.'
@@ -567,7 +575,7 @@ export default function TestConfigModal({
               </View>
               
               {(useSpacedRepetition || focusOnNew) ? (
-                <View style={styles.disabledMessage}>
+                <View style={[styles.disabledMessage, { backgroundColor: colors.backgroundSecondary }]}>
                   <Ionicons name="information-circle" size={16} color={colors.textSecondary} />
                   <Text style={[styles.disabledMessageText, { color: colors.textSecondary }]}>
                     All types included with {useSpacedRepetition ? 'Spaced Repetition' : 'Focus on New'}
@@ -721,7 +729,7 @@ export default function TestConfigModal({
                 {/* Spaced Repetition */}
                 <View style={[styles.toggleSection, { backgroundColor: colors.inputBackground }]}>
                   <View style={styles.toggleInfo}>
-                    <View style={styles.toggleIcon}>
+                    <View style={[styles.toggleIcon, { backgroundColor: colors.card }]}>
                       <Ionicons name="sync" size={20} color="#f59e0b" />
                     </View>
                     <View style={styles.toggleContent}>
@@ -742,7 +750,7 @@ export default function TestConfigModal({
                 {/* Focus on New */}
                 <View style={[styles.toggleSection, { backgroundColor: colors.inputBackground }]}>
                   <View style={styles.toggleInfo}>
-                    <View style={styles.toggleIcon}>
+                    <View style={[styles.toggleIcon, { backgroundColor: colors.card }]}>
                       <Ionicons name="sparkles" size={20} color="#10b981" />
                     </View>
                     <View style={styles.toggleContent}>
@@ -898,20 +906,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     padding: 14,
-    backgroundColor: '#10b98115',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#10b98130',
     marginBottom: 24,
-  },
-  infoBoxStudy: {
-    backgroundColor: '#10b98115',
-    borderColor: '#10b98130',
   },
   infoText: {
     flex: 1,
     fontSize: 13,
-    color: '#d1d5db',
     lineHeight: 20,
   },
   section: {
@@ -1120,12 +1121,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     padding: 12,
-    backgroundColor: '#0f172a',
     borderRadius: 10,
   },
   disabledMessageText: {
     fontSize: 13,
-    color: '#64748b',
   },
   advancedToggle: {
     flexDirection: 'row',
@@ -1145,7 +1144,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 14,
-    backgroundColor: '#0f172a',
     borderRadius: 12,
     marginBottom: 12,
   },
@@ -1160,7 +1158,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1170,12 +1167,10 @@ const styles = StyleSheet.create({
   toggleTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 2,
   },
   toggleDescription: {
     fontSize: 12,
-    color: '#64748b',
     lineHeight: 18,
   },
   tags: {
