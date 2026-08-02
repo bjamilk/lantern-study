@@ -18,8 +18,8 @@ interface TestUtilityToolbarProps {
   onToggleNote: () => void;
   note: string;
   onNoteChange: (note: string) => void;
-  isMarked: boolean;
-  onToggleMark: () => void;
+  isBookmarked: boolean;
+  onToggleBookmark: () => void;
   highlightCount: number;
   onClearHighlights: () => void;
 }
@@ -189,8 +189,8 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
   onToggleNote,
   note,
   onNoteChange,
-  isMarked,
-  onToggleMark,
+  isBookmarked,
+  onToggleBookmark,
   highlightCount,
   onClearHighlights,
 }) => {
@@ -290,29 +290,29 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           )}
         </button>
 
-        {/* Mark */}
+        {/* Bookmark (= mark for review) */}
         <button
-          onClick={onToggleMark}
-          title={isMarked ? 'Remove flag from this question' : 'Flag this question for review'}
+          type="button"
+          onClick={onToggleBookmark}
+          title={isBookmarked ? 'Remove bookmark / review mark' : 'Bookmark this question for review'}
           className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
-            isMarked
-              ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-400 dark:border-orange-600 text-orange-700 dark:text-orange-300 shadow-sm'
+            isBookmarked
+              ? 'bg-yellow-100 dark:bg-yellow-900/40 border-yellow-400 dark:border-yellow-600 text-yellow-700 dark:text-yellow-300 shadow-sm'
               : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
           }`}
         >
           <svg
             className="w-3.5 h-3.5 flex-shrink-0"
             viewBox="0 0 24 24"
-            fill={isMarked ? 'currentColor' : 'none'}
+            fill={isBookmarked ? 'currentColor' : 'none'}
             stroke="currentColor"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-            <line x1="4" y1="22" x2="4" y2="15" />
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
-          <span className="hidden sm:inline">{isMarked ? 'Marked' : 'Mark'}</span>
+          <span className="hidden sm:inline">{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
         </button>
 
         {/* Clear highlights shortcut */}
