@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useNavigation,
   useRoute,
@@ -51,7 +52,7 @@ export function JobCompanyScreen() {
   }, [route.params.companyId]);
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={["top"]}>
       <ScreenHeader title="Company" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
@@ -145,7 +146,7 @@ export function JobCompanyScreen() {
           </>
         ) : null}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

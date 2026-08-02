@@ -1029,11 +1029,14 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     {userAnswer.isCorrect ? 'Correct!' : 'Incorrect.'}
                   </h3>
                   {currentQuestion.questionType === QuestionType.FILL_IN_THE_BLANK && !userAnswer.isCorrect && (
-                    <p className="text-sm text-lantern-text mt-1">
-                      Correct answer(s): <span className="font-semibold">{currentQuestion.acceptableAnswers?.join(', ')}</span>
+                    <p className="text-sm mt-1 text-slate-900 dark:text-slate-100">
+                      Correct answer(s):{' '}
+                      <span className="font-semibold">{currentQuestion.acceptableAnswers?.join(', ')}</span>
                     </p>
                   )}
-                  <p className="text-sm text-lantern-text mt-1 whitespace-pre-wrap">{currentQuestion.explanation}</p>
+                  <p className="text-sm mt-1 whitespace-pre-wrap text-slate-900 dark:text-slate-100">
+                    {currentQuestion.explanation}
+                  </p>
               </div>
             )}
         </div>

@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -91,7 +92,7 @@ export function MyJobPostingsScreen() {
   );
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={["top"]}>
       <ScreenHeader
         title="My job posts"
         onBack={() => navigation.goBack()}
@@ -292,7 +293,7 @@ export function MyJobPostingsScreen() {
           ) : null}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

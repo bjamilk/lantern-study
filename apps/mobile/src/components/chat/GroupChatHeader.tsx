@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Avatar } from '../ui';
+import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 
@@ -25,6 +25,7 @@ export interface GroupChatHeaderAction {
 
 interface GroupChatHeaderProps {
   displayName: string;
+  avatarUrl?: string | null;
   memberCount?: number;
   lowDataMode?: boolean;
   onBack: () => void;
@@ -34,6 +35,7 @@ interface GroupChatHeaderProps {
 
 export function GroupChatHeader({
   displayName,
+  avatarUrl,
   memberCount,
   lowDataMode,
   onBack,
@@ -71,7 +73,7 @@ export function GroupChatHeader({
           <Ionicons name="arrow-back" size={22} color={colors.textSecondary} />
         </Pressable>
 
-        <Avatar name={displayName} size={36} />
+        <ResolvedAvatar name={displayName} uri={avatarUrl} size={36} />
 
         <View className="flex-1 min-w-0">
           <Text

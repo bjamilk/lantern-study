@@ -983,28 +983,37 @@ export default function TestTakingScreen() {
         {isStudyMode && showFeedback && feedbackResult && (
           <View style={[
             styles.feedbackContainer,
-            feedbackResult.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect
+            {
+              backgroundColor: feedbackResult.isCorrect
+                ? colors.successBackground
+                : colors.errorBackground,
+              borderColor: feedbackResult.isCorrect ? colors.success : colors.error,
+            },
           ]}>
             <View style={styles.feedbackHeader}>
               <Ionicons 
                 name={feedbackResult.isCorrect ? 'checkmark-circle' : 'close-circle'} 
                 size={28} 
-                color={feedbackResult.isCorrect ? '#10b981' : '#ef4444'} 
+                color={feedbackResult.isCorrect ? colors.success : colors.error} 
               />
               <Text style={[
                 styles.feedbackTitle,
-                feedbackResult.isCorrect ? styles.feedbackTitleCorrect : styles.feedbackTitleIncorrect
+                { color: feedbackResult.isCorrect ? colors.success : colors.error },
               ]}>
                 {feedbackResult.isCorrect ? 'Correct!' : 'Incorrect'}
               </Text>
             </View>
             {feedbackResult.explanation && (
-              <Text style={styles.feedbackExplanation}>{feedbackResult.explanation}</Text>
+              <Text style={[styles.feedbackExplanation, { color: colors.text }]}>
+                {feedbackResult.explanation}
+              </Text>
             )}
             {!feedbackResult.isCorrect && (
-              <View style={styles.correctAnswerBox}>
-                <Text style={styles.correctAnswerLabel}>Correct answer:</Text>
-                <Text style={styles.correctAnswerText}>
+              <View style={[styles.correctAnswerBox, { backgroundColor: colors.backgroundSecondary }]}>
+                <Text style={[styles.correctAnswerLabel, { color: colors.textSecondary }]}>
+                  Correct answer:
+                </Text>
+                <Text style={[styles.correctAnswerText, { color: colors.success }]}>
                   {formatCorrectAnswerDisplay(currentQuestion)}
                 </Text>
               </View>
@@ -1906,14 +1915,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
   },
-  feedbackCorrect: {
-    backgroundColor: '#10b98115',
-    borderColor: '#10b981',
-  },
-  feedbackIncorrect: {
-    backgroundColor: '#ef444415',
-    borderColor: '#ef4444',
-  },
   feedbackHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1924,31 +1925,21 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
-  feedbackTitleCorrect: {
-    color: '#10b981',
-  },
-  feedbackTitleIncorrect: {
-    color: '#ef4444',
-  },
   feedbackExplanation: {
     fontSize: 14,
-    color: '#d1d5db',
     lineHeight: 22,
   },
   correctAnswerBox: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#1e293b',
     borderRadius: 8,
   },
   correctAnswerLabel: {
     fontSize: 12,
-    color: '#9ca3af',
     marginBottom: 4,
   },
   correctAnswerText: {
     fontSize: 15,
-    color: '#10b981',
     fontWeight: '600',
   },
   checkAnswerButton: {

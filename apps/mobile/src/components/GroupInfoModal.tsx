@@ -10,7 +10,6 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Image,
   Alert,
   TextInput,
   ActivityIndicator,
@@ -19,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
+import { ResolvedAvatar } from './ResolvedAvatar';
 import { useTheme } from '../theme';
 
 type TabType = 'details' | 'members' | 'danger';
@@ -238,22 +238,27 @@ export default function GroupInfoModal({
     <View style={styles.tabContent}>
       {/* Group Avatar */}
       <View style={styles.avatarSection}>
-        <Image
-          source={{ uri: avatarPreview || group.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=6366f1&color=fff&size=100` }}
-          style={styles.groupAvatar}
+        <ResolvedAvatar
+          name={group.name}
+          uri={
+            avatarPreview ||
+            group.avatarUrl ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=6366f1&color=fff&size=100`
+          }
+          size={80}
         />
         {isAdmin && (
           <TouchableOpacity
-            style={styles.changeAvatarButton}
+            style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]}
             onPress={() => void handleChangeAvatar()}
             disabled={uploadingAvatar}
           >
             {uploadingAvatar ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={colors.textInverse} />
             ) : (
               <>
-                <Ionicons name="camera" size={16} color="#ffffff" />
-                <Text style={styles.changeAvatarText}>Change</Text>
+                <Ionicons name="camera" size={16} color={colors.textInverse} />
+                <Text style={[styles.changeAvatarText, { color: colors.textInverse }]}>Change</Text>
               </>
             )}
           </TouchableOpacity>
@@ -262,7 +267,7 @@ export default function GroupInfoModal({
 
       {/* Group Name */}
       <View style={styles.inputGroup}>
-        <Text style={[styles.inputLabel, { color: colors.text }]}>Group Name</Text>
+        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Group Name</Text>
         <TextInput
           style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }, !isAdmin && { opacity: 0.6 }]}
           value={name}
@@ -277,7 +282,7 @@ export default function GroupInfoModal({
 
       {/* Description */}
       <View style={styles.inputGroup}>
-        <Text style={[styles.inputLabel, { color: colors.text }]}>Description</Text>
+        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Description</Text>
         <TextInput
           style={[styles.input, styles.textArea, { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }, !isAdmin && { opacity: 0.6 }]}
           value={description}
@@ -294,13 +299,13 @@ export default function GroupInfoModal({
       </View>
 
       {/* Stats */}
-      <View style={styles.statsRow}>
+      <View style={[styles.statsRow, { backgroundColor: colors.backgroundSecondary }]}>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{group.memberCount}</Text>
-          <Text style={styles.statLabel}>Members</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>{group.memberCount}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Members</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>
+          <Text style={[styles.statValue, { color: colors.text }]}>
             {group.createdAt && !Number.isNaN(Date.parse(group.createdAt))
               ? new Date(group.createdAt).toLocaleDateString(undefined, {
                   year: 'numeric',
@@ -309,22 +314,25 @@ export default function GroupInfoModal({
                 })
               : '—'}
           </Text>
-          <Text style={styles.statLabel}>Created</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Created</Text>
         </View>
       </View>
 
       {/* Save Button */}
       {isAdmin && hasChanges && (
-        <TouchableOpacity style={styles.saveButton} onPress={handleSaveDetails}>
-          <Text style={styles.saveButtonText}>Save Changes</Text>
+        <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary }]} onPress={handleSaveDetails}>
+          <Text style={[styles.saveButtonText, { color: colors.textInverse }]}>Save Changes</Text>
         </TouchableOpacity>
       )}
 
       {/* Create Sub-group */}
       {isAdmin && onCreateSubgroup ? (
-        <TouchableOpacity style={styles.createSubgroupButton} onPress={onCreateSubgroup}>
-          <Ionicons name="git-network" size={20} color="#ffffff" />
-          <Text style={styles.createSubgroupText}>Create Sub-group</Text>
+        <TouchableOpacity
+          style={[styles.createSubgroupButton, { backgroundColor: colors.info }]}
+          onPress={onCreateSubgroup}
+        >
+          <Ionicons name="git-network" size={20} color={colors.textInverse} />
+          <Text style={[styles.createSubgroupText, { color: colors.textInverse }]}>Create Sub-group</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -334,42 +342,54 @@ export default function GroupInfoModal({
     <View style={styles.tabContent}>
       {/* Add Members Button */}
       {isAdmin && (
-        <TouchableOpacity style={styles.addMembersButton} onPress={onAddMembers}>
-          <Ionicons name="person-add" size={20} color="#ffffff" />
-          <Text style={styles.addMembersText}>Add or Invite Members</Text>
+        <TouchableOpacity
+          style={[styles.addMembersButton, { backgroundColor: colors.primary }]}
+          onPress={onAddMembers}
+        >
+          <Ionicons name="person-add" size={20} color={colors.textInverse} />
+          <Text style={[styles.addMembersText, { color: colors.textInverse }]}>
+            Add or Invite Members
+          </Text>
         </TouchableOpacity>
       )}
 
       {/* Members List */}
-      <Text style={styles.sectionTitle}>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>
         Members ({group.members.length})
       </Text>
       
       {group.members.map((member) => (
-        <View key={member.id} style={styles.memberItem}>
+        <View
+          key={member.id}
+          style={[styles.memberItem, { backgroundColor: colors.backgroundSecondary }]}
+        >
           <View style={styles.memberInfo}>
-            <Image
-              source={{ uri: member.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=6366f1&color=fff` }}
-              style={styles.memberAvatar}
+            <ResolvedAvatar
+              name={member.name}
+              uri={
+                member.avatarUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=6366f1&color=fff`
+              }
+              size={40}
             />
             <View>
               <View style={styles.memberNameRow}>
-                <Text style={styles.memberName}>{member.name}</Text>
+                <Text style={[styles.memberName, { color: colors.text }]}>{member.name}</Text>
                 {member.userId === currentUserId && (
-                  <Text style={styles.youBadge}>(You)</Text>
+                  <Text style={[styles.youBadge, { color: colors.textSecondary }]}>(You)</Text>
                 )}
               </View>
               <View style={styles.roleBadge}>
                 {member.role === 'owner' && (
-                  <View style={styles.ownerBadge}>
-                    <Ionicons name="star" size={10} color="#fbbf24" />
-                    <Text style={styles.ownerBadgeText}>Owner</Text>
+                  <View style={[styles.ownerBadge, { backgroundColor: colors.warningBackground }]}>
+                    <Ionicons name="star" size={10} color={colors.warning} />
+                    <Text style={[styles.ownerBadgeText, { color: colors.warning }]}>Owner</Text>
                   </View>
                 )}
                 {member.role === 'admin' && (
-                  <View style={styles.adminBadge}>
-                    <Ionicons name="shield-checkmark" size={10} color="#6366f1" />
-                    <Text style={styles.adminBadgeText}>Admin</Text>
+                  <View style={[styles.adminBadge, { backgroundColor: colors.primaryBackground }]}>
+                    <Ionicons name="shield-checkmark" size={10} color={colors.primary} />
+                    <Text style={[styles.adminBadgeText, { color: colors.primary }]}>Admin</Text>
                   </View>
                 )}
               </View>
@@ -382,19 +402,19 @@ export default function GroupInfoModal({
               {/* Message Button */}
               {onMessageMember && (
                 <TouchableOpacity
-                  style={styles.actionIcon}
+                  style={[styles.actionIcon, { backgroundColor: colors.card }]}
                   onPress={() => onMessageMember(member)}
                 >
-                  <Ionicons name="chatbubble" size={18} color="#6366f1" />
+                  <Ionicons name="chatbubble" size={18} color={colors.primary} />
                 </TouchableOpacity>
               )}
 
               {/* Challenge Button */}
               <TouchableOpacity
-                style={styles.actionIcon}
+                style={[styles.actionIcon, { backgroundColor: colors.card }]}
                 onPress={() => onChallenge(member)}
               >
-                <Ionicons name="game-controller" size={18} color="#ef4444" />
+                <Ionicons name="game-controller" size={18} color={colors.error} />
               </TouchableOpacity>
 
               {/* Admin Actions */}
@@ -402,17 +422,17 @@ export default function GroupInfoModal({
                 <>
                   {member.role === 'admin' ? (
                     <TouchableOpacity
-                      style={styles.actionIcon}
+                      style={[styles.actionIcon, { backgroundColor: colors.card }]}
                       onPress={() => handleDemote(member)}
                     >
-                      <Ionicons name="arrow-down" size={18} color="#f59e0b" />
+                      <Ionicons name="arrow-down" size={18} color={colors.warning} />
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
-                      style={styles.actionIcon}
+                      style={[styles.actionIcon, { backgroundColor: colors.card }]}
                       onPress={() => handlePromote(member)}
                     >
-                      <Ionicons name="arrow-up" size={18} color="#10b981" />
+                      <Ionicons name="arrow-up" size={18} color={colors.success} />
                     </TouchableOpacity>
                   )}
                 </>
@@ -421,10 +441,10 @@ export default function GroupInfoModal({
               {/* Remove Member */}
               {isAdmin && member.role !== 'owner' && (
                 <TouchableOpacity
-                  style={styles.actionIcon}
+                  style={[styles.actionIcon, { backgroundColor: colors.card }]}
                   onPress={() => handleRemove(member)}
                 >
-                  <Ionicons name="close-circle" size={18} color="#ef4444" />
+                  <Ionicons name="close-circle" size={18} color={colors.error} />
                 </TouchableOpacity>
               )}
             </View>
@@ -436,12 +456,20 @@ export default function GroupInfoModal({
 
   const renderDangerTab = () => (
     <View style={styles.tabContent}>
-      <View style={styles.dangerSection}>
+      <View
+        style={[
+          styles.dangerSection,
+          {
+            backgroundColor: colors.warningBackground,
+            borderLeftColor: '#f97316',
+          },
+        ]}
+      >
         <View style={styles.dangerHeader}>
           <Ionicons name="exit-outline" size={24} color="#f97316" />
           <View style={styles.dangerInfo}>
-            <Text style={styles.dangerTitle}>Leave Group</Text>
-            <Text style={styles.dangerDescription}>
+            <Text style={[styles.dangerTitle, { color: '#ea580c' }]}>Leave Group</Text>
+            <Text style={[styles.dangerDescription, { color: colors.textSecondary }]}>
               {isSoleAdmin
                 ? 'Promote another admin before leaving'
                 : 'You will lose access until invited again'}
@@ -462,14 +490,22 @@ export default function GroupInfoModal({
       </View>
 
       {/* Archive Section — any member */}
-      <View style={styles.dangerSection}>
+      <View
+        style={[
+          styles.dangerSection,
+          {
+            backgroundColor: colors.warningBackground,
+            borderLeftColor: colors.warning,
+          },
+        ]}
+      >
         <View style={styles.dangerHeader}>
-          <Ionicons name="archive" size={24} color="#f59e0b" />
+          <Ionicons name="archive" size={24} color={colors.warning} />
           <View style={styles.dangerInfo}>
-            <Text style={styles.dangerTitle}>
+            <Text style={[styles.dangerTitle, { color: colors.warning }]}>
               {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
             </Text>
-            <Text style={styles.dangerDescription}>
+            <Text style={[styles.dangerDescription, { color: colors.textSecondary }]}>
               {group.isArchived
                 ? 'Restore the group for all members'
                 : 'Hide group and disable new messages'}
@@ -477,7 +513,7 @@ export default function GroupInfoModal({
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.dangerButton, styles.archiveButton]}
+          style={[styles.dangerButton, { backgroundColor: colors.warning }]}
           onPress={handleArchive}
         >
           <Ionicons name="archive" size={18} color="#ffffff" />
@@ -488,20 +524,28 @@ export default function GroupInfoModal({
       </View>
 
       {isOwner ? (
-          <View style={[styles.dangerSection, styles.deleteSection]}>
+          <View
+            style={[
+              styles.dangerSection,
+              {
+                backgroundColor: colors.errorBackground,
+                borderLeftColor: colors.error,
+              },
+            ]}
+          >
             <View style={styles.dangerHeader}>
-              <Ionicons name="trash" size={24} color="#ef4444" />
+              <Ionicons name="trash" size={24} color={colors.error} />
               <View style={styles.dangerInfo}>
-                <Text style={[styles.dangerTitle, styles.deleteTitle]}>
+                <Text style={[styles.dangerTitle, { color: colors.error }]}>
                   Delete Group
                 </Text>
-                <Text style={styles.dangerDescription}>
+                <Text style={[styles.dangerDescription, { color: colors.textSecondary }]}>
                   Permanently delete group, messages, and all data
                 </Text>
               </View>
             </View>
             <TouchableOpacity 
-              style={[styles.dangerButton, styles.deleteButton]}
+              style={[styles.dangerButton, { backgroundColor: colors.error }]}
               onPress={handleDelete}
             >
               <Ionicons name="trash" size={18} color="#ffffff" />
@@ -519,12 +563,12 @@ export default function GroupInfoModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={[styles.container, { backgroundColor: colors.card }]}>
+      <View style={[styles.overlay, { backgroundColor: colors.modalOverlay }]}>
+        <View style={[styles.container, { backgroundColor: colors.modalBackground }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.title, { color: colors.text }]}>Group Settings</Text>
-            <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={onClose}>
+            <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.backgroundSecondary }]} onPress={onClose}>
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
@@ -554,11 +598,9 @@ export default function GroupInfoModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#0f172a',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '90%',
@@ -575,20 +617,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
   },
   tabs: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
     marginHorizontal: 20,
   },
   tab: {
@@ -600,16 +639,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  activeTab: {
-    borderBottomColor: '#6366f1',
-  },
   tabText: {
     fontSize: 14,
-    color: '#9ca3af',
-  },
-  activeTabText: {
-    color: '#6366f1',
-    fontWeight: '600',
   },
   scrollContent: {
     flex: 1,
@@ -618,28 +649,20 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
-  // Details Tab
   avatarSection: {
     alignItems: 'center',
     marginBottom: 24,
   },
-  groupAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 12,
-  },
   changeAvatarButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6366f1',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
+    marginTop: 12,
   },
   changeAvatarText: {
-    color: '#ffffff',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -649,20 +672,13 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#9ca3af',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
-    color: '#ffffff',
     borderWidth: 1,
-    borderColor: '#334155',
-  },
-  inputDisabled: {
-    opacity: 0.6,
   },
   textArea: {
     height: 80,
@@ -670,7 +686,6 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
     marginTop: 8,
@@ -683,22 +698,18 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
   },
   statLabel: {
     fontSize: 12,
-    color: '#9ca3af',
     marginTop: 4,
   },
   saveButton: {
-    backgroundColor: '#6366f1',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginTop: 24,
   },
   saveButtonText: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -706,44 +717,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0ea5e9',
     borderRadius: 12,
     padding: 16,
     marginTop: 16,
     gap: 8,
   },
   createSubgroupText: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
   },
-  // Members Tab
   addMembersButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#6366f1',
     borderRadius: 12,
     padding: 14,
     gap: 8,
     marginBottom: 20,
   },
   addMembersText: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '500',
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 12,
   },
   memberItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -754,11 +758,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 12,
   },
-  memberAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
   memberNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -767,11 +766,9 @@ const styles = StyleSheet.create({
   memberName: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#ffffff',
   },
   youBadge: {
     fontSize: 12,
-    color: '#9ca3af',
   },
   roleBadge: {
     flexDirection: 'row',
@@ -780,7 +777,6 @@ const styles = StyleSheet.create({
   ownerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fbbf2420',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -788,13 +784,11 @@ const styles = StyleSheet.create({
   },
   ownerBadgeText: {
     fontSize: 11,
-    color: '#fbbf24',
     fontWeight: '500',
   },
   adminBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6366f120',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -802,7 +796,6 @@ const styles = StyleSheet.create({
   },
   adminBadgeText: {
     fontSize: 11,
-    color: '#6366f1',
     fontWeight: '500',
   },
   memberActions: {
@@ -813,31 +806,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#0f172a',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Danger Tab
-  noAccessContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  noAccessText: {
-    color: '#6b7280',
-    fontSize: 16,
-    marginTop: 12,
-    textAlign: 'center',
-  },
   dangerSection: {
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderLeftWidth: 4,
-    borderLeftColor: '#f59e0b',
-  },
-  deleteSection: {
-    borderLeftColor: '#ef4444',
   },
   dangerHeader: {
     flexDirection: 'row',
@@ -851,15 +827,10 @@ const styles = StyleSheet.create({
   dangerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f59e0b',
     marginBottom: 4,
-  },
-  deleteTitle: {
-    color: '#ef4444',
   },
   dangerDescription: {
     fontSize: 13,
-    color: '#9ca3af',
     lineHeight: 18,
   },
   dangerButton: {
@@ -869,12 +840,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 10,
     gap: 8,
-  },
-  archiveButton: {
-    backgroundColor: '#f59e0b',
-  },
-  deleteButton: {
-    backgroundColor: '#ef4444',
   },
   dangerButtonText: {
     color: '#ffffff',

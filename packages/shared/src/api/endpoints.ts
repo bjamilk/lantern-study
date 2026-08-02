@@ -2378,10 +2378,14 @@ export function createApiEndpoints(client: ApiClient) {
       contentType: string;
       groupId?: string;
     }) =>
-      apiRequest<{ url: string; path: string }>("/messages/upload-image", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
+      apiRequest<{ url: string; path: string }>(
+        "/messages/upload-image",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+        90_000,
+      ),
 
     uploadChatAudio: (payload: {
       fileName: string;
@@ -2390,10 +2394,15 @@ export function createApiEndpoints(client: ApiClient) {
       groupId?: string;
       threadId?: string;
     }) =>
-      apiRequest<{ url: string; path: string }>("/messages/upload-audio", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
+      apiRequest<{ url: string; path: string }>(
+        "/messages/upload-audio",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+        // Base64 voice clips easily exceed the default 10s client timeout on mobile networks.
+        90_000,
+      ),
 
     uploadQuestionImage: (payload: {
       fileName: string;
