@@ -70,7 +70,7 @@ import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
 import { featureAccents } from '@lantern/shared/design';
 import { buildActivityHeatmapGrid, getActivityHeatHexColorForCount, getActivityHeatHexColor, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
 
-import { useTheme } from '../../theme';
+import { ThemeScope, useTheme } from '../../theme';
 
 
 
@@ -1161,7 +1161,7 @@ export function DashboardScreen({ navigation }: Props) {
 
 
       <Modal visible={groupPickerOpen} transparent animationType="fade" onRequestClose={() => setGroupPickerOpen(false)}>
-
+        <ThemeScope className="flex-1">
         <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setGroupPickerOpen(false)}>
 
           <Pressable
@@ -1214,7 +1214,7 @@ export function DashboardScreen({ navigation }: Props) {
           </Pressable>
 
         </Pressable>
-
+        </ThemeScope>
       </Modal>
 
 

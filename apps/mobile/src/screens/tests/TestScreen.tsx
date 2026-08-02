@@ -367,7 +367,7 @@ export default function TestScreen() {
       {/* Tabs */}
       <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'tests' && [styles.activeTab, { backgroundColor: colors.primary + '20' }]]}
+          style={[styles.tab, activeTab === 'tests' && { backgroundColor: colors.primary + '20' }]}
           onPress={() => setActiveTab('tests')}
         >
           <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'tests' && { color: colors.primary }]}>
@@ -375,7 +375,7 @@ export default function TestScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'history' && [styles.activeTab, { backgroundColor: colors.primary + '20' }]]}
+          style={[styles.tab, activeTab === 'history' && { backgroundColor: colors.primary + '20' }]}
           onPress={() => setActiveTab('history')}
         >
           <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'history' && { color: colors.primary }]}>
@@ -662,7 +662,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   headerSubtitle: {
     fontSize: 14,
@@ -673,7 +672,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 4,
   },
@@ -683,16 +681,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 10,
   },
-  activeTab: {
-    backgroundColor: '#6366f1',
-  },
   tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
-  },
-  activeTabText: {
-    color: '#ffffff',
   },
   listContent: {
     paddingHorizontal: 20,
@@ -709,7 +700,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -720,12 +710,10 @@ const styles = StyleSheet.create({
   testName: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 4,
   },
   testDescription: {
     fontSize: 14,
-    color: '#9ca3af',
     marginBottom: 8,
   },
   testMeta: {
@@ -740,7 +728,6 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: '#6b7280',
   },
   attemptCard: {
     borderRadius: 16,
@@ -765,7 +752,6 @@ const styles = StyleSheet.create({
   attemptName: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 2,
   },
   attemptSource: {
@@ -774,7 +760,6 @@ const styles = StyleSheet.create({
   },
   attemptDate: {
     fontSize: 13,
-    color: '#6b7280',
     marginBottom: 8,
   },
   attemptStats: {
@@ -793,7 +778,6 @@ const styles = StyleSheet.create({
   },
   attemptMeta: {
     fontSize: 13,
-    color: '#9ca3af',
   },
   attemptActions: {
     flexDirection: 'row',
@@ -836,7 +820,6 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -844,12 +827,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: '#9ca3af',
     textAlign: 'center',
   },
   // Modal styles
@@ -859,7 +840,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#1e293b',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -873,7 +853,6 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 16,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -881,13 +860,11 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#ffffff',
     marginBottom: 8,
     textAlign: 'center',
   },
   modalDescription: {
     fontSize: 14,
-    color: '#9ca3af',
     textAlign: 'center',
   },
   modalStats: {
@@ -917,13 +894,11 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#334155',
     alignItems: 'center',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
   },
   startButton: {
     flex: 1,
@@ -945,7 +920,6 @@ const styles = StyleSheet.create({
   modeSectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 12,
   },
   modeOptions: {
@@ -954,7 +928,6 @@ const styles = StyleSheet.create({
   },
   modeOption: {
     flex: 1,
-    backgroundColor: '#0f172a',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
@@ -962,34 +935,21 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     position: 'relative',
   },
-  modeOptionActive: {
-    borderColor: '#6366f1',
-    backgroundColor: '#1e293b',
-  },
   modeIconContainer: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
   },
-  modeIconContainerActive: {
-    backgroundColor: '#6366f1',
-  },
   modeTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#9ca3af',
     marginBottom: 6,
-  },
-  modeTitleActive: {
-    color: '#ffffff',
   },
   modeDescription: {
     fontSize: 12,
-    color: '#6b7280',
     textAlign: 'center',
     lineHeight: 18,
   },

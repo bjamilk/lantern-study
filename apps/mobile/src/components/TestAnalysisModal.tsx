@@ -118,9 +118,9 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
             contentContainerStyle={styles.contentContainer}
           >
             <View style={[styles.scoreSummary, { backgroundColor: colors.inputBackground }]}>
-              <View style={styles.scoreCircle}>
-                <Text style={styles.scorePercentage}>{test.percentage}%</Text>
-                <Text style={styles.scoreLabel}>Score</Text>
+              <View style={[styles.scoreCircle, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.scorePercentage, { color: colors.textInverse }]}>{test.percentage}%</Text>
+                <Text style={[styles.scoreLabel, { color: colors.textInverse }]}>Score</Text>
               </View>
               <View style={styles.scoreDetails}>
                 <View style={styles.scoreDetailItem}>
@@ -209,6 +209,9 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                     hideRules
                     xAxisThickness={0}
                     yAxisThickness={0}
+                    yAxisColor={colors.border}
+                    xAxisColor={colors.border}
+                    backgroundColor={colors.inputBackground}
                     yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
                     xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
                     noOfSections={4}
@@ -293,6 +296,9 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                     hideRules
                     xAxisThickness={0}
                     yAxisThickness={0}
+                    yAxisColor={colors.border}
+                    xAxisColor={colors.border}
+                    backgroundColor={colors.inputBackground}
                     yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
                     xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
                     noOfSections={4}
@@ -409,7 +415,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 20,
@@ -417,11 +422,10 @@ const styles = StyleSheet.create({
   scorePercentage: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   scoreLabel: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
+    opacity: 0.9,
   },
   scoreDetails: {
     flex: 1,
