@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
-import { parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
+import { formatChatMessagePreview, parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
@@ -67,6 +67,11 @@ export function DmBubble({
         return;
       }
       if (!soundRef.current) {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          playThroughEarpieceAndroid: false,
+        });
         const { sound } = await Audio.Sound.createAsync({ uri: resolvedAudioUrl });
         soundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((status) => {
@@ -167,7 +172,7 @@ export function DmBubble({
               >
                 {message.replyTo.isRemoved
                   ? 'Message removed'
-                  : (message.replyTo.text || 'Original message').slice(0, 100)}
+                  : (formatChatMessagePreview(message.replyTo.text) || 'Original message').slice(0, 100)}
               </Text>
             </Pressable>
           ) : null}

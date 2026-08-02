@@ -5,13 +5,16 @@
  * Must be imported before any screen/components load (see apps/mobile/index.ts).
  */
 import React from 'react';
-import {
-  Text as RNText,
-  TextInput as RNTextInput,
-  StyleSheet,
-  type TextProps,
-  type TextInputProps,
-} from 'react-native';
+import { StyleSheet, type TextProps, type TextInputProps } from 'react-native';
+
+const reactNativeModule = require('react-native') as typeof import('react-native');
+
+// Capture the ORIGINAL Text/TextInput before we override the module exports below.
+// The wrappers must render these originals — if they rendered the (live) module
+// exports instead, those now resolve back to the wrappers, causing infinite render
+// recursion that exhausts the Hermes JS heap (OOM / SIGABRT) at startup.
+const OriginalText = reactNativeModule.Text;
+const OriginalTextInput = reactNativeModule.TextInput;
 
 let fontScale = 1;
 
@@ -37,30 +40,52 @@ function scaleTextStyle(style: TextProps['style']): TextProps['style'] {
   return Array.isArray(style) ? [...style, { fontSize: scaled }] : [style ?? {}, { fontSize: scaled }];
 }
 
-const ScaledText = React.forwardRef(function ScaledText(props: TextProps, ref: React.Ref<RNText>) {
-  const { style, allowFontScaling = false, ...rest } = props;
-  return (
-    <RNText ref={ref} {...rest} style={scaleTextStyle(style)} allowFontScaling={allowFontScaling} />
-  );
-});
+const ScaledText = React.forwardRef<React.ElementRef<typeof OriginalText>, TextProps>(
+  function ScaledText(props, ref) {
+    const { style, allowFontScaling = false, ...rest } = props;
+    return (
+      <OriginalText
+        ref={ref}
+        {...rest}
+        style={scaleTextStyle(style)}
+        allowFontScaling={allowFontScaling}
+      />
+    );
+  }
+);
 ScaledText.displayName = 'Text';
 
-const ScaledTextInput = React.forwardRef(function ScaledTextInput(
-  props: TextInputProps,
-  ref: React.Ref<RNTextInput>
-) {
-  const { style, allowFontScaling = false, ...rest } = props;
-  return (
-    <RNTextInput
-      ref={ref}
-      {...rest}
-      style={scaleTextStyle(style)}
-      allowFontScaling={allowFontScaling}
-    />
-  );
-});
+const ScaledTextInput = React.forwardRef<React.ElementRef<typeof OriginalTextInput>, TextInputProps>(
+  function ScaledTextInput(props, ref) {
+    const { style, allowFontScaling = false, ...rest } = props;
+    return (
+      <OriginalTextInput
+        ref={ref}
+        {...rest}
+        style={scaleTextStyle(style)}
+        allowFontScaling={allowFontScaling}
+      />
+    );
+  }
+);
 ScaledTextInput.displayName = 'TextInput';
 
-const reactNativeModule = require('react-native') as typeof import('react-native');
-reactNativeModule.Text = ScaledText;
-reactNativeModule.TextInput = ScaledTextInput;
+// React Native 0.81 exposes `Text`/`TextInput` as getter-only module exports, so a direct
+// assignment (`reactNativeModule.Text = ...`) throws "Cannot assign to property 'Text' which
+// has only a getter" at import time. They are configurable accessors, so redefine them via
+// Object.defineProperty instead. Guarded so global font scaling degrades gracefully rather
+// than ever blocking startup.
+function patchReactNativeExport(name: 'Text' | 'TextInput', component: React.ComponentType<never>) {
+  try {
+    Object.defineProperty(reactNativeModule, name, {
+      configurable: true,
+      enumerable: true,
+      get: () => component,
+    });
+  } catch {
+    // If the export can't be redefined, skip global font scaling for it instead of crashing.
+  }
+}
+
+patchReactNativeExport('Text', ScaledText as unknown as React.ComponentType<never>);
+patchReactNativeExport('TextInput', ScaledTextInput as unknown as React.ComponentType<never>);

@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useNavigation,
   useRoute,
@@ -193,7 +194,7 @@ export function JobApplicantsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={["top"]}>
       <ScreenHeader title="Applicants" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
@@ -448,7 +449,7 @@ export function JobApplicantsScreen() {
           </Text>
         ) : null}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

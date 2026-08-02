@@ -987,6 +987,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
       <GroupChatHeader
         displayName={displayName}
+        avatarUrl={currentGroup?.avatarUrl}
         memberCount={memberCount}
         lowDataMode={lowDataMode}
         onBack={handleBack}

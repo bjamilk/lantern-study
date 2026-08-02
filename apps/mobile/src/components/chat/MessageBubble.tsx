@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useGroupStore, type Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import {
+  formatChatMessagePreview,
   normalizeStorageUrl,
   parseChatAudioUrl,
   resolveGroupChatAvatarUrl,
@@ -114,6 +115,11 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
 
     const load = async () => {
       try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          playThroughEarpieceAndroid: false,
+        });
         const { sound } = await Audio.Sound.createAsync(
           { uri: resolvedUrl },
           { shouldPlay: false, progressUpdateIntervalMillis: 100 },
@@ -497,7 +503,11 @@ export function MessageBubble({
               >
                 {message.replyTo.isRemoved
                   ? 'Message removed'
-                  : (message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+                  : (
+                      message.replyTo.questionStem ||
+                      formatChatMessagePreview(message.replyTo.text) ||
+                      'Original message'
+                    ).slice(0, 100)}
               </Text>
             </Pressable>
           ) : null}

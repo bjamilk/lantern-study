@@ -39,6 +39,7 @@ import {
   storageThumbPath,
 } from "@lantern/shared/utils/storageUrl";
 import {
+  formatChatMessagePreview,
   resolveThreadRootId,
   computeDmReceiptStatus,
   computeGroupReceipt,
@@ -2416,7 +2417,7 @@ export class SupabaseService {
       const preview =
         String(latest?.type || "").toUpperCase() === "QUESTION"
           ? `New question: ${String(questionData.questionStem || "").substring(0, 50)}`
-          : latest?.text || null;
+          : formatChatMessagePreview(latest?.text) || null;
 
       const previewCutoff = latest?.timestamp || row.timestamp;
       let updateQuery = this.supabase
@@ -2451,7 +2452,7 @@ export class SupabaseService {
     let updateQuery = this.supabase
       .from("dm_threads")
       .update({
-        last_message: latest?.text || null,
+        last_message: formatChatMessagePreview(latest?.text) || null,
         last_message_time: latest?.timestamp || null,
       })
       .eq("id", threadId);
@@ -3638,12 +3639,13 @@ export class SupabaseService {
       throw new Error(error.message);
     }
 
+    // Persist a durable object URL in chat markdown; clients re-sign for playback.
+    // Embedding a week-long signed URL makes notes expire / break after TTL.
+    const base = process.env.SUPABASE_URL?.replace(/\/$/, "") || "";
+    const durableUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
+
     return {
-      url: await this.createSignedStorageUrl(
-        bucket,
-        filePath,
-        60 * 60 * 24 * 7,
-      ),
+      url: durableUrl,
       path: filePath,
     };
   }
@@ -4701,6 +4703,7 @@ export class SupabaseService {
         nextRequestedBy = null;
       }
 
+      const dmListPreview = formatChatMessagePreview(content) || content;
       const { error: threadError } = await this.supabase
         .from("dm_threads")
         .upsert(
@@ -4708,7 +4711,7 @@ export class SupabaseService {
             id: threadId,
             participant_ids: sortedIds,
             participants: {},
-            last_message: content,
+            last_message: dmListPreview,
             last_message_time: new Date().toISOString(),
             status: nextStatus,
             requested_by: nextRequestedBy,
@@ -4828,7 +4831,7 @@ export class SupabaseService {
       await this.supabase
         .from("dm_threads")
         .update({
-          last_message: content,
+          last_message: dmListPreview,
           last_message_time: new Date().toISOString(),
           archived_by: updatedArchivedBy,
           hidden_by: [],
@@ -4842,8 +4845,11 @@ export class SupabaseService {
         ? (data.profiles as unknown as any[])[0]
         : (data.profiles as unknown as any);
       const senderName = senderProfile?.name || "Someone";
+      const previewSource = dmListPreview;
       const preview =
-        content.length > 80 ? `${content.slice(0, 80)}…` : content;
+        previewSource.length > 80
+          ? `${previewSource.slice(0, 80)}…`
+          : previewSource;
       const isRequestNotify = nextStatus === "pending";
 
       void this.createNotification(recipientId, {
@@ -8255,10 +8261,11 @@ export class SupabaseService {
       });
 
       // Keep group list preview in sync for recipients who have not opened the chat yet.
+      const groupListPreview = formatChatMessagePreview(content) || content;
       void this.supabase
         .from("groups")
         .update({
-          last_message: content,
+          last_message: groupListPreview,
           last_message_time: data.timestamp || new Date().toISOString(),
         })
         .eq("id", groupId)
@@ -8276,7 +8283,7 @@ export class SupabaseService {
       void this.notifyGroupMessageRecipients({
         groupId,
         senderId: userId,
-        content,
+        content: groupListPreview,
         messageId: data.id,
         excludeUserIds: mentionedUserIds,
       }).catch((err) => {
@@ -8291,7 +8298,7 @@ export class SupabaseService {
         senderId: userId,
         messageId: data.id,
         mentionedUserIds,
-        preview: content,
+        preview: groupListPreview,
         mentionedEveryone,
       });
       if (replyToMessageId) {
@@ -8300,7 +8307,7 @@ export class SupabaseService {
           senderId: userId,
           messageId: data.id,
           replyToMessageId,
-          preview: content,
+          preview: groupListPreview,
           skipUserIds: mentionedUserIds,
         });
       }
@@ -10322,7 +10329,7 @@ export class SupabaseService {
           id: dmThreadId,
           participant_ids: sortedIds,
           participants: {},
-          last_message: initialMessage,
+          last_message: formatChatMessagePreview(initialMessage) || initialMessage,
           last_message_time: new Date().toISOString(),
           status: "open",
           requested_by: null,

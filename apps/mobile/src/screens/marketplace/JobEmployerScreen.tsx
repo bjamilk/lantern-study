@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
@@ -65,7 +66,7 @@ export function JobEmployerScreen() {
   };
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader title="Employer" onBack={() => navigation.goBack()} />
       <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 40 }}>
         <Text className="text-xs text-lantern-text-tertiary mb-3">{JOBS_COMPANY_EEO_NOTICE}</Text>
@@ -220,7 +221,7 @@ export function JobEmployerScreen() {
           </Pressable>
         </Card>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

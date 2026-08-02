@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   Text,
   TextInput,
@@ -9,11 +10,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { buildChatAudioMarkdown } from '@lantern/shared/utils';
+import { buildChatAudioMarkdown, formatChatMessagePreview } from '@lantern/shared/utils';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
-import { uploadChatAudio } from '../../services/chatAudioUpload';
+import { uploadChatAudio, uploadChatAudioBase64 } from '../../services/chatAudioUpload';
+import {
+  CHAT_VOICE_TEST_CONTENT_TYPE,
+  CHAT_VOICE_TEST_FILE_NAME,
+  CHAT_VOICE_TEST_M4A_BASE64,
+} from '../../services/chatVoiceTestFixture';
+import { isIosSimulator } from '../../utils/isIosSimulator';
 
 export type MentionCandidate = {
   id: string;
@@ -73,7 +80,7 @@ export function ChatComposer({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
   const recordingRef = useRef<{
-    stopAndUnloadAsync: () => Promise<unknown>;
+    stopAndUnloadAsync: () => Promise<{ uri?: string | null } | unknown>;
     getURI: () => string | null;
   } | null>(null);
   const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -166,6 +173,70 @@ export function ChatComposer({
     }
   };
 
+  const resetPlaybackAudioMode = async () => {
+    try {
+      const { Audio } = await import('expo-av');
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        playThroughEarpieceAndroid: false,
+      });
+    } catch {
+      // Non-fatal
+    }
+  };
+
+  const sendUploadedVoice = useCallback(
+    async (url: string) => {
+      if (!onSendAudioMarkdown) return;
+      await onSendAudioMarkdown(buildChatAudioMarkdown(url));
+    },
+    [onSendAudioMarkdown]
+  );
+
+  const sendDevTestVoiceNote = useCallback(async () => {
+    if (!onSendAudioMarkdown || uploadingAudio || sending) return;
+    setUploadingAudio(true);
+    try {
+      const { url } = await uploadChatAudioBase64(CHAT_VOICE_TEST_M4A_BASE64, {
+        fileName: CHAT_VOICE_TEST_FILE_NAME,
+        contentType: CHAT_VOICE_TEST_CONTENT_TYPE,
+        groupId,
+        threadId,
+      });
+      await sendUploadedVoice(url);
+    } catch (err: any) {
+      Alert.alert('Voice note', err?.message || 'Could not upload test voice note');
+    } finally {
+      setUploadingAudio(false);
+    }
+  }, [groupId, threadId, onSendAudioMarkdown, uploadingAudio, sending, sendUploadedVoice]);
+
+  const offerSimulatorVoiceHelp = useCallback(
+    (detail?: string) => {
+      Alert.alert(
+        'Voice notes need a real iPhone',
+        [
+          'The iOS Simulator cannot record microphone audio (Apple/Expo limitation).',
+          'Use a physical iPhone (TestFlight or a device development build) to record real voice notes.',
+          'You can still send a short silent test note here to verify upload and playback.',
+          detail ? `\n${detail}` : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        [
+          {
+            text: 'Send test note',
+            onPress: () => void sendDevTestVoiceNote(),
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    },
+    [sendDevTestVoiceNote]
+  );
+
   const stopRecording = async () => {
     if (maxTimerRef.current) {
       clearTimeout(maxTimerRef.current);
@@ -178,12 +249,13 @@ export function ChatComposer({
     }
     setIsRecording(false);
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      const status = await recording.stopAndUnloadAsync();
+      const uri = recording.getURI() || (status as { uri?: string | null })?.uri || null;
       recordingRef.current = null;
+      await resetPlaybackAudioMode();
       const elapsed = Date.now() - startedAtRef.current;
       if (!uri || elapsed < 400) {
-        Alert.alert('Voice note', 'Recording was too short. Hold a bit longer.');
+        Alert.alert('Voice note', 'Recording was too short. Tap mic, speak for a second, then tap again to send.');
         return;
       }
       if (!onSendAudioMarkdown) return;
@@ -198,20 +270,29 @@ export function ChatComposer({
               ? 'audio/ogg'
               : 'audio/mp4';
         const { url } = await uploadChatAudio(uri, mimeType, { groupId, threadId });
-        await onSendAudioMarkdown(buildChatAudioMarkdown(url));
+        await sendUploadedVoice(url);
       } catch (err: any) {
         Alert.alert('Voice note', err?.message || 'Could not upload voice note');
       } finally {
         setUploadingAudio(false);
       }
-    } catch {
+    } catch (err: any) {
       recordingRef.current = null;
-      Alert.alert('Voice note', 'Could not finish recording.');
+      await resetPlaybackAudioMode();
+      if (isIosSimulator() || Platform.OS === 'ios') {
+        offerSimulatorVoiceHelp(err?.message);
+        return;
+      }
+      Alert.alert('Voice note', err?.message || 'Could not finish recording.');
     }
   };
 
   const startRecording = async () => {
     if (!onSendAudioMarkdown || uploadingAudio || sending) return;
+    if (isIosSimulator()) {
+      offerSimulatorVoiceHelp();
+      return;
+    }
     try {
       const { Audio } = await import('expo-av');
       const permission = await Audio.requestPermissionsAsync();
@@ -222,6 +303,8 @@ export function ChatComposer({
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        playThroughEarpieceAndroid: false,
       });
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
@@ -232,8 +315,16 @@ export function ChatComposer({
       maxTimerRef.current = setTimeout(() => {
         void stopRecording();
       }, MAX_VOICE_MS);
-    } catch {
-      Alert.alert('Voice note', 'Could not start recording.');
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      const looksLikeSimulatorFailure =
+        Platform.OS === 'ios' &&
+        (/recorder/i.test(message) || /prepare/i.test(message) || /not provided/i.test(message));
+      if (looksLikeSimulatorFailure || isIosSimulator()) {
+        offerSimulatorVoiceHelp(message);
+        return;
+      }
+      Alert.alert('Voice note', message || 'Could not start recording.');
     }
   };
 
@@ -252,7 +343,7 @@ export function ChatComposer({
               Replying to {replyTo.senderName || 'message'}
             </Text>
             <Text className="text-xs" numberOfLines={1} style={{ color: colors.textSecondary }}>
-              {(replyTo.text || 'Message').slice(0, 80)}
+              {(formatChatMessagePreview(replyTo.text) || 'Message').slice(0, 80)}
             </Text>
           </View>
           <Pressable onPress={onClearReply} accessibilityLabel="Cancel reply" className="p-2">

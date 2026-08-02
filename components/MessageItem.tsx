@@ -11,6 +11,7 @@ import {
   resolveGroupChatSenderLabel,
   resolveGroupChatMentionUsername,
   getQuestionVerificationThreshold,
+  formatChatMessagePreview,
   parseChatAudioUrl,
   segmentMentions,
   canEditChatMessage,
@@ -487,7 +488,11 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             <p className="text-xs truncate">
               {message.replyTo.isRemoved
                 ? 'Message removed'
-                : (message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+                : (
+                    message.replyTo.questionStem ||
+                    formatChatMessagePreview(message.replyTo.text) ||
+                    'Original message'
+                  ).slice(0, 100)}
             </p>
           </button>
         )}
