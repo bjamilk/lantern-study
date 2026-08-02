@@ -195,9 +195,9 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
   onClearHighlights,
 }) => {
   return (
-    <div className="mb-2 sm:mb-4 space-y-2">
+    <div className="space-y-1.5">
       {/* ── Tool Buttons ── */}
-      <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap bg-lantern-surface border border-lantern-border rounded-lg sm:rounded-xl px-2 py-1.5 sm:px-3 sm:py-2 shadow-sm">
+      <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap bg-lantern-surface border border-lantern-border rounded-lg sm:rounded-xl px-2 py-1 sm:px-3 sm:py-1.5 shadow-sm">
         <span className="hidden sm:inline text-[10px] font-bold text-lantern-text-tertiary uppercase tracking-widest mr-1 select-none">
           Tools
         </span>
