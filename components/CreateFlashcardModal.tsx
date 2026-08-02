@@ -631,7 +631,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
             useToastStore.getState().showToast('Cloze text is required and must contain a cloze deletion, e.g., {{c1::answer}}.', 'error');
             return;
         }
-        cardData = { deckId, type, clozeText, front: '', back: null, imageUrl: undefined, occlusionData: undefined };
+        // front/back must be null for CLOZE (DB check_flashcard_fields); '' is not null.
+        cardData = { deckId, type, clozeText, front: null, back: null, imageUrl: undefined, occlusionData: undefined };
     }
     
     onSubmit({
