@@ -61,5 +61,16 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+      // Without an explicit include, vitest walks the whole monorepo and collects
+      // the api-server's Jest suites too, which then fail with "describe is not
+      // defined" because they rely on Jest globals. Scope it to the files that
+      // actually import from vitest so `npm test -w @lantern/web` is meaningful.
+      // Paths are relative to `root` above, which is the repo root.
+      test: {
+        include: [
+          'apps/web/src/**/*.test.{ts,tsx}',
+          'components/**/*.test.{ts,tsx}',
+        ],
+      },
     };
 });
