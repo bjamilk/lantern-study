@@ -39,6 +39,7 @@
   },
   "overrides": {
     "react-native-reanimated": "3.19.5",
+    "@types/express-serve-static-core": "5.1.0",
     "jws": "^4.0.1",
     "ws": "^8.21.0",
     "metro": {
