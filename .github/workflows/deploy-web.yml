@@ -1,0 +1,96 @@
+name: Deploy web (Cloudflare Pages)
+
+# Manual on purpose. Deploying to lanternstudy.com affects real users, so it is an
+# explicit action with an audit trail rather than a side effect of pushing.
+# To make it automatic later, add:
+#   push:
+#     branches: [main]
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to deploy'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # Cheap correctness gates first — never publish a tree that cannot build.
+      - name: Security overrides are actually installed
+        run: node scripts/check-overrides.mjs
+
+      - name: Scan for committed secrets
+        run: bash scripts/check-secrets.sh
+
+      - name: Build web
+        env:
+          # Vite inlines these at build time. Supplying them here — rather than from
+          # whatever .env happens to sit on a laptop — is the entire point of this
+          # workflow: a locally built dist once shipped local dev values to
+          # production and every login failed with "Invalid API key".
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+        run: npm run build:web
+
+      # Fails the deploy if Vite did not inline the production values, which would
+      # otherwise ship a bundle that silently falls back to the demo Supabase key.
+      - name: Verify bundle points at production
+        run: |
+          set -euo pipefail
+          url=$(grep -oh '__LANTERN_VITE_SUPABASE_URL__:"[^"]*"' dist/assets/index-*.js | head -1 | sed 's/.*:"//;s/"//')
+          key=$(grep -oh '__LANTERN_VITE_SUPABASE_ANON_KEY__:"[^"]*"' dist/assets/index-*.js | head -1 | sed 's/.*:"//;s/"//')
+          if [ -z "$url" ] || [ -z "$key" ]; then
+            echo "::error::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY were not inlined. Set them as repository variables."
+            exit 1
+          fi
+          case "$url" in
+            *localhost*|*127.0.0.1*|*192.168.*)
+              echo "::error::Bundle points at a local Supabase: $url"; exit 1;;
+          esac
+          issuer=$(python3 -c "import sys,json,base64;p=sys.argv[1].split('.')[1];p+='='*(-len(p)%4);print(json.loads(base64.urlsafe_b64decode(p)).get('iss',''))" "$key")
+          if [ "$issuer" != "supabase" ]; then
+            echo "::error::Anon key issuer is '$issuer', expected 'supabase'. A demo/dev key is baked into the bundle."
+            exit 1
+          fi
+          echo "url=$url issuer=$issuer"
+
+      - name: Publish to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler pages deploy dist --project-name lantern-study --branch main
+
+      # The build stamps a unique service-worker cache id. Comparing it against the
+      # live site is the only reliable proof the deploy actually replaced the old one.
+      - name: Confirm the new build is live
+        run: |
+          set -euo pipefail
+          expected=$(grep -oE 'lantern-[a-z0-9]+-[a-z0-9]+' dist/sw.js | head -1)
+          echo "expected: $expected"
+          for i in $(seq 1 20); do
+            live=$(curl -fsS https://lanternstudy.com/sw.js | grep -oE 'lantern-[a-z0-9]+-[a-z0-9]+' | head -1 || true)
+            if [ "$live" = "$expected" ]; then echo "live: $live — deploy confirmed"; exit 0; fi
+            echo "attempt $i: live=$live"; sleep 15
+          done
+          echo "::error::Live site never served $expected. Cloudflare may still be propagating, or the deploy did not take."
+          exit 1

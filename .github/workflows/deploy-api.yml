@@ -1,0 +1,95 @@
+name: Deploy API (Render)
+
+# Manual on purpose — see deploy-web.yml for the reasoning.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to deploy'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+env:
+  RENDER_SERVICE_NAME: lantern-study-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # Render builds the Docker image itself, but a failed image build silently
+      # leaves the previous version serving — so a broken commit looks "fine" from
+      # outside. Compile and test here first so that cannot happen unnoticed.
+      - name: Security overrides are actually installed
+        run: node scripts/check-overrides.mjs
+
+      - run: npm run build --workspace=@lantern/shared
+      - run: npm run build --workspace=@lantern/api-server
+      - run: npm test --workspace=@lantern/api-server
+
+      - name: Trigger Render deploy and wait
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          set -euo pipefail
+          api() { curl -fsS -H "Authorization: Bearer $RENDER_API_KEY" -H 'Accept: application/json' "$@"; }
+
+          # The list endpoint wraps each entry as {"service": {...}}; `// .` falls back
+          # to the bare object in case that ever changes.
+          service_id=$(api "https://api.render.com/v1/services?name=${RENDER_SERVICE_NAME}&limit=20" \
+            | jq -r --arg n "$RENDER_SERVICE_NAME" '[.[] | (.service // .) | select(.name == $n)][0].id // empty')
+          if [ -z "$service_id" ]; then
+            echo "::error::No Render service named ${RENDER_SERVICE_NAME} is visible to this API key."
+            exit 1
+          fi
+          echo "service: $service_id"
+
+          deploy_id=$(curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H 'Content-Type: application/json' \
+            -d '{"clearCache":"do_not_clear"}' \
+            "https://api.render.com/v1/services/$service_id/deploys" \
+            | jq -r '.id')
+          echo "deploy: $deploy_id"
+
+          # Poll rather than fire-and-forget: Render keeps the last good deploy live
+          # when a new one fails, so /health stays 200 and hides the failure.
+          for i in $(seq 1 80); do
+            status=$(api "https://api.render.com/v1/services/$service_id/deploys/$deploy_id" | jq -r '.status // empty')
+            echo "[$i] $status"
+            case "$status" in
+              live) echo "deploy live"; exit 0;;
+              build_failed|update_failed|canceled|pre_deploy_failed)
+                echo "::error::Render deploy finished as '$status'. Check the Render dashboard build log."
+                exit 1;;
+            esac
+            sleep 15
+          done
+          echo "::error::Timed out waiting for the Render deploy to go live."
+          exit 1
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 20); do
+            code=$(curl -o /dev/null -s -w '%{http_code}' https://lantern-study-api.onrender.com/health || true)
+            [ "$code" = "200" ] && { echo "API healthy"; exit 0; }
+            echo "attempt $i: HTTP $code"; sleep 10
+          done
+          echo "::error::API did not return 200 from /health after the deploy."
+          exit 1
