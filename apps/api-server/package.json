@@ -26,7 +26,7 @@
     "@napi-rs/canvas": "^0.1.100",
     "@sentry/node": "^9.1.0",
     "@supabase/supabase-js": "^2.81.1",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.79.2",
     "compression": "^1.8.0",
