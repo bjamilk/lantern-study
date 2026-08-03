@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+// This suite runs under Jest (see jest.config), which provides describe/expect/it
+// as globals. Importing them from vitest makes the whole suite fail to load with
+// "Vitest cannot be imported in a CommonJS module using require()".
 import { signAccountExport, verifyAccountExportSignature, wrapSignedExport } from './accountExportSign';
 
 describe('accountExportSign', () => {

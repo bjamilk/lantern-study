@@ -3,6 +3,7 @@ import { SupabaseService } from './supabase';
 describe('canAccessStorageObject profile-avatars', () => {
   let service: SupabaseService;
   let visibilitySpy: jest.SpyInstance;
+  let peerChatSpy: jest.SpyInstance;
 
   beforeEach(() => {
     service = new SupabaseService({
@@ -10,10 +11,16 @@ describe('canAccessStorageObject profile-avatars', () => {
       serviceRoleKey: 'test-service-role-key',
     });
     visibilitySpy = jest.spyOn(service, 'isProfileVisibleToViewer');
+    // When a profile is not visible, canAccessStorageObject falls through to the
+    // conversation-peer check (DM / shared group avatars). Without this stub that
+    // path issues a real Supabase request and the test dies with "fetch failed".
+    // Default to false so "not visible" means "no access" unless a test says otherwise.
+    peerChatSpy = jest.spyOn(service, 'canViewPeerChatAvatar').mockResolvedValue(false);
   });
 
   afterEach(() => {
     visibilitySpy.mockRestore();
+    peerChatSpy.mockRestore();
   });
 
   it('allows the avatar owner without a visibility RPC call', async () => {
