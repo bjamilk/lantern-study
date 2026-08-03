@@ -235,8 +235,9 @@ export const getCloudSupabaseProjectRef = (url: string): string | null => {
 const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
   try {
     const parts = jwt.split('.');
-    if (parts.length < 2) return null;
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payloadSegment = parts[1];
+    if (!payloadSegment) return null;
+    const b64 = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
     const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
     const json =
       typeof globalThis.atob === 'function'
