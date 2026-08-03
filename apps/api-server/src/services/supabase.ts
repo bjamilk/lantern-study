@@ -9,6 +9,7 @@ import {
 } from "../types";
 import { cacheService } from "./cache";
 import { logger } from "../utils/logger";
+import { buildFlashcardUpdateData } from "../utils/flashcardUpdate";
 import {
   buildMarketplaceBudgetTxIds,
   buildManualSaleBudgetTxId,
@@ -4156,17 +4157,10 @@ export class SupabaseService {
       if (!canEdit) return null;
     }
 
-    // Build update object with only defined fields
-    const updateData: any = {};
-    if (updates.front !== undefined) updateData.front = updates.front;
-    if (updates.back !== undefined) updateData.back = updates.back;
-    if (updates.clozeText !== undefined)
-      updateData.cloze_text = updates.clozeText;
-    if (updates.imageUrl !== undefined) updateData.image_url = updates.imageUrl;
-    if (updates.occlusionData !== undefined)
-      updateData.occlusion_data = updates.occlusionData;
-    if (updates.srsData !== undefined) updateData.srs_data = updates.srsData;
-    if (updates.tags !== undefined) updateData.tags = updates.tags;
+    // Build update object with only defined fields.
+    // CLOZE rows require front/back NULL (check_flashcard_fields); clients often
+    // send front:'' which must not be written as an empty string.
+    const updateData: any = buildFlashcardUpdateData(existing.type, updates);
 
     // If no fields to update, just return the current flashcard
     if (Object.keys(updateData).length === 0) {

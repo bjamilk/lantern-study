@@ -909,14 +909,15 @@ export default function TestTakingScreen() {
           <TouchableOpacity
             style={[styles.flagButton, isCurrentFlagged && styles.flagButtonActive]}
             onPress={() => toggleFlag(currentQuestion.id)}
+            accessibilityLabel={isCurrentFlagged ? 'Remove bookmark' : 'Bookmark for review'}
           >
             <Ionicons
-              name={isCurrentFlagged ? 'flag' : 'flag-outline'}
+              name={isCurrentFlagged ? 'bookmark' : 'bookmark-outline'}
               size={18}
-              color={isCurrentFlagged ? '#f97316' : '#94a3b8'}
+              color={isCurrentFlagged ? '#eab308' : '#94a3b8'}
             />
             <Text style={[styles.flagButtonText, isCurrentFlagged && styles.flagButtonTextActive]}>
-              {isCurrentFlagged ? 'Flagged' : 'Flag for review'}
+              {isCurrentFlagged ? 'Bookmarked' : 'Bookmark for review'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1131,7 +1132,7 @@ export default function TestTakingScreen() {
           <View style={[styles.reviewModal, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
             <Text style={styles.reviewTitle}>Review & Submit</Text>
             <Text style={styles.reviewSubtitle}>
-              {answeredCount} answered · {activeTest.questions.length - answeredCount} skipped · {flaggedCount} flagged
+              {answeredCount} answered · {activeTest.questions.length - answeredCount} skipped · {flaggedCount} bookmarked
             </Text>
 
             <ScrollView style={styles.reviewGridScroll} contentContainerStyle={styles.reviewGrid}>
@@ -1768,7 +1769,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   flagButtonActive: {
-    backgroundColor: '#f9731620',
+    backgroundColor: '#eab30820',
   },
   flagButtonText: {
     color: '#94a3b8',
@@ -1776,7 +1777,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   flagButtonTextActive: {
-    color: '#f97316',
+    color: '#eab308',
   },
   reviewOverlay: {
     flex: 1,

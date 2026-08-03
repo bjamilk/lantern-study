@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TestSessionData, StudySessionData, TestQuestion, QuestionType, UserAnswerRecord, MatchingItem, DiagramLabel } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon as CheckCircleSolid, XCircleIcon as XCircleSolid, AcademicCapIcon, QuestionMarkCircleIcon, ClockIcon, BookmarkIcon as BookmarkOutlineIcon, ArrowsRightLeftIcon, ArrowLeftIcon, ExclamationTriangleIcon, XMarkIcon, PauseIcon } from '@heroicons/react/24/outline';
+import { ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon as CheckCircleSolid, XCircleIcon as XCircleSolid, ClockIcon, ArrowLeftIcon, ExclamationTriangleIcon, XMarkIcon, PauseIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import VoiceInputButton from './VoiceInputButton';
 import TestUtilityToolbar, { ToolType } from './TestUtilityToolbar';
@@ -123,7 +123,6 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   const [highlights, setHighlights] = useState<Record<string, Array<{ start: number; end: number }>>>({});
   const [struckOutOptions, setStruckOutOptions] = useState<Record<string, string[]>>({});
   const [questionNotes, setQuestionNotes] = useState<Record<string, string>>({});
-  const [markedQuestions, setMarkedQuestions] = useState<string[]>([]);
 
   // ── Answer streak (study mode) ─────────────────────────────────────────────
   const [answerStreak, setAnswerStreak] = useState(0);
@@ -134,6 +133,8 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   const questionViewStartTimeRef = useRef<number | null>(null);
   const paletteRef = useRef<HTMLDivElement>(null);
   const questionStemRef = useRef<HTMLParagraphElement>(null);
+  /** Suppress mark click-to-remove when a drag-select just applied a highlight. */
+  const highlightAppliedRef = useRef(false);
 
   // ── Track answer streak in study mode ─────────────────────────────────────
   useEffect(() => {
@@ -394,31 +395,81 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
   // ── Highlight helpers ──────────────────────────────────────────────────────
 
-  const handleHighlightSelection = useCallback(() => {
+  const applyHighlightFromSelection = useCallback(() => {
     if (activeTool !== 'highlight') return;
+    const stem = questionStemRef.current;
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !questionStemRef.current) return;
+    if (!stem || !selection || selection.isCollapsed || selection.rangeCount === 0) return;
 
-    const range = selection.getRangeAt(0);
-    if (!questionStemRef.current.contains(range.commonAncestorContainer)) return;
+    let range: Range;
+    try {
+      range = selection.getRangeAt(0);
+    } catch {
+      return;
+    }
 
-    // Calculate char offsets relative to the stem element
-    const preRange = document.createRange();
-    preRange.selectNodeContents(questionStemRef.current);
-    preRange.setEnd(range.startContainer, range.startOffset);
-    const start = preRange.toString().length;
-    const end = start + range.toString().length;
-    if (start >= end) return;
+    // Selection must intersect the question stem (mouseup may land outside the <p>).
+    const startInStem = stem.contains(range.startContainer) || stem === range.startContainer;
+    const endInStem = stem.contains(range.endContainer) || stem === range.endContainer;
+    if (!startInStem && !endInStem) return;
 
-    setHighlights(prev => ({
-      ...prev,
-      [currentQuestion.id]: [...(prev[currentQuestion.id] || []), { start, end }],
-    }));
-    selection.removeAllRanges();
+    try {
+      const clipped = range.cloneRange();
+      if (!startInStem) clipped.setStart(stem, 0);
+      if (!endInStem) clipped.setEnd(stem, stem.childNodes.length);
+
+      const preRange = document.createRange();
+      preRange.selectNodeContents(stem);
+      preRange.setEnd(clipped.startContainer, clipped.startOffset);
+      const start = preRange.toString().length;
+      const end = start + clipped.toString().length;
+      if (start >= end) return;
+
+      highlightAppliedRef.current = true;
+      setHighlights(prev => {
+        const existing = prev[currentQuestion.id] || [];
+        // Ignore exact duplicate ranges
+        if (existing.some(r => r.start === start && r.end === end)) return prev;
+        return {
+          ...prev,
+          [currentQuestion.id]: [...existing, { start, end }],
+        };
+      });
+      selection.removeAllRanges();
+      window.setTimeout(() => {
+        highlightAppliedRef.current = false;
+      }, 0);
+    } catch {
+      // Range APIs can throw if the DOM shifted mid-selection; ignore quietly.
+    }
   }, [activeTool, currentQuestion.id]);
 
+  // Listen on document so releasing the pointer slightly outside the stem still applies.
+  useEffect(() => {
+    if (activeTool !== 'highlight') return;
+    const onPointerUp = () => {
+      requestAnimationFrame(() => applyHighlightFromSelection());
+    };
+    document.addEventListener('pointerup', onPointerUp);
+    return () => document.removeEventListener('pointerup', onPointerUp);
+  }, [activeTool, applyHighlightFromSelection]);
+
+  const removeHighlightRange = useCallback(
+    (target: { start: number; end: number }) => {
+      if (highlightAppliedRef.current) return;
+      setHighlights(prev => ({
+        ...prev,
+        [currentQuestion.id]: (prev[currentQuestion.id] || []).filter(
+          // Drop any stored slice that overlaps the clicked (merged) mark
+          r => r.end <= target.start || r.start >= target.end
+        ),
+      }));
+    },
+    [currentQuestion.id]
+  );
+
   const renderHighlightedText = (text: string, ranges: Array<{ start: number; end: number }>) => {
-    if (!ranges.length) return <>{text}</>;
+    if (!ranges.length) return text;
 
     // Sort and merge overlapping ranges
     const sorted = [...ranges].sort((a, b) => a.start - b.start);
@@ -443,13 +494,10 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             key={`h-${i}`}
             className="bg-yellow-200 dark:bg-yellow-500/40 text-inherit rounded-sm cursor-pointer"
             title="Click to remove highlight"
-            onClick={() => {
-              setHighlights(prev => ({
-                ...prev,
-                [currentQuestion.id]: (prev[currentQuestion.id] || []).filter(
-                  r => !(r.start === h.start && r.end === h.end)
-                ),
-              }));
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              removeHighlightRange(h);
             }}
           >
             {text.slice(s, e)}
@@ -553,15 +601,11 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   };
   
   // Mode-specific theming
-  const headerText = mode === 'test' 
-    ? (session.isOffline ? '📝 Offline Test' : '📝 Test in Progress') 
-    : (session.isOffline ? '📚 Offline Study' : '📚 Study Session');
-  const headerIcon = mode === 'test' ? 
-    <QuestionMarkCircleIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-lantern-primary" /> : 
-    <AcademicCapIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-lantern-primary" />;
+  const headerText = mode === 'test'
+    ? (session.isOffline ? 'Offline Test' : 'Test in Progress')
+    : (session.isOffline ? 'Offline Study' : 'Study Session');
 
   const isCurrentBookmarked = userAnswer?.isBookmarked || false;
-  const BookmarkToggleIcon = isCurrentBookmarked ? BookmarkSolidIcon : BookmarkOutlineIcon;
 
   if (isReviewMode && mode === 'test') {
     const answeredCount = Object.values(session.userAnswers).filter((ans: UserAnswerRecord) => {
@@ -685,22 +729,16 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   };
 
   // Mode-specific theme colors
-  const modeTheme = mode === 'study' 
-    ? { 
+  const modeTheme = mode === 'study'
+    ? {
         bgGradient: 'bg-gradient-to-b from-lantern-primary-background to-lantern-background dark:from-lantern-primary-background dark:to-lantern-background',
         headerBorder: 'border-blue-200 dark:border-blue-800',
-        infoBanner: 'bg-blue-100 dark:bg-blue-900/40 border-blue-200 dark:border-blue-700',
-        infoBannerText: 'text-blue-800 dark:text-blue-200',
         infoBannerSubtext: 'text-lantern-primary',
-        navPalette: 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800'
       }
-    : { 
+    : {
         bgGradient: 'bg-gradient-to-b from-lantern-primary-background to-lantern-background dark:from-lantern-primary-background dark:to-lantern-background',
         headerBorder: 'border-purple-200 dark:border-purple-800',
-        infoBanner: 'bg-purple-100 dark:bg-purple-900/40 border-lantern-primary/30',
-        infoBannerText: 'text-purple-800 dark:text-purple-200',
         infoBannerSubtext: 'text-lantern-primary',
-        navPalette: 'bg-purple-100 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800'
       };
 
   return (
@@ -732,81 +770,81 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         </div>
       )}
 
-      {/* Sticky session chrome — stays visible above AppShell overflow clipping */}
-      <div className="shrink-0 z-20 p-2 sm:p-4 md:px-6 md:pt-6 md:pb-0 bg-inherit">
-        {/* Mode Info Banner */}
-        <div className={`mb-2 sm:mb-4 p-2 sm:p-3 rounded-lg border flex items-center ${modeTheme.infoBanner}`}>
-          <span className="text-lg sm:text-2xl mr-2 sm:mr-3">{mode === 'study' ? '📚' : '📝'}</span>
-          <div className="flex-1 min-w-0">
-            <span className={`font-semibold text-sm sm:text-base ${modeTheme.infoBannerText}`}>
-              {mode === 'study' ? 'Study Mode' : 'Test Mode'}
+      {/* Slim sticky session chrome — maximize Q&A viewport below */}
+      <div className={`shrink-0 z-20 px-2 py-1.5 sm:px-4 sm:py-2 border-b ${modeTheme.headerBorder} bg-inherit`}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <span className="text-base sm:text-lg shrink-0" aria-hidden="true">
+              {mode === 'study' ? '📚' : '📝'}
             </span>
-            <span className={`hidden sm:inline text-sm ml-2 ${modeTheme.infoBannerSubtext}`}>
-              {mode === 'study'
-                ? timeLeftDisplay
-                  ? '• Timed • Instant feedback • Not recorded'
-                  : '• No timer • Instant feedback • Not recorded'
-                : '• Timed • Results recorded • Answers at end'}
-            </span>
-            <p className={`sm:hidden text-[10px] mt-0.5 ${modeTheme.infoBannerSubtext}`}>
-              {mode === 'study'
-                ? timeLeftDisplay
-                  ? 'Timed · Instant feedback'
-                  : 'No timer · Instant feedback'
-                : 'Timed · Results recorded'}
-            </p>
-          </div>
-        </div>
-
-        <div className={`pb-2 sm:pb-4 border-b ${modeTheme.headerBorder}`}>
-          <div className="flex items-center justify-between gap-2">
-              <div className={`flex items-center text-base sm:text-xl md:text-2xl font-semibold min-w-0 ${mode === 'study' ? 'text-blue-700 dark:text-blue-300' : 'text-purple-700 dark:text-purple-300'}`}> 
-                  {headerIcon} <span className="truncate">{headerText}</span>
-              </div>
-              <div className="flex items-center shrink-0 gap-2 sm:gap-3">
-                {timeLeftDisplay && (
-                  <div
-                    className={`flex items-center tabular-nums text-base sm:text-lg font-bold px-3 py-1.5 rounded-md border-2 shadow-sm ${
-                      isTimeLow
-                        ? 'text-white bg-red-600 border-red-700 animate-pulse'
-                        : 'text-lantern-text bg-lantern-surface border-lantern-primary dark:bg-lantern-surface-secondary dark:text-lantern-text dark:border-lantern-primary'
-                    }`}
-                    aria-live="polite"
-                    aria-label={`Time remaining ${timeLeftDisplay}`}
-                    title="Time remaining"
-                  >
-                    <ClockIcon className={`w-5 h-5 sm:w-6 sm:h-6 mr-1.5 shrink-0 ${isTimeLow ? 'text-white' : 'text-lantern-primary'}`} />
-                    <span>{timeLeftDisplay}</span>
-                  </div>
-                )}
-                <button 
-                    type="button"
-                    onClick={onPauseSession}
-                    className="p-1.5 sm:p-2 rounded-full hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary text-lantern-text-secondary"
-                    aria-label="Pause Session"
-                    title="Pause & Exit Session"
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2 min-w-0">
+                <h1
+                  className={`text-sm sm:text-base font-semibold truncate ${
+                    mode === 'study'
+                      ? 'text-blue-700 dark:text-blue-300'
+                      : 'text-purple-700 dark:text-purple-300'
+                  }`}
                 >
-                    <PauseIcon className="w-5 h-5 sm:w-6 sm:h-6"/>
-                </button>
-                <button 
-                    type="button"
-                    onClick={onCancelSession}
-                    className="p-1.5 sm:p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400"
-                    aria-label="Cancel Session"
-                    title="Cancel & Exit Session"
-                >
-                    <XMarkIcon className="w-5 h-5 sm:w-6 sm:h-6"/>
-                </button>
+                  {headerText}
+                </h1>
+                <span className="text-[11px] sm:text-xs text-lantern-text-secondary whitespace-nowrap tabular-nums">
+                  Q {session.currentQuestionIndex + 1}/{totalQuestions}
+                </span>
               </div>
+              <p className={`hidden sm:block text-[11px] leading-tight truncate ${modeTheme.infoBannerSubtext}`}>
+                {mode === 'study'
+                  ? timeLeftDisplay
+                    ? 'Timed · Instant feedback · Not recorded'
+                    : 'No timer · Instant feedback · Not recorded'
+                  : 'Timed · Results recorded · Answers at end'}
+              </p>
+            </div>
           </div>
-          <p className="text-xs sm:text-sm text-lantern-text-secondary mt-1 pl-0 sm:pl-14">
-            Question {session.currentQuestionIndex + 1} of {totalQuestions}
-          </p>
+          <div className="flex items-center shrink-0 gap-1 sm:gap-1.5">
+            {timeLeftDisplay && (
+              <div
+                className={`flex items-center tabular-nums text-xs sm:text-sm font-bold px-2 py-1 sm:px-2.5 sm:py-1 rounded-md border ${
+                  isTimeLow
+                    ? 'text-white bg-red-600 border-red-700 animate-pulse'
+                    : 'text-lantern-text bg-lantern-surface border-lantern-primary dark:bg-lantern-surface-secondary dark:text-lantern-text dark:border-lantern-primary'
+                }`}
+                aria-live="polite"
+                aria-label={`Time remaining ${timeLeftDisplay}`}
+                title="Time remaining"
+              >
+                <ClockIcon
+                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 shrink-0 ${
+                    isTimeLow ? 'text-white' : 'text-lantern-primary'
+                  }`}
+                />
+                <span>{timeLeftDisplay}</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onPauseSession}
+              className="p-1 sm:p-1.5 rounded-full hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary text-lantern-text-secondary"
+              aria-label="Pause Session"
+              title="Pause & Exit Session"
+            >
+              <PauseIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={onCancelSession}
+              className="p-1 sm:p-1.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400"
+              aria-label="Cancel Session"
+              title="Cancel & Exit Session"
+            >
+              <XMarkIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 p-2 sm:p-4 md:p-6 pt-3 sm:pt-4 overflow-y-auto overscroll-y-contain">
-        {/* ── Utility Toolbar ── */}
+      {/* Pinned exam tools — stay visible while question content scrolls */}
+      <div className="shrink-0 z-10 px-2 sm:px-4 md:px-6 pt-1.5 sm:pt-2 bg-inherit">
         <TestUtilityToolbar
           activeTool={activeTool}
           onToolChange={setActiveTool}
@@ -818,38 +856,31 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
           onNoteChange={text =>
             setQuestionNotes(prev => ({ ...prev, [currentQuestion.id]: text }))
           }
-          isMarked={markedQuestions.includes(currentQuestion.id)}
-          onToggleMark={() =>
-            setMarkedQuestions(prev =>
-              prev.includes(currentQuestion.id)
-                ? prev.filter(id => id !== currentQuestion.id)
-                : [...prev, currentQuestion.id]
-            )
-          }
+          isBookmarked={isCurrentBookmarked}
+          onToggleBookmark={() => onToggleBookmark(currentQuestion.id)}
           highlightCount={(highlights[currentQuestion.id] || []).length}
           onClearHighlights={() =>
             setHighlights(prev => ({ ...prev, [currentQuestion.id]: [] }))
           }
         />
+      </div>
 
-        <div className="bg-lantern-surface p-3 sm:p-4 md:p-6 rounded-lg shadow-md mb-3 sm:mb-6">
+      {/* Scrollable question + answers — primary content owner */}
+      <div className="flex-1 min-h-0 px-2 sm:px-4 md:px-6 pt-1.5 sm:pt-2 pb-2 overflow-y-auto overscroll-y-contain">
+        <div className="bg-lantern-surface p-3 sm:p-4 md:p-5 rounded-lg shadow-md mb-2 sm:mb-3">
             <div className="flex justify-between items-start mb-1 gap-2">
                 <h2 id={`question-stem-${currentQuestion.id}`} className="text-base sm:text-lg md:text-xl font-semibold text-lantern-text">
                     Question {currentQuestion.questionNumber}:
                 </h2>
-                <button
-                    onClick={() => onToggleBookmark(currentQuestion.id)}
-                    className={`p-1 sm:p-1.5 rounded-md hover:bg-lantern-background-secondary shrink-0 ${isCurrentBookmarked ? 'text-yellow-500 dark:text-yellow-400' : 'text-lantern-text-secondary'}`}
-                    aria-label={isCurrentBookmarked ? 'Remove bookmark' : 'Add bookmark'}
-                    title={isCurrentBookmarked ? 'Remove bookmark' : 'Add bookmark'}
-                >
-                    <BookmarkToggleIcon className="w-5 h-5 md:w-6 md:h-6" />
-                </button>
             </div>
             <p
               ref={questionStemRef}
-              className={`text-sm sm:text-md md:text-lg mb-3 sm:mb-4 whitespace-pre-wrap text-lantern-text ${activeTool === 'highlight' ? 'cursor-text select-text' : ''}`}
-              onMouseUp={activeTool === 'highlight' ? handleHighlightSelection : undefined}
+              className={`text-sm sm:text-md md:text-lg mb-3 sm:mb-4 whitespace-pre-wrap text-lantern-text ${
+                activeTool === 'highlight'
+                  ? 'cursor-text select-text'
+                  : 'select-none'
+              }`}
+              style={activeTool === 'highlight' ? { userSelect: 'text', WebkitUserSelect: 'text' } : undefined}
             >
               {renderHighlightedText(
                 currentQuestion.questionStem,
@@ -1112,12 +1143,10 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 (answerRecord.diagramAnswers && answerRecord.diagramAnswers.length > 0)
             );
             const isBookmarked = !!answerRecord?.isBookmarked;
-            const isMarkedQ = markedQuestions.includes(q.id);
 
             let buttonClasses = "min-w-[44px] sm:min-w-[36px] md:min-w-[40px] min-h-[44px] h-11 sm:h-9 md:h-10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-xs sm:text-xs font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-lantern-surface touch-manipulation";
             let title = `Go to Question ${q.questionNumber}`;
-            if (isBookmarked) title += " (Bookmarked)";
-            if (isMarkedQ) title += " (Flagged)";
+            if (isBookmarked) title += " (Bookmarked for review)";
             if (isAnswered) title += " (Answered)";
             else title += " (Unanswered)";
 
@@ -1132,9 +1161,6 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             if (isBookmarked && !isCurrent) { 
                  buttonClasses += " border-2 border-yellow-500 dark:border-yellow-400";
             }
-            if (isMarkedQ && !isCurrent) {
-                 buttonClasses += " border-2 border-orange-500 dark:border-orange-400";
-            }
 
 
             return (
@@ -1148,16 +1174,6 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               >
                 {isBookmarked && (
                     <BookmarkSolidIcon className={`w-3 h-3 absolute top-0.5 right-0.5 ${isCurrent ? 'text-yellow-300' : 'text-yellow-600 dark:text-yellow-400'}`} />
-                )}
-                {isMarkedQ && !isBookmarked && (
-                    <svg
-                      className={`w-3 h-3 absolute top-0.5 right-0.5 ${isCurrent ? 'text-orange-300' : 'text-orange-500 dark:text-orange-400'}`}
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                      <line x1="4" y1="22" x2="4" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
                 )}
                 {q.questionNumber}
               </button>
