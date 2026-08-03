@@ -8,6 +8,12 @@ cd "$ROOT"
 ALLOWLIST=(
   'packages/shared/src/config/index.ts'
   'apps/mobile/src/services/supabase.ts'
+  # Same public Supabase anon key as supabase.ts above, kept as the
+  # PRODUCTION_ENDPOINTS fallback so preview/production builds never ship empty
+  # endpoints. Anon keys are published in client bundles by design and are
+  # governed by RLS - the service_role key is what must never appear, and the
+  # service_role check above still applies to this file.
+  'apps/mobile/app.config.ts'
   'scripts/verify-rls-privileges.sql'
   'apps/api-server/src/utils/safeError.ts'
   'render.yaml'

@@ -1487,7 +1487,7 @@ export class SupabaseService {
     if (error) throw error;
 
     // If this is a subgroup, add all parent group members to the subgroup
-    let allMemberIds = [userId, ...memberIds];
+    const allMemberIds = [userId, ...memberIds];
 
     if (groupData.parentId) {
       // Fetch parent group members
@@ -6475,7 +6475,7 @@ export class SupabaseService {
     return cacheService.cached(
       cacheKey,
       async () => {
-        let query = this.supabase
+        const query = this.supabase
           .from("profiles")
           .select("id, name, avatar_url, points, stats")
           .order("points", { ascending: false });

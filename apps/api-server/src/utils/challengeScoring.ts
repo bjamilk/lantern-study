@@ -106,7 +106,7 @@ const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 export function checkAndAwardBadges(user: any): { updatedUser: any; awardedBadges: any[] } {
   const awardedBadges: any[] = [];
   const userBadges = user.badges ? JSON.parse(JSON.stringify(user.badges)) : [];
-  let updatedUser = { ...user, badges: userBadges, points: user.points || 0 };
+  const updatedUser = { ...user, badges: userBadges, points: user.points || 0 };
 
   const gamesWon = updatedUser.stats?.gamesWon || 0;
   const currentBadge = updatedUser.badges.find((b: { id: string }) => b.id === 'DUELIST');

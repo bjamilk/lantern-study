@@ -1129,7 +1129,7 @@ router.get('/decks', async (req: any, res: any) => {
     if (error) throw error;
 
     const deckIds = (data || []).map((d: any) => d.id);
-    let cardCounts: Record<string, number> = {};
+    const cardCounts: Record<string, number> = {};
     if (deckIds.length) {
       const { data: cards } = await supabaseService.getClient().from('flashcards').select('deck_id').in('deck_id', deckIds);
       for (const c of cards || []) {

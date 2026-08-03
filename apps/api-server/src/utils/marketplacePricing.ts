@@ -24,7 +24,7 @@ export function normalizeMarketplacePricing(input: {
   salePrice?: unknown;
 }): { price: number | null; sale_price: number | null } {
   const price = toFiniteNumber(input.price);
-  let salePrice = toFiniteNumber(input.sale_price ?? input.salePrice);
+  const salePrice = toFiniteNumber(input.sale_price ?? input.salePrice);
 
   if (price !== null && price < 0) {
     throw new MarketplacePricingError('Price cannot be negative.');

@@ -58,7 +58,7 @@ function skipHealthPaths(req: Request): boolean {
 function buildStoreOptions(redisPrefix: string): Partial<Options> {
   if (!redisSendCommand) return {};
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     const { RedisStore } = require('rate-limit-redis');
     return {
       store: new RedisStore({

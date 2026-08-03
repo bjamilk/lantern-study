@@ -716,7 +716,7 @@ export class JobsBoardService {
       }
     }
 
-    let companyId = input.companyId || null;
+    const companyId = input.companyId || null;
     if (companyId) {
       const member = await this.getCompanyMembership(companyId, userId);
       if (!member) {

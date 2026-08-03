@@ -13,7 +13,7 @@ export function initSentry(): void {
   if (!dsn) return;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     const Sentry = require('@sentry/node');
     Sentry.init({
       dsn,
@@ -36,7 +36,7 @@ export function initSentry(): void {
 export function setupSentryExpress(app: import('express').Application): void {
   if (!process.env.SENTRY_DSN) return;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     const Sentry = require('@sentry/node');
     if (typeof Sentry.setupExpressErrorHandler === 'function') {
       Sentry.setupExpressErrorHandler(app);

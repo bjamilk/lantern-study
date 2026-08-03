@@ -119,7 +119,7 @@ router.get(
       return null;
     };
 
-    let testResults = unwrap(settled[0], 'testResults');
+    const testResults = unwrap(settled[0], 'testResults');
     let questionStats = unwrap(settled[1], 'userQuestionStats');
     const profile = unwrap(settled[2], 'profile');
     const streak = unwrap(settled[3], 'streak');
