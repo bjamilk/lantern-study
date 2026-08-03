@@ -15,6 +15,8 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - name: Security overrides are actually installed
+        run: node scripts/check-overrides.mjs
       - run: npm run lint --workspace=@lantern/api-server --if-present
       - run: npm run build --workspace=@lantern/shared
       - run: npm run build --workspace=@lantern/api-server
