@@ -1,0 +1,16 @@
+diff --git a/node_modules/react-native-css-interop/babel.js b/node_modules/react-native-css-interop/babel.js
+index d84e52b..a3bf8b0 100644
+--- a/node_modules/react-native-css-interop/babel.js
++++ b/node_modules/react-native-css-interop/babel.js
+@@ -9,8 +9,9 @@ module.exports = function () {
+           importSource: "react-native-css-interop",
+         },
+       ],
+-      // Use this plugin in reanimated 4 and later
+-      "react-native-worklets/plugin",
++      // NOTE: patched — this app uses Reanimated 3, whose worklet transform comes from
++      // `react-native-reanimated/plugin` (see apps/mobile/babel.config.js).
++      // `react-native-worklets/plugin` is Reanimated 4 only and is not installed.
+     ],
+   };
+ };
