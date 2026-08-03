@@ -8,6 +8,7 @@
  * return localhost URLs which are unreachable from a physical device.
  */
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ExpoSecureStoreAdapter } from './secureStorage';
 import 'react-native-url-polyfill/auto';
 import Constants from 'expo-constants';
@@ -145,10 +146,16 @@ if (!isDevRuntime && (!supabaseUrl || !supabaseAnonKey || !API_BASE_URL)) {
   throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, or EXPO_PUBLIC_API_URL');
 }
 
-// Create Supabase client with SecureStore-backed session persistence
+// Session storage: SecureStore (Keychain) on iOS. On Android, `expo-secure-store`'s
+// native Keystore call can block the JS thread indefinitely during Supabase auth init
+// and hang app boot (observed on emulator images and the dev client), so use
+// AsyncStorage there — it is reliable and still persists the session across launches.
+const authStorage = Platform.OS === 'android' ? AsyncStorage : ExpoSecureStoreAdapter;
+
+// Create Supabase client with device-appropriate session persistence
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: ExpoSecureStoreAdapter,
+    storage: authStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false, // Not needed in React Native

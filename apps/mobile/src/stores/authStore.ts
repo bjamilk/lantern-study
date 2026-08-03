@@ -92,7 +92,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: async () => {
     try {
       set({ isLoading: true });
-      
+
       // In demo mode, auto-login as demo user
       if (DEMO_MODE) {
         set({ 
@@ -105,10 +105,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
       
-      // Refresh session if present, otherwise load current session
-      const { data: refreshData } = await supabase.auth.refreshSession();
-      const session = refreshData.session ?? (await getSession());
-      
+      // Refresh session if present, otherwise load current session.
+      // Guard with a timeout so a stalled auth call can't hang app boot forever.
+      let session = null;
+      try {
+        session = await Promise.race([
+          (async () => {
+            const { data: refreshData } = await supabase.auth.refreshSession();
+            return refreshData.session ?? (await getSession());
+          })(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('auth-init-timeout')), 8000)
+          ),
+        ]);
+      } catch (e) {
+        console.warn('[Auth] session restore timed out/failed, continuing unauthenticated:', String(e));
+      }
+
       if (session) {
         let profileName: string | null = null;
         let profileFirstName: string | null = null;
@@ -129,7 +142,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false,
         });
       } else {
-        set({ 
+        set({
           user: null,
           session: null,
           profileName: null,
@@ -138,8 +151,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false,
         });
       }
-      
-      // Set up auth state listener
+
+      // Set up auth state listener (deferred so its initial-session emission can't
+      // block the first render).
+      setTimeout(() => {
       onAuthStateChange((event, session) => {
         console.log('Auth state changed:', event);
 
@@ -164,6 +179,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ user: null, session: null, profileName: null, profileFirstName: null, isPasswordRecovery: false });
         }
       });
+      }, 0);
     } catch (error: any) {
       console.error('Failed to initialize auth:', error);
       

@@ -7,6 +7,10 @@ const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 const isExpoGoRuntime = process.env.EXPO_PUBLIC_APP_RUNTIME === 'expo-go';
 const expoNotificationsStub = path.resolve(projectRoot, 'src/stubs/expo-notifications.ts');
+// @react-native-community/netinfo's legacy TurboReactPackage native module does not
+// register under RN 0.81 bridgeless on Android (crashes boot). Route Android to a shim;
+// iOS keeps the real module.
+const netInfoStub = path.resolve(projectRoot, 'src/stubs/netinfo.ts');
 
 function resolvePackageDir(packageName) {
   const mobilePath = path.resolve(projectRoot, 'node_modules', packageName);
@@ -16,7 +20,6 @@ function resolvePackageDir(packageName) {
 
 // Expo Go ships native worklets 0.5.1; monorepo root may hoist 0.7.x via NativeWind peers.
 const pinnedNativeModules = {
-  'react-native-worklets': resolvePackageDir('react-native-worklets'),
   'react-native-reanimated': resolvePackageDir('react-native-reanimated'),
   'react-native-webview': resolvePackageDir('react-native-webview'),
 };
@@ -38,6 +41,9 @@ const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (isExpoGoRuntime && moduleName === 'expo-notifications') {
     return { type: 'sourceFile', filePath: expoNotificationsStub };
+  }
+  if (platform === 'android' && moduleName === '@react-native-community/netinfo') {
+    return { type: 'sourceFile', filePath: netInfoStub };
   }
   if (Object.hasOwn(pinnedNativeModules, moduleName)) {
     return context.resolveRequest(
