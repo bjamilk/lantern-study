@@ -19,6 +19,12 @@ export {
 } from './ai';
 export { createCompanionClient, type LanternCompanionClient } from './companion';
 export {
+  consumeCompanionSseBuffer,
+  readCompanionStreamError,
+  type CompanionStreamDone,
+  type CompanionSseHandlers,
+} from './companionSse';
+export {
   parseGlobalAIUsageFromHeaders,
   parseGlobalAIUsageFromHeaderReader,
   xhrHeaderReader,

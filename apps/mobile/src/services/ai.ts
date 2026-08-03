@@ -1,6 +1,7 @@
 /**
  * Mobile AI Service — thin wrapper around @lantern/shared/api AI + companion clients
  */
+import { fetch as expoFetch } from 'expo/fetch';
 import { createLanternAI, parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
 import type { AIUsageInfo } from '@lantern/shared';
 import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
@@ -49,6 +50,8 @@ const { ai, companion } = createLanternAI({
   getAuthHeaders,
   getUserId: getCurrentUserId,
   onUsageUpdate: updateUsage,
+  // SSE needs a streaming-capable fetch; RN's default often has no response.body.
+  fetchImpl: expoFetch as typeof fetch,
   // Initial enqueue is fast; async job polling has its own timeout.
   defaultTimeoutMs: 120_000,
 });

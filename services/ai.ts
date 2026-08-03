@@ -4,8 +4,10 @@
  */
 import { getApiBaseUrl, DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared';
 import {
+  consumeCompanionSseBuffer,
   parseGlobalAIUsageFromHeaderReader,
   parseGlobalAIUsageFromHeaders,
+  readCompanionStreamError,
   xhrHeaderReader,
 } from '@lantern/shared/api';
 import type {
@@ -418,12 +420,30 @@ export async function companionSendMessageStream(
   // Companion uses feature-scoped quota; skip when X-AI-Feature is visible (CORS-exposed).
   parseGlobalAIUsageFromHeaders(response, updateUsage);
 
-  if (!response.ok || !response.body) {
-    onError(new Error(`Stream request failed (${response.status})`));
+  const handlers = { onToken, onDone, onError };
+
+  if (!response.ok) {
+    onError(await readCompanionStreamError(response));
     return;
   }
 
-  const reader = response.body.getReader();
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    try {
+      const text = await response.text();
+      const { stopped } = consumeCompanionSseBuffer(
+        text.endsWith('\n\n') ? text : `${text}\n\n`,
+        handlers
+      );
+      if (!stopped) {
+        onError(new Error('Stream ended without a complete response'));
+      }
+    } catch (e: any) {
+      onError(new Error(e.message || 'Stream read error'));
+    }
+    return;
+  }
+
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -432,26 +452,18 @@ export async function companionSendMessageStream(
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split('\n\n');
-      buffer = parts.pop() ?? '';
-      for (const part of parts) {
-        if (!part.startsWith('data: ')) continue;
-        try {
-          const data = JSON.parse(part.slice(6));
-          if (data.error) { onError(new Error(data.error)); return; }
-          if (data.token !== undefined) onToken(data.token as string);
-          if (data.done) {
-            onDone({
-              actions: (data.actions as CompanionAction[]) || [],
-              messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
-              userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
-              conversationId:
-                typeof data.conversationId === 'string' ? data.conversationId : undefined,
-            });
-          }
-        } catch { /* malformed chunk — skip */ }
-      }
+      const consumed = consumeCompanionSseBuffer(buffer, handlers);
+      buffer = consumed.rest;
+      if (consumed.stopped) return;
     }
+    if (buffer.trim()) {
+      const consumed = consumeCompanionSseBuffer(
+        buffer.endsWith('\n\n') ? buffer : `${buffer}\n\n`,
+        handlers
+      );
+      if (consumed.stopped) return;
+    }
+    onError(new Error('Stream ended without a complete response'));
   } catch (e: any) {
     onError(new Error(e.message || 'Stream read error'));
   }
