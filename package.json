@@ -21,7 +21,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "seo:notify": "node scripts/seo/notify-search-engines.mjs",
     "eas-build-pre-install": "node scripts/eas-prepare-mobile-install.js",
-    "postinstall": "patch-package"
+    "//postinstall": "`|| true` is required: apps/api-server/Dockerfile installs with `npm ci --omit=dev`, which excludes patch-package (a devDependency) while still running this hook. Without the guard the hook exits 127 and the Render image build fails. Patches only affect the mobile build, so skipping them in a production API install is correct.",
+    "postinstall": "patch-package || true"
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",
