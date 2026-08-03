@@ -1,6 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { Group, UserQuestionStats } from '../types'
-import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl, shouldClearClientStorageKeyOnLogout } from '@lantern/shared'
+import {
+  getSupabaseUrl,
+  getSupabaseAnonKey,
+  getApiBaseUrl,
+  shouldClearClientStorageKeyOnLogout,
+  isMismatchedCloudSupabaseAnonKey,
+  SUPABASE_INVALID_API_KEY_USER_MESSAGE,
+} from '@lantern/shared'
 import { mapUserFromApi, mapFlashcardsFromApi } from '@lantern/shared/utils/apiMappers'
 import {
   listingsCacheKey,
@@ -30,11 +37,18 @@ import {
   restoreCookieSession,
 } from './authCookieSession'
 
-// Use shared config for URLs
+// Use shared config for URLs (getConfig reconciles cloud URL + demo anon mismatches)
 const supabaseUrl = getSupabaseUrl()
 const supabaseAnonKey = getSupabaseAnonKey()
 export const getApiRoot = () => (getApiBaseUrl() || "").replace(/\/$/, "")
 const cookieAuthEnabled = typeof window !== 'undefined' && isCookieAuthEnabled()
+
+if (
+  typeof window !== 'undefined' &&
+  isMismatchedCloudSupabaseAnonKey(supabaseUrl, supabaseAnonKey)
+) {
+  console.warn(`[Lantern] ${SUPABASE_INVALID_API_KEY_USER_MESSAGE}`)
+}
 
 async function createDeliveryResponseError(
   response: Response,

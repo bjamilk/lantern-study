@@ -212,6 +212,111 @@ const resolveWebSupabaseUrl = (supabaseUrl: string): string => {
   return supabaseUrl;
 };
 
+const isCloudSupabaseUrl = (url: string): boolean => {
+  try {
+    return new URL(url).hostname.toLowerCase().endsWith('.supabase.co');
+  } catch {
+    return false;
+  }
+};
+
+/** Project ref from `https://<ref>.supabase.co` (null if not a standard cloud host). */
+export const getCloudSupabaseProjectRef = (url: string): string | null => {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (!host.endsWith('.supabase.co')) return null;
+    const ref = host.slice(0, -'.supabase.co'.length);
+    return ref && !ref.includes('.') ? ref : null;
+  } catch {
+    return null;
+  }
+};
+
+const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const json =
+      typeof globalThis.atob === 'function'
+        ? globalThis.atob(padded)
+        : typeof Buffer !== 'undefined'
+          ? Buffer.from(padded, 'base64').toString('utf8')
+          : null;
+    if (!json) return null;
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * True when a cloud Supabase URL is paired with a local-demo / wrong-project anon JWT.
+ * Publishable keys (`sb_publishable_…`) are left alone (not JWTs).
+ */
+export const isMismatchedCloudSupabaseAnonKey = (
+  supabaseUrl: string,
+  supabaseAnonKey: string
+): boolean => {
+  if (!supabaseUrl || !isCloudSupabaseUrl(supabaseUrl)) return false;
+  if (!supabaseAnonKey) return true;
+  if (supabaseAnonKey.startsWith('sb_publishable_')) return false;
+
+  const expectedRef = getCloudSupabaseProjectRef(supabaseUrl);
+  const payload = decodeJwtPayload(supabaseAnonKey);
+  if (!payload) return true;
+
+  const iss = typeof payload.iss === 'string' ? payload.iss : '';
+  const ref = typeof payload.ref === 'string' ? payload.ref : '';
+  if (iss === 'supabase-demo') return true;
+  if (expectedRef && ref && ref !== expectedRef) return true;
+  if (expectedRef && !ref) return true;
+  return false;
+};
+
+/**
+ * Never call cloud Supabase with the local demo anon key (or another project's JWT).
+ * For Lantern's cloud project, swap in {@link CLOUD_PROD_FALLBACK}'s anon key.
+ */
+export const reconcileSupabaseAnonKey = (
+  supabaseUrl: string,
+  supabaseAnonKey: string
+): string => {
+  if (!isMismatchedCloudSupabaseAnonKey(supabaseUrl, supabaseAnonKey)) {
+    return supabaseAnonKey || CLOUD_PROD_FALLBACK.supabaseAnonKey;
+  }
+
+  const expectedRef = getCloudSupabaseProjectRef(supabaseUrl);
+  const fallbackRef = getCloudSupabaseProjectRef(CLOUD_PROD_FALLBACK.supabaseUrl);
+  if (
+    expectedRef &&
+    fallbackRef &&
+    expectedRef === fallbackRef
+  ) {
+    return CLOUD_PROD_FALLBACK.supabaseAnonKey;
+  }
+
+  // Unknown cloud project with a demo/wrong key — cannot invent their anon key.
+  return supabaseAnonKey;
+};
+
+const finalizeConfig = (config: Config): Config => ({
+  ...config,
+  supabaseAnonKey: reconcileSupabaseAnonKey(config.supabaseUrl, config.supabaseAnonKey),
+});
+
+/** User-facing copy when Supabase returns UNAUTHORIZED_INVALID_API_KEY. */
+export const SUPABASE_INVALID_API_KEY_USER_MESSAGE =
+  'App is misconfigured (Supabase key). Use https://lanternstudy.com or fix local .env (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be from the same project), then restart the dev server.';
+
+export const formatSupabaseClientAuthError = (message: string): string => {
+  if (/invalid api key/i.test(message)) {
+    return SUPABASE_INVALID_API_KEY_USER_MESSAGE;
+  }
+  return message;
+};
+
 /**
  * Get the full configuration based on platform and environment
  */
@@ -229,11 +334,11 @@ export const getConfig = (): Config => {
       // Never ship phones a localhost API/DB — recover even if the build baked bad env.
       apiBaseUrl = resolveWebApiBaseUrl(apiBaseUrl || CLOUD_PROD_FALLBACK.apiBaseUrl);
       supabaseUrl = resolveWebSupabaseUrl(supabaseUrl || CLOUD_PROD_FALLBACK.supabaseUrl);
-      return {
+      return finalizeConfig({
         supabaseUrl,
         supabaseAnonKey: supabaseAnonKey || CLOUD_PROD_FALLBACK.supabaseAnonKey,
         apiBaseUrl,
-      };
+      });
     }
 
     const missing: string[] = [];
@@ -244,20 +349,20 @@ export const getConfig = (): Config => {
     if (missing.length > 0) {
       // Mobile preview/production OTA: never hard-fail chat/API over missing inlined env.
       if (platform === 'mobile') {
-        return {
+        return finalizeConfig({
           supabaseUrl: supabaseUrl || MOBILE_PROD_FALLBACK.supabaseUrl,
           supabaseAnonKey: supabaseAnonKey || MOBILE_PROD_FALLBACK.supabaseAnonKey,
           apiBaseUrl: apiBaseUrl || MOBILE_PROD_FALLBACK.apiBaseUrl,
-        };
+        });
       }
       throw new Error(`Missing required production environment variables: ${missing.join(', ')}`);
     }
 
-    return {
+    return finalizeConfig({
       supabaseUrl: supabaseUrl || '',
       supabaseAnonKey: supabaseAnonKey || '',
       apiBaseUrl: apiBaseUrl || '',
-    };
+    });
   }
 
   // Development: use platform-specific defaults, allow env override
@@ -269,11 +374,11 @@ export const getConfig = (): Config => {
     supabaseUrl = resolveWebSupabaseUrl(supabaseUrl);
   }
 
-  return {
+  return finalizeConfig({
     supabaseUrl,
     supabaseAnonKey: getEnvVar('SUPABASE_ANON_KEY') || defaultConfig.supabaseAnonKey,
     apiBaseUrl,
-  };
+  });
 };
 
 /**

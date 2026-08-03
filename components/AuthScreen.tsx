@@ -6,7 +6,15 @@ import type MatterType from 'matter-js';
 import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability, setCachedAuthToken, resendSignupConfirmation, sendPasswordResetEmail, verifySignupOtp, getWebAuthRedirectOrigin } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
 import { LanternIcon } from './ui/LanternIcon';
-import { LEGAL_PATHS, isEmailNotConfirmedError, isAuthRateLimitError, getAuthRateLimitMessage, isValidOtpCode, RESEND_COOLDOWN_SECONDS } from '@lantern/shared';
+import {
+  LEGAL_PATHS,
+  isEmailNotConfirmedError,
+  isAuthRateLimitError,
+  getAuthRateLimitMessage,
+  isValidOtpCode,
+  RESEND_COOLDOWN_SECONDS,
+  formatSupabaseClientAuthError,
+} from '@lantern/shared';
 
 interface AuthScreenProps {
   onAuthSuccess: (user: User) => void;
@@ -230,11 +238,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     if (isAuthRateLimitError(err)) {
       return getAuthRateLimitMessage(context === 'login' ? 'signup' : context);
     }
-    if (err instanceof Error) return err.message;
-    if (typeof err === 'object' && err !== null && 'message' in err) {
-      return String((err as { message: unknown }).message);
+    let message = 'An error occurred.';
+    if (err instanceof Error) message = err.message;
+    else if (typeof err === 'object' && err !== null && 'message' in err) {
+      message = String((err as { message: unknown }).message);
     }
-    return 'An error occurred.';
+    return formatSupabaseClientAuthError(message);
   };
 
   useEffect(() => {
@@ -373,7 +382,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
       if (error) {
         console.error(`${provider} login error:`, error);
-        setError(error.message);
+        setError(formatAuthError(error, 'login'));
         setSocialLoading(null);
       }
       // If successful, the page will redirect to the OAuth provider
@@ -625,7 +634,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
             goToVerifyEmail(email);
             return;
           }
-          setError(isAuthRateLimitError(error) ? formatAuthError(error, 'signup') : error.message);
+          setError(formatAuthError(error, 'login'));
           return;
         }
 

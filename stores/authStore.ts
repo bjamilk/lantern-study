@@ -27,6 +27,7 @@ import { resolvePlatformAdmin } from '../utils/platformAdmin';
 import { setSentryUser } from '../services/sentry';
 import { normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
 import { normalizeUserSettings } from '@lantern/shared/settings';
+import { formatSupabaseClientAuthError } from '@lantern/shared';
 
 function displayNameFromMeta(
   meta: Record<string, unknown> | undefined,
@@ -141,8 +142,9 @@ export const useAuthStore = create<AuthState>()(
           if (isCookieAuthEnabled()) {
             const cookieResult = await loginViaCookieBff(email, password);
             if (cookieResult.error || !cookieResult.session?.user) {
-              set({ isAuthLoading: false, error: cookieResult.error || 'Login failed' });
-              return { success: false, error: cookieResult.error || 'Login failed' };
+              const errMsg = formatSupabaseClientAuthError(cookieResult.error || 'Login failed');
+              set({ isAuthLoading: false, error: errMsg });
+              return { success: false, error: errMsg };
             }
             session = cookieResult.session;
             authUser = cookieResult.session.user;
@@ -159,8 +161,9 @@ export const useAuthStore = create<AuthState>()(
             });
 
             if (error) {
-              set({ isAuthLoading: false, error: error.message });
-              return { success: false, error: error.message };
+              const errMsg = formatSupabaseClientAuthError(error.message);
+              set({ isAuthLoading: false, error: errMsg });
+              return { success: false, error: errMsg };
             }
 
             if (!data.user) {
