@@ -585,23 +585,17 @@ router.post(
       await cacheService.delete(`user:${userId}`);
       res.json({ success: true, data });
     } catch (err: any) {
-      // Both clients call this on every dashboard load, so a failure here is
-      // invisible in the UI and was going unnoticed. Log the real reason, and
-      // report it back to the authenticated owner of the account rather than
-      // the generic "Something went wrong" the global handler produces — this
-      // endpoint only ever acts on the caller's own profile.
+      // Both clients call this on every dashboard load and neither surfaces a
+      // failure, so a broken sync shows up only as badge progress that quietly
+      // stops moving. Log the real cause before the global handler replaces it
+      // with "Something went wrong"; the response stays on the standard shape.
       logger.error('Gamification sync failed', {
         userId,
         message: err?.message,
         code: err?.code,
         details: err?.details,
       });
-      res.status(500).json({
-        success: false,
-        error: 'sync_failed',
-        reason: String(err?.message || 'unknown'),
-        code: err?.code ?? null,
-      });
+      throw err;
     }
   })
 );

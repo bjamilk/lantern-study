@@ -19,6 +19,17 @@ export default defineConfig(({ mode }) => {
             changeOrigin: true,
             secure: true,
             rewrite: (p) => p.replace(/^\/__lantern_api/, ''),
+            // changeOrigin rewrites Host but leaves the browser's Origin header
+            // as http://localhost:5173, which the production CORS list rejects —
+            // and the rejection surfaced as a 500 on every POST/PUT while GETs
+            // sailed through, which reads exactly like a broken API. Dropping
+            // Origin makes this a server-to-server call, which isOriginAllowed
+            // permits, so writes are testable locally.
+            configure: (proxy) => {
+              proxy.on('proxyReq', (proxyReq) => {
+                proxyReq.removeHeader('origin');
+              });
+            },
           },
         },
       },
