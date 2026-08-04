@@ -86,13 +86,36 @@ export default function CreateFlashcardModal({
   const isCloze = type === FlashcardType.CLOZE;
   const isOcclusion = type === FlashcardType.IMAGE_OCCLUSION;
   const previewUri = picked?.localUri ?? imageUrl;
-  const canSave = uploading
-    ? false
-    : isOcclusion
-      ? Boolean(previewUri) && countShapes(occlusion) > 0 && Boolean(front.trim())
-      : isCloze
-        ? CLOZE_PATTERN.test(clozeText)
-        : Boolean(front.trim() && back.trim());
+  /**
+   * What still stands between this card and being saveable, in words.
+   *
+   * The button used to be disabled until every condition was met without ever
+   * saying which one was missing — so typing ordinary cloze text, or leaving the
+   * occlusion prompt blank, left a dead Create button and no way to find out
+   * why. The requirement is now stated, and the button stays live so the
+   * message can be shown on the attempt.
+   */
+  const missingRequirement: string | null = isOcclusion
+    ? !previewUri
+      ? 'Choose an image first.'
+      : countShapes(occlusion) === 0
+        ? 'Drag across the image to hide at least one region.'
+        : !front.trim()
+          ? 'Add a prompt so you know what to recall.'
+          : null
+    : isCloze
+      ? !clozeText.trim()
+        ? 'Add the text for this card.'
+        : !CLOZE_PATTERN.test(clozeText)
+          ? 'Mark what to hide, like {{c1::answer}} — use “+ Add deletion”.'
+          : null
+      : !front.trim()
+        ? 'Add the front of the card.'
+        : !back.trim()
+          ? 'Add the back of the card.'
+          : null;
+
+  const canSave = !uploading && !saving;
 
   const insertClozeDeletion = () => {
     // Numbering continues from what is already there, so repeated taps give
@@ -144,6 +167,10 @@ export default function CreateFlashcardModal({
 
   const handleSubmit = async () => {
     if (!canSave) return;
+    if (missingRequirement) {
+      setError(missingRequirement);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -365,7 +392,11 @@ export default function CreateFlashcardModal({
               )}
             </ScrollView>
 
-            {error ? <Text className="text-xs text-red-500 mb-2">{error}</Text> : null}
+            {error ? (
+              <Text className="text-xs text-red-500 mb-2">{error}</Text>
+            ) : missingRequirement ? (
+              <Text className="text-xs text-lantern-text-secondary mb-2">{missingRequirement}</Text>
+            ) : null}
 
             <View className="flex-row gap-2">
               <Button variant="secondary" className="flex-1" onPress={onClose}>
