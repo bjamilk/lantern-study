@@ -6,6 +6,12 @@ export interface DeckCardStats {
   newCards: number;
   dueCards: number;
   mastered: number;
+  /**
+   * Cards the SRS has flagged as leeches — repeatedly failed. Web surfaces this
+   * on the deck page and mobile did not, so a deck could be full of cards you
+   * keep forgetting with nothing on the screen saying so.
+   */
+  trickyCards: number;
 }
 
 export function getDeckCardStats(
@@ -21,12 +27,14 @@ export function getDeckCardStats(
   // isCardDue already handles the no-date case by requiring repetitions > 0.
   const dueCards = cards.filter(card => isCardDue(card.srsData)).length;
   const mastered = cards.filter(card => (card.srsData?.repetitions || 0) >= 5).length;
+  const trickyCards = cards.filter(card => card.srsData?.isLeech).length;
 
   return {
     total: cards.length,
     newCards,
     dueCards,
     mastered,
+    trickyCards,
   };
 }
 

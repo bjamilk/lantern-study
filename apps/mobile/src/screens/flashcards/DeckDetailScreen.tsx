@@ -28,7 +28,7 @@ import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '.
 import { confirmSheet } from '../../stores/confirmStore';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import CollaboratorsModal from '../../components/CollaboratorsModal';
-import CreateFlashcardModal from '../../components/CreateFlashcardModal';
+import CreateFlashcardModal, { type FlashcardDraft } from '../../components/CreateFlashcardModal';
 import {
   FlashcardType,
   FLASHCARD_MODE_LABELS,
@@ -184,19 +184,27 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     Alert.alert('Success', `Added ${generated.length} flashcards to the deck.`);
   };
 
-  const handleFlashcardSubmit = async (data: { front: string; back: string }) => {
+  const handleFlashcardSubmit = async (data: FlashcardDraft) => {
     if (!user?.id) return;
+    // Cloze rows must carry null front/back — the database's
+    // check_flashcard_fields constraint rejects empty strings there.
+    const payload =
+      data.type === FlashcardType.CLOZE
+        ? { type: FlashcardType.CLOZE, clozeText: data.clozeText, front: null, back: null }
+        : { type: FlashcardType.BASIC, front: data.front, back: data.back, clozeText: null };
+
     if (editingCard) {
-      await updateFlashcard(editingCard.id, deckId, { front: data.front, back: data.back }, user.id);
+      await updateFlashcard(editingCard.id, deckId, payload, user.id);
       setEditingCard(null);
       return;
     }
     await createFlashcard({
       deckId,
       userId: user.id,
-      type: FlashcardType.BASIC,
-      front: data.front,
-      back: data.back,
+      type: payload.type,
+      front: payload.front ?? undefined,
+      back: payload.back ?? undefined,
+      clozeText: payload.clozeText ?? undefined,
     });
   };
 
@@ -512,6 +520,18 @@ export function DeckDetailScreen({ navigation, route }: Props) {
                   {FLASHCARD_STAT_LABELS.total}
                 </Text>
               </View>
+              {/* Only shown when the deck actually has some, so a healthy deck
+                  is not given a permanent zero to worry about. */}
+              {stats.trickyCards > 0 ? (
+                <View className="items-center flex-1">
+                  <Text className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                    {stats.trickyCards}
+                  </Text>
+                  <Text className="text-[11px] text-lantern-text-secondary text-center mt-0.5">
+                    {FLASHCARD_STAT_LABELS.trickyCards}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </Card>
         )}
