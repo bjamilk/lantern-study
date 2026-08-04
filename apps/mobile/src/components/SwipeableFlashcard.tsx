@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -13,6 +13,24 @@ import Animated, {
 import type { PerformanceRating } from '@lantern/shared/utils';
 import { Card } from './ui';
 import { ImageOcclusionView } from './ImageOcclusionView';
+import { useResolvedStorageUrl } from '../hooks/useResolvedStorageUrl';
+
+/**
+ * Renders a picture attached to an ordinary card. Storage paths need resolving
+ * to a signed URL first, and nothing is drawn until that resolves so the card
+ * never flashes a broken image.
+ */
+function FlashcardImage({ url }: { url?: string | null }) {
+  const uri = useResolvedStorageUrl(url ?? undefined);
+  if (!url || !uri) return null;
+  return (
+    <Image
+      source={{ uri }}
+      style={{ width: '100%', height: 180, borderRadius: 12, marginBottom: 12 }}
+      resizeMode="contain"
+    />
+  );
+}
 import type { Flashcard } from '../stores';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -241,6 +259,9 @@ export function SwipeableFlashcard({
                   </View>
                 ) : (
                   <>
+                    {/* A picture attached to an ordinary card was stored but never
+                        drawn, so attaching one had no visible effect. */}
+                    <FlashcardImage url={card.imageUrl} />
                     <Text className="text-xl font-medium text-lantern-text text-center px-2">
                       {front}
                     </Text>

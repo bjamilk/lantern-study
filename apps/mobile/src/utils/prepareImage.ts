@@ -1,4 +1,7 @@
-import * as FileSystem from 'expo-file-system';
+// The legacy entry point: readAsStringAsync was removed from the new
+// expo-file-system API in SDK 54 and now throws when called through it.
+// DeckDetailScreen already imports the legacy module for the same reason.
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 export type MobileImageBudget =

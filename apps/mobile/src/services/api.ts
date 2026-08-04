@@ -45,6 +45,7 @@ export const {
   addFlashcardComment,
   resolveFlashcardComment,
   uploadFlashcardImage,
+  uploadFlashcardImageBase64,
   fetchUserProfile,
   createUserProfile,
   updateUserProfile,

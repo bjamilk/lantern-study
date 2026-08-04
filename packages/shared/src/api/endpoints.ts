@@ -241,17 +241,22 @@ export function createApiEndpoints(client: ApiClient) {
       userId: string,
       deckId: string,
       data: {
-        type: "BASIC" | "CLOZE";
-        front?: string;
-        back?: string;
-        clozeText?: string;
+        type: "BASIC" | "CLOZE" | "IMAGE_OCCLUSION";
+        front?: string | null;
+        back?: string | null;
+        clozeText?: string | null;
         tags?: string[];
+        // Occlusion cards carry the picture plus its masks; a basic card may
+        // carry just the picture. The server has always accepted both — only
+        // this client type was too narrow to send them.
+        imageUrl?: string | null;
+        occlusionData?: unknown;
       },
     ) =>
       apiRequest<{
         id: string;
         deck_id: string;
-        type: "BASIC" | "CLOZE";
+        type: "BASIC" | "CLOZE" | "IMAGE_OCCLUSION";
         front?: string;
         back?: string;
         cloze_text?: string;
@@ -350,6 +355,25 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         resolved: boolean;
       }>(`/flashcards/comments/${commentId}/resolve`, { method: "PUT" }),
+
+    /**
+     * Upload a flashcard image.
+     *
+     * POST /flashcards/upload-image expects JSON { fileName, base64Data,
+     * contentType } — not multipart. The FormData variant below predates this
+     * and does not match the route, which fails as a 500 rather than a helpful
+     * validation error.
+     */
+    uploadFlashcardImageBase64: (payload: {
+      fileName: string;
+      base64Data: string;
+      contentType: string;
+      folder?: string;
+    }) =>
+      apiRequest<{ url: string; path: string }>("/flashcards/upload-image", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
 
     uploadFlashcardImage: async (
       userId: string,

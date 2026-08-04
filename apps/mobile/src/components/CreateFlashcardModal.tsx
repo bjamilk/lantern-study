@@ -1,8 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import type { Flashcard } from '../stores/flashcardStore';
-import { FlashcardType } from '@lantern/shared';
+import { FlashcardType, type OcclusionData } from '@lantern/shared';
 import { aiEnhanceFlashcard } from '../services/ai';
+import {
+  pickFlashcardImage,
+  uploadPickedFlashcardImage,
+  type PickedFlashcardImage,
+} from '../services/flashcardImageUpload';
+import { OcclusionEditor, countShapes, type OcclusionMode } from './OcclusionEditor';
 import { Button, Card } from './ui';
 
 export interface FlashcardDraft {
@@ -10,11 +25,16 @@ export interface FlashcardDraft {
   front?: string;
   back?: string;
   clozeText?: string;
+  imageUrl?: string;
+  occlusionData?: OcclusionData;
 }
 
 interface CreateFlashcardModalProps {
   visible: boolean;
   onClose: () => void;
+  /** Needed to upload the picture against the right account and deck. */
+  userId?: string;
+  deckId?: string;
   onSubmit: (data: FlashcardDraft) => Promise<void>;
   editingFlashcard?: Flashcard | null;
   /** Only supplied when editing — deleting a card that does not exist yet is meaningless. */
@@ -27,6 +47,8 @@ const CLOZE_PATTERN = /\{\{c\d+::[^}]+\}\}/;
 export default function CreateFlashcardModal({
   visible,
   onClose,
+  userId,
+  deckId,
   onSubmit,
   editingFlashcard,
   onDelete,
@@ -38,6 +60,15 @@ export default function CreateFlashcardModal({
   const [saving, setSaving] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The picked file is kept separately from the stored URL: the local URI is
+  // what the editor draws on straight away, while the uploaded URL is what the
+  // card persists. Uploading on save rather than on pick means a cancelled card
+  // leaves nothing behind in storage.
+  const [picked, setPicked] = useState<PickedFlashcardImage | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
+  const [occlusion, setOcclusion] = useState<OcclusionData | null>(null);
+  const [occlusionMode, setOcclusionMode] = useState<OcclusionMode>('rectangles');
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -45,19 +76,23 @@ export default function CreateFlashcardModal({
     setFront(editingFlashcard?.front ?? '');
     setBack(editingFlashcard?.back ?? '');
     setClozeText(editingFlashcard?.clozeText ?? '');
+    setImageUrl(editingFlashcard?.imageUrl ?? undefined);
+    setOcclusion((editingFlashcard?.occlusionData as OcclusionData) ?? null);
+    setOcclusionMode((editingFlashcard?.occlusionData?.type as OcclusionMode) ?? 'rectangles');
+    setPicked(null);
     setError(null);
   }, [visible, editingFlashcard]);
 
   const isCloze = type === FlashcardType.CLOZE;
-  // Image occlusion cards review fine on mobile but the masks cannot be drawn
-  // here, so the type is shown as locked rather than silently rewriting the
-  // card as Basic and losing its image.
   const isOcclusion = type === FlashcardType.IMAGE_OCCLUSION;
-  const canSave = isOcclusion
+  const previewUri = picked?.localUri ?? imageUrl;
+  const canSave = uploading
     ? false
-    : isCloze
-      ? CLOZE_PATTERN.test(clozeText)
-      : Boolean(front.trim() && back.trim());
+    : isOcclusion
+      ? Boolean(previewUri) && countShapes(occlusion) > 0 && Boolean(front.trim())
+      : isCloze
+        ? CLOZE_PATTERN.test(clozeText)
+        : Boolean(front.trim() && back.trim());
 
   const insertClozeDeletion = () => {
     // Numbering continues from what is already there, so repeated taps give
@@ -65,6 +100,25 @@ export default function CreateFlashcardModal({
     const used = [...clozeText.matchAll(/\{\{c(\d+)::/g)].map((m) => Number(m[1]));
     const next = used.length > 0 ? Math.max(...used) + 1 : 1;
     setClozeText((prev) => `${prev}{{c${next}::answer}}`);
+  };
+
+  const handlePickImage = async () => {
+    setError(null);
+    try {
+      const image = await pickFlashcardImage();
+      if (!image) return;
+      setPicked(image);
+      // A new picture invalidates masks drawn over the old one.
+      if (isOcclusion) setOcclusion(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open the photo library.');
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setPicked(null);
+    setImageUrl(undefined);
+    setOcclusion(null);
   };
 
   const handleEnhance = async () => {
@@ -93,14 +147,42 @@ export default function CreateFlashcardModal({
     setSaving(true);
     setError(null);
     try {
-      await onSubmit(
-        isCloze
-          ? { type: FlashcardType.CLOZE, clozeText: clozeText.trim() }
-          : { type: FlashcardType.BASIC, front: front.trim(), back: back.trim() }
-      );
+      // Upload only now, so abandoning the dialog never leaves an orphan file.
+      let storedUrl = imageUrl;
+      if (picked) {
+        if (!userId) throw new Error('Sign in again to attach an image.');
+        setUploading(true);
+        try {
+          storedUrl = await uploadPickedFlashcardImage(picked, userId, deckId);
+        } finally {
+          setUploading(false);
+        }
+      }
+
+      if (isOcclusion) {
+        await onSubmit({
+          type: FlashcardType.IMAGE_OCCLUSION,
+          front: front.trim(),
+          imageUrl: storedUrl,
+          occlusionData: occlusion ?? undefined,
+        });
+      } else if (isCloze) {
+        await onSubmit({ type: FlashcardType.CLOZE, clozeText: clozeText.trim() });
+      } else {
+        await onSubmit({
+          type: FlashcardType.BASIC,
+          front: front.trim(),
+          back: back.trim(),
+          imageUrl: storedUrl,
+        });
+      }
+
       setFront('');
       setBack('');
       setClozeText('');
+      setPicked(null);
+      setImageUrl(undefined);
+      setOcclusion(null);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save this card.');
@@ -137,22 +219,59 @@ export default function CreateFlashcardModal({
               {editingFlashcard ? 'Edit Flashcard' : 'New Flashcard'}
             </Text>
 
-            {isOcclusion ? (
-              <View className="mb-3 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800">
-                <Text className="text-xs text-amber-800 dark:text-amber-200">
-                  Image occlusion cards can be studied here, but their masks have to be drawn on the
-                  web app.
-                </Text>
-              </View>
-            ) : (
-              <View className="flex-row gap-2 mb-4">
-                <TypeTab value={FlashcardType.BASIC} label="Basic" />
-                <TypeTab value={FlashcardType.CLOZE} label="Cloze" />
-              </View>
-            )}
+            <View className="flex-row gap-2 mb-4">
+              <TypeTab value={FlashcardType.BASIC} label="Basic" />
+              <TypeTab value={FlashcardType.CLOZE} label="Cloze" />
+              <TypeTab value={FlashcardType.IMAGE_OCCLUSION} label="Image" />
+            </View>
 
             <ScrollView className="max-h-80" keyboardShouldPersistTaps="handled">
-              {isCloze ? (
+              {isOcclusion ? (
+                <>
+                  {previewUri ? (
+                    <>
+                      <OcclusionEditor
+                        imageUri={previewUri}
+                        value={occlusion}
+                        onChange={setOcclusion}
+                        mode={occlusionMode}
+                        onModeChange={setOcclusionMode}
+                      />
+                      <View className="flex-row gap-2 mt-3">
+                        <Button size="sm" variant="secondary" onPress={() => void handlePickImage()}>
+                          Replace image
+                        </Button>
+                        <Button size="sm" variant="ghost" onPress={handleRemoveImage}>
+                          Remove
+                        </Button>
+                      </View>
+                      <Text className="text-xs font-medium text-lantern-text-secondary mt-3 mb-1">
+                        Prompt
+                      </Text>
+                      <TextInput
+                        value={front}
+                        onChangeText={setFront}
+                        placeholder="What is hidden here?"
+                        placeholderTextColor="#94a3b8"
+                        className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-2"
+                      />
+                    </>
+                  ) : (
+                    <Pressable
+                      onPress={() => void handlePickImage()}
+                      accessibilityRole="button"
+                      className="items-center justify-center py-10 rounded-2xl border-2 border-dashed border-lantern-border active:opacity-80"
+                    >
+                      <Text className="text-base font-semibold text-lantern-primary">
+                        Choose an image
+                      </Text>
+                      <Text className="text-xs text-lantern-text-secondary mt-1 px-6 text-center">
+                        Then drag across it to hide the parts you want to recall.
+                      </Text>
+                    </Pressable>
+                  )}
+                </>
+              ) : isCloze ? (
                 <>
                   <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Text</Text>
                   <TextInput
@@ -200,6 +319,34 @@ export default function CreateFlashcardModal({
                     editable={!isOcclusion}
                     className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-3 min-h-[72px]"
                   />
+                  {previewUri ? (
+                    <View className="mb-3">
+                      <Image
+                        source={{ uri: previewUri }}
+                        style={{ width: '100%', height: 160, borderRadius: 12 }}
+                        resizeMode="contain"
+                      />
+                      <View className="flex-row gap-2 mt-2">
+                        <Button size="sm" variant="secondary" onPress={() => void handlePickImage()}>
+                          Replace
+                        </Button>
+                        <Button size="sm" variant="ghost" onPress={handleRemoveImage}>
+                          Remove image
+                        </Button>
+                      </View>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => void handlePickImage()}
+                      accessibilityRole="button"
+                      accessibilityLabel="Attach an image"
+                      className="flex-row items-center justify-center gap-2 mb-3 py-2 rounded-xl border border-lantern-border active:opacity-80"
+                    >
+                      <Text className="text-sm font-semibold text-lantern-primary">
+                        🖼  Attach image
+                      </Text>
+                    </Pressable>
+                  )}
                   {!isOcclusion && front.trim() && back.trim() ? (
                     <Pressable
                       onPress={() => void handleEnhance()}

@@ -5,6 +5,36 @@
 import { parseRetryAfterMs, RateLimitError } from './marketplaceCache';
 import { VersionConflictError } from './versionConflict';
 
+/**
+ * Assemble request headers, dropping Content-Type for multipart bodies.
+ *
+ * getAuthHeaders always sets `Content-Type: application/json`. That is right for
+ * the JSON endpoints but fatal for a FormData upload: the boundary is generated
+ * by the platform when it serialises the body, and forcing a content type stops
+ * it being set. React Native then fails the request outright with a bare
+ * "Network request failed" — no status code — which reads like the server is
+ * unreachable rather than a header problem.
+ */
+function buildHeaders(
+  authHeaders: Record<string, string>,
+  options: RequestInit
+): Record<string, string> {
+  const merged: Record<string, string> = {
+    'X-Requested-With': 'LanternStudy',
+    ...authHeaders,
+    ...(options.headers as Record<string, string> | undefined),
+  };
+
+  const isMultipart =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (isMultipart) {
+    for (const key of Object.keys(merged)) {
+      if (key.toLowerCase() === 'content-type') delete merged[key];
+    }
+  }
+  return merged;
+}
+
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
 export interface ApiClientConfig {
@@ -60,11 +90,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       {
         ...options,
         credentials: options.credentials ?? config.credentials ?? 'same-origin',
-        headers: {
-          'X-Requested-With': 'LanternStudy',
-          ...headers,
-          ...options.headers,
-        },
+        headers: buildHeaders(headers, options),
       },
       timeoutMs
     );
@@ -167,11 +193,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       {
         ...options,
         credentials: options.credentials ?? config.credentials ?? 'same-origin',
-        headers: {
-          'X-Requested-With': 'LanternStudy',
-          ...headers,
-          ...options.headers,
-        },
+        headers: buildHeaders(headers, options),
       },
       timeoutMs
     );

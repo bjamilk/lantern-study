@@ -191,7 +191,22 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     const payload =
       data.type === FlashcardType.CLOZE
         ? { type: FlashcardType.CLOZE, clozeText: data.clozeText, front: null, back: null }
-        : { type: FlashcardType.BASIC, front: data.front, back: data.back, clozeText: null };
+        : data.type === FlashcardType.IMAGE_OCCLUSION
+          ? {
+              type: FlashcardType.IMAGE_OCCLUSION,
+              front: data.front ?? null,
+              back: null,
+              clozeText: null,
+              imageUrl: data.imageUrl,
+              occlusionData: data.occlusionData,
+            }
+          : {
+              type: FlashcardType.BASIC,
+              front: data.front,
+              back: data.back,
+              clozeText: null,
+              imageUrl: data.imageUrl ?? null,
+            };
 
     if (editingCard) {
       await updateFlashcard(editingCard.id, deckId, payload, user.id);
@@ -205,6 +220,8 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       front: payload.front ?? undefined,
       back: payload.back ?? undefined,
       clozeText: payload.clozeText ?? undefined,
+      imageUrl: ('imageUrl' in payload ? payload.imageUrl : undefined) ?? undefined,
+      occlusionData: 'occlusionData' in payload ? payload.occlusionData : undefined,
     });
   };
 
@@ -596,6 +613,8 @@ export function DeckDetailScreen({ navigation, route }: Props) {
           setFlashcardModalOpen(false);
           setEditingCard(null);
         }}
+        userId={user?.id}
+        deckId={deckId}
         editingFlashcard={editingCard}
         onSubmit={handleFlashcardSubmit}
         onDelete={editingCard ? () => void handleDeleteCard(editingCard) : undefined}

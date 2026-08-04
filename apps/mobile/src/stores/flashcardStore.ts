@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FlashcardType, type Flashcard as SharedFlashcard } from '@lantern/shared';
+import { FlashcardType, type Flashcard as SharedFlashcard, type OcclusionData } from '@lantern/shared';
 import { mapFlashcardFromApi, mapFlashcardsFromApi } from '@lantern/shared';
 import { applyLocalFlashcardReview } from '@lantern/shared/utils/offlineReview';
 import * as api from '../services/api';
@@ -234,6 +234,8 @@ interface FlashcardState {
     back?: string;
     clozeText?: string;
     tags?: string[];
+    imageUrl?: string;
+    occlusionData?: OcclusionData;
     userId: string;
   }) => Promise<Flashcard>;
   updateFlashcard: (flashcardId: string, deckId: string, updates: any, userId: string) => Promise<void>;
@@ -532,6 +534,8 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       back: data.back,
       clozeText: data.clozeText,
       tags: data.tags,
+      imageUrl: data.imageUrl,
+      occlusionData: data.occlusionData,
       createdAt: new Date().toISOString(),
     };
     
@@ -547,7 +551,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     try {
       const created = await api.createFlashcard(userId, deckId, {
         ...cardData,
-        type: cardData.type as 'BASIC' | 'CLOZE',
+        type: cardData.type as 'BASIC' | 'CLOZE' | 'IMAGE_OCCLUSION',
       });
       const card = mapFlashcardFromApi(created);
 
