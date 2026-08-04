@@ -580,11 +580,29 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const data = await supabaseService.syncGamificationProgress(userId);
-
-    await cacheService.delete(`user:${userId}`);
-
-    res.json({ success: true, data });
+    try {
+      const data = await supabaseService.syncGamificationProgress(userId);
+      await cacheService.delete(`user:${userId}`);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      // Both clients call this on every dashboard load, so a failure here is
+      // invisible in the UI and was going unnoticed. Log the real reason, and
+      // report it back to the authenticated owner of the account rather than
+      // the generic "Something went wrong" the global handler produces — this
+      // endpoint only ever acts on the caller's own profile.
+      logger.error('Gamification sync failed', {
+        userId,
+        message: err?.message,
+        code: err?.code,
+        details: err?.details,
+      });
+      res.status(500).json({
+        success: false,
+        error: 'sync_failed',
+        reason: String(err?.message || 'unknown'),
+        code: err?.code ?? null,
+      });
+    }
   })
 );
 
