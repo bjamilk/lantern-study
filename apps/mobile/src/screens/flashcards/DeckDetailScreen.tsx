@@ -3,10 +3,11 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Platform,
+  Modal,
   Pressable,
   Share,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,8 +22,10 @@ import {
   importDeck,
   importDeckCsv,
   importDeckApkg,
+  resetDeckStatistics,
 } from '../../services/api';
-import { Button, Card, ScreenHeader } from '../../components/ui';
+import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
+import { confirmSheet } from '../../stores/confirmStore';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import CollaboratorsModal from '../../components/CollaboratorsModal';
 import CreateFlashcardModal from '../../components/CreateFlashcardModal';
@@ -102,6 +105,12 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     setCurrentDeck,
     createFlashcard,
     updateFlashcard,
+    deleteFlashcard,
+    updateDeck,
+    deleteDeck,
+    offlineDeckIds,
+    markDeckOffline,
+    unmarkDeckOffline,
   } = useFlashcardStore();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -110,6 +119,11 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const [flashcardModalOpen, setFlashcardModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [moreModesOpen, setMoreModesOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [editDeckOpen, setEditDeckOpen] = useState(false);
+  const [deckDraftName, setDeckDraftName] = useState('');
+  const [deckDraftDescription, setDeckDraftDescription] = useState('');
+  const [savingDeck, setSavingDeck] = useState(false);
 
   const deck = useMemo(() => decks.find((d) => d.id === deckId), [decks, deckId]);
   const cards = flashcards[deckId] ?? [];
@@ -117,6 +131,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const deckName = deck?.name ?? route.params?.deckName ?? 'Deck';
   const studyLabel = getStudyCtaLabel(stats.dueCards, stats.total);
   const hasCards = cards.length > 0;
+  const isOffline = offlineDeckIds.includes(deckId);
 
   const loadCards = useCallback(async () => {
     if (!deckId) return;
@@ -262,49 +277,130 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     }
   };
 
-  const openManageDeck = () => {
-    const options = [
-      'Add card',
-      'Generate with AI',
-      'Import',
-      'Export JSON',
-      'Export CSV',
-      'Collaborators',
-      'Cancel',
-    ] as const;
-    const cancelButtonIndex = options.length - 1;
-
-    if (Platform.OS === 'ios') {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { ActionSheetIOS } = require('react-native') as typeof import('react-native');
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: [...options],
-          cancelButtonIndex,
-          title: 'Manage deck',
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) openCreateCard();
-          else if (buttonIndex === 1) setAiModalOpen(true);
-          else if (buttonIndex === 2) void handleImport();
-          else if (buttonIndex === 3) void handleExportJson();
-          else if (buttonIndex === 4) void handleExportCsv();
-          else if (buttonIndex === 5) setCollaboratorsOpen(true);
-        }
-      );
-      return;
-    }
-
-    Alert.alert('Manage deck', undefined, [
-      { text: 'Add card', onPress: openCreateCard },
-      { text: 'Generate with AI', onPress: () => setAiModalOpen(true) },
-      { text: 'Import', onPress: () => void handleImport() },
-      { text: 'Export JSON', onPress: () => void handleExportJson() },
-      { text: 'Export CSV', onPress: () => void handleExportCsv() },
-      { text: 'Collaborators', onPress: () => setCollaboratorsOpen(true) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const openEditDeck = () => {
+    setDeckDraftName(deck?.name ?? deckName);
+    setDeckDraftDescription(deck?.description ?? '');
+    setEditDeckOpen(true);
   };
+
+  const handleSaveDeck = async () => {
+    if (!user?.id || !deckId) return;
+    const name = deckDraftName.trim();
+    if (!name) return;
+    setSavingDeck(true);
+    try {
+      await updateDeck(deckId, { name, description: deckDraftDescription.trim() }, user.id);
+      setEditDeckOpen(false);
+    } catch (e) {
+      Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setSavingDeck(false);
+    }
+  };
+
+  const handleDeleteDeck = async () => {
+    if (!user?.id || !deckId) return;
+    const ok = await confirmSheet({
+      title: 'Delete deck?',
+      message: `"${deckName}" and its ${stats.total} card${stats.total === 1 ? '' : 's'} will be permanently deleted. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteDeck(deckId, user.id);
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
+  const handleResetProgress = async () => {
+    if (!user?.id || !deckId) return;
+    const ok = await confirmSheet({
+      title: 'Reset progress?',
+      message:
+        'Every card in this deck goes back to new. Your review history for the deck is cleared, but the cards themselves are kept.',
+      confirmLabel: 'Reset',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await resetDeckStatistics(deckId, user.id);
+      await loadCards();
+      await fetchDecks(user.id);
+      Alert.alert('Progress reset', 'All cards in this deck are new again.');
+    } catch (e) {
+      Alert.alert('Could not reset', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
+  const handleToggleOffline = async () => {
+    if (!user?.id || !deckId) return;
+    try {
+      if (isOffline) {
+        await unmarkDeckOffline(deckId);
+      } else {
+        await markDeckOffline(deckId, user.id);
+      }
+    } catch (e) {
+      Alert.alert('Offline change failed', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
+  const handleDeleteCard = async (card: Flashcard) => {
+    if (!user?.id || !deckId) return;
+    const { front } = getCardDisplayText(card);
+    const ok = await confirmSheet({
+      title: 'Delete card?',
+      message: front.length > 80 ? `${front.slice(0, 80)}…` : front,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteFlashcard(card.id, deckId, user.id);
+      setFlashcardModalOpen(false);
+      setEditingCard(null);
+    } catch (e) {
+      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
+  // One sheet for both platforms. This used to branch: ActionSheetIOS on iOS and
+  // Alert.alert on Android — but Android's dialog caps at three buttons and drops
+  // the rest without warning, so Export JSON, Export CSV and Collaborators were
+  // simply unreachable there while iOS showed all seven.
+  const manageItems: ActionSheetItem[] = [
+    { label: 'Add card', icon: 'add-circle-outline', onPress: openCreateCard },
+    { label: 'Generate with AI', icon: 'sparkles-outline', onPress: () => setAiModalOpen(true) },
+    { label: 'Edit deck', icon: 'pencil-outline', onPress: openEditDeck },
+    { label: 'Import', icon: 'download-outline', onPress: () => void handleImport() },
+    { label: 'Export JSON', icon: 'share-outline', onPress: () => void handleExportJson() },
+    { label: 'Export CSV', icon: 'share-outline', onPress: () => void handleExportCsv() },
+    { label: 'Collaborators', icon: 'people-outline', onPress: () => setCollaboratorsOpen(true) },
+    {
+      label: isOffline ? 'Remove from offline' : 'Save for offline',
+      icon: isOffline ? 'cloud-offline-outline' : 'cloud-download-outline',
+      hint: isOffline ? 'Stop keeping this deck on the device' : 'Study this deck without a connection',
+      onPress: () => void handleToggleOffline(),
+    },
+    {
+      label: 'Reset progress',
+      icon: 'refresh-outline',
+      hint: 'Send every card back to new',
+      destructive: true,
+      onPress: () => void handleResetProgress(),
+    },
+    {
+      label: 'Delete deck',
+      icon: 'trash-outline',
+      destructive: true,
+      onPress: () => void handleDeleteDeck(),
+    },
+  ];
+
+  const openManageDeck = () => setManageOpen(true);
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
@@ -475,7 +571,55 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         }}
         editingFlashcard={editingCard}
         onSubmit={handleFlashcardSubmit}
+        onDelete={editingCard ? () => void handleDeleteCard(editingCard) : undefined}
       />
+
+      <ActionSheet
+        visible={manageOpen}
+        title="Manage deck"
+        items={manageItems}
+        onClose={() => setManageOpen(false)}
+      />
+
+      <Modal transparent visible={editDeckOpen} animationType="fade" onRequestClose={() => setEditDeckOpen(false)}>
+        <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setEditDeckOpen(false)}>
+          <Pressable onPress={(e) => e.stopPropagation?.()}>
+            <Card>
+              <Text className="text-lg font-bold text-lantern-text mb-3">Edit deck</Text>
+              <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Name</Text>
+              <TextInput
+                value={deckDraftName}
+                onChangeText={setDeckDraftName}
+                placeholder="Deck name"
+                placeholderTextColor="#94a3b8"
+                className="border border-lantern-border rounded-xl px-3 py-2 mb-3 text-lantern-text"
+              />
+              <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Description</Text>
+              <TextInput
+                value={deckDraftDescription}
+                onChangeText={setDeckDraftDescription}
+                placeholder="Optional"
+                placeholderTextColor="#94a3b8"
+                multiline
+                className="border border-lantern-border rounded-xl px-3 py-2 mb-4 text-lantern-text"
+              />
+              <View className="flex-row gap-2">
+                <Button variant="secondary" className="flex-1" onPress={() => setEditDeckOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  loading={savingDeck}
+                  disabled={!deckDraftName.trim()}
+                  onPress={() => void handleSaveDeck()}
+                >
+                  Save
+                </Button>
+              </View>
+            </Card>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

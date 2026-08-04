@@ -8,6 +8,8 @@ interface CreateFlashcardModalProps {
   onClose: () => void;
   onSubmit: (data: { front: string; back: string }) => Promise<void>;
   editingFlashcard?: Flashcard | null;
+  /** Only supplied when editing — deleting a card that does not exist yet is meaningless. */
+  onDelete?: () => void;
 }
 
 export default function CreateFlashcardModal({
@@ -15,6 +17,7 @@ export default function CreateFlashcardModal({
   onClose,
   onSubmit,
   editingFlashcard,
+  onDelete,
 }: CreateFlashcardModalProps) {
   const [front, setFront] = useState('');
   const [back, setBack] = useState('');
@@ -79,6 +82,16 @@ export default function CreateFlashcardModal({
                 {editingFlashcard ? 'Save' : 'Create'}
               </Button>
             </View>
+            {editingFlashcard && onDelete ? (
+              <Pressable
+                onPress={onDelete}
+                accessibilityRole="button"
+                accessibilityLabel="Delete card"
+                className="mt-3 py-2 items-center active:opacity-70"
+              >
+                <Text className="text-sm font-semibold text-red-500">Delete card</Text>
+              </Pressable>
+            ) : null}
           </Card>
         </Pressable>
       </Pressable>
