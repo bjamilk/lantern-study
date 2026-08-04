@@ -1242,6 +1242,11 @@ export function createApiEndpoints(client: ApiClient) {
         score: number;
         totalQuestions: number;
         correctAnswersCount: number;
+        // Lean responses omit userAnswers, so the server sends question timing
+        // pre-aggregated instead. Rows pass through untouched; normalizeTestResults
+        // reads these to compute "Avg / question" and total study time.
+        timeSpentSeconds?: number;
+        questionsWithTime?: number;
       };
 
       const pageSize = options?.limit ?? 500;
