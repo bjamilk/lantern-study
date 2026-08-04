@@ -78,13 +78,14 @@ function saveSelectedGroupChartIds(ids: string[]): void {
 
 function loadGroupPerfPeriod(): GroupPerformancePeriod {
   try {
-    if (typeof localStorage === 'undefined') return '30days';
+    if (typeof localStorage === 'undefined') return 'all';
     const raw = localStorage.getItem(GROUP_PERF_PERIOD_KEY);
     if (raw === '7days' || raw === '30days' || raw === '90days' || raw === 'all') return raw;
   } catch {
     // ignore
   }
-  return '30days';
+  // Same default as the dashboard period; a saved preference still wins.
+  return 'all';
 }
 
 function saveGroupPerfPeriod(period: GroupPerformancePeriod): void {
@@ -97,11 +98,11 @@ function saveGroupPerfPeriod(period: GroupPerformancePeriod): void {
 }
 
 function buildHierarchicalGroupOptions(
-  activeGroups: Group[],
+  historyGroups: Group[],
   dataIds: Set<string>
 ): GroupPerformanceOption[] {
   const byParent = new Map<string | null, Group[]>();
-  for (const group of activeGroups) {
+  for (const group of historyGroups) {
     const parentKey = group.parentId || null;
     const list = byParent.get(parentKey) || [];
     list.push(group);
@@ -123,9 +124,9 @@ function buildHierarchicalGroupOptions(
   };
 
   // Roots: no parent, or parent not in the active set (orphaned nesting still shows).
-  const activeIds = new Set(activeGroups.map((g) => g.id));
-  const roots = activeGroups
-    .filter((g) => !g.parentId || !activeIds.has(g.parentId))
+  const historyIds = new Set(historyGroups.map((g) => g.id));
+  const roots = historyGroups
+    .filter((g) => !g.parentId || !historyIds.has(g.parentId))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   for (const root of roots) {
@@ -662,16 +663,19 @@ export default function DashboardScreen({
   }, [groupPerformanceResults, groups]);
 
   const activeGroupChartOptions = useMemo(() => {
-    const activeGroups = groups.filter((g) => !g.isArchived);
+    // Archived groups still hold test history and are counted by the tiles
+    // above, so excluding them here left the chart short of the headline
+    // total. Groups with no results are still dropped further down.
+    const historyGroups = groups;
     const directDataIds = new Set(
       allGroupPerformanceData
-        .filter((row) => activeGroups.some((g) => g.id === row.id))
+        .filter((row) => historyGroups.some((g) => g.id === row.id))
         .map((row) => row.id)
     );
     // Include parents that have no direct tests but have descendant results (rollup).
     const dataIds = new Set<string>();
-    for (const group of activeGroups) {
-      const rollup = getGroupIdWithDescendants(group.id, activeGroups, { activeOnly: true });
+    for (const group of historyGroups) {
+      const rollup = getGroupIdWithDescendants(group.id, historyGroups, { activeOnly: false });
       for (const id of rollup) {
         if (directDataIds.has(id)) {
           dataIds.add(group.id);
@@ -679,7 +683,7 @@ export default function DashboardScreen({
         }
       }
     }
-    return buildHierarchicalGroupOptions(activeGroups, dataIds);
+    return buildHierarchicalGroupOptions(historyGroups, dataIds);
   }, [groups, allGroupPerformanceData]);
 
   // Prune archived/deleted ids and seed a sensible default selection.
@@ -848,21 +852,24 @@ export default function DashboardScreen({
   };
   
   const selectedGroupPerformance = useMemo(() => {
-    const activeGroups = groups.filter((g) => !g.isArchived);
+    // Archived groups still hold test history and are counted by the tiles
+    // above, so excluding them here left the chart short of the headline
+    // total. Groups with no results are still dropped further down.
+    const historyGroups = groups;
     const optionIds = new Set(activeGroupChartOptions.map((opt) => opt.id));
     return selectedGroupChartIds
       .filter((id) => optionIds.has(id))
       .map((id) => {
         const name =
-          activeGroups.find((g) => g.id === id)?.name ||
+          historyGroups.find((g) => g.id === id)?.name ||
           allGroupPerformanceData.find((row) => row.id === id)?.name ||
           getGroupName(id);
         return buildRolledUpGroupSeries({
           groupId: id,
           groupName: name,
-          groups: activeGroups,
+          groups: historyGroups,
           results: groupPerformanceResults,
-          activeOnly: true,
+          activeOnly: false,
         });
       })
       .filter((row) => row.testCount > 0);
@@ -911,14 +918,17 @@ export default function DashboardScreen({
       return { testCount: 0, averageScore: 0, accuracy: 0 };
     }
     // Dedupe overlapping parent/child selections in the aggregate strip.
-    const activeGroups = groups.filter((g) => !g.isArchived);
+    // Archived groups still hold test history and are counted by the tiles
+    // above, so excluding them here left the chart short of the headline
+    // total. Groups with no results are still dropped further down.
+    const historyGroups = groups;
     const seen = new Set<string>();
     let testCount = 0;
     let totalScore = 0;
     let correctAnswers = 0;
     let totalQuestions = 0;
     for (const selectedId of selectedGroupChartIds) {
-      const rollup = getGroupIdWithDescendants(selectedId, activeGroups, { activeOnly: true });
+      const rollup = getGroupIdWithDescendants(selectedId, historyGroups, { activeOnly: false });
       for (const result of groupPerformanceResults) {
         const gid = result.session.config?.groupId;
         if (!gid || !rollup.has(gid)) continue;
@@ -1539,7 +1549,7 @@ export default function DashboardScreen({
                   Group performance
                 </h2>
                 <p className="text-xs text-lantern-text-secondary mt-1">
-                  Select one or more active groups or subgroups. Metrics follow the period you pick below.
+                  Select one or more groups or subgroups. Archived groups are included, since their tests still count towards your totals. Metrics follow the period you pick below.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-2 sm:items-center flex-shrink-0">

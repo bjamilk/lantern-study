@@ -61,7 +61,9 @@ async function loadPeriod(): Promise<GroupPerformancePeriod> {
   } catch {
     // ignore
   }
-  return '30days';
+  // Same default as the dashboard period above the chart. A saved preference
+  // still wins — this is only the starting point.
+  return 'all';
 }
 
 async function savePeriod(period: GroupPerformancePeriod): Promise<void> {
@@ -73,11 +75,11 @@ async function savePeriod(period: GroupPerformancePeriod): Promise<void> {
 }
 
 function buildHierarchicalOptions(
-  activeGroups: Array<{ id: string; name: string; parentId?: string | null }>,
+  historyGroups: Array<{ id: string; name: string; parentId?: string | null; isArchived?: boolean }>,
   dataIds: Set<string>
 ): ChartGroupOption[] {
-  const byParent = new Map<string | null, typeof activeGroups>();
-  for (const group of activeGroups) {
+  const byParent = new Map<string | null, typeof historyGroups>();
+  for (const group of historyGroups) {
     const key = group.parentId || null;
     const list = byParent.get(key) || [];
     list.push(group);
@@ -88,9 +90,9 @@ function buildHierarchicalOptions(
   }
 
   const options: ChartGroupOption[] = [];
-  const activeIds = new Set(activeGroups.map((g) => g.id));
-  const roots = activeGroups
-    .filter((g) => !g.parentId || !activeIds.has(g.parentId))
+  const historyIds = new Set(historyGroups.map((g) => g.id));
+  const roots = historyGroups
+    .filter((g) => !g.parentId || !historyIds.has(g.parentId))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const walk = (parentId: string, level: number) => {
@@ -101,6 +103,7 @@ function buildHierarchicalOptions(
           id: child.id,
           name: child.name,
           parentId: child.parentId,
+          isArchived: child.isArchived,
           level,
         });
       }
@@ -110,7 +113,13 @@ function buildHierarchicalOptions(
 
   for (const root of roots) {
     if (dataIds.has(root.id)) {
-      options.push({ id: root.id, name: root.name, parentId: root.parentId, level: 0 });
+      options.push({
+        id: root.id,
+        name: root.name,
+        parentId: root.parentId,
+        isArchived: root.isArchived,
+        level: 0,
+      });
     }
     walk(root.id, 1);
   }
@@ -129,12 +138,16 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [displayMode, setDisplayMode] = useState<'timeline' | 'weekly'>('timeline');
-  const [period, setPeriod] = useState<GroupPerformancePeriod>('30days');
+  // Match the dashboard's own default. These two periods disagreeing is why the
+  // chart total never reconciled with the "Tests taken" tile above it.
+  const [period, setPeriod] = useState<GroupPerformancePeriod>('all');
 
-  const activeGroups = useMemo(
-    () => groups.filter((g) => !g.isArchived),
-    [groups]
-  );
+  // Archiving a group does not erase the tests taken in it, and those tests are
+  // still counted by every other number on this screen. Excluding them here made
+  // the chart total 12 against a headline of 13, which reads as a broken chart
+  // rather than a deliberate filter. Groups with no history are still hidden,
+  // since `options` below only keeps ids that actually have results.
+  const historyGroups = useMemo(() => groups, [groups]);
 
   const periodResults = useMemo(
     () => filterResultsByGroupPerformancePeriod(testResults, period),
@@ -145,11 +158,11 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
     const directDataIds = new Set(
       periodResults
         .map((r) => r.session.config?.groupId)
-        .filter((id): id is string => typeof id === 'string' && activeGroups.some((g) => g.id === id))
+        .filter((id): id is string => typeof id === 'string' && historyGroups.some((g) => g.id === id))
     );
     const dataIds = new Set<string>();
-    for (const group of activeGroups) {
-      const rollup = getGroupIdWithDescendants(group.id, activeGroups, { activeOnly: true });
+    for (const group of historyGroups) {
+      const rollup = getGroupIdWithDescendants(group.id, historyGroups, { activeOnly: false });
       for (const id of rollup) {
         if (directDataIds.has(id)) {
           dataIds.add(group.id);
@@ -157,8 +170,8 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
         }
       }
     }
-    return buildHierarchicalOptions(activeGroups, dataIds);
-  }, [activeGroups, periodResults]);
+    return buildHierarchicalOptions(historyGroups, dataIds);
+  }, [historyGroups, periodResults]);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,17 +217,17 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       selectedIds
         .filter((id) => options.some((o) => o.id === id))
         .map((id) => {
-          const name = activeGroups.find((g) => g.id === id)?.name || options.find((o) => o.id === id)?.name || id;
+          const name = historyGroups.find((g) => g.id === id)?.name || options.find((o) => o.id === id)?.name || id;
           return buildRolledUpGroupSeries({
             groupId: id,
             groupName: name,
-            groups: activeGroups,
+            groups: historyGroups,
             results: periodResults,
-            activeOnly: true,
+            activeOnly: false,
           });
         })
         .filter((s) => s.testCount > 0),
-    [selectedIds, options, activeGroups, periodResults]
+    [selectedIds, options, historyGroups, periodResults]
   );
 
   const isMulti = selectedSeries.length >= 2;
@@ -257,7 +270,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
     let correct = 0;
     let totalQ = 0;
     for (const id of selectedIds) {
-      const rollup = getGroupIdWithDescendants(id, activeGroups, { activeOnly: true });
+      const rollup = getGroupIdWithDescendants(id, historyGroups, { activeOnly: false });
       for (const result of periodResults) {
         const gid = result.session.config?.groupId;
         if (!gid || !rollup.has(gid)) continue;
@@ -275,7 +288,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       averageScore: testCount > 0 ? totalScore / testCount : 0,
       accuracy: totalQ > 0 ? (correct / totalQ) * 100 : 0,
     };
-  }, [selectedIds, activeGroups, periodResults]);
+  }, [selectedIds, historyGroups, periodResults]);
 
   const buttonLabel =
     selectedIds.length === 0
@@ -526,6 +539,10 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                     <Text className="text-sm text-lantern-text flex-1" numberOfLines={1}>
                       {opt.level > 0 ? '└ ' : ''}
                       {opt.name}
+                      {/* Archived groups still hold test history and are counted
+                          in the totals above, so they stay selectable — labelled
+                          so it is clear why an archived group is listed. */}
+                      {opt.isArchived ? ' (archived)' : ''}
                     </Text>
                   </Pressable>
                 );
