@@ -4074,21 +4074,47 @@ async function fileToBase64Payload(
       // Fall back to the original file if canvas compression fails.
     }
   }
-  const contentType = prepared.type || file.type || 'image/jpeg';
-  const base64Data = await new Promise<string>((resolve, reject) => {
+  // Take the content type from the bytes rather than the File's declared type.
+  // The server validates magic bytes, so a declared type that disagrees with
+  // what is actually sent is rejected — and they disagree more often than you
+  // would expect: some files arrive with an empty `type`, a HEIC photo keeps
+  // its original type after being re-encoded, and the compressor above may
+  // output a different format than it was given. The mismatch surfaced as a
+  // bare "Failed to upload image" with no hint that the type was the problem.
+  const { base64Data, detectedType } = await new Promise<{
+    base64Data: string;
+    detectedType: string;
+  }>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = String(reader.result || '');
       const comma = result.indexOf(',');
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+      const semi = result.indexOf(';');
+      const detected =
+        result.startsWith('data:') && semi > 5 ? result.slice(5, semi) : '';
+      resolve({
+        base64Data: comma >= 0 ? result.slice(comma + 1) : result,
+        detectedType: detected,
+      });
     };
     reader.onerror = () => reject(new Error('Failed to read image file'));
     reader.readAsDataURL(prepared);
   });
+
+  const declared = detectedType || prepared.type || file.type || 'image/jpeg';
+  const contentType = declared === 'image/jpg' ? 'image/jpeg' : declared;
+
+  const ALLOWED = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  if (!ALLOWED.includes(contentType)) {
+    throw new Error(
+      `${contentType || 'That file type'} is not supported. Use a JPEG, PNG, GIF or WebP image.`
+    );
+  }
+
   return {
     fileName: prepared.name || file.name || `upload-${Date.now()}.jpg`,
     base64Data,
-    contentType: contentType === 'image/jpg' ? 'image/jpeg' : contentType,
+    contentType,
   };
 }
 
