@@ -1,0 +1,205 @@
+jest.mock('../services/cache', () => ({
+  cacheService: {
+    deletePattern: jest.fn(),
+    delete: jest.fn(),
+    cached: async (_key: string, fn: () => Promise<unknown>) => fn(),
+    invalidateUserCache: jest.fn(),
+  },
+}));
+
+jest.mock('../utils/logger', () => ({
+  logger: { debug: jest.fn(), warn: jest.fn(), error: jest.fn(), info: jest.fn() },
+}));
+
+type TableResult = { data?: any; count?: number | null; error?: any };
+
+let tables: Record<string, TableResult> = {};
+const capturedFilters: Array<{ table: string; method: string; args: any[] }> = [];
+
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: () => ({
+    from: (table: string) => {
+      const result = () => tables[table] ?? { data: null, count: 0, error: null };
+      const builder: any = new Proxy(
+        {},
+        {
+          get: (_t, prop) => {
+            // PostgREST builders are thenables; awaiting one runs the query.
+            if (prop === 'then') {
+              return (resolve: (v: any) => void) => resolve(result());
+            }
+            if (prop === 'maybeSingle' || prop === 'single') {
+              return async () => result();
+            }
+            return (...args: any[]) => {
+              capturedFilters.push({ table, method: String(prop), args });
+              return builder;
+            };
+          },
+        }
+      );
+      return builder;
+    },
+  }),
+}));
+
+import { SupabaseService } from './supabase';
+
+/**
+ * Badge stats used to be incremented on events and never reconciled, so they
+ * drifted both ways — a swallowed increment undercounted permanently, and
+ * re-submitting a test result counted it twice. On the account that surfaced
+ * this, testsCompleted read 11 against 13 real tests while perfectScoreTests
+ * read 3 against 2.
+ *
+ * recomputeDerivedUserStats recounts from the source rows instead. These tests
+ * pin what it counts, and — just as importantly — what it refuses to guess at.
+ */
+const service = () =>
+  new SupabaseService({
+    url: 'https://example.supabase.co',
+    serviceRoleKey: 'test-key',
+  } as any);
+
+const session = (startTime: string, score: number | null) => ({
+  start_time: startTime,
+  test_results: score === null ? null : [{ score }],
+});
+
+beforeEach(() => {
+  tables = {};
+  capturedFilters.length = 0;
+});
+
+describe('recomputeDerivedUserStats', () => {
+  it('counts completed tests and grades them by score', async () => {
+    tables.test_sessions = {
+      data: [
+        session('2026-01-01T00:00:00Z', 100),
+        session('2026-01-02T00:00:00Z', 88),
+        session('2026-01-03T00:00:00Z', 40),
+        session('2026-01-04T00:00:00Z', 100),
+      ],
+      error: null,
+    };
+    tables.messages = { count: 47, data: { upvotes: 12 }, error: null };
+    tables.groups = { count: 4, error: null };
+
+    const stats = await service().recomputeDerivedUserStats('u1');
+
+    expect(stats).toMatchObject({
+      testsCompleted: 4,
+      highScoreTests: 3, // 100, 88, 100
+      perfectScoreTests: 2,
+      questionsCreated: 47,
+      groupsCreated: 4,
+      questionUpvotesMax: 12,
+    });
+  });
+
+  it('deduplicates sessions sharing a start time, matching the dashboard', async () => {
+    // A double-submit can leave two rows for one sitting; the dashboard dedupes
+    // by start time, so the badge count has to agree with what the user sees.
+    tables.test_sessions = {
+      data: [
+        session('2026-07-12T12:40:25.645Z', 63),
+        session('2026-07-12T12:40:25.645Z', 63),
+        session('2026-07-13T09:00:00.000Z', 90),
+      ],
+      error: null,
+    };
+
+    const stats = await service().recomputeDerivedUserStats('u1');
+    expect(stats.testsCompleted).toBe(2);
+    expect(stats.highScoreTests).toBe(1);
+  });
+
+  it('only counts sessions that are completed', async () => {
+    await service().recomputeDerivedUserStats('u1');
+    const sessionFilters = capturedFilters.filter(f => f.table === 'test_sessions');
+    expect(sessionFilters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ method: 'eq', args: ['user_id', 'u1'] }),
+        expect.objectContaining({ method: 'eq', args: ['status', 'completed'] }),
+      ])
+    );
+  });
+
+  it('counts questions the user authored, and their best upvote total', async () => {
+    tables.test_sessions = { data: [], error: null };
+    tables.messages = { count: 3, data: { upvotes: 25 }, error: null };
+
+    const stats = await service().recomputeDerivedUserStats('u1');
+    expect(stats.questionsCreated).toBe(3);
+    expect(stats.questionUpvotesMax).toBe(25);
+
+    const messageFilters = capturedFilters.filter(f => f.table === 'messages');
+    expect(messageFilters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ method: 'eq', args: ['sender_id', 'u1'] }),
+        expect.objectContaining({ method: 'eq', args: ['type', 'QUESTION'] }),
+      ])
+    );
+  });
+
+  it('treats the first admin as the group creator', async () => {
+    tables.test_sessions = { data: [], error: null };
+    tables.groups = { count: 4, error: null };
+
+    const stats = await service().recomputeDerivedUserStats('u1');
+    expect(stats.groupsCreated).toBe(4);
+    expect(capturedFilters.filter(f => f.table === 'groups')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ method: 'eq', args: ['admin_ids->>0', 'u1'] }),
+      ])
+    );
+  });
+
+  it('omits metrics it cannot derive, so stored values survive', async () => {
+    tables.test_sessions = { data: [], error: null };
+    const stats = await service().recomputeDerivedUserStats('u1');
+
+    // gamesWon and the marketplace counters have no source query yet. Returning
+    // 0 for them would wipe real progress when merged over the stored stats.
+    expect(stats).not.toHaveProperty('gamesWon');
+    expect(stats).not.toHaveProperty('listingsCreated');
+    expect(stats).not.toHaveProperty('listingsSold');
+    expect(stats).not.toHaveProperty('fiveStarReviews');
+    expect(stats).not.toHaveProperty('offersMade');
+  });
+
+  it('leaves test counts alone when the query fails rather than zeroing them', async () => {
+    tables.test_sessions = { data: null, error: { message: 'boom' } };
+    tables.messages = { count: 9, data: { upvotes: 1 }, error: null };
+
+    const stats = await service().recomputeDerivedUserStats('u1');
+
+    // A failed read must not be mistaken for "no tests" — that would undo the
+    // very drift this is meant to repair.
+    expect(stats).not.toHaveProperty('testsCompleted');
+    expect(stats).not.toHaveProperty('highScoreTests');
+    expect(stats).not.toHaveProperty('perfectScoreTests');
+    expect(stats.questionsCreated).toBe(9);
+  });
+
+  it('handles a completed session that has no result row', async () => {
+    tables.test_sessions = {
+      data: [session('2026-01-01T00:00:00Z', null), session('2026-01-02T00:00:00Z', 95)],
+      error: null,
+    };
+
+    const stats = await service().recomputeDerivedUserStats('u1');
+    expect(stats.testsCompleted).toBe(2);
+    expect(stats.highScoreTests).toBe(1);
+    expect(stats.perfectScoreTests).toBe(0);
+  });
+
+  it('reports zero upvotes when the user has never posted a question', async () => {
+    tables.test_sessions = { data: [], error: null };
+    tables.messages = { count: 0, data: null, error: null };
+
+    const stats = await service().recomputeDerivedUserStats('u1');
+    expect(stats.questionsCreated).toBe(0);
+    expect(stats.questionUpvotesMax).toBe(0);
+  });
+});

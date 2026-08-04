@@ -6175,7 +6175,6 @@ export class SupabaseService {
       try {
         gamification = await this.applyTestCompletionGamification(
           userId,
-          score,
           resultData.activityDate,
         );
         await cacheService.invalidateUserCache(userId);
@@ -7058,10 +7057,116 @@ export class SupabaseService {
     };
   }
 
+  /**
+   * Recount the badge stats that can be derived from source tables.
+   *
+   * These were previously only ever incremented on events, so they drifted in
+   * both directions and no client agreed with the dashboard: a failed increment
+   * is swallowed and silently undercounts, while re-submitting a result re-ran
+   * the increment and overcounted. Counting from the rows themselves is
+   * self-healing — whatever the history, the answer converges on the truth.
+   *
+   * Only derivable metrics are returned. gamesWon and the marketplace counters
+   * have no reliable source query yet, so they are deliberately absent and the
+   * caller must preserve the stored values rather than treat them as zero.
+   */
+  async recomputeDerivedUserStats(userId: string): Promise<Partial<UserStats>> {
+    const [sessions, questionCount, topQuestion, groupCount] = await Promise.all(
+      [
+        this.supabase
+          .from("test_sessions")
+          .select("start_time, test_results (score)")
+          .eq("user_id", userId)
+          .eq("status", "completed"),
+        this.supabase
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("sender_id", userId)
+          .eq("type", "QUESTION"),
+        this.supabase
+          .from("messages")
+          .select("upvotes")
+          .eq("sender_id", userId)
+          .eq("type", "QUESTION")
+          .order("upvotes", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        // createGroup writes `admin_ids: [userId]`, so element 0 is the creator.
+        // Later admins are appended, which leaves that first entry intact.
+        this.supabase
+          .from("groups")
+          .select("id", { count: "exact", head: true })
+          .eq("admin_ids->>0", userId),
+      ],
+    );
+
+    // Deduplicate by start-time, matching how the dashboard counts. A genuine
+    // double-submit can leave two session rows for one sitting, and the badge
+    // count has to agree with the number the user is shown.
+    const seenStartTimes = new Set<string>();
+    let testsCompleted = 0;
+    let highScoreTests = 0;
+    let perfectScoreTests = 0;
+
+    for (const row of (sessions.data || []) as any[]) {
+      const startTime = String(row.start_time ?? "");
+      if (startTime && seenStartTimes.has(startTime)) continue;
+      if (startTime) seenStartTimes.add(startTime);
+
+      testsCompleted++;
+      const result = Array.isArray(row.test_results)
+        ? row.test_results[0]
+        : row.test_results;
+      const score = Number(result?.score);
+      if (!Number.isFinite(score)) continue;
+      if (score >= 80) highScoreTests++;
+      if (score >= 100) perfectScoreTests++;
+    }
+
+    const derived: Partial<UserStats> = {
+      testsCompleted,
+      highScoreTests,
+      perfectScoreTests,
+    };
+
+    // A failed count must not be mistaken for "zero of them" — leaving the key
+    // out preserves whatever is already stored.
+    if (!questionCount.error && typeof questionCount.count === "number") {
+      derived.questionsCreated = questionCount.count;
+    }
+    if (!groupCount.error && typeof groupCount.count === "number") {
+      derived.groupsCreated = groupCount.count;
+    }
+    if (!topQuestion.error) {
+      derived.questionUpvotesMax = Number(topQuestion.data?.upvotes) || 0;
+    }
+    if (sessions.error) {
+      delete derived.testsCompleted;
+      delete derived.highScoreTests;
+      delete derived.perfectScoreTests;
+      logger.warn("Could not recount test stats; keeping stored values", {
+        userId,
+        error: sessions.error.message,
+      });
+    }
+
+    return derived;
+  }
+
   async syncGamificationProgress(
     userId: string,
   ): Promise<GamificationSyncResult> {
-    return this.syncGamificationProgressWithStats(userId, {});
+    // Reconcile against source data before re-evaluating. checkAndAwardBadges
+    // only ever looks for currentLevel + 1, so a corrected-downwards count can
+    // never revoke a badge the user already holds.
+    const derived = await this.recomputeDerivedUserStats(userId).catch((err) => {
+      logger.warn("Stat recompute failed; evaluating against stored stats", {
+        userId,
+        err,
+      });
+      return {} as Partial<UserStats>;
+    });
+    return this.syncGamificationProgressWithStats(userId, { stats: derived });
   }
 
   /** Server-only: apply trusted stats before badge evaluation (e.g. after test completion). */
@@ -7077,18 +7182,33 @@ export class SupabaseService {
       throw new Error("User not found");
     }
 
+    // What the profile holds now, before any recomputed stats are layered on —
+    // the baseline for deciding whether this sync actually changed anything.
+    const stored = this.profileToGamificationUser(
+      profile as unknown as Record<string, unknown>,
+    );
     const user = this.profileToGamificationUser(
       profile as unknown as Record<string, unknown>,
       options.stats,
     );
     const { updatedUser, awardedBadges } = checkAndAwardBadges(user);
 
-    await this.updateUser(userId, {
-      points: updatedUser.points,
-      badges: updatedUser.badges,
-      stats: updatedUser.stats,
-    });
-    await cacheService.delete(`user:${userId}`);
+    // Both clients call this on every dashboard load, so writing unconditionally
+    // would mean a profile UPDATE per screen open for no reason. Only persist
+    // when the reconciliation or an award genuinely moved something.
+    const changed =
+      updatedUser.points !== stored.points ||
+      JSON.stringify(updatedUser.stats) !== JSON.stringify(stored.stats) ||
+      JSON.stringify(updatedUser.badges) !== JSON.stringify(stored.badges);
+
+    if (changed) {
+      await this.updateUser(userId, {
+        points: updatedUser.points,
+        badges: updatedUser.badges,
+        stats: updatedUser.stats,
+      });
+      await cacheService.delete(`user:${userId}`);
+    }
 
     return {
       points: updatedUser.points,
@@ -7098,9 +7218,11 @@ export class SupabaseService {
     };
   }
 
+  // No `score` parameter: the score of the test that triggered this is read back
+  // from the saved rows along with every other test, rather than trusted from
+  // the caller and added to a running total.
   async applyTestCompletionGamification(
     userId: string,
-    score: number,
     activityDate?: string,
   ): Promise<{
     points: number;
@@ -7113,18 +7235,24 @@ export class SupabaseService {
       throw new Error("User not found");
     }
 
+    // Recount from the saved rows instead of incrementing. The result row is
+    // upserted on session_id, so it is idempotent — but the old increment was
+    // not, and re-submitting a test inflated these counters permanently. The
+    // session is marked completed before its result is written, so the test that
+    // triggered this is already included; if that ever changes, the count is one
+    // low until the next sync rather than wrong forever.
     const stats = {
       ...this.profileToGamificationUser(
         profile as unknown as Record<string, unknown>,
       ).stats,
+      ...(await this.recomputeDerivedUserStats(userId).catch((err) => {
+        logger.warn("Stat recompute failed after test completion", {
+          userId,
+          err,
+        });
+        return {} as Partial<UserStats>;
+      })),
     };
-    stats.testsCompleted = (stats.testsCompleted || 0) + 1;
-    if (score >= 80) {
-      stats.highScoreTests = (stats.highScoreTests || 0) + 1;
-    }
-    if (score === 100) {
-      stats.perfectScoreTests = (stats.perfectScoreTests || 0) + 1;
-    }
 
     const result = await this.syncGamificationProgressWithStats(userId, {
       stats,

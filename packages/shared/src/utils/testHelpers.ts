@@ -23,6 +23,7 @@ export const initialUserStats: UserStats = {
     highScoreTests: 0,
     perfectScoreTests: 0,
     gamesWon: 0,
+    questionUpvotesMax: 0,
     listingsCreated: 0,
     listingsSold: 0,
     fiveStarReviews: 0,
@@ -50,8 +51,6 @@ export const checkAndAwardBadges = (user: User): { updatedUser: User, awardedBad
     let updatedUser = { ...user, badges: userBadges, points: user.points };
 
     for (const def of Object.values(BADGE_DEFINITIONS)) {
-        if (def.metric === 'question_upvotes') continue;
-
         const currentStatValue = updatedUser.stats[def.metric as keyof UserStats] || 0;
         const currentBadge = updatedUser.badges.find((b: Badge) => b.id === def.id);
         const currentLevel = currentBadge?.level || 0;

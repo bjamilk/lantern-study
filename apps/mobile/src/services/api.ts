@@ -129,6 +129,7 @@ export const {
   fetchGamificationStats,
   awardPoints,
   checkBadges,
+  syncGamificationProgress,
   fetchMarketplaceListings,
   fetchMarketplaceListing,
   createMarketplaceListing,

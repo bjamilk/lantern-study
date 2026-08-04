@@ -109,6 +109,12 @@ export interface UserStats {
   highScoreTests: number;
   perfectScoreTests: number;
   gamesWon: number;
+  /**
+   * Highest upvote count on any single question the user has authored — the
+   * metric behind RISING_STAR. Optional because profiles saved before this
+   * existed have no value for it; the server recomputes it from `messages`.
+   */
+  questionUpvotesMax?: number;
   listingsCreated: number;
   listingsSold: number;
   fiveStarReviews: number;

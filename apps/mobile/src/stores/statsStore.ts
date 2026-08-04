@@ -6,12 +6,11 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as api from '../services/api';
 import {
-  checkAndAwardBadges,
   initialUserStats,
   getBadgeProgress,
   BADGE_DEFINITIONS,
 } from '@lantern/shared/utils';
-import type { User, UserStats as SharedUserStats, Badge as SharedBadge, BadgeId } from '@lantern/shared';
+import type { UserStats as SharedUserStats, Badge as SharedBadge, BadgeId } from '@lantern/shared';
 import {
   fetchTestResultsCached,
   loadCachedDashboardStats,
@@ -143,40 +142,37 @@ function normalizeSummaryActivityDays(raw: unknown): Array<{ date: string; count
     .filter(day => Boolean(day.date));
 }
 
+/**
+ * Ask the server to reconcile badge stats and award anything newly earned.
+ *
+ * This used to run `checkAndAwardBadges` here on the device and write the result
+ * straight to the profile. Web never did that, so the same account earned badges
+ * at different moments depending on which app was open, and two clients could
+ * race each other into a double award. The server now owns awarding — it also
+ * recounts the underlying stats from source rows, which the device cannot do.
+ */
 function syncBadgesInBackground(userId: string): void {
   void (async () => {
     try {
-      const profile = await api.fetchUserProfile(userId);
-      const user: User = {
-        id: profile.id,
-        name: profile.name,
-        points: profile.points ?? 0,
-        badges: (profile.badges as SharedBadge[]) || [],
-        stats: { ...initialUserStats, ...(profile.stats as Partial<SharedUserStats>) },
-      };
-
-      const { updatedUser, awardedBadges } = checkAndAwardBadges(user);
-      if (awardedBadges.length === 0) return;
-
-      await api.updateUserProfile(userId, {
-        badges: updatedUser.badges,
-        points: updatedUser.points,
-        stats: updatedUser.stats,
-      });
+      const result = await api.syncGamificationProgress();
+      if (!result) return;
 
       const current = useStatsStore.getState().stats;
       if (!current) return;
 
+      const badges = (result.badges as SharedBadge[]) || [];
+      const stats = { ...initialUserStats, ...(result.stats as Partial<SharedUserStats>) };
+
       useStatsStore.setState({
         stats: {
           ...current,
-          badges: mapSharedBadgesToDashboard(updatedUser.badges, updatedUser.stats),
-          totalPoints: updatedUser.points,
-          userLevel: calculateUserLevel(updatedUser.points),
+          badges: mapSharedBadgesToDashboard(badges, stats),
+          totalPoints: result.points,
+          userLevel: calculateUserLevel(result.points),
         },
       });
     } catch (error) {
-      console.warn('[StatsStore] Background badge sync failed:', error);
+      console.warn('[StatsStore] Badge sync failed:', error);
     }
   })();
 }

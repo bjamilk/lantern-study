@@ -98,6 +98,7 @@ export const mapUserStatsFromApi = (data: any): UserStats => {
     highScoreTests: data.high_score_tests || data.highScoreTests || 0,
     perfectScoreTests: data.perfect_score_tests || data.perfectScoreTests || 0,
     gamesWon: data.games_won || data.gamesWon || 0,
+    questionUpvotesMax: data.question_upvotes_max || data.questionUpvotesMax || 0,
     listingsCreated: data.listings_created || data.listingsCreated || 0,
     listingsSold: data.listings_sold || data.listingsSold || 0,
     fiveStarReviews: data.five_star_reviews || data.fiveStarReviews || 0,

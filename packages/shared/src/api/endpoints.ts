@@ -1551,6 +1551,25 @@ export function createApiEndpoints(client: ApiClient) {
     checkBadges: (userId: string) =>
       apiRequest<unknown[]>(`/gamification/user/${userId}/badges`),
 
+    /**
+     * Recount badge stats from source data and award anything newly earned.
+     *
+     * This is the only path that should award badges. Clients used to run the
+     * award logic locally and write the result back to the profile, which meant
+     * the same account earned badges at different moments depending on which app
+     * was opened. The server is the single source of truth.
+     */
+    syncGamificationProgress: () =>
+      apiRequest<{
+        points: number;
+        badges: Array<{ id: string; level: number; name: string }>;
+        stats: Record<string, number>;
+        awardedBadges?: Array<{ id: string; level: number; name: string }>;
+      }>(`/gamification/me/sync-progress`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+
     // ========== MARKETPLACE API ==========
 
     fetchMarketplaceListings: async (

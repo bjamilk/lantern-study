@@ -67,7 +67,11 @@ export const BADGE_DEFINITIONS: Record<BadgeId, BadgeDefinition> = {
         baseName: 'Rising Star',
         baseDescription: (threshold) => `Receive ${threshold} upvotes on a single question.`,
         icon: '🌟',
-        metric: 'question_upvotes',
+        // Was the pseudo-metric 'question_upvotes', which is not a UserStats key.
+        // checkAndAwardBadges therefore skipped this badge outright and it could
+        // never be earned. It now reads a real stat the server derives from the
+        // user's highest-upvoted question.
+        metric: 'questionUpvotesMax',
         levels: [
             { level: 1, threshold: 10, points: 100 },
             { level: 2, threshold: 25, points: 250 },
