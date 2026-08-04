@@ -304,7 +304,8 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
         <Text className="text-sm font-semibold text-lantern-text">Group performance</Text>
       </View>
       <Text className="text-[11px] text-lantern-text-secondary mb-3">
-        Select one or more active groups. Metrics follow the period you pick below.
+        Select one or more groups. Archived groups are included, since their tests still count
+        towards your totals. Metrics follow the period you pick below.
       </Text>
 
       <View className="flex-row flex-wrap gap-1.5 mb-3">
