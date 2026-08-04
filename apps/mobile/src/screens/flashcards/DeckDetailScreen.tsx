@@ -75,20 +75,27 @@ function FlashcardPreview({ card, onPress }: { card: Flashcard; onPress: () => v
   const { front } = getCardDisplayText(card);
   const status = getCardStatus(card);
 
+  // The row is a single Pressable rather than a Pressable wrapping a Card. The
+  // nested version did not register taps on Android at all — the press never
+  // reached onPress — so the card styling is applied directly here and there is
+  // only one view in the touch path.
   return (
-    <Pressable onPress={onPress}>
-      <Card className="mb-2 py-3 active:opacity-90">
-        <View className="flex-row items-center justify-between gap-2">
-          <Text className="flex-1 text-sm text-lantern-text" numberOfLines={2}>
-            {front}
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={front}
+      className="mb-2 px-4 py-3 rounded-lantern-xl border border-lantern-border bg-lantern-surface active:opacity-90"
+    >
+      <View className="flex-row items-center justify-between gap-2">
+        <Text className="flex-1 text-sm text-lantern-text" numberOfLines={2}>
+          {front}
+        </Text>
+        <View style={{ backgroundColor: `${status.color}22` }} className="px-2 py-0.5 rounded-full">
+          <Text style={{ color: status.color }} className="text-[10px] font-semibold">
+            {status.label}
           </Text>
-          <View style={{ backgroundColor: `${status.color}22` }} className="px-2 py-0.5 rounded-full">
-            <Text style={{ color: status.color }} className="text-[10px] font-semibold">
-              {status.label}
-            </Text>
-          </View>
         </View>
-      </Card>
+      </View>
     </Pressable>
   );
 }
