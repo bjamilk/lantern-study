@@ -236,14 +236,25 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
 
   const chartWidth = Math.max(280, width - 64);
 
+
   const lineDatasets = useMemo(() => {
     if (selectedSeries.length === 0) return [];
     if (!isMulti) {
       const series = selectedSeries[0];
       const points = useWeekly ? series.weeklyChartData : series.chartData;
+      // A label under every point overlaps once the points are packed to fit the
+      // card, so keep roughly six evenly spaced ones plus the last for the
+      // end of the range. Every point is still plotted — only labels are thinned.
+      const stride = Math.max(1, Math.ceil(points.length / 6));
       return [
         {
-          data: points.map((p) => ({ value: p.y ?? 0, label: String(p.x).slice(-8) })),
+          data: points.map((p, i) => ({
+            value: p.y ?? 0,
+            // Points are labelled "Test 3 - 06/21"; keep just the MM/DD. Taking
+            // 8 characters kept a leading "- " that pushed the date past the
+            // available width, so every label rendered as "- 06/…".
+            label: i % stride === 0 || i === points.length - 1 ? String(p.x).slice(-5) : '',
+          })),
           color: SERIES_COLORS[0],
         },
       ];
@@ -262,6 +273,43 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       };
     });
   }, [selectedSeries, isMulti, useWeekly]);
+
+  /**
+   * Fit every point inside the card instead of drawing a chart wider than it.
+   *
+   * The width used to be `max(chartWidth, points * 36)`, which for 11 tests asks
+   * for ~396dp inside a ~330dp card. Android clips overflowing children while
+   * iOS lets them spill, so the same data looked truncated on one platform and
+   * not the other — and the horizontal ScrollView that was meant to rescue it
+   * fought gifted-charts' own internal scroll view, so on Android it neither
+   * fitted nor scrolled. Sizing to the container and deriving the spacing shows
+   * the whole series without scrolling, which is how web already behaves.
+   */
+  const chartGeometry = useMemo(() => {
+    const Y_AXIS_WIDTH = 46;
+    // Labels are centred on their point, so the first one needs room to its left
+    // or it is clipped by the axis, and the last needs room to its right or the
+    // plot runs past the card edge.
+    const INITIAL_SPACING = 22;
+    const END_SPACING = 18;
+    // `width` is the plot area only — gifted-charts draws the y-axis labels
+    // outside it, so passing the full card width made the axis rule overrun the
+    // card's right edge by roughly the axis width.
+    const renderWidth = Math.max(140, chartWidth - Y_AXIS_WIDTH);
+    const plotWidth = Math.max(120, renderWidth - INITIAL_SPACING - END_SPACING);
+    const count = lineDatasets[0]?.data.length ?? 0;
+    // Below this, points sit on top of each other and the line is unreadable;
+    // gifted-charts then scrolls internally rather than silently dropping data.
+    const MIN_SPACING = 14;
+    const spacing = count > 1 ? Math.max(MIN_SPACING, plotWidth / (count - 1)) : plotWidth;
+    return {
+      width: renderWidth,
+      spacing,
+      initialSpacing: INITIAL_SPACING,
+      endSpacing: END_SPACING,
+      count,
+    };
+  }, [chartWidth, lineDatasets]);
 
   const summary = useMemo(() => {
     const seen = new Set<string>();
@@ -430,7 +478,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
               ))}
             </View>
           ) : lineDatasets.length > 0 && lineDatasets[0].data.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View>
               {useWeekly ? (
                 <LineChart
                   data={lineDatasets[0].data}
@@ -439,7 +487,10 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                   data4={lineDatasets[3]?.data}
                   data5={lineDatasets[4]?.data}
                   height={180}
-                  width={Math.max(chartWidth, lineDatasets[0].data.length * 36)}
+                  width={chartGeometry.width}
+                  spacing={chartGeometry.spacing}
+                  initialSpacing={chartGeometry.initialSpacing}
+                  endSpacing={chartGeometry.endSpacing}
                   color={SERIES_COLORS[0]}
                   color2={SERIES_COLORS[1]}
                   color3={SERIES_COLORS[2]}
@@ -458,7 +509,10 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                 <LineChart
                   data={lineDatasets[0].data}
                   height={180}
-                  width={Math.max(chartWidth, lineDatasets[0].data.length * 36)}
+                  width={chartGeometry.width}
+                  spacing={chartGeometry.spacing}
+                  initialSpacing={chartGeometry.initialSpacing}
+                  endSpacing={chartGeometry.endSpacing}
                   color={SERIES_COLORS[0]}
                   thickness={2}
                   hideDataPoints={false}
@@ -469,7 +523,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                   isAnimated
                 />
               )}
-            </ScrollView>
+            </View>
           ) : (
             <Text className="text-sm text-lantern-text-tertiary text-center py-4">No chart points yet.</Text>
           )}
