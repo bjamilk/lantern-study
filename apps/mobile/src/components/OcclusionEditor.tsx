@@ -37,6 +37,8 @@ interface OcclusionEditorProps {
 const BLUR_OPACITY = 0.45;
 /** Ignore stray taps — a mask smaller than this is almost certainly a mis-touch. */
 const MIN_SIZE = 0.02;
+/** Below this much travel the gesture is a tap, which deletes the mask under it. */
+const TAP_THRESHOLD = 0.02;
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
@@ -60,15 +62,55 @@ export function OcclusionEditor({
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
+  const removeShapeAt = (p: Point, data: OcclusionData | null, activeMode: OcclusionMode) => {
+    if (!data) return;
+    if (activeMode === 'rectangles' || activeMode === 'blur') {
+      const key = activeMode === 'rectangles' ? 'rectangles' : 'blur';
+      const list = ((data as any)[key] ?? []) as Array<{ x: number; y: number; width: number; height: number }>;
+      const idx = list.findIndex(
+        (r) => p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
+      );
+      if (idx === -1) return;
+      onChange({ type: activeMode, [key]: list.filter((_, i) => i !== idx) } as OcclusionData);
+      return;
+    }
+    if (activeMode === 'circles') {
+      const list = data.circles ?? [];
+      const idx = list.findIndex((c) => Math.hypot(p.x - c.x, p.y - c.y) <= c.radius);
+      if (idx === -1) return;
+      onChange({ type: 'circles', circles: list.filter((_, i) => i !== idx) });
+      return;
+    }
+    const list = data.freeforms ?? [];
+    if (list.length === 0) return;
+    onChange({ type: 'freeform', freeforms: list.slice(0, -1) });
+  };
+
+  const canvasRef = useRef<View | null>(null);
+  // Page-space origin of the canvas. locationX/locationY are relative to
+  // whichever view the touch lands on — the image, or a mask already drawn —
+  // so they jump as soon as anything is under the finger, which is why drags
+  // produced the wrong size. pageX/pageY minus this origin is stable whatever
+  // is beneath the touch.
+  const originRef = useRef({ x: 0, y: 0 });
+
+  const measureCanvas = () => {
+    canvasRef.current?.measureInWindow?.((x, y) => {
+      originRef.current = { x, y };
+    });
+  };
+
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setLayout({ width, height });
+    measureCanvas();
   };
 
-  const toNormalised = (locationX: number, locationY: number): Point => {
+  const toNormalised = (pageX: number, pageY: number): Point => {
     const { width, height } = layoutRef.current;
     if (!width || !height) return { x: 0, y: 0 };
-    return { x: clamp01(locationX / width), y: clamp01(locationY / height) };
+    const { x: originX, y: originY } = originRef.current;
+    return { x: clamp01((pageX - originX) / width), y: clamp01((pageY - originY) / height) };
   };
 
   const commitDraft = () => {
@@ -79,6 +121,13 @@ export function OcclusionEditor({
     if (!current) return;
 
     const { start, current: end, path } = current;
+
+    const travelled = Math.hypot(end.x - start.x, end.y - start.y);
+    if (travelled < TAP_THRESHOLD) {
+      removeShapeAt(start, data, activeMode);
+      return;
+    }
+
     const x = Math.min(start.x, end.x);
     const y = Math.min(start.y, end.y);
     const width = Math.abs(end.x - start.x);
@@ -125,11 +174,12 @@ export function OcclusionEditor({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (e) => {
-          const p = toNormalised(e.nativeEvent.locationX, e.nativeEvent.locationY);
+          measureCanvas();
+          const p = toNormalised(e.nativeEvent.pageX, e.nativeEvent.pageY);
           setDraft({ start: p, current: p, path: [p] });
         },
         onPanResponderMove: (e) => {
-          const p = toNormalised(e.nativeEvent.locationX, e.nativeEvent.locationY);
+          const p = toNormalised(e.nativeEvent.pageX, e.nativeEvent.pageY);
           setDraft((prev) =>
             prev
               ? {
@@ -201,6 +251,7 @@ export function OcclusionEditor({
       </View>
 
       <View
+        ref={canvasRef}
         onLayout={onLayout}
         {...panResponder.panHandlers}
         style={styles.canvas}
@@ -217,9 +268,11 @@ export function OcclusionEditor({
 
       <View className="flex-row items-center justify-between mt-2">
         <Text className="text-[11px] text-lantern-text-secondary flex-1">
-          {shapeCount === 0
-            ? 'Drag across the image to hide a region.'
-            : `${shapeCount} region${shapeCount === 1 ? '' : 's'} hidden.`}
+          {draft
+            ? draftSizeLabel(draft, mode)
+            : shapeCount === 0
+              ? 'Drag across the image to hide a region.'
+              : `${shapeCount} hidden · tap one to remove it.`}
         </Text>
         <View className="flex-row gap-2">
           <Pressable
@@ -248,6 +301,21 @@ export function OcclusionEditor({
       </View>
     </View>
   );
+}
+
+/** Percentage of the image the in-progress mask covers, shown while dragging. */
+function draftSizeLabel(
+  draft: { start: Point; current: Point; path: Point[] },
+  mode: OcclusionMode
+): string {
+  if (mode === 'freeform') return `Freehand · ${draft.path.length} points`;
+  const w = Math.abs(draft.current.x - draft.start.x);
+  const h = Math.abs(draft.current.y - draft.start.y);
+  if (mode === 'circles') {
+    const r = Math.max(w, h) / 2;
+    return `Radius ${Math.round(r * 200)}%`;
+  }
+  return `${Math.round(w * 100)}% × ${Math.round(h * 100)}%`;
 }
 
 function distance(a: Point | undefined, b: Point): number {
@@ -388,7 +456,7 @@ function renderDraft(
 const styles = StyleSheet.create({
   canvas: {
     width: '100%',
-    height: 260,
+    height: 320,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#0f172a10',
