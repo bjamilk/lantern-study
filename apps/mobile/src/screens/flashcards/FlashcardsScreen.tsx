@@ -6,6 +6,7 @@ import {
   Modal,
   Pressable,
   RefreshControl,
+  Share,
   Text,
   TextInput,
   View,
@@ -18,6 +19,7 @@ import { Button, Card, ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
+import { exportDeck } from '../../services/api';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import { FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
@@ -47,12 +49,18 @@ function DeckCard({
   onPress,
   onAIGenerate,
   onStudy,
+  isOffline,
+  onToggleOffline,
+  onShare,
 }: {
   deck: Deck;
   index: number;
   onPress: () => void;
   onAIGenerate: () => void;
   onStudy?: () => void;
+  isOffline?: boolean;
+  onToggleOffline?: () => void;
+  onShare?: () => void;
 }) {
   const cardCount = deck.card_count ?? 0;
   const dueCount = deck.due_count ?? 0;
@@ -84,6 +92,34 @@ function DeckCard({
                 <Text className="text-[10px] font-bold text-white">{dueCount} due</Text>
               </View>
             ) : null}
+            <Pressable
+              onPress={e => {
+                e.stopPropagation?.();
+                onToggleOffline?.();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={isOffline ? 'Remove from offline' : 'Save for offline'}
+              className="px-2 py-1 rounded-full bg-white/20"
+              hitSlop={8}
+            >
+              <Ionicons
+                name={isOffline ? 'cloud-done' : 'cloud-download-outline'}
+                size={14}
+                color="#ffffff"
+              />
+            </Pressable>
+            <Pressable
+              onPress={e => {
+                e.stopPropagation?.();
+                onShare?.();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Share this deck"
+              className="px-2 py-1 rounded-full bg-white/20"
+              hitSlop={8}
+            >
+              <Ionicons name="share-outline" size={14} color="#ffffff" />
+            </Pressable>
             <Pressable
               onPress={e => {
                 e.stopPropagation?.();
@@ -129,7 +165,18 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
   const user = useAuthStore(s => s.user);
-  const { decks, isLoading, error, fetchDecks, createDeck, createFlashcard, clearError } = useFlashcardStore();
+  const {
+    decks,
+    isLoading,
+    error,
+    fetchDecks,
+    createDeck,
+    createFlashcard,
+    clearError,
+    offlineDeckIds,
+    markDeckOffline,
+    unmarkDeckOffline,
+  } = useFlashcardStore();
   const [refreshing, setRefreshing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -170,6 +217,26 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const openAiForDeck = (deckId: string) => {
     setAiDeckId(deckId);
     setAiModalOpen(true);
+  };
+
+  const handleToggleOffline = async (deckId: string) => {
+    if (!user?.id) return;
+    try {
+      if (offlineDeckIds.includes(deckId)) await unmarkDeckOffline(deckId);
+      else await markDeckOffline(deckId, user.id);
+    } catch (e) {
+      Alert.alert('Offline change failed', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
+  /** Share the deck as JSON so another Lantern user can import it. */
+  const handleShareDeck = async (deckId: string, name: string) => {
+    try {
+      const data = await exportDeck(deckId);
+      await Share.share({ message: JSON.stringify(data, null, 2), title: `${name}.json` });
+    } catch (e) {
+      Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export deck');
+    }
   };
 
   const handleAIGenerated = async (generated: AIGeneratedFlashcard[]) => {
@@ -288,6 +355,9 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
               onPress={() => navigation.navigate('DeckDetail', { deckId: item.id, deckName: item.name })}
               onAIGenerate={() => openAiForDeck(item.id)}
               onStudy={() => navigation.navigate('FlashcardReview', { deckId: item.id, deckName: item.name })}
+              isOffline={offlineDeckIds.includes(item.id)}
+              onToggleOffline={() => void handleToggleOffline(item.id)}
+              onShare={() => void handleShareDeck(item.id, item.name)}
             />
           )}
         />

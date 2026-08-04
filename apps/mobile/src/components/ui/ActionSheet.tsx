@@ -19,6 +19,8 @@ export interface ActionSheetItem {
   disabled?: boolean;
   /** Shown under the label for actions whose effect is not obvious. */
   hint?: string;
+  /** Groups related actions under a heading so a long menu stays scannable. */
+  section?: string;
 }
 
 interface ActionSheetProps {
@@ -62,10 +64,15 @@ export function ActionSheet({
             </Text>
           ) : null}
 
-          <ScrollView className="max-h-96" showsVerticalScrollIndicator={false}>
-            {items.map((item) => (
+          <ScrollView className="max-h-[28rem]" showsVerticalScrollIndicator={false}>
+            {items.map((item, index) => (
+              <React.Fragment key={item.label}>
+                {item.section && item.section !== items[index - 1]?.section ? (
+                  <Text className="px-5 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+                    {item.section}
+                  </Text>
+                ) : null}
               <Pressable
-                key={item.label}
                 onPress={() => select(item)}
                 disabled={item.disabled}
                 accessibilityRole="button"
@@ -95,6 +102,7 @@ export function ActionSheet({
                   ) : null}
                 </View>
               </Pressable>
+              </React.Fragment>
             ))}
           </ScrollView>
 

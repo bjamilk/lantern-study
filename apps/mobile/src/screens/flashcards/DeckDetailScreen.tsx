@@ -404,20 +404,53 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   // the rest without warning, so Export JSON, Export CSV and Collaborators were
   // simply unreachable there while iOS showed all seven.
   const manageItems: ActionSheetItem[] = [
-    { label: 'Add card', icon: 'add-circle-outline', onPress: openCreateCard },
-    { label: 'Generate with AI', icon: 'sparkles-outline', onPress: () => setAiModalOpen(true) },
-    { label: 'Edit deck', icon: 'pencil-outline', onPress: openEditDeck },
-    { label: 'Import', icon: 'download-outline', onPress: () => void handleImport() },
-    { label: 'Export JSON', icon: 'share-outline', onPress: () => void handleExportJson() },
-    { label: 'Export CSV', icon: 'share-outline', onPress: () => void handleExportCsv() },
-    { label: 'Collaborators', icon: 'people-outline', onPress: () => setCollaboratorsOpen(true) },
+    { section: 'Cards', label: 'Add card', icon: 'add-circle-outline', onPress: openCreateCard },
     {
+      section: 'Cards',
+      label: 'Generate with AI',
+      icon: 'sparkles-outline',
+      onPress: () => setAiModalOpen(true),
+    },
+    // Offline and export sit directly under Cards rather than at the bottom:
+    // buried below eight other rows they were effectively undiscoverable.
+    {
+      section: 'Share & offline',
       label: isOffline ? 'Remove from offline' : 'Save for offline',
       icon: isOffline ? 'cloud-offline-outline' : 'cloud-download-outline',
-      hint: isOffline ? 'Stop keeping this deck on the device' : 'Study this deck without a connection',
+      hint: isOffline
+        ? 'Stop keeping this deck on the device'
+        : 'Study this deck without a connection',
       onPress: () => void handleToggleOffline(),
     },
     {
+      section: 'Share & offline',
+      label: 'Export JSON',
+      icon: 'share-outline',
+      hint: 'Send this deck to another Lantern user',
+      onPress: () => void handleExportJson(),
+    },
+    {
+      section: 'Share & offline',
+      label: 'Export CSV',
+      icon: 'share-outline',
+      onPress: () => void handleExportCsv(),
+    },
+    {
+      section: 'Share & offline',
+      label: 'Import',
+      icon: 'download-outline',
+      hint: 'JSON, CSV or Anki .apkg',
+      onPress: () => void handleImport(),
+    },
+    {
+      section: 'Share & offline',
+      label: 'Collaborators',
+      icon: 'people-outline',
+      onPress: () => setCollaboratorsOpen(true),
+    },
+    { section: 'Deck', label: 'Edit deck', icon: 'pencil-outline', onPress: openEditDeck },
+    {
+      section: 'Deck',
       label: 'Reset progress',
       icon: 'refresh-outline',
       hint: 'Send every card back to new',
@@ -425,6 +458,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       onPress: () => void handleResetProgress(),
     },
     {
+      section: 'Deck',
       label: 'Delete deck',
       icon: 'trash-outline',
       destructive: true,
