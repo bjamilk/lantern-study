@@ -519,7 +519,10 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
 export const useStatsStore = create<StatsState>((set, get) => ({
   stats: null,
   leanTestResults: [],
-  selectedPeriod: '30days',
+  // Matches the web dashboard, which defaults to All Time. The two defaulting
+  // differently made the same account show different totals side by side —
+  // e.g. 13 tests taken on web against 10 on mobile — which reads as a sync bug.
+  selectedPeriod: 'all',
   isLoading: false,
   isRefreshing: false,
   error: null,

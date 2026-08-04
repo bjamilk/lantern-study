@@ -402,10 +402,11 @@ export default function DashboardScreen({
   // Lean history omits question payloads — charts only need startTime/config/score.
   const initialTestResults = useMemo(() => {
     return rawTestResults
-      .filter(result => 
-        result?.session?.startTime && 
-        result?.session?.config
-      )
+      // Only startTime is required — it is what dedupe and period filtering key
+      // on. Requiring session.config here dropped lean results the server
+      // returns from /dashboard/summary, making web report fewer tests taken
+      // than mobile. Consumers of config below guard for its absence.
+      .filter(result => result?.session?.startTime)
       .map(result => ({
         ...result,
         session: {
@@ -532,7 +533,8 @@ export default function DashboardScreen({
     saveGroupPerfPeriod(period);
   }, []);
   
-  const totalTestsTakenOverall = filteredTestResults.length;
+  // Derived from the shared builder (defined below) rather than counted here,
+  // so web and mobile report the same number from the same code path.
 
   // Shared web/mobile stats builder so both surfaces compute identical
   // metrics. Results are already filtered by the period selector above
@@ -552,6 +554,8 @@ export default function DashboardScreen({
       }),
     [filteredTestResults, groups, effectiveQuestionStats, currentUser.points]
   );
+
+  const totalTestsTakenOverall = sharedStats.totalTestsTaken;
   
   const getGroupName = (groupId: string, storedName?: string): string => {
     const group = groups.find(g => g.id === groupId);
@@ -572,8 +576,8 @@ export default function DashboardScreen({
     const groupPerformanceMap: Map<string, GroupPerformanceData> = new Map();
     if (groupPerformanceResults.length > 0) {
       groupPerformanceResults.forEach(result => {
-        const groupId = result.session.config.groupId;
-        const groupName = getGroupName(groupId, result.session.config.groupName);
+        const groupId = result.session.config?.groupId;
+        const groupName = getGroupName(groupId, result.session.config?.groupName);
         
         let data = groupPerformanceMap.get(groupId);
         if (!data) {
@@ -615,7 +619,7 @@ export default function DashboardScreen({
         data.averageTimePerQuestion = data.questionsWithTimeData > 0 ? data.totalTimeSpentSeconds / data.questionsWithTimeData : 0;
 
         const groupSpecificResults = groupPerformanceResults
-          .filter(tr => tr.session.config.groupId === data.id)
+          .filter(tr => tr.session.config?.groupId === data.id)
           .sort((a, b) => new Date(a.session.startTime).getTime() - new Date(b.session.startTime).getTime());
         
         data.chartData = groupSpecificResults.map((result, index) => {
@@ -916,7 +920,7 @@ export default function DashboardScreen({
     for (const selectedId of selectedGroupChartIds) {
       const rollup = getGroupIdWithDescendants(selectedId, activeGroups, { activeOnly: true });
       for (const result of groupPerformanceResults) {
-        const gid = result.session.config.groupId;
+        const gid = result.session.config?.groupId;
         if (!gid || !rollup.has(gid)) continue;
         const key = result.session.id || result.id || String(result.session.startTime);
         if (seen.has(key)) continue;
