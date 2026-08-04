@@ -71,6 +71,9 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
   const [blurOpacity, setBlurOpacity] = useState(0.4);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawingShape, setDrawingShape] = useState<PendingOcclusionShape | null>(null);
+  // Zoom for the occlusion canvas. Panning is the wrapper's native scrolling,
+  // which also covers images too large to fit at 100%.
+  const [occlusionZoom, setOcclusionZoom] = useState(1);
   const [activeShapeIndex, setActiveShapeIndex] = useState<number | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [dragMode, setDragMode] = useState<'move' | 'resize' | null>(null);
@@ -716,9 +719,20 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                             {imageUrl && (
                               <div className="mt-2">
                                 <div className="text-xs text-lantern-text-secondary">Preview:</div>
+                                <div className="flex items-center gap-2 mt-1 mb-1">
+                                  <button type="button" onClick={() => setOcclusionZoom(z => Math.max(1, +(z - 0.5).toFixed(1)))} disabled={occlusionZoom <= 1} className="px-2 py-0.5 text-xs rounded border border-lantern-border disabled:opacity-40">−</button>
+                                  <span className="text-xs text-lantern-text-secondary tabular-nums">{Math.round(occlusionZoom * 100)}%</span>
+                                  <button type="button" onClick={() => setOcclusionZoom(z => Math.min(6, +(z + 0.5).toFixed(1)))} disabled={occlusionZoom >= 6} className="px-2 py-0.5 text-xs rounded border border-lantern-border disabled:opacity-40">+</button>
+                                  {occlusionZoom > 1 && (
+                                    <button type="button" onClick={() => setOcclusionZoom(1)} className="px-2 py-0.5 text-xs rounded border border-lantern-border">Reset</button>
+                                  )}
+                                  <span className="text-[11px] text-lantern-text-secondary">Zoom in, then scroll to reach any part of the image.</span>
+                                </div>
+                                <div className="overflow-auto max-h-[60vh]">
                                 <div
                                   ref={imageContainerRef}
-                                  className="relative mt-1 w-full rounded-md border border-lantern-border overflow-hidden cursor-crosshair select-none touch-none"
+                                  style={{ width: `${occlusionZoom * 100}%` }}
+                                  className="relative mt-1 rounded-md border border-lantern-border overflow-hidden cursor-crosshair select-none touch-none"
                                   onMouseDown={handlePointerDown}
                                   onMouseMove={handlePointerMove}
                                   onMouseUp={handleFinishDrawing}
@@ -821,6 +835,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                       }}
                                     />
                                   )}
+                                </div>
                                 </div>
 
                                 {type === FlashcardType.IMAGE_OCCLUSION && (
@@ -1007,9 +1022,20 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                         {imageUrl && (
                           <div className="mt-2">
                             <div className="text-xs text-lantern-text-secondary">Preview:</div>
+                            <div className="flex items-center gap-2 mt-1 mb-1">
+                              <button type="button" onClick={() => setOcclusionZoom(z => Math.max(1, +(z - 0.5).toFixed(1)))} disabled={occlusionZoom <= 1} className="px-2 py-0.5 text-xs rounded border border-lantern-border disabled:opacity-40">−</button>
+                              <span className="text-xs text-lantern-text-secondary tabular-nums">{Math.round(occlusionZoom * 100)}%</span>
+                              <button type="button" onClick={() => setOcclusionZoom(z => Math.min(6, +(z + 0.5).toFixed(1)))} disabled={occlusionZoom >= 6} className="px-2 py-0.5 text-xs rounded border border-lantern-border disabled:opacity-40">+</button>
+                              {occlusionZoom > 1 && (
+                                <button type="button" onClick={() => setOcclusionZoom(1)} className="px-2 py-0.5 text-xs rounded border border-lantern-border">Reset</button>
+                              )}
+                              <span className="text-[11px] text-lantern-text-secondary">Zoom in, then scroll to reach any part of the image.</span>
+                            </div>
+                            <div className="overflow-auto max-h-[60vh]">
                             <div
                               ref={imageContainerRef}
-                              className="relative mt-1 w-full rounded-md border border-lantern-border overflow-hidden cursor-crosshair select-none touch-none"
+                              style={{ width: `${occlusionZoom * 100}%` }}
+                              className="relative mt-1 rounded-md border border-lantern-border overflow-hidden cursor-crosshair select-none touch-none"
                               onMouseDown={handlePointerDown}
                               onMouseMove={handlePointerMove}
                               onMouseUp={handleFinishDrawing}
@@ -1111,6 +1137,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                   }}
                                 />
                               )}
+                            </div>
                             </div>
 
                             <div className="mt-2">

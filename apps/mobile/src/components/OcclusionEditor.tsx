@@ -43,6 +43,25 @@ const MIN_SIZE = 0.02;
 const TAP_THRESHOLD = 0.02;
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+const MAX_SCALE = 6;
+const clampScale = (n: number) => Math.min(MAX_SCALE, Math.max(1, n));
+
+/**
+ * Stop the image being dragged off screen. At 1x there is nothing to pan, and
+ * beyond that the offset is bounded by however much of the image is hidden.
+ */
+function clampPan(
+  v: { scale: number; tx: number; ty: number },
+  layout: { width: number; height: number }
+): { scale: number; tx: number; ty: number } {
+  const maxX = (layout.width * (v.scale - 1)) / 2;
+  const maxY = (layout.height * (v.scale - 1)) / 2;
+  return {
+    scale: v.scale,
+    tx: Math.min(maxX, Math.max(-maxX, v.tx)),
+    ty: Math.min(maxY, Math.max(-maxY, v.ty)),
+  };
+}
 
 export function OcclusionEditor({
   imageUri,
@@ -54,6 +73,14 @@ export function OcclusionEditor({
 }: OcclusionEditorProps) {
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [draft, setDraft] = useState<{ start: Point; current: Point; path: Point[] } | null>(null);
+  // View transform. Masks stay in normalised image coordinates whatever this is,
+  // so zooming changes only what you see — a card drawn zoomed in replays
+  // identically on web and both phones.
+  const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  /** Distance and midpoint of the last two-finger sample, for pinch deltas. */
+  const pinchRef = useRef<{ dist: number; mid: Point } | null>(null);
 
   // PanResponder closes over these, so they have to be refs rather than state.
   const layoutRef = useRef(layout);
@@ -113,7 +140,16 @@ export function OcclusionEditor({
     const { width, height } = layoutRef.current;
     if (!width || !height) return { x: 0, y: 0 };
     const { x: originX, y: originY } = originRef.current;
-    return { x: clamp01((pageX - originX) / width), y: clamp01((pageY - originY) / height) };
+    const { scale, tx, ty } = viewRef.current;
+    // Canvas-local, then undo the pan, then undo the scale about the centre —
+    // the same order the transform is applied in when rendering.
+    const localX = pageX - originX - tx;
+    const localY = pageY - originY - ty;
+    const cx = width / 2;
+    const cy = height / 2;
+    const imageX = cx + (localX - cx) / scale;
+    const imageY = cy + (localY - cy) / scale;
+    return { x: clamp01(imageX / width), y: clamp01(imageY / height) };
   };
 
   const commitDraft = () => {
@@ -126,7 +162,7 @@ export function OcclusionEditor({
     const { start, current: end, path } = current;
 
     const travelled = Math.hypot(end.x - start.x, end.y - start.y);
-    if (travelled < TAP_THRESHOLD) {
+    if (travelled < TAP_THRESHOLD / viewRef.current.scale) {
       removeShapeAt(start, data, activeMode);
       return;
     }
@@ -143,7 +179,10 @@ export function OcclusionEditor({
       return;
     }
 
-    if (width < MIN_SIZE || height < MIN_SIZE) return;
+    // Scale the floor with the zoom: at 4x a mask a quarter the size is still
+    // a deliberate one, and rejecting it would defeat zooming in to be precise.
+    const minSize = MIN_SIZE / viewRef.current.scale;
+    if (width < minSize || height < minSize) return;
 
     if (activeMode === 'rectangles') {
       const existing = data?.type === 'rectangles' ? (data.rectangles ?? []) : [];
@@ -155,7 +194,7 @@ export function OcclusionEditor({
       // Drag from the centre outwards; the radius is normalised against width so
       // the circle stays round when replayed.
       const radius = Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) / 2;
-      if (radius < MIN_SIZE) return;
+      if (radius < MIN_SIZE / viewRef.current.scale) return;
       const existing = data?.type === 'circles' ? (data.circles ?? []) : [];
       onChange({
         type: 'circles',
@@ -189,10 +228,44 @@ export function OcclusionEditor({
         onPanResponderGrant: (e) => {
           onDrawingChange?.(true);
           measureCanvas();
+          pinchRef.current = null;
+          if (e.nativeEvent.touches.length >= 2) return;
           const p = toNormalised(e.nativeEvent.pageX, e.nativeEvent.pageY);
           setDraft({ start: p, current: p, path: [p] });
         },
         onPanResponderMove: (e) => {
+          const touches = e.nativeEvent.touches;
+
+          // Two fingers transform the view instead of drawing: pinch to zoom
+          // into a dense region, drag to reach parts of a large image that do
+          // not fit on screen at all.
+          if (touches.length >= 2) {
+            setDraft(null);
+            const [a, b] = touches;
+            const dist = Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+            const mid = { x: (a.pageX + b.pageX) / 2, y: (a.pageY + b.pageY) / 2 };
+            const last = pinchRef.current;
+            pinchRef.current = { dist, mid };
+            if (!last || last.dist === 0) return;
+
+            setView((prev) => {
+              const next = clampScale(prev.scale * (dist / last.dist));
+              // Keep the point between the fingers steady while zooming, and
+              // follow the midpoint so the same gesture pans.
+              const growth = next / prev.scale;
+              return clampPan(
+                {
+                  scale: next,
+                  tx: prev.tx * growth + (mid.x - last.mid.x),
+                  ty: prev.ty * growth + (mid.y - last.mid.y),
+                },
+                layoutRef.current
+              );
+            });
+            return;
+          }
+
+          if (pinchRef.current) return; // finger lifted mid-pinch; do not draw
           const p = toNormalised(e.nativeEvent.pageX, e.nativeEvent.pageY);
           setDraft((prev) =>
             prev
@@ -209,7 +282,12 @@ export function OcclusionEditor({
           );
         },
         onPanResponderRelease: () => {
-          commitDraft();
+          if (pinchRef.current) {
+            pinchRef.current = null;
+            setDraft(null);
+          } else {
+            commitDraft();
+          }
           onDrawingChange?.(false);
         },
         // A gesture taken away by an ancestor must not leave a half-drawn mask
@@ -279,13 +357,27 @@ export function OcclusionEditor({
         style={styles.canvas}
         accessibilityLabel="Drag on the image to hide a region"
       >
-        <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />
-        {layout.width > 0 ? (
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            {renderSaved(value, layout)}
-            {renderDraft(draft, mode, layout)}
-          </View>
-        ) : null}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              transform: [
+                { translateX: view.tx },
+                { translateY: view.ty },
+                { scale: view.scale },
+              ],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />
+          {layout.width > 0 ? (
+            <View style={StyleSheet.absoluteFill}>
+              {renderSaved(value, layout)}
+              {renderDraft(draft, mode, layout)}
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <View className="flex-row items-center justify-between mt-2">
@@ -297,6 +389,18 @@ export function OcclusionEditor({
               : `${shapeCount} hidden · tap one to remove it.`}
         </Text>
         <View className="flex-row gap-2">
+          {view.scale > 1.01 ? (
+            <Pressable
+              onPress={() => setView({ scale: 1, tx: 0, ty: 0 })}
+              accessibilityRole="button"
+              accessibilityLabel="Reset zoom"
+              className="px-3 py-1.5 rounded-full bg-lantern-background-secondary active:opacity-80"
+            >
+              <Text className="text-xs font-semibold text-lantern-primary">
+                {view.scale.toFixed(1)}× · Reset
+              </Text>
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={undo}
             disabled={shapeCount === 0}
