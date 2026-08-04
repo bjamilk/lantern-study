@@ -262,6 +262,20 @@ export default function CreateFlashcardModal({
                 <>
                   {previewUri ? (
                     <>
+                      {/* Above the canvas deliberately: the canvas claims drags
+                          so masks can be drawn, which leaves almost nowhere to
+                          begin a scroll, and anything below it becomes hard to
+                          reach on a small screen. */}
+                      <Text className="text-xs font-medium text-lantern-text-secondary mb-1">
+                        Prompt
+                      </Text>
+                      <TextInput
+                        value={front}
+                        onChangeText={setFront}
+                        placeholder="What is hidden here?"
+                        placeholderTextColor="#94a3b8"
+                        className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-3"
+                      />
                       <OcclusionEditor
                         imageUri={previewUri}
                         value={occlusion}
@@ -278,16 +292,6 @@ export default function CreateFlashcardModal({
                           Remove
                         </Button>
                       </View>
-                      <Text className="text-xs font-medium text-lantern-text-secondary mt-3 mb-1">
-                        Prompt
-                      </Text>
-                      <TextInput
-                        value={front}
-                        onChangeText={setFront}
-                        placeholder="What is hidden here?"
-                        placeholderTextColor="#94a3b8"
-                        className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-2"
-                      />
                     </>
                   ) : (
                     <Pressable

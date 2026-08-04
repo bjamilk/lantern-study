@@ -478,7 +478,7 @@ function renderDraft(
 const styles = StyleSheet.create({
   canvas: {
     width: '100%',
-    height: 320,
+    height: 280,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#0f172a10',
