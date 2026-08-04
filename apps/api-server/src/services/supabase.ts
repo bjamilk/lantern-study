@@ -5466,8 +5466,11 @@ export class SupabaseService {
     return cacheService.cached(
       cacheKey,
       async () => {
-        // Completed lean history only needs scores + config for charts; omit
-        // questions/user_answers so all-time pagination stays payload-light.
+        // Completed lean history only needs scores + config for charts, so omit
+        // the questions so all-time pagination stays payload-light. user_answers
+        // IS read, because the dashboard's "Avg / question" and total study time
+        // are derived from per-answer timings — but it is folded into two numbers
+        // below and never sent to the client, so the response stays lean.
         const completedLean = lean && status === "completed";
         const selectCols = lean
           ? `
@@ -5484,7 +5487,7 @@ export class SupabaseService {
           updated_at,
           title,
           ${completedLean ? "" : "questions,"}
-          ${completedLean ? "" : "user_answers,"}
+          user_answers,
           test_results (
             score,
             correct_answers_count,
@@ -5613,6 +5616,22 @@ export class SupabaseService {
           const sessionStatus = session.status ||
             (session.end_time ? "completed" : "in_progress");
 
+          // Fold per-answer timings into a sum and a count. Lean responses drop
+          // user_answers, so without these the dashboards cannot compute
+          // "Avg / question" or total study time and render a dash. Answers with
+          // no recorded time are excluded from both, so the client can divide
+          // them directly. Kept as sum+count rather than a pre-divided average so
+          // the client can weight correctly when it aggregates across tests.
+          let timeSpentSeconds = 0;
+          let questionsWithTime = 0;
+          for (const answer of Object.values(answers) as any[]) {
+            const spent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
+            if (typeof spent === "number" && Number.isFinite(spent)) {
+              timeSpentSeconds += spent;
+              questionsWithTime++;
+            }
+          }
+
           if (
             lean &&
             (sessionStatus === "paused" || sessionStatus === "in_progress")
@@ -5664,6 +5683,8 @@ export class SupabaseService {
               questions.length ||
               0,
             correctAnswersCount: result?.correct_answers_count || 0,
+            timeSpentSeconds,
+            questionsWithTime,
           };
         });
 

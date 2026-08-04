@@ -35,6 +35,14 @@ export interface RawTestResult {
   score: number;
   totalQuestions: number;
   correctAnswersCount: number;
+  /**
+   * Question timing, pre-aggregated by the server. Lean history responses omit
+   * userAnswers, so these carry what the timing stats need. Both are absent on
+   * payloads that do include userAnswers; `resolveQuestionTime` prefers the
+   * per-answer data when it is there and falls back to these otherwise.
+   */
+  timeSpentSeconds?: number;
+  questionsWithTime?: number;
 }
 
 export interface UserQuestionStatEntry {
@@ -344,14 +352,9 @@ function buildGroupPerformance(
     data.correctAnswers += result.correctAnswersCount;
     data.totalQuestions += result.totalQuestions;
 
-    const userAnswers = result.session.userAnswers || {};
-    Object.values(userAnswers).forEach((answer: any) => {
-      const timeSpent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
-      if (timeSpent !== undefined) {
-        data!.totalTime += timeSpent;
-        data!.questionsWithTime++;
-      }
-    });
+    const timing = resolveQuestionTime(result);
+    data.totalTime += timing.seconds;
+    data.questionsWithTime += timing.questions;
 
     groupMap.set(groupId, data);
   }
@@ -522,6 +525,42 @@ export function normalizeUserQuestionStats(raw: unknown): Record<string, UserQue
   return stats;
 }
 
+/**
+ * Total question time on a result, and how many questions it covers.
+ *
+ * Full payloads carry per-answer timings; lean history payloads carry only the
+ * server-computed sum and count. Per-answer data wins when present so a full
+ * payload is never double counted, and the two paths deliberately apply the same
+ * numeric guard so lean and full produce identical numbers for the same test.
+ */
+export function resolveQuestionTime(result: RawTestResult): {
+  seconds: number;
+  questions: number;
+} {
+  const answers = Object.values(result.session?.userAnswers || {});
+
+  if (answers.length > 0) {
+    let seconds = 0;
+    let questions = 0;
+    answers.forEach((answer: any) => {
+      const spent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
+      if (typeof spent === 'number' && Number.isFinite(spent)) {
+        seconds += spent;
+        questions++;
+      }
+    });
+    return { seconds, questions };
+  }
+
+  const seconds = result.timeSpentSeconds;
+  const questions = result.questionsWithTime;
+  if (typeof seconds === 'number' && typeof questions === 'number' && questions > 0) {
+    return { seconds, questions };
+  }
+
+  return { seconds: 0, questions: 0 };
+}
+
 export function normalizeTestResults(raw: unknown): RawTestResult[] {
   if (!Array.isArray(raw)) return [];
 
@@ -549,6 +588,8 @@ export function normalizeTestResults(raw: unknown): RawTestResult[] {
           item.correctAnswersCount ??
           item.correct_answers_count ??
           0,
+        timeSpentSeconds: item.timeSpentSeconds ?? item.time_spent_seconds,
+        questionsWithTime: item.questionsWithTime ?? item.questions_with_time,
       };
     })
     .filter(result => result.session.startTime);
@@ -577,13 +618,9 @@ export function buildDashboardStats(params: {
   filteredResults.forEach(result => {
     totalCorrect += result.correctAnswersCount;
     totalAnswered += result.totalQuestions;
-    Object.values(result.session.userAnswers || {}).forEach((answer: any) => {
-      const timeSpent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
-      if (timeSpent !== undefined) {
-        totalTimeSeconds += timeSpent;
-        questionsWithTime++;
-      }
-    });
+    const timing = resolveQuestionTime(result);
+    totalTimeSeconds += timing.seconds;
+    questionsWithTime += timing.questions;
   });
 
   const topicPerformance = buildTopicPerformance(filteredResults);
