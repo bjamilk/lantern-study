@@ -70,6 +70,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       UIBackgroundModes: ['audio'],
       NSMicrophoneUsageDescription:
         'Lantern Study needs the microphone to record lectures and transcribe them into notes.',
+      // iOS terminates the app immediately — no JS error, no permission prompt —
+      // if the photo library or camera is opened without these strings. Eleven
+      // screens use expo-image-picker (flashcard images, note photos, avatars,
+      // marketplace listings), so every one of them crashed on iOS without them.
+      NSPhotoLibraryUsageDescription:
+        'Lantern Study needs your photo library so you can add images to flashcards, notes and listings.',
+      NSPhotoLibraryAddUsageDescription:
+        'Lantern Study saves images you export back to your photo library.',
+      NSCameraUsageDescription:
+        'Lantern Study needs the camera so you can photograph notes and add pictures to cards.',
     },
   },
 
