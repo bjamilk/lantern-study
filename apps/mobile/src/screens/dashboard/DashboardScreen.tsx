@@ -64,6 +64,7 @@ import { DailyGoalsProgress } from '../../components/DailyGoalsProgress';
 
 import { fetchDailyQuests, recordLoginStreak, purchaseStreakFreeze, type DailyQuest } from '../../services/gamification';
 import { WALLET_COINS } from '@lantern/shared/utils';
+import { isCardDue } from '@lantern/shared/utils/srs';
 import { useToastStore } from '../../stores/toastStore';
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
@@ -156,6 +157,7 @@ export function DashboardScreen({ navigation }: Props) {
   const profileFirstName = useAuthStore(s => s.profileFirstName);
 
   const { decks, fetchDecks } = useFlashcardStore();
+  const flashcardsByDeck = useFlashcardStore(s => s.flashcards);
 
   const { groups, fetchGroups } = useGroupStore();
 
@@ -222,7 +224,19 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-  const dueCount = useMemo(() => decks.reduce((s, d) => s + (d.due_count || 0), 0), [decks]);
+  // Count over every loaded card rather than summing each deck's due_count.
+  // enrichDecksWithStats only fills due_count for decks present in `decks`, so a
+  // card whose deck is missing from that list contributes nothing — which made
+  // two signed-in devices disagree (37 on iOS, 38 on Android) and both differ
+  // from web, which counts a flat list. This matches web exactly.
+  const dueCount = useMemo(
+    () =>
+      Object.values(flashcardsByDeck).reduce(
+        (total, cards) => total + cards.filter(card => isCardDue(card.srsData)).length,
+        0
+      ),
+    [flashcardsByDeck]
+  );
 
   const displayName = useMemo(
     () =>
