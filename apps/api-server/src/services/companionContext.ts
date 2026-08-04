@@ -1,6 +1,7 @@
 /**
  * Build server-trusted AI companion context — ignores client-forged study/privacy fields.
  */
+import { isCardDue } from '@lantern/shared/utils/srs';
 import type { SupabaseService } from './supabase';
 import type { CompanionContext } from './aiService';
 
@@ -70,21 +71,12 @@ export async function buildTrustedCompanionContext(
     .filter((name): name is string => Boolean(name))
     .slice(0, 5);
 
-  const now = Date.now();
-  const dueCardsCount = (flashcardsResult.data || []).filter((card: any) => {
-    const srs = (card.srs_data || card.srsData) as
-      | { nextReviewDate?: string; next_review_date?: string; nextReview?: string; repetitions?: number }
-      | null
-      | undefined;
-    if (!srs) return false;
-    const nextRaw = srs.nextReviewDate || srs.next_review_date || srs.nextReview;
-    if (!nextRaw) {
-      // New cards are not due; only corrupted learning cards without a date count
-      return (srs.repetitions ?? 0) > 0;
-    }
-    const next = Date.parse(nextRaw);
-    return Number.isFinite(next) && next <= now;
-  }).length;
+  // Use the shared predicate rather than a local copy. This number is fed to the
+  // AI companion, so when it drifts from the clients the assistant states a
+  // different due count than the dashboards show.
+  const dueCardsCount = (flashcardsResult.data || []).filter((card: any) =>
+    isCardDue(card.srs_data || card.srsData)
+  ).length;
 
   const weakTopicSet = new Set<string>();
   for (const result of testResults.slice(0, 10)) {

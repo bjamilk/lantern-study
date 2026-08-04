@@ -14,10 +14,12 @@ export function getDeckCardStats(
 ): DeckCardStats {
   const cards = flashcardsByDeck[deckId] || [];
   const newCards = cards.filter(card => !card.srsData?.repetitions).length;
-  // Due = scheduled cards past nextReviewDate (new cards are not due)
-  const dueCards = cards.filter(
-    card => Boolean(card.srsData?.repetitions) && isCardDue(card.srsData)
-  ).length;
+  // Due = whatever the shared predicate says, with no extra conditions. This
+  // previously also required repetitions > 0, which made a card scheduled with a
+  // past nextReviewDate but never reviewed count as due on web and not on mobile
+  // — the source of the dashboard showing e.g. 38 due on web and 37 on mobile.
+  // isCardDue already handles the no-date case by requiring repetitions > 0.
+  const dueCards = cards.filter(card => isCardDue(card.srsData)).length;
   const mastered = cards.filter(card => (card.srsData?.repetitions || 0) >= 5).length;
 
   return {

@@ -24,6 +24,10 @@ export function normalizeSrsData(raw: unknown): SrsData | undefined {
         (typeof data.nextReviewDate === 'string' && data.nextReviewDate) ||
         (typeof data.next_review_date === 'string' && data.next_review_date) ||
         (typeof data.next_review === 'string' && data.next_review) ||
+        // The API server's own copy of this check also accepted `nextReview`;
+        // included here so that server can use this normalizer without changing
+        // which rows it considers scheduled.
+        (typeof data.nextReview === 'string' && data.nextReview) ||
         undefined;
     const intervalRaw = data.interval;
     const repetitionsRaw = data.repetitions;
