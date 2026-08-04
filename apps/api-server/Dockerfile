@@ -31,6 +31,11 @@ RUN npm ci --workspace=@lantern/api-server --workspace=@lantern/shared --include
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/apps/api-server/dist ./apps/api-server/dist
 
+# Ship the Tesseract English model in the image. Without it tesseract.js fetches
+# the ~5MB model from a CDN on first OCR after every cold start, which makes the
+# first request slow and fails outright if egress is blocked.
+COPY apps/api-server/eng.traineddata ./apps/api-server/
+
 USER appuser
 
 EXPOSE 3001

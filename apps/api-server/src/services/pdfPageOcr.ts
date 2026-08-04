@@ -1,4 +1,6 @@
 import { createRequire } from 'module';
+import { existsSync } from 'fs';
+import path from 'path';
 import { pathToFileURL } from 'url';
 import { logger } from '../utils/logger';
 import { MAX_OCR_PDF_PAGES, PDF_OCR_TIMEOUT_MS } from './noteFiles';
@@ -51,6 +53,16 @@ async function loadPdfJs(): Promise<PdfJsModule> {
   return mod;
 }
 
+/**
+ * Directory holding eng.traineddata, which is committed and copied into the
+ * Docker image. Resolved from this module rather than process.cwd(): compiled
+ * output lives at apps/api-server/dist/services and the source at
+ * apps/api-server/src/services, so '../..' is the package root either way. The
+ * container's cwd is /app, so relying on the default lookup would miss the file
+ * and silently fall back to downloading the model.
+ */
+const TESSERACT_LANG_PATH = path.resolve(__dirname, '../..');
+
 async function createTesseractWorker() {
   const { createWorker } = nodeRequire('tesseract.js') as {
     createWorker: (
@@ -62,7 +74,19 @@ async function createTesseractWorker() {
       terminate: () => Promise<void>;
     }>;
   };
-  return createWorker('eng', 1, { logger: () => {} });
+  // langPath makes tesseract.js load the bundled model instead of fetching it
+  // from a CDN on every cold start; it still falls back to the network if the
+  // file is missing, so this is an optimisation rather than a hard dependency.
+  const hasLocalModel = existsSync(path.join(TESSERACT_LANG_PATH, 'eng.traineddata'));
+  if (!hasLocalModel) {
+    logger.warn('eng.traineddata not found; tesseract.js will download the model', {
+      langPath: TESSERACT_LANG_PATH,
+    });
+  }
+  return createWorker('eng', 1, {
+    logger: () => {},
+    ...(hasLocalModel ? { langPath: TESSERACT_LANG_PATH, cachePath: TESSERACT_LANG_PATH } : {}),
+  });
 }
 
 /**
