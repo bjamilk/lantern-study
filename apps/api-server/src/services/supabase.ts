@@ -7091,12 +7091,15 @@ export class SupabaseService {
           .order("upvotes", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        // createGroup writes `admin_ids: [userId]`, so element 0 is the creator.
-        // Later admins are appended, which leaves that first entry intact.
+        // createGroup writes `admin_ids: [userId]`, so element 0 is the creator;
+        // later admins are appended, leaving that entry intact. Filtering on
+        // `admin_ids->>0` directly would be neater, but supabase-js URL-encodes
+        // column names and PostgREST then fails to read it as a JSON path — so
+        // match on containment, which encodes safely, and check position here.
         this.supabase
           .from("groups")
-          .select("id", { count: "exact", head: true })
-          .eq("admin_ids->>0", userId),
+          .select("admin_ids")
+          .contains("admin_ids", [userId]),
       ],
     );
 
@@ -7134,8 +7137,12 @@ export class SupabaseService {
     if (!questionCount.error && typeof questionCount.count === "number") {
       derived.questionsCreated = questionCount.count;
     }
-    if (!groupCount.error && typeof groupCount.count === "number") {
-      derived.groupsCreated = groupCount.count;
+    if (!groupCount.error && Array.isArray(groupCount.data)) {
+      derived.groupsCreated = (groupCount.data as any[]).filter((row) => {
+        const admins = row?.admin_ids;
+        const first = Array.isArray(admins) ? admins[0] : undefined;
+        return String(first ?? "") === userId;
+      }).length;
     }
     if (!topQuestion.error) {
       derived.questionUpvotesMax = Number(topQuestion.data?.upvotes) || 0;

@@ -7,12 +7,27 @@ import { concurrencySnapshots } from '../utils/concurrencyGate';
 const router = Router();
 const startTime = Date.now();
 
+// Short commit SHA of the running build. Render injects RENDER_GIT_COMMIT; the
+// generic names cover other hosts. Without this there is no way to tell whether
+// a deploy has actually landed — /health returned a bare "ok", and Render keeps
+// the previous build serving when a deploy fails, so a healthy response proved
+// nothing about which code was live.
+const COMMIT =
+  (
+    process.env.RENDER_GIT_COMMIT ||
+    process.env.GIT_COMMIT ||
+    process.env.SOURCE_VERSION ||
+    ''
+  ).slice(0, 7) || 'unknown';
+
 router.get('/health', (req: Request, res: Response) => {
   if (isProductionEnv()) {
-    return res.status(200).json({ status: 'ok' });
+    // Deliberately no build details beyond the commit: this endpoint is public.
+    return res.status(200).json({ status: 'ok', commit: COMMIT });
   }
   res.status(200).json({
     status: 'ok',
+    commit: COMMIT,
     timestamp: new Date().toISOString(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
   });

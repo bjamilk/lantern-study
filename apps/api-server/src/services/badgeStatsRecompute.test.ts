@@ -83,7 +83,10 @@ describe('recomputeDerivedUserStats', () => {
       error: null,
     };
     tables.messages = { count: 47, data: { upvotes: 12 }, error: null };
-    tables.groups = { count: 4, error: null };
+    tables.groups = {
+      data: [{ admin_ids: ['u1'] }, { admin_ids: ['u1'] }, { admin_ids: ['u1', 'u9'] }, { admin_ids: ['u1'] }],
+      error: null,
+    };
 
     const stats = await service().recomputeDerivedUserStats('u1');
 
@@ -142,15 +145,25 @@ describe('recomputeDerivedUserStats', () => {
     );
   });
 
-  it('treats the first admin as the group creator', async () => {
+  it('counts only groups the user created, not ones they were made admin of', async () => {
     tables.test_sessions = { data: [], error: null };
-    tables.groups = { count: 4, error: null };
+    tables.groups = {
+      data: [
+        { admin_ids: ['u1'] }, // created by u1
+        { admin_ids: ['u1', 'u2'] }, // created by u1, co-admin added later
+        { admin_ids: ['u2', 'u1'] }, // created by someone else; u1 promoted
+      ],
+      error: null,
+    };
 
     const stats = await service().recomputeDerivedUserStats('u1');
-    expect(stats.groupsCreated).toBe(4);
+    expect(stats.groupsCreated).toBe(2);
+
+    // Containment, not an `admin_ids->>0` filter: supabase-js URL-encodes column
+    // names, which stops PostgREST reading the arrow syntax as a JSON path.
     expect(capturedFilters.filter(f => f.table === 'groups')).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ method: 'eq', args: ['admin_ids->>0', 'u1'] }),
+        expect.objectContaining({ method: 'contains', args: ['admin_ids', ['u1']] }),
       ])
     );
   });
