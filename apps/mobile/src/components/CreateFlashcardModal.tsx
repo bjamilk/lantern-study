@@ -69,6 +69,7 @@ export default function CreateFlashcardModal({
   const [occlusion, setOcclusion] = useState<OcclusionData | null>(null);
   const [occlusionMode, setOcclusionMode] = useState<OcclusionMode>('rectangles');
   const [uploading, setUploading] = useState(false);
+  const [drawing, setDrawing] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -252,7 +253,11 @@ export default function CreateFlashcardModal({
               <TypeTab value={FlashcardType.IMAGE_OCCLUSION} label="Image" />
             </View>
 
-            <ScrollView className="max-h-80" keyboardShouldPersistTaps="handled">
+            <ScrollView
+              className="max-h-80"
+              keyboardShouldPersistTaps="handled"
+              scrollEnabled={!drawing}
+            >
               {isOcclusion ? (
                 <>
                   {previewUri ? (
@@ -263,6 +268,7 @@ export default function CreateFlashcardModal({
                         onChange={setOcclusion}
                         mode={occlusionMode}
                         onModeChange={setOcclusionMode}
+                        onDrawingChange={setDrawing}
                       />
                       <View className="flex-row gap-2 mt-3">
                         <Button size="sm" variant="secondary" onPress={() => void handlePickImage()}>

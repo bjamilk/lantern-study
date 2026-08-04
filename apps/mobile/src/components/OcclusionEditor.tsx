@@ -32,6 +32,8 @@ interface OcclusionEditorProps {
   onChange: (data: OcclusionData) => void;
   mode: OcclusionMode;
   onModeChange: (mode: OcclusionMode) => void;
+  /** Lets the parent stop its ScrollView from competing for the drag. */
+  onDrawingChange?: (drawing: boolean) => void;
 }
 
 const BLUR_OPACITY = 0.45;
@@ -48,6 +50,7 @@ export function OcclusionEditor({
   onChange,
   mode,
   onModeChange,
+  onDrawingChange,
 }: OcclusionEditorProps) {
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [draft, setDraft] = useState<{ start: Point; current: Point; path: Point[] } | null>(null);
@@ -173,7 +176,18 @@ export function OcclusionEditor({
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
+        // The canvas sits inside the dialog's vertical ScrollView. Without the
+        // capture handlers the ScrollView claims a downward drag before the
+        // canvas sees it, and without refusing termination it can take the
+        // gesture away part-way through. Either one ends the drag early and
+        // commits a box far smaller than the one being traced — which is why
+        // masks could not be sized.
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: (e) => {
+          onDrawingChange?.(true);
           measureCanvas();
           const p = toNormalised(e.nativeEvent.pageX, e.nativeEvent.pageY);
           setDraft({ start: p, current: p, path: [p] });
@@ -194,8 +208,16 @@ export function OcclusionEditor({
               : prev
           );
         },
-        onPanResponderRelease: commitDraft,
-        onPanResponderTerminate: commitDraft,
+        onPanResponderRelease: () => {
+          commitDraft();
+          onDrawingChange?.(false);
+        },
+        // A gesture taken away by an ancestor must not leave a half-drawn mask
+        // behind; discard it instead of committing whatever had been traced.
+        onPanResponderTerminate: () => {
+          setDraft(null);
+          onDrawingChange?.(false);
+        },
       }),
     []
   );
