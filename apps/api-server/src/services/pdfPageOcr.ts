@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { logger } from '../utils/logger';
-import { MAX_OCR_PDF_PAGES, PDF_OCR_TIMEOUT_MS } from './noteFiles';
+import { MAX_OCR_PDF_PAGES, PDF_OCR_SCALE, PDF_OCR_TIMEOUT_MS } from './noteFiles';
 
 const nodeRequire = createRequire(__filename);
 
@@ -100,7 +100,7 @@ export async function ocrPdfPagesFromBuffer(
 ): Promise<PdfPageOcrResult> {
   const maxPages = Math.max(1, options?.maxPages ?? MAX_OCR_PDF_PAGES);
   const timeoutMs = options?.timeoutMs ?? PDF_OCR_TIMEOUT_MS;
-  const scale = options?.scale ?? 1.5;
+  const scale = options?.scale ?? PDF_OCR_SCALE;
   const startedAt = Date.now();
 
   const { createCanvas } = nodeRequire('@napi-rs/canvas') as {
@@ -130,13 +130,28 @@ export async function ocrPdfPagesFromBuffer(
 
   const worker = await createTesseractWorker();
   const pageTexts: string[] = [];
+  let pagesRead = 0;
+  let timedOut = false;
 
   try {
     for (let pageNum = 1; pageNum <= pagesToOcr; pageNum++) {
       if (Date.now() - startedAt > timeoutMs) {
-        throw new Error(
-          `OCR timed out after ${Math.round(timeoutMs / 1000)}s (capped at ${maxPages} pages).`
-        );
+        // Keep whatever has already been recognized. Rendering at a legible DPI
+        // costs real time per page, so a long PDF can exhaust the budget partway
+        // — and partial text is far more useful than discarding every page read
+        // so far. Only fail outright when nothing was recovered at all.
+        if (!pageTexts.length) {
+          throw new Error(
+            `OCR timed out after ${Math.round(timeoutMs / 1000)}s before any page could be read.`
+          );
+        }
+        timedOut = true;
+        logger.warn('PDF page OCR timed out; returning partial text', {
+          pagesRead,
+          pagesRequested: pagesToOcr,
+          timeoutMs,
+        });
+        break;
       }
 
       const page = await pdf.getPage(pageNum);
@@ -156,6 +171,7 @@ export async function ocrPdfPagesFromBuffer(
       const {
         data: { text },
       } = await worker.recognize(png);
+      pagesRead += 1;
       const trimmed = (text || '').trim();
       if (trimmed) {
         pageTexts.push(trimmed);
@@ -173,8 +189,10 @@ export async function ocrPdfPagesFromBuffer(
   const text = pageTexts.join('\n\n').trim();
   logger.info('PDF page OCR finished', {
     pageCount,
-    ocrPageCount: pagesToOcr,
-    capped,
+    ocrPageCount: pagesRead,
+    capped: capped || timedOut,
+    timedOut,
+    scale,
     contentLength: text.length,
     durationMs: Date.now() - startedAt,
   });
@@ -182,8 +200,8 @@ export async function ocrPdfPagesFromBuffer(
   return {
     text,
     pageCount,
-    ocrPageCount: pagesToOcr,
-    capped,
+    ocrPageCount: pagesRead,
+    capped: capped || timedOut,
   };
 }
 
