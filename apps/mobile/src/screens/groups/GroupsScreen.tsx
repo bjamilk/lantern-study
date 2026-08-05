@@ -22,6 +22,7 @@ import { featureAccents } from '@lantern/shared/design';
 import type { ChatStackParamList } from '../../navigation/types';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useTheme } from '../../theme';
+import { useLowDataMode } from '../../hooks/useLowDataMode';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
 
@@ -56,6 +57,7 @@ function ChatRow({
   unread,
   isMessageRequest,
   isArchived,
+  lowDataMode,
   nestingLevel = 0,
   hasChildren = false,
   isExpanded = false,
@@ -69,6 +71,7 @@ function ChatRow({
   unread?: number;
   isMessageRequest?: boolean;
   isArchived?: boolean;
+  lowDataMode?: boolean;
   nestingLevel?: number;
   hasChildren?: boolean;
   isExpanded?: boolean;
@@ -105,7 +108,7 @@ function ChatRow({
         {/* Group avatars live in the private `group-avatars` bucket, profile
             avatars in `profile-avatars`; ResolvedAvatar re-signs both and falls
             back to initials when there is no uploaded image. */}
-        <ResolvedAvatar name={name} uri={resolveAvatarSrc(avatarUrl)} size={44} />
+        <ResolvedAvatar name={name} uri={resolveAvatarSrc(avatarUrl, lowDataMode)} size={44} />
         {unread && unread > 0 ? (
           <View className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-lantern-error items-center justify-center">
             <Text className="text-[10px] font-bold text-white">{unread > 99 ? '99+' : unread}</Text>
@@ -141,6 +144,7 @@ function ChatRow({
 export function GroupsScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(16);
   const { colors } = useTheme();
+  const { lowDataMode } = useLowDataMode();
   const user = useAuthStore(s => s.user);
   const { groups, dmThreads, isLoading, fetchGroups, fetchDmThreads, getTopLevelGroups, fetchGroupMembers } = useGroupStore();
   const { handleSelectGroup, handleInitiateDm } = useGroupHandlers();
@@ -438,6 +442,7 @@ export function GroupsScreen({ navigation }: Props) {
                   unread={item.thread.unreadCount}
                   isMessageRequest={isMessageRequest}
                   isArchived={item.thread.isArchived}
+                  lowDataMode={lowDataMode}
                   onPress={() => handlePress(item)}
                 />
               );
@@ -451,6 +456,7 @@ export function GroupsScreen({ navigation }: Props) {
                 time={formatRelativeTime(g.lastMessage?.createdAt || g.updatedAt)}
                 unread={g.unreadCount}
                 isArchived={g.isArchived}
+                lowDataMode={lowDataMode}
                 nestingLevel={item.nestingLevel}
                 hasChildren={item.hasChildren}
                 isExpanded={!!expandedParentGroups[g.id]}

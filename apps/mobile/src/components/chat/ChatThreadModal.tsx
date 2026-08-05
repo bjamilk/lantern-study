@@ -285,6 +285,7 @@ export function ChatThreadModal({
               data={visibleMessages}
               keyExtractor={item => item.id}
               className="flex-1"
+              style={{ backgroundColor: colors.chatBackground }}
               contentContainerClassName="px-4 py-4 flex-grow"
               onContentSizeChange={() => {
                 if (visibleMessages.length > 0) {

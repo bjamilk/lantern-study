@@ -21,11 +21,14 @@ type OfferAction = 'accept' | 'decline' | 'counter' | 'withdraw';
  */
 export function DmOffersPanel({
   listingId,
+  buyerId,
   currentUserId,
   isSeller,
   onPostToChat,
 }: {
   listingId: string;
+  /** Buyer on this inquiry — offers from other bidders must not appear here. */
+  buyerId?: string | null;
   currentUserId: string;
   isSeller: boolean;
   onPostToChat: (text: string) => void | Promise<void>;
@@ -70,7 +73,11 @@ export function DmOffersPanel({
     if (!currentUserId || busyOfferId) return;
     if (action === 'counter') {
       setCounterOfferId(offer.id);
-      setCounterAmount(String(Math.round(offer.amount * 0.9)));
+      // Only a buyer negotiates downward. Seeding a seller's counter at 90%
+      // pre-loaded them below the bid they were countering.
+      setCounterAmount(
+        String(isSeller ? Math.round(offer.amount) : Math.round(offer.amount * 0.9))
+      );
       return;
     }
     setBusyOfferId(offer.id);
@@ -133,7 +140,11 @@ export function DmOffersPanel({
     }
   };
 
-  const listingOffers = offers.filter((o) => o.listing_id === listingId);
+  // Scope to this conversation. A listing can have several bidders, and without
+  // the buyer filter each one saw the others' amounts in their own DM.
+  const listingOffers = offers.filter(
+    (o) => o.listing_id === listingId && (!buyerId || o.buyer_id === buyerId)
+  );
   const hasPending = listingOffers.some((o) => o.status === 'pending');
 
   if (loading && listingOffers.length === 0) {

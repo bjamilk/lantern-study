@@ -1709,6 +1709,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       await api.archiveDmThread(threadId, userId);
     } catch (error) {
       console.warn('[GroupStore] Failed to archive DM thread:', error);
+      // Rethrow so the screen can surface it and refetch; swallowing left
+      // the optimistic state in place with no feedback.
+      throw error;
     }
   },
 
@@ -1720,6 +1723,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       await api.unarchiveDmThread(threadId, userId);
     } catch (error) {
       console.warn('[GroupStore] Failed to unarchive DM thread:', error);
+      // Rethrow so the screen can surface it and refetch; swallowing left
+      // the optimistic state in place with no feedback.
+      throw error;
     }
   },
 
@@ -1736,6 +1742,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       await api.deleteDmThread(threadId, userId);
     } catch (error) {
       console.warn('[GroupStore] Failed to delete DM thread:', error);
+      // Rethrow so the screen can surface it and refetch; swallowing left
+      // the optimistic state in place with no feedback.
+      throw error;
     }
   },
 

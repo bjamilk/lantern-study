@@ -894,7 +894,7 @@ export default function TestTakingScreen() {
               s(colors).timerBadge,
               timeRemaining < 60 && s(colors).timerWarning
             ]}>
-              <Ionicons name="time" size={14} color={timeRemaining < 60 ? colors.error : '#ffffff'} />
+              <Ionicons name="time" size={14} color={timeRemaining < 60 ? colors.error : colors.text} />
               <Text style={[
                 s(colors).timerText,
                 timeRemaining < 60 && s(colors).timerTextWarning
@@ -1630,7 +1630,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   labelNumberText: {
     fontSize: 14,
     fontWeight: '600',
-    color: c.text,
+    // sits on a hardcoded red chip
+    color: '#ffffff',
   },
   labelPicker: {
     flex: 1,

@@ -822,6 +822,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       {inquiry?.listing && activeTab === 'offers' ? (
         <DmOffersPanel
           listingId={inquiry.listing.id || inquiry.listing_id || ''}
+          buyerId={inquiry.buyer_id}
           currentUserId={user?.id || ''}
           isSeller={inquiry.seller_id === user?.id}
           onPostToChat={async (text) => {

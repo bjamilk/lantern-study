@@ -637,7 +637,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
       setAiThinking(true);
       try {
         const { answer } = await aiAskTutor(question);
-        if (answer) {
+        if (!answer) {
+          // A 200 with an empty answer (quota exhausted, provider returned
+          // nothing) used to swallow the question along with the composer text.
+          if (!overrideText) setText(trimmed);
+          Alert.alert('No answer', 'The AI Tutor did not return an answer. Please try again.');
+        } else {
           isNearBottomRef.current = true;
           setReplyTo(null);
           await sendMessage(groupId, `🤖 AI Tutor:\n${answer}`, user.id, undefined, {

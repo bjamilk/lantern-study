@@ -1349,12 +1349,20 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
 
       const apiOffers = await api.fetchListingOffers(listingId);
-      const offers: MarketplaceOffer[] = apiOffers.map((o) => ({
+      // seller_id, proposed_by and parent_offer_id are what canRespondToOffer /
+      // canWithdrawOffer / getOfferProposedBy key off. Dropping them made every
+      // offer look buyer-proposed with no responder, so no action button rendered.
+      const offers: MarketplaceOffer[] = apiOffers.map((o: any) => ({
         id: o.id,
         listing_id: o.listing_id,
         buyer_id: o.buyer_id,
+        seller_id: o.seller_id,
         amount: o.amount,
         status: o.status as MarketplaceOffer['status'],
+        proposed_by: o.proposed_by,
+        parent_offer_id: o.parent_offer_id,
+        counter_amount: o.counter_amount,
+        message: o.message,
         created_at: o.created_at,
       }));
       set({ offers, isLoading: false });

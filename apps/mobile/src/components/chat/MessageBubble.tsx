@@ -478,8 +478,8 @@ export function MessageBubble({
               onPress={() => message.replyTo?.id && onScrollToMessage?.(message.replyTo.id)}
               className="mb-2 rounded-lg px-2.5 py-1.5 border-l-2"
               style={{
-                backgroundColor: isOwn && !isQuestion ? 'rgba(255,255,255,0.15)' : colors.backgroundSecondary,
-                borderLeftColor: isOwn && !isQuestion ? '#fff' : colors.primary,
+                backgroundColor: isOwn && !isQuestion ? `${colors.chatBubbleMeta}26` : colors.backgroundSecondary,
+                borderLeftColor: colors.primary,
               }}
             >
               <Text
@@ -492,7 +492,7 @@ export function MessageBubble({
               <Text
                 className="text-xs"
                 numberOfLines={1}
-                style={{ color: isOwn && !isQuestion ? '#c7d2fe' : colors.textSecondary }}
+                style={{ color: isOwn && !isQuestion ? colors.chatBubbleMeta : colors.textSecondary }}
               >
                 {message.replyTo.isRemoved
                   ? 'Message removed'
@@ -601,7 +601,7 @@ export function MessageBubble({
                     <MentionText
                       text={textWithoutImage}
                       color={isQuestion ? colors.text : colors.chatBubbleText}
-                      mentionColor={colors.primary}
+                      mentionColor={isOwn && !isQuestion ? colors.chatBubbleText : colors.primary}
                     />
                   ) : null}
                 </View>
@@ -616,7 +616,7 @@ export function MessageBubble({
                 color: isOwn
                   ? isQuestion
                     ? colors.textTertiary
-                    : '#c7d2fe'
+                    : colors.chatBubbleMeta
                   : colors.textTertiary,
               }}
             >
@@ -625,7 +625,7 @@ export function MessageBubble({
             {message.editedAt ? (
               <Text
                 className="text-[10px] ml-1"
-                style={{ color: isOwn && !isQuestion ? '#c7d2fe' : colors.textTertiary }}
+                style={{ color: isOwn && !isQuestion ? colors.chatBubbleMeta : colors.textTertiary }}
               >
                 edited
               </Text>
@@ -636,7 +636,7 @@ export function MessageBubble({
                 seenByCount={message.seenByCount}
                 seenByTotal={message.seenByTotal}
                 isGroupChat
-                onPrimary={!isQuestion}
+                onPrimary={false}
               />
             ) : null}
           </View>
