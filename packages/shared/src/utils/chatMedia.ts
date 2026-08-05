@@ -2,6 +2,7 @@ import type { Message, MessageReplyPreview, DirectMessage } from '../types';
 import { MessageType } from '../types';
 
 const AUDIO_MARKDOWN_RE = /\[audio\]\((https?:\/\/[^)\s]+)\)/i;
+const IMAGE_MARKDOWN_RE = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/i;
 const MENTION_RE = /@([a-zA-Z0-9_]{2,32})\b/g;
 export const CHAT_MESSAGE_MUTATION_WINDOW_MS = 30 * 60 * 1000;
 
@@ -32,6 +33,30 @@ export function isChatAudioMessage(text?: string | null): boolean {
 
 export function buildChatAudioMarkdown(url: string): string {
   return `[audio](${url})`;
+}
+
+export function parseChatImageUrl(text?: string | null): string | null {
+  if (!text) return null;
+  const match = text.trim().match(IMAGE_MARKDOWN_RE);
+  return match?.[1] || null;
+}
+
+export function isChatImageMessage(text?: string | null): boolean {
+  return !!parseChatImageUrl(text);
+}
+
+/**
+ * One-line label for a message shown outside its own bubble — reply quotes,
+ * composer previews, conversation lists. Media is stored as markdown in the
+ * message text, so echoing the text raw shows the reader a bare signed URL
+ * instead of "Voice note". Only the bubble itself should render the media.
+ */
+export function chatMessagePreview(text?: string | null, fallback = 'Message'): string {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return fallback;
+  if (isChatAudioMessage(trimmed)) return 'Voice note';
+  if (isChatImageMessage(trimmed)) return 'Photo';
+  return trimmed;
 }
 
 export function isChatMessageMutationWindowOpen(

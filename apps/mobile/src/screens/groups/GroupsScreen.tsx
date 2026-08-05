@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
+import { chatMessagePreview } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type Group } from '../../stores/groupStore';
 import { Avatar, Button, ScreenHeader } from '../../components/ui';
@@ -346,7 +347,7 @@ export function GroupsScreen({ navigation }: Props) {
               return (
                 <ChatRow
                   name={item.name}
-                  preview={item.thread.lastMessage}
+                  preview={chatMessagePreview(item.thread.lastMessage, "")}
                   time={formatRelativeTime(
                     typeof item.thread.lastMessageTimestamp === 'string'
                       ? item.thread.lastMessageTimestamp
@@ -363,7 +364,7 @@ export function GroupsScreen({ navigation }: Props) {
             return (
               <ChatRow
                 name={g.name}
-                preview={g.lastMessage?.text}
+                preview={chatMessagePreview(g.lastMessage?.text, "")}
                 time={formatRelativeTime(g.lastMessage?.createdAt || g.updatedAt)}
                 unread={g.unreadCount}
                 nestingLevel={item.nestingLevel}

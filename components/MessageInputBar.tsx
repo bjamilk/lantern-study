@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { featureAccents } from '@lantern/shared/design';
-import { buildChatAudioMarkdown } from '@lantern/shared/utils';
+import { buildChatAudioMarkdown, chatMessagePreview } from '@lantern/shared/utils';
 import type { MessageReplyPreview } from '../types';
 import { uploadChatAudio } from '../services/supabase';
 
@@ -168,7 +168,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   };
 
   const replyPreviewText = replyTo
-    ? (replyTo.questionStem || replyTo.text || 'Message').slice(0, 80)
+    ? (replyTo.questionStem || chatMessagePreview(replyTo.text)).slice(0, 80)
     : '';
 
   const resolveMentionedUserIds = (text: string): string[] => {

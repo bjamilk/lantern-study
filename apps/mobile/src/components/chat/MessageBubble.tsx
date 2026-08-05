@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useGroupStore, type Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import {
+  chatMessagePreview,
   normalizeStorageUrl,
   parseChatAudioUrl,
   resolveGroupChatAvatarUrl,
@@ -497,7 +498,10 @@ export function MessageBubble({
               >
                 {message.replyTo.isRemoved
                   ? 'Message removed'
-                  : (message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+                  : (message.replyTo.questionStem
+                      ? message.replyTo.questionStem
+                      : chatMessagePreview(message.replyTo.text, 'Original message')
+                    ).slice(0, 100)}
               </Text>
             </Pressable>
           ) : null}
