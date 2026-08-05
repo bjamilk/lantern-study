@@ -1405,7 +1405,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.text,
   },
   optionTextSelected: {
-    color: c.text,
+    color: c.textInverse,
     fontWeight: '500',
   },
   
