@@ -16,7 +16,7 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type TestQuestion } from '../../stores/testStore';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
-import { useTheme } from '../../theme';
+import { useTheme, type ThemeColors } from '../../theme';
 import AIExplainModal from '../../components/AIExplainModal';
 import AIUsageBadge from '../../components/AIUsageBadge';
 
@@ -33,6 +33,8 @@ export default function TestResultsScreen() {
   const navigation = useNavigation<any>();
   const { attemptId } = route.params;
   const { colors } = useTheme();
+  // Styles were hardcoded dark, so results stayed dark in light mode.
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { attempts, startQuestionSet } = useTestStore();
 
@@ -346,10 +348,10 @@ export default function TestResultsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
   },
   header: {
     flexDirection: 'row',
@@ -357,9 +359,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: c.border,
   },
   backButton: {
     padding: 4,
@@ -367,7 +369,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
   },
   content: {
     flex: 1,
@@ -377,7 +379,7 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   resultCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
@@ -395,7 +397,7 @@ const styles = StyleSheet.create({
   testName: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -408,7 +410,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -416,11 +418,11 @@ const styles = StyleSheet.create({
   scorePercentage: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: c.text,
   },
   scoreLabel: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   dateText: {
     fontSize: 14,
@@ -435,7 +437,7 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: (SCREEN_WIDTH - 52) / 2,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
@@ -443,12 +445,12 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: c.text,
     marginTop: 8,
   },
   statLabel: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: c.textSecondary,
     marginTop: 4,
   },
   progressSection: {
@@ -457,18 +459,18 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
     marginBottom: 16,
   },
   progressBarContainer: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
   },
   progressBar: {
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     flexDirection: 'row',
     overflow: 'hidden',
     marginBottom: 12,
@@ -498,7 +500,7 @@ const styles = StyleSheet.create({
   },
   progressLabelText: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   reviewSection: {
     marginBottom: 24,
@@ -506,7 +508,7 @@ const styles = StyleSheet.create({
   questionReview: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -525,16 +527,16 @@ const styles = StyleSheet.create({
   questionNumber: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
     marginBottom: 2,
   },
   questionAnswer: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   questionStem: {
     fontSize: 13,
-    color: '#e2e8f0',
+    color: c.text,
     marginBottom: 4,
   },
   questionAnswerWrong: {
@@ -547,7 +549,7 @@ const styles = StyleSheet.create({
   },
   questionExplanation: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: c.textSecondary,
     marginTop: 4,
     fontStyle: 'italic',
   },
@@ -576,9 +578,9 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 20,
     paddingBottom: 32,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: c.border,
   },
   practiceFailedButton: {
     width: '100%',
@@ -630,7 +632,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#9ca3af',
+    color: c.textSecondary,
     marginBottom: 16,
   },
   errorLink: {

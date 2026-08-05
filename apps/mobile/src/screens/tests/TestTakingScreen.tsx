@@ -61,12 +61,12 @@ const MCQSingleComponent = ({
   onAnswer: (answer: string) => void;
   colors: ThemeColors;
 }) => (
-  <View style={styles.optionsContainer}>
+  <View style={s(colors).optionsContainer}>
     {question.options?.map((option, index) => (
       <TouchableOpacity
         key={index}
         style={[
-          styles.optionButton,
+          s(colors).optionButton,
           { backgroundColor: colors.inputBackground, borderColor: colors.border },
           selectedAnswer === option && { backgroundColor: colors.primary, borderColor: colors.primary },
         ]}
@@ -74,16 +74,16 @@ const MCQSingleComponent = ({
         activeOpacity={0.7}
       >
         <View style={[
-          styles.optionRadio,
+          s(colors).optionRadio,
           { borderColor: colors.border },
-          selectedAnswer === option && styles.optionRadioSelected
+          selectedAnswer === option && s(colors).optionRadioSelected
         ]}>
-          {selectedAnswer === option && <View style={styles.optionRadioInner} />}
+          {selectedAnswer === option && <View style={s(colors).optionRadioInner} />}
         </View>
         <Text style={[
-          styles.optionText,
+          s(colors).optionText,
           { color: colors.text },
-          selectedAnswer === option && styles.optionTextSelected
+          selectedAnswer === option && s(colors).optionTextSelected
         ]}>
           {option}
         </Text>
@@ -114,15 +114,15 @@ const MCQMultipleComponent = ({
   };
 
   return (
-    <View style={styles.optionsContainer}>
-      <Text style={[styles.multiSelectHint, { color: colors.textSecondary }]}>Select all that apply</Text>
+    <View style={s(colors).optionsContainer}>
+      <Text style={[s(colors).multiSelectHint, { color: colors.textSecondary }]}>Select all that apply</Text>
       {question.options?.map((option, index) => {
         const isSelected = selectedAnswers?.includes(option);
         return (
           <TouchableOpacity
             key={index}
             style={[
-              styles.optionButton,
+              s(colors).optionButton,
               { backgroundColor: colors.inputBackground, borderColor: colors.border },
               isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
@@ -130,16 +130,16 @@ const MCQMultipleComponent = ({
             activeOpacity={0.7}
           >
             <View style={[
-              styles.optionCheckbox,
+              s(colors).optionCheckbox,
               { borderColor: colors.border },
-              isSelected && styles.optionCheckboxSelected
+              isSelected && s(colors).optionCheckboxSelected
             ]}>
               {isSelected && <Ionicons name="checkmark" size={16} color="#ffffff" />}
             </View>
             <Text style={[
-              styles.optionText,
+              s(colors).optionText,
               { color: colors.text },
-              isSelected && styles.optionTextSelected
+              isSelected && s(colors).optionTextSelected
             ]}>
               {option}
             </Text>
@@ -161,15 +161,15 @@ const TrueFalseComponent = ({
   onAnswer: (answer: string) => void;
   colors: ThemeColors;
 }) => (
-  <View style={styles.trueFalseContainer}>
+  <View style={s(colors).trueFalseContainer}>
     <TouchableOpacity
       style={[
-        styles.trueFalseButton,
+        s(colors).trueFalseButton,
         {
           backgroundColor: selectedAnswer === 'True' ? colors.success : colors.successBackground,
           borderColor: colors.success,
         },
-        selectedAnswer === 'True' && styles.trueFalseSelected,
+        selectedAnswer === 'True' && s(colors).trueFalseSelected,
       ]}
       onPress={() => onAnswer('True')}
     >
@@ -179,7 +179,7 @@ const TrueFalseComponent = ({
         color={selectedAnswer === 'True' ? colors.textInverse : colors.success} 
       />
       <Text style={[
-        styles.trueFalseText,
+        s(colors).trueFalseText,
         { color: selectedAnswer === 'True' ? colors.textInverse : colors.text },
       ]}>
         True
@@ -188,12 +188,12 @@ const TrueFalseComponent = ({
     
     <TouchableOpacity
       style={[
-        styles.trueFalseButton,
+        s(colors).trueFalseButton,
         {
           backgroundColor: selectedAnswer === 'False' ? colors.error : colors.errorBackground,
           borderColor: colors.error,
         },
-        selectedAnswer === 'False' && styles.trueFalseSelected,
+        selectedAnswer === 'False' && s(colors).trueFalseSelected,
       ]}
       onPress={() => onAnswer('False')}
     >
@@ -203,7 +203,7 @@ const TrueFalseComponent = ({
         color={selectedAnswer === 'False' ? colors.textInverse : colors.error} 
       />
       <Text style={[
-        styles.trueFalseText,
+        s(colors).trueFalseText,
         { color: selectedAnswer === 'False' ? colors.textInverse : colors.text },
       ]}>
         False
@@ -216,16 +216,18 @@ const TrueFalseComponent = ({
 const FillBlankComponent = ({ 
   question, 
   answer, 
-  onAnswer 
+  onAnswer, 
+  colors,
 }: { 
   question: TestQuestion; 
   answer?: string; 
   onAnswer: (answer: string) => void;
+  colors: ThemeColors;
 }) => (
-  <View style={styles.fillBlankContainer}>
-    <Text style={styles.fillBlankHint}>Type your answer below:</Text>
+  <View style={s(colors).fillBlankContainer}>
+    <Text style={s(colors).fillBlankHint}>Type your answer below:</Text>
     <TextInput
-      style={styles.fillBlankInput}
+      style={s(colors).fillBlankInput}
       value={answer || ''}
       onChangeText={onAnswer}
       placeholder="Enter your answer..."
@@ -240,11 +242,13 @@ const FillBlankComponent = ({
 const MatchingComponent = ({ 
   question, 
   matches, 
-  onAnswer 
+  onAnswer, 
+  colors,
 }: { 
   question: TestQuestion; 
   matches?: Record<string, string>; 
   onAnswer: (matches: Record<string, string>) => void;
+  colors: ThemeColors;
 }) => {
   const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
   const pairs = question.matchingPairs || [];
@@ -266,30 +270,30 @@ const MatchingComponent = ({
   const isRightUsed = (right: string) => Object.values(matches || {}).includes(right);
 
   return (
-    <View style={styles.matchingContainer}>
-      <Text style={styles.matchingHint}>
+    <View style={s(colors).matchingContainer}>
+      <Text style={s(colors).matchingHint}>
         {selectedLeft ? `Now select a match for "${selectedLeft}"` : 'Tap an item on the left, then its match on the right'}
       </Text>
       
-      <View style={styles.matchingColumns}>
+      <View style={s(colors).matchingColumns}>
         {/* Left Column */}
-        <View style={styles.matchingColumn}>
-          <Text style={styles.matchingColumnTitle}>Items</Text>
+        <View style={s(colors).matchingColumn}>
+          <Text style={s(colors).matchingColumnTitle}>Items</Text>
           {pairs.map((pair) => {
             const matched = getMatchedRight(pair.left);
             return (
               <TouchableOpacity
                 key={pair.id}
                 style={[
-                  styles.matchingItem,
-                  selectedLeft === pair.left && styles.matchingItemSelected,
-                  matched && styles.matchingItemMatched,
+                  s(colors).matchingItem,
+                  selectedLeft === pair.left && s(colors).matchingItemSelected,
+                  matched && s(colors).matchingItemMatched,
                 ]}
                 onPress={() => handleLeftSelect(pair.left)}
               >
-                <Text style={styles.matchingItemText}>{pair.left}</Text>
+                <Text style={s(colors).matchingItemText}>{pair.left}</Text>
                 {matched && (
-                  <View style={styles.matchBadge}>
+                  <View style={s(colors).matchBadge}>
                     <Ionicons name="link" size={14} color="#10b981" />
                   </View>
                 )}
@@ -299,24 +303,24 @@ const MatchingComponent = ({
         </View>
         
         {/* Right Column */}
-        <View style={styles.matchingColumn}>
-          <Text style={styles.matchingColumnTitle}>Matches</Text>
+        <View style={s(colors).matchingColumn}>
+          <Text style={s(colors).matchingColumnTitle}>Matches</Text>
           {rightOptions.map((right, index) => {
             const isUsed = isRightUsed(right);
             return (
               <TouchableOpacity
                 key={index}
                 style={[
-                  styles.matchingItem,
-                  isUsed && styles.matchingItemUsed,
-                  !selectedLeft && styles.matchingItemDisabled,
+                  s(colors).matchingItem,
+                  isUsed && s(colors).matchingItemUsed,
+                  !selectedLeft && s(colors).matchingItemDisabled,
                 ]}
                 onPress={() => handleRightSelect(right)}
                 disabled={!selectedLeft}
               >
                 <Text style={[
-                  styles.matchingItemText,
-                  isUsed && styles.matchingItemTextUsed,
+                  s(colors).matchingItemText,
+                  isUsed && s(colors).matchingItemTextUsed,
                 ]}>
                   {right}
                 </Text>
@@ -329,11 +333,11 @@ const MatchingComponent = ({
       {/* Clear matches button */}
       {matches && Object.keys(matches).length > 0 && (
         <TouchableOpacity 
-          style={styles.clearMatchesButton}
+          style={s(colors).clearMatchesButton}
           onPress={() => onAnswer({})}
         >
           <Ionicons name="refresh" size={16} color="#f59e0b" />
-          <Text style={styles.clearMatchesText}>Clear all matches</Text>
+          <Text style={s(colors).clearMatchesText}>Clear all matches</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -345,10 +349,12 @@ const DiagramLabelingComponent = ({
   question,
   labels,
   onAnswer,
+  colors,
 }: {
   question: TestQuestion;
   labels?: Record<string, string>;
   onAnswer: (labels: Record<string, string>) => void;
+  colors: ThemeColors;
 }) => {
   const shuffledOptions = useMemo(
     () => shuffleArray(question.diagramLabels || []),
@@ -371,12 +377,12 @@ const DiagramLabelingComponent = ({
   };
 
   return (
-    <View style={styles.diagramContainer}>
-      <View style={[styles.diagramImageWrapper, imageUri ? { aspectRatio } : null]}>
+    <View style={s(colors).diagramContainer}>
+      <View style={[s(colors).diagramImageWrapper, imageUri ? { aspectRatio } : null]}>
         {imageUri ? (
           <Image
             source={{ uri: imageUri }}
-            style={styles.diagramImage}
+            style={s(colors).diagramImage}
             resizeMode="contain"
             onLoad={e => {
               const { width, height } = e.nativeEvent.source;
@@ -384,9 +390,9 @@ const DiagramLabelingComponent = ({
             }}
           />
         ) : (
-          <View style={styles.diagramImagePlaceholder}>
+          <View style={s(colors).diagramImagePlaceholder}>
             <Ionicons name="image-outline" size={48} color="#64748b" />
-            <Text style={styles.diagramPlaceholderText}>
+            <Text style={s(colors).diagramPlaceholderText}>
               {imagePending ? 'Loading diagram…' : 'Diagram will appear here'}
             </Text>
           </View>
@@ -396,7 +402,7 @@ const DiagramLabelingComponent = ({
               <View
                 key={label.id}
                 style={[
-                  styles.diagramMarker,
+                  s(colors).diagramMarker,
                   {
                     left: `${typeof label.x === 'number' ? label.x : 50}%`,
                     top: `${typeof label.y === 'number' ? label.y : 50}%`,
@@ -404,31 +410,31 @@ const DiagramLabelingComponent = ({
                 ]}
                 pointerEvents="none"
               >
-                <Text style={styles.diagramMarkerText}>{index + 1}</Text>
+                <Text style={s(colors).diagramMarkerText}>{index + 1}</Text>
               </View>
             ))
           : null}
       </View>
 
-      <Text style={styles.diagramHint}>Match each numbered point to the correct label:</Text>
+      <Text style={s(colors).diagramHint}>Match each numbered point to the correct label:</Text>
 
-      <View style={styles.labelInputsContainer}>
+      <View style={s(colors).labelInputsContainer}>
         {question.diagramLabels?.map((label, index) => (
-          <View key={label.id} style={styles.labelInputRow}>
-            <View style={styles.labelNumber}>
-              <Text style={styles.labelNumberText}>{index + 1}</Text>
+          <View key={label.id} style={s(colors).labelInputRow}>
+            <View style={s(colors).labelNumber}>
+              <Text style={s(colors).labelNumberText}>{index + 1}</Text>
             </View>
             <TouchableOpacity
               style={[
-                styles.labelPicker,
-                labels?.[label.id] ? styles.labelPickerSelected : null,
+                s(colors).labelPicker,
+                labels?.[label.id] ? s(colors).labelPickerSelected : null,
               ]}
               onPress={() => setPickerLabelId(label.id)}
             >
               <Text
                 style={[
-                  styles.labelPickerText,
-                  !labels?.[label.id] ? styles.labelPickerPlaceholder : null,
+                  s(colors).labelPickerText,
+                  !labels?.[label.id] ? s(colors).labelPickerPlaceholder : null,
                 ]}
                 numberOfLines={1}
               >
@@ -441,22 +447,22 @@ const DiagramLabelingComponent = ({
       </View>
 
       <Modal visible={pickerLabelId !== null} transparent animationType="fade">
-        <Pressable style={styles.pickerOverlay} onPress={() => setPickerLabelId(null)}>
-          <Pressable style={styles.pickerSheet} onPress={e => e.stopPropagation?.()}>
-            <Text style={styles.pickerTitle}>Select label</Text>
+        <Pressable style={s(colors).pickerOverlay} onPress={() => setPickerLabelId(null)}>
+          <Pressable style={s(colors).pickerSheet} onPress={e => e.stopPropagation?.()}>
+            <Text style={s(colors).pickerTitle}>Select label</Text>
             <ScrollView
-              style={styles.pickerScroll}
-              contentContainerStyle={styles.pickerScrollContent}
+              style={s(colors).pickerScroll}
+              contentContainerStyle={s(colors).pickerScrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
               {shuffledOptions.map((opt: DiagramLabel) => (
                 <TouchableOpacity
                   key={opt.id}
-                  style={styles.pickerOption}
+                  style={s(colors).pickerOption}
                   onPress={() => pickerLabelId && handleSelect(pickerLabelId, opt.id)}
                 >
-                  <Text style={styles.pickerOptionText}>
+                  <Text style={s(colors).pickerOptionText}>
                     {opt.label || (opt as { text?: string }).text}
                   </Text>
                 </TouchableOpacity>
@@ -473,21 +479,23 @@ const DiagramLabelingComponent = ({
 const OpenEndedComponent = ({ 
   question, 
   answer, 
-  onAnswer 
+  onAnswer, 
+  colors,
 }: { 
   question: TestQuestion; 
   answer?: string; 
   onAnswer: (answer: string) => void;
+  colors: ThemeColors;
 }) => {
   const wordCount = answer ? answer.trim().split(/\s+/).filter(w => w).length : 0;
 
   return (
-    <View style={styles.openEndedContainer}>
-      <Text style={styles.openEndedHint}>
+    <View style={s(colors).openEndedContainer}>
+      <Text style={s(colors).openEndedHint}>
         Write your answer in detail. Include relevant examples where applicable.
       </Text>
       <TextInput
-        style={styles.openEndedInput}
+        style={s(colors).openEndedInput}
         value={answer || ''}
         onChangeText={onAnswer}
         placeholder="Type your answer here..."
@@ -495,10 +503,10 @@ const OpenEndedComponent = ({
         multiline
         textAlignVertical="top"
       />
-      <View style={styles.openEndedFooter}>
-        <Text style={styles.wordCount}>{wordCount} words</Text>
+      <View style={s(colors).openEndedFooter}>
+        <Text style={s(colors).wordCount}>{wordCount} words</Text>
         {question.keywords && (
-          <Text style={styles.keywordsHint}>
+          <Text style={s(colors).keywordsHint}>
             Hint: Consider these concepts: {question.keywords.slice(0, 2).join(', ')}...
           </Text>
         )}
@@ -804,6 +812,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             answer={answer as string}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -813,6 +822,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             matches={answer as Record<string, string>}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -822,6 +832,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             labels={answer as Record<string, string>}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -831,12 +842,13 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             answer={answer as string}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
       default:
         return (
-          <Text style={styles.errorText}>Unknown question type</Text>
+          <Text style={s(colors).errorText}>Unknown question type</Text>
         );
     }
   };
@@ -846,12 +858,12 @@ export default function TestTakingScreen() {
       ? 'Submitting your answers…'
       : 'This test session has ended.';
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.errorContainer}>
-          <Text style={[styles.errorText, { color: colors.textSecondary }]}>{endedCopy}</Text>
+      <SafeAreaView style={[s(colors).container, { backgroundColor: colors.background }]}>
+        <View style={s(colors).errorContainer}>
+          <Text style={[s(colors).errorText, { color: colors.textSecondary }]}>{endedCopy}</Text>
           {!isSubmitting && (
             <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Text style={[styles.errorLink, { color: colors.primary }]}>Go Back</Text>
+              <Text style={[s(colors).errorLink, { color: colors.primary }]}>Go Back</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -860,32 +872,32 @@ export default function TestTakingScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[s(colors).container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }, isStudyMode && styles.headerStudy]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.exitButton}>
+      <View style={[s(colors).header, { backgroundColor: colors.card, borderBottomColor: colors.border }, isStudyMode && s(colors).headerStudy]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={s(colors).exitButton}>
           <Ionicons name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         
-        <View style={styles.headerCenter}>
-          <View style={styles.headerTitleRow}>
-            <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{testName}</Text>
+        <View style={s(colors).headerCenter}>
+          <View style={s(colors).headerTitleRow}>
+            <Text style={[s(colors).testName, { color: colors.text }]} numberOfLines={1}>{testName}</Text>
             {isStudyMode && (
-              <View style={styles.studyBadge}>
+              <View style={s(colors).studyBadge}>
                 <Ionicons name="book" size={12} color="#10b981" />
-                <Text style={styles.studyBadgeText}>Study</Text>
+                <Text style={s(colors).studyBadgeText}>Study</Text>
               </View>
             )}
           </View>
           {!isStudyMode && activeTest.test.timeLimit > 0 && (
             <View style={[
-              styles.timerBadge,
-              timeRemaining < 60 && styles.timerWarning
+              s(colors).timerBadge,
+              timeRemaining < 60 && s(colors).timerWarning
             ]}>
               <Ionicons name="time" size={14} color={timeRemaining < 60 ? '#ef4444' : '#ffffff'} />
               <Text style={[
-                styles.timerText,
-                timeRemaining < 60 && styles.timerTextWarning
+                s(colors).timerText,
+                timeRemaining < 60 && s(colors).timerTextWarning
               ]}>
                 {formatTime(timeRemaining)}
               </Text>
@@ -894,20 +906,20 @@ export default function TestTakingScreen() {
         </View>
         
         {!isStudyMode ? (
-          <TouchableOpacity onPress={() => handleSubmit()} style={styles.submitButton}>
-            <Text style={styles.submitButtonText}>Submit</Text>
+          <TouchableOpacity onPress={() => handleSubmit()} style={s(colors).submitButton}>
+            <Text style={s(colors).submitButtonText}>Submit</Text>
           </TouchableOpacity>
         ) : (
-          <View style={styles.studyProgress}>
-            <Text style={styles.studyProgressText}>{answeredCount}/{activeTest.questions.length}</Text>
+          <View style={s(colors).studyProgress}>
+            <Text style={s(colors).studyProgressText}>{answeredCount}/{activeTest.questions.length}</Text>
           </View>
         )}
       </View>
 
       {!isStudyMode && currentQuestion && (
-        <View style={styles.flagRow}>
+        <View style={s(colors).flagRow}>
           <TouchableOpacity
-            style={[styles.flagButton, isCurrentFlagged && styles.flagButtonActive]}
+            style={[s(colors).flagButton, isCurrentFlagged && s(colors).flagButtonActive]}
             onPress={() => toggleFlag(currentQuestion.id)}
             accessibilityLabel={isCurrentFlagged ? 'Remove bookmark' : 'Bookmark for review'}
           >
@@ -916,7 +928,7 @@ export default function TestTakingScreen() {
               size={18}
               color={isCurrentFlagged ? '#eab308' : '#94a3b8'}
             />
-            <Text style={[styles.flagButtonText, isCurrentFlagged && styles.flagButtonTextActive]}>
+            <Text style={[s(colors).flagButtonText, isCurrentFlagged && s(colors).flagButtonTextActive]}>
               {isCurrentFlagged ? 'Bookmarked' : 'Bookmark for review'}
             </Text>
           </TouchableOpacity>
@@ -924,53 +936,53 @@ export default function TestTakingScreen() {
       )}
 
       {/* Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View style={[styles.progressBar, { backgroundColor: colors.border }, isStudyMode && styles.progressBarStudy]}>
+      <View style={s(colors).progressContainer}>
+        <View style={[s(colors).progressBar, { backgroundColor: colors.border }, isStudyMode && s(colors).progressBarStudy]}>
           <View style={[
-            styles.progressFill, 
+            s(colors).progressFill, 
             { width: `${progress * 100}%` },
-            isStudyMode && styles.progressFillStudy
+            isStudyMode && s(colors).progressFillStudy
           ]} />
         </View>
-        <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+        <Text style={[s(colors).progressText, { color: colors.textSecondary }]}>
           {activeTest.currentQuestionIndex + 1} / {activeTest.questions.length}
         </Text>
       </View>
 
       {/* Question */}
       <ScrollView 
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        style={s(colors).content}
+        contentContainerStyle={s(colors).contentContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.questionCard, { backgroundColor: colors.card }]}>
-          <View style={styles.questionHeader}>
-            <View style={[styles.questionTypeBadge, { backgroundColor: colors.primaryBackground }]}>
-              <Text style={[styles.questionTypeText, { color: colors.primary }]}>
+        <View style={[s(colors).questionCard, { backgroundColor: colors.card }]}>
+          <View style={s(colors).questionHeader}>
+            <View style={[s(colors).questionTypeBadge, { backgroundColor: colors.primaryBackground }]}>
+              <Text style={[s(colors).questionTypeText, { color: colors.primary }]}>
                 {getQuestionTypeLabel(currentQuestion.type)}
               </Text>
             </View>
-            <Text style={[styles.pointsText, { color: colors.textSecondary }]}>{currentQuestion.points} pts</Text>
+            <Text style={[s(colors).pointsText, { color: colors.textSecondary }]}>{currentQuestion.points} pts</Text>
           </View>
           
-          <Text style={[styles.questionText, { color: colors.text }]}>{currentQuestion.question}</Text>
+          <Text style={[s(colors).questionText, { color: colors.text }]}>{currentQuestion.question}</Text>
 
           {resolvedQuestionImage ? (
-            <View style={styles.questionImageWrapper}>
+            <View style={s(colors).questionImageWrapper}>
               <Image
                 source={{ uri: resolvedQuestionImage }}
-                style={styles.questionImage}
+                style={s(colors).questionImage}
                 resizeMode="contain"
               />
             </View>
           ) : null}
           
           {currentQuestion.tags && currentQuestion.tags.length > 0 && (
-            <View style={styles.tagsContainer}>
+            <View style={s(colors).tagsContainer}>
               {currentQuestion.tags.map((tag) => (
-                <View key={tag} style={[styles.tag, { backgroundColor: colors.inputBackground }]}>
-                  <Text style={[styles.tagText, { color: colors.textSecondary }]}>{tag}</Text>
+                <View key={tag} style={[s(colors).tag, { backgroundColor: colors.inputBackground }]}>
+                  <Text style={[s(colors).tagText, { color: colors.textSecondary }]}>{tag}</Text>
                 </View>
               ))}
             </View>
@@ -983,29 +995,29 @@ export default function TestTakingScreen() {
         {/* Study Mode Feedback */}
         {isStudyMode && showFeedback && feedbackResult && (
           <View style={[
-            styles.feedbackContainer,
-            feedbackResult.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect
+            s(colors).feedbackContainer,
+            feedbackResult.isCorrect ? s(colors).feedbackCorrect : s(colors).feedbackIncorrect
           ]}>
-            <View style={styles.feedbackHeader}>
+            <View style={s(colors).feedbackHeader}>
               <Ionicons 
                 name={feedbackResult.isCorrect ? 'checkmark-circle' : 'close-circle'} 
                 size={28} 
                 color={feedbackResult.isCorrect ? '#10b981' : '#ef4444'} 
               />
               <Text style={[
-                styles.feedbackTitle,
-                feedbackResult.isCorrect ? styles.feedbackTitleCorrect : styles.feedbackTitleIncorrect
+                s(colors).feedbackTitle,
+                feedbackResult.isCorrect ? s(colors).feedbackTitleCorrect : s(colors).feedbackTitleIncorrect
               ]}>
                 {feedbackResult.isCorrect ? 'Correct!' : 'Incorrect'}
               </Text>
             </View>
             {feedbackResult.explanation && (
-              <Text style={styles.feedbackExplanation}>{feedbackResult.explanation}</Text>
+              <Text style={s(colors).feedbackExplanation}>{feedbackResult.explanation}</Text>
             )}
             {!feedbackResult.isCorrect && (
-              <View style={styles.correctAnswerBox}>
-                <Text style={styles.correctAnswerLabel}>Correct answer:</Text>
-                <Text style={styles.correctAnswerText}>
+              <View style={s(colors).correctAnswerBox}>
+                <Text style={s(colors).correctAnswerLabel}>Correct answer:</Text>
+                <Text style={s(colors).correctAnswerText}>
                   {formatCorrectAnswerDisplay(currentQuestion)}
                 </Text>
               </View>
@@ -1016,12 +1028,12 @@ export default function TestTakingScreen() {
         {/* Study Mode Check Answer Button */}
         {isStudyMode && hasAnsweredCurrent && !isAnswerRevealed && (
           <TouchableOpacity
-            style={styles.checkAnswerButton}
+            style={s(colors).checkAnswerButton}
             onPress={handleCheckAnswer}
             activeOpacity={0.8}
           >
             <Ionicons name="eye" size={20} color="#ffffff" />
-            <Text style={styles.checkAnswerText}>Check Answer</Text>
+            <Text style={s(colors).checkAnswerText}>Check Answer</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -1029,19 +1041,19 @@ export default function TestTakingScreen() {
       {/* Navigation */}
       <View
         style={[
-          styles.navigation,
+          s(colors).navigation,
           {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
             paddingBottom: Math.max(insets.bottom, 16) + 12,
           },
-          isStudyMode && styles.navigationStudy,
+          isStudyMode && s(colors).navigationStudy,
         ]}
       >
         <TouchableOpacity
           style={[
-            styles.navButton,
-            activeTest.currentQuestionIndex === 0 && styles.navButtonDisabled
+            s(colors).navButton,
+            activeTest.currentQuestionIndex === 0 && s(colors).navButtonDisabled
           ]}
           onPress={previousQuestion}
           disabled={activeTest.currentQuestionIndex === 0}
@@ -1052,7 +1064,7 @@ export default function TestTakingScreen() {
             color={activeTest.currentQuestionIndex === 0 ? colors.textTertiary : colors.text} 
           />
           <Text style={[
-            styles.navButtonText,
+            s(colors).navButtonText,
             { color: colors.text },
             activeTest.currentQuestionIndex === 0 && { color: colors.textTertiary },
           ]}>
@@ -1060,7 +1072,7 @@ export default function TestTakingScreen() {
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.questionDots}>
+        <View style={s(colors).questionDots}>
           {activeTest.questions.slice(
             Math.max(0, activeTest.currentQuestionIndex - 2),
             Math.min(activeTest.questions.length, activeTest.currentQuestionIndex + 3)
@@ -1079,7 +1091,7 @@ export default function TestTakingScreen() {
               >
                 <View
                   style={[
-                    styles.dot,
+                    s(colors).dot,
                     { backgroundColor: colors.border },
                     isAnswered && { backgroundColor: colors.success },
                     isCurrent && { backgroundColor: colors.primary, width: 12 },
@@ -1096,27 +1108,27 @@ export default function TestTakingScreen() {
         {activeTest.currentQuestionIndex === activeTest.questions.length - 1 ? (
           isStudyMode ? (
             <TouchableOpacity
-              style={[styles.navButton, styles.finishStudyButton, { backgroundColor: colors.successBackground }]}
+              style={[s(colors).navButton, s(colors).finishStudyButton, { backgroundColor: colors.successBackground }]}
               onPress={() => handleSubmit()}
             >
-              <Text style={[styles.finishStudyText, { color: colors.success }]}>Finish</Text>
+              <Text style={[s(colors).finishStudyText, { color: colors.success }]}>Finish</Text>
               <Ionicons name="checkmark" size={24} color={colors.success} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.navButton, styles.navButtonDisabled]}
+              style={[s(colors).navButton, s(colors).navButtonDisabled]}
               disabled
             >
-              <Text style={[styles.navButtonTextDisabled, { color: colors.textTertiary }]}>Next</Text>
+              <Text style={[s(colors).navButtonTextDisabled, { color: colors.textTertiary }]}>Next</Text>
               <Ionicons name="chevron-forward" size={24} color={colors.textTertiary} />
             </TouchableOpacity>
           )
         ) : (
           <TouchableOpacity
-            style={styles.navButton}
+            style={s(colors).navButton}
             onPress={nextQuestion}
           >
-            <Text style={[styles.navButtonText, { color: colors.primary }]}>Next</Text>
+            <Text style={[s(colors).navButtonText, { color: colors.primary }]}>Next</Text>
             <Ionicons name="chevron-forward" size={24} color={colors.primary} />
           </TouchableOpacity>
         )}
@@ -1128,14 +1140,14 @@ export default function TestTakingScreen() {
         animationType="slide"
         onRequestClose={() => setShowReviewModal(false)}
       >
-        <View style={styles.reviewOverlay}>
-          <View style={[styles.reviewModal, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
-            <Text style={styles.reviewTitle}>Review & Submit</Text>
-            <Text style={styles.reviewSubtitle}>
+        <View style={s(colors).reviewOverlay}>
+          <View style={[s(colors).reviewModal, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
+            <Text style={s(colors).reviewTitle}>Review & Submit</Text>
+            <Text style={s(colors).reviewSubtitle}>
               {answeredCount} answered · {activeTest.questions.length - answeredCount} skipped · {flaggedCount} bookmarked
             </Text>
 
-            <ScrollView style={styles.reviewGridScroll} contentContainerStyle={styles.reviewGrid}>
+            <ScrollView style={s(colors).reviewGridScroll} contentContainerStyle={s(colors).reviewGrid}>
               {activeTest.questions.map((q, index) => {
                 const isAnswered = !!activeTest.answers[q.id];
                 const isFlagged = activeTest.flaggedQuestions.has(q.id);
@@ -1143,34 +1155,34 @@ export default function TestTakingScreen() {
                   <TouchableOpacity
                     key={q.id}
                     style={[
-                      styles.reviewCell,
-                      isAnswered && styles.reviewCellAnswered,
-                      isFlagged && styles.reviewCellFlagged,
+                      s(colors).reviewCell,
+                      isAnswered && s(colors).reviewCellAnswered,
+                      isFlagged && s(colors).reviewCellFlagged,
                     ]}
                     onPress={() => {
                       setShowReviewModal(false);
                       goToQuestion(index);
                     }}
                   >
-                    <Text style={styles.reviewCellText}>{index + 1}</Text>
+                    <Text style={s(colors).reviewCellText}>{index + 1}</Text>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
-            <View style={styles.reviewActions}>
+            <View style={s(colors).reviewActions}>
               <TouchableOpacity
-                style={styles.reviewCancelButton}
+                style={s(colors).reviewCancelButton}
                 onPress={() => setShowReviewModal(false)}
               >
-                <Text style={styles.reviewCancelText}>Continue Test</Text>
+                <Text style={s(colors).reviewCancelText}>Continue Test</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.reviewSubmitButton, isSubmitting && { opacity: 0.6 }]}
+                style={[s(colors).reviewSubmitButton, isSubmitting && { opacity: 0.6 }]}
                 disabled={isSubmitting}
                 onPress={() => void finalizeSubmit()}
               >
-                <Text style={styles.reviewSubmitText}>{isSubmitting ? 'Submitting...' : 'Submit Test'}</Text>
+                <Text style={s(colors).reviewSubmitText}>{isSubmitting ? 'Submitting...' : 'Submit Test'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1180,10 +1192,23 @@ export default function TestTakingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Styles were hardcoded slate, so a test stayed dark in light mode. Built per
+// theme and cached, so the implicit-return question components can read them
+// straight from the `colors` prop they already receive.
+const styleCache = new WeakMap<ThemeColors, ReturnType<typeof createStyles>>();
+const s = (c: ThemeColors) => {
+  let cached = styleCache.get(c);
+  if (!cached) {
+    cached = createStyles(c);
+    styleCache.set(c, cached);
+  }
+  return cached;
+};
+
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
   },
   header: {
     flexDirection: 'row',
@@ -1191,9 +1216,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: c.border,
   },
   exitButton: {
     padding: 4,
@@ -1206,14 +1231,14 @@ const styles = StyleSheet.create({
   testName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
     marginBottom: 4,
   },
   timerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -1224,7 +1249,7 @@ const styles = StyleSheet.create({
   timerText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
   },
   timerTextWarning: {
     color: '#ef4444',
@@ -1250,7 +1275,7 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 6,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -1262,7 +1287,7 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
+    color: c.textSecondary,
     minWidth: 50,
     textAlign: 'right',
   },
@@ -1274,7 +1299,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   questionCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
@@ -1299,12 +1324,12 @@ const styles = StyleSheet.create({
   pointsText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   questionText: {
     fontSize: 18,
     fontWeight: '500',
-    color: '#ffffff',
+    color: c.text,
     lineHeight: 28,
   },
   questionImageWrapper: {
@@ -1312,9 +1337,9 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: c.border,
   },
   questionImage: {
     width: '100%',
@@ -1328,14 +1353,14 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   tag: {
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   tagText: {
     fontSize: 11,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   
   // MCQ Single styles
@@ -1345,7 +1370,7 @@ const styles = StyleSheet.create({
   optionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     borderWidth: 2,
@@ -1377,17 +1402,17 @@ const styles = StyleSheet.create({
   optionText: {
     flex: 1,
     fontSize: 16,
-    color: '#e2e8f0',
+    color: c.text,
   },
   optionTextSelected: {
-    color: '#ffffff',
+    color: c.text,
     fontWeight: '500',
   },
   
   // MCQ Multiple styles
   multiSelectHint: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
     marginBottom: 8,
     fontStyle: 'italic',
   },
@@ -1450,16 +1475,16 @@ const styles = StyleSheet.create({
   },
   fillBlankHint: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   fillBlankInput: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#ffffff',
+    color: c.text,
     borderWidth: 2,
-    borderColor: '#334155',
+    borderColor: c.border,
   },
   
   // Matching styles
@@ -1468,7 +1493,7 @@ const styles = StyleSheet.create({
   },
   matchingHint: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
     textAlign: 'center',
     fontStyle: 'italic',
   },
@@ -1488,7 +1513,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   matchingItem: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 10,
     padding: 12,
     borderWidth: 2,
@@ -1514,7 +1539,7 @@ const styles = StyleSheet.create({
   },
   matchingItemText: {
     fontSize: 14,
-    color: '#e2e8f0',
+    color: c.text,
     flex: 1,
   },
   matchingItemTextUsed: {
@@ -1541,13 +1566,13 @@ const styles = StyleSheet.create({
   },
   diagramImageWrapper: {
     position: 'relative',
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 12,
     overflow: 'hidden',
     width: '100%',
   },
   diagramImagePlaceholder: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 12,
     height: 200,
     justifyContent: 'center',
@@ -1573,18 +1598,18 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   diagramMarkerText: {
-    color: '#ffffff',
+    color: c.text,
     fontSize: 12,
     fontWeight: '700',
   },
   diagramPlaceholderText: {
     fontSize: 14,
-    color: '#64748b',
+    color: c.textTertiary,
     marginTop: 8,
   },
   diagramHint: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   labelInputsContainer: {
     gap: 10,
@@ -1605,19 +1630,19 @@ const styles = StyleSheet.create({
   labelNumberText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
   },
   labelPicker: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: c.border,
   },
   labelPickerSelected: {
     borderColor: '#6366f1',
@@ -1625,11 +1650,11 @@ const styles = StyleSheet.create({
   labelPickerText: {
     flex: 1,
     fontSize: 14,
-    color: '#ffffff',
+    color: c.text,
     marginRight: 8,
   },
   labelPickerPlaceholder: {
-    color: '#64748b',
+    color: c.textTertiary,
   },
   pickerOverlay: {
     flex: 1,
@@ -1637,7 +1662,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   pickerSheet: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingHorizontal: 16,
@@ -1654,17 +1679,17 @@ const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
     marginBottom: 12,
   },
   pickerOption: {
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: c.border,
   },
   pickerOptionText: {
     fontSize: 15,
-    color: '#e2e8f0',
+    color: c.text,
   },
   
   // Open Ended styles
@@ -1673,16 +1698,16 @@ const styles = StyleSheet.create({
   },
   openEndedHint: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   openEndedInput: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#ffffff',
+    color: c.text,
     borderWidth: 2,
-    borderColor: '#334155',
+    borderColor: c.border,
     minHeight: 180,
   },
   openEndedFooter: {
@@ -1692,7 +1717,7 @@ const styles = StyleSheet.create({
   },
   wordCount: {
     fontSize: 12,
-    color: '#64748b',
+    color: c.textTertiary,
   },
   keywordsHint: {
     fontSize: 11,
@@ -1710,9 +1735,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: c.border,
   },
   navButton: {
     flexDirection: 'row',
@@ -1738,7 +1763,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
   },
   dotAnswered: {
     backgroundColor: '#10b981',
@@ -1757,7 +1782,7 @@ const styles = StyleSheet.create({
   flagRow: {
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
   },
   flagButton: {
     flexDirection: 'row',
@@ -1772,7 +1797,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#eab30820',
   },
   flagButtonText: {
-    color: '#94a3b8',
+    color: c.textSecondary,
     fontSize: 13,
     fontWeight: '500',
   },
@@ -1785,20 +1810,20 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   reviewModal: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     maxHeight: '80%',
   },
   reviewTitle: {
-    color: '#ffffff',
+    color: c.text,
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 4,
   },
   reviewSubtitle: {
-    color: '#94a3b8',
+    color: c.textSecondary,
     fontSize: 14,
     marginBottom: 16,
   },
@@ -1815,7 +1840,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 8,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1829,7 +1854,7 @@ const styles = StyleSheet.create({
     borderColor: '#f97316',
   },
   reviewCellText: {
-    color: '#ffffff',
+    color: c.text,
     fontWeight: '600',
   },
   reviewActions: {
@@ -1841,11 +1866,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     alignItems: 'center',
   },
   reviewCancelText: {
-    color: '#ffffff',
+    color: c.text,
     fontWeight: '600',
   },
   reviewSubmitButton: {
@@ -1890,7 +1915,7 @@ const styles = StyleSheet.create({
   studyProgressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   progressBarStudy: {
     backgroundColor: '#10b98130',
@@ -1933,18 +1958,18 @@ const styles = StyleSheet.create({
   },
   feedbackExplanation: {
     fontSize: 14,
-    color: '#d1d5db',
+    color: c.textSecondary,
     lineHeight: 22,
   },
   correctAnswerBox: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderRadius: 8,
   },
   correctAnswerLabel: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: c.textSecondary,
     marginBottom: 4,
   },
   correctAnswerText: {
@@ -1965,7 +1990,7 @@ const styles = StyleSheet.create({
   checkAnswerText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
   },
   finishStudyButton: {
     backgroundColor: '#10b98120',
@@ -1987,7 +2012,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#9ca3af',
+    color: c.textSecondary,
     marginBottom: 16,
   },
   errorLink: {
