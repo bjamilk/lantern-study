@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '../stores/testStore';
-import { useTheme } from '../theme';
+import { useTheme, type ThemeColors } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { mobileQuestionTypesToWeb, webQuestionTypesToMobile } from '../utils/questionHelpers';
 import {
@@ -107,6 +107,9 @@ export default function TestConfigModal({
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { colors } = useTheme();
+  // The stylesheet used to hardcode slate-900/800 values, so this modal stayed
+  // dark in light mode. Rebuild it whenever the theme changes.
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
 
@@ -832,14 +835,14 @@ export default function TestConfigModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     height: '92%',
@@ -853,7 +856,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: c.border,
   },
   closeButton: {
     padding: 4,
@@ -878,12 +881,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
+    color: c.text,
     marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   content: {
     flex: 1,
@@ -911,7 +914,7 @@ const styles = StyleSheet.create({
   infoText: {
     flex: 1,
     fontSize: 13,
-    color: '#d1d5db',
+    color: c.textSecondary,
     lineHeight: 20,
   },
   section: {
@@ -927,7 +930,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
   },
   questionCount: {
     fontSize: 14,
@@ -1012,20 +1015,20 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   numberInput: {
     width: 80,
     height: 48,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#334155',
+    borderColor: c.border,
     fontSize: 24,
     fontWeight: '700',
-    color: '#ffffff',
+    color: c.text,
     textAlign: 'center',
   },
   quickSelectRow: {
@@ -1037,9 +1040,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: c.border,
   },
   quickSelectButtonActive: {
     backgroundColor: '#10b981',
@@ -1048,7 +1051,7 @@ const styles = StyleSheet.create({
   quickSelectText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   quickSelectTextActive: {
     color: '#ffffff',
@@ -1067,9 +1070,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: c.border,
   },
   timerPresetButtonActive: {
     backgroundColor: '#f9731620',
@@ -1078,7 +1081,7 @@ const styles = StyleSheet.create({
   timerPresetText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   timerPresetTextActive: {
     color: '#f97316',
@@ -1099,9 +1102,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: c.border,
   },
   questionTypeButtonActive: {
     backgroundColor: '#8b5cf6',
@@ -1110,7 +1113,7 @@ const styles = StyleSheet.create({
   questionTypeText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   questionTypeTextActive: {
     color: '#ffffff',
@@ -1120,12 +1123,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     padding: 12,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 10,
   },
   disabledMessageText: {
     fontSize: 13,
-    color: '#64748b',
+    color: c.textTertiary,
   },
   advancedToggle: {
     flexDirection: 'row',
@@ -1145,7 +1148,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 14,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 12,
     marginBottom: 12,
   },
@@ -1160,7 +1163,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#1e293b',
+    backgroundColor: c.card,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1170,12 +1173,12 @@ const styles = StyleSheet.create({
   toggleTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
     marginBottom: 2,
   },
   toggleDescription: {
     fontSize: 12,
-    color: '#64748b',
+    color: c.textTertiary,
     lineHeight: 18,
   },
   tags: {
@@ -1187,9 +1190,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#0f172a',
+    backgroundColor: c.backgroundSecondary,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: c.border,
   },
   tagButtonActive: {
     backgroundColor: '#ec489920',
@@ -1197,7 +1200,7 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: 13,
-    color: '#9ca3af',
+    color: c.textSecondary,
   },
   tagTextActive: {
     color: '#ec4899',
@@ -1207,8 +1210,8 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 32,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
-    backgroundColor: '#1e293b',
+    borderTopColor: c.border,
+    backgroundColor: c.card,
     flexShrink: 0,
   },
   validationHint: {
@@ -1224,13 +1227,13 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#334155',
+    backgroundColor: c.backgroundSecondary,
     alignItems: 'center',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: c.text,
   },
   submitButton: {
     flex: 1.5,

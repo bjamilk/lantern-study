@@ -142,7 +142,7 @@ export function GroupsScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(16);
   const { colors } = useTheme();
   const user = useAuthStore(s => s.user);
-  const { groups, dmThreads, isLoading, fetchGroups, fetchDmThreads, getTopLevelGroups } = useGroupStore();
+  const { groups, dmThreads, isLoading, fetchGroups, fetchDmThreads, getTopLevelGroups, fetchGroupMembers } = useGroupStore();
   const { handleSelectGroup, handleInitiateDm } = useGroupHandlers();
   const [refreshing, setRefreshing] = useState(false);
   const [dmModalOpen, setDmModalOpen] = useState(false);
@@ -290,6 +290,29 @@ export function GroupsScreen({ navigation }: Props) {
     archivedExpanded,
     user?.id,
   ]);
+
+  // Contacts are derived from group members, but the groups list response does
+  // not include them — they only arrive when a group chat is opened. Without
+  // this, "New Message" claims you have no contacts until you visit a group.
+  useEffect(() => {
+    if (!dmModalOpen || contacts.length > 0) return;
+    const needsMembers = groups.filter((g) => !g.isArchived && !g.members?.length).slice(0, 10);
+    if (needsMembers.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      for (const group of needsMembers) {
+        if (cancelled) return;
+        try {
+          await fetchGroupMembers(group.id);
+        } catch {
+          // A group that fails to hydrate simply contributes no contacts.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dmModalOpen, contacts.length, groups, fetchGroupMembers]);
 
   const toggleGroupExpand = useCallback((groupId: string) => {
     setExpandedParentGroups(prev => ({
