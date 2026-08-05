@@ -1310,6 +1310,10 @@ export const useTestStore = create<TestState>((set, get) => ({
       attempts: [attempt, ...state.attempts],
       activeTest: null,
     }));
+    // The dashboard reads results through a 90s cache. Without dropping it here
+    // the next fetchAttempts overwrites the attempt we just added with a stale
+    // cached list, so a finished test disappears from the performance chart.
+    clearTestResultsCache();
     await get().saveToStorage();
 
     const correctCount = answers.filter(a => a.isCorrect).length;
