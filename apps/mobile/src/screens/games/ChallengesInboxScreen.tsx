@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
 
@@ -63,6 +63,13 @@ export default function ChallengesInboxScreen() {
 
 
 
+  // This screen polls every 10s while focused. Logging the raw error on every
+  // tick filled the console with bare "[TypeError: Network request failed]"
+  // lines that named neither the request nor the screen, so a real API problem
+  // was indistinguishable from a dropped connection. Log with context, and only
+  // when the failure changes — repeats of the same error stay quiet.
+  const lastLoadErrorRef = useRef<string | null>(null);
+
   const load = useCallback(async (silent = false) => {
 
     if (!silent) setLoading(true);
@@ -71,9 +78,19 @@ export default function ChallengesInboxScreen() {
 
       setChallenges(await fetchChallenges());
 
+      lastLoadErrorRef.current = null;
+
     } catch (e) {
 
-      console.error(e);
+      const message = e instanceof Error ? e.message : String(e);
+
+      if (lastLoadErrorRef.current !== message) {
+
+        lastLoadErrorRef.current = message;
+
+        console.warn('[ChallengesInbox] fetchChallenges failed:', message);
+
+      }
 
     } finally {
 
