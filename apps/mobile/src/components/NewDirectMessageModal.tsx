@@ -40,7 +40,7 @@ interface NewDirectMessageModalProps {
   onClose: () => void;
   contacts: Contact[];
   currentUserId: string;
-  onStartChat: (userId: string, userName: string) => void;
+  onStartChat: (userId: string, userName: string, userAvatarUrl?: string | null) => void;
 }
 
 export default function NewDirectMessageModal({
@@ -142,8 +142,12 @@ export default function NewDirectMessageModal({
     return filteredContacts;
   }, [useApiSearch, apiResults, filteredContacts]);
 
-  const handleSelectContact = (contact: { userId: string; name: string }) => {
-    onStartChat(contact.userId, contact.name);
+  const handleSelectContact = (contact: {
+    userId: string;
+    name: string;
+    avatarUrl?: string | null;
+  }) => {
+    onStartChat(contact.userId, contact.name, contact.avatarUrl);
     setSearchTerm('');
     onClose();
   };

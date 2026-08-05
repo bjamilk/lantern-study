@@ -57,7 +57,11 @@ export function useGroupHandlers() {
     ]);
   }, [user?.id, navigation, fetchUserVotesForGroup, fetchGroupMembers]);
 
-  const handleInitiateDm = useCallback(async (otherUserId: string, otherUserName: string) => {
+  const handleInitiateDm = useCallback(async (
+    otherUserId: string,
+    otherUserName: string,
+    otherUserAvatarUrl?: string | null,
+  ) => {
     if (!user?.id || otherUserId === user.id) return;
 
     const threadId = buildThreadId(user.id, otherUserId);
@@ -69,7 +73,10 @@ export function useGroupHandlers() {
         participantIds: [user.id, otherUserId].sort() as [string, string],
         participants: {
           [user.id]: { name: user.user_metadata?.full_name || user.email || 'You' },
-          [otherUserId]: { name: otherUserName },
+          // Carry the avatar from the contact row — a client-pending thread has
+          // no server row to hydrate it from, so without this the peer shows
+          // initials until the thread is persisted and refetched.
+          [otherUserId]: { name: otherUserName, avatarUrl: otherUserAvatarUrl || undefined },
         },
         clientPending: true,
       };

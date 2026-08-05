@@ -276,7 +276,7 @@ export function GroupsScreen({ navigation }: Props) {
       return;
     }
     if (item.otherUserId) {
-      handleInitiateDm(item.otherUserId, item.name);
+      handleInitiateDm(item.otherUserId, item.name, item.avatarUrl);
     }
   };
     
@@ -384,9 +384,9 @@ export function GroupsScreen({ navigation }: Props) {
         onClose={() => setDmModalOpen(false)}
         contacts={contacts}
         currentUserId={user?.id || ''}
-        onStartChat={(userId, userName) => {
+        onStartChat={(userId, userName, userAvatarUrl) => {
           setDmModalOpen(false);
-          handleInitiateDm(userId, userName);
+          handleInitiateDm(userId, userName, userAvatarUrl);
         }}
       />
     </SafeAreaView>
