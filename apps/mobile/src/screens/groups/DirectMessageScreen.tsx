@@ -145,6 +145,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     fetchDmThreads,
     applyPeerChatRead,
     setActiveDmThreadId,
+    archiveDmThread,
+    unarchiveDmThread,
+    deleteDmThread,
   } =
     useGroupStore();
   const { colors } = useTheme();
@@ -159,6 +162,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [chatMuted, setChatMuted] = useState(false);
   const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
   const [muteBusy, setMuteBusy] = useState(false);
+  const [chatActionBusy, setChatActionBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
@@ -341,6 +345,72 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   }, [chatMuted, clearMute, applyMute]);
 
   const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
+
+  const handleToggleArchive = useCallback(async () => {
+    if (!user?.id || chatActionBusy) return;
+    setChatActionBusy(true);
+    try {
+      if (thread?.isArchived) {
+        await unarchiveDmThread(threadId, user.id);
+      } else {
+        await archiveDmThread(threadId, user.id);
+        navigation.goBack();
+      }
+    } catch (error) {
+      Alert.alert(
+        'Could not update chat',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    } finally {
+      setChatActionBusy(false);
+    }
+  }, [
+    user?.id,
+    chatActionBusy,
+    thread?.isArchived,
+    threadId,
+    archiveDmThread,
+    unarchiveDmThread,
+    navigation,
+  ]);
+
+  const handleDeleteChat = useCallback(() => {
+    if (!user?.id || chatActionBusy) return;
+    Alert.alert(
+      'Delete conversation?',
+      'This removes the conversation and its history from your chats. The other person keeps their copy.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setChatActionBusy(true);
+            void deleteDmThread(threadId, user.id)
+              .then(() => navigation.goBack())
+              .catch((error: unknown) => {
+                Alert.alert(
+                  'Delete failed',
+                  error instanceof Error ? error.message : 'Please try again.'
+                );
+              })
+              .finally(() => setChatActionBusy(false));
+          },
+        },
+      ]
+    );
+  }, [user?.id, chatActionBusy, threadId, deleteDmThread, navigation]);
+
+  const openChatMenu = useCallback(() => {
+    Alert.alert('Conversation', undefined, [
+      {
+        text: thread?.isArchived ? 'Unarchive conversation' : 'Archive conversation',
+        onPress: () => void handleToggleArchive(),
+      },
+      { text: 'Delete conversation', style: 'destructive', onPress: handleDeleteChat },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [thread?.isArchived, handleToggleArchive, handleDeleteChat]);
 
   const reloadThread = useCallback(async () => {
     if (!threadRootId) return;
@@ -645,7 +715,32 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             color={iBlockedThem ? '#16a34a' : '#dc2626'}
           />
         </Pressable>
+        <Pressable
+          onPress={openChatMenu}
+          disabled={chatActionBusy}
+          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
+          accessibilityLabel="Conversation options"
+        >
+          <Ionicons name="ellipsis-vertical" size={22} color={colors.textSecondary} />
+        </Pressable>
       </View>
+
+      {thread?.isArchived ? (
+        <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300" numberOfLines={2}>
+            This conversation is archived
+          </Text>
+          <Pressable
+            onPress={() => void handleToggleArchive()}
+            disabled={chatActionBusy}
+            className="px-2 py-1"
+          >
+            <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+              Unarchive
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {chatMuted ? (
         <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">

@@ -1277,10 +1277,19 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     try {
       const group = get().groups.find(g => g.id === groupId);
       await api.updateGroup(groupId, { isArchived: !group?.isArchived });
-      const groups = get().groups.map(g => 
+      const groups = get().groups.map(g =>
         g.id === groupId ? { ...g, isArchived: !g.isArchived } : g
       );
-      set({ groups, currentGroup: null });
+      // Keep the open group loaded so the chat screen can show its archived
+      // state (and unarchive again) instead of losing its header.
+      const current = get().currentGroup;
+      set({
+        groups,
+        currentGroup:
+          current?.id === groupId
+            ? { ...current, isArchived: !current.isArchived }
+            : current,
+      });
     } catch (error: any) {
       set({ error: error.message || 'Failed to archive group' });
       throw error;
