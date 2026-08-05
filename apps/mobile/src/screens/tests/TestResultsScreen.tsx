@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type TestQuestion } from '../../stores/testStore';
@@ -130,6 +130,10 @@ export default function TestResultsScreen() {
   };
 
   return (
+    // Presented as a fullScreenModal, which is its own window — the app-root
+    // provider never measures it, so edges={['top']} resolved to 0 and the back
+    // button sat under the status bar.
+    <SafeAreaProvider>
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card }]}>
@@ -345,6 +349,7 @@ export default function TestResultsScreen() {
         </TouchableOpacity>
       </View>
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
