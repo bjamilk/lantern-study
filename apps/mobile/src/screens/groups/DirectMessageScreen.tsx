@@ -28,6 +28,7 @@ import { ChatComposer } from '../../components/chat/ChatComposer';
 import { ChatThreadModal } from '../../components/chat/ChatThreadModal';
 import { DmBubble } from '../../components/chat/DmBubble';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
+import { DmOffersPanel } from '../../components/chat/DmOffersPanel';
 import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import {
@@ -163,6 +164,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
   const [muteBusy, setMuteBusy] = useState(false);
   const [chatActionBusy, setChatActionBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<'chat' | 'offers'>('chat');
   const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
@@ -785,16 +787,50 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               </View>
             </View>
           </View>
-          <Pressable
-            onPress={openOffers}
-            className="px-2.5 py-1.5 rounded-lg bg-lantern-primary-background active:opacity-80"
-            accessibilityLabel="View offers"
-          >
-            <Text className="text-xs font-semibold text-lantern-primary">Offers</Text>
-          </Pressable>
           <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
         </Pressable>
       ) : null}
+
+      {/* Chat / Offers segmented control, mirroring web's marketplace tabs. */}
+      {inquiry?.listing ? (
+        <View className="flex-row gap-1 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
+          {(['chat', 'offers'] as const).map((tab) => {
+            const active = activeTab === tab;
+            return (
+              <Pressable
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                className={`flex-1 items-center py-2 rounded-lg ${
+                  active ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+                }`}
+              >
+                <Text
+                  className={`text-xs font-semibold ${
+                    active ? 'text-white' : 'text-lantern-text-secondary'
+                  }`}
+                >
+                  {tab === 'chat' ? 'Chat' : 'Offers'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {inquiry?.listing && activeTab === 'offers' ? (
+        <DmOffersPanel
+          listingId={inquiry.listing.id || inquiry.listing_id || ''}
+          currentUserId={user?.id || ''}
+          isSeller={inquiry.seller_id === user?.id}
+          onPostToChat={async (text) => {
+            if (!user?.id || !recipientId) return;
+            await sendDirectMessageTo(user.id, recipientId, text, threadId);
+          }}
+        />
+      ) : (
+        <>
 
       <KeyboardAvoidingView
         className="flex-1"
@@ -1008,6 +1044,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           />
         )}
       </KeyboardAvoidingView>
+      </>
+      )}
 
       <ChatThreadModal
         visible={!!threadRootId}
