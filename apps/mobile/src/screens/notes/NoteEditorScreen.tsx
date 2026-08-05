@@ -18,12 +18,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import {
+  FlashcardType,
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
   MarkdownRenderer,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared';
+import { normalizeFlashcardCount } from '@lantern/shared/utils';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { useCompanionStore } from '../../stores/companionStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTheme } from '../../theme';
 
@@ -47,6 +52,7 @@ import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
 import { useAuthStore } from '../../stores/authStore';
+import { useFlashcardStore } from '../../stores/flashcardStore';
 import {
   formatRecordingDuration,
   getElapsedRecordingSeconds,
@@ -121,6 +127,8 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [youtubeTranscriptExpanded, setYoutubeTranscriptExpanded] = useState(true);
   const [showCollaborators, setShowCollaborators] = useState(false);
   const [parentScrollEnabled, setParentScrollEnabled] = useState(true);
+  const tabBarClearance = useTabBarClearance(16);
+  const openCompanionWithMessage = useCompanionStore(s => s.openWithMessage);
   const handleDocumentScrollLock = useCallback((locked: boolean) => {
     setParentScrollEnabled(!locked);
   }, []);
@@ -614,6 +622,17 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
+  const handleChatWithNote = () => {
+    // Same prompt web builds in hooks/useNoteHandlers.ts so the companion gets
+    // the note's content either way, rather than being opened empty.
+    const noteTitle = title || selectedNote?.title || 'Untitled Note';
+    openCompanionWithMessage(
+      studyContent.trim().length >= MIN_NOTE_STUDY_CONTENT_CHARS
+        ? `Help me study my note "${noteTitle}". Ask me questions and explain key concepts from this material:\n\n${studyContent.slice(0, 4000)}`
+        : `I want to study my note "${noteTitle}". Ask me questions about it or help me understand key concepts based on this material.`
+    );
+  };
+
   const handleGenerateFlashcards = async () => {
     if (!canGenerateStudyMaterials) {
       Alert.alert(
@@ -622,10 +641,49 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       );
       return;
     }
+    if (!user?.id) {
+      Alert.alert('Error', 'You must be signed in to generate flashcards.');
+      return;
+    }
     setGeneratingCards(true);
     try {
-      const cards = await handleAIGenerateFlashcards(studyContent.slice(0, 8000), { count: 5, style: 'concise' });
-      Alert.alert('Generated', `${cards.length} flashcard ideas created. Add them to a deck from Flashcards.`);
+      // Same count as web's deck-from-note path; 5 was below the supported
+      // minimum of 10 and got clamped anyway.
+      const cards = await handleAIGenerateFlashcards(studyContent.slice(0, 8000), {
+        count: normalizeFlashcardCount(),
+        style: 'concise',
+      });
+      if (!cards.length) {
+        throw new Error('Could not generate flashcards from this note.');
+      }
+
+      // Persist into a deck the same way web does — generating without saving
+      // spends AI credits and leaves the user with nothing to study.
+      const noteTitle = title || selectedNote?.title || 'Untitled Note';
+      const { createDeck, createFlashcard } = useFlashcardStore.getState();
+      const deck = await createDeck(
+        `From: ${noteTitle}`.slice(0, 80),
+        `Generated from note: ${noteTitle}`,
+        user.id
+      );
+      for (const card of cards) {
+        await createFlashcard({
+          deckId: deck.id,
+          type: FlashcardType.BASIC,
+          front: card.front,
+          back: card.back,
+          userId: user.id,
+        });
+      }
+
+      Alert.alert('Generated', `Created ${cards.length} flashcards in "${deck.name}".`, [
+        { text: 'Later', style: 'cancel' },
+        {
+          text: 'Open deck',
+          onPress: () =>
+            navigation.navigate('DeckDetail', { deckId: deck.id, deckName: deck.name }),
+        },
+      ]);
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Flashcard generation failed');
     } finally {
@@ -784,7 +842,8 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         <ScrollView
           className="flex-1"
           keyboardShouldPersistTaps="handled"
-          contentContainerClassName="p-4 pb-10"
+          contentContainerClassName="p-4"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
           scrollEnabled={parentScrollEnabled}
           nestedScrollEnabled
           directionalLockEnabled
@@ -1092,7 +1151,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             <Text className="text-sm font-semibold text-lantern-text mb-1">
 
-              Summary & quiz
+              Learn from this note
 
             </Text>
 
@@ -1108,6 +1167,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
                 Smart Note
 
+              </Button>
+
+              <Button size="sm" variant="secondary" onPress={handleChatWithNote}>
+                Chat
               </Button>
 
               <Button

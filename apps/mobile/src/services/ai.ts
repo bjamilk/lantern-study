@@ -51,6 +51,10 @@ const { ai, companion } = createLanternAI({
   onUsageUpdate: updateUsage,
   // Initial enqueue is fast; async job polling has its own timeout.
   defaultTimeoutMs: 120_000,
+  // React Native's fetch resolves with a null body, so the streaming companion
+  // endpoint can never be read here — every message failed with
+  // "Stream request failed (200)" until this routed to the whole-reply endpoint.
+  supportsResponseStreaming: false,
 });
 
 export function getLatestAIUsage(): AIUsageInfo {

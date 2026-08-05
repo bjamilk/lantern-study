@@ -100,6 +100,10 @@ router.post(
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
+    // The list above caches under `decks:<userId>:scope:...`, which the
+    // `decks:user:<userId>` patterns never match — without this the deck list
+    // stays stale for the full 300s TTL.
+    await cacheService.deletePattern(`decks:${userId}*`);
 
     res.status(201).json({ success: true, data: deck });
   })
@@ -127,6 +131,7 @@ router.put(
     await cacheService.deletePattern(`deck:${deckId}:user:*`);
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
 
     res.json({ success: true, data: updatedDeck });
   })
@@ -152,6 +157,7 @@ router.delete(
     await cacheService.deletePattern(`deck:${deckId}:user:*`);
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
 
     res.json({ success: true, message: 'Deck deleted successfully' });
   })

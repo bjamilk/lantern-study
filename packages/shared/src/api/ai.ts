@@ -17,6 +17,15 @@ export interface AIClientConfig {
   getUserId?: () => Promise<string | undefined>;
   onUsageUpdate?: (usage: AIUsageInfo) => void;
   defaultTimeoutMs?: number;
+  /**
+   * Whether this runtime can read a streamed response body. React Native's
+   * fetch resolves with `body === null`, so token streaming is impossible there
+   * and the caller must use the non-streaming endpoint instead. Defaults to
+   * true (browsers). This has to be declared rather than detected after the
+   * fact: by the time a streamed response comes back unreadable the server has
+   * already generated and billed the reply, so retrying would charge twice.
+   */
+  supportsResponseStreaming?: boolean;
 }
 
 async function pollAiJob<T>(
