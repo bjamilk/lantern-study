@@ -128,6 +128,21 @@ export function resolveGroupChatAvatarUrl(
   return sender.avatarUrl;
 }
 
+/**
+ * Avatar image source, or null when the initials placeholder should be used.
+ * `ui-avatars.com` URLs are generated placeholders stored on older groups —
+ * rendering them costs a network round trip to draw the initials we already
+ * draw locally, so they are treated as "no image".
+ */
+export function resolveAvatarSrc(
+  src?: string | null,
+  localOnly = false
+): string | null {
+  if (localOnly || !src) return null;
+  if (src.includes('ui-avatars.com')) return null;
+  return src;
+}
+
 /** Short actor label for notifications (prefers @username). */
 export function formatActorLabel(user: {
   username?: string | null;

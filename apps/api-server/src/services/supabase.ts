@@ -7736,8 +7736,11 @@ export class SupabaseService {
     }
 
     return messages.map((m) => {
-      const rootKey = m.thread_root_id || m.threadRootId || m.id;
-      return { ...m, replyCount: counts.get(rootKey) || 0 };
+      // Only a thread root carries a reply count. Falling back to the root id
+      // for replies gave every message in the thread the root's count, so each
+      // reply rendered its own "N replies" chip.
+      const isThreadRoot = !(m.thread_root_id || m.threadRootId);
+      return { ...m, replyCount: isThreadRoot ? counts.get(m.id) || 0 : 0 };
     });
   }
 

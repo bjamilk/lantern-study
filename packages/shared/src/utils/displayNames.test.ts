@@ -1,6 +1,7 @@
 import {
   formatChatSenderLabel,
   getDashboardFirstName,
+  resolveAvatarSrc,
   resolveGroupChatAvatarUrl,
   resolveGroupChatMentionUsername,
   resolveGroupChatSenderLabel,
@@ -134,5 +135,29 @@ describe('resolveGroupChatAvatarUrl', () => {
         []
       )
     ).toBe('https://cdn.example/message-avatar.webp');
+  });
+});
+
+describe('resolveAvatarSrc', () => {
+  it('passes through an uploaded avatar', () => {
+    expect(resolveAvatarSrc('https://cdn.example/group-avatars/g1/avatar.webp')).toBe(
+      'https://cdn.example/group-avatars/g1/avatar.webp'
+    );
+  });
+
+  it('treats a generated ui-avatars placeholder as no image', () => {
+    expect(
+      resolveAvatarSrc('https://ui-avatars.com/api/?name=Study%20Group&background=6366f1')
+    ).toBeNull();
+  });
+
+  it('returns null for a missing avatar', () => {
+    expect(resolveAvatarSrc(undefined)).toBeNull();
+    expect(resolveAvatarSrc(null)).toBeNull();
+    expect(resolveAvatarSrc('')).toBeNull();
+  });
+
+  it('suppresses remote images in low-data mode', () => {
+    expect(resolveAvatarSrc('https://cdn.example/group-avatars/g1/avatar.webp', true)).toBeNull();
   });
 });

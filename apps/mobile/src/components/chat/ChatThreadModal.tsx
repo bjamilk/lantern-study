@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ChatComposer, type ReplyPreview } from './ChatComposer';
 import { MessageBubble } from './MessageBubble';
 import { DmBubble } from './DmBubble';
@@ -243,12 +243,16 @@ export function ChatThreadModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView
-        accessibilityViewIsModal
-        accessibilityLabel="Message thread"
-        className="flex-1 bg-lantern-background"
-        edges={['top', 'bottom']}
-      >
+      {/* A native Modal is its own window, so the app-root SafeAreaProvider
+          never measures it — without this the insets read 0 and the thread
+          header renders under the status bar and notch. */}
+      <SafeAreaProvider>
+        <SafeAreaView
+          accessibilityViewIsModal
+          accessibilityLabel="Message thread"
+          className="flex-1 bg-lantern-background"
+          edges={['top', 'bottom']}
+        >
         <View
           className="flex-row items-center justify-between px-3 py-2 border-b border-lantern-border bg-lantern-surface"
         >
@@ -393,7 +397,8 @@ export function ChatThreadModal({
             </View>
           )}
         </KeyboardAvoidingView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

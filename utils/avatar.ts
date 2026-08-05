@@ -1,12 +1,8 @@
-/** Returns avatar URL only if it's a real uploaded image, not ui-avatars fallback */
-export function resolveAvatarSrc(
-  src?: string | null,
-  localOnly = false
-): string | null {
-  if (localOnly || !src) return null;
-  if (src.includes('ui-avatars.com')) return null;
-  return src;
-}
+/**
+ * Returns avatar URL only if it's a real uploaded image, not ui-avatars fallback.
+ * Re-exported from shared so web and mobile apply the same rule.
+ */
+export { resolveAvatarSrc } from '@lantern/shared/utils';
 
 /** Legacy helper — returns empty string instead of ui-avatars URL */
 export function avatarFallback(_name: string): string {
