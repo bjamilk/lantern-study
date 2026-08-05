@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { buildChatAudioMarkdown } from '@lantern/shared/utils';
+import { buildChatAudioMarkdown, chatMessagePreview } from '@lantern/shared/utils';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
@@ -252,7 +252,7 @@ export function ChatComposer({
               Replying to {replyTo.senderName || 'message'}
             </Text>
             <Text className="text-xs" numberOfLines={1} style={{ color: colors.textSecondary }}>
-              {(replyTo.text || 'Message').slice(0, 80)}
+              {chatMessagePreview(replyTo.text).slice(0, 80)}
             </Text>
           </View>
           <Pressable onPress={onClearReply} accessibilityLabel="Cancel reply" className="p-2">

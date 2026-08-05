@@ -161,6 +161,7 @@ router.post(
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
     const group = await supabaseService.getGroupById(groupId, userId);
@@ -194,6 +195,7 @@ router.post(
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
     res.json({
@@ -267,6 +269,7 @@ router.post(
 
     // Invalidate groups list cache
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
 
     res.status(201).json({
       success: true,
@@ -327,6 +330,7 @@ router.put(
     // Invalidate group cache
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
 
     res.json({
       success: true,
@@ -380,6 +384,7 @@ router.post(
     const updatedGroup = await supabaseService.updateGroup(groupId, { avatarUrl: uploaded.avatarUrl });
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
 
     res.json({
       success: true,
@@ -427,6 +432,7 @@ router.delete(
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`messages:group:${groupId}:*`);
     await cacheService.deletePattern(`user:groups:*`);
 
@@ -493,6 +499,7 @@ router.post(
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${memberId}:*`);
 
     res.json({
@@ -692,6 +699,7 @@ router.post(
     await cacheService.delete(`group:${group.id}`);
     await cacheService.deletePattern(`group:members:${group.id}:*`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
     res.json({
@@ -746,6 +754,7 @@ router.post(
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
     res.json({
@@ -805,6 +814,7 @@ router.delete(
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${memberId}:*`);
 
     res.json({
@@ -1037,6 +1047,7 @@ router.post(
 
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
 
     res.json({ success: true, data: updatedGroup });
   })
@@ -1073,6 +1084,7 @@ router.delete(
 
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern('groups:user:*');
 
     res.json({ success: true, data: updatedGroup });
   })

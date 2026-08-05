@@ -62,6 +62,9 @@ type SettingsCallback = (settings: Record<string, unknown>) => void;
 
 export type RealtimeSubscribeMode = 'full' | 'lean';
 
+/** Floor between membership refetches triggered by unknown-id payloads. */
+const MEMBERSHIP_REFRESH_COOLDOWN_MS = 15_000;
+
 const CHANNEL = {
   notifications: (userId: string) => `notifications:${userId}`,
   groupMessages: (userId: string) => `group-messages-all:${userId}`,
@@ -84,6 +87,55 @@ class RealtimeSubscriptionManager {
   private mode: RealtimeSubscribeMode = 'full';
   private groupIds = new Set<string>();
   private dmThreadIds = new Set<string>();
+  /** Refetches the user's groups/threads and pushes them back via setMembership. */
+  private membershipRefresher: (() => Promise<void>) | null = null;
+  private membershipRefreshInFlight: Promise<void> | null = null;
+  private lastMembershipRefreshAt = 0;
+
+  /**
+   * Install the callback used to re-read membership when a realtime payload
+   * arrives for a group/thread this client has not heard of yet.
+   */
+  setMembershipRefresher(refresher: (() => Promise<void>) | null): void {
+    this.membershipRefresher = refresher;
+  }
+
+  /**
+   * Refetch membership, coalescing concurrent callers and rate-limiting so a
+   * burst of messages for an unknown group cannot trigger a refetch storm.
+   */
+  private async refreshMembership(): Promise<void> {
+    if (!this.membershipRefresher) return;
+    if (this.membershipRefreshInFlight) return this.membershipRefreshInFlight;
+    if (Date.now() - this.lastMembershipRefreshAt < MEMBERSHIP_REFRESH_COOLDOWN_MS) return;
+
+    this.lastMembershipRefreshAt = Date.now();
+    this.membershipRefreshInFlight = (async () => {
+      try {
+        await this.membershipRefresher?.();
+      } catch (error) {
+        console.warn('[Realtime] Membership refresh failed:', error);
+      } finally {
+        this.membershipRefreshInFlight = null;
+      }
+    })();
+    return this.membershipRefreshInFlight;
+  }
+
+  /**
+   * A payload arrived for an id we do not have in membership. Rather than drop
+   * it — which silently loses the first message in a group you were just added
+   * to — refetch membership once and deliver if it turns out we are a member.
+   */
+  private async deliverAfterMembershipRefresh(
+    id: string,
+    scope: 'group' | 'dm',
+    deliver: () => void
+  ): Promise<void> {
+    await this.refreshMembership();
+    const known = scope === 'group' ? this.groupIds.has(id) : this.dmThreadIds.has(id);
+    if (known) deliver();
+  }
 
   /**
    * Subscribe with a fixed lean channel set (not one channel per group/DM).
@@ -244,12 +296,19 @@ class RealtimeSubscriptionManager {
       const raw = payload.new as Message & { group_id?: string; groupId?: string };
       const groupId = raw.group_id || raw.groupId;
       if (!groupId) return;
-      // If membership list is loaded, ignore unknown groups; if empty (still loading), accept RLS-filtered events.
-      if (this.groupIds.size > 0 && !this.groupIds.has(groupId)) return;
       const message = isUpdate
         ? ({ ...raw, __realtimeEvent: 'UPDATE' } as Message)
         : raw;
-      this.messageCallbacks.forEach(cb => cb(message));
+      const dispatch = () => this.messageCallbacks.forEach(cb => cb(message));
+      // If membership is loaded but does not know this group, the cached list is
+      // stale rather than the message being unwanted — RLS already scoped the
+      // row to us. Refetch membership and deliver instead of dropping, which
+      // used to lose every message in a group joined since the last fetch.
+      if (this.groupIds.size > 0 && !this.groupIds.has(groupId)) {
+        void this.deliverAfterMembershipRefresh(groupId, 'group', dispatch);
+        return;
+      }
+      dispatch();
     };
 
     const channel = supabase
@@ -285,7 +344,6 @@ class RealtimeSubscriptionManager {
     ) => {
       const raw = payload.new as RawDmMessage;
       if (!raw?.thread_id) return;
-      if (this.dmThreadIds.size > 0 && !this.dmThreadIds.has(raw.thread_id)) return;
 
       const message: DirectMessage = {
         id: raw.id,
@@ -301,7 +359,14 @@ class RealtimeSubscriptionManager {
         clientMessageId: raw.client_message_id,
         ...(isUpdate ? { __realtimeEvent: 'UPDATE' } : {}),
       };
-      this.dmMessageCallbacks.forEach(cb => cb(message));
+      const dispatch = () => this.dmMessageCallbacks.forEach(cb => cb(message));
+      // Same stale-membership case as group messages: a thread opened by the
+      // other person is unknown here until the next fetch.
+      if (this.dmThreadIds.size > 0 && !this.dmThreadIds.has(raw.thread_id)) {
+        void this.deliverAfterMembershipRefresh(raw.thread_id, 'dm', dispatch);
+        return;
+      }
+      dispatch();
     };
 
     const channel = supabase
@@ -624,6 +689,28 @@ export function useRealtimeSubscriptions(
     if (!user?.id || !isSubscribedRef.current) return;
     subscriptionManager.setMembership(groupIds, dmThreadIds);
   }, [user?.id, groupIds, dmThreadIds, groupIdsKey, dmThreadIdsKey]);
+
+  // Lets the manager re-read membership when a payload arrives for a group or
+  // thread this client has not fetched yet, instead of discarding the message.
+  useEffect(() => {
+    if (!user?.id) {
+      subscriptionManager.setMembershipRefresher(null);
+      return;
+    }
+    subscriptionManager.setMembershipRefresher(async () => {
+      const store = useGroupStore.getState();
+      await Promise.all([
+        store.fetchGroups(user.id).catch(() => undefined),
+        store.fetchDmThreads(user.id).catch(() => undefined),
+      ]);
+      const next = useGroupStore.getState();
+      subscriptionManager.setMembership(
+        next.groups.map(g => g.id),
+        next.dmThreads.map(t => t.id)
+      );
+    });
+    return () => subscriptionManager.setMembershipRefresher(null);
+  }, [user?.id]);
 
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {

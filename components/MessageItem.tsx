@@ -12,6 +12,8 @@ import {
   resolveGroupChatMentionUsername,
   getQuestionVerificationThreshold,
   parseChatAudioUrl,
+  parseChatImageUrl,
+  chatMessagePreview,
   segmentMentions,
   canEditChatMessage,
   canRemoveChatMessage,
@@ -283,6 +285,10 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
   const audioUrl = message.type === MessageType.TEXT ? parseChatAudioUrl(message.text) : null;
+  // Chat photos travel as markdown in the message text (mobile sends them that
+  // way and parses them back out). Without this, a photo sent from a phone
+  // showed up here as the literal string "![image](https://…)".
+  const chatImageUrl = message.type === MessageType.TEXT ? parseChatImageUrl(message.text) : null;
   const isRemoved = !!message.isRemoved || !!message.removedAt;
   const canEdit = !!onEditMessage && canEditChatMessage(message, currentUser.id);
   const canRemove = !!onRemoveMessage && canRemoveChatMessage(message, currentUser.id);
@@ -487,15 +493,26 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             <p className="text-xs truncate">
               {message.replyTo.isRemoved
                 ? 'Message removed'
-                : (message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+                : (message.replyTo.questionStem
+                    ? message.replyTo.questionStem
+                    : chatMessagePreview(message.replyTo.text, 'Original message')
+                  ).slice(0, 100)}
             </p>
           </button>
         )}
 
-        {/* Text / voice message */}
+        {/* Text / voice / photo message */}
         {message.type === MessageType.TEXT && message.text && (
           audioUrl ? (
             <ChatAudioPlayer url={audioUrl} onPrimary={onPrimaryChrome} />
+          ) : chatImageUrl ? (
+            <ResolvedStorageImg
+              src={chatImageUrl}
+              alt="Photo"
+              variant="thumb"
+              className="max-w-full h-auto rounded-lg border border-lantern-border"
+              style={{ maxHeight: '260px' }}
+            />
           ) : (
             <MentionedText text={message.text} onPrimary={onPrimaryChrome} />
           )
