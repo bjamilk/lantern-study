@@ -313,7 +313,11 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+      // MP4/AAC first: expo-av on iOS and Android cannot decode WebM/Opus, so a
+      // voice note recorded here in WebM plays on web and shows "Voice note
+      // unavailable" on every phone. WebM stays as the fallback for browsers
+      // that cannot record MP4 (mainly Firefox).
+      const mimeCandidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
       const supportedMime =
         typeof MediaRecorder.isTypeSupported === 'function'
           ? mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
