@@ -24,9 +24,11 @@ import {
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
   MarkdownRenderer,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { useCompanionStore } from '../../stores/companionStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTheme } from '../../theme';
 
@@ -126,6 +128,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [showCollaborators, setShowCollaborators] = useState(false);
   const [parentScrollEnabled, setParentScrollEnabled] = useState(true);
   const tabBarClearance = useTabBarClearance(16);
+  const openCompanionWithMessage = useCompanionStore(s => s.openWithMessage);
   const handleDocumentScrollLock = useCallback((locked: boolean) => {
     setParentScrollEnabled(!locked);
   }, []);
@@ -618,6 +621,17 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   };
 
 
+
+  const handleChatWithNote = () => {
+    // Same prompt web builds in hooks/useNoteHandlers.ts so the companion gets
+    // the note's content either way, rather than being opened empty.
+    const noteTitle = title || selectedNote?.title || 'Untitled Note';
+    openCompanionWithMessage(
+      studyContent.trim().length >= MIN_NOTE_STUDY_CONTENT_CHARS
+        ? `Help me study my note "${noteTitle}". Ask me questions and explain key concepts from this material:\n\n${studyContent.slice(0, 4000)}`
+        : `I want to study my note "${noteTitle}". Ask me questions about it or help me understand key concepts based on this material.`
+    );
+  };
 
   const handleGenerateFlashcards = async () => {
     if (!canGenerateStudyMaterials) {
@@ -1137,7 +1151,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             <Text className="text-sm font-semibold text-lantern-text mb-1">
 
-              Summary & quiz
+              Learn from this note
 
             </Text>
 
@@ -1153,6 +1167,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
                 Smart Note
 
+              </Button>
+
+              <Button size="sm" variant="secondary" onPress={handleChatWithNote}>
+                Chat
               </Button>
 
               <Button

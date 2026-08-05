@@ -175,6 +175,31 @@ export function createCompanionClient(config: AIClientConfig) {
       }) => void,
       onError: (err: Error) => void
     ): Promise<void> => {
+      // React Native cannot read a streamed body, so ask for the whole reply in
+      // one piece and hand it to the same callbacks. Callers get a single
+      // "token" instead of a trickle, which is the only difference they see.
+      if (config.supportsResponseStreaming === false) {
+        try {
+          const result = await companionRequest<{
+            reply: string;
+            actions: CompanionAction[];
+            messageId?: string;
+            userMessageId?: string;
+            conversationId?: string;
+          }>('/message', 'POST', { message, context }, { trackUsage: false });
+          if (result.reply) onToken(result.reply);
+          onDone({
+            actions: result.actions || [],
+            messageId: result.messageId,
+            userMessageId: result.userMessageId,
+            conversationId: result.conversationId,
+          });
+        } catch (e: unknown) {
+          onError(e instanceof Error ? e : new Error('Failed to reach Lantern.'));
+        }
+        return;
+      }
+
       const headers = await config.getAuthHeaders();
 
       let response: Response;
