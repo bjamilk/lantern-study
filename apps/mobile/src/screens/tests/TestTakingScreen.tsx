@@ -894,7 +894,7 @@ export default function TestTakingScreen() {
               s(colors).timerBadge,
               timeRemaining < 60 && s(colors).timerWarning
             ]}>
-              <Ionicons name="time" size={14} color={timeRemaining < 60 ? '#ef4444' : '#ffffff'} />
+              <Ionicons name="time" size={14} color={timeRemaining < 60 ? colors.error : '#ffffff'} />
               <Text style={[
                 s(colors).timerText,
                 timeRemaining < 60 && s(colors).timerTextWarning
@@ -1002,7 +1002,7 @@ export default function TestTakingScreen() {
               <Ionicons 
                 name={feedbackResult.isCorrect ? 'checkmark-circle' : 'close-circle'} 
                 size={28} 
-                color={feedbackResult.isCorrect ? '#10b981' : '#ef4444'} 
+                color={feedbackResult.isCorrect ? colors.success : colors.error} 
               />
               <Text style={[
                 s(colors).feedbackTitle,
@@ -1252,7 +1252,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.text,
   },
   timerTextWarning: {
-    color: '#ef4444',
+    color: c.error,
   },
   submitButton: {
     backgroundColor: '#6366f1',
@@ -1456,12 +1456,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderWidth: 3,
   },
   trueButtonSelected: {
-    backgroundColor: '#10b981',
-    borderColor: '#10b981',
+    backgroundColor: c.success,
+    borderColor: c.success,
   },
   falseButtonSelected: {
-    backgroundColor: '#ef4444',
-    borderColor: '#ef4444',
+    backgroundColor: c.error,
+    borderColor: c.error,
   },
   trueFalseText: {
     fontSize: 18,
@@ -1527,7 +1527,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: '#6366f120',
   },
   matchingItemMatched: {
-    borderColor: '#10b981',
+    borderColor: c.success,
     backgroundColor: '#10b98110',
   },
   matchingItemUsed: {
@@ -1543,7 +1543,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
   },
   matchingItemTextUsed: {
-    color: '#10b981',
+    color: c.success,
   },
   matchBadge: {
     marginLeft: 8,
@@ -1766,7 +1766,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.backgroundSecondary,
   },
   dotAnswered: {
-    backgroundColor: '#10b981',
+    backgroundColor: c.success,
   },
   dotCurrent: {
     backgroundColor: '#6366f1',
@@ -1847,7 +1847,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   reviewCellAnswered: {
     backgroundColor: '#10b98130',
     borderWidth: 1,
-    borderColor: '#10b981',
+    borderColor: c.success,
   },
   reviewCellFlagged: {
     borderWidth: 1,
@@ -1906,7 +1906,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   studyBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#10b981',
+    color: c.success,
   },
   studyProgress: {
     paddingHorizontal: 12,
@@ -1921,7 +1921,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: '#10b98130',
   },
   progressFillStudy: {
-    backgroundColor: '#10b981',
+    backgroundColor: c.success,
   },
   navigationStudy: {
     borderTopColor: '#10b98140',
@@ -1934,11 +1934,11 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   feedbackCorrect: {
     backgroundColor: '#10b98115',
-    borderColor: '#10b981',
+    borderColor: c.success,
   },
   feedbackIncorrect: {
     backgroundColor: '#ef444415',
-    borderColor: '#ef4444',
+    borderColor: c.error,
   },
   feedbackHeader: {
     flexDirection: 'row',
@@ -1951,10 +1951,10 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
   },
   feedbackTitleCorrect: {
-    color: '#10b981',
+    color: c.success,
   },
   feedbackTitleIncorrect: {
-    color: '#ef4444',
+    color: c.error,
   },
   feedbackExplanation: {
     fontSize: 14,
@@ -1974,7 +1974,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   correctAnswerText: {
     fontSize: 15,
-    color: '#10b981',
+    color: c.success,
     fontWeight: '600',
   },
   checkAnswerButton: {
@@ -1984,7 +1984,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 8,
     marginTop: 20,
     padding: 16,
-    backgroundColor: '#10b981',
+    backgroundColor: c.success,
     borderRadius: 12,
   },
   checkAnswerText: {
@@ -2001,7 +2001,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   finishStudyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#10b981',
+    color: c.success,
   },
   
   // Error styles

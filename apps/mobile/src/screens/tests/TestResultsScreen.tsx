@@ -148,7 +148,7 @@ export default function TestResultsScreen() {
         {/* Result Card */}
         <View style={[
           styles.resultCard,
-          { borderColor: attempt.passed ? '#10b981' : '#ef4444' }
+          { borderColor: attempt.passed ? colors.success : colors.error }
         ]}>
           <View style={[
             styles.resultIcon,
@@ -157,7 +157,7 @@ export default function TestResultsScreen() {
             <Ionicons 
               name={attempt.passed ? 'trophy' : 'close-circle'} 
               size={48} 
-              color={attempt.passed ? '#10b981' : '#ef4444'} 
+              color={attempt.passed ? colors.success : colors.error} 
             />
           </View>
           
@@ -165,7 +165,7 @@ export default function TestResultsScreen() {
           
           <Text style={[
             styles.resultStatus,
-            { color: attempt.passed ? '#10b981' : '#ef4444' }
+            { color: attempt.passed ? colors.success : colors.error }
           ]}>
             {attempt.passed ? 'PASSED!' : 'NOT PASSED'}
           </Text>
@@ -224,11 +224,11 @@ export default function TestResultsScreen() {
             </View>
             <View style={styles.progressLabels}>
               <View style={styles.progressLabel}>
-                <View style={[styles.progressDot, { backgroundColor: '#10b981' }]} />
+                <View style={[styles.progressDot, { backgroundColor: colors.success }]} />
                 <Text style={styles.progressLabelText}>Correct ({correctCount})</Text>
               </View>
               <View style={styles.progressLabel}>
-                <View style={[styles.progressDot, { backgroundColor: '#ef4444' }]} />
+                <View style={[styles.progressDot, { backgroundColor: colors.error }]} />
                 <Text style={styles.progressLabelText}>Incorrect ({incorrectCount})</Text>
               </View>
             </View>
@@ -247,7 +247,7 @@ export default function TestResultsScreen() {
                 <Ionicons 
                   name={answer.isCorrect ? 'checkmark' : 'close'} 
                   size={16} 
-                  color={answer.isCorrect ? '#10b981' : '#ef4444'} 
+                  color={answer.isCorrect ? colors.success : colors.error} 
                 />
               </View>
               <View style={styles.questionInfo}>
@@ -293,7 +293,7 @@ export default function TestResultsScreen() {
               )}
               <Text style={[
                 styles.questionPoints,
-                { color: answer.isCorrect ? '#10b981' : '#ef4444' }
+                { color: answer.isCorrect ? colors.success : colors.error }
               ]}>
                 {answer.isCorrect ? `+${answer.points}` : '0'}
               </Text>
@@ -477,11 +477,11 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   progressFillCorrect: {
     height: '100%',
-    backgroundColor: '#10b981',
+    backgroundColor: c.success,
   },
   progressFillIncorrect: {
     height: '100%',
-    backgroundColor: '#ef4444',
+    backgroundColor: c.error,
   },
   progressLabels: {
     flexDirection: 'row',
@@ -596,7 +596,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   practiceFailedButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#10b981',
+    color: c.success,
   },
   retryButton: {
     flex: 1,
