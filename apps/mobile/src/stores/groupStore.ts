@@ -927,19 +927,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const previousCache = get().messagesCache[groupId] || [];
     const isActiveGroup = get().activeGroupId === groupId;
     const withOptimistic = [...previousCache, newMessage];
+    // Bump the root only — matching on `threadRootId || id` also matched every
+    // reply, so each reply showed its own "N replies" chip.
     const optimisticCache = threadRootId
-      ? withOptimistic.map((m) => {
-          const rootKey = m.threadRootId || m.id;
-          if (rootKey !== threadRootId) return m;
-          return { ...m, replyCount: rootReplyCount };
-        })
+      ? withOptimistic.map((m) =>
+          m.id === threadRootId ? { ...m, replyCount: rootReplyCount } : m
+        )
       : withOptimistic;
     const optimisticMessages = threadRootId
-      ? (isActiveGroup ? [...previousMessages, newMessage] : previousMessages).map((m) => {
-          const rootKey = m.threadRootId || m.id;
-          if (rootKey !== threadRootId) return m;
-          return { ...m, replyCount: rootReplyCount };
-        })
+      ? (isActiveGroup ? [...previousMessages, newMessage] : previousMessages).map((m) =>
+          m.id === threadRootId ? { ...m, replyCount: rootReplyCount } : m
+        )
       : isActiveGroup
         ? [...previousMessages, newMessage]
         : previousMessages;
@@ -1558,11 +1556,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
     const withOptimistic = [...existing, optimistic];
     const updatedList = threadRootId
-      ? withOptimistic.map((m) => {
-          const rootKey = m.threadRootId || m.id;
-          if (rootKey !== threadRootId) return m;
-          return { ...m, replyCount: rootReplyCount };
-        })
+      ? withOptimistic.map((m) =>
+          m.id === threadRootId ? { ...m, replyCount: rootReplyCount } : m
+        )
       : withOptimistic;
 
     set(state => {
