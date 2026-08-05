@@ -11,10 +11,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
-import { chatMessagePreview } from '@lantern/shared/utils';
+import { chatMessagePreview, resolveAvatarSrc } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type Group } from '../../stores/groupStore';
-import { Avatar, Button, ScreenHeader } from '../../components/ui';
+import { Button, ScreenHeader } from '../../components/ui';
+import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import NewDirectMessageModal from '../../components/NewDirectMessageModal';
 import { useGroupHandlers } from '../../hooks/useGroupHandlers';
 import { featureAccents } from '@lantern/shared/design';
@@ -26,7 +27,13 @@ type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
 
 type ListItem =
   | { kind: 'section'; title: string }
-  | { kind: 'dm'; thread: DMThread; otherUserId: string; name: string }
+  | {
+      kind: 'dm';
+      thread: DMThread;
+      otherUserId: string;
+      name: string;
+      avatarUrl?: string | null;
+    }
   | { kind: 'group'; group: Group; nestingLevel: number; hasChildren: boolean };
 
 function formatRelativeTime(iso?: string): string {
@@ -42,10 +49,10 @@ function formatRelativeTime(iso?: string): string {
 
 function ChatRow({
   name,
+  avatarUrl,
   preview,
   time,
   unread,
-  isDm,
   isMessageRequest,
   nestingLevel = 0,
   hasChildren = false,
@@ -54,10 +61,10 @@ function ChatRow({
   onPress,
 }: {
   name: string;
+  avatarUrl?: string | null;
   preview?: string;
   time?: string;
   unread?: number;
-  isDm?: boolean;
   isMessageRequest?: boolean;
   nestingLevel?: number;
   hasChildren?: boolean;
@@ -91,16 +98,10 @@ function ChatRow({
         className="flex-1 flex-row items-center active:opacity-80"
       >
       <View className="relative mr-3">
-        {isDm ? (
-          <View
-            className="w-11 h-11 rounded-full items-center justify-center"
-            style={{ backgroundColor: colors.backgroundSecondary }}
-          >
-            <Ionicons name="person" size={20} color={colors.primary} />
-          </View>
-        ) : (
-          <Avatar name={name} size={44} />
-        )}
+        {/* Group avatars live in the private `group-avatars` bucket, profile
+            avatars in `profile-avatars`; ResolvedAvatar re-signs both and falls
+            back to initials when there is no uploaded image. */}
+        <ResolvedAvatar name={name} uri={resolveAvatarSrc(avatarUrl)} size={44} />
         {unread && unread > 0 ? (
           <View className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-lantern-error items-center justify-center">
             <Text className="text-[10px] font-bold text-white">{unread > 99 ? '99+' : unread}</Text>
@@ -201,10 +202,9 @@ export function GroupsScreen({ navigation }: Props) {
 
     const toDmItem = (thread: DMThread): ListItem => {
       const otherUserId = thread.participantIds.find((id) => id !== user?.id) || '';
-      const name = otherUserId
-        ? thread.participants[otherUserId]?.name || 'Direct message'
-        : 'Direct message';
-      return { kind: 'dm', thread, otherUserId, name };
+      const other = otherUserId ? thread.participants[otherUserId] : undefined;
+      const name = other?.name || 'Direct message';
+      return { kind: 'dm', thread, otherUserId, name, avatarUrl: other?.avatarUrl };
     };
 
     const openItems: ListItem[] = openDms.map(toDmItem);
@@ -347,6 +347,7 @@ export function GroupsScreen({ navigation }: Props) {
               return (
                 <ChatRow
                   name={item.name}
+                  avatarUrl={item.avatarUrl}
                   preview={chatMessagePreview(item.thread.lastMessage, "")}
                   time={formatRelativeTime(
                     typeof item.thread.lastMessageTimestamp === 'string'
@@ -354,7 +355,6 @@ export function GroupsScreen({ navigation }: Props) {
                       : item.thread.lastMessageTimestamp?.toString()
                   )}
                   unread={item.thread.unreadCount}
-                  isDm
                   isMessageRequest={isMessageRequest}
                   onPress={() => handlePress(item)}
                 />
@@ -364,6 +364,7 @@ export function GroupsScreen({ navigation }: Props) {
             return (
               <ChatRow
                 name={g.name}
+                avatarUrl={g.avatarUrl}
                 preview={chatMessagePreview(g.lastMessage?.text, "")}
                 time={formatRelativeTime(g.lastMessage?.createdAt || g.updatedAt)}
                 unread={g.unreadCount}

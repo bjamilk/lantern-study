@@ -19,6 +19,7 @@ import {
   canRemoveChatMessage,
   findFirstUnreadMessageId,
   normalizeStorageUrl,
+  resolveAvatarSrc,
   shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
@@ -26,6 +27,7 @@ import { useGroupStore, type DirectMessage } from '../../stores/groupStore';
 import { ChatComposer } from '../../components/chat/ChatComposer';
 import { ChatThreadModal } from '../../components/chat/ChatThreadModal';
 import { DmBubble } from '../../components/chat/DmBubble';
+import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import {
@@ -611,9 +613,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         >
           <Ionicons name="arrow-back" size={22} color="#475569" />
         </Pressable>
-        <View className="w-9 h-9 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center">
-          <Ionicons name="person" size={18} color="#6366f1" />
-        </View>
+        <ResolvedAvatar
+          name={displayName}
+          uri={resolveAvatarSrc(peerAvatarUrl)}
+          size={36}
+        />
         <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={1}>
           {displayName}
         </Text>
