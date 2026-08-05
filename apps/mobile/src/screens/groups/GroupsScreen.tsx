@@ -27,6 +27,7 @@ type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
 
 type ListItem =
   | { kind: 'section'; title: string }
+  | { kind: 'archivedHeader'; count: number }
   | {
       kind: 'dm';
       thread: DMThread;
@@ -54,6 +55,7 @@ function ChatRow({
   time,
   unread,
   isMessageRequest,
+  isArchived,
   nestingLevel = 0,
   hasChildren = false,
   isExpanded = false,
@@ -66,6 +68,7 @@ function ChatRow({
   time?: string;
   unread?: number;
   isMessageRequest?: boolean;
+  isArchived?: boolean;
   nestingLevel?: number;
   hasChildren?: boolean;
   isExpanded?: boolean;
@@ -79,6 +82,7 @@ function ChatRow({
         paddingLeft: 16 + nestingLevel * 20,
         borderLeftWidth: nestingLevel > 0 ? 3 : 0,
         borderLeftColor: nestingLevel > 0 ? `${featureAccents.groups}55` : 'transparent',
+        opacity: isArchived ? 0.6 : 1,
       }}
       className="flex-row items-center pr-4 py-3.5 border-b border-lantern-border"
     >
@@ -113,6 +117,9 @@ function ChatRow({
           <Text className="text-base font-semibold text-lantern-text flex-1" numberOfLines={1}>
             {name}
           </Text>
+          {isArchived ? (
+            <Ionicons name="archive-outline" size={14} color={colors.textTertiary} />
+          ) : null}
           {time ? <Text className="text-xs text-lantern-text-tertiary shrink-0">{time}</Text> : null}
         </View>
         {isMessageRequest ? (
@@ -133,12 +140,14 @@ function ChatRow({
 
 export function GroupsScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(16);
+  const { colors } = useTheme();
   const user = useAuthStore(s => s.user);
   const { groups, dmThreads, isLoading, fetchGroups, fetchDmThreads, getTopLevelGroups } = useGroupStore();
   const { handleSelectGroup, handleInitiateDm } = useGroupHandlers();
   const [refreshing, setRefreshing] = useState(false);
   const [dmModalOpen, setDmModalOpen] = useState(false);
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
 
   const subGroupsMap = useMemo(() => {
     const map: Record<string, Group[]> = {};
@@ -253,8 +262,34 @@ export function GroupsScreen({ navigation }: Props) {
       rebuilt.push(...inboundRequests.map(toDmItem));
     }
     rebuilt.push(...openItems);
+
+    // Archived chats stay reachable, as they are on web. Without this the mobile
+    // archive action is one-way: the row disappears and nothing can unarchive it.
+    const archivedItems: ListItem[] = [
+      ...groups
+        .filter((g) => g.isArchived)
+        .map((group): ListItem => ({
+          kind: 'group',
+          group,
+          nestingLevel: 0,
+          hasChildren: false,
+        })),
+      ...dmThreads.filter((t) => t.isArchived).map(toDmItem),
+    ];
+    if (archivedItems.length > 0) {
+      rebuilt.push({ kind: 'archivedHeader', count: archivedItems.length });
+      if (archivedExpanded) rebuilt.push(...archivedItems);
+    }
     return rebuilt;
-  }, [dmThreads, getTopLevelGroups, subGroupsMap, expandedParentGroups, user?.id]);
+  }, [
+    dmThreads,
+    groups,
+    getTopLevelGroups,
+    subGroupsMap,
+    expandedParentGroups,
+    archivedExpanded,
+    user?.id,
+  ]);
 
   const toggleGroupExpand = useCallback((groupId: string) => {
     setExpandedParentGroups(prev => ({
@@ -270,7 +305,7 @@ export function GroupsScreen({ navigation }: Props) {
   };
 
   const handlePress = (item: ListItem) => {
-    if (item.kind === 'section') return;
+    if (item.kind === 'section' || item.kind === 'archivedHeader') return;
     if (item.kind === 'group') {
       handleSelectGroup(item.group);
       return;
@@ -307,9 +342,11 @@ export function GroupsScreen({ navigation }: Props) {
           keyExtractor={item =>
             item.kind === 'section'
               ? `section-${item.title}`
-              : item.kind === 'dm'
-                ? `dm-${item.thread.id}`
-                : `group-${item.group.id}-L${item.nestingLevel}`
+              : item.kind === 'archivedHeader'
+                ? 'section-archived'
+                : item.kind === 'dm'
+                  ? `dm-${item.thread.id}`
+                  : `group-${item.group.id}-L${item.nestingLevel}`
           }
           contentContainerStyle={{ paddingBottom: tabBarClearance }}
           refreshControl={
@@ -339,6 +376,27 @@ export function GroupsScreen({ navigation }: Props) {
                 </View>
               );
             }
+            if (item.kind === 'archivedHeader') {
+              return (
+                <Pressable
+                  onPress={() => setArchivedExpanded((prev) => !prev)}
+                  className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border active:bg-lantern-background-secondary"
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: archivedExpanded }}
+                  accessibilityLabel={`Archived chats, ${item.count}`}
+                >
+                  <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+                  <Text className="flex-1 text-xs font-semibold uppercase tracking-wider text-lantern-text-secondary">
+                    Archived ({item.count})
+                  </Text>
+                  <Ionicons
+                    name={archivedExpanded ? 'chevron-down' : 'chevron-forward'}
+                    size={16}
+                    color={colors.textTertiary}
+                  />
+                </Pressable>
+              );
+            }
             if (item.kind === 'dm') {
               const isMessageRequest =
                 item.thread.status === 'pending' &&
@@ -356,6 +414,7 @@ export function GroupsScreen({ navigation }: Props) {
                   )}
                   unread={item.thread.unreadCount}
                   isMessageRequest={isMessageRequest}
+                  isArchived={item.thread.isArchived}
                   onPress={() => handlePress(item)}
                 />
               );
@@ -368,6 +427,7 @@ export function GroupsScreen({ navigation }: Props) {
                 preview={chatMessagePreview(g.lastMessage?.text, "")}
                 time={formatRelativeTime(g.lastMessage?.createdAt || g.updatedAt)}
                 unread={g.unreadCount}
+                isArchived={g.isArchived}
                 nestingLevel={item.nestingLevel}
                 hasChildren={item.hasChildren}
                 isExpanded={!!expandedParentGroups[g.id]}

@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useGroupStore, type Message, type GroupMember } from '../../stores/groupStore';
@@ -36,7 +37,7 @@ import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode';
 import { useTheme } from '../../theme';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
-import { summarizeGroupChat } from '../../services/ai';
+import { aiAskTutor, summarizeGroupChat } from '../../services/ai';
 import * as api from '../../services/api';
 import { navigateToTestTaking } from '../../navigation/navigationRef';
 import {
@@ -179,6 +180,9 @@ function NewMessagesDivider() {
 
 const NEAR_BOTTOM_PX = 120;
 
+/** Mirrors web's MessageInputBar: "@AI <question>" / "/ask <question>". */
+const AI_QUERY_PATTERN = /^(?:@AI\s+|\/ask\s+)(.+)/is;
+
 export function GroupChatScreen({ navigation, route }: Props) {
   const { groupId, groupName, openAddMembers } = route.params;
   const user = useAuthStore(s => s.user);
@@ -226,6 +230,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [aiThinking, setAiThinking] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [showTestConfig, setShowTestConfig] = useState(false);
   const [testMode, setTestMode] = useState<TestMode>('test');
@@ -619,7 +625,39 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const handleSend = async (overrideText?: string) => {
     const trimmed = (overrideText ?? text).trim();
-    if (!trimmed || !user?.id || sending) return;
+    if (!trimmed || !user?.id || sending || aiThinking) return;
+
+    // Same trigger as web: "@AI <question>" or "/ask <question>" answers in-chat
+    // instead of posting the question. Not available while editing a message.
+    const aiMatch = editingMessage ? null : trimmed.match(AI_QUERY_PATTERN);
+    if (aiMatch) {
+      const question = aiMatch[1]!.trim();
+      if (!overrideText) setText('');
+      const replyId = replyTo?.id;
+      setAiThinking(true);
+      try {
+        const { answer } = await aiAskTutor(question);
+        if (answer) {
+          isNearBottomRef.current = true;
+          setReplyTo(null);
+          await sendMessage(groupId, `🤖 AI Tutor:\n${answer}`, user.id, undefined, {
+            replyToMessageId: replyId,
+          });
+          listRef.current?.scrollToEnd({ animated: true });
+          setNewMessagesBelow(0);
+        }
+      } catch (error) {
+        if (!overrideText) setText(trimmed);
+        Alert.alert(
+          'AI Tutor failed',
+          error instanceof Error ? error.message : 'Please try again.'
+        );
+      } finally {
+        setAiThinking(false);
+      }
+      return;
+    }
+
     setSending(true);
     try {
       if (editingMessage) {
@@ -799,6 +837,22 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const isAdmin =
     group?.ownerId === user?.id || group?.adminIds?.includes(user?.id || '') || false;
   const memberCount = group?.memberCount || group?.members?.length || 0;
+
+  // archiveGroup is a toggle, so this unarchives an archived group.
+  const handleToggleArchive = useCallback(async () => {
+    if (archiveBusy) return;
+    setArchiveBusy(true);
+    try {
+      await archiveGroup(groupId);
+    } catch (error) {
+      Alert.alert(
+        'Could not update group',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    } finally {
+      setArchiveBusy(false);
+    }
+  }, [archiveBusy, archiveGroup, groupId]);
 
   useEffect(() => {
     const { setTipAllowed, setTipReady } = useFeatureTipStore.getState();
@@ -1006,6 +1060,23 @@ export function GroupChatScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
+      {group?.isArchived ? (
+        <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300" numberOfLines={2}>
+            This group is archived. Unarchive it to send messages.
+          </Text>
+          <Pressable
+            onPress={() => void handleToggleArchive()}
+            disabled={archiveBusy}
+            className="px-2 py-1"
+          >
+            <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+              Unarchive
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {isLoadingMessages && displayMessages.length === 0 ? (
           <View className="flex-1 items-center justify-center">
@@ -1148,7 +1219,14 @@ export function GroupChatScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {typingLabel ? (
+        {aiThinking ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            className="px-4 py-1 text-xs text-lantern-primary"
+          >
+            🤖 AI Tutor is thinking…
+          </Text>
+        ) : typingLabel ? (
           <Text
             accessibilityLiveRegion="polite"
             className="px-4 py-1 text-xs text-lantern-text-secondary"
@@ -1156,6 +1234,14 @@ export function GroupChatScreen({ navigation, route }: Props) {
             {typingLabel}
           </Text>
         ) : null}
+        {group?.isArchived ? (
+          <View className="flex-row items-center justify-center gap-2 px-4 py-4 border-t border-lantern-border bg-lantern-surface">
+            <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+            <Text className="text-sm text-lantern-text-secondary">
+              This group is archived.
+            </Text>
+          </View>
+        ) : (
         <ChatComposer
           value={text}
           onChangeText={value => {
@@ -1163,7 +1249,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             broadcastTyping();
           }}
           onSend={() => void handleSend()}
-          sending={sending}
+          sending={sending || aiThinking}
           groupId={groupId}
           replyTo={replyTo}
           onClearReply={() => setReplyTo(null)}
@@ -1199,6 +1285,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             }
           }}
         />
+        )}
       </KeyboardAvoidingView>
 
       <TestConfigModal
