@@ -207,10 +207,10 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
   const durationSec = durationMs / 1000;
   const positionSec = positionMs / 1000;
   const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0;
-  const iconColor = isOwn ? '#ffffff' : colors.primary;
-  const trackColor = isOwn ? 'rgba(255,255,255,0.25)' : colors.primaryBackground;
-  const fillColor = isOwn ? '#ffffff' : colors.primary;
-  const timeColor = isOwn ? 'rgba(255,255,255,0.8)' : colors.textSecondary;
+  const iconColor = isOwn ? colors.chatBubbleText : colors.primary;
+  const trackColor = isOwn ? `${colors.chatBubbleMeta}55` : colors.primaryBackground;
+  const fillColor = isOwn ? colors.chatBubbleText : colors.primary;
+  const timeColor = colors.chatBubbleMeta;
 
   if (loadError || resolvedUrl === null) {
     return (
@@ -238,7 +238,7 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
         style={{
           width: 36,
           height: 36,
-          backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : colors.primaryBackground,
+          backgroundColor: isOwn ? `${colors.chatBubbleMeta}33` : colors.primaryBackground,
         }}
       >
         <Ionicons
@@ -368,7 +368,7 @@ export function MessageBubble({
             : { id: (opt as { id?: string }).id || String(i), text: (opt as { text?: string }).text || String(opt) }
         );
 
-  const ownTextBubbleStyle = { backgroundColor: colors.primary };
+  const ownTextBubbleStyle = { backgroundColor: colors.chatBubbleOwn };
   const ownQuestionBubbleStyle = {
     backgroundColor: colors.primaryBackground,
     borderColor: colors.primary,
@@ -381,9 +381,7 @@ export function MessageBubble({
   };
 
   const otherTextBubbleStyle = {
-    backgroundColor: colors.card,
-    borderColor: colors.border,
-    borderWidth: 1,
+    backgroundColor: colors.chatBubbleOther,
   };
   const storedLabel = message.senderName?.trim() || '';
   const authorLabel = resolveGroupChatSenderLabel(
@@ -487,7 +485,7 @@ export function MessageBubble({
               <Text
                 className="text-[11px] font-semibold"
                 numberOfLines={1}
-                style={{ color: isOwn && !isQuestion ? colors.textInverse : colors.primary }}
+                style={{ color: isOwn && !isQuestion ? colors.chatBubbleText : colors.primary }}
               >
                 {message.replyTo.senderName || 'Message'}
               </Text>
@@ -602,8 +600,8 @@ export function MessageBubble({
                   {textWithoutImage ? (
                     <MentionText
                       text={textWithoutImage}
-                      color={isOwn ? colors.textInverse : colors.text}
-                      mentionColor={isOwn ? '#fff' : colors.primary}
+                      color={isQuestion ? colors.text : colors.chatBubbleText}
+                      mentionColor={colors.primary}
                     />
                   ) : null}
                 </View>

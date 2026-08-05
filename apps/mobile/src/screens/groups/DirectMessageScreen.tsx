@@ -848,6 +848,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               data={messages}
               keyExtractor={item => item.id}
               className="flex-1"
+              style={{ backgroundColor: colors.chatBackground }}
               contentContainerClassName="px-4 py-4 flex-grow"
               onScroll={(e) => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
