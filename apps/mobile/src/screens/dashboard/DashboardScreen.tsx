@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import { CompositeScreenProps } from '@react-navigation/native';
+import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -410,7 +410,13 @@ export function DashboardScreen({ navigation }: Props) {
 
   }, [selectedPeriod, user?.id]);
 
-
+  // Home tab stays mounted; refetch chart inputs when returning from a test.
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.id) return;
+      void fetchStats(user.id, selectedPeriod, { force: true }).catch(() => {});
+    }, [user?.id, selectedPeriod, fetchStats])
+  );
 
   const onRefresh = async () => {
 

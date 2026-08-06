@@ -5953,9 +5953,10 @@ export class SupabaseService {
 
     await cacheService.delete(`test:${draftId}`);
     await cacheService.delete(`test:${draftId}:user:${userId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
 
     if (sessionKind === "study") {
+      // Study sessions still affect lean history lists / draft caches.
+      await cacheService.deletePattern(`tests:${userId}:*`);
       return {
         session: this.mapTestSessionRowToClient(data),
         sessionKind: "study",
@@ -5965,6 +5966,7 @@ export class SupabaseService {
       };
     }
 
+    // createTestResult invalidates tests:${userId}:* after the score row lands.
     const result = await this.createTestResult(
       draftId,
       {
@@ -6160,8 +6162,16 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    // Invalidate caches
+    // Invalidate caches. Dashboard Group Performance is built from lean completed
+    // history (`tests:${userId}:*` / `/dashboard/summary`), so drop those AFTER
+    // the result row exists — earlier deletes race with a refill that still
+    // lacks score/correctAnswersCount.
     await cacheService.delete(`test:results:${testId}`);
+    if (userId) {
+      await cacheService.deletePattern(`tests:${userId}:*`);
+      await cacheService.deletePattern(`tests:stats:performance:${userId}:*`);
+      await cacheService.delete(`tests:stats:subject:${userId}`);
+    }
 
     let gamification:
       | {

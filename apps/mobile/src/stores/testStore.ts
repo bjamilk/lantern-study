@@ -1382,9 +1382,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       attempts: [attempt, ...state.attempts],
       activeTest: null,
     }));
-    // The dashboard reads results through a 90s cache. Without dropping it here
-    // the next fetchAttempts overwrites the attempt we just added with a stale
-    // cached list, so a finished test disappears from the performance chart.
+    // Drop the 90s lean-results cache so later list fetches are not stale.
     clearTestResultsCache();
     await get().saveToStorage();
 
@@ -1459,7 +1457,7 @@ export const useTestStore = create<TestState>((set, get) => ({
         set(state => ({
           attempts: state.attempts.map(a =>
             a.id === attempt.id
-              ? { ...a, id: sessionId!, testId: sessionId!, groupName: options?.groupName || a.groupName, groupId: options?.groupId || a.groupId }
+              ? { ...a, id: sessionId!, testId: sessionId!, groupId: options?.groupId || a.groupId, groupName: options?.groupName || a.groupName }
               : a
           ),
           pausedSessions: state.pausedSessions.filter((s) => s.id !== sessionId),
@@ -1467,6 +1465,16 @@ export const useTestStore = create<TestState>((set, get) => ({
         attempt.id = sessionId!;
         attempt.testId = sessionId!;
         await get().saveToStorage();
+
+        // Group Performance chart reads statsStore.leanTestResults (via
+        // /dashboard/summary). Refresh after the score row is persisted.
+        try {
+          const { useStatsStore } = await import('./statsStore');
+          const period = useStatsStore.getState().selectedPeriod;
+          void useStatsStore.getState().fetchStats(userId, period, { force: true });
+        } catch (err) {
+          console.warn('Failed to refresh dashboard stats after test submit:', err);
+        }
       } catch (error) {
         console.warn('Failed to save test result to API:', error);
         await syncService.queueOperation(
