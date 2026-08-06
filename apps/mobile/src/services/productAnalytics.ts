@@ -83,7 +83,20 @@ export function trackScreenView(screen: string): void {
 }
 
 export function trackListingView(listingId: string): void {
+  // Detail-view analytics only for signed-in users (matches unique views_count).
+  if (!useAuthStore.getState().user?.id) return;
   trackProductEvent({ event: 'listing_view', props: { listingId } });
+}
+
+export function trackListingImpression(
+  listingId: string,
+  position: number,
+  from?: string
+): void {
+  trackProductEvent({
+    event: 'listing_impression',
+    props: { listingId, position, from: from?.slice(0, 40) },
+  });
 }
 
 export function trackMarketplaceSearch(opts: {

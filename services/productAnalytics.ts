@@ -119,6 +119,8 @@ export function trackPageView(route: string): void {
 }
 
 export function trackListingView(listingId: string, referrer?: string): void {
+  // Detail-view analytics only for signed-in users (matches unique views_count).
+  if (!useAuthStore.getState().currentUser?.id) return;
   trackProductEvent({
     event: 'listing_view',
     props: { listingId, referrer: referrer?.slice(0, 80) },

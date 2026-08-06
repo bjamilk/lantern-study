@@ -48,7 +48,12 @@ router.get(
     )
       ? req.query.compensationKind
       : undefined;
-    const sort = req.query.sort === "closing" ? "closing" : "newest";
+    const sort =
+      req.query.sort === "closing"
+        ? "closing"
+        : req.query.sort === "newest"
+          ? "newest"
+          : "trending";
     const remote =
       req.query.remote === "true"
         ? true

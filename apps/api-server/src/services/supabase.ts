@@ -8874,7 +8874,7 @@ export class SupabaseService {
       location,
       campusId,
       countryCode,
-      sortBy = "created_at",
+      sortBy = "trending",
       sortOrder = "desc",
       responseProfile = "full",
     } = options;
@@ -8890,7 +8890,9 @@ export class SupabaseService {
       Boolean(categoryList) ||
       minPrice !== undefined ||
       maxPrice !== undefined ||
-      Boolean(location);
+      Boolean(location) ||
+      sortBy === "trending" ||
+      sortBy === "sale_first";
 
     if (useSearchRpc) {
       const { data: rpcRows, error: rpcError } = await this.supabase.rpc(
@@ -9011,8 +9013,10 @@ export class SupabaseService {
       query = query.ilike("location", `%${location}%`);
     }
 
-    // Apply sorting
-    query = query.order(sortBy, { ascending: sortOrder === "asc" });
+    // Fallback path: trending/sale_first require the RPC; degrade to created_at.
+    const fallbackSort =
+      sortBy === "trending" || sortBy === "sale_first" ? "created_at" : sortBy;
+    query = query.order(fallbackSort, { ascending: sortOrder === "asc" });
 
     const { data, error, count } = await query;
     if (error) throw error;
@@ -10331,33 +10335,36 @@ export class SupabaseService {
     return data;
   }
 
-  // Increment view count
-  async incrementListingViews(listingId: string): Promise<void> {
+  /**
+   * Count at most one view per registered viewer (never anonymous / owner /
+   * repeat opens). Returns true only when views_count was actually bumped.
+   */
+  async incrementListingViews(
+    listingId: string,
+    viewerId?: string | null,
+  ): Promise<boolean> {
+    if (!viewerId) return false;
     try {
-      const { error: rpcError } = await this.supabase.rpc(
-        "increment_listing_views",
-        { listing_id: listingId },
-      );
-
-      // Fallback if RPC doesn't exist — do a read-then-write
-      if (rpcError) {
-        const { data } = await this.supabase
-          .from("marketplace_listings")
-          .select("views_count")
-          .eq("id", listingId)
-          .single();
-
-        const currentViews = data?.views_count || 0;
-        await this.supabase
-          .from("marketplace_listings")
-          .update({ views_count: currentViews + 1 })
-          .eq("id", listingId);
+      const { data, error } = await this.supabase.rpc("increment_listing_views", {
+        listing_id: listingId,
+        viewer_id: viewerId,
+      });
+      if (error) {
+        logger.warn("Unique listing view RPC failed", {
+          listingId,
+          viewerId,
+          error: error.message,
+        });
+        return false;
       }
+      return data === true;
     } catch (err) {
       logger.error("Failed to increment listing views", {
         listingId,
+        viewerId,
         error: err,
       });
+      return false;
     }
   }
 

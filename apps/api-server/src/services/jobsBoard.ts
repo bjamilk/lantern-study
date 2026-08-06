@@ -431,7 +431,7 @@ export class JobsBoardService {
     companyOnly?: boolean;
     remote?: boolean;
     compensationKind?: "paid" | "unpaid" | "discuss";
-    sort?: "newest" | "closing";
+    sort?: "newest" | "closing" | "trending";
     sponsoredFirst?: boolean;
     viewerId?: string | null;
   }) {
@@ -439,6 +439,11 @@ export class JobsBoardService {
     const limit = Math.min(50, Math.max(1, filters.limit || 20));
     const from = (page - 1) * limit;
     const to = from + limit - 1;
+    const sort = filters.sort || "trending";
+
+    if (sort === "trending") {
+      return this.listPostingsTrending(filters, page, limit);
+    }
 
     let query = this.client()
       .from("job_postings")
@@ -472,7 +477,7 @@ export class JobsBoardService {
       });
     }
 
-    if (filters.sort === "closing") {
+    if (sort === "closing") {
       query = query
         .not("deadline", "is", null)
         .gte("deadline", new Date().toISOString())
@@ -494,6 +499,75 @@ export class JobsBoardService {
     return {
       data: (data || []).map((row: any) => mapPosting(row, savedIds)),
       pagination: { page, limit, total: count ?? 0 },
+    };
+  }
+
+  private async listPostingsTrending(
+    filters: {
+      search?: string;
+      employmentType?: string;
+      campusId?: string;
+      companyOnly?: boolean;
+      remote?: boolean;
+      compensationKind?: "paid" | "unpaid" | "discuss";
+      sponsoredFirst?: boolean;
+      viewerId?: string | null;
+    },
+    page: number,
+    limit: number,
+  ) {
+    const { data: ranked, error: rankError } = await this.client().rpc(
+      "jobs_board_trending_ids",
+      {
+        p_page: page,
+        p_limit: limit,
+        p_search: filters.search?.trim() || null,
+        p_employment_type: filters.employmentType || null,
+        p_campus_id: filters.campusId || null,
+        p_company_only: !!filters.companyOnly,
+        p_remote: filters.remote ?? null,
+        p_compensation_kind: filters.compensationKind || null,
+        p_country_code: JOBS_DEFAULT_COUNTRY,
+        p_sponsored_first: filters.sponsoredFirst !== false,
+      },
+    );
+    if (rankError) throw rankError;
+
+    const rows = (ranked || []) as Array<{
+      id: string;
+      trending_score: number;
+      total_count: number;
+    }>;
+    const total = rows.length > 0 ? Number(rows[0].total_count) || 0 : 0;
+    const ids = rows.map((row) => row.id);
+    if (ids.length === 0) {
+      return { data: [], pagination: { page, limit, total: 0 } };
+    }
+
+    const { data, error } = await this.client()
+      .from("job_postings")
+      .select(
+        `
+        *,
+        campus:marketplace_campuses!campus_id(id, name, slug),
+        company:job_companies(*),
+        poster:profiles!poster_user_id(id, name, username, avatar_url)
+      `,
+      )
+      .in("id", ids);
+    if (error) throw error;
+
+    const byId = new Map((data || []).map((row: any) => [row.id, row]));
+    const ordered = ids
+      .map((id) => byId.get(id))
+      .filter(Boolean) as any[];
+    const savedIds = await this.savedPostingIds(
+      filters.viewerId,
+      ordered.map((row) => row.id),
+    );
+    return {
+      data: ordered.map((row) => mapPosting(row, savedIds)),
+      pagination: { page, limit, total },
     };
   }
 
@@ -680,12 +754,25 @@ export class JobsBoardService {
     if (error) throw error;
     if (!data) return null;
 
-    if (opts?.incrementViews && data.status === "active") {
-      await this.client()
-        .from("job_postings")
-        .update({ views_count: (data.views_count || 0) + 1 })
-        .eq("id", id);
-      data.views_count = (data.views_count || 0) + 1;
+    if (
+      opts?.incrementViews &&
+      data.status === "active" &&
+      opts.viewerId &&
+      opts.viewerId !== data.poster_user_id
+    ) {
+      const { data: counted, error: viewError } = await this.client().rpc(
+        "increment_job_posting_views",
+        { posting_id: id, viewer_id: opts.viewerId },
+      );
+      if (viewError) {
+        logger.warn("Unique job view RPC failed", {
+          postingId: id,
+          viewerId: opts.viewerId,
+          error: viewError.message,
+        });
+      } else if (counted === true) {
+        data.views_count = (data.views_count || 0) + 1;
+      }
     }
 
     return mapPosting(

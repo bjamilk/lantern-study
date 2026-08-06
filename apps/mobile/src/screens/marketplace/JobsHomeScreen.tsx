@@ -70,7 +70,7 @@ export function JobsHomeScreen() {
   const activeFilters = useMemo<JobSearchFilters>(() => {
     const saved = savedSearches.find((item) => item.id === activeSavedId);
     if (saved) return saved.filters;
-    const filters: JobSearchFilters = {};
+    const filters: JobSearchFilters = { sort: "trending" };
     if (query) filters.search = query;
     if (
       filter === "full_time" ||

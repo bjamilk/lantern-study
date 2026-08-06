@@ -101,7 +101,7 @@ router.get(
       location,
       campus_id: campusId,
       country_code: countryCode,
-      sortBy = 'created_at',
+      sortBy = 'trending',
       sortOrder = 'desc',
       responseProfile,
     } = req.query;
@@ -227,10 +227,9 @@ router.get(
       }
     }
 
-    await supabaseService.incrementListingViews(id);
-    listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
-    if (cacheKey && listing.status === 'active') {
-      await cacheService.set(cacheKey, listing, 600);
+    const counted = await supabaseService.incrementListingViews(id, viewerId);
+    if (counted) {
+      listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
     }
 
     res.json({
@@ -1924,10 +1923,9 @@ router.get(
       }
     }
 
-    await supabaseService.incrementListingViews(id);
-    listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
-    if (listingCacheKey && listing.status === 'active') {
-      await cacheService.set(listingCacheKey, listing, 600);
+    const counted = await supabaseService.incrementListingViews(id, viewerId);
+    if (counted) {
+      listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
     }
 
     // --- 2. Similar listings (cached 5 min, shared across all users) ---

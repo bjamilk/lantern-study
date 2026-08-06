@@ -10,7 +10,7 @@ import {
 } from "./employmentTypes";
 import type { JobCompensationKind, JobPosting } from "./types";
 
-export type JobSearchSort = "newest" | "closing";
+export type JobSearchSort = "newest" | "closing" | "trending";
 
 export interface JobSearchFilters {
   search?: string;
@@ -79,7 +79,9 @@ export function normalizeJobSearchFilters(input: unknown): JobSearchFilters {
   if (isCompensationKind(raw.compensationKind)) {
     filters.compensationKind = raw.compensationKind;
   }
-  if (raw.sort === "closing") filters.sort = "closing";
+  if (raw.sort === "closing" || raw.sort === "newest" || raw.sort === "trending") {
+    filters.sort = raw.sort;
+  }
 
   return filters;
 }

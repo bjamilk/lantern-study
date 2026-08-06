@@ -107,7 +107,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     maxPrice,
     locationFilter,
     campusIdFilter,
-  ].filter(Boolean).length + (sortBy !== 'created_at' || sortOrder !== 'desc' ? 1 : 0);
+  ].filter(Boolean).length + (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
 
   const academicCategoryIds = useMemo(() => ACADEMIC_CATEGORIES.map(c => c.id), []);
   const studentLifeCategoryIds = useMemo(() => STUDENT_LIFE_CATEGORIES.map(c => c.id), []);
@@ -259,6 +259,19 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery, displayListings.length, selectedCategory, savedCampusId]);
+
+  useEffect(() => {
+    if (displayListings.length === 0) return;
+    void import('../../services/productAnalytics').then(({ trackListingImpression }) => {
+      displayListings.slice(0, 20).forEach((listing, index) => {
+        trackListingImpression(
+          listing.id,
+          index,
+          searchQuery.trim() ? 'search' : 'browse'
+        );
+      });
+    });
+  }, [displayListings, searchQuery]);
 
   const handleSaveSearch = async () => {
     try {
@@ -516,24 +529,35 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               placeholderTextColor="#94a3b8"
               className="p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
             />
-            <View className="flex-row gap-2">
+            <View className="flex-row gap-2 flex-wrap">
               <Pressable
                 onPress={() => {
-                  setSortBy('created_at');
-                  setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+                  setSortBy('trending');
+                  setSortOrder('desc');
                 }}
-                className="px-3 py-1.5 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'trending' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
-                <Text className="text-xs text-lantern-text-secondary">
-                  Date {sortOrder === 'desc' ? '↓' : '↑'}
+                <Text className={`text-xs ${sortBy === 'trending' ? 'text-white' : 'text-lantern-text-secondary'}`}>
+                  Trending
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => setSortBy(sortBy === 'price' ? 'created_at' : 'price')}
-                className="px-3 py-1.5 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
+                onPress={() => {
+                  setSortBy('created_at');
+                  setSortOrder(sortBy === 'created_at' && sortOrder === 'desc' ? 'asc' : 'desc');
+                }}
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'created_at' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
-                <Text className="text-xs text-lantern-text-secondary">
-                  Sort: {sortBy === 'price' ? 'Price' : 'Newest'}
+                <Text className={`text-xs ${sortBy === 'created_at' ? 'text-white' : 'text-lantern-text-secondary'}`}>
+                  Newest {sortBy === 'created_at' && sortOrder === 'asc' ? '↑' : '↓'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSortBy('price')}
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'price' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+              >
+                <Text className={`text-xs ${sortBy === 'price' ? 'text-white' : 'text-lantern-text-secondary'}`}>
+                  Price
                 </Text>
               </Pressable>
             </View>

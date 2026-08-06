@@ -47,7 +47,7 @@ interface PortalFilters {
   location: "" | "remote" | "onsite";
   compensationKind: "" | "paid" | "discuss" | "unpaid";
   companyOnly: boolean;
-  sort: "newest" | "closing";
+  sort: "newest" | "closing" | "trending";
 }
 
 const EMPTY_FILTERS: PortalFilters = {
@@ -56,7 +56,7 @@ const EMPTY_FILTERS: PortalFilters = {
   location: "",
   compensationKind: "",
   companyOnly: false,
-  sort: "newest",
+  sort: "trending",
 };
 
 /** The form's shape is UI-friendly; a saved search stores the shared shape. */
@@ -72,7 +72,9 @@ function toSearchFilters(portal: PortalFilters): JobSearchFilters {
   if (portal.compensationKind)
     filters.compensationKind = portal.compensationKind;
   if (portal.companyOnly) filters.companyOnly = true;
-  if (portal.sort === "closing") filters.sort = "closing";
+  if (portal.sort === "closing" || portal.sort === "newest" || portal.sort === "trending") {
+    filters.sort = portal.sort;
+  }
   return filters;
 }
 
@@ -88,7 +90,10 @@ function fromSearchFilters(filters: JobSearchFilters): PortalFilters {
           : "",
     compensationKind: filters.compensationKind || "",
     companyOnly: !!filters.companyOnly,
-    sort: filters.sort === "closing" ? "closing" : "newest",
+    sort:
+      filters.sort === "closing" || filters.sort === "newest"
+        ? filters.sort
+        : "trending",
   };
 }
 
@@ -457,6 +462,7 @@ export default function JobsBoardScreen({
                     }
                     className="rounded-md border border-lantern-border bg-lantern-background px-2 py-1 text-sm text-lantern-text"
                   >
+                    <option value="trending">Trending</option>
                     <option value="newest">Newest</option>
                     <option value="closing">Closing soon</option>
                   </select>

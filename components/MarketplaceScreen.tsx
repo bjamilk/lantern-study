@@ -70,7 +70,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
-  const [sortBy, setSortBy] = useState<string>('created_at');
+  const [sortBy, setSortBy] = useState<string>('trending');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
@@ -407,14 +407,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setMaxPrice('');
     setLocationFilter('');
     setCampusIdFilter('');
-    setSortBy('created_at');
+    setSortBy('trending');
     setSortOrder('desc');
     setShowFilters(false);
   };
 
   const activeFilterCount =
     [minPrice, maxPrice, locationFilter, campusIdFilter].filter(Boolean).length +
-    (sortBy !== 'created_at' ? 1 : 0);
+    (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
 
   const handleCreateListing = () => {
     onNavigate('CreateMarketplaceListing', { category: activeTab });

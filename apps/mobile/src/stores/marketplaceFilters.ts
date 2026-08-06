@@ -47,7 +47,7 @@ export function normalizeSavedMarketplaceFilters(
     maxPrice: stringValue(filters.maxPrice ?? filters.max_price),
     locationFilter: stringValue(filters.location),
     campusIdFilter: stringValue(filters.campus_id ?? filters.campusId),
-    sortBy: stringValue(filters.sortBy ?? filters.sort_by) || 'created_at',
+    sortBy: stringValue(filters.sortBy ?? filters.sort_by) || 'trending',
     sortOrder:
       filters.sortOrder === 'asc' ||
       filters.sort_order === 'asc'
@@ -69,7 +69,7 @@ export function buildSavedMarketplaceFilters(
   if (state.maxPrice.trim()) filters.maxPrice = state.maxPrice.trim();
   if (state.locationFilter.trim()) filters.location = state.locationFilter.trim();
   if (state.campusIdFilter) filters.campus_id = state.campusIdFilter;
-  if (state.sortBy !== 'created_at') filters.sortBy = state.sortBy;
+  if (state.sortBy !== 'trending') filters.sortBy = state.sortBy;
   if (state.sortOrder !== 'desc') filters.sortOrder = state.sortOrder;
 
   return filters;

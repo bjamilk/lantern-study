@@ -131,7 +131,14 @@ export const validatePagination = [
 // Search validation
 export const validateSearch = [
   query('q').optional().trim().isLength({ min: 1, max: 100 }).withMessage('Search query must be 1-100 characters'),
-  query('sortBy').optional().isIn(['created_at', 'name', 'updated_at']).withMessage('Invalid sort field'),
+  query('sortBy').optional().isIn([
+    'created_at',
+    'name',
+    'updated_at',
+    'price',
+    'trending',
+    'sale_first',
+  ]).withMessage('Invalid sort field'),
   query('sortOrder').optional().isIn(['asc', 'desc']).withMessage('Sort order must be asc or desc'),
 ];
 

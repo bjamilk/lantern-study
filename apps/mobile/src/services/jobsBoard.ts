@@ -69,7 +69,7 @@ export async function fetchJobPostings(
     companyOnly?: boolean;
     remote?: boolean;
     compensationKind?: "paid" | "unpaid" | "discuss";
-    sort?: "newest" | "closing";
+    sort?: "newest" | "closing" | "trending";
   } = {},
 ) {
   const params = new URLSearchParams();

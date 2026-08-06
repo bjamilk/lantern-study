@@ -15,7 +15,7 @@ describe("normalizeJobSearchFilters", () => {
         compensationKind: "paid",
         companyOnly: true,
         remote: false,
-        sort: "closing",
+        sort: "trending",
         somethingElse: "drop me",
       }),
     ).toEqual({
@@ -24,7 +24,7 @@ describe("normalizeJobSearchFilters", () => {
       compensationKind: "paid",
       companyOnly: true,
       remote: false,
-      sort: "closing",
+      sort: "trending",
     });
   });
 

@@ -201,7 +201,7 @@ export const schemas = {
   pagination: Joi.object({
     page: Joi.number().integer().min(1).max(10000).default(1),
     limit: Joi.number().integer().min(1).max(100).default(20),
-    sortBy: Joi.string().max(50).default('created_at'),
+    sortBy: Joi.string().max(50).default('trending'),
     sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
     cursor: Joi.string().max(200).optional(),
   }),

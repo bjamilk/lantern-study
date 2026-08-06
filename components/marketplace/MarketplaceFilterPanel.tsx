@@ -113,6 +113,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
             }}
             className={inputClass}
           >
+            <option value="trending:desc">Trending</option>
             <option value="created_at:desc">Newest first</option>
             <option value="created_at:asc">Oldest first</option>
             <option value="price:asc">Price: low to high</option>
