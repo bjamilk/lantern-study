@@ -105,6 +105,40 @@ describe('normalizeStoredUserAnswer', () => {
 });
 
 describe('normalizeTestResultSession', () => {
+  it('coerces legacy array user_answers into a questionId map for review', () => {
+    const { userAnswers } = normalizeTestResultSession({
+      questions: [
+        {
+          id: 'q1',
+          questionType: QuestionType.MULTIPLE_CHOICE_SINGLE,
+          questionStem: 'Pick 4',
+          options: [
+            { id: 'a', text: '4' },
+            { id: 'b', text: '5' },
+          ],
+          correctAnswerIds: ['a'],
+        },
+        {
+          id: 'q2',
+          questionType: QuestionType.MULTIPLE_CHOICE_SINGLE,
+          questionStem: 'Pick 5',
+          options: [
+            { id: 'a', text: '4' },
+            { id: 'b', text: '5' },
+          ],
+          correctAnswerIds: ['b'],
+        },
+      ],
+      user_answers: [
+        { questionId: 'q1', selectedOptionIds: ['a'], timeSpentSeconds: 12 },
+        { selectedOptionIds: ['a'], timeSpentSeconds: 8 }, // index-fallback → q2
+      ],
+    });
+    expect(userAnswers.q1?.isCorrect).toBe(true);
+    expect(userAnswers.q2?.isCorrect).toBe(false);
+    expect(userAnswers.q1?.timeSpentSeconds).toBe(12);
+  });
+
   it('recomputes correctness from correct_answer_ids when isCorrect is missing', () => {
     const { userAnswers } = normalizeTestResultSession({
       questions: [

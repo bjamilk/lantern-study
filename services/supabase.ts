@@ -1982,7 +1982,7 @@ export const fetchTestResults = async (userId: string, options?: FetchTestResult
   }
 };
 
-/** Full session payload for Analyze when list rows are lean. */
+/** Full session payload for Analyze/Review when list rows are lean. */
 export const fetchTestSessionById = async (sessionId: string): Promise<any | null> => {
   try {
     if (!(await hasValidSession()) || !sessionId) return null;
@@ -1995,16 +1995,40 @@ export const fetchTestSessionById = async (sessionId: string): Promise<any | nul
     const row = result?.data;
     if (!row) return null;
 
-    // API returns raw session row; normalize to TestResult shape when possible.
+    // Nested TestResult shape from some list/detail responses.
     if (row.session) return mapTestResultItem(row);
+
+    // GET /tests/:id returns mapTestSessionRowToClient (camelCase) fields.
+    const startRaw = row.startTime ?? row.start_time;
+    const endRaw = row.endTime ?? row.end_time;
     const normalized = normalizeTestResultSession({
       id: row.id,
       config: row.config,
       questions: row.questions,
-      userAnswers: row.user_answers || row.userAnswers,
-      startTime: row.start_time || row.startTime,
-      endTime: row.end_time || row.endTime,
+      userAnswers: row.userAnswers ?? row.user_answers,
+      startTime: startRaw,
+      endTime: endRaw,
     });
+    const recomputedCorrect = Object.values(normalized.userAnswers).filter(
+      (answer) => answer?.isCorrect
+    ).length;
+    const totalQuestions =
+      typeof row.totalQuestions === 'number' && row.totalQuestions > 0
+        ? row.totalQuestions
+        : normalized.questions.length;
+    const correctAnswersCount =
+      typeof row.correctAnswersCount === 'number'
+        ? row.correctAnswersCount
+        : typeof row.correct_answers_count === 'number'
+          ? row.correct_answers_count
+          : recomputedCorrect;
+    const score =
+      typeof row.score === 'number'
+        ? row.score
+        : totalQuestions > 0
+          ? (correctAnswersCount / totalQuestions) * 100
+          : 0;
+
     return {
       id: row.id,
       session: {
@@ -2012,13 +2036,16 @@ export const fetchTestSessionById = async (sessionId: string): Promise<any | nul
         config: row.config || {},
         questions: normalized.questions,
         userAnswers: normalized.userAnswers,
-        startTime: row.start_time ? new Date(row.start_time) : new Date(),
-        endTime: row.end_time ? new Date(row.end_time) : undefined,
-        isOffline: row.is_offline || false,
+        currentQuestionIndex: row.currentQuestionIndex ?? row.current_question_index ?? 0,
+        startTime: startRaw ? new Date(startRaw) : new Date(),
+        endTime: endRaw ? new Date(endRaw) : undefined,
+        isOffline: row.isOffline ?? row.is_offline ?? false,
+        sessionKind: row.sessionKind ?? row.session_kind,
+        status: row.status,
       },
-      score: 0,
-      totalQuestions: normalized.questions?.length || 0,
-      correctAnswersCount: 0,
+      score,
+      totalQuestions,
+      correctAnswersCount,
     };
   } catch (error) {
     console.error('Error fetching test session:', error);

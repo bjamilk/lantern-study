@@ -530,12 +530,43 @@ export function normalizeStoredUserAnswer(raw: unknown, questionId?: string): Us
     return normalized;
 }
 
+/**
+ * Coerce stored user_answers into a questionId-keyed map.
+ * Legacy `/submit` persisted Object.values(...) as a JSON array; draft complete
+ * stores a Record. Both shapes must work for history hydrate / review.
+ */
+export function coerceRawUserAnswers(
+    raw: unknown,
+    questions: Array<{ id?: string } | null | undefined> = []
+): Record<string, unknown> {
+    if (!raw) return {};
+    if (Array.isArray(raw)) {
+        const out: Record<string, unknown> = {};
+        raw.forEach((answer, index) => {
+            if (!answer || typeof answer !== 'object') return;
+            const rec = answer as Record<string, unknown>;
+            const qid = String(
+                rec.questionId ||
+                    rec.question_id ||
+                    questions[index]?.id ||
+                    ''
+            );
+            if (!qid) return;
+            out[qid] = { ...rec, questionId: qid };
+        });
+        return out;
+    }
+    if (typeof raw === 'object') return raw as Record<string, unknown>;
+    return {};
+}
+
 export function normalizeStoredUserAnswers(
-    raw: Record<string, unknown> | undefined | null
+    raw: Record<string, unknown> | unknown[] | undefined | null,
+    questions: Array<{ id?: string } | null | undefined> = []
 ): Record<string, UserAnswerRecord> {
-    if (!raw || typeof raw !== 'object') return {};
+    const coerced = coerceRawUserAnswers(raw, questions);
     const result: Record<string, UserAnswerRecord> = {};
-    for (const [key, value] of Object.entries(raw)) {
+    for (const [key, value] of Object.entries(coerced)) {
         result[key] = normalizeStoredUserAnswer(value, key);
     }
     return result;
@@ -582,20 +613,20 @@ export function normalizeTestSessionQuestions(questions: unknown[]): TestQuestio
 
 export function normalizeTestResultSession(session: {
     questions?: unknown[];
-    userAnswers?: Record<string, unknown>;
-    user_answers?: Record<string, unknown>;
+    userAnswers?: Record<string, unknown> | unknown[];
+    user_answers?: Record<string, unknown> | unknown[];
     [key: string]: unknown;
 }): {
     questions: TestQuestion[];
     userAnswers: Record<string, UserAnswerRecord>;
 } {
     const questions = normalizeTestSessionQuestions(session.questions || []);
-    const rawAnswers = session.userAnswers || session.user_answers || {};
-    const userAnswers = normalizeStoredUserAnswers(rawAnswers as Record<string, unknown>);
+    const rawAnswers = session.userAnswers ?? session.user_answers ?? {};
+    const userAnswers = normalizeStoredUserAnswers(rawAnswers, questions);
 
     for (const q of questions) {
         const existing = userAnswers[q.id];
-        if (existing && existing.isCorrect === undefined) {
+        if (existing) {
             userAnswers[q.id] = {
                 ...existing,
                 isCorrect: checkAnswerIsCorrect(q, existing),
