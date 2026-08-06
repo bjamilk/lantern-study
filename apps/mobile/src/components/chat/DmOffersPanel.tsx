@@ -34,8 +34,15 @@ export function DmOffersPanel({
   onPostToChat: (text: string) => void | Promise<void>;
 }) {
   const { colors } = useTheme();
-  const { offers, fetchListingOffers, respondToOffer, createMarketplaceOffer } =
-    useMarketplaceStore();
+  // GET /marketplace/listings/:id/offers is seller-only (403 for a buyer), so
+  // read the role-scoped list instead — the same source OffersScreen uses.
+  const {
+    buyerOffers,
+    sellerOffers,
+    fetchOffers,
+    respondToOffer,
+    createMarketplaceOffer,
+  } = useMarketplaceStore();
   const [loading, setLoading] = useState(true);
   const [busyOfferId, setBusyOfferId] = useState<string | null>(null);
   const [counterOfferId, setCounterOfferId] = useState<string | null>(null);
@@ -46,11 +53,11 @@ export function DmOffersPanel({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      await fetchListingOffers(listingId);
+      await fetchOffers(isSeller ? 'seller' : 'buyer');
     } finally {
       setLoading(false);
     }
-  }, [fetchListingOffers, listingId]);
+  }, [fetchOffers, isSeller]);
 
   useEffect(() => {
     void load();
@@ -142,6 +149,7 @@ export function DmOffersPanel({
 
   // Scope to this conversation. A listing can have several bidders, and without
   // the buyer filter each one saw the others' amounts in their own DM.
+  const offers = isSeller ? sellerOffers : buyerOffers;
   const listingOffers = offers.filter(
     (o) => o.listing_id === listingId && (!buyerId || o.buyer_id === buyerId)
   );

@@ -699,8 +699,15 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         mapApiMember(m, adminIds)
       );
 
+      // The members endpoint is paginated (50 by default), so members.length is
+      // a page size, not a roster size. Overwriting memberCount with it made a
+      // 180-member group report 50, which feeds the header, seenByTotal for read
+      // receipts and the flag-to-archive threshold. Only raise it — never shrink
+      // a server-provided count to the size of one page.
       const applyMembers = (g: Group): Group =>
-        g.id === groupId ? { ...g, members, memberCount: members.length } : g;
+        g.id === groupId
+          ? { ...g, members, memberCount: Math.max(g.memberCount ?? 0, members.length) }
+          : g;
 
       set(state => ({
         groups: state.groups.map(applyMembers),
