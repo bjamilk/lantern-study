@@ -404,6 +404,10 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                         correctAnswersCount,
                         totalQuestions: finalSessionData.questions.length,
                         activityDate: formatActivityLocalDate(new Date()),
+                        config: {
+                            groupId: finalSessionData.config?.groupId,
+                            groupName: finalSessionData.config?.groupName,
+                        },
                     });
                     savedSessionId = saved?.session?.id || savedSessionId;
                 } else {

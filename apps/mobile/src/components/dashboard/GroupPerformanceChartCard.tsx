@@ -11,6 +11,7 @@ import {
   buildRolledUpGroupSeries,
   filterResultsByGroupPerformancePeriod,
   getGroupIdWithDescendants,
+  withResolvedGroupIds,
   GROUP_PERFORMANCE_PERIOD_OPTIONS,
   type GroupPerformancePeriod,
   type LeanTestResultLike,
@@ -149,10 +150,13 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
   // since `options` below only keeps ids that actually have results.
   const historyGroups = useMemo(() => groups, [groups]);
 
-  const periodResults = useMemo(
-    () => filterResultsByGroupPerformancePeriod(testResults, period),
-    [testResults, period]
-  );
+  const periodResults = useMemo(() => {
+    const resolved = withResolvedGroupIds(
+      testResults,
+      groups.map((g) => ({ id: g.id, name: g.name }))
+    );
+    return filterResultsByGroupPerformancePeriod(resolved, period);
+  }, [testResults, period, groups]);
 
   const options = useMemo(() => {
     const directDataIds = new Set(

@@ -123,14 +123,22 @@ function buildDraftPayloadFromActive(activeTest: ActiveTest) {
       { timeSpentSeconds: activeTest.answerTimings?.[questionId] },
     );
   }
+  // Study-group id only — never deckId/custom session id. Those broke Group
+  // Performance after cloud drafts landed (chart filters by group membership).
+  const groupId = activeTest.groupId || undefined;
+  const groupName = activeTest.groupName || activeTest.test.name;
   return {
     config: {
-      groupId: activeTest.test.deckId || activeTest.test.id,
-      groupName: activeTest.test.name,
+      groupId,
+      groupName,
       numberOfQuestions: activeTest.questions.length,
       questionIds: activeTest.questions.map((q) => q.id),
       timerDuration: (activeTest.test.timeLimit || 0) * 60,
       allowedQuestionTypes: [],
+      testId: activeTest.test.id,
+      deckId: activeTest.test.deckId,
+      deckName: activeTest.test.deckName,
+      name: activeTest.test.name,
     },
     questions: canonicalQuestions,
     user_answers: userAnswers,
@@ -276,6 +284,9 @@ export interface ActiveTest {
   flaggedQuestions: Set<string>;
   /** Server draft id for durable pause/resume */
   draftId?: string;
+  /** Study group attribution for dashboard Group Performance */
+  groupId?: string;
+  groupName?: string;
 }
 
 export interface StartTestConfig {
@@ -286,6 +297,8 @@ export interface StartTestConfig {
   tags?: string[];
   spacedRepetition?: boolean;
   focusOnNew?: boolean;
+  groupId?: string;
+  groupName?: string;
 }
 
 export interface UserQuestionStatEntry {
@@ -330,7 +343,14 @@ interface TestState {
   fetchAttempts: (userId: string) => Promise<void>;
   hydrateAttemptDetail: (attemptId: string) => Promise<void>;
   startTest: (testId: string, mode?: TestMode, config?: StartTestConfig) => Promise<void>;
-  startQuestionSet: (testName: string, questions: TestQuestion[], mode?: TestMode, options?: { timeLimitMinutes?: number }) => Promise<void>;
+  startQuestionSet: (
+    testName: string,
+    questions: TestQuestion[],
+    mode?: TestMode,
+    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string }
+  ) => Promise<void>;
+  /** Bind study-group attribution once route params are known (after draft create). */
+  setActiveTestAttribution: (attribution: { groupId?: string; groupName?: string }) => void;
   answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>, timeSpentSeconds?: number) => void;
   revealAnswer: (questionId: string) => void; // For study mode
   checkCurrentAnswer: () => { isCorrect: boolean; explanation?: string } | null; // For study mode
@@ -905,6 +925,8 @@ export const useTestStore = create<TestState>((set, get) => ({
       mode,
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
+      groupId: config?.groupId,
+      groupName: config?.groupName,
     };
     set({ activeTest: started });
     const drafted = await ensureMobileDraft(started);
@@ -924,7 +946,7 @@ export const useTestStore = create<TestState>((set, get) => ({
     testName: string,
     questions: TestQuestion[],
     mode: TestMode = 'study',
-    options?: { timeLimitMinutes?: number }
+    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string }
   ) => {
     // Do not invent a timer — use the caller's value, or untimed (0).
     const timeLimit =
@@ -953,6 +975,8 @@ export const useTestStore = create<TestState>((set, get) => ({
       mode,
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
+      groupId: options?.groupId,
+      groupName: options?.groupName,
     };
     set({ activeTest: started });
     void ensureMobileDraft(started).then((drafted) => {
@@ -967,6 +991,26 @@ export const useTestStore = create<TestState>((set, get) => ({
         });
       }
     });
+  },
+
+  setActiveTestAttribution: (attribution) => {
+    const activeTest = get().activeTest;
+    if (!activeTest) return;
+    const groupId = attribution.groupId || activeTest.groupId;
+    const groupName = attribution.groupName || activeTest.groupName;
+    if (groupId === activeTest.groupId && groupName === activeTest.groupName) return;
+
+    const next: ActiveTest = { ...activeTest, groupId, groupName };
+    set({ activeTest: next });
+
+    if (next.draftId && !next.draftId.startsWith('local-') && (groupId || groupName)) {
+      void patchMobileTestDraft(next.draftId, {
+        config: {
+          ...(groupId ? { groupId } : {}),
+          ...(groupName ? { groupName } : {}),
+        },
+      }).catch((err) => console.warn('Failed to patch draft group attribution', err));
+    }
   },
 
   answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>, timeSpentSeconds?: number) => {
@@ -1167,9 +1211,10 @@ export const useTestStore = create<TestState>((set, get) => ({
           ? draft.remaining_time_seconds
           : 0;
     const mode = (draft.sessionKind || draft.session_kind) === 'study' ? 'study' : 'test';
+    const draftConfig = (draft.config as { groupId?: string; groupName?: string } | undefined) || {};
     const title =
       (draft.title as string) ||
-      (draft.config as any)?.groupName ||
+      draftConfig.groupName ||
       (mode === 'study' ? 'Study session' : 'Test');
     const resumed: ActiveTest = {
       test: {
@@ -1194,6 +1239,8 @@ export const useTestStore = create<TestState>((set, get) => ({
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
       draftId: String(draft.id),
+      groupId: draftConfig.groupId || (draft.groupId as string | undefined),
+      groupName: draftConfig.groupName,
     };
     set((state) => ({
       activeTest: resumed,
@@ -1443,6 +1490,12 @@ export const useTestStore = create<TestState>((set, get) => ({
             score: percentage,
             correct_answers_count: correctCount,
             total_questions: activeTest.questions.length,
+            // Draft create often raced ahead of route params; stamp the real
+            // study-group id here so Group Performance can plot the point.
+            config: {
+              groupId: options?.groupId || activeTest.groupId,
+              groupName: options?.groupName || activeTest.groupName || activeTest.test.name,
+            },
           });
         } else {
           const savedSession = await api.saveTestResult(userId, sessionPayload);

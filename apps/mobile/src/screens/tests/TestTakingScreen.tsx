@@ -539,6 +539,7 @@ export default function TestTakingScreen() {
     toggleFlag,
     goToQuestion,
     updateTimeRemaining,
+    setActiveTestAttribution,
   } = useTestStore();
 
   const { showExplanationsImmediately } = useStudySettings();
@@ -551,6 +552,12 @@ export default function TestTakingScreen() {
   const submittingRef = useRef(false);
   const questionViewStartTimeRef = useRef<number | null>(null);
   const handleSubmitRef = useRef<(timeUp?: boolean) => Promise<void>>(async () => undefined);
+
+  // Route params often arrive after draft create — bind study-group attribution ASAP.
+  useEffect(() => {
+    if (!groupId && !groupName) return;
+    setActiveTestAttribution({ groupId, groupName });
+  }, [groupId, groupName, setActiveTestAttribution]);
 
   // Get mode from active test
   const isStudyMode = activeTest?.mode === 'study';

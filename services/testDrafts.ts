@@ -123,6 +123,7 @@ export async function completeTestDraft(
     correctAnswersCount?: number;
     totalQuestions?: number;
     activityDate?: string;
+    config?: { groupId?: string; groupName?: string };
   },
 ): Promise<any> {
   const response = await fetch(
@@ -136,6 +137,7 @@ export async function completeTestDraft(
         correct_answers_count: payload.correctAnswersCount,
         total_questions: payload.totalQuestions,
         activityDate: payload.activityDate,
+        config: payload.config,
       }),
     },
   );

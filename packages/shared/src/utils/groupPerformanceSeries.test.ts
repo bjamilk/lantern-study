@@ -1,6 +1,8 @@
 import {
   buildRolledUpGroupSeries,
   filterResultsByGroupPerformancePeriod,
+  resolveResultGroupId,
+  withResolvedGroupIds,
   type LeanTestResultLike,
 } from './groupPerformanceSeries';
 
@@ -44,7 +46,57 @@ describe('filterResultsByGroupPerformancePeriod', () => {
   });
 });
 
+describe('resolveResultGroupId', () => {
+  const groups = [
+    { id: 'g1', name: 'Anatomy' },
+    { id: 'g2', name: 'Biochem' },
+  ];
+
+  it('keeps a valid study-group id', () => {
+    expect(resolveResultGroupId(resultAt(1, 'a'), groups)).toBe('g1');
+  });
+
+  it('recovers from custom/deck ids via "Name Test" groupName', () => {
+    const bad: LeanTestResultLike = {
+      ...resultAt(1, 'b', 75),
+      session: {
+        id: 'b',
+        startTime: new Date().toISOString(),
+        config: { groupId: 'custom-123', groupName: 'Anatomy Test' },
+      },
+    };
+    expect(resolveResultGroupId(bad, groups)).toBe('g1');
+    expect(withResolvedGroupIds([bad], groups)[0]?.session.config?.groupId).toBe('g1');
+  });
+});
+
 describe('buildRolledUpGroupSeries', () => {
+  it('includes mis-attributed mobile draft rows via groupName fallback', () => {
+    const results: LeanTestResultLike[] = [
+      resultAt(10, 'old', 70),
+      {
+        id: 'new',
+        score: 88,
+        totalQuestions: 10,
+        correctAnswersCount: 9,
+        session: {
+          id: 'new',
+          startTime: new Date().toISOString(),
+          config: { groupId: 'custom-999', groupName: 'Anatomy Test' },
+        },
+      },
+    ];
+    const series = buildRolledUpGroupSeries({
+      groupId: 'g1',
+      groupName: 'Anatomy',
+      groups: [{ id: 'g1', name: 'Anatomy' }],
+      results,
+      activeOnly: true,
+    });
+    expect(series.testCount).toBe(2);
+    expect(series.chartData.at(-1)?.y).toBe(88);
+  });
+
   it('includes oldest-through-newest points for all-time history', () => {
     // Unsorted input spanning well beyond a 500-result / 90-day window.
     const results = [
