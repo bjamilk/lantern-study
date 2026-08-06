@@ -9,6 +9,7 @@ import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/ide
 import {
   aiRateLimit,
   aiRateLimitForFeature,
+  applyGlobalUsageHeaders,
   chargeAiCredits,
   NOTE_OCR_CREDIT_COST,
 } from '../middleware/aiRateLimit';
@@ -254,6 +255,26 @@ async function startPresentationPreviewJob(params: {
   });
 }
 
+/**
+ * Auto-OCR on upload uses the same global AI credits as manual OCR.
+ * Returns false when the user is out of credits — caller should skip OCR
+ * rather than fail the upload itself.
+ */
+async function tryChargeAutoOcrCredits(userId: string): Promise<boolean> {
+  if (NOTE_OCR_CREDIT_COST <= 0) return true;
+  const denied = await chargeAiCredits(userId, NOTE_OCR_CREDIT_COST);
+  if (denied) {
+    logger.warn('Skipping auto OCR — daily AI credit limit reached', {
+      userId,
+      creditCost: NOTE_OCR_CREDIT_COST,
+      used: denied.used,
+      limit: denied.limit,
+    });
+    return false;
+  }
+  return true;
+}
+
 async function startNoteOcrJob(params: {
   noteId: string;
   attachmentId: string;
@@ -450,14 +471,17 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
   }
 
   if (willOcr) {
-    void startNoteOcrJob({
-      noteId: note.id,
-      attachmentId: attachment.id,
-      storagePath,
-      fileName: String(fileName),
-      sourceKind: 'pdf',
-      meta: attachmentMeta,
-      userId,
+    void tryChargeAutoOcrCredits(userId).then((charged) => {
+      if (!charged) return;
+      return startNoteOcrJob({
+        noteId: note.id,
+        attachmentId: attachment.id,
+        storagePath,
+        fileName: String(fileName),
+        sourceKind: 'pdf',
+        meta: attachmentMeta,
+        userId,
+      });
     }).catch((err) => {
       logger.error('Failed to start PDF OCR job', { noteId: note.id, err });
     });
@@ -761,14 +785,17 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   }
 
   if (willOcr) {
-    void startNoteOcrJob({
-      noteId: note.id,
-      attachmentId: attachment.id,
-      storagePath: ownedPath,
-      fileName: safeName,
-      sourceKind: 'pdf',
-      meta: attachmentMeta,
-      userId,
+    void tryChargeAutoOcrCredits(userId).then((charged) => {
+      if (!charged) return;
+      return startNoteOcrJob({
+        noteId: note.id,
+        attachmentId: attachment.id,
+        storagePath: ownedPath,
+        fileName: safeName,
+        sourceKind: 'pdf',
+        meta: attachmentMeta,
+        userId,
+      });
     }).catch((err) => {
       logger.error('Failed to start PDF OCR job', { noteId: note.id, err });
     });
@@ -2207,6 +2234,7 @@ router.post(
         res.status(429).json(denied);
         return;
       }
+      await applyGlobalUsageHeaders(res, userId);
     }
 
     const fileName =

@@ -14,6 +14,7 @@ export const DEFAULT_AI_FEATURE_LIMITS = {
   study_plan: 10,
   enhance_flashcard: 25,
   study_recommendations: 25,
+  listing_description: 20,
 } as const;
 
 export type AIFeatureLimitKey = keyof typeof DEFAULT_AI_FEATURE_LIMITS;
