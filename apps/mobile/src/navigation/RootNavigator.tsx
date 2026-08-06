@@ -155,7 +155,7 @@ import {
 
 import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen } from '../screens/settings';
 
-import { TestScreen, TestTakingScreen, TestResultsScreen } from '../screens/tests';
+import { TestScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
 import { GameScreen, GameResultScreen, ChallengesInboxScreen } from '../screens/games';
 
@@ -251,6 +251,8 @@ function HomeNavigator() {
 
       <HomeStack.Screen name="Leaderboard" component={LeaderboardScreen} />
 
+      <HomeStack.Screen name="TestAnalysis" component={TestAnalysisScreen} />
+
     </HomeStack.Navigator>
 
   );
@@ -292,6 +294,9 @@ function StudyNavigator() {
       <StudyStack.Screen name="TestTaking" component={TestTakingScreen} options={{ presentation: 'fullScreenModal' }} />
 
       <StudyStack.Screen name="TestResults" component={TestResultsScreen} options={{ presentation: 'fullScreenModal' }} />
+
+      {/* Stack screen (not nested RN Modal) so charts work above TestResults. */}
+      <StudyStack.Screen name="TestAnalysis" component={TestAnalysisScreen} options={{ presentation: 'fullScreenModal' }} />
 
     </StudyStack.Navigator>
 

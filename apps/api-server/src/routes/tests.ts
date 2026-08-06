@@ -156,7 +156,20 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      res.json({ success: true, data });
+      // Same camelCase + coerced userAnswers map as GET /tests/:id so mobile
+      // hydrate matches web (legacy array user_answers become a questionId map).
+      const mapped = supabaseService.mapTestSessionRowToClient(data);
+      res.json({
+        success: true,
+        data: {
+          ...mapped,
+          score: data.score,
+          // Keep snake_case aliases — older mobile builders still read them.
+          user_answers: mapped.userAnswers,
+          start_time: data.start_time,
+          end_time: data.end_time,
+        },
+      });
     })
   );
 

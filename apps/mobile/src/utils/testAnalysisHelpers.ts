@@ -1,3 +1,8 @@
+import {
+  buildTestAnalysis,
+  type RawTestResult,
+} from '@lantern/shared/utils/buildDashboardStats';
+import { normalizeTestResultSession } from '@lantern/shared/utils/testHelpers';
 import type { RecentTest, TestAnalysis, TestAnalysisQuestionTime } from '../types/dashboardStats';
 import type { TestAttempt } from '../stores/testStore';
 
@@ -99,8 +104,14 @@ export function normalizeDashboardStats(stats: import('../types/dashboardStats')
   };
 }
 
+/**
+ * Match web `buildDashboardStats` attempted detection: legacy rows often store
+ * only `isCorrect` / `is_correct` without option ids.
+ */
 export function isAnswerAttempted(answer: any): boolean {
   if (!answer) return false;
+  if (answer.isCorrect === true || answer.isCorrect === false) return true;
+  if (answer.is_correct === true || answer.is_correct === false) return true;
   if (answer.selectedOptionIds?.length) return true;
   if (answer.fillText?.trim?.()) return true;
   if (answer.matchingAnswers?.length) return true;
@@ -174,7 +185,7 @@ export function buildAnalysisFromAttempt(attempt: TestAttempt): TestAnalysis {
     }
   });
 
-  return {
+  return normalizeTestAnalysis({
     correctCount,
     incorrectCount,
     unattemptedCount,
@@ -192,20 +203,19 @@ export function buildAnalysisFromAttempt(attempt: TestAttempt): TestAnalysis {
       total: stats.total,
       accuracy: stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0,
     })),
-  };
+  });
 }
 
 /**
- * Build a RecentTest analysis payload from a full `/tests/sessions/:id` response.
- * Lean list rows omit questions/answers, so the dashboard must call this after
- * fetching session detail (parity with web TestReviewScreen charts).
+ * Build a RecentTest analysis payload from a full session detail response.
+ * Uses the same normalize + buildTestAnalysis path as web so stems, status,
+ * and timings match (including legacy array user_answers).
  */
 export function buildRecentTestFromSessionDetail(
   session: any,
   fallback?: Partial<RecentTest>
 ): RecentTest {
-  const questions: any[] = Array.isArray(session?.questions) ? session.questions : [];
-  const userAnswers = session?.user_answers || session?.userAnswers || {};
+  const { questions, userAnswers } = normalizeTestResultSession(session);
   const start = session?.start_time || session?.startTime || fallback?.completedAt;
   const end = session?.end_time || session?.endTime || start;
   const startDate = start ? new Date(start) : new Date();
@@ -215,108 +225,52 @@ export function buildRecentTestFromSessionDetail(
     Math.round((endDate.getTime() - startDate.getTime()) / 1000)
   );
 
-  const orderedQuestions =
-    questions.length > 0
-      ? [...questions].sort(
-          (a, b) =>
-            (a.questionNumber ?? a.question_number ?? 0) -
-            (b.questionNumber ?? b.question_number ?? 0)
-        )
-      : Object.keys(userAnswers).map((id, index) => ({
-          id,
-          questionNumber: index + 1,
-          question: userAnswers[id]?.questionText || `Question ${index + 1}`,
-          tags: userAnswers[id]?.tags,
-        }));
-
-  const fallbackPerQuestion =
-    orderedQuestions.length > 0
-      ? Math.max(1, Math.round(sessionDuration / orderedQuestions.length))
-      : 0;
-
-  const timePerQuestion: TestAnalysisQuestionTime[] = orderedQuestions.map((question, index) => {
-    const answer = userAnswers[question.id] ?? userAnswers[String(question.id)];
-    const status = resolveQuestionStatus(
-      answer
-        ? {
-            ...answer,
-            userAnswer: answer.answer ?? answer.userAnswer ?? answer,
-            isCorrect: answer.isCorrect ?? answer.is_correct,
-          }
-        : null
-    );
-    const stem =
-      question.question ||
-      question.questionStem ||
-      question.text ||
-      question.question_stem ||
-      `Question ${question.questionNumber ?? index + 1}`;
-
-    return {
-      questionNumber: question.questionNumber ?? question.question_number ?? index + 1,
-      time: getAnswerTimeSeconds(answer, fallbackPerQuestion, status),
-      status,
-      stem: String(stem).trim() || `Question ${index + 1}`,
-    };
-  });
-
-  const correctCount = timePerQuestion.filter(q => q.status === 'correct').length;
-  const incorrectCount = timePerQuestion.filter(q => q.status === 'incorrect').length;
-  const unattemptedCount = timePerQuestion.filter(q => q.status === 'unattempted').length;
-
-  const tagStats = new Map<string, { correct: number; total: number; totalTime: number; count: number }>();
-  orderedQuestions.forEach((question, index) => {
-    const tags = question.tags?.length
-      ? question.tags
-      : userAnswers[question.id]?.tags?.length
-        ? userAnswers[question.id].tags
-        : ['General'];
-    const row = timePerQuestion[index];
-    if (!row) return;
-    for (const tag of tags) {
-      const stats = tagStats.get(tag) || { correct: 0, total: 0, totalTime: 0, count: 0 };
-      stats.total++;
-      if (row.status === 'correct') stats.correct++;
-      if (row.status !== 'unattempted') {
-        stats.totalTime += row.time;
-        stats.count++;
-      }
-      tagStats.set(tag, stats);
-    }
-  });
-
-  const analysis: TestAnalysis = {
-    correctCount,
-    incorrectCount,
-    unattemptedCount,
-    timePerQuestion,
-    timePerTag: Array.from(tagStats.entries())
-      .filter(([, stats]) => stats.count > 0)
-      .map(([tag, stats]) => ({
-        tag,
-        avgTime: Math.round(stats.totalTime / stats.count),
-        count: stats.count,
-      })),
-    tagPerformance: Array.from(tagStats.entries()).map(([tag, stats]) => ({
-      tag,
-      correct: stats.correct,
-      total: stats.total,
-      accuracy: stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0,
-    })),
-  };
-
+  const recomputedCorrect = Object.values(userAnswers).filter((a) => a?.isCorrect).length;
   const totalQuestions =
     fallback?.totalQuestions ||
     session?.config?.questionCount ||
-    orderedQuestions.length ||
+    session?.totalQuestions ||
+    questions.length ||
+    Object.keys(userAnswers).length ||
     0;
-  const score = fallback?.score ?? correctCount;
+
+  // Prefer server correct-count when present; otherwise let buildTestAnalysis
+  // derive counts from normalized answers (do not pass fallback.score — that
+  // skewed pie slices via `correctAnswersCount || correctCount`).
+  const serverCorrectCount =
+    typeof session?.correctAnswersCount === 'number'
+      ? session.correctAnswersCount
+      : typeof session?.correct_answers_count === 'number'
+        ? session.correct_answers_count
+        : undefined;
+
+  const rawResult: RawTestResult = {
+    id: String(session?.id || fallback?.id || ''),
+    session: {
+      id: String(session?.id || fallback?.id || ''),
+      config: session?.config || {},
+      questions,
+      userAnswers,
+      startTime: startDate,
+      endTime: endDate,
+    },
+    score:
+      typeof session?.score === 'number'
+        ? session.score
+        : fallback?.percentage ?? 0,
+    totalQuestions,
+    correctAnswersCount: serverCorrectCount ?? recomputedCorrect,
+  };
+
+  const analysis = normalizeTestAnalysis(buildTestAnalysis(rawResult));
+
+  const score = fallback?.score ?? analysis.correctCount;
   const percentage =
     fallback?.percentage ??
     (typeof session?.score === 'number'
       ? Math.round(session.score)
       : totalQuestions > 0
-        ? Math.round((correctCount / totalQuestions) * 100)
+        ? Math.round((score / totalQuestions) * 100)
         : 0);
 
   return normalizeRecentTest({

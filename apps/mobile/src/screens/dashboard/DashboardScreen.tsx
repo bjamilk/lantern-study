@@ -40,12 +40,6 @@ import { useSettingsStore } from '../../stores/settingsStore';
 
 import { useNotesStore } from '../../stores/notesStore';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
-import TestAnalysisModal from '../../components/TestAnalysisModal';
-import {
-  buildRecentTestFromSessionDetail,
-  normalizeRecentTest,
-} from '../../utils/testAnalysisHelpers';
-
 import { useTestStore } from '../../stores/testStore';
 
 import { Card, Button } from '../../components/ui';
@@ -218,7 +212,6 @@ export function DashboardScreen({ navigation }: Props) {
 
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
 
-  const [analysisTest, setAnalysisTest] = useState<RecentTest | null>(null);
   const [analysisLoadingId, setAnalysisLoadingId] = useState<string | null>(null);
   const [recentSort, setRecentSort] = useState<'newest' | 'oldest' | 'highestScore'>('newest');
   const [recentPage, setRecentPage] = useState(1);
@@ -226,29 +219,19 @@ export function DashboardScreen({ navigation }: Props) {
   const [recentTotal, setRecentTotal] = useState(0);
   const [recentLoading, setRecentLoading] = useState(false);
 
-  const openDetailedAnalysis = useCallback(async (test: RecentTest) => {
-    // Lean list rows have empty timePerQuestion — fetch the full session like web.
-    setAnalysisLoadingId(test.id);
-    try {
-      const session = await api.fetchTestSessionDetail(test.id);
-      setAnalysisTest(buildRecentTestFromSessionDetail(session, test));
-    } catch {
-      const attempt = useTestStore.getState().attempts.find((a) => a.id === test.id);
-      if (attempt?.answers?.length) {
-        const { buildAnalysisFromAttempt } = await import('../../utils/testAnalysisHelpers');
-        setAnalysisTest(
-          normalizeRecentTest({
-            ...test,
-            analysis: buildAnalysisFromAttempt(attempt),
-          })
-        );
-      } else {
-        setAnalysisTest(normalizeRecentTest(test));
-      }
-    } finally {
+  const openDetailedAnalysis = useCallback(
+    (test: RecentTest) => {
+      // Navigate to a stack screen — nested RN Modal fails under some parents,
+      // and the analysis screen hydrates lean rows via fetchTestSessionDetail.
+      setAnalysisLoadingId(test.id);
+      navigation.navigate('TestAnalysis', {
+        test,
+        sessionId: test.id,
+      });
       setAnalysisLoadingId(null);
-    }
-  }, []);
+    },
+    [navigation]
+  )
 
 
 
@@ -1265,16 +1248,6 @@ export function DashboardScreen({ navigation }: Props) {
       </Modal>
 
 
-
-      <TestAnalysisModal
-
-        visible={!!analysisTest}
-
-        onClose={() => setAnalysisTest(null)}
-
-        test={analysisTest}
-
-      />
 
     </SafeAreaView>
 

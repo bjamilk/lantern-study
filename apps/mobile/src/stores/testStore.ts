@@ -692,32 +692,47 @@ export const useTestStore = create<TestState>((set, get) => ({
     if (!existing || existing.answers.length > 0) return;
 
     try {
+      const { normalizeTestResultSession } = await import('@lantern/shared/utils/testHelpers');
       const session: any = await api.fetchTestSessionDetail(attemptId);
-      const questions = normalizeApiQuestions(session?.questions || []);
-      const userAnswers = session?.user_answers || session?.userAnswers || {};
+      const { questions: normalizedQuestions, userAnswers } =
+        normalizeTestResultSession(session);
+      const questions = normalizeApiQuestions(normalizedQuestions.length
+        ? normalizedQuestions
+        : session?.questions || []);
 
       const orderedQuestions =
         questions.length > 0
           ? [...questions].sort(
               (a: any, b: any) =>
-                (a.questionNumber ?? 0) - (b.questionNumber ?? 0)
+                ((a as any).questionNumber ?? 0) - ((b as any).questionNumber ?? 0)
             )
           : Object.keys(userAnswers).map((id) => ({ id }));
 
       const answers = orderedQuestions.map((question: any) => {
         const qId = question.id;
         const ans = userAnswers[qId] ?? userAnswers[String(qId)];
-        const userAnswer = ans?.answer ?? ans?.userAnswer ?? ans;
+        const userAnswer =
+          ans?.selectedOptionIds?.length === 1
+            ? ans.selectedOptionIds[0]
+            : ans?.selectedOptionIds?.length
+              ? ans.selectedOptionIds
+              : ans?.fillText ??
+                ans?.matchingAnswers ??
+                ans?.diagramAnswers ??
+                (ans as any)?.answer ??
+                (ans as any)?.userAnswer ??
+                '';
         const resolvedQuestion =
           questions.find((q: any) => q.id === qId) || question;
+        const isCorrect = ans?.isCorrect ?? (ans as any)?.is_correct ?? false;
         return {
           questionId: qId,
           userAnswer,
-          isCorrect: ans?.isCorrect ?? ans?.is_correct ?? false,
-          points: (ans?.isCorrect ?? ans?.is_correct)
-            ? (resolvedQuestion?.points || 10)
-            : 0,
-          questionText: resolvedQuestion?.question,
+          isCorrect,
+          points: isCorrect ? (resolvedQuestion?.points || 10) : 0,
+          questionText:
+            resolvedQuestion?.question ||
+            (normalizedQuestions.find((q) => q.id === qId) as any)?.questionStem,
           questionType: resolvedQuestion?.type,
           correctAnswer: resolvedQuestion
             ? getCorrectAnswerForQuestion(resolvedQuestion)
@@ -725,7 +740,7 @@ export const useTestStore = create<TestState>((set, get) => ({
           options: resolvedQuestion?.options,
           explanation: resolvedQuestion?.explanation,
           tags: resolvedQuestion?.tags,
-          timeSpentSeconds: ans?.timeSpentSeconds ?? ans?.time_spent_seconds ?? 0,
+          timeSpentSeconds: ans?.timeSpentSeconds ?? (ans as any)?.time_spent_seconds ?? 0,
           questionSnapshot: resolvedQuestion,
         };
       }).filter((row: any) => row.questionId);

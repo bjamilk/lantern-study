@@ -20,6 +20,11 @@ export type AuthStackParamList = {
 export type HomeStackParamList = {
   Dashboard: undefined;
   Leaderboard: undefined;
+  TestAnalysis: {
+    test?: import("../types/dashboardStats").RecentTest;
+    sessionId?: string;
+    attemptId?: string;
+  };
 };
 
 export type StudyStackParamList = {
@@ -45,6 +50,11 @@ export type StudyStackParamList = {
     groupId?: string;
   };
   TestResults: { attemptId: string };
+  TestAnalysis: {
+    test?: import("../types/dashboardStats").RecentTest;
+    sessionId?: string;
+    attemptId?: string;
+  };
 };
 
 export type ChatStackParamList = {
@@ -130,6 +140,7 @@ const IMMERSIVE_SCREENS = new Set([
   "LearnStudy",
   "TestTaking",
   "TestResults",
+  "TestAnalysis",
   "GameScreen",
   "GameResult",
   "ListingDetail",

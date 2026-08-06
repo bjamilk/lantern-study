@@ -151,7 +151,8 @@ function getSessionDurationSeconds(result: RawTestResult): number {
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
 }
 
-function buildTestAnalysis(result: RawTestResult): TestAnalysis {
+/** Shared pie/bar chart builder — web dashboard and mobile analysis both use this. */
+export function buildTestAnalysis(result: RawTestResult): TestAnalysis {
   const questions = result.session.questions || [];
   const userAnswers = result.session.userAnswers || {};
   const timePerQuestion: TestAnalysis['timePerQuestion'] = [];

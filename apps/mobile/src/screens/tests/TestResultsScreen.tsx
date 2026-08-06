@@ -19,7 +19,6 @@ import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { useTheme, type ThemeColors } from '../../theme';
 import AIExplainModal from '../../components/AIExplainModal';
 import AIUsageBadge from '../../components/AIUsageBadge';
-import TestAnalysisModal from '../../components/TestAnalysisModal';
 import {
   buildAnalysisFromAttempt,
   normalizeRecentTest,
@@ -52,7 +51,6 @@ export default function TestResultsScreen() {
 
   // AI Explain state
   const [showExplain, setShowExplain] = useState(false);
-  const [showAnalysis, setShowAnalysis] = useState(false);
   const [explainData, setExplainData] = useState<{
     question: string;
     userAnswer: string;
@@ -84,6 +82,32 @@ export default function TestResultsScreen() {
       analysis: buildAnalysisFromAttempt(attempt),
     });
   }, [attempt]);
+
+  const openDetailedAnalysis = () => {
+    if (!attempt) return;
+    // Stack screen — never nest RN Modal inside this fullScreenModal.
+    navigation.navigate('TestAnalysis', {
+      test: analysisTest ?? {
+        id: attempt.id,
+        groupName: attempt.groupName || attempt.testName,
+        score: attempt.score,
+        totalQuestions: attempt.totalPoints || attempt.answers.length,
+        percentage: attempt.percentage,
+        completedAt: attempt.completedAt || attempt.startedAt,
+        timeSpent: attempt.timeSpent,
+        analysis: {
+          correctCount: 0,
+          incorrectCount: 0,
+          unattemptedCount: 0,
+          timePerQuestion: [],
+          timePerTag: [],
+          tagPerformance: [],
+        },
+      },
+      sessionId: attempt.id,
+      attemptId: attempt.id,
+    });
+  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -235,17 +259,15 @@ export default function TestResultsScreen() {
           </View>
         </View>
 
-        {analysisTest ? (
-          <TouchableOpacity
-            style={[styles.analysisButton, { backgroundColor: colors.primary }]}
-            onPress={() => setShowAnalysis(true)}
-            accessibilityRole="button"
-            accessibilityLabel="View detailed analysis of this test"
-          >
-            <Ionicons name="bar-chart" size={18} color="#fff" />
-            <Text style={styles.analysisButtonText}>Detailed Analysis</Text>
-          </TouchableOpacity>
-        ) : null}
+        <TouchableOpacity
+          style={[styles.analysisButton, { backgroundColor: colors.primary }]}
+          onPress={openDetailedAnalysis}
+          accessibilityRole="button"
+          accessibilityLabel="View detailed analysis of this test"
+        >
+          <Ionicons name="bar-chart" size={18} color="#fff" />
+          <Text style={styles.analysisButtonText}>Detailed Analysis</Text>
+        </TouchableOpacity>
 
         {/* Progress Bar */}
         <View style={styles.progressSection}>
@@ -360,12 +382,6 @@ export default function TestResultsScreen() {
         />
       )}
 
-      <TestAnalysisModal
-        visible={showAnalysis}
-        onClose={() => setShowAnalysis(false)}
-        test={analysisTest}
-      />
-
       {/* Bottom Actions */}
       <View style={styles.bottomActions}>
         {failedQuestions.length > 0 ? (
@@ -379,15 +395,13 @@ export default function TestResultsScreen() {
             </Text>
           </TouchableOpacity>
         ) : null}
-        {analysisTest ? (
-          <TouchableOpacity
-            style={styles.analysisFooterButton}
-            onPress={() => setShowAnalysis(true)}
-          >
-            <Ionicons name="bar-chart" size={20} color="#0f766e" />
-            <Text style={styles.analysisFooterButtonText}>Detailed Analysis</Text>
-          </TouchableOpacity>
-        ) : null}
+        <TouchableOpacity
+          style={styles.analysisFooterButton}
+          onPress={openDetailedAnalysis}
+        >
+          <Ionicons name="bar-chart" size={20} color="#0f766e" />
+          <Text style={styles.analysisFooterButtonText}>Detailed Analysis</Text>
+        </TouchableOpacity>
         <TouchableOpacity 
           style={styles.retryButton}
           onPress={() => navigation.navigate('TestsList')}
