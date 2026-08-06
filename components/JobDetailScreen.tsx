@@ -95,6 +95,7 @@ export default function JobDetailScreen({
         resumePath: applicantProfile?.resumePath || null,
         resumeFilename: applicantProfile?.resumeFilename || null,
       });
+      setJob({ ...job, hasApplied: true });
       setSuccess(
         res.existing
           ? "You already applied — opening chat."
@@ -130,6 +131,7 @@ export default function JobDetailScreen({
     setError(null);
     try {
       const res = await trackJobExternalApply(job.id);
+      setJob({ ...job, hasApplied: true });
       window.open(res.data.url, "_blank", "noopener,noreferrer");
     } catch (e) {
       setError(
@@ -273,6 +275,11 @@ export default function JobDetailScreen({
             )}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
+                {job.hasApplied ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                    Already applied
+                  </span>
+                ) : null}
                 {job.isSponsored ? (
                   <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
                     Featured
@@ -420,106 +427,132 @@ export default function JobDetailScreen({
           </main>
 
           <aside className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm lg:sticky lg:top-4">
-            <h2 className="text-lg font-semibold text-lantern-text">
-              {showInApp ? "Apply for this job" : "Continue your application"}
-            </h2>
-            <p className="mt-1 text-sm text-lantern-text-secondary">
-              {showInApp
-                ? "Send your details directly to the poster."
-                : "This employer accepts applications on an external site."}
-            </p>
-
-            {showInApp ? (
-              <form
-                className="mt-5 space-y-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleApply();
-                }}
-              >
-                {(job.screeningQuestions || []).map((question) => (
-                  <label key={question.id} className="block text-sm">
-                    <span className="font-medium text-lantern-text">
-                      {question.prompt}
-                      {question.required ? " *" : ""}
-                    </span>
-                    {question.questionType === "single_choice" ? (
-                      <select
-                        required={question.required}
-                        className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
-                        value={answers[question.id] || ""}
-                        onChange={(event) =>
-                          setAnswers((current) => ({
-                            ...current,
-                            [question.id]: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">Select an answer</option>
-                        {(question.options || []).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        required={question.required}
-                        className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
-                        value={answers[question.id] || ""}
-                        onChange={(event) =>
-                          setAnswers((current) => ({
-                            ...current,
-                            [question.id]: event.target.value,
-                          }))
-                        }
-                      />
-                    )}
-                  </label>
-                ))}
-                <label className="block text-sm">
-                  <span className="font-medium text-lantern-text">
-                    Message to the poster
-                  </span>
-                  <span className="ml-1 text-lantern-text-tertiary">
-                    (optional)
-                  </span>
-                  <textarea
-                    className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
-                    rows={4}
-                    value={message}
-                    onChange={(event) => setMessage(event.target.value)}
-                    placeholder="Briefly introduce yourself and your interest."
-                  />
-                </label>
-                <ResumeUploadField
-                  profile={applicantProfile}
-                  onUploaded={setApplicantProfile}
-                />
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="w-full rounded-lg bg-lantern-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            {job.hasApplied ? (
+              <>
+                <p
+                  role="status"
+                  className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800"
                 >
-                  {busy ? "Submitting…" : "Submit application"}
-                </button>
-              </form>
-            ) : null}
-
-            {showExternal ? (
-              <div
-                className={`${showInApp ? "mt-4 border-t border-lantern-border pt-4" : "mt-5"}`}
-              >
+                  Already applied
+                </p>
+                <p className="mt-2 text-sm text-lantern-text-secondary">
+                  You already sent an application for this role. Track it from
+                  My applications.
+                </p>
                 <button
                   type="button"
-                  disabled={busy}
-                  onClick={() => void handleExternal()}
-                  className="w-full rounded-lg border border-lantern-primary px-4 py-3 text-sm font-semibold text-lantern-primary hover:bg-lantern-primary/5 disabled:opacity-60"
+                  onClick={() => onNavigate("MyJobApplications")}
+                  className="mt-4 w-full rounded-lg bg-lantern-primary px-4 py-3 text-sm font-semibold text-white hover:bg-lantern-primary/90"
                 >
-                  Apply on company site
+                  View my applications
                 </button>
-              </div>
-            ) : null}
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-semibold text-lantern-text">
+                  {showInApp
+                    ? "Apply for this job"
+                    : "Continue your application"}
+                </h2>
+                <p className="mt-1 text-sm text-lantern-text-secondary">
+                  {showInApp
+                    ? "Send your details directly to the poster."
+                    : "This employer accepts applications on an external site."}
+                </p>
+
+                {showInApp ? (
+                  <form
+                    className="mt-5 space-y-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleApply();
+                    }}
+                  >
+                    {(job.screeningQuestions || []).map((question) => (
+                      <label key={question.id} className="block text-sm">
+                        <span className="font-medium text-lantern-text">
+                          {question.prompt}
+                          {question.required ? " *" : ""}
+                        </span>
+                        {question.questionType === "single_choice" ? (
+                          <select
+                            required={question.required}
+                            className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
+                            value={answers[question.id] || ""}
+                            onChange={(event) =>
+                              setAnswers((current) => ({
+                                ...current,
+                                [question.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select an answer</option>
+                            {(question.options || []).map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            required={question.required}
+                            className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
+                            value={answers[question.id] || ""}
+                            onChange={(event) =>
+                              setAnswers((current) => ({
+                                ...current,
+                                [question.id]: event.target.value,
+                              }))
+                            }
+                          />
+                        )}
+                      </label>
+                    ))}
+                    <label className="block text-sm">
+                      <span className="font-medium text-lantern-text">
+                        Message to the poster
+                      </span>
+                      <span className="ml-1 text-lantern-text-tertiary">
+                        (optional)
+                      </span>
+                      <textarea
+                        className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
+                        rows={4}
+                        value={message}
+                        onChange={(event) => setMessage(event.target.value)}
+                        placeholder="Briefly introduce yourself and your interest."
+                      />
+                    </label>
+                    <ResumeUploadField
+                      profile={applicantProfile}
+                      onUploaded={setApplicantProfile}
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="w-full rounded-lg bg-lantern-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busy ? "Submitting…" : "Submit application"}
+                    </button>
+                  </form>
+                ) : null}
+
+                {showExternal ? (
+                  <div
+                    className={`${showInApp ? "mt-4 border-t border-lantern-border pt-4" : "mt-5"}`}
+                  >
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleExternal()}
+                      className="w-full rounded-lg border border-lantern-primary px-4 py-3 text-sm font-semibold text-lantern-primary hover:bg-lantern-primary/5 disabled:opacity-60"
+                    >
+                      Apply on company site
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
 
             {error ? (
               <p

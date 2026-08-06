@@ -185,7 +185,11 @@ function normalizeEngagementDuration(
   };
 }
 
-function mapPosting(row: any, savedPostingIds?: ReadonlySet<string>) {
+function mapPosting(
+  row: any,
+  savedPostingIds?: ReadonlySet<string>,
+  appliedPostingIds?: ReadonlySet<string>,
+) {
   if (!row) return null;
   const campus = Array.isArray(row.campus) ? row.campus[0] : row.campus;
   const company = Array.isArray(row.company) ? row.company[0] : row.company;
@@ -217,6 +221,9 @@ function mapPosting(row: any, savedPostingIds?: ReadonlySet<string>) {
     countryCode: row.country_code || JOBS_DEFAULT_COUNTRY,
     campusName: campus?.name || null,
     isSaved: savedPostingIds ? savedPostingIds.has(row.id) : undefined,
+    hasApplied: appliedPostingIds
+      ? appliedPostingIds.has(row.id)
+      : undefined,
     company: mapCompany(company),
     poster: poster
       ? {
@@ -492,12 +499,15 @@ export class JobsBoardService {
 
     const { data, error, count } = await query.range(from, to);
     if (error) throw error;
-    const savedIds = await this.savedPostingIds(
+    const ids = (data || []).map((row: any) => row.id as string);
+    const { savedIds, appliedIds } = await this.viewerPostingFlags(
       filters.viewerId,
-      (data || []).map((row: any) => row.id),
+      ids,
     );
     return {
-      data: (data || []).map((row: any) => mapPosting(row, savedIds)),
+      data: (data || []).map((row: any) =>
+        mapPosting(row, savedIds, appliedIds),
+      ),
       pagination: { page, limit, total: count ?? 0 },
     };
   }
@@ -561,12 +571,12 @@ export class JobsBoardService {
     const ordered = ids
       .map((id) => byId.get(id))
       .filter(Boolean) as any[];
-    const savedIds = await this.savedPostingIds(
+    const { savedIds, appliedIds } = await this.viewerPostingFlags(
       filters.viewerId,
       ordered.map((row) => row.id),
     );
     return {
-      data: ordered.map((row) => mapPosting(row, savedIds)),
+      data: ordered.map((row) => mapPosting(row, savedIds, appliedIds)),
       pagination: { page, limit, total },
     };
   }
@@ -591,6 +601,42 @@ export class JobsBoardService {
       return undefined;
     }
     return new Set((data || []).map((row: any) => row.posting_id));
+  }
+
+  /**
+   * Posting ids the viewer has already applied to (any application row,
+   * including external-click tracked applies).
+   */
+  private async appliedPostingIds(
+    viewerId: string | null | undefined,
+    postingIds: string[],
+  ): Promise<ReadonlySet<string> | undefined> {
+    if (!viewerId) return undefined;
+    if (!postingIds.length) return new Set<string>();
+    const { data, error } = await this.client()
+      .from("job_applications")
+      .select("posting_id")
+      .eq("applicant_id", viewerId)
+      .in("posting_id", postingIds);
+    if (error) {
+      logger.warn("Failed to load applied jobs for viewer", { error });
+      return undefined;
+    }
+    return new Set((data || []).map((row: any) => row.posting_id));
+  }
+
+  private async viewerPostingFlags(
+    viewerId: string | null | undefined,
+    postingIds: string[],
+  ): Promise<{
+    savedIds?: ReadonlySet<string>;
+    appliedIds?: ReadonlySet<string>;
+  }> {
+    const [savedIds, appliedIds] = await Promise.all([
+      this.savedPostingIds(viewerId, postingIds),
+      this.appliedPostingIds(viewerId, postingIds),
+    ]);
+    return { savedIds, appliedIds };
   }
 
   async savePosting(userId: string, postingId: string) {
@@ -633,15 +679,21 @@ export class JobsBoardService {
       .order("created_at", { ascending: false });
     if (error) throw error;
 
-    const savedIds = new Set((data || []).map((row: any) => row.posting_id));
-    return (data || [])
+    const postings = (data || [])
       .map((row: any) =>
         Array.isArray(row.posting) ? row.posting[0] : row.posting,
       )
       .filter(
         (posting: any) => posting && posting.status !== "removed_by_admin",
-      )
-      .map((posting: any) => mapPosting(posting, savedIds));
+      );
+    const savedIds = new Set(postings.map((posting: any) => posting.id));
+    const appliedIds = await this.appliedPostingIds(
+      userId,
+      postings.map((posting: any) => posting.id),
+    );
+    return postings.map((posting: any) =>
+      mapPosting(posting, savedIds, appliedIds),
+    );
   }
 
   // ─── Saved searches ──────────────────────────────────────────────────────
@@ -775,10 +827,11 @@ export class JobsBoardService {
       }
     }
 
-    return mapPosting(
-      data,
-      await this.savedPostingIds(opts?.viewerId, [data.id]),
+    const { savedIds, appliedIds } = await this.viewerPostingFlags(
+      opts?.viewerId,
+      [data.id],
     );
+    return mapPosting(data, savedIds, appliedIds);
   }
 
   async createPosting(userId: string, input: CreateJobPostingInput) {
@@ -2787,14 +2840,17 @@ export class JobsBoardService {
       .limit(50);
     if (error) throw error;
 
-    const savedIds = await this.savedPostingIds(
+    const ids = (data || []).map((row: any) => row.id as string);
+    const { savedIds, appliedIds } = await this.viewerPostingFlags(
       viewerId,
-      (data || []).map((row: any) => row.id),
+      ids,
     );
 
     return {
       company,
-      jobs: (data || []).map((row: any) => mapPosting(row, savedIds)),
+      jobs: (data || []).map((row: any) =>
+        mapPosting(row, savedIds, appliedIds),
+      ),
       myRole: (membership?.role as JobCompanyMemberRole | undefined) ?? null,
     };
   }

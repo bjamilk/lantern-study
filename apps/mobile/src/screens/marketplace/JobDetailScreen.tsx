@@ -262,7 +262,27 @@ export function JobDetailScreen() {
             </Card>
           </>
         ) : null}
+        {job?.hasApplied ? (
+          <Card className="mb-3 border border-emerald-200 bg-emerald-50">
+            <Text className="text-base font-semibold text-emerald-800">
+              Already applied
+            </Text>
+            <Text className="mt-1 text-sm text-emerald-700">
+              You already sent an application for this role. Track it from My
+              applications.
+            </Text>
+            <Pressable
+              className="mt-4 items-center rounded-xl bg-lantern-primary py-3"
+              onPress={() => navigation.navigate("MyJobApplications")}
+            >
+              <Text className="font-semibold text-white">
+                View my applications
+              </Text>
+            </Pressable>
+          </Card>
+        ) : null}
         {job &&
+        !job.hasApplied &&
         isJobPostingPubliclyVisible(job.status) &&
         (job.applyMode === "in_app" || job.applyMode === "both") ? (
           <Card className="mb-3 border border-lantern-border">
@@ -366,6 +386,7 @@ export function JobDetailScreen() {
                       resumePath: applicantProfile?.resumePath || null,
                       resumeFilename: applicantProfile?.resumeFilename || null,
                     });
+                    setJob({ ...job, hasApplied: true });
                     setSuccess(
                       "Application sent. Track it from My applications.",
                     );
@@ -384,14 +405,16 @@ export function JobDetailScreen() {
           </Card>
         ) : null}
         {job?.externalUrl &&
+        !job.hasApplied &&
         isJobPostingPubliclyVisible(job.status) &&
         (job.applyMode === "external" || job.applyMode === "both") ? (
           <Pressable
             className="mb-3 items-center rounded-xl border border-lantern-primary bg-lantern-surface py-3"
             onPress={() =>
-              void trackJobExternalApply(job.id).then((res) =>
-                Linking.openURL(res.data.url),
-              )
+              void trackJobExternalApply(job.id).then((res) => {
+                setJob({ ...job, hasApplied: true });
+                return Linking.openURL(res.data.url);
+              })
             }
           >
             <Text className="font-semibold text-lantern-primary">

@@ -481,6 +481,11 @@ export function JobsHomeScreen() {
                           <Text className="flex-shrink font-semibold text-lantern-text">
                             {job.title}
                           </Text>
+                          {job.hasApplied ? (
+                            <Text className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                              APPLIED
+                            </Text>
+                          ) : null}
                           {job.isSponsored ? (
                             <Text className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                               FEATURED
