@@ -11,7 +11,7 @@ import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createSh
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createTestSession, createTestResult, upsertUserQuestionStat,
-    createNotification
+    createNotification, fetchDashboardSummary, fetchTestResults,
 } from '../services/supabase';
 import {
     abandonTestDraft,
@@ -54,7 +54,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
     const {
         activeTestSession, setActiveTestSession,
         activeStudySession, setActiveStudySession,
-        userQuestionStats, setUserQuestionStats, updateTestResults,
+        userQuestionStats, setUserQuestionStats, updateTestResults, setTestResults,
         addPendingSyncResult,
         setPausedSessions, removePausedSession,
     } = useTestStore();
@@ -429,8 +429,42 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 }
 
                 if (savedSessionId) removePausedSession(savedSessionId);
-            
-            updateTestResults(prev => [result, ...prev]);
+
+            // Optimistic chart update, then refresh lean history so Group
+            // Performance matches the server after cache invalidation.
+            const persistedResult: TestResult = {
+                ...result,
+                id: savedSessionId || result.id,
+                session: {
+                    ...result.session,
+                    id: savedSessionId || result.session.id,
+                },
+            };
+            updateTestResults(prev => {
+                const withoutDup = prev.filter(
+                    (r) => r.id !== persistedResult.id && r.session?.id !== persistedResult.session.id
+                );
+                return [persistedResult, ...withoutDup];
+            });
+            void (async () => {
+                try {
+                    const summary = await fetchDashboardSummary();
+                    const cloudResults = Array.isArray(summary?.testResults)
+                        ? summary.testResults
+                        : await fetchTestResults(currentUser.id, { limit: 500, lean: true });
+                    if (!Array.isArray(cloudResults) || cloudResults.length === 0) return;
+                    const cloudIds = new Set(
+                        cloudResults.map((r: TestResult) => r.id || r.session?.id).filter(Boolean)
+                    );
+                    if (!cloudIds.has(persistedResult.id) && !cloudIds.has(persistedResult.session.id)) {
+                        setTestResults([persistedResult, ...cloudResults]);
+                    } else {
+                        setTestResults(cloudResults as TestResult[]);
+                    }
+                } catch (err) {
+                    console.warn('Failed to refresh dashboard test results after submit:', err);
+                }
+            })();
 
             const walletBalance = (saved as { walletBalance?: number })?.walletBalance;
             if (typeof walletBalance === 'number') {
@@ -530,7 +564,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             isSubmittingTestRef.current = false;
             setIsSubmittingTest(false);
         }
-    }, [activeTestSession, currentUser, userQuestionStats, isOnline, setCurrentUser, updateTestResults, addPendingSyncResult, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification, removePausedSession]);
+        }, [activeTestSession, currentUser, userQuestionStats, isOnline, setCurrentUser, updateTestResults, setTestResults, addPendingSyncResult, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification, removePausedSession]);
     
     const handleEndStudySession = useCallback(async () => {
         cancelScheduledSessionDraftAutosave();

@@ -301,12 +301,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           totalQuestions: body.total_questions ?? body.totalQuestions,
         });
 
-        // The dashboard performance chart and subject breakdown are cached for
-        // 5 minutes per user. Nothing dropped them when a session completed, so
-        // a finished test did not appear on the chart on either web or mobile
-        // until the TTL lapsed. Invalidate both on the write.
+        // Group Performance chart reads lean completed history via
+        // `/dashboard/summary` (`tests:${userId}:*`). Also drop the unused
+        // stats:performance keys for older clients.
         try {
           await Promise.all([
+            cacheService.deletePattern(`tests:${userId}:*`),
             cacheService.deletePattern(`tests:stats:performance:${userId}:*`),
             cacheService.delete(`tests:stats:subject:${userId}`),
           ]);

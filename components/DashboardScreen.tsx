@@ -413,6 +413,7 @@ export default function DashboardScreen({
         session: {
           ...result.session,
           questions: Array.isArray(result.session.questions) ? result.session.questions : [],
+          userAnswers: result.session.userAnswers || {},
           startTime: result.session.startTime instanceof Date 
             ? result.session.startTime 
             : new Date(result.session.startTime),
@@ -604,7 +605,7 @@ export default function DashboardScreen({
         data.correctAnswers += result.correctAnswersCount;
         data.totalQuestions += result.totalQuestions;
         
-        Object.values(result.session.userAnswers).forEach((answer: UserAnswerRecord) => {
+        Object.values(result.session.userAnswers || {}).forEach((answer: UserAnswerRecord) => {
           if (answer.timeSpentSeconds !== undefined) {
             data.totalTimeSpentSeconds += answer.timeSpentSeconds;
             data.questionsWithTimeData++;

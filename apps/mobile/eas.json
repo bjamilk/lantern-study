@@ -33,6 +33,19 @@
         "buildType": "apk"
       }
     },
+    "ios-simulator": {
+      "distribution": "internal",
+      "node": "20.19.4",
+      "env": {
+        "APP_VARIANT": "development",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
