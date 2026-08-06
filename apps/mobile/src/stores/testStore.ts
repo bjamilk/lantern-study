@@ -262,6 +262,8 @@ export interface TestAttempt {
     options?: string[];
     explanation?: string;
     tags?: string[];
+    /** Per-question dwell time for detailed analysis charts. */
+    timeSpentSeconds?: number;
     questionSnapshot?: TestQuestion;
   }[];
   timeSpent: number; // in seconds
@@ -694,24 +696,39 @@ export const useTestStore = create<TestState>((set, get) => ({
       const questions = normalizeApiQuestions(session?.questions || []);
       const userAnswers = session?.user_answers || session?.userAnswers || {};
 
-      const answers = Object.entries(userAnswers).map(([qId, ans]: [string, any]) => {
-        const question = questions.find((q: any) => q.id === qId);
+      const orderedQuestions =
+        questions.length > 0
+          ? [...questions].sort(
+              (a: any, b: any) =>
+                (a.questionNumber ?? 0) - (b.questionNumber ?? 0)
+            )
+          : Object.keys(userAnswers).map((id) => ({ id }));
+
+      const answers = orderedQuestions.map((question: any) => {
+        const qId = question.id;
+        const ans = userAnswers[qId] ?? userAnswers[String(qId)];
         const userAnswer = ans?.answer ?? ans?.userAnswer ?? ans;
+        const resolvedQuestion =
+          questions.find((q: any) => q.id === qId) || question;
         return {
           questionId: qId,
           userAnswer,
           isCorrect: ans?.isCorrect ?? ans?.is_correct ?? false,
-          points: (ans?.isCorrect ?? ans?.is_correct) ? (question?.points || 10) : 0,
-          questionText: question?.question,
-          questionType: question?.type,
-          correctAnswer: question ? getCorrectAnswerForQuestion(question) : undefined,
-          options: question?.options,
-          explanation: question?.explanation,
-          tags: question?.tags,
+          points: (ans?.isCorrect ?? ans?.is_correct)
+            ? (resolvedQuestion?.points || 10)
+            : 0,
+          questionText: resolvedQuestion?.question,
+          questionType: resolvedQuestion?.type,
+          correctAnswer: resolvedQuestion
+            ? getCorrectAnswerForQuestion(resolvedQuestion)
+            : undefined,
+          options: resolvedQuestion?.options,
+          explanation: resolvedQuestion?.explanation,
+          tags: resolvedQuestion?.tags,
           timeSpentSeconds: ans?.timeSpentSeconds ?? ans?.time_spent_seconds ?? 0,
-          questionSnapshot: question,
+          questionSnapshot: resolvedQuestion,
         };
-      });
+      }).filter((row: any) => row.questionId);
 
       if (!answers.length) return;
 
@@ -782,6 +799,7 @@ export const useTestStore = create<TestState>((set, get) => ({
             options: question?.options,
             explanation: question?.explanation,
             tags: question?.tags,
+            timeSpentSeconds: ans?.timeSpentSeconds ?? ans?.time_spent_seconds ?? 0,
             questionSnapshot: question,
           };
         });
@@ -1400,6 +1418,7 @@ export const useTestStore = create<TestState>((set, get) => ({
         options: q.options,
         explanation: q.explanation,
         tags: q.tags,
+        timeSpentSeconds: activeTest.answerTimings?.[q.id] ?? 0,
         questionSnapshot: q,
       };
     });

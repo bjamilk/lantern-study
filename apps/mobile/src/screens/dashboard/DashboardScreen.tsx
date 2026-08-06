@@ -41,7 +41,10 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import TestAnalysisModal from '../../components/TestAnalysisModal';
-import { normalizeRecentTest } from '../../utils/testAnalysisHelpers';
+import {
+  buildRecentTestFromSessionDetail,
+  normalizeRecentTest,
+} from '../../utils/testAnalysisHelpers';
 
 import { useTestStore } from '../../stores/testStore';
 
@@ -216,11 +219,36 @@ export function DashboardScreen({ navigation }: Props) {
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
 
   const [analysisTest, setAnalysisTest] = useState<RecentTest | null>(null);
+  const [analysisLoadingId, setAnalysisLoadingId] = useState<string | null>(null);
   const [recentSort, setRecentSort] = useState<'newest' | 'oldest' | 'highestScore'>('newest');
   const [recentPage, setRecentPage] = useState(1);
   const [recentPageItems, setRecentPageItems] = useState<RecentTest[]>([]);
   const [recentTotal, setRecentTotal] = useState(0);
   const [recentLoading, setRecentLoading] = useState(false);
+
+  const openDetailedAnalysis = useCallback(async (test: RecentTest) => {
+    // Lean list rows have empty timePerQuestion — fetch the full session like web.
+    setAnalysisLoadingId(test.id);
+    try {
+      const session = await api.fetchTestSessionDetail(test.id);
+      setAnalysisTest(buildRecentTestFromSessionDetail(session, test));
+    } catch {
+      const attempt = useTestStore.getState().attempts.find((a) => a.id === test.id);
+      if (attempt?.answers?.length) {
+        const { buildAnalysisFromAttempt } = await import('../../utils/testAnalysisHelpers');
+        setAnalysisTest(
+          normalizeRecentTest({
+            ...test,
+            analysis: buildAnalysisFromAttempt(attempt),
+          })
+        );
+      } else {
+        setAnalysisTest(normalizeRecentTest(test));
+      }
+    } finally {
+      setAnalysisLoadingId(null);
+    }
+  }, []);
 
 
 
@@ -967,7 +995,8 @@ export function DashboardScreen({ navigation }: Props) {
             recentPageItems.map((test) => (
               <Pressable
                 key={`${test.id}-${test.completedAt}`}
-                onPress={() => setAnalysisTest(normalizeRecentTest(test))}
+                onPress={() => void openDetailedAnalysis(test)}
+                disabled={analysisLoadingId === test.id}
                 className="mb-2 active:opacity-90"
               >
                 <Card className="py-3">
@@ -977,7 +1006,9 @@ export function DashboardScreen({ navigation }: Props) {
                         {test.groupName}
                       </Text>
                       <Text className="text-xs text-lantern-text-secondary mt-0.5">
-                        {new Date(test.completedAt).toLocaleDateString()} · {formatDuration(test.timeSpent)}
+                        {analysisLoadingId === test.id
+                          ? 'Loading analysis…'
+                          : `${new Date(test.completedAt).toLocaleDateString()} · ${formatDuration(test.timeSpent)}`}
                       </Text>
                     </View>
                     <View

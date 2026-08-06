@@ -19,6 +19,12 @@ import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { useTheme, type ThemeColors } from '../../theme';
 import AIExplainModal from '../../components/AIExplainModal';
 import AIUsageBadge from '../../components/AIUsageBadge';
+import TestAnalysisModal from '../../components/TestAnalysisModal';
+import {
+  buildAnalysisFromAttempt,
+  normalizeRecentTest,
+} from '../../utils/testAnalysisHelpers';
+import type { RecentTest } from '../../types/dashboardStats';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -46,6 +52,7 @@ export default function TestResultsScreen() {
 
   // AI Explain state
   const [showExplain, setShowExplain] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const [explainData, setExplainData] = useState<{
     question: string;
     userAnswer: string;
@@ -62,6 +69,20 @@ export default function TestResultsScreen() {
     return attempt.answers
       .filter(a => !a.isCorrect && a.questionSnapshot)
       .map(a => a.questionSnapshot!);
+  }, [attempt]);
+
+  const analysisTest = useMemo((): RecentTest | null => {
+    if (!attempt || attempt.answers.length === 0) return null;
+    return normalizeRecentTest({
+      id: attempt.id,
+      groupName: attempt.groupName || attempt.testName,
+      score: attempt.answers.filter(a => a.isCorrect).length,
+      totalQuestions: attempt.answers.length,
+      percentage: attempt.percentage,
+      completedAt: attempt.completedAt || attempt.startedAt,
+      timeSpent: attempt.timeSpent,
+      analysis: buildAnalysisFromAttempt(attempt),
+    });
   }, [attempt]);
 
   const formatTime = (seconds: number) => {
@@ -214,6 +235,18 @@ export default function TestResultsScreen() {
           </View>
         </View>
 
+        {analysisTest ? (
+          <TouchableOpacity
+            style={[styles.analysisButton, { backgroundColor: colors.primary }]}
+            onPress={() => setShowAnalysis(true)}
+            accessibilityRole="button"
+            accessibilityLabel="View detailed analysis of this test"
+          >
+            <Ionicons name="bar-chart" size={18} color="#fff" />
+            <Text style={styles.analysisButtonText}>Detailed Analysis</Text>
+          </TouchableOpacity>
+        ) : null}
+
         {/* Progress Bar */}
         <View style={styles.progressSection}>
           <Text style={styles.sectionTitle}>Performance</Text>
@@ -327,6 +360,12 @@ export default function TestResultsScreen() {
         />
       )}
 
+      <TestAnalysisModal
+        visible={showAnalysis}
+        onClose={() => setShowAnalysis(false)}
+        test={analysisTest}
+      />
+
       {/* Bottom Actions */}
       <View style={styles.bottomActions}>
         {failedQuestions.length > 0 ? (
@@ -338,6 +377,15 @@ export default function TestResultsScreen() {
             <Text style={styles.practiceFailedButtonText}>
               Practice Failed ({failedQuestions.length})
             </Text>
+          </TouchableOpacity>
+        ) : null}
+        {analysisTest ? (
+          <TouchableOpacity
+            style={styles.analysisFooterButton}
+            onPress={() => setShowAnalysis(true)}
+          >
+            <Ionicons name="bar-chart" size={20} color="#0f766e" />
+            <Text style={styles.analysisFooterButtonText}>Detailed Analysis</Text>
           </TouchableOpacity>
         ) : null}
         <TouchableOpacity 
@@ -463,6 +511,37 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 12,
     color: c.textSecondary,
     marginTop: 4,
+  },
+  analysisButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  analysisButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  analysisFooterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#ccfbf1',
+    borderRadius: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#99f6e4',
+  },
+  analysisFooterButtonText: {
+    color: '#0f766e',
+    fontSize: 13,
+    fontWeight: '700',
   },
   progressSection: {
     marginBottom: 24,
