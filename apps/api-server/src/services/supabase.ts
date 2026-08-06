@@ -5858,6 +5858,7 @@ export class SupabaseService {
       remaining_time_seconds?: number | null;
       status?: "in_progress" | "paused";
       title?: string;
+      config?: Record<string, unknown>;
     },
   ): Promise<any | null> {
     const existing = await this.getTestById(draftId, userId);
@@ -5879,6 +5880,13 @@ export class SupabaseService {
       patch.remaining_time_seconds = updates.remaining_time_seconds;
     }
     if (updates.title !== undefined) patch.title = updates.title;
+    if (updates.config && typeof updates.config === "object" && !Array.isArray(updates.config)) {
+      const existingConfig =
+        existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
+          ? existing.config
+          : {};
+      patch.config = { ...existingConfig, ...updates.config };
+    }
     if (updates.status === "paused") {
       patch.status = "paused";
       patch.paused_at = now;
@@ -5915,6 +5923,8 @@ export class SupabaseService {
       score?: number;
       correctAnswersCount?: number;
       totalQuestions?: number;
+      /** Merge into session config before completing (fixes mobile draft groupId). */
+      config?: Record<string, unknown>;
     },
   ): Promise<any> {
     const existing = await this.getTestById(draftId, userId);
@@ -5929,6 +5939,15 @@ export class SupabaseService {
     const now = new Date().toISOString();
     const answers = options?.user_answers ?? existing.user_answers ?? {};
     const sessionKind = existing.session_kind === "study" ? "study" : "test";
+    const existingConfig =
+      existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
+        ? existing.config
+        : {};
+    const configPatch =
+      options?.config && typeof options.config === "object" && !Array.isArray(options.config)
+        ? options.config
+        : null;
+    const nextConfig = configPatch ? { ...existingConfig, ...configPatch } : existingConfig;
 
     const { data, error } = await this.supabase
       .from("test_sessions")
@@ -5939,6 +5958,7 @@ export class SupabaseService {
         updated_at: now,
         remaining_time_seconds: null,
         paused_at: null,
+        ...(configPatch ? { config: nextConfig } : {}),
       })
       .eq("id", draftId)
       .eq("user_id", userId)

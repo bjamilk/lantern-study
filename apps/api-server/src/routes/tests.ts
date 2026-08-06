@@ -256,6 +256,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const body = req.body || {};
 
       try {
+        const configBody = body.config && typeof body.config === 'object' ? body.config : null;
         const updated = await supabaseService.updateTestDraft(draftId, userId, {
           user_answers: body.user_answers ?? body.userAnswers,
           current_question_index:
@@ -264,6 +265,16 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
             body.remaining_time_seconds ?? body.remainingTime,
           status: body.status,
           title: body.title,
+          config: configBody
+            ? {
+                ...(typeof configBody.groupId === 'string' || configBody.groupId === null
+                  ? { groupId: configBody.groupId }
+                  : {}),
+                ...(typeof configBody.groupName === 'string' || configBody.groupName === null
+                  ? { groupName: configBody.groupName }
+                  : {}),
+              }
+            : undefined,
         });
         if (!updated) {
           return res.status(404).json({
@@ -293,12 +304,25 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const body = req.body || {};
 
       try {
+        const configBody = body.config && typeof body.config === 'object' ? body.config : null;
         const completed = await supabaseService.completeTestDraft(draftId, userId, {
           user_answers: body.user_answers ?? body.userAnswers,
           activityDate: body.activityDate,
           score: body.score,
           correctAnswersCount: body.correct_answers_count ?? body.correctAnswersCount,
           totalQuestions: body.total_questions ?? body.totalQuestions,
+          // Allow clients to correct study-group attribution on complete.
+          // Mobile drafts historically wrote deckId/custom-* into config.groupId.
+          config: configBody
+            ? {
+                ...(typeof configBody.groupId === 'string' || configBody.groupId === null
+                  ? { groupId: configBody.groupId }
+                  : {}),
+                ...(typeof configBody.groupName === 'string' || configBody.groupName === null
+                  ? { groupName: configBody.groupName }
+                  : {}),
+              }
+            : undefined,
         });
 
         // Group Performance chart reads lean completed history via

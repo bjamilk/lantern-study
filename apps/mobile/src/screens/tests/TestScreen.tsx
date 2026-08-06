@@ -123,7 +123,11 @@ export default function TestScreen() {
     const sessionName = attempt.testName || 'Retake';
 
     if (questions.length > 0) {
-      await startQuestionSet(sessionName, questions, 'test', { timeLimitMinutes });
+      await startQuestionSet(sessionName, questions, 'test', {
+        timeLimitMinutes,
+        groupId: attempt.groupId,
+        groupName: attempt.groupName,
+      });
       navigation.navigate('TestTaking', {
         testId: 'custom',
         testName: sessionName,
@@ -141,6 +145,8 @@ export default function TestScreen() {
         await startTest(existingTest.id, 'test', {
           timeLimit: timeLimitMinutes || existingTest.timeLimit,
           userId: user?.id,
+          groupId: attempt.groupId,
+          groupName: attempt.groupName,
         });
         navigation.navigate('TestTaking', {
           testId: existingTest.id,

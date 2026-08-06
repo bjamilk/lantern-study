@@ -572,7 +572,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
           : mode === 'test'
             ? Math.max(config.numberOfQuestions * 2, 5)
             : 0;
-      await startQuestionSet(sessionName, questions, mode, { timeLimitMinutes });
+      await startQuestionSet(sessionName, questions, mode, {
+        timeLimitMinutes,
+        groupId,
+        groupName: displayName,
+      });
       const parent = navigation.getParent?.();
       if (parent?.navigate) {
         parent.navigate('StudyTab', {

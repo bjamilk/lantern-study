@@ -68,6 +68,61 @@ export function filterResultsByGroupPerformancePeriod<T extends LeanTestResultLi
   return results.filter((result) => toDate(result.session.startTime) >= cutoff);
 }
 
+/**
+ * Resolve a lean result onto a real study-group id.
+ *
+ * Mobile cloud drafts (since 2026-07-31) sometimes persisted `config.groupId` as
+ * a deck id or `custom-*` session id. Chart series filter by study-group id, so
+ * those rows never appear under the selected group. Prefer an exact id match,
+ * then fall back to `config.groupName` / the common "Name Test|Study" suffix.
+ */
+export type NamedGroupRef = { id: string; name?: string };
+
+export function resolveResultGroupId(
+  result: LeanTestResultLike,
+  groups: NamedGroupRef[]
+): string | undefined {
+  const groupIds = new Set(groups.map((g) => g.id));
+  const gid = result.session.config?.groupId;
+  if (typeof gid === 'string' && gid && groupIds.has(gid)) return gid;
+
+  const rawName = result.session.config?.groupName?.trim();
+  if (rawName) {
+    const exact = groups.find((g) => g.name === rawName);
+    if (exact) return exact.id;
+    const stripped = rawName.replace(/\s+(Test|Study)$/i, '').trim();
+    if (stripped && stripped !== rawName) {
+      const byStrip = groups.find((g) => g.name === stripped);
+      if (byStrip) return byStrip.id;
+    }
+  }
+
+  return typeof gid === 'string' && gid ? gid : undefined;
+}
+
+/** Rewrite lean results so chart filters see a study-group id when recoverable. */
+export function withResolvedGroupIds<T extends LeanTestResultLike>(
+  results: T[],
+  groups: NamedGroupRef[]
+): T[] {
+  if (!groups.length) return results;
+  return results.map((result) => {
+    const resolved = resolveResultGroupId(result, groups);
+    const current = result.session.config?.groupId;
+    if (!resolved || resolved === current) return result;
+    return {
+      ...result,
+      session: {
+        ...result.session,
+        config: {
+          ...result.session.config,
+          groupId: resolved,
+        },
+      },
+    };
+  });
+}
+
 export function getIsoWeekKey(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
@@ -79,7 +134,7 @@ export function getIsoWeekKey(date: Date): string {
 export function buildRolledUpGroupSeries(params: {
   groupId: string;
   groupName: string;
-  groups: GroupTreeNode[];
+  groups: Array<GroupTreeNode & { name?: string }>;
   results: LeanTestResultLike[];
   activeOnly?: boolean;
 }): RolledUpGroupSeries {
@@ -88,7 +143,8 @@ export function buildRolledUpGroupSeries(params: {
   });
   const includesDescendants = rollupIds.size > 1;
 
-  const groupResults = params.results
+  const resolvedResults = withResolvedGroupIds(params.results, params.groups);
+  const groupResults = resolvedResults
     .filter((r) => {
       const gid = r.session.config?.groupId;
       return typeof gid === 'string' && rollupIds.has(gid);

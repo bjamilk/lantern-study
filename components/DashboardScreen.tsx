@@ -23,6 +23,7 @@ import {
   getGroupIdWithDescendants,
   buildRolledUpGroupSeries,
   filterResultsByGroupPerformancePeriod,
+  withResolvedGroupIds,
   GROUP_PERFORMANCE_PERIOD_OPTIONS,
   type ActivityHeatLevel,
   type GroupPerformancePeriod,
@@ -527,8 +528,16 @@ export default function DashboardScreen({
         byStartTime.set(ts, r);
       }
     }
-    return filterResultsByGroupPerformancePeriod(Array.from(byStartTime.values()), groupPerfPeriod);
-  }, [initialTestResults, groupPerfPeriod]);
+    // Recover mobile draft rows that stored deckId/custom-* as config.groupId.
+    const resolved = withResolvedGroupIds(
+      Array.from(byStartTime.values()) as unknown as RawTestResult[],
+      groups.map((g) => ({ id: g.id, name: g.name }))
+    );
+    return filterResultsByGroupPerformancePeriod(
+      resolved as unknown as typeof initialTestResults,
+      groupPerfPeriod
+    );
+  }, [initialTestResults, groupPerfPeriod, groups]);
 
   const handleGroupPerfPeriodChange = useCallback((period: GroupPerformancePeriod) => {
     setGroupPerfPeriod(period);

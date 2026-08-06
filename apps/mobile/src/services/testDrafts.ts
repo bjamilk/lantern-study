@@ -40,6 +40,7 @@ export async function patchMobileTestDraft(
     current_question_index?: number;
     remaining_time_seconds?: number | null;
     status?: 'in_progress' | 'paused';
+    config?: { groupId?: string; groupName?: string };
   },
 ): Promise<Record<string, unknown>> {
   return request(`/api/v1/tests/drafts/${encodeURIComponent(draftId)}`, {
@@ -55,6 +56,7 @@ export async function completeMobileTestDraft(
     score?: number;
     correct_answers_count?: number;
     total_questions?: number;
+    config?: { groupId?: string; groupName?: string };
   },
 ): Promise<Record<string, unknown>> {
   return request(`/api/v1/tests/drafts/${encodeURIComponent(draftId)}/complete`, {
