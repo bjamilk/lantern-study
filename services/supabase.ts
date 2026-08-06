@@ -3728,7 +3728,120 @@ export const buyMarketplaceListingNow = async (
   }
 
   const result = await response.json();
+  return result.data as {
+    order?: { id: string; seller_id?: string; amount?: number };
+    authorizationUrl?: string;
+    accessCode?: string;
+    publicKey?: string;
+    payment?: {
+      reference: string;
+      itemAmountKobo: number;
+      serviceFeeKobo: number;
+      totalChargeKobo: number;
+    };
+  };
+};
+
+export const fetchMarketplacePaymentsConfig = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/payments/config`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load payment config');
+  }
+  const result = await response.json();
+  return result.data as {
+    paystackEnabled: boolean;
+    publicKey: string | null;
+    serviceFeeBps: number;
+  };
+};
+
+export const verifyMarketplacePayment = async (reference: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/marketplace/payments/${encodeURIComponent(reference)}/verify`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({}),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to verify payment');
+  }
+  const result = await response.json();
   return result.data;
+};
+
+export const resumeMarketplaceOrderCheckout = async (orderId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/marketplace/orders/${encodeURIComponent(orderId)}/checkout`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({}),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to start checkout');
+  }
+  const result = await response.json();
+  return result.data as {
+    authorizationUrl?: string;
+    payment?: {
+      itemAmountKobo: number;
+      serviceFeeKobo: number;
+      totalChargeKobo: number;
+      reference?: string;
+    };
+  };
+};
+
+export const fetchSellerPayoutProfile = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/seller/payout-profile`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load payout profile');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const upsertSellerPayoutProfile = async (data: {
+  accountNumber: string;
+  bankCode: string;
+}) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/seller/payout-profile`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to save payout profile');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchPaystackBanks = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/seller/banks`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load banks');
+  }
+  const result = await response.json();
+  return result.data as Array<{ name: string; code: string }>;
 };
 
 export const fetchMarketplaceCart = async () => {

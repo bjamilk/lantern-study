@@ -48,6 +48,7 @@ import userStatsRoutes from './routes/user-stats';
 import dashboardRoutes from './routes/dashboard';
 import preferencesRoutes from './routes/preferences';
 import marketplaceRoutes from './routes/marketplace';
+import paystackWebhookRoutes, { initializePaystackWebhookRoutes } from './routes/paystackWebhook';
 import sitemapRoutes from './routes/sitemap';
 import { marketplaceGeoMiddleware } from './middleware/marketplaceGeo';
 import aiRoutes, { initializeAIRoutes } from './routes/ai';
@@ -150,6 +151,7 @@ async function initializeServices() {
     initializeDashboardRoutes(supabaseService, cacheService);
     initializePreferencesRoutes(supabaseService, cacheService);
     initializeMarketplaceRoutes(supabaseService, cacheService);
+    initializePaystackWebhookRoutes(supabaseService);
     initializeJobsBoardRoutes(supabaseService, cacheService);
     initializeSitemapRoutes(supabaseService, cacheService);
     initializeOfflineBundlesRoutes(supabaseService, cacheService);
@@ -357,6 +359,8 @@ async function startServer() {
     app.use('/api/v1/dashboard', dashboardRoutes);
     app.use('/api/v1/preferences', preferencesRoutes);
     app.use('/api/v1/marketplace', optionalAuthMiddleware, marketplaceGeoMiddleware, applyPublicRateLimits, marketplaceRoutes);
+    app.use('/webhooks/paystack', paystackWebhookRoutes);
+    app.use('/api/v1/webhooks/paystack', paystackWebhookRoutes);
     app.use('/api/v1/sitemap', sitemapRoutes);
     app.use('/api/v1/api-keys', apiKeysRoutes);
     app.use('/api/v1/ai', aiRoutes);

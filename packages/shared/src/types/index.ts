@@ -847,6 +847,7 @@ export interface MarketplaceTransaction {
 
 export type MarketplaceOrderStatus =
   | 'pending_payment'
+  | 'awaiting_payment'
   | 'paid'
   | 'ready_for_pickup'
   | 'buyer_confirmed'
@@ -867,6 +868,8 @@ export interface MarketplaceOrder {
   offer_id?: string;
   inquiry_id?: string;
   transaction_id?: string;
+  /** Paystack marketplace payment row when checkout is enabled. */
+  payment_id?: string | null;
   coupon_id?: string;
   discount_amount?: number;
   payment_proof_url?: string;

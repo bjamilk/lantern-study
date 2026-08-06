@@ -30,4 +30,21 @@ describe('note share deep links', () => {
       id: token,
     });
   });
+
+  it('parses marketplace order Paystack return URLs', () => {
+    const orderId = '11111111-2222-3333-4444-555555555555';
+    expect(
+      parseDeepLink(
+        `${WEB_BASE_URL}/marketplace/orders/${orderId}?payment=return&reference=ls_buy_abc`
+      )
+    ).toEqual({
+      type: 'marketplace',
+      id: 'orders',
+      extra: {
+        orderId,
+        payment: 'return',
+        reference: 'ls_buy_abc',
+      },
+    });
+  });
 });

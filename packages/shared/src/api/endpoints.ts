@@ -2110,6 +2110,27 @@ export function createApiEndpoints(client: ApiClient) {
         status: string;
         amount: number;
         updated_at: string;
+        orderId?: string;
+        authorizationUrl?: string;
+        accessCode?: string;
+        publicKey?: string;
+        payment?: {
+          id: string;
+          reference: string;
+          status: string;
+          itemAmountKobo: number;
+          serviceFeeKobo: number;
+          totalChargeKobo: number;
+          currency: string;
+        };
+        checkout?: {
+          authorizationUrl?: string;
+          accessCode?: string;
+          publicKey?: string;
+          payment?: Record<string, unknown>;
+          order?: import("../types").MarketplaceOrder;
+          error?: string;
+        } | null;
       }>(`/marketplace/offers/${offerId}`, {
         method: "PUT",
         body: JSON.stringify({ action, counterAmount, message }),
@@ -2156,7 +2177,21 @@ export function createApiEndpoints(client: ApiClient) {
       idempotencyKey?: string,
       quantity?: number,
     ) =>
-      apiRequest<{ order: import("../types").MarketplaceOrder }>(
+      apiRequest<{
+        order: import("../types").MarketplaceOrder;
+        authorizationUrl?: string;
+        accessCode?: string;
+        publicKey?: string;
+        payment?: {
+          id: string;
+          reference: string;
+          status: string;
+          itemAmountKobo: number;
+          serviceFeeKobo: number;
+          totalChargeKobo: number;
+          currency: string;
+        };
+      }>(
         `/marketplace/listings/${listingId}/buy-now`,
         {
           method: "POST",
@@ -2169,6 +2204,56 @@ export function createApiEndpoints(client: ApiClient) {
             ...(quantity != null && quantity > 0 ? { quantity } : {}),
           }),
         },
+      ),
+
+    fetchMarketplacePaymentsConfig: () =>
+      apiRequest<{
+        paystackEnabled: boolean;
+        publicKey: string | null;
+        serviceFeeBps: number;
+      }>("/marketplace/payments/config", {}, 5000),
+
+    verifyMarketplacePayment: (reference: string) =>
+      apiRequest<{
+        payment: Record<string, unknown>;
+        order: import("../types").MarketplaceOrder | null;
+        alreadySettled?: boolean;
+      }>(`/marketplace/payments/${encodeURIComponent(reference)}/verify`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+
+    fetchSellerPayoutProfile: () =>
+      apiRequest<{
+        user_id: string;
+        bank_code: string | null;
+        account_number_last4: string | null;
+        account_name: string | null;
+        status: string;
+        verified_at: string | null;
+      } | null>("/marketplace/seller/payout-profile", {}, 5000),
+
+    upsertSellerPayoutProfile: (data: {
+      accountNumber: string;
+      bankCode: string;
+    }) =>
+      apiRequest<{
+        user_id: string;
+        bank_code: string | null;
+        account_number_last4: string | null;
+        account_name: string | null;
+        status: string;
+        verified_at: string | null;
+      }>("/marketplace/seller/payout-profile", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+
+    fetchPaystackBanks: () =>
+      apiRequest<Array<{ name: string; code: string }>>(
+        "/marketplace/seller/banks",
+        {},
+        10000,
       ),
 
     fetchMarketplaceCart: () =>
@@ -2210,12 +2295,42 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<{
         orders: import("../types").MarketplaceOrder[];
         failures: Array<{ listingId: string; error: string }>;
+        sessions?: Array<{
+          order?: import("../types").MarketplaceOrder;
+          authorizationUrl?: string;
+          payment?: {
+            itemAmountKobo: number;
+            serviceFeeKobo: number;
+            totalChargeKobo: number;
+          };
+        }>;
+        authorizationUrl?: string;
       }>("/marketplace/cart/checkout", {
         method: "POST",
         headers: {
           "Idempotency-Key":
             idempotencyKey || createIdempotencyKey("cart-checkout"),
         },
+        body: JSON.stringify({}),
+      }),
+
+    resumeMarketplaceOrderCheckout: (orderId: string) =>
+      apiRequest<{
+        order: import("../types").MarketplaceOrder;
+        authorizationUrl?: string;
+        accessCode?: string;
+        publicKey?: string;
+        payment?: {
+          id: string;
+          reference: string;
+          status: string;
+          itemAmountKobo: number;
+          serviceFeeKobo: number;
+          totalChargeKobo: number;
+          currency: string;
+        };
+      }>(`/marketplace/orders/${orderId}/checkout`, {
+        method: "POST",
         body: JSON.stringify({}),
       }),
 

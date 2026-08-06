@@ -52,7 +52,28 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
     }
     setBusyOfferId(offer.id);
     try {
-      await respondToOffer(offer.id, action, user.id);
+      const result = await respondToOffer(offer.id, action, user.id);
+      if (action === 'accept') {
+        const payUrl =
+          (result as { authorizationUrl?: string } | void)?.authorizationUrl ||
+          (result as { checkout?: { authorizationUrl?: string } } | void)?.checkout
+            ?.authorizationUrl;
+        const isBuyer = offer.buyer_id === user.id;
+        if (payUrl && isBuyer) {
+          const WebBrowser = await import('expo-web-browser');
+          await WebBrowser.openBrowserAsync(payUrl);
+          const orderId = (result as { orderId?: string } | void)?.orderId;
+          if (orderId) {
+            navigation.navigate('OrderDetail', { orderId, paymentReturn: true });
+          }
+          return;
+        }
+        if (payUrl && !isBuyer) {
+          Alert.alert('Offer accepted', 'The buyer will complete Paystack checkout.');
+          await load();
+          return;
+        }
+      }
       await load();
       Alert.alert('Done', `Offer ${action}ed.`);
     } catch (e: unknown) {

@@ -8,6 +8,7 @@ export async function invalidateSellerAnalyticsCache(sellerId: string): Promise<
 }
 
 const OPEN_ORDER_STATUSES = [
+  'awaiting_payment',
   'pending_payment',
   'paid',
   'ready_for_pickup',
@@ -476,11 +477,18 @@ export class MarketplaceOrdersService {
     const patch: Record<string, unknown> = {};
 
     switch (action) {
-      case 'mark_paid':
+      case 'mark_paid': {
+        const { marketplacePaystackEnabled } = await import('./marketplacePayments');
+        if (marketplacePaystackEnabled() && order.payment_id) {
+          throw new Error(
+            'This order is paid via Paystack. Manual mark-paid is disabled; wait for payment confirmation.'
+          );
+        }
         if (!isSeller && !isBuyer) throw new Error('Unauthorized');
         if (order.status !== 'pending_payment') throw new Error('Order is not awaiting payment');
         nextStatus = 'paid';
         break;
+      }
       case 'mark_ready':
         if (!isSeller) throw new Error('Only the seller can mark ready for pickup');
         if (!['paid', 'pending_payment'].includes(order.status)) {
@@ -489,22 +497,43 @@ export class MarketplaceOrdersService {
         nextStatus = 'ready_for_pickup';
         patch.seller_confirmed_at = now;
         break;
-      case 'confirm_received':
+      case 'confirm_received': {
         if (!isBuyer) throw new Error('Only the buyer can confirm receipt');
         if (!['ready_for_pickup', 'paid', 'buyer_confirmed'].includes(order.status)) {
           throw new Error('Order is not ready for buyer confirmation');
         }
         patch.buyer_confirmed_at = now;
+        await this.db.from('marketplace_orders').update({ buyer_confirmed_at: now }).eq('id', orderId);
+        const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
+          './marketplacePayments'
+        );
+        if (marketplacePaystackEnabled() && order.payment_id) {
+          return getMarketplacePaymentsService(this.supabaseService).payoutOnConfirmReceived(
+            orderId,
+            userId
+          );
+        }
         return this.releaseEscrow(orderId, userId);
-      case 'cancel':
+      }
+      case 'cancel': {
         if (!isSeller && !isBuyer) throw new Error('Unauthorized');
         if (['completed', 'cancelled'].includes(order.status)) {
           throw new Error('Order cannot be cancelled');
         }
         nextStatus = 'cancelled';
+        const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
+          './marketplacePayments'
+        );
+        if (marketplacePaystackEnabled() && order.payment_id) {
+          await getMarketplacePaymentsService(this.supabaseService).refundPaymentForOrder(
+            orderId,
+            userId
+          );
+        }
         await this.refundEscrow(order);
         await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
         break;
+      }
       case 'open_dispute':
         if (!isBuyer && !isSeller) throw new Error('Unauthorized');
         nextStatus = 'disputed';
@@ -1186,7 +1215,7 @@ export class MarketplaceOrdersService {
     return withSegments.filter((b) => b.segments.includes(segment));
   }
 
-  private async notifyOrderParty(
+  async notifyOrderParty(
     userId: string,
     payload: {
       type: string;
@@ -1263,6 +1292,12 @@ export class MarketplaceOrdersService {
     order: MarketplaceOrderRow,
     adminNote?: string
   ): Promise<MarketplaceOrderRow> {
+    const { marketplacePaystackEnabled, getMarketplacePaymentsService } = await import(
+      './marketplacePayments'
+    );
+    if (marketplacePaystackEnabled() && order.payment_id) {
+      await getMarketplacePaymentsService(this.supabaseService).forcePayoutForOrder(order.id);
+    }
     return this.finalizeEscrowRelease(order.id, {
       actorId: null,
       allowDisputed: true,
@@ -1280,6 +1315,17 @@ export class MarketplaceOrdersService {
     const listing = await this.supabaseService.getMarketplaceListingById(order.listing_id);
     const listingTitle = listing?.title || 'Marketplace item';
     const noteSuffix = adminNote?.trim() ? ` Note: ${adminNote.trim()}` : '';
+
+    const { marketplacePaystackEnabled, getMarketplacePaymentsService } = await import(
+      './marketplacePayments'
+    );
+    if (marketplacePaystackEnabled() && order.payment_id) {
+      await getMarketplacePaymentsService(this.supabaseService).refundPaymentForOrder(
+        orderId,
+        order.buyer_id,
+        true
+      );
+    }
 
     await this.refundEscrow(order);
 

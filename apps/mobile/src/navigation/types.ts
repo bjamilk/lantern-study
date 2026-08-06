@@ -81,7 +81,14 @@ export type MarketStackParamList = {
   Favorites: undefined;
   Orders: undefined;
   Cart: undefined;
-  OrderDetail: { orderId: string };
+  OrderDetail: {
+    orderId: string;
+    paymentReturn?: boolean;
+    /** Paystack callback query: payment=return */
+    payment?: string;
+    reference?: string;
+    trxref?: string;
+  };
   SellerCustomers: undefined;
   JobsHome: undefined;
   JobDetail: { jobId: string };

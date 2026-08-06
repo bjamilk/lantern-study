@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -16,6 +17,12 @@ import {
   updateMarketplaceCartItem,
 } from '../../services/api';
 import type { MarketplaceCartItem } from '@lantern/shared/types';
+import {
+  computeMarketplaceCheckoutFees,
+  MARKETPLACE_DEFAULT_SERVICE_FEE_BPS,
+  koboToNaira,
+  nairaToKobo,
+} from '@lantern/shared/marketplace';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
@@ -51,6 +58,12 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   const cartTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
+  const fees = computeMarketplaceCheckoutFees(
+    nairaToKobo(cartTotal),
+    MARKETPLACE_DEFAULT_SERVICE_FEE_BPS
+  );
+  const serviceFeeNaira = koboToNaira(fees.serviceFeeKobo);
+  const payTotalNaira = koboToNaira(fees.totalChargeKobo);
 
   const handleCheckout = async () => {
     setCheckingOut(true);
@@ -58,14 +71,38 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
       const result = await checkoutMarketplaceCart();
       const orderCount = result?.orders?.length || 0;
       const failCount = result?.failures?.length || 0;
+      const payUrl =
+        result?.authorizationUrl ||
+        result?.sessions?.find((s) => s?.authorizationUrl)?.authorizationUrl;
+      const firstOrderId = result?.orders?.[0]?.id;
+
+      if (payUrl) {
+        if (failCount > 0) {
+          Alert.alert(
+            'Partial checkout',
+            `${orderCount} checkout(s) started; ${failCount} item(s) failed. Opening Paystack for the first order.`
+          );
+        }
+        await WebBrowser.openBrowserAsync(payUrl);
+        if (firstOrderId) {
+          navigation.navigate('OrderDetail', {
+            orderId: firstOrderId,
+            paymentReturn: true,
+          });
+        } else {
+          navigation.navigate('Orders');
+        }
+        return;
+      }
+
       if (failCount > 0) {
         Alert.alert(
           'Partial checkout',
           `${orderCount} order(s) created; ${failCount} item(s) failed.`
         );
       }
-      if (orderCount === 1 && result.orders[0]?.id) {
-        navigation.navigate('OrderDetail', { orderId: result.orders[0].id });
+      if (orderCount === 1 && firstOrderId) {
+        navigation.navigate('OrderDetail', { orderId: firstOrderId });
       } else {
         navigation.navigate('Orders');
       }
@@ -92,7 +129,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 120 }}
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 160 }}
           ListEmptyComponent={
             <Text className="text-center text-lantern-text-secondary mt-12">
               Your cart is empty
@@ -163,15 +200,24 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
 
       {items.length > 0 ? (
         <View className="absolute bottom-0 left-0 right-0 px-4 pb-8 pt-3 bg-lantern-surface border-t border-lantern-border">
+          <View className="flex-row justify-between mb-1">
+            <Text className="text-lantern-text-secondary">Items</Text>
+            <Text className="text-lantern-text">{formatPrice(cartTotal)}</Text>
+          </View>
+          <View className="flex-row justify-between mb-1">
+            <Text className="text-lantern-text-secondary">Service charge (5%)</Text>
+            <Text className="text-lantern-text">{formatPrice(serviceFeeNaira)}</Text>
+          </View>
           <View className="flex-row justify-between mb-2">
-            <Text className="text-lantern-text-secondary">Estimated total</Text>
-            <Text className="font-bold text-lantern-primary">{formatPrice(cartTotal)}</Text>
+            <Text className="font-medium text-lantern-text">You pay</Text>
+            <Text className="font-bold text-lantern-primary">{formatPrice(payTotalNaira)}</Text>
           </View>
           <Text className="text-xs text-lantern-text-tertiary mb-3">
-            One order per listing so each seller can arrange pickup separately.
+            One Paystack charge per listing. Multi-item carts open the first payment; finish the rest
+            from Orders.
           </Text>
           <Button loading={checkingOut} onPress={() => void handleCheckout()}>
-            Checkout
+            Pay with Paystack
           </Button>
         </View>
       ) : null}

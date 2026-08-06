@@ -206,7 +206,7 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
                     seller: o.seller?.name || o.seller_id,
                     amount: o.amount,
                     status: o.status,
-                    escrow: o.transaction?.status || '',
+                    payout_or_refund: o.transaction?.status || '',
                     updated: o.updated_at,
                   }))
                 )
@@ -218,8 +218,9 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
 
           {orderStatusFilter === 'disputed' ? (
             <p className="text-sm text-lantern-text-muted">
-              Resolve marketplace order disputes by releasing escrow to the seller (complete sale) or refunding the buyer
-              (cancel order and re-list the item).
+              Resolve marketplace order disputes by forcing a Paystack payout to the seller (complete sale) or
+              issuing a Paystack refund to the buyer (cancel order and re-list the item). Legacy offline orders
+              still use the soft settlement path.
             </p>
           ) : null}
 
@@ -253,7 +254,7 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
                   <div className="text-xs text-lantern-text-muted flex flex-wrap gap-x-4 gap-y-1">
                     <span>Order {order.id.slice(0, 8)}…</span>
                     <span>Source: {order.source.replace(/_/g, ' ')}</span>
-                    <span>Escrow: {order.transaction?.status || 'none'}</span>
+                    <span>Settlement: {order.transaction?.status || 'none'}</span>
                     <span>Updated {formatDateTime(order.updated_at)}</span>
                   </div>
 
@@ -271,7 +272,7 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
                           loading={actionLoading[`dispute:${order.id}:release_to_seller`]}
                           onClick={() => onResolveDispute(order.id, 'release_to_seller')}
                         >
-                          Release to seller
+                          Force payout to seller
                         </Button>
                         <Button
                           size="sm"
@@ -279,7 +280,7 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
                           loading={actionLoading[`dispute:${order.id}:refund_buyer`]}
                           onClick={() => onResolveDispute(order.id, 'refund_buyer')}
                         >
-                          Refund buyer
+                          Refund buyer (Paystack)
                         </Button>
                       </div>
                     </div>

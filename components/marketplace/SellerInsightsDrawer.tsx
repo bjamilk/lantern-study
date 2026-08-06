@@ -3,6 +3,8 @@ import { ChartBarIcon, HeartIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import type { SellerAnalytics } from '../../types';
 import { Drawer } from '../ui';
 import { updateSellerPreferences } from '../../services/supabase';
+import { SellerPayoutSetup } from './SellerPayoutSetup';
+import { useToastStore } from '../../stores/toastStore';
 
 export interface SellerInsightsDrawerProps {
   isOpen: boolean;
@@ -216,6 +218,10 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
           </>
         )}
 
+        <SellerPayoutSetup
+          showToast={(message, type) => useToastStore.getState().showToast(message, type || 'info')}
+        />
+
         <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border space-y-3">
           <p className="text-xs font-semibold text-lantern-text-secondary">Seller preferences</p>
           <label className="flex items-center gap-2 text-sm">
@@ -224,7 +230,7 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
               checked={requirePaymentConfirmation}
               onChange={e => onRequirePaymentConfirmationChange(e.target.checked)}
             />
-            Require payment proof before marking orders paid
+            Require payment proof before marking orders paid (legacy offline path)
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input

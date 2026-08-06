@@ -437,12 +437,12 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     const order = orders.find((o) => o.id === orderId);
     const label =
       resolution === 'release_to_seller'
-        ? 'Release escrow to seller (complete sale)'
-        : 'Refund buyer and re-list item';
+        ? 'Force Paystack payout to seller (complete sale)'
+        : 'Refund buyer via Paystack and re-list item';
     openConfirm({
       title: 'Resolve marketplace dispute',
       message: `${label} for "${order?.listing?.title || orderId}"? This notifies both parties.`,
-      confirmLabel: resolution === 'release_to_seller' ? 'Release to seller' : 'Refund buyer',
+      confirmLabel: resolution === 'release_to_seller' ? 'Force payout' : 'Refund buyer',
       danger: resolution === 'refund_buyer',
       action: async () => {
         const note = orderNotes[orderId]?.trim() || undefined;

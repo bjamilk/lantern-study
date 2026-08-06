@@ -534,7 +534,11 @@ interface MarketplaceState {
     userId: string,
     counterAmount?: number,
     message?: string
-  ) => Promise<void>;
+  ) => Promise<{
+    authorizationUrl?: string;
+    orderId?: string;
+    checkout?: { authorizationUrl?: string } | null;
+  } | void>;
   buyNowListing: (
     listingId: string,
     userId: string,
@@ -1456,6 +1460,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       if (action === 'accept') {
         await refreshMarketplaceBudget(userId);
       }
+      return updated;
     } catch (error: any) {
       console.error('Failed to respond to offer:', error);
       set({ error: error.message, isLoading: false });

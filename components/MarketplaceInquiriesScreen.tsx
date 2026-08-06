@@ -70,9 +70,24 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
         setRespondingTo(null);
         return;
       }
-      await respondToOffer(offerId, action, counterAmount);
+      const result = await respondToOffer(offerId, action, counterAmount);
       if (action === 'accept') {
         await refreshBudgetTransactions(userId);
+        const payUrl =
+          (result as { authorizationUrl?: string })?.authorizationUrl ||
+          (result as { checkout?: { authorizationUrl?: string } })?.checkout?.authorizationUrl;
+        const offer = offers.find((o) => o.id === offerId);
+        const isBuyer = offer?.buyer_id === userId;
+        if (payUrl && isBuyer) {
+          window.location.assign(payUrl);
+          return;
+        }
+        if (payUrl && !isBuyer) {
+          useToastStore.getState().showToast(
+            'Offer accepted. The buyer will complete Paystack checkout.',
+            'info'
+          );
+        }
       }
       await loadOffers();
     } catch (error: any) {

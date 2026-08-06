@@ -55,6 +55,8 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               Favorites: 'marketplace/favorites',
               EditListing: 'marketplace/edit/:listingId',
               MyListings: 'marketplace/my-listings',
+              Orders: 'marketplace/orders',
+              OrderDetail: 'marketplace/orders/:orderId',
               CreateListing: 'marketplace/create',
               JobsHome: 'marketplace/jobs',
               JobDetail: 'marketplace/jobs/:jobId',
@@ -111,6 +113,20 @@ export function resolveDeepLinkNavigation(url: string): { screen: string; params
     case 'profile':
       return { screen: 'EditProfile' } as any;
     case 'marketplace':
+      // marketplace/orders/:orderId (Paystack return / notification deep links)
+      if (parsed.id === 'orders' && parsed.extra?.orderId) {
+        return {
+          screen: 'MarketTab',
+          params: {
+            screen: 'OrderDetail',
+            params: {
+              orderId: parsed.extra.orderId,
+              payment: parsed.extra.payment,
+              reference: parsed.extra.reference || parsed.extra.trxref,
+            },
+          } as any,
+        };
+      }
       return { screen: 'MarketTab', params: { screen: 'MarketplaceHome' } as any };
     case 'budget':
       return { screen: 'BudgetTab', params: { screen: 'BudgetHome' } as any };

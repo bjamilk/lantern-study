@@ -100,6 +100,21 @@ export const parseDeepLink = (url: string): DeepLinkParams | null => {
                 id: decodeURIComponent(segments[2]),
             };
         }
+        // Convert searchParams to object
+        const extra: Record<string, string> = {};
+        searchParams.forEach((value, key) => {
+            extra[key] = value;
+        });
+
+        // marketplace/orders/:orderId — Paystack return & order deep links
+        if (segments[0] === 'marketplace' && segments[1] === 'orders' && segments[2]) {
+            return {
+                type: 'marketplace',
+                id: 'orders',
+                extra: { ...extra, orderId: segments[2] },
+            };
+        }
+
         if (segments.length === 1) {
             const route = segments[0];
             if (route === 'budget' || route === 'marketplace') {
@@ -111,12 +126,6 @@ export const parseDeepLink = (url: string): DeepLinkParams | null => {
 
         const type = segments[0] as DeepLinkType;
         const id = segments[1] ?? '';
-
-        // Convert searchParams to object
-        const extra: Record<string, string> = {};
-        searchParams.forEach((value, key) => {
-            extra[key] = value;
-        });
 
         return {
             type,

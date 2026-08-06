@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -207,14 +208,16 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     const pricing = resolveListingDisplayPrice(listing);
     const qty = listing.quantity == null ? 1 : selectedQuantity;
     const unitPay = couponPreview?.finalAmount ?? pricing.effective;
-    const payAmount = Math.round(unitPay * qty * 100) / 100;
+    const itemTotal = Math.round(unitPay * qty * 100) / 100;
+    const serviceFee = Math.round(itemTotal * 0.05 * 100) / 100;
+    const payAmount = Math.round((itemTotal + serviceFee) * 100) / 100;
     Alert.alert(
       'Buy Now',
-      `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''} for ${formatPrice(payAmount)}?`,
+      `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ${formatPrice(itemTotal)}\nService charge (5%): ${formatPrice(serviceFee)}\nTotal: ${formatPrice(payAmount)}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm',
+          text: 'Pay now',
           onPress: async () => {
             setActionLoading(true);
             void import('../../services/productAnalytics').then(({ trackCheckoutStarted }) => {
@@ -227,7 +230,15 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                 couponPreview ? couponCode.trim() : undefined,
                 qty
               );
+              const authUrl = (result as { authorizationUrl?: string })?.authorizationUrl;
               const orderId = result?.order?.id;
+              if (authUrl) {
+                await WebBrowser.openBrowserAsync(authUrl);
+                if (orderId) {
+                  navigation.navigate('OrderDetail', { orderId, paymentReturn: true });
+                }
+                return;
+              }
               if (orderId) {
                 navigation.navigate('OrderDetail', { orderId });
               } else {

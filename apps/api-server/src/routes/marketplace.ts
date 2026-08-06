@@ -577,7 +577,7 @@ router.post(
   })
 );
 
-// POST /api/v1/marketplace/listings/:id/buy-now - Instant purchase
+// POST /api/v1/marketplace/listings/:id/buy-now - Instant purchase (Paystack when enabled)
 router.post(
   '/listings/:id/buy-now',
   authMiddleware,
@@ -603,23 +603,47 @@ router.post(
       normalizeIdempotencyKey(req.headers['idempotency-key']) ||
       `${buyerId}:buy_now:${id}:q${quantity}:${Math.floor(Date.now() / 300_000)}`;
 
+    const { marketplacePaystackEnabled, getMarketplacePaymentsService } = await import(
+      '../services/marketplacePayments'
+    );
+
     const result = await withIdempotency(
       supabaseService.getClient(),
       buyerId,
       'marketplace_buy_now',
       idempotencyKey,
-      async () =>
-        supabaseService.buyMarketplaceListingNow(
+      async () => {
+        if (marketplacePaystackEnabled()) {
+          const email =
+            (typeof req.user?.email === 'string' && req.user.email) ||
+            (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user
+              ?.email ||
+            '';
+          if (!email) {
+            throw new Error('A verified email is required for Paystack checkout');
+          }
+          return getMarketplacePaymentsService(supabaseService).createBuyNowCheckoutSession({
+            listingId: id,
+            buyerId,
+            buyerEmail: email,
+            couponCode: req.body?.couponCode,
+            quantity,
+          });
+        }
+        return supabaseService.buyMarketplaceListingNow(
           id,
           buyerId,
           req.body?.couponCode,
           quantity
-        )
+        );
+      }
     );
 
     await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
-    await invalidateSellerAnalyticsCache(String(result.order?.seller_id || ''));
+    const sellerId =
+      (result as any)?.order?.seller_id || (result as any)?.seller_id || '';
+    await invalidateSellerAnalyticsCache(String(sellerId));
 
     res.json({ success: true, data: result });
   })
@@ -708,7 +732,7 @@ router.delete(
   })
 );
 
-// POST /api/v1/marketplace/cart/checkout - One order per cart line
+// POST /api/v1/marketplace/cart/checkout - One order per cart line (Paystack sessions when enabled)
 router.post(
   '/cart/checkout',
   authMiddleware,
@@ -722,15 +746,78 @@ router.post(
       normalizeIdempotencyKey(req.headers['idempotency-key']) ||
       `${buyerId}:cart_checkout:${Math.floor(Date.now() / 300_000)}`;
 
+    const { marketplacePaystackEnabled, getMarketplacePaymentsService } = await import(
+      '../services/marketplacePayments'
+    );
+
     const result = await withIdempotency(
       supabaseService.getClient(),
       buyerId,
       'marketplace_cart_checkout',
       idempotencyKey,
-      async () => getMarketplaceCartService(supabaseService).checkout(buyerId)
+      async () => {
+        if (!marketplacePaystackEnabled()) {
+          return getMarketplaceCartService(supabaseService).checkout(buyerId);
+        }
+
+        const email =
+          (typeof req.user?.email === 'string' && req.user.email) ||
+          (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user?.email ||
+          '';
+        if (!email) {
+          throw new Error('A verified email is required for Paystack checkout');
+        }
+
+        const cart = await getMarketplaceCartService(supabaseService).listCart(buyerId);
+        if (cart.length === 0) throw new Error('Cart is empty');
+
+        const payments = getMarketplacePaymentsService(supabaseService);
+        const sessions: unknown[] = [];
+        const failures: Array<{ listingId: string; error: string }> = [];
+        const succeededListingIds: string[] = [];
+
+        for (const item of cart) {
+          try {
+            const session = await payments.createBuyNowCheckoutSession({
+              listingId: item.listing_id,
+              buyerId,
+              buyerEmail: email,
+              quantity: item.quantity,
+            });
+            sessions.push(session);
+            succeededListingIds.push(item.listing_id);
+          } catch (err: any) {
+            failures.push({
+              listingId: item.listing_id,
+              error: err?.message || 'Checkout failed',
+            });
+          }
+        }
+
+        if (succeededListingIds.length > 0) {
+          await supabaseService
+            .getClient()
+            .from('marketplace_cart_items')
+            .delete()
+            .eq('buyer_id', buyerId)
+            .in('listing_id', succeededListingIds);
+        }
+
+        if (sessions.length === 0) {
+          throw new Error(failures[0]?.error || 'Checkout failed for all items');
+        }
+
+        return {
+          sessions,
+          failures,
+          // Convenience: first Paystack URL for single-item carts
+          authorizationUrl: (sessions[0] as { authorizationUrl?: string })?.authorizationUrl,
+          orders: sessions.map((s: any) => s.order).filter(Boolean),
+        };
+      }
     );
 
-    for (const order of result.orders || []) {
+    for (const order of (result as any).orders || []) {
       if (order?.listing_id) {
         await invalidateListingCaches(cacheService, String(order.listing_id));
         await invalidateSellerAnalyticsCache(String(order.seller_id || ''));
@@ -1430,9 +1517,42 @@ router.put(
               .maybeSingle();
             if (acceptedErr) throw acceptedErr;
             if (!acceptedOffer) throw new Error('Offer not found after accept');
+
+            let checkout: Record<string, unknown> | null = null;
+            const { marketplacePaystackEnabled, getMarketplacePaymentsService } = await import(
+              '../services/marketplacePayments'
+            );
+            if (marketplacePaystackEnabled() && finalized.orderId) {
+              try {
+                const buyerId = String(acceptedOffer.buyer_id);
+                const email =
+                  (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user
+                    ?.email || '';
+                if (email) {
+                  checkout = (await getMarketplacePaymentsService(
+                    supabaseService
+                  ).createCheckoutForExistingOrder({
+                    orderId: finalized.orderId,
+                    buyerId,
+                    buyerEmail: email,
+                  })) as unknown as Record<string, unknown>;
+                }
+              } catch (checkoutErr) {
+                // Order already created — do not fail accept; buyer can resume checkout later.
+                logger.warn('Paystack checkout after offer accept failed', checkoutErr);
+                checkout = {
+                  error:
+                    checkoutErr instanceof Error
+                      ? checkoutErr.message
+                      : 'Checkout unavailable; open the order to pay',
+                };
+              }
+            }
+
             return {
               offer: acceptedOffer,
               orderId: finalized.orderId,
+              checkout,
             };
           }
         );
@@ -1440,6 +1560,20 @@ router.put(
         updatedOffer = result.offer;
         await invalidateSellerAnalyticsCache(offer.seller_id);
         // Buyer/seller notifications are sent inside createOrderFromOfferAccept.
+        const checkout = (result as { checkout?: Record<string, unknown> | null }).checkout;
+        return res.json({
+          success: true,
+          data: {
+            ...updatedOffer,
+            orderId: (result as { orderId?: string }).orderId,
+            checkout,
+            authorizationUrl:
+              typeof checkout?.authorizationUrl === 'string' ? checkout.authorizationUrl : undefined,
+            payment: checkout?.payment,
+            accessCode: checkout?.accessCode,
+            publicKey: checkout?.publicKey,
+          },
+        });
       } catch (finalizeErr) {
         logger.error('Failed to finalize offer accept sale', finalizeErr);
         return res.status(500).json({
@@ -2119,6 +2253,14 @@ router.post(
   idempotencyMiddleware({ operation: 'marketplace_payment_link' }),
   asyncHandler(async (req: IdempotentRequest, res: any) => {
     try {
+      const { marketplacePaystackEnabled } = await import('../services/marketplacePayments');
+      if (marketplacePaystackEnabled()) {
+        return res.status(409).json({
+          success: false,
+          error:
+            'Offline payment links are disabled while Paystack checkout is enabled. Buyers pay in-app.',
+        });
+      }
       const result = await req.runIdempotent!(async () => {
         const data = await getMarketplaceOrdersService(supabaseService).createPaymentLinkOrder(
           req.params.id,
@@ -2127,6 +2269,127 @@ router.post(
         return { data: data as unknown as Record<string, unknown> };
       });
       res.json({ success: true, data: result.data });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+// ---- Paystack marketplace payments ----
+
+router.get(
+  '/payments/config',
+  authMiddleware,
+  asyncHandler(async (_req: any, res: any) => {
+    const { marketplacePaystackEnabled } = await import('../services/marketplacePayments');
+    const { getPaystackPublicKey } = await import('../services/paystack');
+    const { resolveMarketplaceServiceFeeBps } = await import('@lantern/shared/marketplace');
+    res.json({
+      success: true,
+      data: {
+        paystackEnabled: marketplacePaystackEnabled(),
+        publicKey: marketplacePaystackEnabled() ? getPaystackPublicKey() : null,
+        serviceFeeBps: resolveMarketplaceServiceFeeBps(process.env.MARKETPLACE_SERVICE_FEE_BPS),
+      },
+    });
+  })
+);
+
+router.post(
+  '/payments/:reference/verify',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplacePaymentsService } = await import('../services/marketplacePayments');
+    try {
+      const result = await getMarketplacePaymentsService(supabaseService).verifyPaymentByReference(
+        req.params.reference,
+        req.user.id
+      );
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+// Resume / start Paystack checkout for an unpaid order (buyer only)
+router.post(
+  '/orders/:id/checkout',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = req.user.id;
+    const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
+      '../services/marketplacePayments'
+    );
+    if (!marketplacePaystackEnabled()) {
+      return res.status(400).json({ success: false, error: 'Paystack checkout is not enabled' });
+    }
+    try {
+      const email =
+        (typeof req.user?.email === 'string' && req.user.email) ||
+        (await supabaseService.getClient().auth.admin.getUserById(userId)).data.user?.email ||
+        '';
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          error: 'A verified email is required for Paystack checkout',
+        });
+      }
+      const session = await getMarketplacePaymentsService(supabaseService).getCheckoutSessionForOrder(
+        req.params.id,
+        userId,
+        email
+      );
+      res.json({ success: true, data: session });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+router.get(
+  '/seller/payout-profile',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplacePaymentsService } = await import('../services/marketplacePayments');
+    const profile = await getMarketplacePaymentsService(supabaseService).getSellerPayoutProfile(
+      req.user.id
+    );
+    res.json({ success: true, data: profile });
+  })
+);
+
+router.post(
+  '/seller/payout-profile',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplacePaymentsService } = await import('../services/marketplacePayments');
+    try {
+      const profile = await getMarketplacePaymentsService(supabaseService).upsertSellerPayoutProfile(
+        req.user.id,
+        {
+          accountNumber: req.body?.accountNumber,
+          bankCode: req.body?.bankCode,
+        }
+      );
+      res.json({ success: true, data: profile });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+router.get(
+  '/seller/banks',
+  authMiddleware,
+  asyncHandler(async (_req: any, res: any) => {
+    const { listPaystackBanks, isPaystackConfigured } = await import('../services/paystack');
+    if (!isPaystackConfigured()) {
+      return res.json({ success: true, data: [] });
+    }
+    try {
+      const banks = await listPaystackBanks();
+      res.json({ success: true, data: banks });
     } catch (err: any) {
       res.status(400).json({ success: false, error: clientErrorMessage(err) });
     }

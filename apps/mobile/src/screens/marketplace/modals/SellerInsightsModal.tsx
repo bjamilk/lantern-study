@@ -14,6 +14,7 @@ import type { SellerAnalytics } from '@lantern/shared/types';
 import { Button } from '../../../components/ui';
 import { updateSellerPreferences } from '../../../services/api';
 import { formatPrice } from '../marketplaceHelpers';
+import { SellerPayoutSetup } from '../SellerPayoutSetup';
 
 interface Props {
   visible: boolean;
@@ -180,6 +181,8 @@ export function SellerInsightsModal({
                 Analytics will appear once you have selling activity.
               </Text>
             )}
+
+            <SellerPayoutSetup />
 
             <View className="p-3 rounded-xl bg-lantern-background border border-lantern-border">
               <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Seller preferences</Text>
