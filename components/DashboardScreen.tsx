@@ -1005,34 +1005,53 @@ export default function DashboardScreen({
 
   const recentTotalPages = Math.max(1, Math.ceil(recentTotal / RECENT_TESTS_PAGE_SIZE));
 
+  const hydrateRecentTestResult = useCallback(async (result: TestResult): Promise<TestResult> => {
+    const sessionId = result.session?.id || result.id;
+    const hasQuestions =
+      Array.isArray(result.session?.questions) && result.session.questions.length > 0;
+    const hasAnswers =
+      !!result.session?.userAnswers && Object.keys(result.session.userAnswers).length > 0;
+    if ((hasQuestions && hasAnswers) || !sessionId) {
+      return result;
+    }
+    const full = await fetchTestSessionById(sessionId);
+    if (!full?.session?.questions?.length) {
+      return result;
+    }
+    return {
+      ...result,
+      ...full,
+      session: {
+        ...result.session,
+        ...full.session,
+        questions: full.session.questions,
+        userAnswers: full.session.userAnswers || {},
+      },
+      score: result.score ?? full.score ?? 0,
+      totalQuestions: result.totalQuestions ?? full.totalQuestions ?? full.session.questions.length,
+      correctAnswersCount:
+        result.correctAnswersCount ??
+        full.correctAnswersCount ??
+        Object.values(full.session.userAnswers || {}).filter((a) => a?.isCorrect).length,
+    };
+  }, []);
+
   const handleViewRecentAnalysis = useCallback(
     async (result: TestResult) => {
-      const sessionId = result.session?.id || result.id;
-      const hasQuestions = Array.isArray(result.session?.questions) && result.session.questions.length > 0;
-      if (hasQuestions || !sessionId) {
-        onViewAnalysis(result);
-        return;
-      }
-      const full = await fetchTestSessionById(sessionId);
-      if (full?.session?.questions?.length) {
-        onViewAnalysis({
-          ...result,
-          ...full,
-          session: {
-            ...result.session,
-            ...full.session,
-            questions: full.session.questions,
-            userAnswers: full.session.userAnswers || {},
-          },
-          score: result.score,
-          totalQuestions: result.totalQuestions || full.totalQuestions,
-          correctAnswersCount: result.correctAnswersCount || full.correctAnswersCount,
-        });
-        return;
-      }
-      onViewAnalysis(result);
+      onViewAnalysis(await hydrateRecentTestResult(result));
     },
-    [onViewAnalysis]
+    [hydrateRecentTestResult, onViewAnalysis]
+  );
+
+  const handleViewRecentReview = useCallback(
+    async (result: TestResult) => {
+      if (!onViewTestResult) {
+        onViewAnalysis(await hydrateRecentTestResult(result));
+        return;
+      }
+      onViewTestResult(await hydrateRecentTestResult(result));
+    },
+    [hydrateRecentTestResult, onViewAnalysis, onViewTestResult]
   );
 
 
@@ -1779,6 +1798,13 @@ export default function DashboardScreen({
                               <p className="text-[10px] text-lantern-text-tertiary">avg/q</p>
                             </div>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => void handleViewRecentReview(result)}
+                            className="px-3 py-1.5 bg-lantern-background-secondary hover:bg-lantern-border/40 text-lantern-text rounded-lantern text-xs font-semibold flex items-center gap-1 transition-colors border border-lantern-border"
+                          >
+                            Review
+                          </button>
                           <button
                             type="button"
                             onClick={() => void handleViewRecentAnalysis(result)}

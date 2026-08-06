@@ -20,6 +20,7 @@ import {
 } from "@lantern/shared/utils/server";
 import {
   checkAndAwardBadges,
+  coerceRawUserAnswers,
   initialUserStats,
   resolveQuestionStatusAfterVote,
 } from "@lantern/shared/utils/testHelpers";
@@ -5606,13 +5607,8 @@ export class SupabaseService {
           const questions = Array.isArray(session.questions)
             ? session.questions
             : [];
-          const answers =
-            session.user_answers && typeof session.user_answers === "object"
-              ? session.user_answers
-              : {};
-          const answeredCount = Array.isArray(answers)
-            ? answers.length
-            : Object.keys(answers).length;
+          const answers = coerceRawUserAnswers(session.user_answers, questions);
+          const answeredCount = Object.keys(answers).length;
           const sessionStatus = session.status ||
             (session.end_time ? "completed" : "in_progress");
 
@@ -5777,14 +5773,17 @@ export class SupabaseService {
   }
 
   mapTestSessionRowToClient(session: any) {
-    const answers =
-      session.user_answers && typeof session.user_answers === "object" && !Array.isArray(session.user_answers)
-        ? session.user_answers
-        : {};
+    const questions = Array.isArray(session.questions) ? session.questions : [];
+    // Legacy submit stored Object.values(userAnswers) as a JSON array; draft
+    // complete stores a Record. Coerce both so history hydrate keeps answers.
+    const answers = coerceRawUserAnswers(
+      session.user_answers ?? session.userAnswers,
+      questions,
+    );
     return {
       id: session.id,
       config: session.config || {},
-      questions: Array.isArray(session.questions) ? session.questions : [],
+      questions,
       userAnswers: answers,
       currentQuestionIndex: session.current_question_index || 0,
       startTime: session.start_time ? new Date(session.start_time) : new Date(),

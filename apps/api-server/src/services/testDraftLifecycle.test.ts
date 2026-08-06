@@ -54,4 +54,30 @@ describe('mapTestSessionRowToClient', () => {
     expect(mapped.userAnswers).toEqual({ q1: { questionId: 'q1' } });
     expect(mapped.startTime).toBeInstanceOf(Date);
   });
+
+  it('coerces array user_answers so history hydrate keeps answers', () => {
+    const svc = new SupabaseService({
+      url: 'https://example.supabase.co',
+      serviceRoleKey: 'test-key',
+    } as any);
+
+    const mapped = svc.mapTestSessionRowToClient({
+      id: 'session-1',
+      user_id: 'user-1',
+      config: {},
+      questions: [{ id: 'q1' }, { id: 'q2' }],
+      user_answers: [
+        { questionId: 'q1', selectedOptionIds: ['a'], isCorrect: true },
+        { selectedOptionIds: ['b'], isCorrect: false },
+      ],
+      start_time: '2026-08-11T12:00:00.000Z',
+      status: 'completed',
+      session_kind: 'test',
+    });
+
+    expect(mapped.userAnswers).toEqual({
+      q1: { questionId: 'q1', selectedOptionIds: ['a'], isCorrect: true },
+      q2: { questionId: 'q2', selectedOptionIds: ['b'], isCorrect: false },
+    });
+  });
 });
