@@ -328,6 +328,7 @@ interface TestState {
   // Actions
   fetchTests: (userId: string) => Promise<void>;
   fetchAttempts: (userId: string) => Promise<void>;
+  hydrateAttemptDetail: (attemptId: string) => Promise<void>;
   startTest: (testId: string, mode?: TestMode, config?: StartTestConfig) => Promise<void>;
   startQuestionSet: (testName: string, questions: TestQuestion[], mode?: TestMode, options?: { timeLimitMinutes?: number }) => Promise<void>;
   answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>, timeSpentSeconds?: number) => void;
@@ -655,6 +656,60 @@ export const useTestStore = create<TestState>((set, get) => ({
     } catch (error: any) {
       console.warn('Failed to fetch tests from API, using cached:', error);
       set({ isLoading: false });
+    }
+  },
+
+  /**
+   * The results list is fetched lean, so an attempt loaded from history has no
+   * per-question detail: Correct/Incorrect read 0, Question Review is empty and
+   * the analysis chart has no bars. Pull the full session on demand and rebuild
+   * `answers` from it.
+   */
+  hydrateAttemptDetail: async (attemptId: string) => {
+    const existing = get().attempts.find(a => a.id === attemptId);
+    if (!existing || existing.answers.length > 0) return;
+
+    try {
+      const session: any = await api.fetchTestSessionDetail(attemptId);
+      const questions = normalizeApiQuestions(session?.questions || []);
+      const userAnswers = session?.user_answers || session?.userAnswers || {};
+
+      const answers = Object.entries(userAnswers).map(([qId, ans]: [string, any]) => {
+        const question = questions.find((q: any) => q.id === qId);
+        const userAnswer = ans?.answer ?? ans?.userAnswer ?? ans;
+        return {
+          questionId: qId,
+          userAnswer,
+          isCorrect: ans?.isCorrect ?? ans?.is_correct ?? false,
+          points: (ans?.isCorrect ?? ans?.is_correct) ? (question?.points || 10) : 0,
+          questionText: question?.question,
+          questionType: question?.type,
+          correctAnswer: question ? getCorrectAnswerForQuestion(question) : undefined,
+          options: question?.options,
+          explanation: question?.explanation,
+          tags: question?.tags,
+          timeSpentSeconds: ans?.timeSpentSeconds ?? ans?.time_spent_seconds ?? 0,
+          questionSnapshot: question,
+        };
+      });
+
+      if (!answers.length) return;
+
+      const timeSpent = answers.reduce(
+        (sum, a: any) => sum + (a.timeSpentSeconds || 0),
+        0
+      );
+
+      set(state => ({
+        attempts: state.attempts.map(a =>
+          a.id === attemptId
+            ? ({ ...a, answers, timeSpent: a.timeSpent || timeSpent } as typeof a)
+            : a
+        ),
+      }));
+      await get().saveToStorage();
+    } catch (error) {
+      console.warn('[TestStore] Failed to hydrate attempt detail:', error);
     }
   },
 

@@ -1419,6 +1419,18 @@ export function createApiEndpoints(client: ApiClient) {
       });
     },
 
+    /** One session with questions and user_answers — the list is served lean. */
+    fetchTestSessionDetail: (sessionId: string) =>
+      apiRequest<{
+        id: string;
+        questions?: unknown[];
+        user_answers?: Record<string, unknown>;
+        start_time?: string;
+        end_time?: string;
+        config?: Record<string, unknown>;
+        score?: number;
+      }>(`/tests/sessions/${sessionId}`),
+
     deleteTestSession: (sessionId: string) =>
       apiRequest<{ deleted: boolean; message?: string }>(
         `/tests/sessions/${sessionId}`,

@@ -126,6 +126,40 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     })
   );
 
+  // GET /api/v1/tests/sessions/:sessionId - One session with full detail.
+  // The results list is served lean (no questions/user_answers) so it stays
+  // cheap, which left clients with no per-question data at all: the results
+  // screen showed Correct 0 / Incorrect 0, Question Review was empty, and the
+  // time-per-question chart had no bars. This is the on-demand detail fetch.
+  router.get(
+    '/sessions/:sessionId',
+    authMiddleware,
+    handleValidationErrors,
+    asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
+      const { sessionId } = req.params;
+
+      const { data, error } = await supabaseService.getClient()
+        .from('test_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
+        return res.status(404).json({
+          success: false,
+          error: 'Test session not found or access denied',
+        });
+      }
+
+      res.json({ success: true, data });
+    })
+  );
+
   // DELETE /api/v1/tests/sessions/:sessionId - Delete one completed test session
   router.delete(
     '/sessions/:sessionId',
@@ -266,6 +300,19 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           correctAnswersCount: body.correct_answers_count ?? body.correctAnswersCount,
           totalQuestions: body.total_questions ?? body.totalQuestions,
         });
+
+        // The dashboard performance chart and subject breakdown are cached for
+        // 5 minutes per user. Nothing dropped them when a session completed, so
+        // a finished test did not appear on the chart on either web or mobile
+        // until the TTL lapsed. Invalidate both on the write.
+        try {
+          await Promise.all([
+            cacheService.deletePattern(`tests:stats:performance:${userId}:*`),
+            cacheService.delete(`tests:stats:subject:${userId}`),
+          ]);
+        } catch (cacheError) {
+          logger.warn('Failed to invalidate test stats cache', { userId, cacheError });
+        }
 
         let walletBalance: number | undefined;
         if (

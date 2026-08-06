@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Test Results Screen
 // ===========================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -36,7 +36,13 @@ export default function TestResultsScreen() {
   // Styles were hardcoded dark, so results stayed dark in light mode.
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const { attempts, startQuestionSet } = useTestStore();
+  const { attempts, startQuestionSet, hydrateAttemptDetail } = useTestStore();
+
+  // A lean results row carries no per-question detail, so pull the full session
+  // when this attempt has no answers to show.
+  useEffect(() => {
+    void hydrateAttemptDetail(attemptId);
+  }, [attemptId, hydrateAttemptDetail]);
 
   // AI Explain state
   const [showExplain, setShowExplain] = useState(false);

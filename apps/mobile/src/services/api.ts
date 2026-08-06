@@ -117,6 +117,7 @@ export const {
   fetchTestResultsPage,
   saveTestResult,
   deleteTestSession,
+  fetchTestSessionDetail,
   clearTestHistory,
   fetchUserQuestionStats,
   upsertUserQuestionStat,
