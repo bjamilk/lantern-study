@@ -736,7 +736,24 @@ export const useTestStore = create<TestState>((set, get) => ({
       const localPending = get().attempts.filter(
         a => a.id.startsWith('attempt-') && !attempts.some(server => server.startedAt === a.startedAt && server.testName === a.testName)
       );
-      const mergedAttempts = [...attempts, ...localPending].sort(
+      // The results list is fetched lean, and lean rows omit userAnswers, so
+      // `answers` maps to []. Overwriting a locally-built attempt with that
+      // wiped its per-question detail: Correct/Incorrect showed 0 and Question
+      // Review rendered empty for a test the user had just finished. Keep the
+      // richer local copy whenever the server row carries no answers.
+      const previous = get().attempts;
+      const withLocalDetail = attempts.map(serverAttempt => {
+        if (serverAttempt.answers.length > 0) return serverAttempt;
+        const local = previous.find(p => p.id === serverAttempt.id);
+        if (!local?.answers?.length) return serverAttempt;
+        return {
+          ...serverAttempt,
+          answers: local.answers,
+          timeSpent: serverAttempt.timeSpent || local.timeSpent,
+        };
+      });
+
+      const mergedAttempts = [...withLocalDetail, ...localPending].sort(
         (a, b) =>
           new Date(b.completedAt || b.startedAt).getTime() -
           new Date(a.completedAt || a.startedAt).getTime()
