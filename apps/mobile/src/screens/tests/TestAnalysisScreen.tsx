@@ -34,62 +34,123 @@ type TestAnalysisParams = {
   };
 };
 
+function sessionHasUsableDetail(session: any): boolean {
+  const questions = session?.questions;
+  const answers = session?.userAnswers ?? session?.user_answers;
+  const qLen = Array.isArray(questions) ? questions.length : 0;
+  const aLen = Array.isArray(answers)
+    ? answers.length
+    : answers && typeof answers === 'object'
+      ? Object.keys(answers).length
+      : 0;
+  return qLen > 0 || aLen > 0;
+}
+
+function analysisQuality(test: RecentTest | null | undefined): number {
+  if (!test?.analysis) return 0;
+  const bars = test.analysis.timePerQuestion?.length ?? 0;
+  const stems = (test.analysis.timePerQuestion ?? []).filter(
+    (q) => q.stem && !/^Question\s+\d+$/i.test(q.stem.trim())
+  ).length;
+  const timed = (test.analysis.timePerQuestion ?? []).filter((q) => q.time > 0).length;
+  return bars * 10 + stems * 2 + timed;
+}
+
+async function fetchSessionForAnalysis(id: string): Promise<any> {
+  try {
+    const session = await api.fetchTestSessionDetail(id);
+    if (sessionHasUsableDetail(session)) return session;
+  } catch {
+    // Fall through to web's GET /tests/:id path.
+  }
+  const fallback = await api.fetchTestById(id);
+  if (!sessionHasUsableDetail(fallback)) {
+    throw new Error('Session detail empty');
+  }
+  return fallback;
+}
+
 export default function TestAnalysisScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<TestAnalysisParams, 'TestAnalysis'>>();
   const { colors } = useTheme();
   const { test: initialTest, sessionId, attemptId } = route.params ?? {};
 
-  const [test, setTest] = useState<RecentTest | null>(
-    initialTest ? normalizeRecentTest(initialTest) : null
+  const normalizedInitial = useMemo(
+    () => (initialTest ? normalizeRecentTest(initialTest) : null),
+    [initialTest]
   );
-  const [loading, setLoading] = useState(!initialTest?.analysis?.timePerQuestion?.length);
+
+  const [test, setTest] = useState<RecentTest | null>(normalizedInitial);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const needsHydrate = useMemo(() => {
-    const bars = initialTest?.analysis?.timePerQuestion?.length ?? 0;
-    return bars === 0 && !!(sessionId || attemptId || initialTest?.id);
-  }, [initialTest, sessionId, attemptId]);
+  const hydrateId = sessionId || attemptId || initialTest?.id;
+
+  // Lean dashboard rows ship empty timePerQuestion. Always hydrate when we have
+  // a session id so stems/timings match web's fetchTestSessionById path.
+  // Keep a rich local attempt (TestResults) if the server body is thinner.
+  const needsHydrate = !!hydrateId;
 
   useEffect(() => {
     if (!needsHydrate) {
       setLoading(false);
+      setTest(normalizedInitial);
       return;
     }
 
     let cancelled = false;
-    const id = sessionId || attemptId || initialTest?.id;
-    if (!id) {
-      setLoading(false);
-      setError('Missing test session id');
-      return;
-    }
+    const id = hydrateId!;
 
     (async () => {
       setLoading(true);
       setError(null);
+
+      const localAttempt = useTestStore.getState().attempts.find((a) => a.id === id);
+      const localFromAttempt =
+        localAttempt?.answers?.length
+          ? normalizeRecentTest({
+              id: localAttempt.id,
+              groupName: localAttempt.groupName || localAttempt.testName,
+              score: localAttempt.answers.filter((a) => a.isCorrect).length,
+              totalQuestions: localAttempt.answers.length,
+              percentage: localAttempt.percentage,
+              completedAt: localAttempt.completedAt || localAttempt.startedAt,
+              timeSpent: localAttempt.timeSpent,
+              analysis: buildAnalysisFromAttempt(localAttempt),
+            })
+          : null;
+
+      // Show the best local payload immediately while the network hydrate runs.
+      const localSeed =
+        analysisQuality(localFromAttempt) >= analysisQuality(normalizedInitial)
+          ? localFromAttempt
+          : normalizedInitial;
+      if (localSeed && !cancelled) {
+        setTest(localSeed);
+      }
+
       try {
-        const session = await api.fetchTestSessionDetail(id);
+        const session = await fetchSessionForAnalysis(id);
         if (cancelled) return;
-        setTest(buildRecentTestFromSessionDetail(session, initialTest ?? { id }));
+        const hydrated = buildRecentTestFromSessionDetail(session, normalizedInitial ?? { id });
+        // Prefer whichever payload has more bars/stems/timings.
+        if (analysisQuality(hydrated) >= analysisQuality(localSeed)) {
+          setTest(hydrated);
+        } else if (localSeed) {
+          setTest(localSeed);
+        } else {
+          setTest(hydrated);
+        }
       } catch {
         if (cancelled) return;
-        const attempt = useTestStore.getState().attempts.find((a) => a.id === id);
-        if (attempt?.answers?.length) {
-          setTest(
-            normalizeRecentTest({
-              id: attempt.id,
-              groupName: attempt.groupName || attempt.testName,
-              score: attempt.answers.filter((a) => a.isCorrect).length,
-              totalQuestions: attempt.answers.length,
-              percentage: attempt.percentage,
-              completedAt: attempt.completedAt || attempt.startedAt,
-              timeSpent: attempt.timeSpent,
-              analysis: buildAnalysisFromAttempt(attempt),
-            })
-          );
-        } else if (initialTest) {
-          setTest(normalizeRecentTest(initialTest));
+        if (localSeed) {
+          setTest(localSeed);
+          if (analysisQuality(localSeed) === 0) {
+            setError('Could not load full session detail');
+          }
+        } else if (normalizedInitial) {
+          setTest(normalizedInitial);
           setError('Could not load full session detail');
         } else {
           setError('Could not load test analysis');
@@ -102,7 +163,7 @@ export default function TestAnalysisScreen() {
     return () => {
       cancelled = true;
     };
-  }, [needsHydrate, sessionId, attemptId, initialTest]);
+  }, [needsHydrate, hydrateId, normalizedInitial]);
 
   return (
     <SafeAreaProvider>
@@ -122,7 +183,7 @@ export default function TestAnalysisScreen() {
           <View style={{ width: 40 }} />
         </View>
 
-        {loading ? (
+        {loading && !test ? (
           <View style={styles.centered}>
             <ActivityIndicator color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
@@ -131,6 +192,11 @@ export default function TestAnalysisScreen() {
           </View>
         ) : test ? (
           <>
+            {loading ? (
+              <Text style={[styles.errorBanner, { color: colors.textSecondary }]}>
+                Refreshing session detail…
+              </Text>
+            ) : null}
             {error ? (
               <Text style={[styles.errorBanner, { color: colors.textSecondary }]}>{error}</Text>
             ) : null}

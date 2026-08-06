@@ -110,8 +110,6 @@ export function normalizeDashboardStats(stats: import('../types/dashboardStats')
  */
 export function isAnswerAttempted(answer: any): boolean {
   if (!answer) return false;
-  if (answer.isCorrect === true || answer.isCorrect === false) return true;
-  if (answer.is_correct === true || answer.is_correct === false) return true;
   if (answer.selectedOptionIds?.length) return true;
   if (answer.fillText?.trim?.()) return true;
   if (answer.matchingAnswers?.length) return true;
@@ -124,6 +122,13 @@ export function isAnswerAttempted(answer: any): boolean {
   // Hydrated attempt answers store the chosen value directly.
   if (typeof answer === 'string' && answer.trim()) return true;
   if (Array.isArray(answer) && answer.length > 0) return true;
+  // Legacy graded boolean: require a dwell for bare `isCorrect: false` so
+  // skipped questions persisted without option ids stay unattempted (web parity).
+  if (answer.isCorrect === true || answer.is_correct === true) return true;
+  if (answer.isCorrect === false || answer.is_correct === false) {
+    const dwell = answer.timeSpentSeconds ?? answer.time_spent_seconds;
+    return typeof dwell === 'number' && dwell > 0;
+  }
   return false;
 }
 

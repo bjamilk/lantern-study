@@ -75,9 +75,17 @@ function buildSessionPayload(
   for (const answer of answers) {
     const question = activeTest.questions.find(q => q.id === answer.questionId);
     if (!question) continue;
+    const raw = activeTest.answers[answer.questionId];
+    const attempted =
+      raw !== undefined &&
+      raw !== null &&
+      !(typeof raw === 'string' && raw.trim() === '') &&
+      !(Array.isArray(raw) && raw.length === 0);
+    // Omit unattempted keys entirely so hydrate matches web (skipped ≠ wrong).
+    if (!attempted) continue;
     userAnswers[answer.questionId] = toUserAnswerRecord(
       question as unknown as Record<string, unknown>,
-      activeTest.answers[answer.questionId],
+      raw,
       {
         isCorrect: answer.isCorrect,
         timeSpentSeconds: activeTest.answerTimings?.[answer.questionId],
@@ -1418,10 +1426,17 @@ export const useTestStore = create<TestState>((set, get) => ({
       }
     };
     
-    // Calculate score
+    // Calculate score. Unattempted questions must not persist as
+    // `{ isCorrect: false }` alone — that made analysis treat skips as
+    // incorrect and disagreed with web's isUserAnswerAttempted checks.
     const answers = activeTest.questions.map(q => {
       const userAnswer = activeTest.answers[q.id];
-      const isCorrect = checkAnswer(q, userAnswer);
+      const attempted =
+        userAnswer !== undefined &&
+        userAnswer !== null &&
+        !(typeof userAnswer === 'string' && userAnswer.trim() === '') &&
+        !(Array.isArray(userAnswer) && userAnswer.length === 0);
+      const isCorrect = attempted ? checkAnswer(q, userAnswer) : false;
       return {
         questionId: q.id,
         userAnswer: userAnswer || '',

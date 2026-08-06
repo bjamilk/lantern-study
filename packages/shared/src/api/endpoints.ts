@@ -1425,11 +1425,31 @@ export function createApiEndpoints(client: ApiClient) {
         id: string;
         questions?: unknown[];
         user_answers?: Record<string, unknown>;
+        userAnswers?: Record<string, unknown>;
         start_time?: string;
         end_time?: string;
         config?: Record<string, unknown>;
         score?: number;
       }>(`/tests/sessions/${sessionId}`),
+
+    /**
+     * Same payload web uses for Analyze/Review hydrate (`GET /tests/:id`).
+     * Prefer `fetchTestSessionDetail` first; use this as a fallback when the
+     * sessions route is unavailable or returns an empty body.
+     */
+    fetchTestById: (testId: string) =>
+      apiRequest<{
+        id: string;
+        questions?: unknown[];
+        user_answers?: Record<string, unknown>;
+        userAnswers?: Record<string, unknown>;
+        start_time?: string;
+        startTime?: string;
+        end_time?: string;
+        endTime?: string;
+        config?: Record<string, unknown>;
+        score?: number;
+      }>(`/tests/${testId}`),
 
     deleteTestSession: (sessionId: string) =>
       apiRequest<{ deleted: boolean; message?: string }>(

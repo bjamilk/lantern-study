@@ -121,14 +121,22 @@ function getQuestionTags(question: any): string[] {
 
 function isAnswerAttempted(answer: any): boolean {
   if (!answer) return false;
-  return (
+  const hasBody =
     (answer.selectedOptionIds?.length ?? 0) > 0 ||
     (typeof answer.fillText === 'string' && answer.fillText.trim() !== '') ||
     (answer.matchingAnswers?.length ?? 0) > 0 ||
-    (answer.diagramAnswers?.length ?? 0) > 0 ||
-    answer.isCorrect === true ||
-    answer.isCorrect === false
-  );
+    (answer.diagramAnswers?.length ?? 0) > 0;
+  if (hasBody) return true;
+  // Legacy graded rows sometimes only persist the boolean. A positive dwell
+  // proves the question was opened; bare `{ isCorrect: false }` without body
+  // or time is the mobile submit artifact for skips — treat as unattempted so
+  // analysis matches web's isUserAnswerAttempted.
+  if (answer.isCorrect === true) return true;
+  if (answer.isCorrect === false) {
+    const dwell = answer.timeSpentSeconds ?? answer.time_spent_seconds;
+    return typeof dwell === 'number' && dwell > 0;
+  }
+  return false;
 }
 
 function resolveAnswerStatus(answer: any): 'correct' | 'incorrect' | 'unattempted' {

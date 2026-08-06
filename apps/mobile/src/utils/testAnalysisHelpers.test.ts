@@ -7,12 +7,15 @@ import {
 import type { TestAttempt } from '../stores/testStore';
 
 describe('isAnswerAttempted / resolveQuestionStatus', () => {
-  it('treats legacy isCorrect boolean as attempted when option ids are missing', () => {
+  it('treats legacy isCorrect:true as attempted; bare isCorrect:false as skip', () => {
     expect(isAnswerAttempted({ isCorrect: true })).toBe(true);
-    expect(isAnswerAttempted({ isCorrect: false })).toBe(true);
+    // Mobile historically wrote skips as `{ isCorrect: false }` with no body.
+    expect(isAnswerAttempted({ isCorrect: false })).toBe(false);
+    expect(isAnswerAttempted({ isCorrect: false, timeSpentSeconds: 5 })).toBe(true);
     expect(isAnswerAttempted({ is_correct: true })).toBe(true);
     expect(resolveQuestionStatus({ isCorrect: true })).toBe('correct');
-    expect(resolveQuestionStatus({ isCorrect: false })).toBe('incorrect');
+    expect(resolveQuestionStatus({ isCorrect: false })).toBe('unattempted');
+    expect(resolveQuestionStatus({ isCorrect: false, timeSpentSeconds: 4 })).toBe('incorrect');
     expect(resolveQuestionStatus(null)).toBe('unattempted');
   });
 
@@ -89,6 +92,7 @@ describe('buildAnalysisFromAttempt', () => {
         },
         {
           questionId: 'q2',
+          userAnswer: 'B',
           isCorrect: false,
           points: 0,
           questionText: 'Second?',
@@ -240,9 +244,9 @@ describe('buildRecentTestFromSessionDetail', () => {
         },
       ],
       userAnswers: {
+        // No dwell on either — triggers session-duration estimation.
         q1: { selectedOptionIds: ['x'], isCorrect: true },
-        // Legacy row: graded boolean only, no option ids
-        q2: { isCorrect: false },
+        q2: { selectedOptionIds: ['x'], isCorrect: false },
       },
     });
 
@@ -250,7 +254,72 @@ describe('buildRecentTestFromSessionDetail', () => {
     expect(recent.analysis.timePerQuestion.every((q) => q.time > 0)).toBe(true);
     expect(recent.analysis.timePerQuestion[0].stem).toContain('Alpha');
     expect(recent.analysis.correctCount).toBe(1);
-    // Legacy isCorrect-only rows still count as attempted (incorrect) on web/mobile.
     expect(recent.analysis.incorrectCount).toBe(1);
+  });
+
+  it('handles production sparse payload: text stems + bare isCorrect skips', () => {
+    // Mirrors session b52f12cf shape seen in prod: questions use `text` +
+    // full options, and most answers are `{ isCorrect, questionId }` only.
+    const recent = buildRecentTestFromSessionDetail({
+      id: 'b52f12cf-79ef-45ea-90f6-dac4f340d7bd',
+      startTime: '2026-08-05T22:50:36.459Z',
+      endTime: '2026-08-05T23:03:36.696Z',
+      config: { groupName: 'Asthma Review' },
+      questions: [
+        {
+          id: 'q1',
+          text: 'What is the term for a type of medication used to prevent exercise-induced asthma?',
+          questionStem: 'What is the term for a type of medication used to prevent exercise-induced asthma?',
+          questionType: 'MULTIPLE_CHOICE_SINGLE',
+          options: [
+            { id: 'opt-1', text: 'A) SABA' },
+            { id: 'opt-2', text: 'B) Other' },
+          ],
+          correctAnswerIds: ['opt-1'],
+          tags: ['Treatment'],
+        },
+        {
+          id: 'q2',
+          text: 'What is a common symptom of PMOS?',
+          questionStem: 'What is a common symptom of PMOS?',
+          questionType: 'MULTIPLE_CHOICE_SINGLE',
+          options: [
+            { id: 'a', text: 'A' },
+            { id: 'b', text: 'B' },
+          ],
+          correctAnswerIds: ['a'],
+          tags: ['Symptoms'],
+        },
+        {
+          id: 'q3',
+          questionStem: 'Which is NOT a common manifestation of asthma?',
+          questionType: 'MULTIPLE_CHOICE_SINGLE',
+          options: [
+            { id: 'a', text: 'A' },
+            { id: 'b', text: 'B' },
+          ],
+          correctAnswerIds: ['a'],
+          tags: ['Manifestations'],
+        },
+      ],
+      userAnswers: {
+        q1: {
+          questionId: 'q1',
+          isCorrect: true,
+          timeSpentSeconds: 8,
+          selectedOptionIds: ['opt-1'],
+        },
+        q2: { questionId: 'q2', isCorrect: false },
+        q3: { questionId: 'q3', isCorrect: false },
+      },
+    });
+
+    expect(recent.analysis.timePerQuestion).toHaveLength(3);
+    expect(recent.analysis.timePerQuestion[0].stem).toContain('exercise-induced asthma');
+    expect(recent.analysis.timePerQuestion[1].stem).toContain('PMOS');
+    expect(recent.analysis.correctCount).toBe(1);
+    expect(recent.analysis.incorrectCount).toBe(0);
+    expect(recent.analysis.unattemptedCount).toBe(2);
+    expect(recent.analysis.timePerQuestion[0].time).toBe(8);
   });
 });

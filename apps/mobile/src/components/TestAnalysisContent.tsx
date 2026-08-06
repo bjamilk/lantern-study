@@ -1,6 +1,10 @@
 // ===========================================
 // Lantern Study Mobile - Test Analysis Charts
 // ===========================================
+// Time-per-question bars are custom Pressable views — not gifted-charts BarChart.
+// Nesting BarChart inside a horizontal ScrollView fights gifted-charts' own
+// scroller on Android (same bug GroupPerformanceChartCard documented), which
+// left the analysis screen looking empty after OTA even when data was fine.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -8,23 +12,108 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Dimensions,
   Pressable,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { PieChart, BarChart } from 'react-native-gifted-charts';
+import { PieChart } from 'react-native-gifted-charts';
 import type { RecentTest, TestAnalysisQuestionTime } from '../types/dashboardStats';
 import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
 import { useTheme } from '../theme';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface TestAnalysisContentProps {
   test: RecentTest;
   /** Optional header close control when embedded in a custom chrome. */
   onClose?: () => void;
   showHeader?: boolean;
+}
+
+function TimePerQuestionBars({
+  items,
+  selectedQuestionNumber,
+  onSelect,
+  labelColor,
+  activeColor,
+}: {
+  items: TestAnalysisQuestionTime[];
+  selectedQuestionNumber?: number;
+  onSelect: (item: TestAnalysisQuestionTime) => void;
+  labelColor: string;
+  activeColor: string;
+}) {
+  const maxTime = Math.max(1, ...items.map((item) => item.time));
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={items.length > 8}
+      contentContainerStyle={styles.barsRow}
+    >
+      {items.map((item) => {
+        const active = selectedQuestionNumber === item.questionNumber;
+        const displayTime = item.time > 0 ? item.time : item.status === 'unattempted' ? 0 : 1;
+        const barHeight = Math.max(10, Math.round((Math.max(displayTime, 1) / maxTime) * 120));
+        const color = active ? activeColor : STATUS_BAR_COLORS[item.status];
+
+        return (
+          <Pressable
+            key={item.questionNumber}
+            onPress={() => onSelect(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Question ${item.questionNumber}, ${item.time} seconds, ${item.status}`}
+            style={[styles.barItem, active && styles.barItemActive]}
+          >
+            <Text style={[styles.barValue, { color: labelColor }]}>{item.time}s</Text>
+            <View style={[styles.barTrack, { height: 128 }]}>
+              <View
+                style={[
+                  styles.barFill,
+                  {
+                    height: barHeight,
+                    backgroundColor: color,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={[styles.barLabel, { color: labelColor }]}>Q{item.questionNumber}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function TopicBars({
+  items,
+  labelColor,
+  barColor,
+}: {
+  items: Array<{ tag: string; avgTime: number }>;
+  labelColor: string;
+  barColor: string;
+}) {
+  const maxTime = Math.max(1, ...items.map((item) => item.avgTime));
+
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={items.length > 5} contentContainerStyle={styles.barsRow}>
+      {items.map((item) => {
+        const barHeight = Math.max(10, Math.round((Math.max(item.avgTime, 1) / maxTime) * 120));
+        const label = item.tag.length > 8 ? `${item.tag.substring(0, 8)}…` : item.tag;
+        return (
+          <View key={item.tag} style={styles.barItem}>
+            <Text style={[styles.barValue, { color: labelColor }]}>{item.avgTime}s</Text>
+            <View style={[styles.barTrack, { height: 128 }]}>
+              <View style={[styles.barFill, { height: barHeight, backgroundColor: barColor }]} />
+            </View>
+            <Text style={[styles.barLabel, { color: labelColor }]} numberOfLines={1}>
+              {label}
+            </Text>
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
 }
 
 export default function TestAnalysisContent({
@@ -50,29 +139,7 @@ export default function TestAnalysisContent({
       { value: analysis.correctCount, color: '#22c55e', text: `${analysis.correctCount}`, label: 'Correct' },
       { value: analysis.incorrectCount, color: '#ef4444', text: `${analysis.incorrectCount}`, label: 'Incorrect' },
       { value: analysis.unattemptedCount, color: '#f59e0b', text: `${analysis.unattemptedCount}`, label: 'Skipped' },
-    ].filter(item => item.value > 0);
-  }, [analysis]);
-
-  const timePerQuestionData = useMemo(() => {
-    if (!analysis) return [];
-    return analysis.timePerQuestion.slice(0, 15).map((item) => ({
-      value: item.status === 'unattempted' && item.time <= 0 ? 1 : item.time,
-      label: `Q${item.questionNumber}`,
-      frontColor:
-        selectedQuestion?.questionNumber === item.questionNumber
-          ? colors.primary
-          : STATUS_BAR_COLORS[item.status],
-      onPress: () => selectQuestion(item),
-    }));
-  }, [analysis, selectedQuestion, colors.primary]);
-
-  const timePerTagData = useMemo(() => {
-    if (!analysis) return [];
-    return analysis.timePerTag.map(item => ({
-      value: item.avgTime,
-      label: item.tag.length > 8 ? item.tag.substring(0, 8) + '...' : item.tag,
-      frontColor: '#8b5cf6',
-    }));
+    ].filter((item) => item.value > 0);
   }, [analysis]);
 
   const avgTime = useMemo(() => {
@@ -152,31 +219,33 @@ export default function TestAnalysisContent({
               <Ionicons name="pie-chart" size={20} color="#22c55e" />
               <Text style={[styles.chartTitle, { color: colors.text }]}>Question Performance</Text>
             </View>
-            <View style={styles.pieChartContainer}>
-              <PieChart
-                data={pieData}
-                donut
-                radius={80}
-                innerRadius={50}
-                innerCircleColor={colors.card}
-                centerLabelComponent={() => (
-                  <View style={styles.pieCenter}>
-                    <Text style={[styles.pieCenterValue, { color: colors.text }]}>{test.percentage}%</Text>
-                    <Text style={[styles.pieCenterLabel, { color: colors.textSecondary }]}>Accuracy</Text>
-                  </View>
-                )}
-              />
-              <View style={styles.pieLegend}>
-                {pieData.map((item, index) => (
-                  <View key={index} style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                    <Text style={[styles.legendText, { color: colors.textSecondary }]}>
-                      {item.label}: {item.value}
-                    </Text>
-                  </View>
-                ))}
+            <ErrorBoundary fallbackTitle="Performance chart failed to render">
+              <View style={styles.pieChartContainer}>
+                <PieChart
+                  data={pieData}
+                  donut
+                  radius={80}
+                  innerRadius={50}
+                  innerCircleColor={colors.card}
+                  centerLabelComponent={() => (
+                    <View style={styles.pieCenter}>
+                      <Text style={[styles.pieCenterValue, { color: colors.text }]}>{test.percentage}%</Text>
+                      <Text style={[styles.pieCenterLabel, { color: colors.textSecondary }]}>Accuracy</Text>
+                    </View>
+                  )}
+                />
+                <View style={styles.pieLegend}>
+                  {pieData.map((item, index) => (
+                    <View key={index} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                      <Text style={[styles.legendText, { color: colors.textSecondary }]}>
+                        {item.label}: {item.value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
               </View>
-            </View>
+            </ErrorBoundary>
           </View>
         ) : null}
 
@@ -205,30 +274,13 @@ export default function TestAnalysisContent({
                 </View>
               </View>
               <View style={styles.barChartContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <BarChart
-                    data={timePerQuestionData}
-                    width={Math.max(SCREEN_WIDTH - 80, timePerQuestionData.length * 35)}
-                    height={160}
-                    barWidth={24}
-                    spacing={8}
-                    roundedTop
-                    roundedBottom
-                    hideRules
-                    xAxisThickness={0}
-                    yAxisThickness={0}
-                    yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
-                    xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
-                    noOfSections={4}
-                    maxValue={Math.max(10, ...timePerQuestionData.map(d => d.value)) + 10}
-                    isAnimated
-                    animationDuration={300}
-                    onPress={(_item: unknown, index: number) => {
-                      const q = analysis.timePerQuestion[index];
-                      if (q) selectQuestion(q);
-                    }}
-                  />
-                </ScrollView>
+                <TimePerQuestionBars
+                  items={analysis.timePerQuestion}
+                  selectedQuestionNumber={selectedQuestion?.questionNumber}
+                  onSelect={selectQuestion}
+                  labelColor={colors.textSecondary}
+                  activeColor={colors.primary}
+                />
               </View>
 
               {selectedQuestion ? (
@@ -249,7 +301,7 @@ export default function TestAnalysisContent({
 
               <Text style={[styles.questionsListTitle, { color: colors.text }]}>Questions</Text>
               <View style={styles.questionsList}>
-                {analysis.timePerQuestion.map(item => {
+                {analysis.timePerQuestion.map((item) => {
                   const active = selectedQuestion?.questionNumber === item.questionNumber;
                   return (
                     <Pressable
@@ -296,23 +348,10 @@ export default function TestAnalysisContent({
               <Text style={[styles.chartTitle, { color: colors.text }]}>Average Time by Topic</Text>
             </View>
             <View style={styles.barChartContainer}>
-              <BarChart
-                data={timePerTagData}
-                width={SCREEN_WIDTH - 80}
-                height={160}
-                barWidth={40}
-                spacing={16}
-                roundedTop
-                roundedBottom
-                hideRules
-                xAxisThickness={0}
-                yAxisThickness={0}
-                yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
-                xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
-                noOfSections={4}
-                maxValue={Math.max(10, ...timePerTagData.map(d => d.value)) + 10}
-                isAnimated
-                animationDuration={300}
+              <TopicBars
+                items={analysis.timePerTag}
+                labelColor={colors.textSecondary}
+                barColor="#8b5cf6"
               />
             </View>
           </View>
@@ -480,6 +519,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
+    minHeight: 180,
   },
   pieCenter: {
     alignItems: 'center',
@@ -508,7 +548,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   barChartContainer: {
+    minHeight: 168,
+    width: '100%',
+  },
+  barsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    gap: 6,
+    minHeight: 168,
+  },
+  barItem: {
+    width: 40,
     alignItems: 'center',
+  },
+  barItemActive: {
+    opacity: 1,
+  },
+  barValue: {
+    fontSize: 9,
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  barTrack: {
+    width: 28,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  barFill: {
+    width: 24,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+  },
+  barLabel: {
+    fontSize: 9,
+    marginTop: 6,
+    fontWeight: '600',
   },
   questionDetail: {
     marginTop: 14,
