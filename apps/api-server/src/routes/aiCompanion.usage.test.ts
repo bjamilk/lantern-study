@@ -1,5 +1,6 @@
 import {
   aiRateLimitForFeature,
+  getAIUsage,
   getFeatureAIUsage,
   resetAIUsageForUser,
 } from '../middleware/aiRateLimit';
@@ -8,7 +9,7 @@ describe('companion AI usage', () => {
   const userId = 'test-user-companion-usage';
 
   beforeEach(async () => {
-    await resetAIUsageForUser(userId, 'companion');
+    await resetAIUsageForUser(userId);
   });
 
   it('companion feature quota is unchanged when history would be read (no middleware)', async () => {
@@ -18,8 +19,9 @@ describe('companion AI usage', () => {
     expect(after.used).toBe(0);
   });
 
-  it('companion rate limit increments only on charged companion routes', async () => {
-    const before = await getFeatureAIUsage(userId, 'companion');
+  it('companion rate limit increments feature and global counters', async () => {
+    const beforeFeature = await getFeatureAIUsage(userId, 'companion');
+    const beforeGlobal = await getAIUsage(userId);
 
     const req = { user: { id: userId } } as any;
     const res = {
@@ -40,8 +42,11 @@ describe('companion AI usage', () => {
       });
     });
 
-    const after = await getFeatureAIUsage(userId, 'companion');
-    expect(after.used).toBe(before.used + 1);
+    const afterFeature = await getFeatureAIUsage(userId, 'companion');
+    const afterGlobal = await getAIUsage(userId);
+    expect(afterFeature.used).toBe(beforeFeature.used + 1);
+    expect(afterGlobal.used).toBe(beforeGlobal.used + 1);
     expect(res.headers['x-ai-feature']).toBe('companion');
+    expect(res.headers['x-ai-global-usage-used']).toBe(String(afterGlobal.used));
   });
 });

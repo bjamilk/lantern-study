@@ -132,7 +132,7 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
     body: JSON.stringify(body),
   });
 
-  // Global badge only — feature quotas (generate_questions=15) must not overwrite the 100 daily limit.
+  // Badge prefers X-AI-Global-Usage-*; feature X-AI-Usage-* alone is ignored.
   const hadFeatureQuota = Boolean(response.headers.get('X-AI-Feature'));
   parseGlobalAIUsageFromHeaders(response, updateUsage);
 
@@ -415,7 +415,7 @@ export async function companionSendMessageStream(
     return;
   }
 
-  // Companion uses feature-scoped quota; skip when X-AI-Feature is visible (CORS-exposed).
+  // Companion also charges global; parseGlobal reads X-AI-Global-Usage-* for the badge.
   parseGlobalAIUsageFromHeaders(response, updateUsage);
 
   if (!response.ok || !response.body) {

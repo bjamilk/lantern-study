@@ -112,12 +112,15 @@ export const corsConfig = cors({
     'X-Request-ID',
     'X-RateLimit-Limit',
     'X-RateLimit-Remaining',
-    // Clients must see X-AI-Feature so feature quotas (companion, quiz, etc.)
-    // do not overwrite the global daily AI badge with the wrong limit.
+    // Feature routes send X-AI-Feature + feature X-AI-Usage-*; global badge
+    // reads X-AI-Global-Usage-* so companion/quiz/etc. still move the counter.
     'X-AI-Feature',
     'X-AI-Usage-Used',
     'X-AI-Usage-Limit',
     'X-AI-Usage-Resets-At',
+    'X-AI-Global-Usage-Used',
+    'X-AI-Global-Usage-Limit',
+    'X-AI-Global-Usage-Resets-At',
   ],
   maxAge: 86400,
 });

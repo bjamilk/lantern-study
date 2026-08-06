@@ -126,6 +126,29 @@ export async function getFeatureAIUsage(
   return readUsage(key, limit);
 }
 
+/** Explicit global headers — clients prefer these for the sidebar AI badge. */
+function setGlobalUsageHeaders(
+  res: Response,
+  usage: { count: number; resetTime: number }
+): void {
+  const resetsAt = toResetsAt(usage.resetTime);
+  res.setHeader('X-AI-Global-Usage-Used', usage.count.toString());
+  res.setHeader('X-AI-Global-Usage-Limit', AI_DAILY_LIMIT.toString());
+  res.setHeader('X-AI-Global-Usage-Resets-At', resetsAt);
+}
+
+/** Global-only routes: legacy + explicit global headers carry the same counts. */
+function setLegacyAndGlobalUsageHeaders(
+  res: Response,
+  usage: { count: number; resetTime: number }
+): void {
+  const resetsAt = toResetsAt(usage.resetTime);
+  res.setHeader('X-AI-Usage-Used', usage.count.toString());
+  res.setHeader('X-AI-Usage-Limit', AI_DAILY_LIMIT.toString());
+  res.setHeader('X-AI-Usage-Resets-At', resetsAt);
+  setGlobalUsageHeaders(res, usage);
+}
+
 export async function aiRateLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
   const userId = (req as any).user?.id;
   if (!userId) {
@@ -144,9 +167,7 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  res.setHeader('X-AI-Usage-Used', result.count.toString());
-  res.setHeader('X-AI-Usage-Limit', AI_DAILY_LIMIT.toString());
-  res.setHeader('X-AI-Usage-Resets-At', toResetsAt(result.resetTime));
+  setLegacyAndGlobalUsageHeaders(res, result);
   next();
 }
 
@@ -167,12 +188,8 @@ export async function chargeAiCredits(
   const credits = Math.max(0, Math.floor(amount));
   if (credits <= 0) return null;
 
-  let lastCount = 0;
-  let lastReset = Date.now();
   for (let i = 0; i < credits; i++) {
     const result = await incrementUsage(userId, AI_DAILY_LIMIT);
-    lastCount = result.count;
-    lastReset = result.resetTime;
     if (!result.allowed) {
       return {
         error:
@@ -185,9 +202,17 @@ export async function chargeAiCredits(
       };
     }
   }
-  void lastCount;
-  void lastReset;
   return null;
+}
+
+/** Attach current global AI usage headers (for OCR and other non-middleware charges). */
+export async function applyGlobalUsageHeaders(res: Response, userId: string): Promise<void> {
+  const usage = await getAIUsage(userId);
+  const resetTime = usage.resetsAt ? Date.parse(usage.resetsAt) : Date.now();
+  setLegacyAndGlobalUsageHeaders(res, {
+    count: usage.used,
+    resetTime: Number.isFinite(resetTime) ? resetTime : Date.now(),
+  });
 }
 
 function resolveFeatureLimit(featureKey?: string): number {
@@ -210,23 +235,51 @@ export function aiRateLimitForFeature(featureKey: string) {
     }
     const limit = resolveFeatureLimit(featureKey);
     const key = buildUsageKey(userId as string, featureKey);
-    const result = await incrementUsage(key, limit);
 
-    if (!result.allowed) {
+    // Soft-check feature first so a spent feature budget does not burn a global credit.
+    const featureSnapshot = await readUsage(key, limit);
+    if (featureSnapshot.used >= limit) {
       res.status(429).json({
         error: `Daily limit reached for this feature (${featureKey}). Try again tomorrow.`,
         feature: featureKey,
         limit,
-        used: result.count,
-        resetsAt: toResetsAt(result.resetTime),
+        used: featureSnapshot.used,
+        resetsAt: featureSnapshot.resetsAt,
+      });
+      return;
+    }
+
+    // Every feature AI action also counts toward the global badge counter.
+    const globalResult = await incrementUsage(userId, AI_DAILY_LIMIT);
+    if (!globalResult.allowed) {
+      res.status(429).json({
+        error: 'Daily AI limit reached. Try again tomorrow.',
+        limit: AI_DAILY_LIMIT,
+        used: globalResult.count,
+        resetsAt: toResetsAt(globalResult.resetTime),
+      });
+      return;
+    }
+
+    const featureResult = await incrementUsage(key, limit);
+    if (!featureResult.allowed) {
+      res.status(429).json({
+        error: `Daily limit reached for this feature (${featureKey}). Try again tomorrow.`,
+        feature: featureKey,
+        limit,
+        used: featureResult.count,
+        resetsAt: toResetsAt(featureResult.resetTime),
       });
       return;
     }
 
     res.setHeader('X-AI-Feature', featureKey);
-    res.setHeader('X-AI-Usage-Used', result.count.toString());
+    // Feature-scoped counts (for inline "N left" next to that tool).
+    res.setHeader('X-AI-Usage-Used', featureResult.count.toString());
     res.setHeader('X-AI-Usage-Limit', limit.toString());
-    res.setHeader('X-AI-Usage-Resets-At', toResetsAt(result.resetTime));
+    res.setHeader('X-AI-Usage-Resets-At', toResetsAt(featureResult.resetTime));
+    // Global counts drive the sidebar / floating AI badge.
+    setGlobalUsageHeaders(res, globalResult);
     next();
   };
 }

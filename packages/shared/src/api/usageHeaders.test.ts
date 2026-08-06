@@ -5,7 +5,7 @@ import {
 } from './usageHeaders';
 
 describe('parseGlobalAIUsageFromHeaders', () => {
-  it('ignores feature-scoped companion quota headers', () => {
+  it('ignores feature-scoped companion quota headers without global headers', () => {
     const updates: Array<{ used: number; limit: number }> = [];
     const response = new Response('{}', {
       headers: {
@@ -20,6 +20,30 @@ describe('parseGlobalAIUsageFromHeaders', () => {
     });
 
     expect(updates).toHaveLength(0);
+  });
+
+  it('updates global badge from X-AI-Global-Usage-* even when feature header is set', () => {
+    const updates: Array<{ used: number; limit: number; remaining: number }> = [];
+    const response = new Response('{}', {
+      headers: {
+        'X-AI-Feature': 'companion',
+        'X-AI-Usage-Used': '3',
+        'X-AI-Usage-Limit': '75',
+        'X-AI-Global-Usage-Used': '12',
+        'X-AI-Global-Usage-Limit': '100',
+        'X-AI-Global-Usage-Resets-At': '2026-08-07T00:00:00.000Z',
+      },
+    });
+
+    parseGlobalAIUsageFromHeaders(response, (usage) => {
+      updates.push({
+        used: usage.used,
+        limit: usage.limit,
+        remaining: usage.remaining,
+      });
+    });
+
+    expect(updates).toEqual([{ used: 12, limit: 100, remaining: 88 }]);
   });
 
   it('updates global usage when no feature header is present', () => {
