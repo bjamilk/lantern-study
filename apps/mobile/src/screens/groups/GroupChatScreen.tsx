@@ -195,39 +195,43 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const loadTestPresets = useTestStore(s => s.loadTestPresets);
   const saveTestPreset = useTestStore(s => s.saveTestPreset);
   const deleteTestPreset = useTestStore(s => s.deleteTestPreset);
-  const {
-    messagesCache,
-    currentGroup,
-    isLoadingMore,
-    isLoadingMessages,
-    error: groupError,
-    userVotes,
-    groups,
-    selectGroup,
-    fetchMessages,
-    loadMoreMessages,
-    sendMessage,
-    retryFailedMessage,
-    editGroupMessage,
-    removeGroupMessage,
-    markGroupAsRead,
-    updateGroupDetails,
-    promoteToAdmin,
-    demoteAdmin,
-    removeMember,
-    leaveGroup,
-    archiveGroup,
-    deleteGroup,
-    submitQuestion,
-    voteOnMessage,
-    flagMessageAsSimilar,
-    fetchUserVotesForGroup,
-    getSubgroupsWithLevel,
-    getMessagesForGroups,
-    messagePagination,
-    fetchThread,
-    applyPeerChatRead,
-  } = useGroupStore();
+  // Per-value selectors: the whole-store destructure re-rendered this 1500-line
+  // screen on ANY store mutation, including other groups' realtime traffic.
+  // Selecting this group's slice by key also stops the derived chains below
+  // being invalidated by unrelated messages.
+  const groupMessages = useGroupStore(s => s.messagesCache[groupId]);
+  const currentGroup = useGroupStore(s => s.currentGroup);
+  const isLoadingMore = useGroupStore(s => s.isLoadingMore);
+  const isLoadingMessages = useGroupStore(s => s.isLoadingMessages);
+  const groupError = useGroupStore(s => s.error);
+  const userVotes = useGroupStore(s => s.userVotes);
+  const groups = useGroupStore(s => s.groups);
+  const messagePagination = useGroupStore(s => s.messagePagination);
+  // Only the cross-group aggregate below needs the whole cache.
+  const messagesCache = useGroupStore(s => s.messagesCache);
+  const selectGroup = useGroupStore(s => s.selectGroup);
+  const fetchMessages = useGroupStore(s => s.fetchMessages);
+  const loadMoreMessages = useGroupStore(s => s.loadMoreMessages);
+  const sendMessage = useGroupStore(s => s.sendMessage);
+  const retryFailedMessage = useGroupStore(s => s.retryFailedMessage);
+  const editGroupMessage = useGroupStore(s => s.editGroupMessage);
+  const removeGroupMessage = useGroupStore(s => s.removeGroupMessage);
+  const markGroupAsRead = useGroupStore(s => s.markGroupAsRead);
+  const updateGroupDetails = useGroupStore(s => s.updateGroupDetails);
+  const promoteToAdmin = useGroupStore(s => s.promoteToAdmin);
+  const demoteAdmin = useGroupStore(s => s.demoteAdmin);
+  const removeMember = useGroupStore(s => s.removeMember);
+  const leaveGroup = useGroupStore(s => s.leaveGroup);
+  const archiveGroup = useGroupStore(s => s.archiveGroup);
+  const deleteGroup = useGroupStore(s => s.deleteGroup);
+  const submitQuestion = useGroupStore(s => s.submitQuestion);
+  const voteOnMessage = useGroupStore(s => s.voteOnMessage);
+  const flagMessageAsSimilar = useGroupStore(s => s.flagMessageAsSimilar);
+  const fetchUserVotesForGroup = useGroupStore(s => s.fetchUserVotesForGroup);
+  const getSubgroupsWithLevel = useGroupStore(s => s.getSubgroupsWithLevel);
+  const getMessagesForGroups = useGroupStore(s => s.getMessagesForGroups);
+  const fetchThread = useGroupStore(s => s.fetchThread);
+  const applyPeerChatRead = useGroupStore(s => s.applyPeerChatRead);
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -330,16 +334,21 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const displayMessages = useMemo(() => {
     // Per-group cache is the source of truth — global `messages` can lag or hold another chat.
-    const raw = messagesCache[groupId] || [];
+    const raw = groupMessages || [];
     return raw.filter(
       (msg) =>
         shouldRenderRemovedMessage(msg, raw) &&
         messagePassesQuestionVisibility(msg, questionVisibilityMode)
     );
-  }, [messagesCache, groupId, questionVisibilityMode]);
+  }, [groupMessages, questionVisibilityMode]);
+
+  // Only TestConfigModal / ChallengeModal consume the chain below, and both are
+  // mounted-but-hidden, so it used to recompute on every incoming message.
+  const questionPickerActive = showTestConfig || !!challengeMember;
 
   const allGroupMessages = useMemo(() => {
-    const combined = [...(messagesCache[groupId] || [])];
+    if (!questionPickerActive) return [];
+    const combined = [...(groupMessages || [])];
     const seen = new Set(combined.map((m) => m.id));
     for (const msg of cachedGroupMessages) {
       if (!seen.has(msg.id)) {
@@ -352,7 +361,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
         shouldRenderRemovedMessage(msg, combined) &&
         messagePassesQuestionVisibility(msg, questionVisibilityMode)
     );
-  }, [messagesCache, groupId, cachedGroupMessages, questionVisibilityMode]);
+  }, [questionPickerActive, groupMessages, cachedGroupMessages, questionVisibilityMode]);
 
   const availableTags = useMemo(
     () =>
@@ -544,7 +553,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
       const sessionMessages = await getMessagesForGroups(sourceGroupIds);
       const combinedMessages = sessionMessages.length
         ? sessionMessages
-        : (messagesCache[groupId] || []);
+        : (groupMessages || []);
       const visibilityMode = config.visibilityMode ?? questionVisibilityMode;
 
       const questions = selectGroupQuestions(
