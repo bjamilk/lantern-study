@@ -31,7 +31,6 @@ import {
     bootstrapAuthFromStorage,
     readPersistedAuthUser,
     shouldRefreshStoredSession,
-    sendPresenceHeartbeat,
     resolveClientSession,
     clearClientAuthSession,
     clearAllClientAuthStorage,
@@ -70,6 +69,10 @@ import {
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
 import { isAccessTokenFreshEnough, shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
 import { resetSessionExpiredGuard } from '../services/sessionHandler';
+import {
+    sendPresenceHeartbeat,
+    shouldRunPresenceHeartbeat,
+} from '../services/presenceHeartbeat';
 
 function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
   return Object.values(state).every((status) => status !== 'pending');
@@ -247,32 +250,39 @@ export function useAppEffects({
     }, [updateDmThreads]);
 
     // --- Presence heartbeat for online status ---
+    // Gate on authTokenReady (same as lifecycle / paused sessions / gamification)
+    // so guest + stale-session landings never POST /presence/heartbeat.
     useEffect(() => {
-        if (!currentUser?.id || !normalizeUserSettings(currentUser.settings).privacy.showOnlineStatus) {
+        const showOnlineStatus = currentUser
+            ? normalizeUserSettings(currentUser.settings).privacy.showOnlineStatus
+            : false;
+        if (!shouldRunPresenceHeartbeat({
+            userId: currentUser?.id,
+            authTokenReady,
+            showOnlineStatus,
+        })) {
             return;
         }
         let cancelled = false;
         let interval: ReturnType<typeof setInterval> | undefined;
 
-        const start = async () => {
-            // Wait until a bearer token exists so we don't 401 every 2 minutes
-            // after fast-boot restores a cached user without a live session.
-            for (let i = 0; i < 20 && !cancelled; i++) {
-                if (await ensureAuthTokenReady()) break;
-                await new Promise((r) => setTimeout(r, 250));
-            }
+        const beat = async () => {
             if (cancelled) return;
-            if (!(await ensureAuthTokenReady())) return;
-            void sendPresenceHeartbeat();
-            interval = setInterval(() => void sendPresenceHeartbeat(), 2 * 60 * 1000);
+            const keepGoing = await sendPresenceHeartbeat();
+            // Unrecovered 401/403 or missing token — stop spamming Unauthorized.
+            if (!keepGoing && interval) {
+                clearInterval(interval);
+                interval = undefined;
+            }
         };
 
-        void start();
+        void beat();
+        interval = setInterval(() => void beat(), 2 * 60 * 1000);
         return () => {
             cancelled = true;
             if (interval) clearInterval(interval);
         };
-    }, [currentUser?.id, currentUser?.settings]);
+    }, [currentUser?.id, currentUser?.settings, authTokenReady]);
 
     // --- Restore session on app load ---
     useEffect(() => {
