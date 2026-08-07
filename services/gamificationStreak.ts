@@ -3,16 +3,29 @@ import { createIdempotencyKey } from '@lantern/shared/api';
 import type { ActivityType, StudyActivityDay, UserStats } from '@lantern/shared';
 import { ACTIVITY_DAYS, formatActivityLocalDate } from '@lantern/shared/utils';
 import { getAuthHeaders } from './supabase';
+import { handleApiAuthFailure } from './sessionHandler';
 
 const API_BASE = getApiBaseUrl();
 
 async function gamificationRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE}/api/v1/gamification${path}`, {
-    ...options,
-    headers: { ...headers, 'Content-Type': 'application/json', ...options.headers },
-  });
-  const data = await res.json();
+  const doFetch = async () => {
+    const headers = await getAuthHeaders();
+    return fetch(`${API_BASE}/api/v1/gamification${path}`, {
+      ...options,
+      headers: { ...headers, 'Content-Type': 'application/json', ...options.headers },
+    });
+  };
+
+  let res = await doFetch();
+  if (res.status === 401 || res.status === 403) {
+    if (await handleApiAuthFailure(res.status)) {
+      res = await doFetch();
+    } else {
+      throw new Error('Session expired');
+    }
+  }
+
+  const data = await res.json().catch(() => ({} as Record<string, unknown>));
   if (!res.ok) {
     throw new Error(
       (typeof data.message === 'string' && data.message) ||
@@ -20,7 +33,7 @@ async function gamificationRequest<T>(path: string, options: RequestInit = {}): 
         'Gamification request failed'
     );
   }
-  return data.data;
+  return data.data as T;
 }
 
 export interface GamificationSyncResult {

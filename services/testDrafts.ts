@@ -175,9 +175,19 @@ export async function fetchPausedSessions(options?: {
     limit: String(limit),
     sort: 'newest',
   });
-  const response = await fetch(`${getApiRoot()}/api/v1/tests?${params}`, {
-    headers: await getAuthHeaders(),
-  });
+  const doFetch = async () =>
+    fetch(`${getApiRoot()}/api/v1/tests?${params}`, {
+      headers: await getAuthHeaders(),
+    });
+  let response = await doFetch();
+  if (response.status === 401 || response.status === 403) {
+    const { handleApiAuthFailure } = await import('./sessionHandler');
+    if (await handleApiAuthFailure(response.status)) {
+      response = await doFetch();
+    } else {
+      return [];
+    }
+  }
   if (!response.ok) {
     throw new Error(`Failed to fetch paused sessions (${response.status})`);
   }

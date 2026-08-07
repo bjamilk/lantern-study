@@ -34,6 +34,8 @@ import {
     sendPresenceHeartbeat,
     resolveClientSession,
     clearClientAuthSession,
+    clearAllClientAuthStorage,
+    getStoredSessionExpiresAt,
 } from '../services/supabase';
 import {
     isCookieAuthEnabled,
@@ -66,6 +68,8 @@ import {
   type BootstrapLoadState,
 } from './useAuthHandlers';
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
+import { isAccessTokenFreshEnough, shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
+import { resetSessionExpiredGuard } from '../services/sessionHandler';
 
 function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
   return Object.values(state).every((status) => status !== 'pending');
@@ -92,7 +96,12 @@ export function useAppEffects({
     onChallengeNotification,
 }: UseAppEffectsParams) {
     const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, setPasswordRecovery } = useAuthStore();
-    const [authTokenReady, setAuthTokenReady] = useState(() => bootstrapAuthFromStorage() !== null);
+    // Only treat cold-start as token-ready when the stored access token is still fresh.
+    // Expired local JWTs must wait for resolve/refresh before authenticated fan-out.
+    const [authTokenReady, setAuthTokenReady] = useState(() => {
+        const boot = bootstrapAuthFromStorage();
+        return Boolean(boot && isAccessTokenFreshEnough(getStoredSessionExpiresAt()));
+    });
   const { groups, setGroups, updateGroups,
         dmThreads, updateDmThreads,
         setAllMessages,
@@ -299,14 +308,17 @@ export function useAppEffects({
             let user = useAuthStore.getState().currentUser;
             if (!user) {
                 const persisted = readPersistedAuthUser();
-                if (persisted?.id === boot.userId) {
+                if (shouldRestorePersistedAuthUser(boot, persisted)) {
                     user = persisted as unknown as User;
                     setCurrentUser(user);
                 }
             }
             if (!user || user.id !== boot.userId) return false;
 
-            setAuthTokenReady(true);
+            // Defer API fan-out until refresh if the access token is near expiry.
+            if (isAccessTokenFreshEnough(getStoredSessionExpiresAt())) {
+                setAuthTokenReady(true);
+            }
             return true;
         };
 
@@ -334,8 +346,11 @@ export function useAppEffects({
                     ) {
                         console.warn('[Auth] No active session — clearing stale cached user');
                         await clearClientAuthSession();
+                        clearAllClientAuthStorage();
                         setCurrentUser(null);
                         setAuthTokenReady(false);
+                        setDataLoaded(false);
+                        setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
                     }
                     return;
                 }
@@ -350,6 +365,7 @@ export function useAppEffects({
 
                 if (session.access_token) {
                     setCachedAuthToken(session.access_token, session.user.id);
+                    resetSessionExpiredGuard();
                     setAuthTokenReady(true);
                 }
 
@@ -467,12 +483,10 @@ export function useAppEffects({
             if (event === 'SIGNED_OUT') {
                 setAuthTokenReady(false);
                 setPasswordRecovery(false);
-                const store = useAuthStore.getState();
-                if (!store.isAuthLoading) {
-                    setCurrentUser(null);
-                    setDataLoaded(false);
-                    setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
-                }
+                // Always clear — previously skipped while isAuthLoading, leaving stale users on /.
+                setCurrentUser(null);
+                setDataLoaded(false);
+                setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
             } else if (event === 'PASSWORD_RECOVERY') {
                 if (session?.access_token) {
                     setCachedAuthToken(session.access_token, session.user?.id);
@@ -492,6 +506,7 @@ export function useAppEffects({
                 }
                 if (session.access_token) {
                     setCachedAuthToken(session.access_token, session.user?.id);
+                    resetSessionExpiredGuard();
                     setAuthTokenReady(true);
                 }
                 try {
@@ -1927,5 +1942,6 @@ export function useAppEffects({
         serverStreak,
         streakFreezes,
         questsLoaded,
+        authTokenReady,
     };
 }

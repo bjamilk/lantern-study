@@ -28,6 +28,8 @@ import { setSentryUser } from '../services/sentry';
 import { normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import { formatSupabaseClientAuthError } from '@lantern/shared';
+import { shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
+import { resetSessionExpiredGuard } from '../services/sessionHandler';
 
 function displayNameFromMeta(
   meta: Record<string, unknown> | undefined,
@@ -50,10 +52,9 @@ function getInitialAuthState(): {
   }
   const boot = bootstrapAuthFromStorage();
   const persisted = readPersistedAuthUser();
-  if (persisted?.id) {
-    if (boot && persisted.id !== boot.userId) {
-      return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
-    }
+  // Never treat a persisted profile as logged-in without a matching local token.
+  // Otherwise / redirects to dashboard and auth bootstrap 401s pollute guest landing.
+  if (shouldRestorePersistedAuthUser(boot, persisted)) {
     return {
       currentUser: persisted as unknown as User,
       isAuthenticated: true,
@@ -234,6 +235,7 @@ export const useAuthStore = create<AuthState>()(
               setCachedAuthToken(session.access_token, authUser.id);
             }
 
+            resetSessionExpiredGuard();
             set({
               currentUser: userObj,
               isAuthenticated: true,
@@ -301,6 +303,7 @@ export const useAuthStore = create<AuthState>()(
               }
             }
 
+            resetSessionExpiredGuard();
             set({
               currentUser: userObj,
               isAuthenticated: true,
@@ -532,6 +535,24 @@ export const useAuthStore = create<AuthState>()(
           : null,
         isAuthenticated: state.isAuthenticated,
       }),
+      // Drop stale profiles that outlive the Supabase session so guest `/` stays a guest.
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState || {}) as Partial<AuthState>;
+        const boot = bootstrapAuthFromStorage();
+        if (!shouldRestorePersistedAuthUser(boot, persisted.currentUser ?? null)) {
+          return {
+            ...currentState,
+            ...persisted,
+            currentUser: null,
+            isAuthenticated: false,
+          };
+        }
+        return {
+          ...currentState,
+          ...persisted,
+          isAuthenticated: true,
+        };
+      },
     }
   )
 );

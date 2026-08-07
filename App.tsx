@@ -102,7 +102,7 @@ const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
 const LandingPage = lazyWithRetry(() => import('./components/marketing/LandingPage'));
 import AppShell from './components/layout/AppShell';
 import Breadcrumb from './components/layout/Breadcrumb';
-import { useAuthHandlers } from './hooks/useAuthHandlers';
+import { useAuthHandlers, INITIAL_BOOTSTRAP_LOAD_STATE } from './hooks/useAuthHandlers';
 import { useGroupHandlers } from './hooks/useGroupHandlers';
 import { useTestHandlers } from './hooks/useTestHandlers';
 import { useGameHandlers } from './hooks/useGameHandlers';
@@ -160,15 +160,6 @@ export const App: React.FC = () => {
         graceDaysRemaining?: number | null;
     } | null>(null);
     const [reactivatingAccount, setReactivatingAccount] = useState(false);
-
-    useEffect(() => {
-        setSessionExpiredHandler(async (message) => {
-            showToast(message || 'Your session has expired. Please sign in again.', 'error');
-            await apiLogoutSession();
-            setCurrentUser(null);
-            setAuthLoading(false);
-        });
-    }, [showToast, setCurrentUser, setAuthLoading]);
 
     useEffect(() => {
         const sync = (user: User | null) => {
@@ -255,12 +246,19 @@ export const App: React.FC = () => {
     } = useAuthHandlers();
 
     useEffect(() => {
-        if (!currentUser?.id) {
-            setAccountLifecycle(null);
-            return;
-        }
-        void fetchAccountLifecycle(currentUser.id).then(setAccountLifecycle);
-    }, [currentUser?.id]);
+        setSessionExpiredHandler(async (message) => {
+            showToast(message || 'Your session has expired. Please sign in again.', 'error');
+            try {
+                await apiLogoutSession();
+            } finally {
+                setCurrentUser(null);
+                setAuthLoading(false);
+                setDataLoaded(false);
+                setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
+                navigateToPath('/welcome', { replace: true });
+            }
+        });
+    }, [showToast, setCurrentUser, setAuthLoading, setDataLoaded, setBootstrapLoad, navigateToPath]);
 
     const handleReactivateFromBanner = async () => {
         setReactivatingAccount(true);
@@ -304,11 +302,6 @@ export const App: React.FC = () => {
         handleRetakeTest, handlePracticeFailedQuestions,
         isSubmittingTest,
     } = useTestHandlers({ addNotification });
-
-    React.useEffect(() => {
-        if (!currentUser?.id) return;
-        void refreshPausedSessions();
-    }, [currentUser?.id, refreshPausedSessions]);
 
     const {
         handleSendChallenge,
@@ -411,6 +404,7 @@ export const App: React.FC = () => {
         serverStreak,
         streakFreezes,
         questsLoaded,
+        authTokenReady,
     } = useAppEffects({
         dataLoaded,
         setDataLoaded,
@@ -419,10 +413,23 @@ export const App: React.FC = () => {
         onChallengeNotification: handleChallengeNotification,
     });
 
+    useEffect(() => {
+        if (!currentUser?.id || !authTokenReady) {
+            setAccountLifecycle(null);
+            return;
+        }
+        void fetchAccountLifecycle(currentUser.id).then(setAccountLifecycle);
+    }, [currentUser?.id, authTokenReady]);
+
     React.useEffect(() => {
-        if (!currentUser?.id || appMode !== AppMode.DASHBOARD) return;
+        if (!currentUser?.id || !authTokenReady) return;
+        void refreshPausedSessions();
+    }, [currentUser?.id, authTokenReady, refreshPausedSessions]);
+
+    React.useEffect(() => {
+        if (!currentUser?.id || !authTokenReady || appMode !== AppMode.DASHBOARD) return;
         void refreshDashboardGamification();
-    }, [currentUser?.id, appMode, refreshDashboardGamification]);
+    }, [currentUser?.id, authTokenReady, appMode, refreshDashboardGamification]);
 
     const handlePurchaseStreakFreeze = React.useCallback(async () => {
         const { walletBalance, setWalletBalance } = useBudgetStore.getState();

@@ -112,37 +112,42 @@ const fetchWithTimeout = async (
       } catch {
         authCode = undefined;
       }
-      if (authCode !== 'SESSION_REVOKED' && authCode !== 'ACCOUNT_BANNED' && authCode !== 'ACCOUNT_DEACTIVATED') {
-        let refreshed = false;
-        if (cookieAuthEnabled) {
-          const session = await refreshCookieSession();
-          if (session?.access_token) {
-            _cachedAccessToken = session.access_token;
+      if (authCode === 'SESSION_REVOKED' || authCode === 'ACCOUNT_BANNED' || authCode === 'ACCOUNT_DEACTIVATED') {
+        const { notifySessionExpired } = await import('./sessionHandler');
+        notifySessionExpired();
+        return response;
+      }
+      let refreshed = false;
+      if (cookieAuthEnabled) {
+        const session = await refreshCookieSession();
+        if (session?.access_token) {
+          _cachedAccessToken = session.access_token;
+          refreshed = true;
+        }
+      } else {
+        try {
+          const { data } = await supabase.auth.refreshSession();
+          if (data.session?.access_token) {
+            _cachedAccessToken = data.session.access_token;
             refreshed = true;
           }
-        } else {
-          try {
-            const { data } = await supabase.auth.refreshSession();
-            if (data.session?.access_token) {
-              _cachedAccessToken = data.session.access_token;
-              refreshed = true;
-            }
-          } catch {
-            // ignore refresh failure
-          }
-        }
-        if (refreshed) {
-          const headers = await getAuthHeaders();
-          const retryOptions: RequestInit = {
-            ...options,
-            headers: {
-              ...(options.headers as Record<string, string> | undefined),
-              ...headers,
-            },
-          };
-          return fetchWithTimeout(url, retryOptions, timeoutMs, false);
+        } catch {
+          // ignore refresh failure
         }
       }
+      if (refreshed) {
+        const headers = await getAuthHeaders();
+        const retryOptions: RequestInit = {
+          ...options,
+          headers: {
+            ...(options.headers as Record<string, string> | undefined),
+            ...headers,
+          },
+        };
+        return fetchWithTimeout(url, retryOptions, timeoutMs, false);
+      }
+      const { notifySessionExpired } = await import('./sessionHandler');
+      notifySessionExpired();
     }
 
     return response;
@@ -2427,8 +2432,19 @@ export const fetchAccountLifecycle = async (userId: string): Promise<{
   gracePeriodDays: number;
 } | null> => {
   try {
-    const headers = await getAuthHeaders();
-    const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/lifecycle`, { headers });
+    const doFetch = async () => {
+      const headers = await getAuthHeaders();
+      return fetch(`${getApiRoot()}/api/v1/users/${userId}/lifecycle`, { headers });
+    };
+    let response = await doFetch();
+    if (response.status === 401 || response.status === 403) {
+      const { handleApiAuthFailure } = await import('./sessionHandler');
+      if (await handleApiAuthFailure(response.status)) {
+        response = await doFetch();
+      } else {
+        return null;
+      }
+    }
     if (!response.ok) return null;
     const json = await response.json();
     return json.data ?? null;
@@ -4993,10 +5009,22 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
   try {
     if (!(await hasValidSession())) return null;
 
-    const response = await fetch(`${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    });
+    const doFetch = async () =>
+      fetch(`${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`, {
+        method: 'GET',
+        headers: await getAuthHeaders(),
+      });
+
+    let response = await doFetch();
+
+    if (response.status === 401 || response.status === 403) {
+      const { handleApiAuthFailure } = await import('./sessionHandler');
+      if (await handleApiAuthFailure(response.status)) {
+        response = await doFetch();
+      } else {
+        return null;
+      }
+    }
 
     if (response.status === 401 || response.status === 403 || response.status === 404) {
       return null;
