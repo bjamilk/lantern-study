@@ -207,6 +207,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     fetchMessages,
     loadMoreMessages,
     sendMessage,
+    retryFailedMessage,
     editGroupMessage,
     removeGroupMessage,
     markGroupAsRead,
@@ -1203,6 +1204,10 @@ export function GroupChatScreen({ navigation, route }: Props) {
                       }
                     }}
                     onOpenThread={handleOpenThread}
+                    onRetry={(m) => {
+                      if (!user?.id) return;
+                      void retryFailedMessage(groupId, m.id, user.id).catch(() => undefined);
+                    }}
                   />
                 </View>
               );

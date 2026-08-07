@@ -45,6 +45,8 @@ interface MessageBubbleProps {
   onMentionUser?: (username: string) => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
+  /** Re-send a message that failed to reach the server. */
+  onRetry?: (message: Message) => void;
 }
 
 function MentionText({
@@ -318,6 +320,7 @@ export function MessageBubble({
   onMentionUser,
   onScrollToMessage,
   onOpenThread,
+  onRetry,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
   const messageGroup = useGroupStore((state) =>
@@ -630,7 +633,27 @@ export function MessageBubble({
                 edited
               </Text>
             ) : null}
-            {isOwn ? (
+            {isOwn && message.deliveryState === 'pending' ? (
+              <Text
+                className="text-[10px] ml-1"
+                style={{ color: colors.chatBubbleMeta }}
+                accessibilityLabel="Sending"
+              >
+                Sending…
+              </Text>
+            ) : isOwn && message.deliveryState === 'failed' ? (
+              <Pressable
+                onPress={() => onRetry?.(message)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Message not sent. Tap to retry."
+                className="ml-1"
+              >
+                <Text className="text-[10px] font-semibold" style={{ color: colors.error }}>
+                  Not sent · Retry
+                </Text>
+              </Pressable>
+            ) : isOwn ? (
               <ReceiptTicks
                 status={message.receiptStatus || 'sent'}
                 seenByCount={message.seenByCount}

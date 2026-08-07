@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
 import {
+  chatMessagePreview,
   resolveQuestionStatusAfterVote,
   normalizeStorageUrl,
   formatChatSenderLabel,
@@ -31,8 +32,29 @@ const MESSAGES_PAGE_SIZE = 50;
 
 const messagesFetchSeqByGroup: Record<string, number> = {};
 const dmFetchSeqByThread: Record<string, number> = {};
-const sendingGroupIds = new Set<string>();
-const sendingDmThreadIds = new Set<string>();
+// Sends are serialized per conversation rather than rejected. The old Set-based
+// locks threw a user-facing Alert (groups) or returned silently (DMs, after the
+// composer had already been cleared) — both cost the user their message.
+// deliveryIntents still guards genuine duplicate taps.
+const sendChainByGroup = new Map<string, Promise<void>>();
+const sendChainByDmThread = new Map<string, Promise<void>>();
+
+async function acquireSendSlot(
+  chains: Map<string, Promise<void>>,
+  key: string
+): Promise<() => void> {
+  const prior = chains.get(key);
+  if (prior) await prior.catch(() => undefined);
+  let release: () => void = () => undefined;
+  const slot = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  chains.set(key, slot);
+  return () => {
+    release();
+    if (chains.get(key) === slot) chains.delete(key);
+  };
+}
 const deliveryIntents = new DeliveryIntentRegistry();
 
 // Storage keys
@@ -141,6 +163,11 @@ export interface Message {
   threadRootId?: string;
   replyCount?: number;
   receiptStatus?: 'sent' | 'read';
+  /**
+   * Local-only outbox state. Deliberately separate from receiptStatus, which
+   * ReceiptTicks / computeDmReceiptStatus / web all branch on as 'sent' | 'read'.
+   */
+  deliveryState?: 'pending' | 'failed';
   seenByCount?: number;
   seenByTotal?: number;
 }
@@ -283,6 +310,8 @@ interface GroupState {
   promoteGroupAdmin: (groupId: string, userId: string) => Promise<void>;
   demoteGroupAdmin: (groupId: string, userId: string) => Promise<void>;
   removeMember: (groupId: string, userId: string) => Promise<void>;
+  retryFailedMessage: (groupId: string, messageId: string, senderId: string) => Promise<void>;
+  retryFailedDirectMessage: (threadId: string, messageId: string, senderId: string) => Promise<void>;
   archiveGroup: (groupId: string) => Promise<void>;
   deleteGroup: (groupId: string) => Promise<void>;
   inviteByEmail: (groupId: string, emails: string[]) => Promise<void>;
@@ -300,6 +329,19 @@ interface GroupState {
   getBreadcrumbs: (groupId: string) => Group[];
   getTopLevelGroups: () => Group[];
   getActiveDmThreads: () => DMThread[];
+}
+
+/** Newest row that is neither removed nor stuck in the outbox. */
+function lastDeliveredMessage<T extends { isRemoved?: boolean; removedAt?: string | null; deliveryState?: 'pending' | 'failed' }>(
+  list: T[]
+): T | undefined {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i]!;
+    if (m.isRemoved || m.removedAt) continue;
+    if (m.deliveryState === 'failed' || m.deliveryState === 'pending') continue;
+    return m;
+  }
+  return undefined;
 }
 
 function isOptimisticMessageId(id: string): boolean {
@@ -850,10 +892,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     _senderName?: string,
     options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
   ) => {
-    if (sendingGroupIds.has(groupId)) {
-      throw new Error('Another message is still sending. Please wait a moment and try again.');
-    }
-    sendingGroupIds.add(groupId);
+    const releaseSendSlot = await acquireSendSlot(sendChainByGroup, groupId);
 
     const group = get().groups.find((g) => g.id === groupId);
     // Prefer userId — member.id may be the membership row id, not the auth user id.
@@ -994,15 +1033,28 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       } else {
         deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
       }
-      set({
-        error: error.message || 'Failed to send message',
-        messages: get().activeGroupId === groupId ? previousMessages : get().messages,
-        groups: previousGroups,
-        messagesCache: { ...get().messagesCache, [groupId]: previousCache },
+      // Mark just the failed row. Restoring the pre-await snapshots destroyed any
+      // realtime message that landed while the send was in flight, and reverting the
+      // whole `groups` array also threw away unread counts and other groups' previews.
+      set((state) => {
+        const markFailed = (list: Message[]) =>
+          list.map((m) =>
+            m.id === newMessage.id ? { ...m, deliveryState: 'failed' as const } : m
+          );
+        const updatedCache = markFailed(state.messagesCache[groupId] || []);
+        const latest = lastDeliveredMessage(updatedCache);
+        return {
+          messages: state.activeGroupId === groupId ? markFailed(state.messages) : state.messages,
+          messagesCache: { ...state.messagesCache, [groupId]: updatedCache },
+          groups: state.groups.map((g) =>
+            g.id === groupId ? { ...g, lastMessage: latest ?? undefined } : g
+          ),
+        };
       });
+      void get().saveToStorage();
       throw error instanceof Error ? error : new Error(error?.message || 'Failed to send message');
     } finally {
-      sendingGroupIds.delete(groupId);
+      releaseSendSlot();
     }
   },
 
@@ -1280,6 +1332,48 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  /**
+   * Re-send a message left in the outbox. The failed row is dropped first so the
+   * new optimistic row takes its place; deliveryIntents still guards the case
+   * where the original actually landed and only the response was lost.
+   */
+  retryFailedMessage: async (groupId: string, messageId: string, senderId: string) => {
+    const failed = (get().messagesCache[groupId] || []).find(m => m.id === messageId);
+    if (!failed || failed.deliveryState !== 'failed') return;
+    set(state => ({
+      messagesCache: {
+        ...state.messagesCache,
+        [groupId]: (state.messagesCache[groupId] || []).filter(m => m.id !== messageId),
+      },
+      messages:
+        state.activeGroupId === groupId
+          ? state.messages.filter(m => m.id !== messageId)
+          : state.messages,
+    }));
+    await get().sendMessage(groupId, failed.text, senderId, undefined, {
+      replyToMessageId: failed.replyToMessageId,
+      mentionedUserIds: failed.mentionedUserIds,
+    });
+  },
+
+  retryFailedDirectMessage: async (threadId: string, messageId: string, senderId: string) => {
+    const list = get().directMessages[threadId] || [];
+    const failed = list.find(m => m.id === messageId);
+    if (!failed || failed.deliveryState !== 'failed') return;
+    const thread = get().dmThreads.find(t => t.id === threadId);
+    const recipientId = thread?.participantIds.find(id => id !== senderId);
+    if (!recipientId) return;
+    set(state => ({
+      directMessages: {
+        ...state.directMessages,
+        [threadId]: (state.directMessages[threadId] || []).filter(m => m.id !== messageId),
+      },
+    }));
+    await get().sendDirectMessageTo(senderId, recipientId, failed.text, threadId, {
+      replyToMessageId: failed.replyToMessageId,
+    });
+  },
+
   archiveGroup: async (groupId: string) => {
     try {
       const group = get().groups.find(g => g.id === groupId);
@@ -1534,8 +1628,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     threadId: string,
     options?: { replyToMessageId?: string }
   ) => {
-    if (sendingDmThreadIds.has(threadId)) return;
-    sendingDmThreadIds.add(threadId);
+    const releaseDmSendSlot = await acquireSendSlot(sendChainByDmThread, threadId);
     const deliveryScope = `dm:${threadId}`;
     const deliveryFingerprint = JSON.stringify({
       text,
@@ -1589,7 +1682,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           t.id === threadId
             ? {
                 ...t,
-                lastMessage: text,
+                lastMessage: chatMessagePreview(text, ''),
                 lastMessageTimestamp: new Date().toISOString(),
                 ...(t.clientPending ? { clientPending: true } : {}),
                 historyClearedAt: null,
@@ -1630,15 +1723,30 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       } else {
         deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
       }
-      set(state => ({
-        directMessages: {
-          ...state.directMessages,
-          [threadId]: (state.directMessages[threadId] || []).filter(m => m.id !== optimistic.id),
-        },
-      }));
+      // Keep the bubble and mark it, so the message is recoverable rather than gone.
+      // Also revert the chat-list preview, which previously kept advertising a
+      // message that was never sent.
+      set(state => {
+        const marked = (state.directMessages[threadId] || []).map(m =>
+          m.id === optimistic.id ? { ...m, deliveryState: 'failed' as const } : m
+        );
+        const latest = lastDeliveredMessage(marked);
+        return {
+          directMessages: { ...state.directMessages, [threadId]: marked },
+          dmThreads: state.dmThreads.map(t =>
+            t.id === threadId
+              ? {
+                  ...t,
+                  lastMessage: latest ? chatMessagePreview(latest.text, '') : undefined,
+                  lastMessageTimestamp: latest?.timestamp,
+                }
+              : t
+          ),
+        };
+      });
       throw error;
     } finally {
-      sendingDmThreadIds.delete(threadId);
+      releaseDmSendSlot();
     }
   },
 

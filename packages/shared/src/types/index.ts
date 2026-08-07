@@ -644,6 +644,8 @@ export interface DMThread {
 }
 
 export interface DirectMessage {
+  /** Local-only outbox state; never sent to or returned by the server. */
+  deliveryState?: 'pending' | 'failed';
   id: string;
   threadId: string;
   senderId: string;

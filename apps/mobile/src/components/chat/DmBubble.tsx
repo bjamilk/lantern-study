@@ -16,6 +16,7 @@ interface DmBubbleProps {
     removedAt?: string;
     isRemoved?: boolean;
     replyCount?: number;
+    deliveryState?: 'pending' | 'failed';
     receiptStatus?: 'sent' | 'read';
     replyTo?: {
       id: string;
@@ -34,6 +35,8 @@ interface DmBubbleProps {
   onOpenThread?: (rootId: string) => void;
   threadRootId?: string;
   messageId?: string;
+  /** Re-send a message that failed to reach the server. */
+  onRetry?: () => void;
 }
 
 export function DmBubble({
@@ -45,6 +48,7 @@ export function DmBubble({
   onSwipeReply,
   onScrollToMessage,
   onOpenThread,
+  onRetry,
   threadRootId,
   messageId,
 }: DmBubbleProps) {
@@ -226,7 +230,23 @@ export function DmBubble({
                 edited
               </Text>
             ) : null}
-            {isOwn ? (
+            {isOwn && message.deliveryState === 'pending' ? (
+              <Text className="text-[10px] ml-1" style={{ color: colors.chatBubbleMeta }}>
+                Sending…
+              </Text>
+            ) : isOwn && message.deliveryState === 'failed' ? (
+              <Pressable
+                onPress={onRetry}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Message not sent. Tap to retry."
+                className="ml-1"
+              >
+                <Text className="text-[10px] font-semibold" style={{ color: colors.error }}>
+                  Not sent · Retry
+                </Text>
+              </Pressable>
+            ) : isOwn ? (
               <ReceiptTicks status={message.receiptStatus || 'sent'} onPrimary />
             ) : null}
           </View>

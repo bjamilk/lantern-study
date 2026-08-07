@@ -87,6 +87,7 @@ function DmBubbleWrapper({
   onSwipeReply,
   onScrollToMessage,
   onOpenThread,
+  onRetry,
 }: {
   message: DirectMessage;
   isOwn: boolean;
@@ -96,6 +97,7 @@ function DmBubbleWrapper({
   onSwipeReply?: () => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
+  onRetry?: () => void;
 }) {
   const timestamp =
     message.timestamp instanceof Date ? message.timestamp.toISOString() : String(message.timestamp);
@@ -109,6 +111,7 @@ function DmBubbleWrapper({
         isRemoved: message.isRemoved,
         replyCount: message.replyCount,
         receiptStatus: message.receiptStatus,
+        deliveryState: message.deliveryState,
         replyTo: message.replyTo
           ? {
               id: message.replyTo.id,
@@ -123,6 +126,7 @@ function DmBubbleWrapper({
       senderAvatar={isOwn ? undefined : senderAvatar}
       onReply={onReply}
       onSwipeReply={onSwipeReply}
+      onRetry={onRetry}
       onScrollToMessage={onScrollToMessage}
       onOpenThread={onOpenThread}
       threadRootId={message.threadRootId}
@@ -139,6 +143,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     dmThreads,
     fetchDirectMessagesForThread,
     sendDirectMessageTo,
+    retryFailedDirectMessage,
     editDirectMessage,
     removeDirectMessage,
     markDMAsRead,
@@ -889,6 +894,12 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                       }
                     }}
                     onOpenThread={handleOpenThread}
+                    onRetry={() => {
+                      if (!user?.id) return;
+                      void retryFailedDirectMessage(threadId, item.id, user.id).catch(
+                        () => undefined
+                      );
+                    }}
                   />
                 </View>
               )}
