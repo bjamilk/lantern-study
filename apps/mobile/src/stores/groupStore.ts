@@ -22,6 +22,7 @@ import {
   reconcileDeliveredItem,
 } from '@lantern/shared/utils';
 import * as api from '../services/api';
+import { syncService } from '../services/syncService';
 import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
 
@@ -1033,13 +1034,30 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       } else {
         deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
       }
+      // Network-shaped failures go to the outbox and stay 'pending'; anything the
+      // server actively rejected is 'failed' and needs the user's attention.
+      const queueable = isQueueableSendError(error);
+      if (queueable) {
+        void syncService
+          .queueOperation('message', newMessage.id, 'create', {
+            kind: 'group',
+            groupId,
+            text,
+            clientMessageId,
+            replyToMessageId: options?.replyToMessageId,
+            mentionedUserIds: options?.mentionedUserIds,
+          }, senderId)
+          .catch(() => undefined);
+      }
       // Mark just the failed row. Restoring the pre-await snapshots destroyed any
       // realtime message that landed while the send was in flight, and reverting the
       // whole `groups` array also threw away unread counts and other groups' previews.
       set((state) => {
         const markFailed = (list: Message[]) =>
           list.map((m) =>
-            m.id === newMessage.id ? { ...m, deliveryState: 'failed' as const } : m
+            m.id === newMessage.id
+              ? { ...m, deliveryState: (queueable ? 'pending' : 'failed') as 'pending' | 'failed' }
+              : m
           );
         const updatedCache = markFailed(state.messagesCache[groupId] || []);
         const latest = lastDeliveredMessage(updatedCache);
@@ -1723,12 +1741,27 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       } else {
         deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
       }
+      const dmQueueable = isQueueableSendError(error);
+      if (dmQueueable) {
+        void syncService
+          .queueOperation('message', optimistic.id, 'create', {
+            kind: 'dm',
+            threadId,
+            recipientId,
+            text,
+            clientMessageId,
+            replyToMessageId: options?.replyToMessageId,
+          }, senderId)
+          .catch(() => undefined);
+      }
       // Keep the bubble and mark it, so the message is recoverable rather than gone.
       // Also revert the chat-list preview, which previously kept advertising a
       // message that was never sent.
       set(state => {
         const marked = (state.directMessages[threadId] || []).map(m =>
-          m.id === optimistic.id ? { ...m, deliveryState: 'failed' as const } : m
+          m.id === optimistic.id
+            ? { ...m, deliveryState: (dmQueueable ? 'pending' : 'failed') as 'pending' | 'failed' }
+            : m
         );
         const latest = lastDeliveredMessage(marked);
         return {
@@ -2295,3 +2328,101 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }));
   },
 }));
+
+/** Network-shaped failure — worth queueing rather than surfacing as failed. */
+function isQueueableSendError(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  if (typeof status === 'number') {
+    if (status === 408 || status === 429 || status >= 500) return true;
+    if (status >= 400 && status < 500) return false;
+  }
+  const message = String((error as { message?: string } | null)?.message || '');
+  return /network request failed|network error|timed out|failed to fetch/i.test(message);
+}
+
+/**
+ * Outbox. Chat was the only major feature that never touched the sync queue, so
+ * an offline send simply failed. Registered here rather than inside syncService
+ * because that module must not import stores (groupStore -> syncService cycle).
+ */
+syncService.registerHandler('message', async (op: { entityId: string; userId: string; data: Record<string, unknown> }) => {
+  const data = op.data as {
+    kind: 'group' | 'dm';
+    groupId?: string;
+    threadId?: string;
+    recipientId?: string;
+    text: string;
+    clientMessageId: string;
+    replyToMessageId?: string;
+    mentionedUserIds?: string[];
+  };
+  try {
+    if (data.kind === 'group' && data.groupId) {
+      const payload = await api.sendMessage(data.groupId, op.userId, {
+        content: data.text,
+        clientMessageId: data.clientMessageId,
+        replyToMessageId: data.replyToMessageId,
+        mentionedUserIds: data.mentionedUserIds,
+      });
+      const server = mapApiMessage(payload, data.groupId);
+      useGroupStore.setState((state) => ({
+        messagesCache: {
+          ...state.messagesCache,
+          [data.groupId!]: replaceOptimisticWithServer(
+            state.messagesCache[data.groupId!] || [],
+            op.entityId,
+            server
+          ),
+        },
+        messages:
+          state.activeGroupId === data.groupId
+            ? replaceOptimisticWithServer(state.messages, op.entityId, server)
+            : state.messages,
+      }));
+    } else if (data.kind === 'dm' && data.threadId && data.recipientId) {
+      const sent = await api.sendDirectMessage(
+        op.userId,
+        data.recipientId,
+        data.text,
+        data.clientMessageId,
+        { replyToMessageId: data.replyToMessageId }
+      );
+      const confirmed = mapDirectMessage(sent, data.threadId);
+      useGroupStore.setState((state) => ({
+        directMessages: {
+          ...state.directMessages,
+          [data.threadId!]: reconcileDeliveredItem(
+            state.directMessages[data.threadId!] || [],
+            { ...confirmed, clientMessageId: data.clientMessageId },
+            [op.entityId]
+          ),
+        },
+      }));
+    }
+    void useGroupStore.getState().saveToStorage();
+    return true;
+  } catch (error) {
+    // Permanent rejections must not retry forever — mark the row and drop the op.
+    if (!isQueueableSendError(error)) {
+      useGroupStore.setState((state) => {
+        const markFailed = <T extends { id: string }>(list: T[]) =>
+          list.map((m) =>
+            m.id === op.entityId ? { ...m, deliveryState: 'failed' as const } : m
+          );
+        const gid = data.groupId;
+        const tid = data.threadId;
+        return {
+          messagesCache: gid
+            ? { ...state.messagesCache, [gid]: markFailed(state.messagesCache[gid] || []) }
+            : state.messagesCache,
+          directMessages: tid
+            ? { ...state.directMessages, [tid]: markFailed(state.directMessages[tid] || []) }
+            : state.directMessages,
+        };
+      });
+      return true;
+    }
+    console.warn('[SyncHandler:message] send failed, will retry:', error);
+    return false;
+  }
+});

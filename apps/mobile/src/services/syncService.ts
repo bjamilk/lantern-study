@@ -412,6 +412,18 @@ class SyncService {
   /**
    * Queue an operation for sync
    */
+  /**
+   * Register a handler from outside this module. Chat lives in groupStore, and
+   * registering its handler here would create an import cycle
+   * (groupStore -> syncService -> groupStore).
+   */
+  registerHandler(
+    entityType: SyncEntityType,
+    handler: (op: SyncOperation) => Promise<boolean>
+  ): void {
+    this.queue.registerHandler(entityType, handler);
+  }
+
   async queueOperation(
     entityType: SyncEntityType,
     entityId: string,
