@@ -161,8 +161,24 @@ A/B/C/D has been exercised on a device.
 | **C1** invites inbox | ✅ *UI only* — section, relative time and Decline/Accept render; Decline hit the real API and surfaced the server error without removing the row. The real `fetchPendingGroupInvites` payload is unexercised (this account has no pending invites) |
 | **B5** windowing | ⚠️ partial — `removeClippedSubviews` verified not to blank cells while scrolling 30 messages on Android. Rows actually dropping out of the window needs ~100+ messages, since `windowSize: 11` is eleven *screenfuls* |
 
-Not yet exercised: **C2–C4** invite round-trip (needs a second account/device) and the
-VoiceOver/TalkBack sweep for **D7**.
+| **C2** invite id in the link | ✅ link reads `…/invite/invite-1786224960214` — the `invite-` token, not the group UUID it used to carry |
+| **C4** invite panel | ✅ renders in the `GroupInfoModal` Members tab (its new home) with Share / Copy Link |
+| **C3** `/invite/<token>` deep link | ✅ firing `lanternstudy://invite/<token>` on Android navigated straight into the right group. Previously a complete no-op. Does **not** prove a non-member joining — both accounts could not be used, see below |
+| **D7** accessibility | ✅ measured from the `uiautomator` tree, not by eye: GroupChatScreen 20/20 clickable nodes labelled, GroupInfoModal 8/8 (was 14 pressables / 0 labels). Bubbles announce as e.g. "You at 5:06 PM. msg24m" |
+
+## ⚠️ iOS cannot receive deep links at all
+
+`app.config.ts` declares `scheme: 'lanternstudy'` and Android's manifest has it, but the
+generated **`ios/` project's `Info.plist` has no `CFBundleURLTypes`** — `simctl openurl`
+with the app scheme fails with `LSApplicationWorkspaceErrorDomain error 115`, and an
+`https://lanternstudy.com/invite/…` link opens Safari instead (no
+`apple-app-site-association` / associated-domains entitlement either). So **no invite link
+can open the iOS app**, regardless of C3. The `ios/` directory is out of sync with
+app.config; `npx expo prebuild -p ios` should regenerate it. Unrelated to phases A–D, and
+the reason the cross-account join could not be completed: the non-member account was on
+iOS, which cannot receive the link.
+
+Still unexercised: a genuine non-member join via an invite link.
 
 ## Verification debt (important)
 
