@@ -157,9 +157,12 @@ A/B/C/D has been exercised on a device.
 | **D2 + D3** offline banner | ✅ "Couldn't refresh your chats" over the cached list, with Retry |
 | **D4** ErrorState | ❌ **bug found** → fixed in `1d11ae0` → ✅ re-verified |
 
-Not yet exercised: **C1** (no pending invites on this account), **C2–C4** invite
-round-trip (needs a second account/device), **C7** `@AI` in a thread, **B5** windowing on a
-long list, and the VoiceOver/TalkBack sweep for **D7**.
+| **C7** `@AI` in a thread | ✅ "AI Tutor is thinking…" then the answer posted, threaded on the root |
+| **C1** invites inbox | ✅ *UI only* — section, relative time and Decline/Accept render; Decline hit the real API and surfaced the server error without removing the row. The real `fetchPendingGroupInvites` payload is unexercised (this account has no pending invites) |
+| **B5** windowing | ⚠️ partial — `removeClippedSubviews` verified not to blank cells while scrolling 30 messages on Android. Rows actually dropping out of the window needs ~100+ messages, since `windowSize: 11` is eleven *screenfuls* |
+
+Not yet exercised: **C2–C4** invite round-trip (needs a second account/device) and the
+VoiceOver/TalkBack sweep for **D7**.
 
 ## Verification debt (important)
 
