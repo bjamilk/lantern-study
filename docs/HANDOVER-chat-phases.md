@@ -104,6 +104,14 @@ list through a ref so its identity survives every incoming message. Windowing li
   hosts used to `setThreadRootId(null)`, so the thread vanished behind an alert with
   nothing to retry. `reloadThread` in both hosts now resolves rather than rejects, since it
   doubles as the ErrorState's Retry handler.
+- **D4 follow-up (found on device, Aug 8).** The screen-level `catch` in
+  `DirectMessageScreen.loadThread` was **dead code**: `fetchDirectMessagesForThread`
+  swallowed its own error (`console.warn` only) and resolved successfully, so an offline
+  thread with no cached messages still rendered "Start a conversation with X" — the exact
+  bug D exists to prevent. D2 fixed that swallow for `fetchGroups`/`fetchDmThreads` but
+  missed this one. The store action now returns `Promise<boolean>` (it deliberately does
+  not throw — several callers fire it un-awaited) and `loadThread` branches on the result.
+  Verified on the Android emulator in airplane mode: ErrorState + Retry.
 - **D7** — accessibility. Coverage went `GroupInfoModal` 14 pressables/0 labels/0 roles →
   14/14/14; `DmBubble` 6/2/1 → 6/6/6; `DmOffersPanel` 7/2/0 → 7/9/7; `MessageBubble`
   8/8/4 → 8/11/8. Voice-note labels in `DmBubble` are copied verbatim from

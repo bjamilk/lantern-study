@@ -508,12 +508,15 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     setFirstUnreadId(null);
     setNewMessagesBelow(0);
     try {
-      const [, previousLastReadAt] = await Promise.all([
+      const [fetched, previousLastReadAt] = await Promise.all([
         fetchDirectMessagesForThread(user.id, recipientId, threadId),
         markDMAsRead(threadId, user.id),
       ]);
       setUnreadAnchorAt(previousLastReadAt ?? null);
-      setLoadError(null);
+      // The store reports failure by return value, not by throwing — several
+      // callers fire it un-awaited. Without this check the catch below is dead
+      // code and an offline thread renders as "Start a conversation with X".
+      setLoadError(fetched ? null : 'Could not load this conversation.');
     } catch (error) {
       // Was a bare try/finally: a failed fetch left an empty list, so a 500
       // rendered as "Start a conversation with X" with no way to retry.

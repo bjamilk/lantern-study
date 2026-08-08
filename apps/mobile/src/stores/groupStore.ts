@@ -281,7 +281,13 @@ interface GroupState {
   setActiveDmThreadId: (threadId: string | null) => void;
   fetchDmThreads: (userId: string) => Promise<void>;
   fetchDMUnreadCounts: (userId: string) => Promise<void>;
-  fetchDirectMessagesForThread: (userId: string, otherUserId: string, threadId: string) => Promise<void>;
+  /**
+   * Resolves `true` on success, `false` when the fetch failed. It deliberately
+   * does not throw — several callers fire it without awaiting — but it must
+   * still report failure, or a screen cannot tell "no messages" from "could not
+   * load them" and renders an empty state over an error.
+   */
+  fetchDirectMessagesForThread: (userId: string, otherUserId: string, threadId: string) => Promise<boolean>;
   sendDirectMessageTo: (
     senderId: string,
     recipientId: string,
@@ -1596,7 +1602,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         () => api.fetchDirectMessages(userId, otherUserId),
         { delayMs: 400 }
       );
-      if (requestId !== dmFetchSeqByThread[threadId]) return;
+      if (requestId !== dmFetchSeqByThread[threadId]) return true;
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const mapped = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
       set(state => {
@@ -1623,9 +1629,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           directMessages: { ...state.directMessages, [threadId]: merged },
         };
       });
+      return true;
     } catch (error) {
-      if (requestId !== dmFetchSeqByThread[threadId]) return;
+      // A superseded request must not report failure — a newer one owns the outcome.
+      if (requestId !== dmFetchSeqByThread[threadId]) return true;
       console.warn('[GroupStore] Failed to fetch direct messages:', error);
+      return false;
     }
   },
 
