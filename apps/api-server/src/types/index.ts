@@ -71,7 +71,6 @@ export interface Group {
   createdAt?: string;
   unreadCount?: number;
   members?: User[];
-  pendingMembers?: User[];
   memberEmails?: string[];
   invitedPhoneNumbers?: string[];
 }

@@ -153,7 +153,7 @@ import {
 
 } from '../screens/marketplace';
 
-import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen } from '../screens/settings';
+import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen } from '../screens/settings';
 
 import { TestScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
@@ -1005,6 +1005,8 @@ function RootNavigatorInner() {
             <RootStack.Screen name="Settings" component={SettingsScreen} options={{ presentation: 'modal' }} />
 
             <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ presentation: 'modal' }} />
+
+            <RootStack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ presentation: 'modal' }} />
 
             <RootStack.Screen name="Offline" component={OfflineScreen} options={{ presentation: 'modal' }} />
 

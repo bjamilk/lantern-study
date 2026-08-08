@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { useGroupStore, type Message } from '../../stores/groupStore';
+import type { GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import {
   chatMessagePreview,
@@ -33,6 +33,13 @@ interface MessageBubbleProps {
   isOwn: boolean;
   userVote?: 'up' | 'down';
   memberCount: number;
+  /**
+   * Group roster, used to resolve the author label / mention handle / avatar.
+   * Passed down rather than read from the store: a per-row subscription meant N
+   * store subscriptions plus N `groups.find()` scans on every store mutation.
+   * Must be a referentially stable array or it defeats the memo below.
+   */
+  members?: GroupMember[];
   onVote?: (vote: 'up' | 'down') => void;
   flagCount?: number;
   userFlagged?: boolean;
@@ -304,11 +311,12 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
   );
 }
 
-export function MessageBubble({
+function MessageBubbleComponent({
   message,
   isOwn,
   userVote,
   memberCount,
+  members,
   onVote,
   flagCount,
   userFlagged,
@@ -323,21 +331,54 @@ export function MessageBubble({
   onRetry,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
-  const messageGroup = useGroupStore((state) =>
-    state.currentGroup?.id === message.groupId
-      ? state.currentGroup
-      : state.groups.find((group) => group.id === message.groupId)
-  );
   const [imageFailed, setImageFailed] = useState(false);
   const isQuestion = message.type === 'question';
-  const timeLabel = new Date(message.createdAt).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
   const audioUrl = !isQuestion ? parseChatAudioUrl(message.text) : null;
   const isRemoved = !!message.isRemoved || !!message.removedAt;
-  // Must run before any early return — removed vs normal messages must not change hook count.
+  // Everything below must run before the `isRemoved` early return — removed vs
+  // normal messages must not change the hook count.
   const questionImageUri = useResolvedStorageUrl(message.imageUrl);
+
+  const timeLabel = useMemo(
+    () =>
+      new Date(message.createdAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    [message.createdAt]
+  );
+
+  const optionItems = useMemo(
+    () =>
+      message.optionItems?.length
+        ? message.optionItems
+        : (message.options || []).map((opt, i) =>
+            typeof opt === 'string'
+              ? { id: String(i), text: opt }
+              : {
+                  id: (opt as { id?: string }).id || String(i),
+                  text: (opt as { text?: string }).text || String(opt),
+                }
+          ),
+    [message.optionItems, message.options]
+  );
+
+  const { authorLabel, mentionUsername, avatarUrl } = useMemo(() => {
+    const storedLabel = message.senderName?.trim() || '';
+    const sender = {
+      id: message.senderId,
+      username: storedLabel.startsWith('@') ? storedLabel.slice(1) : undefined,
+      name: storedLabel && !storedLabel.startsWith('@') ? storedLabel : undefined,
+    };
+    return {
+      authorLabel: resolveGroupChatSenderLabel(sender, members),
+      mentionUsername: resolveGroupChatMentionUsername(sender, members),
+      avatarUrl: resolveGroupChatAvatarUrl(
+        { id: message.senderId, avatarUrl: message.senderAvatar },
+        members
+      ),
+    };
+  }, [message.senderId, message.senderName, message.senderAvatar, members]);
 
   if (isRemoved) {
     return (
@@ -362,15 +403,6 @@ export function MessageBubble({
     );
   }
 
-  const optionItems =
-    message.optionItems?.length
-      ? message.optionItems
-      : (message.options || []).map((opt, i) =>
-          typeof opt === 'string'
-            ? { id: String(i), text: opt }
-            : { id: (opt as { id?: string }).id || String(i), text: (opt as { text?: string }).text || String(opt) }
-        );
-
   const ownTextBubbleStyle = { backgroundColor: colors.chatBubbleOwn };
   const ownQuestionBubbleStyle = {
     backgroundColor: colors.primaryBackground,
@@ -386,23 +418,6 @@ export function MessageBubble({
   const otherTextBubbleStyle = {
     backgroundColor: colors.chatBubbleOther,
   };
-  const storedLabel = message.senderName?.trim() || '';
-  const authorLabel = resolveGroupChatSenderLabel(
-    {
-      id: message.senderId,
-      username: storedLabel.startsWith('@') ? storedLabel.slice(1) : undefined,
-      name: storedLabel && !storedLabel.startsWith('@') ? storedLabel : undefined,
-    },
-    messageGroup?.members
-  );
-  const mentionUsername = resolveGroupChatMentionUsername(
-    {
-      id: message.senderId,
-      username: storedLabel.startsWith('@') ? storedLabel.slice(1) : undefined,
-    },
-    messageGroup?.members
-  );
-
   return (
     <SwipeToReply
       enabled={!!onSwipeReply}
@@ -417,14 +432,7 @@ export function MessageBubble({
         isGroupedWithPrevious ? (
           <View style={{ width: 28 }} />
         ) : (
-          <ResolvedAvatar
-            name={authorLabel}
-            uri={resolveGroupChatAvatarUrl(
-              { id: message.senderId, avatarUrl: message.senderAvatar },
-              messageGroup?.members
-            )}
-            size={28}
-          />
+          <ResolvedAvatar name={authorLabel} uri={avatarUrl} size={28} />
         )
       ) : null}
 
@@ -686,3 +694,12 @@ export function MessageBubble({
     </SwipeToReply>
   );
 }
+
+/**
+ * Default shallow comparator on purpose. A hand-written one is a silent
+ * correctness bug waiting to happen — it only has to forget `userVote`,
+ * `isGroupedWithPrevious` or `flagCount` for votes and grouping to go stale.
+ * The cost of that is that callers must pass stable callbacks and a stable
+ * `members` array; see MessageRow in GroupChatScreen.
+ */
+export const MessageBubble = React.memo(MessageBubbleComponent);

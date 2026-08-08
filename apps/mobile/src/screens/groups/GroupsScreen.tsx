@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -14,7 +15,13 @@ import type { DMThread } from '@lantern/shared/types';
 import { chatMessagePreview, resolveAvatarSrc } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type Group } from '../../stores/groupStore';
+import {
+  acceptGroupInvite,
+  declineGroupInvite,
+  fetchPendingGroupInvites,
+} from '../../services/api';
 import { Button, ScreenHeader } from '../../components/ui';
+import { CHAT_LIST_WINDOWING } from '../../components/chat/chatListWindowing';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import NewDirectMessageModal from '../../components/NewDirectMessageModal';
 import { useGroupHandlers } from '../../hooks/useGroupHandlers';
@@ -26,9 +33,17 @@ import { useLowDataMode } from '../../hooks/useLowDataMode';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
 
+interface PendingGroupInvite {
+  groupId: string;
+  groupName: string;
+  avatarUrl?: string;
+  invitedAt?: string;
+}
+
 type ListItem =
   | { kind: 'section'; title: string }
   | { kind: 'archivedHeader'; count: number }
+  | { kind: 'invite'; invite: PendingGroupInvite }
   | {
       kind: 'dm';
       thread: DMThread;
@@ -141,6 +156,69 @@ function ChatRow({
   );
 }
 
+/**
+ * A group invite the user has not answered yet. Until this existed the only way
+ * in was the push notification — if it was missed or dismissed, the invite was
+ * unreachable even though the server still had it pending.
+ */
+function InviteRow({
+  invite,
+  busy,
+  lowDataMode,
+  onAccept,
+  onDecline,
+}: {
+  invite: PendingGroupInvite;
+  busy: boolean;
+  lowDataMode?: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <View className="flex-row items-center gap-3 px-4 py-3.5 border-b border-lantern-border">
+      <ResolvedAvatar
+        name={invite.groupName}
+        uri={resolveAvatarSrc(invite.avatarUrl, lowDataMode)}
+        size={44}
+      />
+      <View className="flex-1 min-w-0">
+        <Text className="text-base font-semibold text-lantern-text" numberOfLines={1}>
+          {invite.groupName}
+        </Text>
+        <Text className="text-xs text-lantern-text-secondary mt-0.5" numberOfLines={1}>
+          Invited you to join{invite.invitedAt ? ` · ${formatRelativeTime(invite.invitedAt)}` : ''}
+        </Text>
+      </View>
+      <View className="flex-row items-center gap-2 shrink-0">
+        <Pressable
+          onPress={onDecline}
+          disabled={busy}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Decline invite to ${invite.groupName}`}
+          accessibilityState={{ disabled: busy }}
+          className="px-3 py-1.5 rounded-lg border border-lantern-border active:opacity-70"
+          style={{ opacity: busy ? 0.5 : 1 }}
+        >
+          <Text className="text-xs font-semibold text-lantern-text-secondary">Decline</Text>
+        </Pressable>
+        <Pressable
+          onPress={onAccept}
+          disabled={busy}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Accept invite to ${invite.groupName}`}
+          accessibilityState={{ disabled: busy }}
+          className="px-3 py-1.5 rounded-lg bg-lantern-primary active:opacity-70"
+          style={{ opacity: busy ? 0.5 : 1 }}
+        >
+          <Text className="text-xs font-semibold text-white">Accept</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function GroupsScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(16);
   const { colors } = useTheme();
@@ -152,6 +230,8 @@ export function GroupsScreen({ navigation }: Props) {
   const [dmModalOpen, setDmModalOpen] = useState(false);
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState<PendingGroupInvite[]>([]);
+  const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
 
   const subGroupsMap = useMemo(() => {
     const map: Record<string, Group[]> = {};
@@ -187,10 +267,20 @@ export function GroupsScreen({ navigation }: Props) {
     [groups, user?.id]
   );
 
+  const loadInvites = useCallback(async () => {
+    try {
+      const invites = await fetchPendingGroupInvites();
+      setPendingInvites(Array.isArray(invites) ? invites : []);
+    } catch {
+      // An invites fetch failure must not blank the chat list — leave whatever
+      // is already on screen and try again on the next refresh.
+    }
+  }, []);
+
   const loadChats = useCallback(async () => {
     if (!user?.id) return;
-    await Promise.all([fetchGroups(user.id), fetchDmThreads(user.id)]);
-  }, [user?.id, fetchGroups, fetchDmThreads]);
+    await Promise.all([fetchGroups(user.id), fetchDmThreads(user.id), loadInvites()]);
+  }, [user?.id, fetchGroups, fetchDmThreads, loadInvites]);
 
   useEffect(() => {
     loadChats();
@@ -258,6 +348,15 @@ export function GroupsScreen({ navigation }: Props) {
     });
 
     const rebuilt: ListItem[] = [];
+    // Invites sit above message requests: they are the more consequential ask,
+    // and an unanswered one hides a whole group from the list.
+    if (pendingInvites.length > 0) {
+      rebuilt.push({
+        kind: 'section',
+        title: `Group invites (${pendingInvites.length})`,
+      });
+      rebuilt.push(...pendingInvites.map((invite): ListItem => ({ kind: 'invite', invite })));
+    }
     if (inboundRequests.length > 0) {
       rebuilt.push({
         kind: 'section',
@@ -292,6 +391,7 @@ export function GroupsScreen({ navigation }: Props) {
     subGroupsMap,
     expandedParentGroups,
     archivedExpanded,
+    pendingInvites,
     user?.id,
   ]);
 
@@ -331,8 +431,53 @@ export function GroupsScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
+  const handleAcceptInvite = useCallback(
+    async (invite: PendingGroupInvite) => {
+      if (inviteBusyId) return;
+      setInviteBusyId(invite.groupId);
+      try {
+        await acceptGroupInvite(invite.groupId);
+        setPendingInvites((prev) => prev.filter((i) => i.groupId !== invite.groupId));
+        // Refetch before navigating — the group is not in the store yet, and
+        // GroupChatScreen reads its name and roster from there.
+        if (user?.id) await fetchGroups(user.id);
+        navigation.navigate('GroupChat', {
+          groupId: invite.groupId,
+          groupName: invite.groupName,
+        });
+      } catch (error) {
+        Alert.alert(
+          'Could not accept invite',
+          error instanceof Error ? error.message : 'Please try again.'
+        );
+      } finally {
+        setInviteBusyId(null);
+      }
+    },
+    [inviteBusyId, user?.id, fetchGroups, navigation]
+  );
+
+  const handleDeclineInvite = useCallback(
+    async (invite: PendingGroupInvite) => {
+      if (inviteBusyId) return;
+      setInviteBusyId(invite.groupId);
+      try {
+        await declineGroupInvite(invite.groupId);
+        setPendingInvites((prev) => prev.filter((i) => i.groupId !== invite.groupId));
+      } catch (error) {
+        Alert.alert(
+          'Could not decline invite',
+          error instanceof Error ? error.message : 'Please try again.'
+        );
+      } finally {
+        setInviteBusyId(null);
+      }
+    },
+    [inviteBusyId]
+  );
+
   const handlePress = (item: ListItem) => {
-    if (item.kind === 'section' || item.kind === 'archivedHeader') return;
+    if (item.kind === 'section' || item.kind === 'archivedHeader' || item.kind === 'invite') return;
     if (item.kind === 'group') {
       handleSelectGroup(item.group);
       return;
@@ -366,14 +511,17 @@ export function GroupsScreen({ navigation }: Props) {
       ) : (
         <FlatList
           data={listItems}
+          {...CHAT_LIST_WINDOWING}
           keyExtractor={item =>
             item.kind === 'section'
               ? `section-${item.title}`
               : item.kind === 'archivedHeader'
                 ? 'section-archived'
-                : item.kind === 'dm'
-                  ? `dm-${item.thread.id}`
-                  : `group-${item.group.id}-L${item.nestingLevel}`
+                : item.kind === 'invite'
+                  ? `invite-${item.invite.groupId}`
+                  : item.kind === 'dm'
+                    ? `dm-${item.thread.id}`
+                    : `group-${item.group.id}-L${item.nestingLevel}`
           }
           contentContainerStyle={{ paddingBottom: tabBarClearance }}
           refreshControl={
@@ -422,6 +570,17 @@ export function GroupsScreen({ navigation }: Props) {
                     color={colors.textTertiary}
                   />
                 </Pressable>
+              );
+            }
+            if (item.kind === 'invite') {
+              return (
+                <InviteRow
+                  invite={item.invite}
+                  busy={inviteBusyId === item.invite.groupId}
+                  lowDataMode={lowDataMode}
+                  onAccept={() => void handleAcceptInvite(item.invite)}
+                  onDecline={() => void handleDeclineInvite(item.invite)}
+                />
               );
             }
             if (item.kind === 'dm') {

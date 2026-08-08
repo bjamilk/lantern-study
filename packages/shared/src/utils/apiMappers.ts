@@ -128,7 +128,6 @@ export const mapGroupFromApi = (data: any): Group => {
     parentId: data.parent_id || data.parentId,
     isArchived: data.is_archived || data.isArchived || false,
     inviteId: data.invite_id || data.inviteId,
-    pendingMembers: (data.pending_members || data.pendingMembers || []).map(mapUserFromApi),
     permissions: data.permissions,
     invitedPhoneNumbers: data.invited_phone_numbers || data.invitedPhoneNumbers,
   };

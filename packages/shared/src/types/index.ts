@@ -173,7 +173,6 @@ export interface Group {
   parentId?: string;
   isArchived?: boolean;
   inviteId?: string;
-  pendingMembers?: User[];
   permissions?: GroupPermissions;
   invitedPhoneNumbers?: string[];
 }

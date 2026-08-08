@@ -36,3 +36,4 @@ export * from './noteComments';
 export * from './groupTree';
 export * from './groupPerformanceSeries';
 export * from './marketplaceOfferTurn';
+export * from './aiChatQuery';

@@ -1,7 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { featureAccents } from '@lantern/shared/design';
-import { buildChatAudioMarkdown, chatMessagePreview } from '@lantern/shared/utils';
+import {
+  buildChatAudioMarkdown,
+  chatMessagePreview,
+  formatAiTutorReply,
+  parseAiQuery,
+} from '@lantern/shared/utils';
 import type { MessageReplyPreview } from '../types';
 import { uploadChatAudio } from '../services/supabase';
 
@@ -195,9 +200,8 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     const trimmed = (overrideText ?? inputText).trim();
     if (!trimmed) return;
 
-    const aiMatch = editingMessage ? null : trimmed.match(/^(?:@AI\s+|\/ask\s+)(.+)/is);
-    if (aiMatch && onAIQuery) {
-      const question = aiMatch[1].trim();
+    const question = editingMessage ? null : parseAiQuery(trimmed);
+    if (question && onAIQuery) {
       setInputText('');
       setIsAIThinking(true);
       try {
@@ -205,7 +209,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
         if (answer) {
           setIsSending(true);
           try {
-            await onSendMessage(`🤖 AI Tutor:\n${answer}`, {
+            await onSendMessage(formatAiTutorReply(answer), {
               replyToMessageId: replyTo?.id,
             });
             onClearReply?.();

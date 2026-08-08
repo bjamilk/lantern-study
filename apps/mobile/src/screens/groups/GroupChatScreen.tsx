@@ -23,6 +23,7 @@ import QuestionModal from '../../components/QuestionModal';
 import AddMembersModal from '../../components/AddMembersModal';
 import AIGenerateQuestionsModal from '../../components/AIGenerateQuestionsModal';
 import {
+  CHAT_LIST_WINDOWING,
   ChatComposer,
   ChatThreadModal,
   GroupChatHeader,
@@ -31,13 +32,15 @@ import {
   isDifferentChatDay,
   type GroupChatHeaderAction,
 } from '../../components/chat';
+import { useAiTutorSend } from '../../hooks/useAiTutorSend';
+import { useChatImageAttach } from '../../hooks/useChatImageAttach';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode';
 import { useTheme } from '../../theme';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
-import { aiAskTutor, summarizeGroupChat } from '../../services/ai';
+import { summarizeGroupChat } from '../../services/ai';
 import * as api from '../../services/api';
 import { navigateToTestTaking } from '../../navigation/navigationRef';
 import {
@@ -45,6 +48,7 @@ import {
   canEditChatMessage,
   canRemoveChatMessage,
   messagePassesQuestionVisibility,
+  parseAiQuery,
   shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
 import {
@@ -178,10 +182,96 @@ function NewMessagesDivider() {
   );
 }
 
-const NEAR_BOTTOM_PX = 120;
+interface MessageRowProps {
+  message: Message;
+  isOwn: boolean;
+  userVote?: 'up' | 'down';
+  memberCount: number;
+  members?: GroupMember[];
+  flagCount: number;
+  userFlagged: boolean;
+  canFlag: boolean;
+  canVote: boolean;
+  dateLabel: string | null;
+  showUnreadDivider: boolean;
+  isGroupedWithPrevious: boolean;
+  onVoteMessage: (message: Message, vote: 'up' | 'down') => void;
+  onFlagMessage: (message: Message) => void;
+  onReply: (message: Message) => void;
+  onSwipeReply: (message: Message) => void;
+  onMentionUser: (username: string) => void;
+  onScrollToMessage: (messageId: string) => void;
+  onOpenThread: (rootId: string) => void;
+  onRetry: (message: Message) => void;
+}
 
-/** Mirrors web's MessageInputBar: "@AI <question>" / "/ask <question>". */
-const AI_QUERY_PATTERN = /^(?:@AI\s+|\/ask\s+)(.+)/is;
+/**
+ * One chat row: date separator, unread divider, bubble. Memoized so a keystroke
+ * in the composer (or another row's realtime update) re-renders nothing here.
+ *
+ * Everything crossing the memo boundary is either a primitive or referentially
+ * stable — the grouping/divider decisions arrive pre-computed as primitives, and
+ * the per-message closures the bubble wants are built *inside* the row, so they
+ * only change when this row's own props do. The screen-level handlers below must
+ * stay `useCallback`-stable or this memo is decorative.
+ */
+const MessageRow = React.memo(function MessageRow({
+  message,
+  isOwn,
+  userVote,
+  memberCount,
+  members,
+  flagCount,
+  userFlagged,
+  canFlag,
+  canVote,
+  dateLabel,
+  showUnreadDivider,
+  isGroupedWithPrevious,
+  onVoteMessage,
+  onFlagMessage,
+  onReply,
+  onSwipeReply,
+  onMentionUser,
+  onScrollToMessage,
+  onOpenThread,
+  onRetry,
+}: MessageRowProps) {
+  const handleVote = useCallback(
+    (vote: 'up' | 'down') => onVoteMessage(message, vote),
+    [message, onVoteMessage]
+  );
+  const handleFlag = useCallback(() => onFlagMessage(message), [message, onFlagMessage]);
+  const isQuestion = message.type === 'question';
+
+  return (
+    <View>
+      {dateLabel ? <ChatDateSeparator label={dateLabel} /> : null}
+      {showUnreadDivider ? <NewMessagesDivider /> : null}
+      <MessageBubble
+        message={message}
+        isOwn={isOwn}
+        userVote={userVote}
+        memberCount={memberCount}
+        members={members}
+        isGroupedWithPrevious={isGroupedWithPrevious}
+        onVote={isQuestion && canVote ? handleVote : undefined}
+        flagCount={flagCount}
+        userFlagged={userFlagged}
+        onFlag={isQuestion && canVote ? handleFlag : undefined}
+        canFlag={canFlag}
+        onReply={onReply}
+        onSwipeReply={onSwipeReply}
+        onMentionUser={onMentionUser}
+        onScrollToMessage={onScrollToMessage}
+        onOpenThread={onOpenThread}
+        onRetry={onRetry}
+      />
+    </View>
+  );
+});
+
+const NEAR_BOTTOM_PX = 120;
 
 export function GroupChatScreen({ navigation, route }: Props) {
   const { groupId, groupName, openAddMembers } = route.params;
@@ -235,7 +325,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [aiThinking, setAiThinking] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [showTestConfig, setShowTestConfig] = useState(false);
@@ -341,6 +430,10 @@ export function GroupChatScreen({ navigation, route }: Props) {
         messagePassesQuestionVisibility(msg, questionVisibilityMode)
     );
   }, [groupMessages, questionVisibilityMode]);
+
+  // Read by handlers that must not take `displayMessages` as a dependency.
+  const displayMessagesRef = useRef(displayMessages);
+  displayMessagesRef.current = displayMessages;
 
   // Only TestConfigModal / ChallengeModal consume the chain below, and both are
   // mounted-but-hidden, so it used to recompute on every incoming message.
@@ -637,43 +730,37 @@ export function GroupChatScreen({ navigation, route }: Props) {
     return members;
   }, [mentionRoster, user?.id, currentGroup?.ownerId, currentGroup?.adminIds]);
 
+  // Captured at trigger time: the reply target is cleared before the answer
+  // comes back, and the answer must still thread onto what was replied to.
+  const aiReplyToIdRef = useRef<string | undefined>(undefined);
+
+  const postAiAnswer = useCallback(
+    async (answerText: string) => {
+      if (!user?.id) return;
+      isNearBottomRef.current = true;
+      setReplyTo(null);
+      await sendMessage(groupId, answerText, user.id, undefined, {
+        replyToMessageId: aiReplyToIdRef.current,
+      });
+      listRef.current?.scrollToEnd({ animated: true });
+      setNewMessagesBelow(0);
+    },
+    [groupId, sendMessage, user?.id]
+  );
+
+  const { trySend: tryAiTutorSend, aiThinking } = useAiTutorSend({ onPostAnswer: postAiAnswer });
+
   const handleSend = async (overrideText?: string) => {
     const trimmed = (overrideText ?? text).trim();
     if (!trimmed || !user?.id || sending || aiThinking) return;
 
     // Same trigger as web: "@AI <question>" or "/ask <question>" answers in-chat
     // instead of posting the question. Not available while editing a message.
-    const aiMatch = editingMessage ? null : trimmed.match(AI_QUERY_PATTERN);
-    if (aiMatch) {
-      const question = aiMatch[1]!.trim();
+    if (!editingMessage && parseAiQuery(trimmed)) {
       if (!overrideText) setText('');
-      const replyId = replyTo?.id;
-      setAiThinking(true);
-      try {
-        const { answer } = await aiAskTutor(question);
-        if (!answer) {
-          // A 200 with an empty answer (quota exhausted, provider returned
-          // nothing) used to swallow the question along with the composer text.
-          if (!overrideText) setText(trimmed);
-          Alert.alert('No answer', 'The AI Tutor did not return an answer. Please try again.');
-        } else {
-          isNearBottomRef.current = true;
-          setReplyTo(null);
-          await sendMessage(groupId, `🤖 AI Tutor:\n${answer}`, user.id, undefined, {
-            replyToMessageId: replyId,
-          });
-          listRef.current?.scrollToEnd({ animated: true });
-          setNewMessagesBelow(0);
-        }
-      } catch (error) {
-        if (!overrideText) setText(trimmed);
-        Alert.alert(
-          'AI Tutor failed',
-          error instanceof Error ? error.message : 'Please try again.'
-        );
-      } finally {
-        setAiThinking(false);
-      }
+      aiReplyToIdRef.current = replyTo?.id;
+      const result = await tryAiTutorSend(trimmed);
+      if (result === 'failed' && !overrideText) setText(trimmed);
       return;
     }
 
@@ -797,6 +884,66 @@ export function GroupChatScreen({ navigation, route }: Props) {
     ]);
   }, [beginEdit, beginReply, confirmRemoveMessage, user?.id]);
 
+  // Row handlers, all stable — MessageRow's memo is only worth anything if these
+  // keep their identity across composer keystrokes and incoming messages.
+  const handleVoteMessage = useCallback(
+    (message: Message, vote: 'up' | 'down') => {
+      if (!user?.id) return;
+      void voteOnMessage(groupId, message.id, user.id, vote);
+    },
+    [groupId, user?.id, voteOnMessage]
+  );
+
+  const handleFlagMessage = useCallback(
+    (message: Message) => {
+      if (!user?.id) return;
+      void flagMessageAsSimilar(message.id, groupId, user.id);
+    },
+    [flagMessageAsSimilar, groupId, user?.id]
+  );
+
+  const handleMentionUser = useCallback((username: string) => {
+    setSeedMentionUsername(username);
+  }, []);
+
+  // Reads the list through a ref so the handler identity does not change on
+  // every new message — which would re-render every row it is passed to.
+  const handleScrollToMessage = useCallback((messageId: string) => {
+    const index = displayMessagesRef.current.findIndex((m) => m.id === messageId);
+    if (index >= 0) {
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
+    }
+  }, []);
+
+  const handleRetryMessage = useCallback(
+    (message: Message) => {
+      if (!user?.id) return;
+      void retryFailedMessage(groupId, message.id, user.id).catch(() => undefined);
+    },
+    [groupId, retryFailedMessage, user?.id]
+  );
+
+  const sendImageMarkdown = useCallback(
+    async (markdown: string) => {
+      if (!user?.id) return;
+      await sendMessage(
+        groupId,
+        markdown,
+        user.id,
+        user.user_metadata?.full_name || user.email || 'User',
+        { replyToMessageId: replyTo?.id }
+      );
+      setReplyTo(null);
+    },
+    [groupId, replyTo?.id, sendMessage, user?.id, user?.email, user?.user_metadata?.full_name]
+  );
+
+  const attachImage = useChatImageAttach({
+    chatId: groupId,
+    onSendMarkdown: sendImageMarkdown,
+    enabled: !!user?.id,
+  });
+
   const handleSummarize = async () => {
     if (!user?.id || summarizing) return;
     setSummarizing(true);
@@ -848,14 +995,21 @@ export function GroupChatScreen({ navigation, route }: Props) {
     setShowAddMembers(false);
   };
 
-  const inviteLink = currentGroup?.id
-    ? `https://lanternstudy.com/invite/${(currentGroup as any).inviteId || currentGroup.id}`
-    : '';
-
   const group = currentGroup;
   const isAdmin =
     group?.ownerId === user?.id || group?.adminIds?.includes(user?.id || '') || false;
   const memberCount = group?.memberCount || group?.members?.length || 0;
+  // Handed to every bubble in place of the per-row store subscription it used to
+  // hold. Stable while the roster is: the store replaces this array only on fetch.
+  const groupMembers = group?.members;
+
+  // MessageRow is memoized and reads none of these from the store, so FlatList
+  // needs them here — without it a vote, the unread divider or a sign-in change
+  // silently fails to repaint rows that are already mounted.
+  const listExtraData = useMemo(
+    () => ({ userVotes, firstUnreadId, userId: user?.id, members: groupMembers }),
+    [userVotes, firstUnreadId, user?.id, groupMembers]
+  );
 
   // archiveGroup is a toggle, so this unarchives an archived group.
   const handleToggleArchive = useCallback(async () => {
@@ -1117,6 +1271,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             ref={listRef}
             data={displayMessages}
             keyExtractor={item => item.id}
+            {...CHAT_LIST_WINDOWING}
             className="flex-1"
             style={{ backgroundColor: colors.chatBackground }}
             contentContainerClassName="px-4 py-4 flex-grow"
@@ -1159,6 +1314,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
                 <Text className="text-sm text-lantern-text-secondary">No messages yet. Say hello!</Text>
               </View>
             }
+            // MessageRow closes over none of these, so the list must be told
+            // when they change or votes / the unread divider go stale.
+            extraData={listExtraData}
             renderItem={({ item, index }) => {
               const previous = index > 0 ? displayMessages[index - 1] : undefined;
               const showDate =
@@ -1175,50 +1333,30 @@ export function GroupChatScreen({ navigation, route }: Props) {
                 new Date(item.createdAt).getTime() - new Date(previous.createdAt).getTime() < 5 * 60 * 1000;
 
               return (
-                <View>
-                  {showDate ? (
-                    <ChatDateSeparator label={formatChatDateLabel(item.createdAt)} />
-                  ) : null}
-                  {showUnreadDivider ? <NewMessagesDivider /> : null}
-                  <MessageBubble
-                    message={item}
-                    isOwn={item.senderId === user?.id}
-                    userVote={userVotes[item.id]}
-                    memberCount={memberCount}
-                    isGroupedWithPrevious={isGroupedWithPrevious}
-                    onVote={
-                      item.type === 'question' && user?.id
-                        ? vote => void voteOnMessage(groupId, item.id, user.id!, vote)
-                        : undefined
-                    }
-                    flagCount={item.flaggedAsSimilarUserIds?.length ?? 0}
-                    userFlagged={
-                      user?.id
-                        ? item.flaggedAsSimilarUserIds?.includes(user.id) ?? false
-                        : false
-                    }
-                    onFlag={
-                      item.type === 'question' && user?.id
-                        ? () => void flagMessageAsSimilar(item.id, groupId, user.id!)
-                        : undefined
-                    }
-                    canFlag={item.senderId !== user?.id}
-                    onReply={showMessageActions}
-                    onSwipeReply={beginReply}
-                    onMentionUser={(username) => setSeedMentionUsername(username)}
-                    onScrollToMessage={(messageId) => {
-                      const index = displayMessages.findIndex((m) => m.id === messageId);
-                      if (index >= 0) {
-                        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
-                      }
-                    }}
-                    onOpenThread={handleOpenThread}
-                    onRetry={(m) => {
-                      if (!user?.id) return;
-                      void retryFailedMessage(groupId, m.id, user.id).catch(() => undefined);
-                    }}
-                  />
-                </View>
+                <MessageRow
+                  message={item}
+                  isOwn={item.senderId === user?.id}
+                  userVote={userVotes[item.id]}
+                  memberCount={memberCount}
+                  members={groupMembers}
+                  flagCount={item.flaggedAsSimilarUserIds?.length ?? 0}
+                  userFlagged={
+                    user?.id ? item.flaggedAsSimilarUserIds?.includes(user.id) ?? false : false
+                  }
+                  canFlag={item.senderId !== user?.id}
+                  canVote={!!user?.id}
+                  dateLabel={showDate ? formatChatDateLabel(item.createdAt) : null}
+                  showUnreadDivider={showUnreadDivider}
+                  isGroupedWithPrevious={isGroupedWithPrevious}
+                  onVoteMessage={handleVoteMessage}
+                  onFlagMessage={handleFlagMessage}
+                  onReply={showMessageActions}
+                  onSwipeReply={beginReply}
+                  onMentionUser={handleMentionUser}
+                  onScrollToMessage={handleScrollToMessage}
+                  onOpenThread={handleOpenThread}
+                  onRetry={handleRetryMessage}
+                />
               );
             }}
           />
@@ -1290,24 +1428,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onSendAudioMarkdown={async (markdown) => {
             await handleSend(markdown);
           }}
-          onAttachImage={async (uri, mimeType) => {
-            if (!user?.id) return;
-            try {
-              const { uploadChatImage } = await import('../../services/chatImageUpload');
-              const { url } = await uploadChatImage(uri, mimeType, groupId);
-              await sendMessage(
-                groupId,
-                `![image](${url})`,
-                user.id,
-                user.user_metadata?.full_name || user.email || 'User',
-                { replyToMessageId: replyTo?.id }
-              );
-              setReplyTo(null);
-            } catch {
-              const { useToastStore } = await import('../../stores/toastStore');
-              useToastStore.getState().showToast('Failed to send image.', 'error');
-            }
-          }}
+          onAttachImage={attachImage}
         />
         )}
       </KeyboardAvoidingView>
@@ -1417,7 +1538,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onClose={() => setShowAddMembers(false)}
           groupId={groupId}
           groupName={displayName}
-          inviteLink={inviteLink}
+          inviteId={currentGroup?.inviteId}
           groupMemberIds={group?.members.map(m => m.userId) || []}
           currentUserId={user.id}
           onAddMembers={handleAddMembers}
@@ -1503,6 +1624,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
         currentUserId={user?.id}
         isGroup
         memberCount={memberCount}
+        members={groupMembers}
+        mentionCandidates={mentionCandidates}
         userVotes={userVotes}
         onVote={(messageId, vote) => {
           if (!user?.id) return;

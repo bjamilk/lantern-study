@@ -945,6 +945,14 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
+              icon="ban-outline"
+              iconColor="#ef4444"
+              title="Blocked Users"
+              subtitle="Review and unblock people you have blocked"
+              onPress={() => navigation.navigate('BlockedUsers' as never)}
+            />
+            <SettingItem
+              colors={colors}
               icon="search-outline"
               iconColor="#6366f1"
               title="Discoverable for Invites"

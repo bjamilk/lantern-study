@@ -24,6 +24,8 @@ import {
 } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type DirectMessage } from '../../stores/groupStore';
+import { useChatImageAttach } from '../../hooks/useChatImageAttach';
+import { CHAT_LIST_WINDOWING } from '../../components/chat/chatListWindowing';
 import { ChatComposer } from '../../components/chat/ChatComposer';
 import { ChatThreadModal } from '../../components/chat/ChatThreadModal';
 import { DmBubble } from '../../components/chat/DmBubble';
@@ -78,62 +80,91 @@ function NewMessagesDivider() {
   );
 }
 
-function DmBubbleWrapper({
-  message,
-  isOwn,
-  senderName,
-  senderAvatar,
-  onReply,
-  onSwipeReply,
-  onScrollToMessage,
-  onOpenThread,
-  onRetry,
-}: {
+interface DmMessageRowProps {
   message: DirectMessage;
   isOwn: boolean;
   senderName?: string;
   senderAvatar?: string | null;
-  onReply?: () => void;
-  onSwipeReply?: () => void;
-  onScrollToMessage?: (messageId: string) => void;
-  onOpenThread?: (rootId: string) => void;
-  onRetry?: () => void;
-}) {
-  const timestamp =
-    message.timestamp instanceof Date ? message.timestamp.toISOString() : String(message.timestamp);
-  return (
-    <DmBubble
-      message={{
-        text: message.text,
-        timestamp,
-        editedAt: message.editedAt,
-        removedAt: message.removedAt,
-        isRemoved: message.isRemoved,
-        replyCount: message.replyCount,
-        receiptStatus: message.receiptStatus,
-        deliveryState: message.deliveryState,
-        replyTo: message.replyTo
-          ? {
-              id: message.replyTo.id,
-              senderName: message.replyTo.senderName,
-              text: message.replyTo.text,
-              isRemoved: message.replyTo.isRemoved,
-            }
-          : null,
-      }}
-      isOwn={isOwn}
-      senderName={isOwn ? undefined : senderName}
-      senderAvatar={isOwn ? undefined : senderAvatar}
-      onReply={onReply}
-      onSwipeReply={onSwipeReply}
-      onRetry={onRetry}
-      onScrollToMessage={onScrollToMessage}
-      onOpenThread={onOpenThread}
-      threadRootId={message.threadRootId}
-      messageId={message.id}
-    />
-  );
+  showUnreadDivider: boolean;
+  onReplyToMessage: (message: DirectMessage) => void;
+  onSwipeReplyToMessage: (message: DirectMessage) => void;
+  onScrollToMessage: (messageId: string) => void;
+  onOpenThread: (rootId: string) => void;
+  onRetryMessage: (message: DirectMessage) => void;
 }
+
+/**
+ * DM equivalent of the group screen's MessageRow. `DmBubble` takes a projection
+ * of the message rather than the message itself, so that object has to be
+ * memoized here — a fresh literal per render would defeat the bubble's memo
+ * outright. Same for the per-message closures.
+ */
+const DmMessageRow = React.memo(function DmMessageRow({
+  message,
+  isOwn,
+  senderName,
+  senderAvatar,
+  showUnreadDivider,
+  onReplyToMessage,
+  onSwipeReplyToMessage,
+  onScrollToMessage,
+  onOpenThread,
+  onRetryMessage,
+}: DmMessageRowProps) {
+  const bubbleMessage = useMemo(() => {
+    const timestamp =
+      message.timestamp instanceof Date
+        ? message.timestamp.toISOString()
+        : String(message.timestamp);
+    return {
+      text: message.text,
+      timestamp,
+      editedAt: message.editedAt,
+      removedAt: message.removedAt,
+      isRemoved: message.isRemoved,
+      replyCount: message.replyCount,
+      receiptStatus: message.receiptStatus,
+      deliveryState: message.deliveryState,
+      replyTo: message.replyTo
+        ? {
+            id: message.replyTo.id,
+            senderName: message.replyTo.senderName,
+            text: message.replyTo.text,
+            isRemoved: message.replyTo.isRemoved,
+          }
+        : null,
+    };
+  }, [message]);
+
+  const handleReply = useCallback(
+    () => onReplyToMessage(message),
+    [message, onReplyToMessage]
+  );
+  const handleSwipeReply = useCallback(
+    () => onSwipeReplyToMessage(message),
+    [message, onSwipeReplyToMessage]
+  );
+  const handleRetry = useCallback(() => onRetryMessage(message), [message, onRetryMessage]);
+
+  return (
+    <View>
+      {showUnreadDivider ? <NewMessagesDivider /> : null}
+      <DmBubble
+        message={bubbleMessage}
+        isOwn={isOwn}
+        senderName={isOwn ? undefined : senderName}
+        senderAvatar={isOwn ? undefined : senderAvatar}
+        onReply={handleReply}
+        onSwipeReply={handleSwipeReply}
+        onRetry={handleRetry}
+        onScrollToMessage={onScrollToMessage}
+        onOpenThread={onOpenThread}
+        threadRootId={message.threadRootId}
+        messageId={message.id}
+      />
+    </View>
+  );
+});
 
 export function DirectMessageScreen({ navigation, route }: Props) {
   const { threadId, recipientId, recipientName } = route.params;
@@ -194,6 +225,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     () => rawMessages.filter((message) => shouldRenderRemovedMessage(message, rawMessages)),
     [rawMessages]
   );
+  // Read by handlers that must not take `messages` as a dependency.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const thread = dmThreads.find((t) => t.id === threadId);
   const peerAvatarUrl =
     (recipientId && thread?.participants?.[recipientId]?.avatarUrl) ||
@@ -599,6 +633,21 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     }
   };
 
+  // `handleSend` is re-created every render; going through a ref keeps the
+  // attach handler's identity stable for the composer.
+  const handleSendRef = useRef(handleSend);
+  handleSendRef.current = handleSend;
+
+  const sendImageMarkdown = useCallback(async (markdown: string) => {
+    await handleSendRef.current(markdown);
+  }, []);
+
+  const attachImage = useChatImageAttach({
+    chatId: threadId,
+    onSendMarkdown: sendImageMarkdown,
+    enabled: !!user?.id,
+  });
+
   const beginReply = useCallback((message: DirectMessage) => {
     setEditingMessage(null);
     setReplyTo({
@@ -672,6 +721,30 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       },
     ]);
   }, [beginEdit, beginReply, confirmRemoveMessage, user?.id]);
+
+  // Reads the list through a ref so its identity survives every new message —
+  // otherwise every row re-renders whenever the thread grows.
+  const handleScrollToMessage = useCallback((messageId: string) => {
+    const index = messagesRef.current.findIndex((m) => m.id === messageId);
+    if (index >= 0) {
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
+    }
+  }, []);
+
+  const handleRetryMessage = useCallback(
+    (message: DirectMessage) => {
+      if (!user?.id) return;
+      void retryFailedDirectMessage(threadId, message.id, user.id).catch(() => undefined);
+    },
+    [retryFailedDirectMessage, threadId, user?.id]
+  );
+
+  // DmMessageRow is memoized, so the list has to be told when the values the
+  // rows are *given* change — otherwise the unread divider goes stale.
+  const listExtraData = useMemo(
+    () => ({ firstUnreadId, userId: user?.id, displayName, peerAvatarUrl }),
+    [firstUnreadId, user?.id, displayName, peerAvatarUrl]
+  );
 
   const handleBack = useCallback(() => {
     if (navigation.canGoBack?.()) {
@@ -853,6 +926,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               ref={listRef}
               data={messages}
               keyExtractor={item => item.id}
+              {...CHAT_LIST_WINDOWING}
               className="flex-1"
               style={{ backgroundColor: colors.chatBackground }}
               contentContainerClassName="px-4 py-4 flex-grow"
@@ -873,35 +947,25 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   </Text>
                 </View>
               }
+              // DmMessageRow is memoized and closes over none of these.
+              extraData={listExtraData}
               renderItem={({ item }) => (
-                <View>
-                  {firstUnreadId === item.id ? <NewMessagesDivider /> : null}
-                  <DmBubbleWrapper
-                    message={item}
-                    isOwn={item.senderId === user?.id}
-                    senderName={displayName}
-                    senderAvatar={
-                      item.senderId === user?.id
-                        ? undefined
-                        : peerAvatarUrl || item.senderAvatar || undefined
-                    }
-                    onReply={() => showMessageActions(item)}
-                    onSwipeReply={() => beginReply(item)}
-                    onScrollToMessage={(messageId) => {
-                      const index = messages.findIndex((m) => m.id === messageId);
-                      if (index >= 0) {
-                        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
-                      }
-                    }}
-                    onOpenThread={handleOpenThread}
-                    onRetry={() => {
-                      if (!user?.id) return;
-                      void retryFailedDirectMessage(threadId, item.id, user.id).catch(
-                        () => undefined
-                      );
-                    }}
-                  />
-                </View>
+                <DmMessageRow
+                  message={item}
+                  isOwn={item.senderId === user?.id}
+                  senderName={displayName}
+                  senderAvatar={
+                    item.senderId === user?.id
+                      ? undefined
+                      : peerAvatarUrl || item.senderAvatar || undefined
+                  }
+                  showUnreadDivider={firstUnreadId === item.id}
+                  onReplyToMessage={showMessageActions}
+                  onSwipeReplyToMessage={beginReply}
+                  onScrollToMessage={handleScrollToMessage}
+                  onOpenThread={handleOpenThread}
+                  onRetryMessage={handleRetryMessage}
+                />
               )}
             />
             {newMessagesBelow > 0 ? (
@@ -1054,6 +1118,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             onSendAudioMarkdown={async (markdown) => {
               await handleSend(markdown);
             }}
+            onAttachImage={attachImage}
           />
         )}
       </KeyboardAvoidingView>

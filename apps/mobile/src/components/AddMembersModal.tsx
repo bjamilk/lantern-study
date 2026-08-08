@@ -12,13 +12,12 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Share,
   FlatList,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import { ThemeScope, useTheme } from '../theme';
+import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
 import * as api from '../services/api';
 import { ResolvedAvatar } from './ResolvedAvatar';
 
@@ -37,7 +36,8 @@ interface AddMembersModalProps {
   onClose: () => void;
   groupId: string;
   groupName: string;
-  inviteLink: string;
+  /** The group's server-side invite token, not its id. Absent = no link to share. */
+  inviteId?: string;
   groupMemberIds: string[];
   currentUserId: string;
   onAddMembers: (userIds: string[]) => void;
@@ -48,7 +48,7 @@ export default function AddMembersModal({
   onClose,
   groupId,
   groupName,
-  inviteLink,
+  inviteId,
   groupMemberIds,
   currentUserId,
   onAddMembers,
@@ -58,7 +58,6 @@ export default function AddMembersModal({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [copied, setCopied] = useState(false);
   const { colors } = useTheme();
   const searchRequestRef = useRef(0);
   const memberIdSet = useMemo(() => new Set(groupMemberIds), [groupMemberIds]);
@@ -70,7 +69,6 @@ export default function AddMembersModal({
       setSearchTerm('');
       setSearchResults([]);
       setSelectedUserIds([]);
-      setCopied(false);
     }
   }, [visible]);
 
@@ -114,23 +112,6 @@ export default function AddMembersModal({
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm, view, memberIdSet, currentUserId]);
-
-  const handleCopyLink = async () => {
-    await Clipboard.setStringAsync(inviteLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleShareLink = async () => {
-    try {
-      await Share.share({
-        message: `Join my study group "${groupName}" on Lantern Study!\n\n${inviteLink}`,
-        title: `Join ${groupName}`,
-      });
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
-  };
 
   const handleUserToggle = (userId: string) => {
     setSelectedUserIds(prev =>
@@ -309,44 +290,7 @@ export default function AddMembersModal({
 
   const renderInviteView = () => (
     <ScrollView style={styles.inviteView} showsVerticalScrollIndicator={false}>
-      <View style={[styles.section, { backgroundColor: colors.background }]}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="link" size={22} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Share Invite Link</Text>
-        </View>
-        <Text style={[styles.sectionDescription, { color: colors.textSecondary }]}>
-          Anyone with this link can join the group
-        </Text>
-
-        <View style={[styles.linkContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.linkText, { color: colors.primary }]} numberOfLines={1}>
-            {inviteLink}
-          </Text>
-          <TouchableOpacity 
-            style={[styles.copyButton, copied && styles.copiedButton]}
-            onPress={handleCopyLink}
-          >
-            <Ionicons 
-              name={copied ? 'checkmark' : 'copy'} 
-              size={18} 
-              color="#ffffff" 
-            />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.shareButtons}>
-          <TouchableOpacity style={styles.shareButton} onPress={handleShareLink}>
-            <Ionicons name="share-social" size={20} color="#ffffff" />
-            <Text style={styles.shareButtonText}>Share</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.shareButton} onPress={handleCopyLink}>
-            <Ionicons name="copy" size={20} color="#ffffff" />
-            <Text style={styles.shareButtonText}>
-              {copied ? 'Copied!' : 'Copy Link'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <GroupInviteLinkPanel groupName={groupName} inviteId={inviteId} />
 
       <View style={[styles.infoBox, { backgroundColor: colors.primary + '15' }]}>
         <Ionicons name="at" size={20} color={colors.primary} />
@@ -607,49 +551,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 16,
     lineHeight: 18,
-  },
-  linkContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    padding: 12,
-    gap: 10,
-    borderWidth: 1,
-  },
-  linkText: {
-    flex: 1,
-    fontSize: 13,
-  },
-  copyButton: {
-    backgroundColor: '#6366f1',
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  copiedButton: {
-    backgroundColor: '#10b981',
-  },
-  shareButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  shareButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6366f1',
-    padding: 12,
-    borderRadius: 10,
-    gap: 8,
-  },
-  shareButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
   },
   infoBox: {
     flexDirection: 'row',

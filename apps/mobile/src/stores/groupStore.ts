@@ -95,12 +95,6 @@ export interface CreateGroupInput {
   }>;
 }
 
-export interface PendingMember {
-  id: string;
-  name: string;
-  avatarUrl?: string;
-}
-
 export interface Group {
   id: string;
   name: string;
@@ -109,9 +103,13 @@ export interface Group {
   ownerId: string;
   parentId?: string;
   adminIds?: string[];
+  /**
+   * Server-side invite token. Distinct from `id` — invite links must carry this,
+   * not the group id, or `joinGroupByInvite` has nothing to look up.
+   */
+  inviteId?: string;
   permissions?: GroupPermissions;
   members: GroupMember[];
-  pendingMembers?: PendingMember[];
   memberCount: number;
   unreadCount?: number;
   isArchived: boolean;
@@ -204,12 +202,8 @@ function mapApiGroup(g: any, unreadCounts: Record<string, number>): Group {
     ownerId: adminIds[0] || '',
     parentId: g.parent_id || g.parentId,
     adminIds,
+    inviteId: g.invite_id || g.inviteId,
     members: mappedMembers,
-    pendingMembers: (g.pending_members || g.pendingMembers || []).map((m: any) => ({
-      id: m.id || m.user_id || m.userId,
-      name: m.name,
-      avatarUrl: m.avatar_url || m.avatarUrl,
-    })),
     memberCount: g.member_count ?? g.memberCount ?? (mappedMembers.length > 0 ? mappedMembers.length : 0),
     unreadCount: unreadCounts[g.id] || 0,
     isArchived: g.is_archived || g.isArchived || false,
@@ -315,11 +309,8 @@ interface GroupState {
   retryFailedDirectMessage: (threadId: string, messageId: string, senderId: string) => Promise<void>;
   archiveGroup: (groupId: string) => Promise<void>;
   deleteGroup: (groupId: string) => Promise<void>;
-  inviteByEmail: (groupId: string, emails: string[]) => Promise<void>;
   submitQuestion: (groupId: string, question: any) => Promise<void>;
   flagMessageAsSimilar: (messageId: string, groupId: string, userId: string) => Promise<void>;
-  approvePendingMember: (groupId: string, userId: string) => Promise<void>;
-  rejectPendingMember: (groupId: string, userId: string) => Promise<void>;
   fetchUserVotesForGroup: (groupId: string, userId: string) => Promise<void>;
   voteOnMessage: (groupId: string, messageId: string, userId: string, voteType: 'up' | 'down') => Promise<void>;
 
@@ -1425,24 +1416,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  inviteByEmail: async (groupId: string, emails: string[]) => {
-    for (const email of emails) {
-      const trimmed = email.trim();
-      if (!trimmed) continue;
-      try {
-        const results = await api.searchUsers(trimmed, 5);
-        const match = (results as any[]).find(
-          u => (u.email || '').toLowerCase() === trimmed.toLowerCase()
-        ) || (results as any[])[0];
-        if (match?.id) {
-          await api.addGroupMember(groupId, match.id);
-        }
-      } catch (error) {
-        console.warn(`Failed to invite ${trimmed}:`, error);
-      }
-    }
-  },
-
   submitQuestion: async (groupId: string, question: any) => {
     const user = question.senderId ? { id: question.senderId, name: question.senderName || 'You' } : null;
 
@@ -2184,50 +2157,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     } catch (error) {
       console.warn('[GroupStore] Failed to flag message:', error);
     }
-  },
-
-  approvePendingMember: async (groupId: string, userId: string) => {
-    const group = get().groups.find(g => g.id === groupId);
-    const pending = group?.pendingMembers?.find(m => m.id === userId);
-    if (!pending) return;
-
-    try {
-      await api.addGroupMember(groupId, userId);
-    } catch (error) {
-      console.warn('[GroupStore] addGroupMember failed, updating locally:', error);
-    }
-
-    set(state => ({
-      groups: state.groups.map(g => {
-        if (g.id !== groupId) return g;
-        return {
-          ...g,
-          pendingMembers: (g.pendingMembers || []).filter(m => m.id !== userId),
-          members: [
-            ...g.members,
-            {
-              id: `member-${userId}`,
-              userId,
-              name: pending.name,
-              avatarUrl: pending.avatarUrl,
-              role: 'member' as const,
-              joinedAt: new Date().toISOString(),
-            },
-          ],
-          memberCount: g.memberCount + 1,
-        };
-      }),
-    }));
-  },
-
-  rejectPendingMember: async (groupId: string, userId: string) => {
-    set(state => ({
-      groups: state.groups.map(g =>
-        g.id === groupId
-          ? { ...g, pendingMembers: (g.pendingMembers || []).filter(m => m.id !== userId) }
-          : g
-      ),
-    }));
   },
 
   fetchUserVotesForGroup: async (groupId: string, userId: string) => {

@@ -6,11 +6,12 @@
 export const DEEP_LINK_SCHEME = 'lanternstudy';
 export const WEB_BASE_URL = 'https://lanternstudy.com';
 
-export type DeepLinkType = 
+export type DeepLinkType =
     | 'flashcard'
     | 'deck'
     | 'test'
     | 'group'
+    | 'invite'
     | 'profile'
     | 'marketplace'
     | 'budget'
@@ -168,6 +169,17 @@ export const generateGroupLink = (groupId: string, inviteId?: string): string =>
         id: groupId,
         extra: inviteId ? { invite: inviteId } : undefined,
     });
+};
+
+/**
+ * Canonical shareable group-invite link.
+ *
+ * Takes the group's `inviteId`, never its `id` — `joinGroupByInvite` resolves an
+ * invite token, so a link built from the group id is a dead end for the
+ * recipient. Callers that have no `inviteId` should not offer a link at all.
+ */
+export const buildGroupInviteLink = (inviteId: string): string => {
+    return `${WEB_BASE_URL}/invite/${encodeURIComponent(inviteId)}`;
 };
 
 /**

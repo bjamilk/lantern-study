@@ -4,6 +4,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Settings: undefined;
   EditProfile: undefined;
+  BlockedUsers: undefined;
   Offline: undefined;
   LegalDocument: { document: "privacy" | "terms" | "cookies" };
 };

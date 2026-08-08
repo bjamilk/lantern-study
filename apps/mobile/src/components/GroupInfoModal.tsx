@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
+import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
 import { useTheme } from '../theme';
 
 type TabType = 'details' | 'members' | 'danger';
@@ -339,6 +340,10 @@ export default function GroupInfoModal({
           <Text style={styles.addMembersText}>Add or Invite Members</Text>
         </TouchableOpacity>
       )}
+
+      {/* Same panel AddMembersModal shows — the link is worth reaching from the
+          roster too, without going through the add-members flow first. */}
+      {isAdmin && <GroupInviteLinkPanel groupName={group.name} inviteId={group.inviteId} />}
 
       {/* Members List */}
       <Text style={styles.sectionTitle}>

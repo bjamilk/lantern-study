@@ -12,14 +12,18 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { ChatComposer, type ReplyPreview } from './ChatComposer';
+import { useAiTutorSend } from '../../hooks/useAiTutorSend';
+import { useChatImageAttach } from '../../hooks/useChatImageAttach';
+import { CHAT_LIST_WINDOWING } from './chatListWindowing';
+import { ChatComposer, type MentionCandidate, type ReplyPreview } from './ChatComposer';
 import { MessageBubble } from './MessageBubble';
 import { DmBubble } from './DmBubble';
-import type { DirectMessage, Message } from '../../stores/groupStore';
+import type { DirectMessage, GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import {
   canEditChatMessage,
   canRemoveChatMessage,
+  parseAiQuery,
   shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
 
@@ -43,11 +47,15 @@ interface ChatThreadModalProps {
   /** Group thread rendering */
   isGroup?: boolean;
   memberCount?: number;
+  /** Group roster for author/mention/avatar resolution in MessageBubble. */
+  members?: GroupMember[];
   userVotes?: Record<string, 'up' | 'down' | undefined>;
   onVote?: (messageId: string, vote: 'up' | 'down') => void;
   onFlag?: (messageId: string) => void;
   canFlag?: (message: Message) => boolean;
   userFlagged?: (message: Message) => boolean;
+  /** @mention autocomplete for the thread composer — same roster as the parent chat. */
+  mentionCandidates?: MentionCandidate[];
   /** DM thread rendering */
   otherDisplayName?: string;
   otherAvatarUrl?: string | null;
@@ -68,6 +76,8 @@ export function ChatThreadModal({
   currentUserId,
   isGroup = false,
   memberCount = 0,
+  members,
+  mentionCandidates,
   userVotes,
   onVote,
   onFlag,
@@ -127,9 +137,39 @@ export function ChatThreadModal({
 
   const replyCount = Math.max(0, visibleMessages.length - 1);
 
+  // Posts arbitrary text into this thread, threaded onto the current reply
+  // target. Shared by the image attachment and the AI tutor.
+  const postToThread = useCallback(
+    async (markdown: string) => {
+      await onSend(markdown, threadReplyTo?.id || rootId || undefined);
+      await onReload();
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    },
+    [onSend, onReload, threadReplyTo?.id, rootId]
+  );
+
+  const attachImage = useChatImageAttach({
+    chatId: groupId || threadId,
+    onSendMarkdown: postToThread,
+  });
+
+  const { trySend: tryAiTutorSend, aiThinking } = useAiTutorSend({
+    onPostAnswer: postToThread,
+  });
+
   const handleSend = async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || aiThinking) return;
+
+    // Same trigger as the parent chat. Without this, "@AI …" typed in a thread
+    // posted verbatim as a plain message.
+    if (!editingMessage && parseAiQuery(trimmed)) {
+      setText('');
+      const result = await tryAiTutorSend(trimmed);
+      if (result === 'failed') setText(trimmed);
+      return;
+    }
+
     setSending(true);
     try {
       if (editingMessage && onEdit) {
@@ -284,6 +324,7 @@ export function ChatThreadModal({
               ref={listRef}
               data={visibleMessages}
               keyExtractor={item => item.id}
+              {...CHAT_LIST_WINDOWING}
               className="flex-1"
               style={{ backgroundColor: colors.chatBackground }}
               contentContainerClassName="px-4 py-4 flex-grow"
@@ -310,6 +351,7 @@ export function ChatThreadModal({
                       isOwn={isOwn}
                       userVote={userVotes?.[item.id]}
                       memberCount={memberCount}
+                      members={members}
                       isGroupedWithPrevious={isGroupedWithPrevious}
                       onVote={
                         item.type === 'question' && onVote
@@ -361,12 +403,21 @@ export function ChatThreadModal({
             />
           )}
 
+          {aiThinking ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              className="px-4 py-1 text-xs text-lantern-primary"
+            >
+              🤖 AI Tutor is thinking…
+            </Text>
+          ) : null}
+
           {!isRootRemoved ? (
             <ChatComposer
               value={text}
               onChangeText={setText}
               onSend={() => void handleSend()}
-              sending={sending}
+              sending={sending || aiThinking}
               replyTo={threadReplyTo}
               onClearReply={resetReplyToRoot}
               editingMessage={
@@ -379,6 +430,8 @@ export function ChatThreadModal({
               }}
               groupId={groupId}
               threadId={threadId}
+              mentionCandidates={mentionCandidates}
+              onAttachImage={attachImage}
               onSendAudioMarkdown={async markdown => {
                 setSending(true);
                 try {

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import { chatMessagePreview, parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
@@ -39,7 +39,7 @@ interface DmBubbleProps {
   onRetry?: () => void;
 }
 
-export function DmBubble({
+function DmBubbleComponent({
   message,
   isOwn,
   senderName,
@@ -53,10 +53,14 @@ export function DmBubble({
   messageId,
 }: DmBubbleProps) {
   const { colors } = useTheme();
-  const timeLabel = new Date(message.timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const timeLabel = useMemo(
+    () =>
+      new Date(message.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    [message.timestamp]
+  );
   const audioUrl = parseChatAudioUrl(message.text);
   const resolvedAudioUrl = useResolvedStorageUrl(audioUrl);
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -98,7 +102,10 @@ export function DmBubble({
     }
   };
 
-  const segments = !audioUrl ? segmentMentions(message.text) : [];
+  const segments = useMemo(
+    () => (!audioUrl ? segmentMentions(message.text) : []),
+    [audioUrl, message.text]
+  );
   const isRemoved = !!message.isRemoved || !!message.removedAt;
 
   if (isRemoved) {
@@ -270,3 +277,10 @@ export function DmBubble({
     </SwipeToReply>
   );
 }
+
+/**
+ * Default shallow comparator, same reasoning as MessageBubble. Note that the
+ * `message` prop is a projection built by the caller — callers must memoize it
+ * (see DmBubbleWrapper) or a fresh object literal defeats this on every render.
+ */
+export const DmBubble = React.memo(DmBubbleComponent);

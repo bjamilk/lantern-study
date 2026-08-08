@@ -51,11 +51,25 @@ async function handleIncomingUrl(url: string, userId?: string) {
 
   if (!userId) return;
 
-  try {
-    const normalized = url.replace('lanternstudy:/', 'https://lanternstudy.app/');
-    const urlObj = new URL(normalized.startsWith('http') ? normalized : `https://lanternstudy.app/${normalized}`);
-    const inviteId = urlObj.searchParams.get('inviteId');
-    if (inviteId) {
+  // Invite tokens arrive two ways: as `?inviteId=` (older links) and as the
+  // `/invite/<token>` path that the app's own share sheet produces. Only the
+  // query form was handled, so every link the app itself generated was a
+  // no-op for the recipient.
+  let inviteId: string | null = parsed?.type === 'invite' ? parsed.id : null;
+  if (!inviteId) {
+    try {
+      const normalized = url.replace('lanternstudy:/', 'https://lanternstudy.app/');
+      const urlObj = new URL(
+        normalized.startsWith('http') ? normalized : `https://lanternstudy.app/${normalized}`
+      );
+      inviteId = urlObj.searchParams.get('inviteId');
+    } catch {
+      // Fall through to path-based links.
+    }
+  }
+
+  if (inviteId) {
+    try {
       const group = await joinGroupByInvite(inviteId, userId);
       const groupId = (group as { id?: string })?.id;
       if (groupId) {
@@ -67,10 +81,10 @@ async function handleIncomingUrl(url: string, userId?: string) {
           },
         });
       }
-      return;
+    } catch {
+      // A revoked or already-used invite should not crash the launch path.
     }
-  } catch {
-    // Fall through to path-based links.
+    return;
   }
 
   if (!parsed) return;

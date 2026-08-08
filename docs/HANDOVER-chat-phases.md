@@ -23,6 +23,7 @@ bug report:
 | `83f88c1` | Phase A — the three message-loss fixes + `deliveryState` + "Not sent · Retry" |
 | `203c8c4` | A6 — offline outbox on `syncService` |
 | `f30005b` | B1/B2 — per-value selectors, gated question chain |
+| *(working tree)* | B3/B4/B5 — memoized bubbles, `MessageRow`/`DmMessageRow`, FlatList windowing |
 
 **Phase A detail.** `sendMessage`'s catch restored snapshots captured *before* the await,
 destroying any realtime message that landed mid-send and reverting the whole `groups`
@@ -37,35 +38,68 @@ there would create a cycle. Network-shaped failures enqueue and stay `pending`; 
 rejections are `failed`. Replay is safe — same `clientMessageId`, unique partial indexes
 on `(group_id, sender_id, client_message_id)` with `23505` recovery.
 
+**Phase B detail (uncommitted).** `MessageBubble` lost its per-row store subscription and
+takes a `members` prop; `timeLabel` / `optionItems` / `authorLabel` / `mentionUsername` /
+`avatarUrl` moved into `useMemo` *above* the `isRemoved` early return; both bubbles are
+`React.memo` with the **default** comparator. New `MessageRow` (GroupChatScreen) and
+`DmMessageRow` (DirectMessageScreen) own the date separator / unread divider / grouping and
+build the per-message closures internally, so only primitives and stable references cross
+the memo boundary. `DmMessageRow` memoizes the projection object `DmBubble` takes —
+a fresh literal there would defeat the memo outright. Both lists carry `extraData`
+(`userVotes`, `firstUnreadId`, `user?.id`, roster). Screen-level handlers
+(`handleVoteMessage`, `handleFlagMessage`, `handleMentionUser`, `handleScrollToMessage`,
+`handleRetryMessage`) are `useCallback`-stable; `handleScrollToMessage` reads the message
+list through a ref so its identity survives every incoming message. Windowing lives in
+`components/chat/chatListWindowing.ts` and is spread onto all four lists.
+
+**Phase C detail (uncommitted).**
+
+- **C0** — `inviteByEmail`, `approvePendingMember`, `rejectPendingMember` and the
+  `pendingMembers` field/mapper are gone from `groupStore`, and `pendingMembers` is also
+  gone from `packages/shared` types + `apiMappers` and from the api-server type. Verified
+  first that no endpoint ever emits `pending_members` — it was a type with no producer.
+  `useGroupHandlers` dropped its 12 unconsumed returns (kept `handleSelectGroup`,
+  `handleInitiateDm`, `userVotes`) and its whole-store subscription with them.
+- **C1** — group-invites section in `GroupsScreen`, above message requests, with
+  Accept/Decline. Accept refetches groups *before* navigating, because the group is not in
+  the store yet and `GroupChatScreen` reads its name and roster from there. An invites
+  fetch failure is swallowed deliberately so it cannot blank the chat list.
+- **C2** — mobile `mapApiGroup` now maps `inviteId`. The server was already returning it;
+  mobile dropped it, so every generated link carried the group id and was a dead end.
+- **C3** — `buildGroupInviteLink` in `packages/shared/src/linking`, `'invite'` added to
+  `DeepLinkType`, and `useDeepLinkHandler` now resolves *both* `/invite/<token>` and the
+  older `?inviteId=` form. Only the query form was handled before, so links the app itself
+  produced did nothing for the recipient. Unit tests in `linking/groupInviteLink.test.ts`.
+- **C4** — `components/GroupInviteLinkPanel.tsx`, used by `AddMembersModal` and (new) the
+  `GroupInfoModal` members tab. Renders an explanatory empty state when there is no
+  `inviteId` rather than a link that silently fails.
+- **C5** — `screens/settings/BlockedUsersScreen.tsx`, routed as `BlockedUsers` and reachable
+  from Settings → Privacy. Hydrates ids via `fetchUserProfile`; a profile that fails to load
+  still gets a row, or the user loses the ability to unblock that person.
+- **C6** — `hooks/useChatImageAttach.ts`, wired into all three composers. Returns
+  `undefined` when disabled so the composer's attach button visibility comes for free.
+- **C7** — `AI_QUERY_PATTERN` / `parseAiQuery` / `formatAiTutorReply` moved into
+  `packages/shared/src/utils/aiChatQuery.ts` (with tests) and both web's `MessageInputBar`
+  and mobile now use them. New `hooks/useAiTutorSend.ts` returns
+  `'not-a-query' | 'answered' | 'failed'` — composer state stays with the caller because it
+  varies (voice-note sends pass override text and must not clear the box), and getting it
+  wrong loses the user's question. `ChatThreadModal` now takes `mentionCandidates` and runs
+  the tutor.
+
 ## Remaining
-
-**B3** memoize `MessageBubble` (remove its per-row store subscription — N subscriptions +
-N `groups.find()` scans per update; pass `members` down instead). Use the **default**
-shallow comparator; a hand-written one that forgets `userVote` / `isGroupedWithPrevious` /
-`flagCount` is a silent correctness bug.
-**B4** stable memoized `MessageRow` — **must** add `extraData` covering `userVotes`,
-`firstUnreadId`, `user?.id`. Plan flags this as the most likely regression in the phase.
-**B5** FlatList windowing on all four lists. `removeClippedSubviews` **Android only** — on
-iOS it blanks cells and breaks the `scrollToIndex`/`scrollToEnd` these screens rely on.
-
-**C0** delete `inviteByEmail`, `approvePendingMember`, `rejectPendingMember`, the
-`pendingMembers` field, and 12 unconsumed returns from `useGroupHandlers`.
-**C1** group-invites inbox (`fetchPendingGroupInvites` has no caller).
-**C2→C4** invite-link chain, ordered. **C5** blocked-users screen. **C6** image attach in
-DMs/threads. **C7** mentions + AI tutor in threads.
 
 **D1–D7** error/empty-state primitives, `listError` in the store, then accessibility.
 
 ## Traps
 
-- **`inviteByEmail` is dangerous, not just dead.** No email match falls through to
-  `(results as any[])[0]` and calls `addGroupMember` — and `/users/search` matches
-  usernames only, so the match essentially never succeeds. Wiring it up would add an
-  arbitrary stranger to a private group. Delete it.
-- **`approvePendingMember`/`rejectPendingMember` have no server concept.** `pending` means
-  "invitee hasn't accepted"; `getGroupMembers` filters those rows out and no endpoint
-  returns `pending_members`. A mobile approval UI would be permanently empty. Web's
-  equivalent section is vestigial for the same reason.
+- **Do not reinstate `inviteByEmail`** (deleted in C0). No email match fell through to
+  `(results as any[])[0]` and called `addGroupMember` — and `/users/search` matches
+  usernames only, so the match essentially never succeeded. It would add an arbitrary
+  stranger to a private group.
+- **Do not reinstate `approvePendingMember`/`rejectPendingMember`** (deleted in C0). They
+  had no server concept: `pending` means "invitee hasn't accepted", `getGroupMembers`
+  filters those rows out, and no endpoint returns `pending_members`. Any approval UI is
+  permanently empty. Web's equivalent section is vestigial for the same reason.
 - **Typecheck baseline is 55 pre-existing errors.** The change is clean only if it stays at
   55, never zero.
 - **No component test harness exists in `apps/mobile`.** Add unit tests only for new pure
@@ -76,8 +110,12 @@ DMs/threads. **C7** mentions + AI tutor in threads.
 
 ## Verification debt (important)
 
-Everything above is **typechecked and boot-verified only**. None of the plan's device
-scenarios have been run:
+Everything above is **typechecked only** — mobile stays at the 55-error baseline and the
+jest suite is unchanged (1 pre-existing `marketplaceFilters` failure). Phase A/B1/B2 were
+boot-verified when they shipped. **B3/B4/B5 have not run on a device at all:** the iOS dev
+client was serving a cached bundle, and the `simctl uninstall` that finally busted it signed
+the simulator out, so the chat screens became unreachable. Re-verify from a signed-in dev
+client before trusting any of it. None of the plan's device scenarios have been run:
 
 - two devices in one group, kill A's network mid-send while B's message lands — B's
   message must survive A's failure
