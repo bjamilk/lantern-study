@@ -1,0 +1,21 @@
+diff --git a/node_modules/@expo/plist/build/parse.js b/node_modules/@expo/plist/build/parse.js
+index 572d7f8..058b394 100644
+--- a/node_modules/@expo/plist/build/parse.js
++++ b/node_modules/@expo/plist/build/parse.js
+@@ -66,7 +66,15 @@ function isEmptyNode(node) {
+  */
+ function parse(xml) {
+     // prevent the parser from logging non-fatal errors
+-    const doc = new xmldom_1.DOMParser({ errorHandler() { } }).parseFromString(xml);
++    // Compatibility shim for @xmldom/xmldom >= 0.9, which the repo pins via a
++    // root override while this package was written against 0.8.x:
++    //   1. parseFromString now REQUIRES a mimeType, else it throws
++    //      "the provided mimeType 'undefined' is not valid".
++    //   2. the `errorHandler` option was renamed to `onError`.
++    //   3. the parser is stricter about anything preceding the XML declaration,
++    //      and Xcode writes .entitlements files with a leading newline.
++    // Without this, `expo prebuild` and `expo run:ios` both fail outright.
++    const doc = new xmldom_1.DOMParser({ onError() { } }).parseFromString(String(xml).replace(/^[\uFEFF\s]+/, ''), 'text/xml');
+     (0, assert_1.default)(doc.documentElement.nodeName === 'plist', 'malformed document. First element should be <plist>');
+     let plist = parsePlistXML(doc.documentElement);
+     // the root <plist> node gets interpreted as an Array,
