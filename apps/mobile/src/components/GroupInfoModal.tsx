@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Group Info Modal
 // ===========================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -68,6 +68,22 @@ export default function GroupInfoModal({
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const { colors } = useTheme();
+
+  // The modal stays mounted and is reused for every group, so this state would
+  // otherwise keep whichever group was opened first. That is not just cosmetic:
+  // the Details tab showed the previous group's name and description, and
+  // saving from there would have renamed the wrong group.
+  //
+  // Keyed on the group id and the open transition rather than on `group` itself
+  // — resetting on every store mutation would wipe edits mid-typing.
+  useEffect(() => {
+    if (!visible) return;
+    setName(group.name);
+    setDescription(group.description || '');
+    setHasChanges(false);
+    setAvatarPreview(null);
+    setActiveTab('details');
+  }, [visible, group.id]);
 
   const currentUserMember = group.members.find(m => m.userId === currentUserId);
   const isAdmin = currentUserMember?.role === 'owner' || currentUserMember?.role === 'admin';
