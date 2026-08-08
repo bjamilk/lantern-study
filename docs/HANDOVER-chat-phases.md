@@ -146,6 +146,21 @@ A/B/C/D has been exercised on a device.
   `build --platform android --profile preview`. Claude cannot run this — it needs the
   user's Expo credentials. Dev clients show everything; a real phone shows none of it.
 
+## Device-verified (Android emulator, Aug 8 2026)
+
+| Check | Result |
+|---|---|
+| **B3/B4** render counts | ✅ counter read 30 on open and **30 after 10 keystrokes** — 0 bubble re-renders per keystroke |
+| **C5** blocked-users screen | ✅ routes from Settings → Privacy, loads, shows its empty state |
+| **C6** image attach in DMs | ✅ the attach button now renders in the DM composer |
+| **D1** `LoadingState` | ✅ "Loading conversation" |
+| **D2 + D3** offline banner | ✅ "Couldn't refresh your chats" over the cached list, with Retry |
+| **D4** ErrorState | ❌ **bug found** → fixed in `1d11ae0` → ✅ re-verified |
+
+Not yet exercised: **C1** (no pending invites on this account), **C2–C4** invite
+round-trip (needs a second account/device), **C7** `@AI` in a thread, **B5** windowing on a
+long list, and the VoiceOver/TalkBack sweep for **D7**.
+
 ## Verification debt (important)
 
 Everything above is **typechecked only** — mobile stays at the 55-error baseline and the
