@@ -20,7 +20,14 @@ import {
   declineGroupInvite,
   fetchPendingGroupInvites,
 } from '../../services/api';
-import { Button, ScreenHeader } from '../../components/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  InlineErrorBanner,
+  LoadingState,
+  ScreenHeader,
+} from '../../components/ui';
 import { CHAT_LIST_WINDOWING } from '../../components/chat/chatListWindowing';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import NewDirectMessageModal from '../../components/NewDirectMessageModal';
@@ -224,7 +231,7 @@ export function GroupsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const { lowDataMode } = useLowDataMode();
   const user = useAuthStore(s => s.user);
-  const { groups, dmThreads, isLoading, fetchGroups, fetchDmThreads, getTopLevelGroups, fetchGroupMembers } = useGroupStore();
+  const { groups, dmThreads, isLoading, listError, fetchGroups, fetchDmThreads, getTopLevelGroups, fetchGroupMembers } = useGroupStore();
   const { handleSelectGroup, handleInitiateDm } = useGroupHandlers();
   const [refreshing, setRefreshing] = useState(false);
   const [dmModalOpen, setDmModalOpen] = useState(false);
@@ -504,10 +511,12 @@ export function GroupsScreen({ navigation }: Props) {
         }
       />
 
+      {/* error + no data -> ErrorState; error + stale data -> banner over the
+          list; no error + no data -> EmptyState. See components/ui/AsyncStates. */}
       {isLoading && listItems.length === 0 ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
-            </View>
+        <LoadingState label="Loading your chats" />
+      ) : listError && listItems.length === 0 ? (
+        <ErrorState message={listError} onRetry={() => void loadChats()} />
       ) : (
         <FlatList
           data={listItems}
@@ -527,19 +536,24 @@ export function GroupsScreen({ navigation }: Props) {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
           }
+          ListHeaderComponent={
+            listError ? (
+              <InlineErrorBanner
+                title="Couldn't refresh your chats"
+                detail="Showing your latest saved conversations."
+                onRetry={() => void loadChats()}
+              />
+            ) : null
+          }
           ListEmptyComponent={
-            <View className="items-center py-16 px-6">
-              <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center mb-4">
-                <Ionicons name="people" size={32} color="#6366f1" />
-              </View>
-              <Text className="text-base font-semibold text-lantern-text mb-1">
-                No conversations yet
-              </Text>
-              <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-                Join or create a group to start collaborating.
-              </Text>
-              <Button onPress={() => navigation.navigate('CreateGroup')}>Create Group</Button>
-            </View>
+            <EmptyState
+              icon="people"
+              title="No conversations yet"
+              description="Join or create a group to start collaborating."
+              action={
+                <Button onPress={() => navigation.navigate('CreateGroup')}>Create Group</Button>
+              }
+            />
           }
           renderItem={({ item }) => {
             if (item.kind === 'section') {

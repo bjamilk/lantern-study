@@ -12,6 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { buildChatAudioMarkdown, chatMessagePreview } from '@lantern/shared/utils';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
+import { getFontScaleValue } from '../../theme/installFontScale';
 import { featureAccents } from '@lantern/shared/design';
 import { uploadChatAudio } from '../../services/chatAudioUpload';
 
@@ -357,11 +358,15 @@ export function ChatComposer({
           placeholderTextColor={colors.inputPlaceholder}
           multiline
           editable={!busy && !isRecording}
-          className="flex-1 max-h-28 px-3 py-2.5 rounded-2xl border border-lantern-border bg-lantern-background text-sm text-lantern-text"
+          className="flex-1 px-3 py-2.5 rounded-2xl border border-lantern-border bg-lantern-background text-sm text-lantern-text"
           style={{
             borderColor: colors.inputBorder,
             backgroundColor: colors.inputBackground,
             color: colors.inputText,
+            // Was a fixed max-h-28 (112pt). At larger text that clipped the
+            // composer to roughly two lines and hid what was being typed, so
+            // the cap grows with the text scale instead.
+            maxHeight: 112 * getFontScaleValue(),
           }}
         />
         <Button size="sm" loading={sending} disabled={!value.trim() || busy || isRecording} onPress={onSend}>

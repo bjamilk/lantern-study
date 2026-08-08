@@ -10,6 +10,7 @@ import {
   type MarketplaceOffer,
 } from '../../stores/marketplaceStore';
 import { formatPrice } from '../../screens/marketplace/marketplaceHelpers';
+import { ErrorState, InlineErrorBanner, LoadingState } from '../ui';
 import { useTheme } from '../../theme';
 
 type OfferAction = 'accept' | 'decline' | 'counter' | 'withdraw';
@@ -44,6 +45,7 @@ export function DmOffersPanel({
     createMarketplaceOffer,
   } = useMarketplaceStore();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busyOfferId, setBusyOfferId] = useState<string | null>(null);
   const [counterOfferId, setCounterOfferId] = useState<string | null>(null);
   const [counterAmount, setCounterAmount] = useState('');
@@ -54,6 +56,11 @@ export function DmOffersPanel({
     setLoading(true);
     try {
       await fetchOffers(isSeller ? 'seller' : 'buyer');
+      setLoadError(null);
+    } catch (error) {
+      // Was a bare try/finally: a 500 rendered as "No offers yet on this
+      // listing", which reads as a fact about the listing rather than a fault.
+      setLoadError(error instanceof Error ? error.message : 'Could not load offers.');
     } finally {
       setLoading(false);
     }
@@ -156,15 +163,23 @@ export function DmOffersPanel({
   const hasPending = listingOffers.some((o) => o.status === 'pending');
 
   if (loading && listingOffers.length === 0) {
-    return (
-      <View className="flex-1 items-center justify-center">
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <LoadingState label="Loading offers" />;
+  }
+
+  if (loadError && listingOffers.length === 0) {
+    return <ErrorState message={loadError} onRetry={() => void load()} />;
   }
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="p-4">
+      {loadError ? (
+        <InlineErrorBanner
+          title="Couldn't refresh offers"
+          detail="Showing the offers saved on this device."
+          onRetry={() => void load()}
+        />
+      ) : null}
+
       {listingOffers.length === 0 ? (
         <Text className="text-sm text-lantern-text-secondary text-center mt-6">
           No offers yet on this listing.
@@ -212,12 +227,17 @@ export function DmOffersPanel({
                   <Pressable
                     onPress={() => void submitCounter()}
                     disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Send counter offer"
+                    accessibilityState={{ disabled: busy, busy }}
                     className="px-3 py-2 rounded-xl bg-lantern-primary"
                   >
                     <Text className="text-xs font-semibold text-white">Send counter</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setCounterOfferId(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel counter offer"
                     className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
                   >
                     <Text className="text-xs font-semibold text-lantern-text">Cancel</Text>
@@ -231,6 +251,9 @@ export function DmOffersPanel({
                     <Pressable
                       onPress={() => void handleAction(offer, 'accept')}
                       disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${acceptLabel}, ${formatPrice(offer.amount)}`}
+                      accessibilityState={{ disabled: busy, busy }}
                       className="px-3 py-2 rounded-xl bg-emerald-600"
                     >
                       <Text className="text-xs font-semibold text-white">{acceptLabel}</Text>
@@ -238,6 +261,9 @@ export function DmOffersPanel({
                     <Pressable
                       onPress={() => void handleAction(offer, 'decline')}
                       disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${declineLabel}, ${formatPrice(offer.amount)}`}
+                      accessibilityState={{ disabled: busy, busy }}
                       className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
                     >
                       <Text className="text-xs font-semibold text-lantern-text">{declineLabel}</Text>
@@ -245,6 +271,9 @@ export function DmOffersPanel({
                     <Pressable
                       onPress={() => void handleAction(offer, 'counter')}
                       disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Counter offer of ${formatPrice(offer.amount)}`}
+                      accessibilityState={{ disabled: busy, busy }}
                       className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
                     >
                       <Text className="text-xs font-semibold text-lantern-text">Counter</Text>
@@ -255,6 +284,9 @@ export function DmOffersPanel({
                   <Pressable
                     onPress={() => void handleAction(offer, 'withdraw')}
                     disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Withdraw your offer of ${formatPrice(offer.amount)}`}
+                    accessibilityState={{ disabled: busy, busy }}
                     className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
                   >
                     <Text className="text-xs font-semibold text-lantern-error">Withdraw</Text>
@@ -283,6 +315,9 @@ export function DmOffersPanel({
           <Pressable
             onPress={() => void submitNewOffer()}
             disabled={creating}
+            accessibilityRole="button"
+            accessibilityLabel="Send offer"
+            accessibilityState={{ disabled: creating, busy: creating }}
             className="mt-2 px-3 py-2 rounded-xl bg-lantern-primary self-start"
           >
             <Text className="text-xs font-semibold text-white">

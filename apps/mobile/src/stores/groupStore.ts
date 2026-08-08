@@ -249,6 +249,13 @@ interface GroupState {
   isLoadingMore: boolean;
   isLoadingMessages: boolean;
   error: string | null;
+  /**
+   * Failure of the *list* fetches (groups / DM threads) only.
+   *
+   * Deliberately separate from `error`, which six mutation paths write: a
+   * failed "leave group" must not make the chat list render as broken.
+   */
+  listError: string | null;
 
   loadFromStorage: () => Promise<void>;
   saveToStorage: () => Promise<void>;
@@ -650,6 +657,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   isLoadingMore: false,
   isLoadingMessages: false,
   error: null,
+  listError: null,
 
   // Load cached data from AsyncStorage
   loadFromStorage: async () => {
@@ -684,8 +692,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   fetchGroups: async (userId: string) => {
-    set({ isLoading: true, error: null });
-    
+    set({ isLoading: true, error: null, listError: null });
+
     // Load from local storage first for instant UI
     await get().loadFromStorage();
 
@@ -718,8 +726,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       });
       await get().saveToStorage();
     } catch (error: any) {
+      // Previously swallowed entirely, so an offline chat list was
+      // indistinguishable from a new account with no groups.
       console.warn('[GroupStore] API fetch failed, using cached data:', error);
-      set({ isLoading: false });
+      set({
+        isLoading: false,
+        listError: error?.message || 'Could not load your chats.',
+      });
     }
   },
 
@@ -1557,6 +1570,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       });
     } catch (error) {
       console.warn('[GroupStore] Failed to fetch DM threads:', error);
+      set({
+        listError:
+          error instanceof Error ? error.message : 'Could not load your conversations.',
+      });
     }
   },
 

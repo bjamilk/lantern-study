@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { ErrorState, InlineErrorBanner, LoadingState } from '../ui';
 import { useAiTutorSend } from '../../hooks/useAiTutorSend';
 import { useChatImageAttach } from '../../hooks/useChatImageAttach';
 import { CHAT_LIST_WINDOWING } from './chatListWindowing';
@@ -38,6 +39,8 @@ interface ChatThreadModalProps {
   onClose: () => void;
   rootId: string | null;
   loading: boolean;
+  /** Set when the thread failed to load. The modal stays open and offers Retry. */
+  loadError?: string | null;
   messages: ThreadMessage[];
   onReload: () => Promise<void>;
   onSend: (text: string, replyToMessageId?: string) => Promise<void>;
@@ -68,6 +71,7 @@ export function ChatThreadModal({
   onClose,
   rootId,
   loading,
+  loadError,
   messages,
   onReload,
   onSend,
@@ -316,15 +320,25 @@ export function ChatThreadModal({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           {loading && messages.length === 0 ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator size="large" color={colors.primary} />
-            </View>
+            <LoadingState label="Loading thread" />
+          ) : loadError && messages.length === 0 ? (
+            /* The modal used to close itself on failure, so the thread simply
+               vanished behind an alert with nothing to retry. */
+            <ErrorState message={loadError} onRetry={() => void onReload()} />
           ) : (
             <FlatList
               ref={listRef}
               data={visibleMessages}
               keyExtractor={item => item.id}
               {...CHAT_LIST_WINDOWING}
+              ListHeaderComponent={
+                loadError ? (
+                  <InlineErrorBanner
+                    title="Couldn't refresh this thread"
+                    onRetry={() => void onReload()}
+                  />
+                ) : null
+              }
               className="flex-1"
               style={{ backgroundColor: colors.chatBackground }}
               contentContainerClassName="px-4 py-4 flex-grow"

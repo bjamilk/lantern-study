@@ -351,6 +351,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [threadError, setThreadError] = useState<string | null>(null);
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottomRef = useRef(true);
   const initialAnchorDoneRef = useRef(false);
@@ -374,21 +375,33 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const reloadThread = useCallback(async () => {
     if (!threadRootId) return;
-    const msgs = (await fetchThread(threadRootId, { groupId })) as Message[];
-    setThreadMessages(msgs);
+    try {
+      const msgs = (await fetchThread(threadRootId, { groupId })) as Message[];
+      setThreadMessages(msgs);
+      setThreadError(null);
+    } catch (error) {
+      // Also the Retry path of the thread's ErrorState — it must resolve, not
+      // reject, or a failed retry becomes an unhandled rejection.
+      setThreadError(
+        error instanceof Error ? error.message : 'Could not load this thread.'
+      );
+    }
   }, [fetchThread, groupId, threadRootId]);
 
   const handleOpenThread = useCallback(
     async (rootId: string) => {
       setThreadRootId(rootId);
       setThreadLoading(true);
+      setThreadError(null);
       try {
         const msgs = (await fetchThread(rootId, { groupId })) as Message[];
         setThreadMessages(msgs);
-      } catch {
-        Alert.alert('Thread', 'Could not load thread.');
-        setThreadRootId(null);
-        setThreadMessages([]);
+      } catch (error) {
+        // Was: close the modal and show an alert, so the thread vanished with
+        // nothing to retry. Keep it open and let the user retry in place.
+        setThreadError(
+          error instanceof Error ? error.message : 'Could not load this thread.'
+        );
       } finally {
         setThreadLoading(false);
       }
@@ -1608,9 +1621,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
         onClose={() => {
           setThreadRootId(null);
           setThreadMessages([]);
+          setThreadError(null);
         }}
         rootId={threadRootId}
         loading={threadLoading}
+        loadError={threadError}
         messages={threadMessages}
         onReload={reloadThread}
         onSend={async (text, replyToMessageId) => {

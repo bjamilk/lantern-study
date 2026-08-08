@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   AppState,
@@ -24,6 +25,12 @@ import {
 } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type DirectMessage } from '../../stores/groupStore';
+import {
+  EmptyState,
+  ErrorState,
+  InlineErrorBanner,
+  LoadingState,
+} from '../../components/ui';
 import { useChatImageAttach } from '../../hooks/useChatImageAttach';
 import { CHAT_LIST_WINDOWING } from '../../components/chat/chatListWindowing';
 import { ChatComposer } from '../../components/chat/ChatComposer';
@@ -191,6 +198,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [dmRequestBusy, setDmRequestBusy] = useState(false);
   const [dmBlocked, setDmBlocked] = useState(false);
@@ -214,6 +222,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [threadError, setThreadError] = useState<string | null>(null);
   const listRef = useRef<FlatList<DirectMessage>>(null);
   const isNearBottomRef = useRef(true);
   const initialAnchorDoneRef = useRef(false);
@@ -455,20 +464,33 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   const reloadThread = useCallback(async () => {
     if (!threadRootId) return;
-    const msgs = (await fetchThread(threadRootId, { threadId })) as DirectMessage[];
-    setThreadMessages(msgs);
+    try {
+      const msgs = (await fetchThread(threadRootId, { threadId })) as DirectMessage[];
+      setThreadMessages(msgs);
+      setThreadError(null);
+    } catch (error) {
+      // Also the Retry path of the thread's ErrorState — it must resolve, not
+      // reject, or a failed retry becomes an unhandled rejection.
+      setThreadError(
+        error instanceof Error ? error.message : 'Could not load this thread.'
+      );
+    }
   }, [fetchThread, threadId, threadRootId]);
 
   const handleOpenThread = useCallback(
     async (rootId: string) => {
       setThreadRootId(rootId);
       setThreadLoading(true);
+      setThreadError(null);
       try {
         const msgs = (await fetchThread(rootId, { threadId })) as DirectMessage[];
         setThreadMessages(msgs);
-      } catch {
-        setThreadMessages([]);
-        setThreadRootId(null);
+      } catch (error) {
+        // Was: close the modal, so the thread vanished silently with no way to
+        // retry. Keep it open and surface the failure in place.
+        setThreadError(
+          error instanceof Error ? error.message : 'Could not load this thread.'
+        );
       } finally {
         setThreadLoading(false);
       }
@@ -491,6 +513,13 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         markDMAsRead(threadId, user.id),
       ]);
       setUnreadAnchorAt(previousLastReadAt ?? null);
+      setLoadError(null);
+    } catch (error) {
+      // Was a bare try/finally: a failed fetch left an empty list, so a 500
+      // rendered as "Start a conversation with X" with no way to retry.
+      setLoadError(
+        error instanceof Error ? error.message : 'Could not load this conversation.'
+      );
     } finally {
       setLoading(false);
     }
@@ -582,6 +611,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     } else {
       const added = Math.max(1, messages.length - prevMessageCountRef.current);
       setNewMessagesBelow((n) => n + added);
+      // Mirrors GroupChatScreen: without this a screen-reader user gets no
+      // signal that messages arrived below the viewport.
+      void AccessibilityInfo.announceForAccessibility(
+        `${added} new message${added === 1 ? '' : 's'}`
+      );
     }
     lastMessageIdRef.current = last.id;
     prevMessageCountRef.current = messages.length;
@@ -917,9 +951,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         {loading && messages.length === 0 ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color="#6366f1" />
-          </View>
+          <LoadingState label="Loading conversation" />
+        ) : loadError && messages.length === 0 ? (
+          <ErrorState message={loadError} onRetry={() => void loadThread()} />
         ) : (
           <View className="flex-1">
             <FlatList
@@ -940,12 +974,20 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               onScrollToIndexFailed={() => {
                 listRef.current?.scrollToEnd({ animated: false });
               }}
+              ListHeaderComponent={
+                loadError ? (
+                  <InlineErrorBanner
+                    title="Couldn't refresh this conversation"
+                    detail="Showing the messages saved on this device."
+                    onRetry={() => void loadThread()}
+                  />
+                ) : null
+              }
               ListEmptyComponent={
-                <View className="flex-1 items-center justify-center py-16">
-                  <Text className="text-sm text-lantern-text-secondary">
-                    Start a conversation with {displayName}
-                  </Text>
-                </View>
+                <EmptyState
+                  icon="chatbubble-ellipses-outline"
+                  title={`Start a conversation with ${displayName}`}
+                />
               }
               // DmMessageRow is memoized and closes over none of these.
               extraData={listExtraData}
@@ -1130,9 +1172,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         onClose={() => {
           setThreadRootId(null);
           setThreadMessages([]);
+          setThreadError(null);
         }}
         rootId={threadRootId}
         loading={threadLoading}
+        loadError={threadError}
         messages={threadMessages}
         onReload={reloadThread}
         onSend={async (text, replyToMessageId) => {

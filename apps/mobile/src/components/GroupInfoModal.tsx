@@ -223,6 +223,9 @@ export default function GroupInfoModal({
     <TouchableOpacity
       style={[styles.tab, { borderBottomColor: activeTab === tab ? colors.primary : 'transparent' }]}
       onPress={() => setActiveTab(tab)}
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: activeTab === tab }}
     >
       <Ionicons 
         name={icon as any} 
@@ -248,6 +251,9 @@ export default function GroupInfoModal({
             style={styles.changeAvatarButton}
             onPress={() => void handleChangeAvatar()}
             disabled={uploadingAvatar}
+            accessibilityRole="button"
+            accessibilityLabel={uploadingAvatar ? 'Uploading group photo' : 'Change group photo'}
+            accessibilityState={{ disabled: uploadingAvatar, busy: uploadingAvatar }}
           >
             {uploadingAvatar ? (
               <ActivityIndicator size="small" color="#ffffff" />
@@ -316,14 +322,24 @@ export default function GroupInfoModal({
 
       {/* Save Button */}
       {isAdmin && hasChanges && (
-        <TouchableOpacity style={styles.saveButton} onPress={handleSaveDetails}>
+        <TouchableOpacity
+          style={styles.saveButton}
+          onPress={handleSaveDetails}
+          accessibilityRole="button"
+          accessibilityLabel="Save group details"
+        >
           <Text style={styles.saveButtonText}>Save Changes</Text>
         </TouchableOpacity>
       )}
 
       {/* Create Sub-group */}
       {isAdmin && onCreateSubgroup ? (
-        <TouchableOpacity style={styles.createSubgroupButton} onPress={onCreateSubgroup}>
+        <TouchableOpacity
+          style={styles.createSubgroupButton}
+          onPress={onCreateSubgroup}
+          accessibilityRole="button"
+          accessibilityLabel="Create sub-group"
+        >
           <Ionicons name="git-network" size={20} color="#ffffff" />
           <Text style={styles.createSubgroupText}>Create Sub-group</Text>
         </TouchableOpacity>
@@ -335,7 +351,12 @@ export default function GroupInfoModal({
     <View style={styles.tabContent}>
       {/* Add Members Button */}
       {isAdmin && (
-        <TouchableOpacity style={styles.addMembersButton} onPress={onAddMembers}>
+        <TouchableOpacity
+          style={styles.addMembersButton}
+          onPress={onAddMembers}
+          accessibilityRole="button"
+          accessibilityLabel="Add or invite members"
+        >
           <Ionicons name="person-add" size={20} color="#ffffff" />
           <Text style={styles.addMembersText}>Add or Invite Members</Text>
         </TouchableOpacity>
@@ -388,6 +409,9 @@ export default function GroupInfoModal({
               {onMessageMember && (
                 <TouchableOpacity
                   style={styles.actionIcon}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Message ${member.name}`}
                   onPress={() => onMessageMember(member)}
                 >
                   <Ionicons name="chatbubble" size={18} color="#6366f1" />
@@ -397,6 +421,9 @@ export default function GroupInfoModal({
               {/* Challenge Button */}
               <TouchableOpacity
                 style={styles.actionIcon}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Challenge ${member.name}`}
                 onPress={() => onChallenge(member)}
               >
                 <Ionicons name="game-controller" size={18} color="#ef4444" />
@@ -408,6 +435,9 @@ export default function GroupInfoModal({
                   {member.role === 'admin' ? (
                     <TouchableOpacity
                       style={styles.actionIcon}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove admin from ${member.name}`}
                       onPress={() => handleDemote(member)}
                     >
                       <Ionicons name="arrow-down" size={18} color="#f59e0b" />
@@ -415,6 +445,9 @@ export default function GroupInfoModal({
                   ) : (
                     <TouchableOpacity
                       style={styles.actionIcon}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Make ${member.name} an admin`}
                       onPress={() => handlePromote(member)}
                     >
                       <Ionicons name="arrow-up" size={18} color="#10b981" />
@@ -427,6 +460,9 @@ export default function GroupInfoModal({
               {isAdmin && member.role !== 'owner' && (
                 <TouchableOpacity
                   style={styles.actionIcon}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${member.name} from group`}
                   onPress={() => handleRemove(member)}
                 >
                   <Ionicons name="close-circle" size={18} color="#ef4444" />
@@ -460,6 +496,12 @@ export default function GroupInfoModal({
           ]}
           onPress={handleLeave}
           disabled={isSoleAdmin}
+          accessibilityRole="button"
+          accessibilityLabel="Leave group"
+          accessibilityHint={
+            isSoleAdmin ? 'Unavailable: promote another admin before leaving' : undefined
+          }
+          accessibilityState={{ disabled: isSoleAdmin }}
         >
           <Ionicons name="exit-outline" size={18} color="#ffffff" />
           <Text style={styles.dangerButtonText}>Leave Group</Text>
@@ -483,6 +525,8 @@ export default function GroupInfoModal({
         </View>
         <TouchableOpacity
           style={[styles.dangerButton, styles.archiveButton]}
+          accessibilityRole="button"
+          accessibilityLabel={group.isArchived ? 'Unarchive group' : 'Archive group'}
           onPress={handleArchive}
         >
           <Ionicons name="archive" size={18} color="#ffffff" />
@@ -507,6 +551,8 @@ export default function GroupInfoModal({
             </View>
             <TouchableOpacity 
               style={[styles.dangerButton, styles.deleteButton]}
+              accessibilityRole="button"
+              accessibilityLabel="Delete group permanently"
               onPress={handleDelete}
             >
               <Ionicons name="trash" size={18} color="#ffffff" />
@@ -529,7 +575,13 @@ export default function GroupInfoModal({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.title, { color: colors.text }]}>Group Settings</Text>
-            <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={onClose}>
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: colors.background }]}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Close group info"
+              onPress={onClose}
+            >
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>

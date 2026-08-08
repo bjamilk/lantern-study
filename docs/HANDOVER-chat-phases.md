@@ -16,14 +16,14 @@ bug report:
 4. **Failures render as empty states** — a network error on the chat list shows
    "No conversations yet — Create Group", indistinguishable from a new account.
 
-## Done (committed, NOT pushed)
+## Done (all on `main`)
 
 | Commit | What |
 |---|---|
 | `83f88c1` | Phase A — the three message-loss fixes + `deliveryState` + "Not sent · Retry" |
 | `203c8c4` | A6 — offline outbox on `syncService` |
 | `f30005b` | B1/B2 — per-value selectors, gated question chain |
-| *(working tree)* | B3/B4/B5 — memoized bubbles, `MessageRow`/`DmMessageRow`, FlatList windowing |
+| `c3b50ce` | B3/B4/B5 + all of Phase C |
 
 **Phase A detail.** `sendMessage`'s catch restored snapshots captured *before* the await,
 destroying any realtime message that landed mid-send and reverting the whole `groups`
@@ -38,7 +38,7 @@ there would create a cycle. Network-shaped failures enqueue and stay `pending`; 
 rejections are `failed`. Replay is safe — same `clientMessageId`, unique partial indexes
 on `(group_id, sender_id, client_message_id)` with `23505` recovery.
 
-**Phase B detail (uncommitted).** `MessageBubble` lost its per-row store subscription and
+**Phase B detail.** `MessageBubble` lost its per-row store subscription and
 takes a `members` prop; `timeLabel` / `optionItems` / `authorLabel` / `mentionUsername` /
 `avatarUrl` moved into `useMemo` *above* the `isRemoved` early return; both bubbles are
 `React.memo` with the **default** comparator. New `MessageRow` (GroupChatScreen) and
@@ -52,7 +52,7 @@ a fresh literal there would defeat the memo outright. Both lists carry `extraDat
 list through a ref so its identity survives every incoming message. Windowing lives in
 `components/chat/chatListWindowing.ts` and is spread onto all four lists.
 
-**Phase C detail (uncommitted).**
+**Phase C detail.**
 
 - **C0** — `inviteByEmail`, `approvePendingMember`, `rejectPendingMember` and the
   `pendingMembers` field/mapper are gone from `groupStore`, and `pendingMembers` is also
@@ -86,9 +86,39 @@ list through a ref so its identity survives every incoming message. Windowing li
   wrong loses the user's question. `ChatThreadModal` now takes `mentionCandidates` and runs
   the tutor.
 
+**Phase D detail.**
+
+- **D1** — `components/ui/AsyncStates.tsx`: `LoadingState`, `ErrorState`, `InlineErrorBanner`,
+  `EmptyState`. The rule is written at the top of that file and applied below:
+  **error + no data → ErrorState; error + stale data → InlineErrorBanner; no error + no
+  data → EmptyState.** Never let an error fall through to an empty state.
+- **D2** — `listError` on `groupStore`, set in the `fetchGroups` and `fetchDmThreads`
+  catches that previously swallowed. Kept separate from `error` (six mutation paths write
+  that one; a failed *leave group* must not render as a broken chat list). `fetchGroups`
+  clears it synchronously at the top of every load, which is what makes the retry path
+  correct given both fetches run in parallel.
+- **D3–D6** — applied to `GroupsScreen`, `DirectMessageScreen`, `ChatThreadModal` and
+  `DmOffersPanel`. Two of those had a bare `try/finally` with no `catch`, which is exactly
+  how a 500 came to read as "Start a conversation with X" and "No offers yet on this
+  listing". `ChatThreadModal` now takes `loadError` and **stays open** on failure — both
+  hosts used to `setThreadRootId(null)`, so the thread vanished behind an alert with
+  nothing to retry. `reloadThread` in both hosts now resolves rather than rejects, since it
+  doubles as the ErrorState's Retry handler.
+- **D7** — accessibility. Coverage went `GroupInfoModal` 14 pressables/0 labels/0 roles →
+  14/14/14; `DmBubble` 6/2/1 → 6/6/6; `DmOffersPanel` 7/2/0 → 7/9/7; `MessageBubble`
+  8/8/4 → 8/11/8. Voice-note labels in `DmBubble` are copied verbatim from
+  `MessageBubble`. New `components/ui/IconButton.tsx` bakes in a **required** label, a
+  button role, disabled/selected state, and `hitSlop` padding the target to 44pt.
+  `ThemeProvider` now folds `PixelRatio.getFontScale()` into the app's own scale — text
+  renders with `allowFontScaling={false}`, so OS Dynamic Type had been ignored outright —
+  clamped at 1.6x for the OS factor and 1.8x combined, and re-read on foreground because
+  RN emits no font-scale event. `ChatComposer`'s `max-h-28` is unpinned and now scales with
+  it. `DirectMessageScreen` mirrors `GroupChatScreen`'s `announceForAccessibility`.
+
 ## Remaining
 
-**D1–D7** error/empty-state primitives, `listError` in the store, then accessibility.
+Nothing from the original four-phase plan. See "Verification debt" below — none of
+A/B/C/D has been exercised on a device.
 
 ## Traps
 

@@ -392,6 +392,9 @@ function MessageBubbleComponent({
         {(message.replyCount ?? 0) > 0 && onOpenThread ? (
           <Pressable
             onPress={() => onOpenThread(message.threadRootId || message.id)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
             className="mt-1.5"
           >
             <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
@@ -426,6 +429,11 @@ function MessageBubbleComponent({
     <Pressable
       onLongPress={onReply ? () => onReply(message) : undefined}
       delayLongPress={350}
+      accessibilityRole={onReply ? 'button' : 'text'}
+      accessibilityLabel={
+        `${isOwn ? 'You' : authorLabel} at ${timeLabel}. ${message.questionStem || message.text}`
+      }
+      accessibilityHint={onReply ? 'Double tap and hold for message options' : undefined}
       className={`flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'} ${isGroupedWithPrevious ? 'mb-1' : 'mb-3'}`}
     >
       {!isOwn ? (
@@ -487,6 +495,8 @@ function MessageBubbleComponent({
           {message.replyTo ? (
             <Pressable
               onPress={() => message.replyTo?.id && onScrollToMessage?.(message.replyTo.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Replying to ${message.replyTo.senderName || 'a message'}. Tap to jump to it.`}
               className="mb-2 rounded-lg px-2.5 py-1.5 border-l-2"
               style={{
                 backgroundColor: isOwn && !isQuestion ? `${colors.chatBubbleMeta}26` : colors.backgroundSecondary,
@@ -676,8 +686,10 @@ function MessageBubbleComponent({
         {(message.replyCount ?? 0) > 0 && onOpenThread ? (
           <Pressable
             onPress={() => onOpenThread(message.threadRootId || message.id)}
+            hitSlop={8}
             className="mt-1.5"
-            accessibilityLabel={`${message.replyCount} replies`}
+            accessibilityRole="button"
+            accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
           >
             <Text
               className="text-xs font-semibold"

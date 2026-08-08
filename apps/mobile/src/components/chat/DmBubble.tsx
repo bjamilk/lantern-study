@@ -120,6 +120,9 @@ function DmBubbleComponent({
         {(message.replyCount ?? 0) > 0 && onOpenThread ? (
           <Pressable
             onPress={() => onOpenThread(threadRootId || messageId || '')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
             className="mt-1.5"
           >
             <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
@@ -136,6 +139,11 @@ function DmBubbleComponent({
     <Pressable
       onLongPress={onReply}
       delayLongPress={350}
+      accessibilityRole={onReply ? 'button' : 'text'}
+      accessibilityLabel={
+        `${isOwn ? 'You' : senderName?.trim() || 'Member'} at ${timeLabel}. ${message.text}`
+      }
+      accessibilityHint={onReply ? 'Double tap and hold for message options' : undefined}
       className={`mb-3 flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'}`}
     >
       {!isOwn ? (
@@ -158,6 +166,8 @@ function DmBubbleComponent({
           {message.replyTo ? (
             <Pressable
               onPress={() => message.replyTo?.id && onScrollToMessage?.(message.replyTo.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Replying to ${message.replyTo.senderName || 'a message'}. Tap to jump to it.`}
               className="mb-2 rounded-lg px-2.5 py-1.5 border-l-2"
               style={{
                 backgroundColor: isOwn ? 'rgba(255,255,255,0.15)' : colors.backgroundSecondary,
@@ -193,7 +203,13 @@ function DmBubbleComponent({
                 Loading voice note…
               </Text>
             ) : (
-              <Pressable onPress={() => void toggleAudio()} className="flex-row items-center gap-2">
+              <Pressable
+                onPress={() => void toggleAudio()}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
+                className="flex-row items-center gap-2"
+              >
                 <Text
                   className="text-xs font-semibold px-2.5 py-1.5 rounded-lg"
                   style={{
@@ -262,8 +278,10 @@ function DmBubbleComponent({
         {(message.replyCount ?? 0) > 0 && onOpenThread ? (
           <Pressable
             onPress={() => onOpenThread(threadRootId || messageId || message.replyTo?.id || '')}
+            hitSlop={8}
             className="mt-1.5"
-            accessibilityLabel={`${message.replyCount} replies`}
+            accessibilityRole="button"
+            accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
           >
             <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
               {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
