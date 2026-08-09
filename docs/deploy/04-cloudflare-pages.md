@@ -1,6 +1,6 @@
 # Step 4: Deploy the web app (Cloudflare Pages)
 
-Host the Lantern Study Vite web app on **Cloudflare Pages** with GitHub auto-deploy from `main`.
+Host the Lantern Study Vite web app on **Cloudflare Pages**. Production deploys to `lanternstudy.com` stay **manual** (`Deploy web` workflow). Same-repo PRs get automatic preview aliases — see [05-preview-cicd.md](./05-preview-cicd.md).
 
 ## What gets deployed
 

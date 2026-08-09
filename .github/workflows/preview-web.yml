@@ -1,0 +1,171 @@
+name: Preview web (Cloudflare Pages)
+
+# Deploys every same-repo PR to a Cloudflare Pages preview alias so you can
+# test alternate implementations without touching lanternstudy.com.
+#
+# Preview URL pattern:
+#   https://<sanitized-branch>.lantern-study.pages.dev
+#
+# Requires repository (or environment) secrets/vars — see docs/deploy/05-preview-cicd.md
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch to preview (defaults to the branch that triggered the run)'
+        required: false
+        default: ''
+
+concurrency:
+  group: preview-web-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    # Fork PRs do not receive repo secrets — skip rather than fail noisily.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - name: Resolve checkout ref
+        id: ref
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.ref }}" ]; then
+            echo "ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - name: Sanitize Pages branch alias
+        id: branch
+        run: |
+          set -euo pipefail
+          raw="${{ github.head_ref || github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.ref }}" ]; then
+            raw="${{ inputs.ref }}"
+          fi
+          # Cloudflare Pages aliases: lowercase, hyphenated, max ~63 chars.
+          alias=$(printf '%s' "$raw" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' \
+            | cut -c1-63)
+          if [ -z "$alias" ]; then
+            echo "::error::Could not derive a Pages branch alias from '$raw'"
+            exit 1
+          fi
+          echo "alias=$alias" >> "$GITHUB_OUTPUT"
+          echo "Preview alias: $alias"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Security overrides are actually installed
+        run: node scripts/check-overrides.mjs
+
+      - name: Scan for committed secrets
+        run: bash scripts/check-secrets.sh
+
+      - name: Build web
+        env:
+          # Same production-safe Vite values as deploy-web.yml. Preview hosts
+          # still talk to the live API/Supabase until a staging API exists.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+        run: npm run build:web
+
+      - name: Verify bundle points at cloud Supabase
+        run: bash scripts/verify-web-bundle-env.sh
+
+      - name: Publish preview to Cloudflare Pages
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_BRANCH: ${{ steps.branch.outputs.alias }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::Missing CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID. Add them to the GitHub Environment named 'preview' (or as repository secrets)."
+            exit 1
+          fi
+          # Capture wrangler output for the unique deployment URL.
+          set +e
+          out=$(npx wrangler pages deploy dist \
+            --project-name lantern-study \
+            --branch "$PAGES_BRANCH" 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 0 ]; then
+            exit "$code"
+          fi
+          deploy_url=$(printf '%s\n' "$out" | grep -oE 'https://[a-z0-9.-]+\.pages\.dev' | tail -1 || true)
+          alias_url="https://${PAGES_BRANCH}.lantern-study.pages.dev"
+          echo "alias_url=$alias_url" >> "$GITHUB_OUTPUT"
+          echo "deploy_url=${deploy_url:-$alias_url}" >> "$GITHUB_OUTPUT"
+          echo "Preview alias: $alias_url"
+          echo "Deployment URL: ${deploy_url:-$alias_url}"
+
+      - name: Comment preview URL on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const aliasUrl = '${{ steps.deploy.outputs.alias_url }}';
+            const deployUrl = '${{ steps.deploy.outputs.deploy_url }}';
+            const branch = '${{ steps.branch.outputs.alias }}';
+            const marker = '<!-- lantern-preview-web -->';
+            const body = [
+              marker,
+              '## Web preview',
+              '',
+              `**Stable alias:** ${aliasUrl}`,
+              deployUrl && deployUrl !== aliasUrl ? `**This deploy:** ${deployUrl}` : null,
+              '',
+              `Pages branch: \`${branch}\``,
+              '',
+              '> Uses production Supabase + API credentials baked at build time.',
+              '> Production (`lanternstudy.com`) is unchanged — deploy that via **Deploy web (Cloudflare Pages)** manually.',
+            ].filter((line) => line != null).join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

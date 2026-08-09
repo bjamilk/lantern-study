@@ -65,7 +65,8 @@ If push fails with **workflow scope** error, run `gh auth refresh -h github.com 
 ## After push
 
 1. Open the repo on GitHub → **Actions** tab → confirm the **CI** workflow passes on `main`.
-2. Next step: [02-supabase-cloud.md](./02-supabase-cloud.md) — link CLI, push migrations, configure auth.
+2. For PR-based web previews (test implementations without touching production), see [05-preview-cicd.md](./05-preview-cicd.md).
+3. Next step: [02-supabase-cloud.md](./02-supabase-cloud.md) — link CLI, push migrations, configure auth.
 
 ## Rollback / fix broken deploys
 
