@@ -115,6 +115,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   plugins: [
+    // Keeps the fmt C++17 workaround in the generated Podfile — see the plugin.
+    './plugins/withFmtCxx17',
     'expo-font',
     'expo-secure-store',
     'expo-web-browser',
