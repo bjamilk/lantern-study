@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { getFavoritePriceSnapshots } from './marketplaceFavoritePrices';
 
 type NavigationProp = {
   goBack: () => void;
@@ -17,8 +18,11 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
   const { user } = useAuthStore();
   const { favoriteListings, favorites, listings, fetchServerFavorites, toggleFavorite } = useMarketplaceStore();
 
+  const [priceSnapshots, setPriceSnapshots] = useState<Record<string, number>>({});
+
   const load = useCallback(async () => {
     await fetchServerFavorites();
+    setPriceSnapshots(await getFavoritePriceSnapshots());
   }, [fetchServerFavorites]);
 
   useEffect(() => {
@@ -63,7 +67,27 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
               <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
                 {item.title}
               </Text>
-              <Text className="text-sm font-bold text-lantern-primary mt-1">{formatPrice(item.price)}</Text>
+              {(() => {
+                // Flag listings whose price fell since the user saved them.
+                const seen = priceSnapshots[item.id];
+                const current = item.effective_price ?? item.price;
+                const dropped =
+                  typeof seen === 'number' && typeof current === 'number' && current < seen;
+                return (
+                  <View className="flex-row items-center gap-2 mt-1">
+                    <Text className="text-sm font-bold text-lantern-primary">
+                      {formatPrice(current ?? item.price)}
+                    </Text>
+                    {dropped ? (
+                      <View className="px-1.5 py-0.5 rounded-md bg-lantern-success-background">
+                        <Text className="text-[10px] font-semibold text-lantern-success">
+                          Price drop · was {formatPrice(seen)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })()}
             </View>
             {user?.id ? (
               <Pressable

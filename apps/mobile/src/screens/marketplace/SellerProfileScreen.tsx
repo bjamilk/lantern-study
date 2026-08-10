@@ -216,17 +216,31 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        {profile?.average_rating != null && profile.average_rating > 0 ? (
-          <View className="flex-row items-center gap-1 mt-2">
-            <Ionicons name="star" size={14} color="#fbbf24" />
+        <View className="flex-row items-center flex-wrap gap-x-3 gap-y-1 mt-2">
+          {profile?.average_rating != null && profile.average_rating > 0 ? (
+            <View className="flex-row items-center gap-1">
+              <Ionicons name="star" size={14} color="#fbbf24" />
+              <Text className="text-sm text-lantern-text-secondary">
+                {profile.average_rating.toFixed(1)}
+                {profile.review_count ? ` (${profile.review_count})` : ''}
+              </Text>
+            </View>
+          ) : (
+            <Text className="text-sm text-lantern-text-secondary">No ratings yet</Text>
+          )}
+          {profile?.memberSince ? (
+            // Join date is a cheap, honest trust signal buyers expect on peer marketplaces.
             <Text className="text-sm text-lantern-text-secondary">
-              {profile.average_rating.toFixed(1)}
-              {profile.review_count ? ` (${profile.review_count})` : ''}
+              · Member since{' '}
+              {new Date(profile.memberSince).toLocaleDateString([], { month: 'short', year: 'numeric' })}
             </Text>
-          </View>
-        ) : (
-          <Text className="text-sm text-lantern-text-secondary mt-2">No ratings yet</Text>
-        )}
+          ) : null}
+          {(profile?.badges ?? []).map(badge => (
+            <View key={badge.id} className="px-2 py-0.5 rounded-full bg-lantern-primary-background">
+              <Text className="text-[10px] font-semibold text-lantern-primary">{badge.label}</Text>
+            </View>
+          ))}
+        </View>
         {profile?.shopBio ? (
           <Text className="text-sm text-lantern-text-secondary mt-2 leading-5">{profile.shopBio}</Text>
         ) : null}

@@ -190,6 +190,8 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
                     onPress={() =>
                       void removeMarketplaceCartItem(item.listing_id).then(load)
                     }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${item.listing?.title ?? 'item'} from cart`}
                     className="p-2"
                   >
                     <Ionicons name="trash-outline" size={20} color="#ef4444" />

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,6 +57,17 @@ export function MarketplaceWorkspaceBar({
 }: MarketplaceWorkspaceBarProps) {
   const insets = useSafeAreaInsets();
   const [showMore, setShowMore] = useState(false);
+  // The chip row scrolls, but nothing said so — chips just clipped mid-word
+  // ("Selli…") and the tail of the nav was undiscoverable. Show a chevron
+  // while there is off-screen content to the right.
+  const [showOverflowHint, setShowOverflowHint] = useState(false);
+  const scrollMetrics = useRef({ container: 0, content: 0 });
+  const syncOverflowHint = (scrollX?: number) => {
+    const { container, content } = scrollMetrics.current;
+    if (!container || !content) return;
+    const atEnd = scrollX != null && scrollX >= content - container - 8;
+    setShowOverflowHint(content > container + 8 && !atEnd);
+  };
 
   const items = showFavorites
     ? [
@@ -72,11 +83,22 @@ export function MarketplaceWorkspaceBar({
 
   return (
     <View className={`flex-row items-center gap-1.5 ${className}`}>
+      <View className="flex-1 flex-row items-center">
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         className="flex-1"
         contentContainerStyle={{ gap: 6, alignItems: 'center', paddingRight: 4 }}
+        onLayout={e => {
+          scrollMetrics.current.container = e.nativeEvent.layout.width;
+          syncOverflowHint();
+        }}
+        onContentSizeChange={w => {
+          scrollMetrics.current.content = w;
+          syncOverflowHint();
+        }}
+        onScroll={e => syncOverflowHint(e.nativeEvent.contentOffset.x)}
+        scrollEventThrottle={64}
       >
         {items.map(item => {
           const isActive = active === item.id;
@@ -107,6 +129,12 @@ export function MarketplaceWorkspaceBar({
           );
         })}
       </ScrollView>
+      {showOverflowHint ? (
+        <View pointerEvents="none" className="absolute right-0">
+          <Ionicons name="chevron-forward" size={14} color="#94a3b8" />
+        </View>
+      ) : null}
+      </View>
 
       {moreItems.length > 0 ? (
         <Pressable

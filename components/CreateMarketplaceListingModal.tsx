@@ -104,6 +104,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     distanceToCampus: '',
   });
   const [loading, setLoading] = useState(false);
+  // One-shot: the first photoless Publish warns; the second goes through.
+  const [skipPhotoNudge, setSkipPhotoNudge] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
@@ -406,7 +408,17 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       useToastStore.getState().showToast('Please confirm the marketplace fulfillment terms');
       return;
     }
-    
+
+    // Photos are the strongest conversion lever a listing has; nudge — but
+    // don't block — before publishing a photoless one. Mirrors mobile.
+    if (formData.images.length === 0 && !skipPhotoNudge) {
+      setSkipPhotoNudge(true);
+      useToastStore
+        .getState()
+        .showToast('Listings with photos get far more buyers. Add one, or press Publish again to continue.');
+      return;
+    }
+
     setLoading(true);
 
     try {

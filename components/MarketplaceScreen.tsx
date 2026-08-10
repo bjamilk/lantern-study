@@ -51,6 +51,34 @@ interface MarketplaceScreenProps {
   refreshKey?: number;
 }
 
+const RECENT_SEARCHES_KEY = 'lantern_marketplace_recent_searches';
+const MAX_RECENT_SEARCHES = 8;
+
+/** Local-only recent queries shown as one-tap chips; mirrors mobile. */
+const readRecentSearches = (): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || '[]');
+  } catch {
+    return [];
+  }
+};
+
+const writeRecentSearch = (query: string): string[] => {
+  const trimmed = query.trim();
+  const current = readRecentSearches();
+  if (trimmed.length < 2) return current;
+  const next = [
+    trimmed,
+    ...current.filter(q => q.toLowerCase() !== trimmed.toLowerCase()),
+  ].slice(0, MAX_RECENT_SEARCHES);
+  try {
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+  } catch {
+    // non-critical
+  }
+  return next;
+};
+
 const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   onNavigate,
   guestMode = false,
@@ -65,6 +93,10 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => readRecentSearches());
+  // The search input is uncontrolled (defaultValue); bump this to re-mount it
+  // when a recent-search chip fills it programmatically.
+  const [searchInputKey, setSearchInputKey] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
@@ -348,6 +380,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       }
 
       if (reset && searchTerm.trim()) {
+        if (filteredData.length > 0) {
+          setRecentSearches(writeRecentSearch(searchTerm));
+        }
         void import('../services/productAnalytics').then(({ trackMarketplaceSearch }) => {
           trackMarketplaceSearch({
             query: searchTerm,
@@ -747,6 +782,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           <div className="flex-1 min-w-0 w-full relative">
             <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
             <input
+              key={searchInputKey}
               type="text"
               aria-label={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search student essentials'}
               placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
@@ -785,6 +821,36 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             </button>
           ) : null}
         </div>
+
+        {!searchTerm.trim() && recentSearches.length > 0 ? (
+          <div className="flex items-center gap-1.5 mt-2 overflow-x-auto" aria-label="Recent searches">
+            <span className="text-[11px] text-lantern-text-tertiary shrink-0">Recent</span>
+            {recentSearches.map(q => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => {
+                  setSearchTerm(q);
+                  setSearchInputKey(k => k + 1);
+                }}
+                className="shrink-0 px-2.5 py-1 rounded-full bg-lantern-background-secondary text-[11px] text-lantern-text-secondary hover:text-lantern-primary transition-colors"
+              >
+                {q}
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-label="Clear recent searches"
+              onClick={() => {
+                try { localStorage.removeItem(RECENT_SEARCHES_KEY); } catch { /* non-critical */ }
+                setRecentSearches([]);
+              }}
+              className="shrink-0 px-1.5 py-1 text-[11px] text-lantern-text-tertiary hover:text-lantern-error"
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
 
         {showFilters && (
           <MarketplaceFilterPanel

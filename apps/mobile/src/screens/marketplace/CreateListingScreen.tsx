@@ -294,6 +294,22 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       Alert.alert('Invalid price', 'Please enter a valid price.');
       return;
     }
+    // Photos are the strongest conversion lever a listing has; nudge — but
+    // don't block — before publishing a photoless one.
+    if (pendingImages.length === 0) {
+      const publishWithout = await new Promise<boolean>(resolve => {
+        Alert.alert(
+          'No photos yet',
+          'Listings with photos get far more buyers. Add one first?',
+          [
+            { text: 'Add photo', onPress: () => resolve(false) },
+            { text: 'Publish without', onPress: () => resolve(true) },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) }
+        );
+      });
+      if (!publishWithout) return;
+    }
     try {
       const saleEndsAt =
         saleEndsPreset === 'none'

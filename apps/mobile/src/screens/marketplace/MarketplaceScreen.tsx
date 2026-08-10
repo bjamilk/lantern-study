@@ -32,6 +32,11 @@ import {
 } from '../../services/api';
 import { categoryIcon, formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { getRecentlyViewedListingIds } from './marketplaceRecentlyViewed';
+import {
+  addRecentMarketplaceSearch,
+  clearRecentMarketplaceSearches,
+  getRecentMarketplaceSearches,
+} from './marketplaceRecentSearches';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
@@ -96,6 +101,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   const [recentListings, setRecentListings] = useState<MarketplaceListing[]>([]);
   const [savedSearchNewMatches, setSavedSearchNewMatches] = useState(0);
   const [campuses, setCampuses] = useState<MarketplaceCampusOption[]>([]);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  useEffect(() => {
+    void getRecentMarketplaceSearches().then(setRecentSearches);
+  }, []);
 
   const categories = activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES;
   const activeCategoryLabel = selectedCategory
@@ -248,6 +258,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   useEffect(() => {
     if (!searchQuery.trim()) return;
     const timer = setTimeout(() => {
+      if (displayListings.length > 0) {
+        void addRecentMarketplaceSearch(searchQuery).then(() =>
+          getRecentMarketplaceSearches().then(setRecentSearches)
+        );
+      }
       void import('../../services/productAnalytics').then(({ trackMarketplaceSearch }) => {
         trackMarketplaceSearch({
           query: searchQuery,
@@ -434,6 +449,37 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       </View>
 
       <View className="bg-lantern-surface border-b border-lantern-border">
+        {!searchQuery.trim() && recentSearches.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, gap: 6, alignItems: 'center' }}
+          >
+            <Text className="text-[11px] text-lantern-text-tertiary mr-1">Recent</Text>
+            {recentSearches.map(q => (
+              <Pressable
+                key={q}
+                onPress={() => setSearchQuery(q)}
+                accessibilityRole="button"
+                accessibilityLabel={`Search again for ${q}`}
+                className="px-2.5 py-1 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
+              >
+                <Text className="text-[11px] text-lantern-text-secondary">{q}</Text>
+              </Pressable>
+            ))}
+            <Pressable
+              onPress={() => {
+                void clearRecentMarketplaceSearches();
+                setRecentSearches([]);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Clear recent searches"
+              className="px-2 py-1"
+            >
+              <Ionicons name="close-circle-outline" size={14} color="#94a3b8" />
+            </Pressable>
+          </ScrollView>
+        ) : null}
         <View className="flex-row px-4 items-center">
           {(['academic', 'student-life', 'shops'] as const).map(tab => (
             <Pressable

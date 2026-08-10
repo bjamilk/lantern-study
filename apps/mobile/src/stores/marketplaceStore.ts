@@ -271,6 +271,8 @@ export interface SellerProfile {
   review_count?: number;
   is_verified?: boolean;
   badges?: Array<{ id: string; label: string }>;
+  /** profiles.created_at — "Member since" trust signal. */
+  memberSince?: string;
 }
 
 export interface MarketplaceShopCard {
@@ -1076,8 +1078,20 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     
     if (isFavorited) {
       newFavorites.delete(listingId);
+      void import('../screens/marketplace/marketplaceFavoritePrices').then(m =>
+        m.forgetFavoritePrice(listingId)
+      );
     } else {
       newFavorites.add(listingId);
+      // Remember the price at favorite time so Saved Listings can flag drops.
+      const listing =
+        get().listings.find(l => l.id === listingId) ||
+        get().favoriteListings.find(l => l.id === listingId) ||
+        get().currentListing;
+      const seenPrice = listing?.id === listingId ? listing?.effective_price ?? listing?.price : undefined;
+      void import('../screens/marketplace/marketplaceFavoritePrices').then(m =>
+        m.snapshotFavoritePrice(listingId, seenPrice)
+      );
     }
     
     // Optimistic update
@@ -1627,7 +1641,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
 
       const profile = await api.fetchSellerProfile(sellerId);
       const data = profile as {
-        user?: { id: string; name: string; avatar_url?: string };
+        user?: { id: string; name: string; avatar_url?: string; created_at?: string };
         shop?: { shopName?: string; bio?: string | null; coverImageUrl?: string | null };
         stats?: {
           totalListings: number;
@@ -1654,6 +1668,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           review_count: data.stats?.totalReviews || 0,
           is_verified: data.stats?.isVerified,
           badges: data.badges,
+          memberSince: data.user?.created_at,
         },
         isLoading: false,
       });
