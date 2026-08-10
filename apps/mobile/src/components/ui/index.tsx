@@ -55,12 +55,24 @@ export function Button({
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
-      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityLabel={
+        accessibilityLabel ?? (typeof children === 'string' ? children : undefined)
+      }
+      accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       className={`flex-row items-center justify-center ${variantClass[variant]} ${sizeClass[size]} ${fullWidth ? 'w-full' : ''} ${disabled ? 'opacity-50' : ''} ${className}`}
     >
       {loading ? <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? '#4f46e5' : '#fff'} /> : null}
       {typeof children === 'string' ? (
-        <Text className={`font-semibold text-sm ${textClass[variant]}`}>{children}</Text>
+        // Not its own TalkBack stop — the Pressable already announces this
+        // label, so leaving the Text important made every Button say its
+        // caption twice ("Send", then "Send" again).
+        <Text
+          importantForAccessibility="no"
+          className={`font-semibold text-sm ${textClass[variant]}`}
+        >
+          {children}
+        </Text>
       ) : (
         children
       )}

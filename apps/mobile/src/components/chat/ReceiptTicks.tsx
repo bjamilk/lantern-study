@@ -41,20 +41,39 @@ export function ReceiptTicks({
   };
 
   const icon = (
+    // Label lives on whichever wrapper is announced (or nowhere, when the row
+    // speaks the state) — never on the glyph itself.
     <Ionicons
       name={isRead ? 'checkmark-done' : 'checkmark'}
       size={14}
       color={color}
-      accessibilityLabel={label}
+      importantForAccessibility="no"
     />
   );
 
   if (!showSeenDetail) {
-    return <View className="ml-0.5">{icon}</View>;
+    // Purely visual: the message row's accessibility label already speaks the
+    // delivery state, so the bare tick was a duplicate TalkBack stop per message.
+    return (
+      <View
+        className="ml-0.5"
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      >
+        {icon}
+      </View>
+    );
   }
 
   return (
-    <Pressable onLongPress={handleLongPress} delayLongPress={300} className="ml-0.5">
+    <Pressable
+      onLongPress={handleLongPress}
+      delayLongPress={300}
+      className="ml-0.5"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint="Double tap and hold for read receipt details"
+    >
       {icon}
     </Pressable>
   );

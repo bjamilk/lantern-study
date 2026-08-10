@@ -309,7 +309,7 @@ export function ChatComposer({
           <Pressable
             onPress={() => void pickImage()}
             disabled={busy || isRecording}
-            className="p-2 mb-0.5 min-w-[44px] min-h-[44px] items-center justify-center"
+            className="p-2 mb-0.5 min-w-[48px] min-h-[48px] items-center justify-center"
             accessibilityLabel="Attach image"
           >
             {attaching ? (
@@ -327,7 +327,7 @@ export function ChatComposer({
               else void startRecording();
             }}
             disabled={uploadingAudio}
-            className="p-2 mb-0.5 min-w-[44px] min-h-[44px] items-center justify-center rounded-xl"
+            className="p-2 mb-0.5 min-w-[48px] min-h-[48px] items-center justify-center rounded-xl"
             style={{ backgroundColor: isRecording ? '#ef4444' : colors.backgroundSecondary }}
             accessibilityLabel={isRecording ? 'Stop recording' : 'Record voice note'}
           >
@@ -369,7 +369,7 @@ export function ChatComposer({
             maxHeight: 112 * getFontScaleValue(),
           }}
         />
-        <Button size="sm" loading={sending} disabled={!value.trim() || busy || isRecording} onPress={onSend}>
+        <Button size="sm" className="min-w-[48px] min-h-[48px]" loading={sending} disabled={!value.trim() || busy || isRecording} onPress={onSend}>
           Send
         </Button>
       </View>

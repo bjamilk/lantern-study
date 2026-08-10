@@ -70,7 +70,13 @@ export function GroupChatHeader({
         className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface"
         style={{ borderBottomColor: colors.border, backgroundColor: colors.card }}
       >
-        <Pressable onPress={onBack} className="p-2 rounded-lg" accessibilityLabel="Go back">
+        <Pressable
+          onPress={onBack}
+          // 48dp is the Android/Material minimum target; p-2 around a 22px icon was 36dp.
+          className="p-2 rounded-lg min-w-[48px] min-h-[48px] items-center justify-center"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Ionicons name="arrow-back" size={22} color={colors.textSecondary} />
         </Pressable>
 
@@ -78,6 +84,8 @@ export function GroupChatHeader({
           name={displayName}
           uri={resolveAvatarSrc(avatarUrl, lowDataMode)}
           size={36}
+          // The title right next to it already announces the group name.
+          decorative
         />
 
         <View className="flex-1 min-w-0">
@@ -99,8 +107,9 @@ export function GroupChatHeader({
 
         <Pressable
           onPress={onAddQuestion}
-          className="p-2 rounded-lg min-w-[44px] min-h-[44px] items-center justify-center"
+          className="p-2 rounded-lg min-w-[48px] min-h-[48px] items-center justify-center"
           style={{ backgroundColor: `${featureAccents.groups}20` }}
+          accessibilityRole="button"
           accessibilityLabel="Add question"
         >
           <Ionicons name="add-circle-outline" size={22} color={featureAccents.groups} />
@@ -108,7 +117,8 @@ export function GroupChatHeader({
 
         <Pressable
           onPress={openMenu}
-          className="p-2 rounded-lg"
+          className="p-2 rounded-lg min-w-[48px] min-h-[48px] items-center justify-center"
+          accessibilityRole="button"
           accessibilityLabel="More actions"
         >
           <Ionicons name="ellipsis-vertical" size={22} color={colors.primary} />

@@ -1,12 +1,12 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Audio } from 'expo-av';
-import { chatMessagePreview, parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
+import { chatMessagePreview, parseChatAudioUrl } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
-import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { ChatTextBody } from './ChatMessageBody';
 import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
+import { VoiceNotePlayer } from './VoiceNotePlayer';
 
 interface DmBubbleProps {
   message: {
@@ -62,50 +62,6 @@ function DmBubbleComponent({
     [message.timestamp]
   );
   const audioUrl = parseChatAudioUrl(message.text);
-  const resolvedAudioUrl = useResolvedStorageUrl(audioUrl);
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const [playing, setPlaying] = useState(false);
-
-  const toggleAudio = async () => {
-    if (!resolvedAudioUrl) return;
-    try {
-      if (playing && soundRef.current) {
-        await soundRef.current.pauseAsync();
-        setPlaying(false);
-        return;
-      }
-      if (!soundRef.current) {
-        const { sound } = await Audio.Sound.createAsync({ uri: resolvedAudioUrl });
-        soundRef.current = sound;
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (!status.isLoaded) return;
-          if (status.didJustFinish) {
-            setPlaying(false);
-            void sound.setPositionAsync(0);
-          }
-        });
-      }
-      const status = await soundRef.current.getStatusAsync();
-      if (!status.isLoaded) return;
-      const total = status.durationMillis ?? 0;
-      const atEnd =
-        !!status.didJustFinish ||
-        (total > 0 && (status.positionMillis ?? 0) >= total - 40);
-      if (atEnd) {
-        await soundRef.current.playFromPositionAsync(0);
-      } else {
-        await soundRef.current.playAsync();
-      }
-      setPlaying(true);
-    } catch {
-      setPlaying(false);
-    }
-  };
-
-  const segments = useMemo(
-    () => (!audioUrl ? segmentMentions(message.text) : []),
-    [audioUrl, message.text]
-  );
   const isRemoved = !!message.isRemoved || !!message.removedAt;
 
   if (isRemoved) {
@@ -134,34 +90,54 @@ function DmBubbleComponent({
     );
   }
 
+  // One composed announcement per row — same scheme as MessageBubble. The
+  // duplicate child Texts (sender, text, time, state) are silenced below.
+  const statusLabel = !isOwn
+    ? ''
+    : message.deliveryState === 'pending'
+      ? '. Sending'
+      : message.deliveryState === 'failed'
+        ? '. Not sent'
+        : (message.receiptStatus || 'sent') === 'read'
+          ? '. Read'
+          : '. Sent';
+  const rowLabel =
+    `${isOwn ? 'You' : senderName?.trim() || 'Member'} at ${timeLabel}. ` +
+    `${chatMessagePreview(message.text)}${message.editedAt ? '. Edited' : ''}${statusLabel}`;
+
   return (
     <SwipeToReply enabled={!!onSwipeReply} onReply={() => onSwipeReply?.()}>
     <Pressable
       onLongPress={onReply}
       delayLongPress={350}
       accessibilityRole={onReply ? 'button' : 'text'}
-      accessibilityLabel={
-        `${isOwn ? 'You' : senderName?.trim() || 'Member'} at ${timeLabel}. ${message.text}`
-      }
+      accessibilityLabel={rowLabel}
       accessibilityHint={onReply ? 'Double tap and hold for message options' : undefined}
       className={`mb-3 flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'}`}
     >
       {!isOwn ? (
-        <ResolvedAvatar name={senderName || 'User'} uri={senderAvatar} size={28} />
+        // The row label already names the sender.
+        <ResolvedAvatar name={senderName || 'User'} uri={senderAvatar} size={28} decorative />
       ) : null}
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
         {!isOwn ? (
-          <Text className="text-xs font-semibold mb-1 ml-0.5" style={{ color: colors.primary }}>
+          <Text
+            importantForAccessibility="no"
+            className="text-xs font-semibold mb-1 ml-0.5"
+            style={{ color: colors.primary }}
+          >
             {senderName?.trim() || 'Member'}
           </Text>
         ) : null}
 
         <View
           className={`px-3.5 py-2.5 rounded-2xl max-w-full shadow-sm ${
-            isOwn ? 'rounded-br-md' : 'rounded-bl-md border border-lantern-border'
+            isOwn ? 'rounded-br-md' : 'rounded-bl-md'
           }`}
-          style={isOwn ? { backgroundColor: colors.primary } : { backgroundColor: colors.card }}
+          style={{
+            backgroundColor: isOwn ? colors.chatBubbleOwn : colors.chatBubbleOther,
+          }}
         >
           {message.replyTo ? (
             <Pressable
@@ -170,21 +146,21 @@ function DmBubbleComponent({
               accessibilityLabel={`Replying to ${message.replyTo.senderName || 'a message'}. Tap to jump to it.`}
               className="mb-2 rounded-lg px-2.5 py-1.5 border-l-2"
               style={{
-                backgroundColor: isOwn ? 'rgba(255,255,255,0.15)' : colors.backgroundSecondary,
-                borderLeftColor: isOwn ? '#fff' : colors.primary,
+                backgroundColor: isOwn ? `${colors.chatBubbleMeta}26` : colors.backgroundSecondary,
+                borderLeftColor: colors.primary,
               }}
             >
               <Text
                 className="text-[11px] font-semibold"
                 numberOfLines={1}
-                style={{ color: isOwn ? colors.textInverse : colors.primary }}
+                style={{ color: isOwn ? colors.chatBubbleText : colors.primary }}
               >
                 {message.replyTo.senderName || 'Message'}
               </Text>
               <Text
                 className="text-xs"
                 numberOfLines={1}
-                style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}
+                style={{ color: isOwn ? colors.chatBubbleMeta : colors.textSecondary }}
               >
                 {message.replyTo.isRemoved
                   ? 'Message removed'
@@ -194,67 +170,39 @@ function DmBubbleComponent({
           ) : null}
 
           {audioUrl ? (
-            resolvedAudioUrl === null ? (
-              <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
-                Voice note unavailable
-              </Text>
-            ) : !resolvedAudioUrl ? (
-              <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
-                Loading voice note…
-              </Text>
-            ) : (
-              <Pressable
-                onPress={() => void toggleAudio()}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
-                className="flex-row items-center gap-2"
-              >
-                <Text
-                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg"
-                  style={{
-                    backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : colors.primaryBackground,
-                    color: isOwn ? colors.textInverse : colors.primary,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {playing ? 'Pause' : 'Play'}
-                </Text>
-                <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
-                  Voice note
-                </Text>
-              </Pressable>
-            )
+            <VoiceNotePlayer url={audioUrl} isOwn={isOwn} />
           ) : (
-            <Text className="text-sm leading-relaxed" style={{ color: isOwn ? colors.textInverse : colors.text }}>
-              {segments.map((seg, i) =>
-                seg.type === 'mention' ? (
-                  <Text key={i} style={{ fontWeight: '700', color: isOwn ? '#fff' : colors.primary }}>
-                    {seg.value}
-                  </Text>
-                ) : (
-                  <Text key={i}>{seg.value}</Text>
-                )
-              )}
-            </Text>
+            <ChatTextBody
+              text={message.text}
+              textColor={colors.chatBubbleText}
+              mentionColor={isOwn ? colors.chatBubbleText : colors.primary}
+            />
           )}
+          {/* Time / edited / delivery are spoken once as part of the row label;
+              only the Retry action stays as its own stop. */}
           <View className="flex-row items-center justify-end mt-1.5 gap-0.5">
             <Text
+              importantForAccessibility="no"
               className="text-[10px]"
-              style={{ color: isOwn ? '#c7d2fe' : colors.textTertiary }}
+              style={{ color: isOwn ? colors.chatBubbleMeta : colors.textTertiary }}
             >
               {timeLabel}
             </Text>
             {message.editedAt ? (
               <Text
-                className="text-[10px]"
-                style={{ color: isOwn ? '#c7d2fe' : colors.textTertiary }}
+                importantForAccessibility="no"
+                className="text-[10px] ml-1"
+                style={{ color: isOwn ? colors.chatBubbleMeta : colors.textTertiary }}
               >
                 edited
               </Text>
             ) : null}
             {isOwn && message.deliveryState === 'pending' ? (
-              <Text className="text-[10px] ml-1" style={{ color: colors.chatBubbleMeta }}>
+              <Text
+                importantForAccessibility="no"
+                className="text-[10px] ml-1"
+                style={{ color: colors.chatBubbleMeta }}
+              >
                 Sending…
               </Text>
             ) : isOwn && message.deliveryState === 'failed' ? (
@@ -270,7 +218,8 @@ function DmBubbleComponent({
                 </Text>
               </Pressable>
             ) : isOwn ? (
-              <ReceiptTicks status={message.receiptStatus || 'sent'} onPrimary />
+              // Not `onPrimary`: the own bubble is chatBubbleOwn now, not the indigo primary.
+              <ReceiptTicks status={message.receiptStatus || 'sent'} onPrimary={false} />
             ) : null}
           </View>
         </View>

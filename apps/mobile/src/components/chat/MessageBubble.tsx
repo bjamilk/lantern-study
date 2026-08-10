@@ -1,32 +1,22 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
-import { Audio } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
 import type { GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import {
   chatMessagePreview,
-  normalizeStorageUrl,
   parseChatAudioUrl,
   resolveGroupChatAvatarUrl,
   resolveGroupChatMentionUsername,
   resolveGroupChatSenderLabel,
-  segmentMentions,
 } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
+import { ChatTextBody } from './ChatMessageBody';
 import { QuestionVoteBar } from './QuestionVoteBar';
 import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
+import { VoiceNotePlayer } from './VoiceNotePlayer';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
-
-function formatChatAudioTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
-  const total = Math.floor(seconds);
-  const minutes = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
-}
 
 interface MessageBubbleProps {
   message: Message;
@@ -54,261 +44,6 @@ interface MessageBubbleProps {
   onOpenThread?: (rootId: string) => void;
   /** Re-send a message that failed to reach the server. */
   onRetry?: (message: Message) => void;
-}
-
-function MentionText({
-  text,
-  color,
-  mentionColor,
-}: {
-  text: string;
-  color: string;
-  mentionColor: string;
-}) {
-  const segments = segmentMentions(text);
-  return (
-    <Text className="text-sm leading-relaxed" style={{ color }}>
-      {segments.map((seg, i) =>
-        seg.type === 'mention' ? (
-          <Text key={i} style={{ color: mentionColor, fontWeight: '700' }}>
-            {seg.value}
-          </Text>
-        ) : (
-          <Text key={i}>{seg.value}</Text>
-        )
-      )}
-    </Text>
-  );
-}
-
-function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; colors: any }) {
-  // Re-sign embedded storage URLs — chat messages keep a short-lived signed link.
-  const resolvedUrl = useResolvedStorageUrl(url);
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const trackWidthRef = useRef(0);
-  const [playing, setPlaying] = useState(false);
-  const [durationMs, setDurationMs] = useState(0);
-  const [positionMs, setPositionMs] = useState(0);
-  const [loadError, setLoadError] = useState(false);
-
-  const onStatus = useCallback((status: Audio.AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-    if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
-      setDurationMs(status.durationMillis);
-    }
-    if (status.didJustFinish) {
-      setPlaying(false);
-      setPositionMs(0);
-      void soundRef.current?.setPositionAsync(0);
-      return;
-    }
-    setPositionMs(status.positionMillis ?? 0);
-    setPlaying(status.isPlaying);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadError(false);
-    setPlaying(false);
-    setDurationMs(0);
-    setPositionMs(0);
-
-    const previous = soundRef.current;
-    soundRef.current = null;
-    if (previous) void previous.unloadAsync();
-
-    if (!resolvedUrl) {
-      if (resolvedUrl === null) setLoadError(true);
-      return;
-    }
-
-    const load = async () => {
-      try {
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: resolvedUrl },
-          { shouldPlay: false, progressUpdateIntervalMillis: 100 },
-          onStatus
-        );
-        if (cancelled) {
-          await sound.unloadAsync();
-          return;
-        }
-        soundRef.current = sound;
-        const status = await sound.getStatusAsync();
-        if (status.isLoaded && typeof status.durationMillis === 'number') {
-          setDurationMs(status.durationMillis);
-        }
-      } catch {
-        if (!cancelled) setLoadError(true);
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-      const sound = soundRef.current;
-      soundRef.current = null;
-      if (sound) void sound.unloadAsync();
-    };
-  }, [resolvedUrl, onStatus]);
-
-  const ensureSound = async (): Promise<Audio.Sound | null> => {
-    if (!resolvedUrl) return null;
-    let sound = soundRef.current;
-    if (sound) return sound;
-    try {
-      const created = await Audio.Sound.createAsync(
-        { uri: resolvedUrl },
-        { shouldPlay: false, progressUpdateIntervalMillis: 100 },
-        onStatus
-      );
-      sound = created.sound;
-      soundRef.current = sound;
-      return sound;
-    } catch {
-      setLoadError(true);
-      return null;
-    }
-  };
-
-  const seekToRatio = async (ratio: number) => {
-    const sound = await ensureSound();
-    if (!sound) return;
-    const status = await sound.getStatusAsync();
-    if (!status.isLoaded) return;
-    const total =
-      (typeof status.durationMillis === 'number' && status.durationMillis > 0
-        ? status.durationMillis
-        : durationMs) || 0;
-    if (!(total > 0)) return;
-    const next = Math.max(0, Math.min(total, Math.floor(ratio * total)));
-    // Avoid leaving the player stuck in the finished state after scrubbing to the tail.
-    const clamped = next >= total - 40 ? Math.max(0, total - 40) : next;
-    await sound.setPositionAsync(clamped);
-    setPositionMs(clamped);
-  };
-
-  const toggle = async () => {
-    try {
-      const sound = await ensureSound();
-      if (!sound) return;
-      const status = await sound.getStatusAsync();
-      if (!status.isLoaded) return;
-      if (status.isPlaying) {
-        await sound.pauseAsync();
-        return;
-      }
-      const total = status.durationMillis ?? durationMs;
-      const atEnd =
-        !!status.didJustFinish ||
-        (typeof total === 'number' && total > 0 && (status.positionMillis ?? 0) >= total - 40);
-      if (atEnd) {
-        await sound.playFromPositionAsync(0);
-      } else {
-        await sound.playAsync();
-      }
-    } catch {
-      setPlaying(false);
-    }
-  };
-
-  const durationSec = durationMs / 1000;
-  const positionSec = positionMs / 1000;
-  const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0;
-  const iconColor = isOwn ? colors.chatBubbleText : colors.primary;
-  const trackColor = isOwn ? `${colors.chatBubbleMeta}55` : colors.primaryBackground;
-  const fillColor = isOwn ? colors.chatBubbleText : colors.primary;
-  const timeColor = colors.chatBubbleMeta;
-
-  if (loadError || resolvedUrl === null) {
-    return (
-      <Text className="text-xs py-1" style={{ color: timeColor }}>
-        Voice note unavailable
-      </Text>
-    );
-  }
-
-  if (!resolvedUrl) {
-    return (
-      <Text className="text-xs py-1" style={{ color: timeColor }}>
-        Loading voice note…
-      </Text>
-    );
-  }
-
-  return (
-    <View className="flex-row items-center gap-2.5 py-1 min-w-0 w-full" style={{ maxWidth: 260 }}>
-      <Pressable
-        onPress={() => void toggle()}
-        accessibilityRole="button"
-        accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
-        className="items-center justify-center rounded-full"
-        style={{
-          width: 36,
-          height: 36,
-          backgroundColor: isOwn ? `${colors.chatBubbleMeta}33` : colors.primaryBackground,
-        }}
-      >
-        <Ionicons
-          name={playing ? 'pause' : 'play'}
-          size={18}
-          color={iconColor}
-          style={playing ? undefined : { marginLeft: 2 }}
-        />
-      </Pressable>
-      <View className="flex-1 min-w-0" style={{ gap: 6 }}>
-        <Pressable
-          onLayout={(e) => {
-            trackWidthRef.current = e.nativeEvent.layout.width;
-          }}
-          onPress={(e) => {
-            const width = trackWidthRef.current;
-            if (!(width > 0)) return;
-            const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / width));
-            void seekToRatio(ratio);
-          }}
-          style={{
-            height: 16,
-            justifyContent: 'center',
-          }}
-          accessibilityRole="adjustable"
-          accessibilityLabel="Seek voice note"
-          accessibilityValue={{
-            min: 0,
-            max: Math.round(durationSec),
-            now: Math.round(positionSec),
-          }}
-        >
-          <View
-            style={{
-              height: 6,
-              borderRadius: 999,
-              overflow: 'hidden',
-              backgroundColor: trackColor,
-            }}
-          >
-            <View
-              style={{
-                height: '100%',
-                width: `${progress * 100}%`,
-                borderRadius: 999,
-                backgroundColor: fillColor,
-              }}
-            />
-          </View>
-        </Pressable>
-        <View className="flex-row items-center justify-between">
-          <Text style={{ color: timeColor, fontSize: 11, fontVariant: ['tabular-nums'] }}>
-            {formatChatAudioTime(positionSec)}
-          </Text>
-          <Text style={{ color: timeColor, fontSize: 11, fontVariant: ['tabular-nums'] }}>
-            {formatChatAudioTime(durationSec)}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
 }
 
 function MessageBubbleComponent({
@@ -421,6 +156,30 @@ function MessageBubbleComponent({
   const otherTextBubbleStyle = {
     backgroundColor: colors.chatBubbleOther,
   };
+
+  // One composed announcement per row: speaker, time, content, then state.
+  // The child Texts that used to repeat each part are marked not-important
+  // below, so a TalkBack swipe hears each message once instead of four times.
+  // `chatMessagePreview` keeps media markers readable ("Voice note", "Photo")
+  // instead of dumping a signed URL into the label.
+  const contentLabel = isQuestion
+    ? message.questionStem || message.text
+    : chatMessagePreview(message.text);
+  const statusLabel = !isOwn
+    ? ''
+    : message.deliveryState === 'pending'
+      ? '. Sending'
+      : message.deliveryState === 'failed'
+        ? '. Not sent'
+        : typeof message.seenByTotal === 'number' && message.seenByTotal > 0
+          ? `. Seen by ${message.seenByCount ?? 0} of ${message.seenByTotal}`
+          : (message.receiptStatus || 'sent') === 'read'
+            ? '. Read'
+            : '. Sent';
+  const rowLabel =
+    `${isOwn ? 'You' : authorLabel} at ${timeLabel}. ${contentLabel}` +
+    `${message.editedAt ? '. Edited' : ''}${statusLabel}`;
+
   return (
     <SwipeToReply
       enabled={!!onSwipeReply}
@@ -430,9 +189,7 @@ function MessageBubbleComponent({
       onLongPress={onReply ? () => onReply(message) : undefined}
       delayLongPress={350}
       accessibilityRole={onReply ? 'button' : 'text'}
-      accessibilityLabel={
-        `${isOwn ? 'You' : authorLabel} at ${timeLabel}. ${message.questionStem || message.text}`
-      }
+      accessibilityLabel={rowLabel}
       accessibilityHint={onReply ? 'Double tap and hold for message options' : undefined}
       className={`flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'} ${isGroupedWithPrevious ? 'mb-1' : 'mb-3'}`}
     >
@@ -440,13 +197,15 @@ function MessageBubbleComponent({
         isGroupedWithPrevious ? (
           <View style={{ width: 28 }} />
         ) : (
-          <ResolvedAvatar name={authorLabel} uri={avatarUrl} size={28} />
+          // The row label already names the author.
+          <ResolvedAvatar name={authorLabel} uri={avatarUrl} size={28} decorative />
         )
       ) : null}
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
         {!isOwn && !isGroupedWithPrevious ? (
           onMentionUser && mentionUsername ? (
+            // Kept as a stop: "Mention X" is an action, not a repeat of the row label.
             <Pressable
               onPress={() => onMentionUser(mentionUsername)}
               accessibilityRole="button"
@@ -454,6 +213,7 @@ function MessageBubbleComponent({
               className="mb-1 ml-0.5"
             >
               <Text
+                importantForAccessibility="no"
                 className="text-xs font-semibold"
                 style={{ color: colors.primary }}
                 numberOfLines={1}
@@ -463,6 +223,7 @@ function MessageBubbleComponent({
             </Pressable>
           ) : (
             <Text
+              importantForAccessibility="no"
               className="text-xs font-semibold mb-1 ml-0.5"
               style={{ color: colors.primary }}
               numberOfLines={1}
@@ -543,7 +304,10 @@ function MessageBubbleComponent({
                 </View>
               </View>
 
+              {/* The stem is spoken by the row label; the type chip and options
+                  below stay announced — they aren't in it. */}
               <Text
+                importantForAccessibility="no"
                 className="text-sm leading-relaxed"
                 style={{ color: isOwn ? colors.text : colors.text }}
               >
@@ -601,37 +365,21 @@ function MessageBubbleComponent({
               />
             </View>
           ) : audioUrl ? (
-            <VoiceNotePlayer url={audioUrl} isOwn={isOwn} colors={colors} />
+            <VoiceNotePlayer url={audioUrl} isOwn={isOwn} />
           ) : (
-            (() => {
-              const imageMatch = message.text?.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/);
-              const imageUri = imageMatch?.[1] ? normalizeStorageUrl(imageMatch[1]) : undefined;
-              const textWithoutImage = message.text?.replace(/!\[.*?\]\(https?:\/\/[^)]+\)/, '').trim();
-              return (
-                <View className="gap-2">
-                  {imageUri && !imageFailed ? (
-                    <Image
-                      source={{ uri: imageUri }}
-                      accessibilityLabel="Shared image"
-                      resizeMode="cover"
-                      onError={() => setImageFailed(true)}
-                      style={{ width: 220, height: 180, borderRadius: 10 }}
-                    />
-                  ) : null}
-                  {textWithoutImage ? (
-                    <MentionText
-                      text={textWithoutImage}
-                      color={isQuestion ? colors.text : colors.chatBubbleText}
-                      mentionColor={isOwn && !isQuestion ? colors.chatBubbleText : colors.primary}
-                    />
-                  ) : null}
-                </View>
-              );
-            })()
+            // Only reached when !isQuestion, so the bubble is always a chatBubble* surface.
+            <ChatTextBody
+              text={message.text}
+              textColor={colors.chatBubbleText}
+              mentionColor={isOwn ? colors.chatBubbleText : colors.primary}
+            />
           )}
 
+          {/* Time / edited / delivery are spoken once as part of the row label;
+              only the Retry action stays as its own stop. */}
           <View className="flex-row items-center justify-end mt-1.5 gap-0.5">
             <Text
+              importantForAccessibility="no"
               className="text-[10px]"
               style={{
                 color: isOwn
@@ -645,6 +393,7 @@ function MessageBubbleComponent({
             </Text>
             {message.editedAt ? (
               <Text
+                importantForAccessibility="no"
                 className="text-[10px] ml-1"
                 style={{ color: isOwn && !isQuestion ? colors.chatBubbleMeta : colors.textTertiary }}
               >
@@ -653,9 +402,9 @@ function MessageBubbleComponent({
             ) : null}
             {isOwn && message.deliveryState === 'pending' ? (
               <Text
+                importantForAccessibility="no"
                 className="text-[10px] ml-1"
                 style={{ color: colors.chatBubbleMeta }}
-                accessibilityLabel="Sending"
               >
                 Sending…
               </Text>
