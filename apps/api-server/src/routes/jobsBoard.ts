@@ -69,6 +69,7 @@ router.get(
       companyOnly: req.query.companyOnly === "true",
       remote,
       compensationKind,
+      minPay: Number(req.query.minPay) > 0 ? Number(req.query.minPay) : undefined,
       sort,
       sponsoredFirst: req.query.sponsoredFirst !== "false",
       viewerId: req.user?.id || null,
@@ -732,6 +733,24 @@ router.get(
     if (!userId) return;
     const data = await jobs().listSavedPostings(userId);
     res.json({ success: true, data });
+  }),
+);
+
+// GET /saved-searches/:id/matches — new postings since last check (job alerts badge)
+router.get(
+  "/saved-searches/:id/matches",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().savedSearchMatches(userId, req.params.id);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
   }),
 );
 

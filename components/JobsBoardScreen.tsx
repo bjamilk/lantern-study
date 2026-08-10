@@ -29,6 +29,7 @@ import {
   deleteJobSavedSearch,
   fetchJobPostings,
   fetchJobSavedSearches,
+  fetchJobSavedSearchMatches,
   fetchSavedJobPostings,
   setJobPostingSaved,
   updateJobSavedSearch,
@@ -46,6 +47,7 @@ interface PortalFilters {
   employmentType: string;
   location: "" | "remote" | "onsite";
   compensationKind: "" | "paid" | "discuss" | "unpaid";
+  minPay: string;
   companyOnly: boolean;
   sort: "newest" | "closing" | "trending";
 }
@@ -55,6 +57,7 @@ const EMPTY_FILTERS: PortalFilters = {
   employmentType: "",
   location: "",
   compensationKind: "",
+  minPay: "",
   companyOnly: false,
   sort: "trending",
 };
@@ -71,6 +74,8 @@ function toSearchFilters(portal: PortalFilters): JobSearchFilters {
   if (portal.location === "onsite") filters.remote = false;
   if (portal.compensationKind)
     filters.compensationKind = portal.compensationKind;
+  const minPay = Number(portal.minPay);
+  if (Number.isFinite(minPay) && minPay > 0) filters.minPay = minPay;
   if (portal.companyOnly) filters.companyOnly = true;
   if (portal.sort === "closing" || portal.sort === "newest" || portal.sort === "trending") {
     filters.sort = portal.sort;
@@ -89,6 +94,7 @@ function fromSearchFilters(filters: JobSearchFilters): PortalFilters {
           ? "onsite"
           : "",
     compensationKind: filters.compensationKind || "",
+    minPay: filters.minPay ? String(filters.minPay) : "",
     companyOnly: !!filters.companyOnly,
     sort:
       filters.sort === "closing" || filters.sort === "newest"
@@ -101,6 +107,10 @@ function formatDeadline(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
+  const daysLeft = Math.ceil((date.getTime() - Date.now()) / 86_400_000);
+  if (daysLeft < 0) return null;
+  if (daysLeft === 0) return "Closes today";
+  if (daysLeft <= 7) return `Closes in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
   return `Apply by ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
@@ -130,6 +140,7 @@ export default function JobsBoardScreen({
   const [total, setTotal] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedSearches, setSavedSearches] = useState<JobSavedSearch[]>([]);
+  const [savedSearchMatches, setSavedSearchMatches] = useState<Record<string, number>>({});
   const [savingSearch, setSavingSearch] = useState(false);
   const [searchNameDraft, setSearchNameDraft] = useState<string | null>(null);
   const limit = 12;
@@ -156,6 +167,10 @@ export default function JobsBoardScreen({
               ? false
               : undefined,
         compensationKind: appliedFilters.compensationKind || undefined,
+        minPay:
+          Number(appliedFilters.minPay) > 0
+            ? Number(appliedFilters.minPay)
+            : undefined,
         companyOnly: appliedFilters.companyOnly || undefined,
         sort: appliedFilters.sort,
       });
@@ -179,7 +194,21 @@ export default function JobsBoardScreen({
       return;
     }
     void fetchJobSavedSearches()
-      .then((res) => setSavedSearches(res.data || []))
+      .then((res) => {
+        const searches = res.data || [];
+        setSavedSearches(searches);
+        // In-app job alerts: count postings that appeared since each search
+        // was last checked. Checking acknowledges, so badges are one-shot.
+        void Promise.all(
+          searches.map((saved) =>
+            fetchJobSavedSearchMatches(saved.id)
+              .then((m) => [saved.id, m.count] as const)
+              .catch(() => [saved.id, 0] as const),
+          ),
+        ).then((pairs) => {
+          setSavedSearchMatches(Object.fromEntries(pairs.filter(([, c]) => c > 0)));
+        });
+      })
       .catch(() => setSavedSearches([]));
   }, [guestMode]);
 
@@ -291,6 +320,7 @@ export default function JobsBoardScreen({
     !!appliedFilters.employmentType ||
     !!appliedFilters.location ||
     !!appliedFilters.compensationKind ||
+    Number(appliedFilters.minPay) > 0 ||
     appliedFilters.companyOnly;
 
   return (
@@ -428,6 +458,24 @@ export default function JobsBoardScreen({
                     <option value="unpaid">Unpaid</option>
                   </select>
                 </label>
+                <label className="block">
+                  <span className="sr-only">Minimum pay in naira</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    step={5000}
+                    placeholder="Min pay ₦"
+                    value={filters.minPay}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        minPay: event.target.value,
+                      }))
+                    }
+                    className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
+                  />
+                </label>
                 <button
                   type="submit"
                   className="h-11 rounded-lg bg-lantern-primary px-5 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 focus:outline-none focus:ring-2 focus:ring-lantern-primary/30"
@@ -551,6 +599,14 @@ export default function JobsBoardScreen({
                         >
                           {saved.name}
                         </button>
+                        {savedSearchMatches[saved.id] ? (
+                          <span
+                            aria-label={`${savedSearchMatches[saved.id]} new matches`}
+                            className="rounded-full bg-lantern-primary px-1.5 py-0.5 text-[10px] font-bold text-white"
+                          >
+                            {savedSearchMatches[saved.id]}
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => void toggleSearchAlerts(saved)}
@@ -787,6 +843,18 @@ export default function JobsBoardScreen({
                           {duration ? (
                             <span className="rounded-full bg-lantern-background px-2.5 py-1 text-lantern-text-secondary">
                               {duration}
+                            </span>
+                          ) : null}
+                          {job.applyMode === "in_app" || job.applyMode === "both" ? (
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                              Easy Apply
+                            </span>
+                          ) : null}
+                          {typeof job.applicationsCount === "number" &&
+                          job.applicationsCount < 5 &&
+                          !job.hasApplied ? (
+                            <span className="rounded-full bg-lantern-primary/10 px-2.5 py-1 font-medium text-lantern-primary">
+                              Be an early applicant
                             </span>
                           ) : null}
                         </div>

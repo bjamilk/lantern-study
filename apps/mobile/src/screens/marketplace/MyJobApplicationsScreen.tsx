@@ -353,15 +353,18 @@ export function MyJobApplicationsScreen() {
                       {JOB_APPLICATION_STATUS_DESCRIPTIONS[application.status]}
                     </Text>
                     <Text className="mt-2 text-xs text-lantern-text-tertiary">
-                      Updated{" "}
-                      {new Date(application.updatedAt).toLocaleDateString(
-                        undefined,
-                        {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        },
-                      )}
+                      {[
+                        `Applied ${new Date(application.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+                        liveInterview
+                          ? `Interview ${new Date(liveInterview.scheduledAt || liveInterview.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                          : null,
+                        liveOffer
+                          ? `Offer ${new Date(liveOffer.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                          : null,
+                        `${JOB_APPLICATION_STATUS_LABELS[application.status]} ${new Date(application.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+                      ]
+                        .filter(Boolean)
+                        .join("  →  ")}
                     </Text>
                   </Pressable>
                   <View className="mt-3 flex-row flex-wrap gap-2">

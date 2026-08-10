@@ -27,6 +27,7 @@ import {
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import {
+  fetchJobSavedSearchMatches,
   createJobSavedSearch,
   deleteJobSavedSearch,
   fetchJobPostings,
@@ -50,6 +51,17 @@ const FILTERS = [
 
 type FilterId = (typeof FILTERS)[number]["id"];
 
+function formatJobDeadline(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const daysLeft = Math.ceil((date.getTime() - Date.now()) / 86_400_000);
+  if (daysLeft < 0) return null;
+  if (daysLeft === 0) return "Closes today";
+  if (daysLeft <= 7) return `Closes in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+  return `Apply by ${date.toLocaleDateString([], { month: "short", day: "numeric" })}`;
+}
+
 export function JobsHomeScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
@@ -68,6 +80,7 @@ export function JobsHomeScreen() {
   const [savedSearches, setSavedSearches] = useState<JobSavedSearch[]>([]);
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
   const [savingSearch, setSavingSearch] = useState(false);
+  const [savedSearchMatches, setSavedSearchMatches] = useState<Record<string, number>>({});
   const limit = 12;
 
   const activeFilters = useMemo<JobSearchFilters>(() => {
@@ -129,7 +142,22 @@ export function JobsHomeScreen() {
   useEffect(() => {
     // Signed-out visitors have none; a failure here should not block browsing.
     void fetchJobSavedSearches()
-      .then((res) => setSavedSearches(res.data || []))
+      .then((res) => {
+        const searches = res.data || [];
+        setSavedSearches(searches);
+        // In-app job alerts: one-shot new-match counts per saved search.
+        void Promise.all(
+          searches.map((saved) =>
+            fetchJobSavedSearchMatches(saved.id)
+              .then((matches) => [saved.id, matches.count] as const)
+              .catch(() => [saved.id, 0] as const)
+          )
+        ).then((pairs) =>
+          setSavedSearchMatches(
+            Object.fromEntries(pairs.filter(([, count]) => count > 0))
+          )
+        );
+      })
       .catch(() => setSavedSearches([]));
   }, []);
 
@@ -339,9 +367,19 @@ export function JobsHomeScreen() {
                 className="mt-2 flex-row items-center gap-2 border-t border-lantern-border pt-2"
               >
                 <Pressable
-                  className="flex-1"
+                  className="flex-1 flex-row items-center gap-2"
                   onPress={() => setActiveSavedId(saved.id)}
                 >
+                  {savedSearchMatches[saved.id] ? (
+                    <View
+                      accessibilityLabel={`${savedSearchMatches[saved.id]} new matches`}
+                      className="rounded-full bg-lantern-primary px-1.5 py-0.5"
+                    >
+                      <Text className="text-[10px] font-bold text-white">
+                        {savedSearchMatches[saved.id]}
+                      </Text>
+                    </View>
+                  ) : null}
                   <Text
                     className={`text-sm font-semibold ${
                       activeSavedId === saved.id
@@ -542,6 +580,18 @@ export function JobsHomeScreen() {
                           {duration}
                         </Text>
                       ) : null}
+                      {job.applyMode === "in_app" || job.applyMode === "both" ? (
+                        <Text className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                          Easy Apply
+                        </Text>
+                      ) : null}
+                      {typeof job.applicationsCount === "number" &&
+                      job.applicationsCount < 5 &&
+                      !job.hasApplied ? (
+                        <Text className="rounded-full bg-lantern-primary/10 px-2 py-1 text-xs font-medium text-lantern-primary">
+                          Be an early applicant
+                        </Text>
+                      ) : null}
                     </View>
 
                     <Text
@@ -550,9 +600,16 @@ export function JobsHomeScreen() {
                     >
                       {job.description}
                     </Text>
-                    <Text className="mt-3 text-xs text-lantern-text-tertiary">
-                      {formatJobPostedDate(job.createdAt)}
-                    </Text>
+                    <View className="mt-3 flex-row items-center gap-3">
+                      <Text className="text-xs text-lantern-text-tertiary">
+                        {formatJobPostedDate(job.createdAt)}
+                      </Text>
+                      {formatJobDeadline(job.deadline) ? (
+                        <Text className="text-xs font-medium text-amber-700">
+                          {formatJobDeadline(job.deadline)}
+                        </Text>
+                      ) : null}
+                    </View>
                   </Card>
                 </Pressable>
               );

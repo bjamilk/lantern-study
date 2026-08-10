@@ -212,6 +212,10 @@ function mapPosting(
     companyId: row.company_id,
     status: row.status,
     viewsCount: row.views_count ?? 0,
+    // PostgREST count embed: applications:job_applications(count) -> [{count}]
+    applicationsCount: Array.isArray(row.applications)
+      ? Number(row.applications[0]?.count ?? 0)
+      : undefined,
     isSponsored: !!row.is_sponsored,
     sponsoredUntil: row.sponsored_until,
     atsProvider: row.ats_provider,
@@ -438,6 +442,7 @@ export class JobsBoardService {
     companyOnly?: boolean;
     remote?: boolean;
     compensationKind?: "paid" | "unpaid" | "discuss";
+    minPay?: number;
     sort?: "newest" | "closing" | "trending";
     sponsoredFirst?: boolean;
     viewerId?: string | null;
@@ -446,7 +451,16 @@ export class JobsBoardService {
     const limit = Math.min(50, Math.max(1, filters.limit || 20));
     const from = (page - 1) * limit;
     const to = from + limit - 1;
-    const sort = filters.sort || "trending";
+    const minPay =
+      typeof filters.minPay === "number" && Number.isFinite(filters.minPay) && filters.minPay > 0
+        ? filters.minPay
+        : undefined;
+    // The trending ranking runs in a SQL function that has no pay parameter,
+    // so a pay-filtered browse degrades to newest-first rather than silently
+    // ignoring the filter.
+    const sort = minPay && (filters.sort || "trending") === "trending"
+      ? "newest"
+      : filters.sort || "trending";
 
     if (sort === "trending") {
       return this.listPostingsTrending(filters, page, limit);
@@ -457,6 +471,7 @@ export class JobsBoardService {
       .select(
         `
         *,
+        applications:job_applications(count),
         campus:marketplace_campuses!campus_id(id, name, slug),
         company:job_companies(*),
         poster:profiles!poster_user_id(id, name, username, avatar_url)
@@ -476,6 +491,15 @@ export class JobsBoardService {
       query = query.contains("compensation", {
         kind: filters.compensationKind,
       });
+    }
+    if (minPay) {
+      // Only paid roles are comparable; match when the top (or only) figure
+      // clears the bar. JSONB `->` comparisons are numeric, unlike `->>`.
+      query = query
+        .contains("compensation", { kind: "paid" })
+        .or(
+          `compensation->amountMax.gte.${minPay},compensation->amountMin.gte.${minPay}`,
+        );
     }
     if (filters.search?.trim()) {
       query = query.textSearch("search_vector", filters.search.trim(), {
@@ -559,6 +583,7 @@ export class JobsBoardService {
       .select(
         `
         *,
+        applications:job_applications(count),
         campus:marketplace_campuses!campus_id(id, name, slug),
         company:job_companies(*),
         poster:profiles!poster_user_id(id, name, username, avatar_url)
@@ -660,6 +685,58 @@ export class JobsBoardService {
     return { postingId, isSaved: false };
   }
 
+  /**
+   * New-postings count for a saved search since it was last checked - the
+   * in-app "job alert" badge. Checking is the acknowledgement: last_checked_at
+   * advances so the badge is one-shot, same as the marketplace equivalent.
+   */
+  async savedSearchMatches(userId: string, searchId: string) {
+    const { data: search, error } = await this.client()
+      .from("job_saved_searches")
+      .select("*")
+      .eq("id", searchId)
+      .eq("user_id", userId)
+      .single();
+    if (error || !search) {
+      const err = new Error("Saved search not found") as Error & { statusCode?: number };
+      err.statusCode = 404;
+      throw err;
+    }
+    const f = (search.filters || {}) as {
+      search?: string;
+      employmentType?: string;
+      campusId?: string;
+      companyOnly?: boolean;
+      remote?: boolean;
+      compensationKind?: "paid" | "unpaid" | "discuss";
+    };
+    let query = this.client()
+      .from("job_postings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .eq("country_code", JOBS_DEFAULT_COUNTRY)
+      .gt("created_at", search.last_checked_at);
+    if (f.employmentType) query = query.eq("employment_type", f.employmentType);
+    if (f.campusId) query = query.eq("campus_id", f.campusId);
+    if (f.companyOnly) query = query.not("company_id", "is", null);
+    if (f.remote !== undefined) query = query.eq("is_remote", f.remote);
+    if (f.compensationKind)
+      query = query.contains("compensation", { kind: f.compensationKind });
+    if (f.search?.trim()) {
+      query = query.textSearch("search_vector", f.search.trim(), {
+        type: "websearch",
+        config: "english",
+      });
+    }
+    const { count, error: countError } = await query;
+    if (countError) throw countError;
+    await this.client()
+      .from("job_saved_searches")
+      .update({ last_checked_at: new Date().toISOString() })
+      .eq("id", searchId);
+    return { count: count ?? 0 };
+  }
+
   async listSavedPostings(userId: string) {
     const { data, error } = await this.client()
       .from("job_favorites")
@@ -669,7 +746,8 @@ export class JobsBoardService {
         created_at,
         posting:job_postings(
           *,
-          campus:marketplace_campuses!campus_id(id, name, slug),
+          applications:job_applications(count),
+        campus:marketplace_campuses!campus_id(id, name, slug),
           company:job_companies(*),
           poster:profiles!poster_user_id(id, name, username, avatar_url)
         )
@@ -795,6 +873,7 @@ export class JobsBoardService {
       .select(
         `
         *,
+        applications:job_applications(count),
         campus:marketplace_campuses!campus_id(id, name, slug),
         company:job_companies(*),
         poster:profiles!poster_user_id(id, name, username, avatar_url),
@@ -1117,6 +1196,7 @@ export class JobsBoardService {
       .select(
         `
         *,
+        applications:job_applications(count),
         campus:marketplace_campuses!campus_id(id, name, slug),
         company:job_companies(*)
       `,
@@ -2829,6 +2909,7 @@ export class JobsBoardService {
       .select(
         `
         *,
+        applications:job_applications(count),
         campus:marketplace_campuses!campus_id(id, name, slug),
         company:job_companies(*),
         poster:profiles!poster_user_id(id, name, username, avatar_url)

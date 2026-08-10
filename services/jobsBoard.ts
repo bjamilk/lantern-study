@@ -72,6 +72,7 @@ export async function fetchJobPostings(
     companyOnly?: boolean;
     remote?: boolean;
     compensationKind?: "paid" | "unpaid" | "discuss";
+    minPay?: number;
     sort?: "newest" | "closing" | "trending";
   } = {},
 ) {
@@ -138,6 +139,13 @@ export async function updateJobSavedSearch(
     `/saved-searches/${encodeURIComponent(id)}`,
     { method: "PATCH", body: JSON.stringify(body) },
   );
+}
+
+export async function fetchJobSavedSearchMatches(id: string) {
+  const res = await jobsRequest<{ success: boolean; data: { count: number } }>(
+    `/saved-searches/${id}/matches`,
+  );
+  return res.data ?? { count: 0 };
 }
 
 export async function deleteJobSavedSearch(id: string) {

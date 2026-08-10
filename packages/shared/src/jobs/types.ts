@@ -138,7 +138,7 @@ export interface JobPosting {
   isSaved?: boolean;
   /** Whether the requesting viewer already applied. Absent for anonymous reads. */
   hasApplied?: boolean;
-  /** Applications received. Only returned to the poster on their own dashboard. */
+  /** Applications received. Public on browse lists ("Be an early applicant"); also on the poster dashboard. */
   applicationsCount?: number;
   /** Subset of `applicationsCount` the employer has not triaged yet. */
   newApplicationsCount?: number;

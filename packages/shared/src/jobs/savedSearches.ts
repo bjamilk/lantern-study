@@ -20,6 +20,8 @@ export interface JobSearchFilters {
   /** `true` for remote-only, `false` for on-site only, absent for either. */
   remote?: boolean;
   compensationKind?: JobCompensationKind;
+  /** Minimum pay in NGN; matches paid roles whose top figure clears the bar. */
+  minPay?: number;
   sort?: JobSearchSort;
 }
 
@@ -79,6 +81,9 @@ export function normalizeJobSearchFilters(input: unknown): JobSearchFilters {
   if (isCompensationKind(raw.compensationKind)) {
     filters.compensationKind = raw.compensationKind;
   }
+  if (typeof raw.minPay === "number" && Number.isFinite(raw.minPay) && raw.minPay > 0) {
+    filters.minPay = raw.minPay;
+  }
   if (raw.sort === "closing" || raw.sort === "newest" || raw.sort === "trending") {
     filters.sort = raw.sort;
   }
@@ -112,6 +117,7 @@ export function describeJobSearchFilters(filters: JobSearchFilters): string {
   }
   if (filters.remote === true) parts.push("Remote");
   if (filters.remote === false) parts.push("On-site");
+  if (filters.minPay) parts.push(`₦${filters.minPay.toLocaleString()}+`);
   if (filters.compensationKind) {
     parts.push(COMPENSATION_LABELS[filters.compensationKind]);
   }
