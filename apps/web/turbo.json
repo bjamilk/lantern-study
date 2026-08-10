@@ -1,0 +1,31 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../components/**",
+        "../../hooks/**",
+        "../../stores/**",
+        "../../services/**",
+        "../../utils/**",
+        "../../design-system/**",
+        "../../functions/**",
+        "../../App.tsx",
+        "../../index.tsx",
+        "../../index.html",
+        "../../index.css",
+        "../../types.ts",
+        "../../gamification.ts",
+        "../../srs.ts",
+        "../../env-bootstrap.ts",
+        "../../tailwind.config.js",
+        "../../postcss.config.js",
+        "../../vite.config.ts"
+      ]
+    }
+  }
+}
