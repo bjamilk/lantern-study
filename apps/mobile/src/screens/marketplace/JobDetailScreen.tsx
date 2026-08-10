@@ -95,10 +95,16 @@ export function JobDetailScreen() {
       .catch(() => setApplicantProfile(null));
   }, []);
 
+  // Keep the loaded screen's shell while fetching: a bare spinner leaves the
+  // user with no back affordance and no status-bar inset, then jumps when the
+  // header appears.
   if (!job && !error) {
     return (
-      <View className="flex-1 items-center justify-center bg-lantern-background">
-        <ActivityIndicator />
+      <View className="flex-1 bg-lantern-background">
+        <ScreenHeader safeTop title="Job" onBack={() => navigation.goBack()} />
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator />
+        </View>
       </View>
     );
   }

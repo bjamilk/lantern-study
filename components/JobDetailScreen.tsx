@@ -142,10 +142,17 @@ export default function JobDetailScreen({
     }
   };
 
+  // Loading and error keep the loaded screen's shell — same wrapper width and
+  // the workspace nav — so the page doesn't reflow once the posting arrives.
   if (!job && !error) {
     return (
       <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overscroll-contain bg-lantern-background">
-        <p className="p-6 text-sm text-lantern-text-tertiary">Loading…</p>
+        <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-8 space-y-4">
+          {!guestMode ? (
+            <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
+          ) : null}
+          <p className="text-sm text-lantern-text-tertiary">Loading…</p>
+        </div>
       </div>
     );
   }
@@ -153,15 +160,20 @@ export default function JobDetailScreen({
   if (!job) {
     return (
       <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overscroll-contain bg-lantern-background">
-        <div className="max-w-3xl mx-auto p-4 pb-20 md:pb-6">
-          <p className="text-red-600 text-sm">{error}</p>
-          <button
-            type="button"
-            className="mt-3 text-sm text-lantern-primary"
-            onClick={() => onNavigate("MarketplaceJobs")}
-          >
-            Back to jobs
-          </button>
+        <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-8 space-y-4">
+          {!guestMode ? (
+            <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
+          ) : null}
+          <div>
+            <p className="text-red-600 text-sm">{error}</p>
+            <button
+              type="button"
+              className="mt-3 text-sm text-lantern-primary"
+              onClick={() => onNavigate("MarketplaceJobs")}
+            >
+              Back to jobs
+            </button>
+          </div>
         </div>
       </div>
     );

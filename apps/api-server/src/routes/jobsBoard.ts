@@ -33,9 +33,30 @@ function jobs() {
   return getJobsBoardService(supabaseService);
 }
 
-function statusCode(err: unknown, fallback = 500): number {
+/**
+ * Postgres 22P02 (invalid_text_representation) is what a malformed `:id` in the
+ * path looks like by the time it reaches us: the value never parses as a uuid,
+ * so the query rejects it. Nothing is wrong on our side, so it must not be a 500.
+ */
+function isMalformedId(err: unknown): boolean {
+  return (err as { code?: string })?.code === "22P02";
+}
+
+// Exported for the regression test covering the 22P02 → 400 mapping.
+export function statusCode(err: unknown, fallback = 500): number {
   const code = (err as Error & { statusCode?: number })?.statusCode;
-  return typeof code === "number" ? code : fallback;
+  if (typeof code === "number") return code;
+  if (isMalformedId(err)) return 400;
+  return fallback;
+}
+
+/**
+ * `clientErrorMessage` collapses to "Something went wrong" in production, which
+ * is right for a 500 and useless for a 400 — the caller can act on a bad id.
+ */
+export function errorMessage(err: unknown): string {
+  if (isMalformedId(err)) return "Invalid id";
+  return clientErrorMessage(err);
 }
 
 // GET /postings
@@ -172,7 +193,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -194,7 +215,7 @@ router.patch(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -242,7 +263,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -279,7 +300,7 @@ router.put(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -306,7 +327,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -334,7 +355,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -352,7 +373,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -372,7 +393,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -400,7 +421,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -418,7 +439,7 @@ router.delete(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -441,7 +462,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -463,7 +484,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -506,7 +527,7 @@ router.patch(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -535,7 +556,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -555,7 +576,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -577,7 +598,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -614,7 +635,7 @@ router.patch(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -643,7 +664,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err, 400))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -679,7 +700,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -701,7 +722,7 @@ router.patch(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -719,7 +740,7 @@ router.delete(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -749,7 +770,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -767,7 +788,7 @@ router.put(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -785,7 +806,7 @@ router.delete(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -814,7 +835,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -833,7 +854,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -863,7 +884,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -881,7 +902,7 @@ router.get(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -905,7 +926,7 @@ router.post(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -936,7 +957,7 @@ router.patch(
     } catch (err) {
       res
         .status(statusCode(err))
-        .json({ success: false, error: clientErrorMessage(err) });
+        .json({ success: false, error: errorMessage(err) });
     }
   }),
 );
@@ -1027,7 +1048,7 @@ router.get(
     } catch (err) {
       return res.status(statusCode(err, 500)).json({
         success: false,
-        error: clientErrorMessage(err),
+        error: errorMessage(err),
       });
     }
   }),
@@ -1053,7 +1074,7 @@ router.patch(
     } catch (err) {
       return res.status(statusCode(err, 500)).json({
         success: false,
-        error: clientErrorMessage(err),
+        error: errorMessage(err),
       });
     }
   }),
@@ -1074,7 +1095,7 @@ router.post(
     } catch (err) {
       return res.status(statusCode(err, 500)).json({
         success: false,
-        error: clientErrorMessage(err),
+        error: errorMessage(err),
       });
     }
   }),
@@ -1092,7 +1113,7 @@ router.get(
     } catch (err) {
       return res.status(statusCode(err, 500)).json({
         success: false,
-        error: clientErrorMessage(err),
+        error: errorMessage(err),
       });
     }
   }),
@@ -1113,7 +1134,7 @@ router.post(
     } catch (err) {
       return res.status(statusCode(err, 500)).json({
         success: false,
-        error: clientErrorMessage(err),
+        error: errorMessage(err),
       });
     }
   }),
@@ -1135,7 +1156,7 @@ router.delete(
     } catch (err) {
       return res.status(statusCode(err, 500)).json({
         success: false,
-        error: clientErrorMessage(err),
+        error: errorMessage(err),
       });
     }
   }),
