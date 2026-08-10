@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Group Info Modal
 // ===========================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
 import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
 import { useTheme } from '../theme';
+import type { ThemeColors } from '../theme';
 
 type TabType = 'details' | 'members' | 'danger';
 
@@ -68,6 +69,7 @@ export default function GroupInfoModal({
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // The modal stays mounted and is reused for every group, so this state would
   // otherwise keep whichever group was opened first. That is not just cosmetic:
@@ -624,14 +626,20 @@ export default function GroupInfoModal({
   );
 }
 
-const styles = StyleSheet.create({
+/**
+ * Built per-theme rather than at module scope: every colour in here used to be a
+ * baked dark-mode hex, so the sheet stayed dark navy while the rest of the app
+ * was in light mode. Saturated button fills (primary, warning, error, the sky
+ * accent) keep white text in both themes on purpose.
+ */
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '90%',
@@ -648,20 +656,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: colors.text,
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   tabs: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: colors.border,
     marginHorizontal: 20,
   },
   tab: {
@@ -674,14 +682,14 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   activeTab: {
-    borderBottomColor: '#6366f1',
+    borderBottomColor: colors.primary,
   },
   tabText: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: colors.textSecondary,
   },
   activeTabText: {
-    color: '#6366f1',
+    color: colors.primary,
     fontWeight: '600',
   },
   scrollContent: {
@@ -705,7 +713,7 @@ const styles = StyleSheet.create({
   changeAvatarButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -722,17 +730,17 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#9ca3af',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.inputBackground,
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
-    color: '#ffffff',
+    color: colors.inputText,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.inputBorder,
   },
   inputDisabled: {
     opacity: 0.6,
@@ -743,7 +751,7 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.backgroundSecondary,
     borderRadius: 12,
     padding: 16,
     marginTop: 8,
@@ -756,15 +764,15 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.text,
   },
   statLabel: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: colors.textSecondary,
     marginTop: 4,
   },
   saveButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.primary,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -795,7 +803,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.primary,
     borderRadius: 12,
     padding: 14,
     gap: 8,
@@ -809,14 +817,14 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.text,
     marginBottom: 12,
   },
   memberItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.backgroundSecondary,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -840,11 +848,11 @@ const styles = StyleSheet.create({
   memberName: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#ffffff',
+    color: colors.text,
   },
   youBadge: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: colors.textSecondary,
   },
   roleBadge: {
     flexDirection: 'row',
@@ -853,7 +861,7 @@ const styles = StyleSheet.create({
   ownerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fbbf2420',
+    backgroundColor: `${colors.warning}20`,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -861,13 +869,13 @@ const styles = StyleSheet.create({
   },
   ownerBadgeText: {
     fontSize: 11,
-    color: '#fbbf24',
+    color: colors.warning,
     fontWeight: '500',
   },
   adminBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6366f120',
+    backgroundColor: colors.primaryBackground,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -875,7 +883,7 @@ const styles = StyleSheet.create({
   },
   adminBadgeText: {
     fontSize: 11,
-    color: '#6366f1',
+    color: colors.primary,
     fontWeight: '500',
   },
   memberActions: {
@@ -886,7 +894,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -896,21 +904,21 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   noAccessText: {
-    color: '#6b7280',
+    color: colors.textSecondary,
     fontSize: 16,
     marginTop: 12,
     textAlign: 'center',
   },
   dangerSection: {
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.backgroundSecondary,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderLeftWidth: 4,
-    borderLeftColor: '#f59e0b',
+    borderLeftColor: colors.warning,
   },
   deleteSection: {
-    borderLeftColor: '#ef4444',
+    borderLeftColor: colors.error,
   },
   dangerHeader: {
     flexDirection: 'row',
@@ -924,15 +932,15 @@ const styles = StyleSheet.create({
   dangerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f59e0b',
+    color: colors.warning,
     marginBottom: 4,
   },
   deleteTitle: {
-    color: '#ef4444',
+    color: colors.error,
   },
   dangerDescription: {
     fontSize: 13,
-    color: '#9ca3af',
+    color: colors.textSecondary,
     lineHeight: 18,
   },
   dangerButton: {
@@ -944,10 +952,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   archiveButton: {
-    backgroundColor: '#f59e0b',
+    backgroundColor: colors.warning,
   },
   deleteButton: {
-    backgroundColor: '#ef4444',
+    backgroundColor: colors.error,
   },
   dangerButtonText: {
     color: '#ffffff',
