@@ -165,6 +165,7 @@ A/B/C/D has been exercised on a device.
 | **C4** invite panel | ✅ renders in the `GroupInfoModal` Members tab (its new home) with Share / Copy Link |
 | **C3** `/invite/<token>` deep link | ✅ firing `lanternstudy://invite/<token>` on Android navigated straight into the right group. Previously a complete no-op. Does **not** prove a non-member joining — both accounts could not be used, see below |
 | **D7** accessibility | ✅ measured from the `uiautomator` tree, not by eye: GroupChatScreen 20/20 clickable nodes labelled, GroupInfoModal 8/8 (was 14 pressables / 0 labels). Bubbles announce as e.g. "You at 5:06 PM. msg24m" |
+| **join-by-invite group name** | ✅ was showing "Group" — fixed in `e8179a3`, re-verified by leaving and re-joining |
 
 ## ⚠️ iOS cannot receive deep links at all
 
