@@ -1184,4 +1184,18 @@ router.get(
   }),
 );
 
+/**
+ * Router-scoped error handler. Most routes guard their own service calls and
+ * map the error through statusCode(), but three don't — GET /postings/:id,
+ * GET /companies/:id and POST /postings/:id/reports — and asyncHandler forwards
+ * their rejections straight to the global handler, which answers 500. That made
+ * the malformed-uuid fix look route-shaped when it isn't: catching it here means
+ * a bad :id is a 400 everywhere in this router, including routes added later.
+ * Everything else passes through untouched.
+ */
+router.use((err: any, _req: any, res: any, next: any) => {
+  if (!isMalformedId(err)) return next(err);
+  res.status(400).json({ success: false, error: errorMessage(err) });
+});
+
 export default router;

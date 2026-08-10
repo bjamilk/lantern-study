@@ -30,3 +30,51 @@ describe('jobs board error mapping', () => {
     expect(statusCode(new Error('bad payload'), 400)).toBe(400);
   });
 });
+
+/**
+ * The three routes without their own try/catch (GET /postings/:id,
+ * GET /companies/:id, POST /postings/:id/reports) forward through asyncHandler,
+ * so the router-scoped handler is the only thing standing between a malformed
+ * :id and a 500. Exercise it directly.
+ */
+describe('jobs board router error middleware', () => {
+  const router = require('./jobsBoard').default;
+  const layer = router.stack.filter((l: any) => l.handle.length === 4).pop();
+
+  const run = (err: unknown) => {
+    let status: number | undefined;
+    let body: unknown;
+    let passedOn = false;
+    const res = {
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      json(payload: unknown) {
+        body = payload;
+        return this;
+      },
+    };
+    layer.handle(err, {}, res, () => {
+      passedOn = true;
+    });
+    return { status, body, passedOn };
+  };
+
+  it('is registered as a 4-arg error handler', () => {
+    expect(layer).toBeDefined();
+  });
+
+  it('turns a malformed uuid into a 400 instead of letting it reach the 500 handler', () => {
+    const out = run({ code: '22P02', message: 'invalid input syntax for type uuid' });
+    expect(out.status).toBe(400);
+    expect(out.body).toEqual({ success: false, error: 'Invalid id' });
+    expect(out.passedOn).toBe(false);
+  });
+
+  it('passes every other error through to the global handler', () => {
+    const out = run(new Error('connection terminated'));
+    expect(out.passedOn).toBe(true);
+    expect(out.status).toBeUndefined();
+  });
+});
