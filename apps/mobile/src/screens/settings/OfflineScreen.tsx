@@ -143,15 +143,22 @@ export default function OfflineScreen() {
       await startQuestionSet(test.testName, questions, 'test', {
         timeLimitMinutes: test.timeLimit || Math.max(questions.length * 2, 5),
       });
-      navigation.navigate('StudyTab', {
-        screen: 'TestTaking',
+      // Offline is a ROOT-stack modal, so 'StudyTab' is not a sibling route
+      // here — it lives inside 'Main'. The unnested navigate was silently
+      // dropped in release builds and Start did nothing. Navigating via
+      // 'Main' also pops this modal so the test screen is actually visible.
+      navigation.navigate('Main', {
+        screen: 'StudyTab',
         params: {
-          testId: test.testId,
-          testName: test.testName,
-          mode: 'test',
-          isOffline: true,
-          offlineTestId: test.id,
-          groupName: test.groupName,
+          screen: 'TestTaking',
+          params: {
+            testId: test.testId,
+            testName: test.testName,
+            mode: 'test',
+            isOffline: true,
+            offlineTestId: test.id,
+            groupName: test.groupName,
+          },
         },
       });
     } catch {
@@ -741,9 +748,11 @@ export default function OfflineScreen() {
                   />
                 </View>
               </View>
-            </ScrollView>
-
-            {/* Download Button */}
+            {/* Download Button — rendered inside the ScrollView on purpose.
+                As a sibling it measured zero height on device (release build,
+                Pixel 8) and the modal footer vanished entirely, making offline
+                downloads impossible. Inside the scroll content it is always
+                reachable. */}
             <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 style={[styles.cancelButton, { backgroundColor: colors.background }]}
@@ -791,6 +800,7 @@ export default function OfflineScreen() {
                 )}
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </ThemeScope>
       </Modal>
@@ -1152,7 +1162,12 @@ const styles = StyleSheet.create({
   modalContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '85%',
+    // A fixed height (not maxHeight) is required: with maxHeight and auto
+    // height, Yoga clamps this container AFTER measuring children, so the
+    // body never shrinks and the Cancel/Download footer is pushed off-screen
+    // — offline downloads were impossible on a Pixel 8. A definite height
+    // with a flex:1 body pins the footer and lets the body scroll.
+    height: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1167,6 +1182,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   modalBody: {
+    // flex:1 (with the fixed-height modalContent above) bounds the body to
+    // the space between header and footer; flexShrink alone was not enough
+    // because the maxHeight clamp happened after child measurement.
+    flex: 1,
     padding: 20,
   },
   modalSection: {
