@@ -241,6 +241,14 @@ const json50mb = express.json({
 const json35mb = express.json({ limit: '35mb' });
 const json4mb = express.json({ limit: '4mb' });
 const json1mb = express.json({ limit: '1mb' });
+// Paystack webhooks are authenticated by HMAC-SHA512 over the EXACT request
+// bytes. json1mb has no `verify` hook, so webhook requests previously reached
+// the handler with req.rawBody unset and signatures were checked against
+// re-serialized JSON — a byte-for-byte match only by luck.
+const jsonWebhook = express.json({
+  limit: '1mb',
+  verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); },
+});
 
 function normalizePathname(raw: string): string {
   const path = (raw || '').split('?')[0] || '';
@@ -280,6 +288,9 @@ function isAvatarUploadPath(pathname: string): boolean {
 
 app.use((req, res, next) => {
   const pathname = normalizePathname(req.originalUrl || req.url || '');
+  if (pathname === '/webhooks/paystack' || pathname === '/api/v1/webhooks/paystack') {
+    return jsonWebhook(req, res, next);
+  }
   if (isLargeUploadPath(pathname)) return json50mb(req, res, next);
   if (isLargeNotesPath(pathname)) return json35mb(req, res, next);
   if (isOfflineBundlePath(pathname)) return json50mb(req, res, next);
