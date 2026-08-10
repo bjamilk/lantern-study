@@ -925,8 +925,13 @@ function RootNavigatorInner() {
       .single()
       .then(({ data: profile, error }) => {
         if (error || !profile) {
+          // A fetch failure is NOT "no username". Offline cold boots landed
+          // here and trapped the user behind a modal whose Continue needs the
+          // network (back is disabled), locking them out of their downloaded
+          // offline tests. Only a definitive empty result (PGRST116: no rows)
+          // may re-raise the gate; transient/network errors never do.
           setUserProfile({ name: user.user_metadata?.name || 'User' });
-          setShowUsernameModal(true);
+          setShowUsernameModal(error?.code === 'PGRST116');
           return;
         }
 
