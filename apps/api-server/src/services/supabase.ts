@@ -772,6 +772,11 @@ export class SupabaseService {
       "test_result",
       "srs_reminder",
       "dm_message",
+      // Jobs-board alert family: saved-search matches and pipeline reminders.
+      // Settings policy still applies per user (pushEnabled + marketplaceUpdates).
+      "job_alert",
+      "job_interview_reminder",
+      "job_offer_reminder",
     ]);
     if (notification.type && !pushTypes.has(notification.type)) return;
 

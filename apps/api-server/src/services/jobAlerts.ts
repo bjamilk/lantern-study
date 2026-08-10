@@ -4,9 +4,12 @@
  */
 import {
   JOB_SAVED_SEARCH_MAX_MATCHES_PER_RUN,
+  formatJobCompensation,
   jobPostingMatchesSearch,
   normalizeJobSearchFilters,
 } from "@lantern/shared/jobs";
+import { shouldSendEmailNotifications } from "@lantern/shared/settings";
+import { isAlertMailConfigured, sendJobAlertEmail } from "./alertMail";
 import type { SupabaseService } from "./supabase";
 import { logger } from "../utils/logger";
 
@@ -40,7 +43,7 @@ export async function processJobSavedSearchAlerts(
     const { data: postings, error: postingError } = await db
       .from("job_postings")
       .select(
-        "id, title, description, employment_type, is_remote, campus_id, company_id, compensation, created_at",
+        "id, title, description, employment_type, is_remote, campus_id, company_id, compensation, location_text, created_at",
       )
       .eq("status", "active")
       .gt("created_at", since)
@@ -79,8 +82,10 @@ export async function processJobSavedSearchAlerts(
         search.user_id,
         search.id,
       );
-      for (const posting of matches) {
-        if (alreadyNotified.has(posting.id)) continue;
+      const fresh = matches.filter((p: any) => !alreadyNotified.has(p.id));
+      for (const posting of fresh) {
+        // createNotification handles the in-app policy and, now that
+        // job_alert is push-enabled, the Expo push delivery too.
         const notification = await supabaseService.createNotification(
           search.user_id,
           {
@@ -91,6 +96,9 @@ export async function processJobSavedSearchAlerts(
           },
         );
         if (notification) sent += 1;
+      }
+      if (fresh.length) {
+        await maybeEmailDigest(supabaseService, search, fresh);
       }
     }
 
@@ -106,6 +114,64 @@ export async function processJobSavedSearchAlerts(
     logger.info("Job saved search alerts sent", { count: sent });
   }
   return sent;
+}
+
+/**
+ * One email per saved search per sweep, and only when the user has email
+ * notifications on. Deduplication rides on the same watermark and
+ * already-notified set as the in-app path, so a posting is emailed at most
+ * once per search.
+ */
+async function maybeEmailDigest(
+  supabaseService: SupabaseService,
+  search: { id: string; user_id: string; name: string },
+  fresh: Array<{
+    id: string;
+    title: string;
+    compensation?: unknown;
+    location_text?: string | null;
+    is_remote?: boolean;
+  }>,
+): Promise<void> {
+  if (!isAlertMailConfigured()) return;
+  try {
+    const db = supabaseService.getClient();
+    const { data: profile } = await db
+      .from("profiles")
+      .select("settings")
+      .eq("id", search.user_id)
+      .single();
+    if (!shouldSendEmailNotifications(profile?.settings)) return;
+
+    const { data: authUser } = await db.auth.admin.getUserById(search.user_id);
+    const to = authUser?.user?.email;
+    if (!to) return;
+
+    const delivered = await sendJobAlertEmail({
+      to,
+      searchName: search.name || "your saved search",
+      matches: fresh.map((posting) => ({
+        id: posting.id,
+        title: posting.title,
+        compensationLabel: formatJobCompensation(posting.compensation as any),
+        locationLabel: posting.is_remote
+          ? "Remote"
+          : posting.location_text || null,
+      })),
+    });
+    if (delivered) {
+      logger.info("Job alert email sent", {
+        searchId: search.id,
+        matches: fresh.length,
+      });
+    }
+  } catch (err) {
+    // Email is best-effort; the in-app notification already landed.
+    logger.warn("Job alert email delivery failed", {
+      searchId: search.id,
+      err,
+    });
+  }
 }
 
 /**
