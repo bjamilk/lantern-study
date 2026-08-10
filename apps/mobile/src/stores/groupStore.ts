@@ -264,6 +264,13 @@ interface GroupState {
   fetchGroupUnreadCounts: (userId: string) => Promise<void>;
   markGroupAsRead: (groupId: string, userId: string) => Promise<string | null>;
   selectGroup: (groupId: string) => void;
+  /**
+   * Load a group the store has never seen. Needed whenever a screen is reached
+   * without going through the chat list — an invite join, an accepted invite,
+   * a notification deep link — because `selectGroup` otherwise has nothing to
+   * show and falls back to a placeholder.
+   */
+  hydrateGroup: (groupId: string) => Promise<void>;
   fetchMessages: (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => Promise<void>;
   loadMoreMessages: (groupId: string) => Promise<number>;
   sendMessage: (
@@ -824,6 +831,37 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       messages: cached,
     });
     void get().fetchGroupMembers(groupId);
+    // The placeholder above exists only so the screen can render immediately.
+    // Without this the header keeps showing "Group" with no owner or count for
+    // the whole session, since nothing else refetches the list.
+    if (!group) void get().hydrateGroup(groupId);
+  },
+
+  hydrateGroup: async (groupId: string) => {
+    try {
+      const apiGroup = await api.fetchGroup(groupId);
+      if (!(apiGroup as { id?: string })?.id) return;
+      const mapped = mapApiGroup(apiGroup, get().groupUnreadCounts);
+      set((state) => {
+        // fetchGroupMembers may have already landed a roster on the placeholder;
+        // the group endpoint omits members, so never overwrite one with nothing.
+        const merge = (g: Group): Group => ({
+          ...mapped,
+          members: g.members?.length ? g.members : mapped.members,
+          memberCount: Math.max(mapped.memberCount ?? 0, g.memberCount ?? 0),
+        });
+        const known = state.groups.some((g) => g.id === groupId);
+        return {
+          groups: known
+            ? state.groups.map((g) => (g.id === groupId ? merge(g) : g))
+            : [...state.groups, mapped],
+          currentGroup:
+            state.currentGroup?.id === groupId ? merge(state.currentGroup) : state.currentGroup,
+        };
+      });
+    } catch (error) {
+      console.warn('[GroupStore] Failed to hydrate group:', error);
+    }
   },
 
   fetchMessages: async (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => {
