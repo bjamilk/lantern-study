@@ -167,7 +167,11 @@ export default function UsernameRequiredModal({
     >
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        // Android must stay undefined: the manifest sets adjustResize, so the
+        // window already shrinks for the keyboard. 'height' subtracts it a
+        // second time and the two corrections oscillate, which makes the footer
+        // Continue button jump around the screen.
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerSpacer} />

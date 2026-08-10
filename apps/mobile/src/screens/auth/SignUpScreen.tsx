@@ -324,7 +324,9 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // See UsernameRequiredModal: 'height' fights the manifest's adjustResize
+      // on Android and makes the layout oscillate.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 24 + cookieNoticeInset }]}
