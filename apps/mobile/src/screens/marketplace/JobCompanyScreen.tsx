@@ -25,8 +25,11 @@ import {
 import { Card, ScreenHeader } from "../../components/ui";
 import { fetchJobCompanyProfile } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 export function JobCompanyScreen() {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const route = useRoute<RouteProp<MarketStackParamList, "JobCompany">>();
@@ -55,7 +58,7 @@ export function JobCompanyScreen() {
       <ScreenHeader title="Company" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
       >
         {error ? (
           <Text className="text-red-600 text-sm mt-4">{error}</Text>

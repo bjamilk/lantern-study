@@ -22,6 +22,7 @@ import { Card, ScreenHeader } from "../../components/ui";
 import { JobEmployerInsights } from "../../components/jobs/JobEmployerInsights";
 import { fetchMyJobPostings, updateJobPosting } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 const STATUS_STYLES: Record<JobPosting["status"], string> = {
   draft: "bg-slate-100 text-slate-700",
@@ -34,6 +35,8 @@ const STATUS_STYLES: Record<JobPosting["status"], string> = {
 };
 
 export function MyJobPostingsScreen() {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
@@ -106,7 +109,7 @@ export function MyJobPostingsScreen() {
       />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
       >
         <View className="px-4">
           <Text className="text-2xl font-bold text-lantern-text">

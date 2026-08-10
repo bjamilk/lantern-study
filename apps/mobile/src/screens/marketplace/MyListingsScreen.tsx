@@ -29,6 +29,7 @@ import { SellerCampaignModal } from './modals/SellerCampaignModal';
 import { SellerInsightsModal } from './modals/SellerInsightsModal';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
 import type { SellerAnalytics, SellerOnboardingStatus } from '@lantern/shared/types';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type StatusTab = 'active' | 'sold' | 'inactive';
 
@@ -38,6 +39,8 @@ type NavigationProp = {
 };
 
 export function MyListingsScreen({ navigation }: { navigation: NavigationProp }) {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
   const { myListings, sellerStats, isLoading, fetchMyListings, fetchSellerStats, updateListing, deleteListing } =
     useMarketplaceStore();
@@ -359,7 +362,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
           data={filtered}
           keyExtractor={item => item.id}
           ListHeaderComponent={listHeader}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
           ListEmptyComponent={
             <View className="items-center py-16">

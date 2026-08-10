@@ -26,6 +26,7 @@ import {
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   goBack: () => void;
@@ -33,6 +34,8 @@ type NavigationProp = {
 };
 
 export function CartScreen({ navigation }: { navigation: NavigationProp }) {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const [items, setItems] = useState<MarketplaceCartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
@@ -129,7 +132,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 160 }}
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance + 160 }}
           ListEmptyComponent={
             <Text className="text-center text-lantern-text-secondary mt-12">
               Your cart is empty
@@ -199,7 +202,9 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
       )}
 
       {items.length > 0 ? (
-        <View className="absolute bottom-0 left-0 right-0 px-4 pb-8 pt-3 bg-lantern-surface border-t border-lantern-border">
+        <View className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
+          // pb-8 left the Pay button underneath the tab bar, which swallowed the tap.
+          style={{ paddingBottom: tabBarClearance }}>
           <View className="flex-row justify-between mb-1">
             <Text className="text-lantern-text-secondary">Items</Text>
             <Text className="text-lantern-text">{formatPrice(cartTotal)}</Text>

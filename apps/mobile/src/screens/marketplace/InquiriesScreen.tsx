@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { fetchMarketplaceListing, fetchMyInquiries } from '../../services/api';
 import { ListingImage, timeAgo } from './marketplaceHelpers';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type InquiryItem = {
   id: string;
@@ -76,6 +77,8 @@ async function enrichInquiries(raw: Awaited<ReturnType<typeof fetchMyInquiries>>
 }
 
 export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
   const { updateInquiryStatus } = useMarketplaceStore();
   const [tab, setTab] = useState<Tab>('seller');
@@ -202,7 +205,7 @@ export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) 
         <FlatList
           data={inquiries}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">

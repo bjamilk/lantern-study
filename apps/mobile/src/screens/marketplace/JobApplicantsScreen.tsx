@@ -43,6 +43,7 @@ import {
 } from "../../services/jobsBoard";
 import { useAuthStore } from "../../stores";
 import type { MarketStackParamList } from "../../navigation/types";
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 const STATUSES: JobApplicationStatus[] = [
   "new",
@@ -57,6 +58,8 @@ const STATUSES: JobApplicationStatus[] = [
 const SORTS: JobApplicantSort[] = ["newest", "oldest", "name"];
 
 export function JobApplicantsScreen() {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const route = useRoute<RouteProp<MarketStackParamList, "JobApplicants">>();
@@ -197,7 +200,7 @@ export function JobApplicantsScreen() {
       <ScreenHeader title="Applicants" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
         keyboardShouldPersistTaps="handled"
       >
         <Text className="mb-2 text-sm text-lantern-text-secondary">

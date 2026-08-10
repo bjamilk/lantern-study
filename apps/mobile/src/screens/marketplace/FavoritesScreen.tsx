@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   goBack: () => void;
@@ -11,6 +12,8 @@ type NavigationProp = {
 };
 
 export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
   const { favoriteListings, favorites, listings, fetchServerFavorites, toggleFavorite } = useMarketplaceStore();
 
@@ -44,7 +47,7 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
       <FlatList
         data={items}
         keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: tabBarClearance }}
         ListEmptyComponent={
           <Text className="text-center text-lantern-text-secondary mt-12">
             No saved listings yet. Tap the heart on any listing to save it.

@@ -18,6 +18,7 @@ import { useAuthStore, useMarketplaceStore, type MarketplaceListing } from '../.
 import * as api from '../../services/api';
 import { Avatar } from '../../components/ui';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   goBack: () => void;
@@ -30,6 +31,8 @@ interface Props {
 }
 
 export function SellerProfileScreen({ navigation, route }: Props) {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const sellerId = route.params?.sellerId ?? '';
   const { user } = useAuthStore();
   const { sellerProfile, fetchSellerProfile, updateMyShop, isLoading } = useMarketplaceStore();
@@ -253,7 +256,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           data={listings}
           keyExtractor={item => item.id}
           numColumns={2}
-          contentContainerStyle={{ padding: 8, paddingBottom: 24 }}
+          contentContainerStyle={{ padding: 8, paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ justifyContent: 'space-between' }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
           ListEmptyComponent={

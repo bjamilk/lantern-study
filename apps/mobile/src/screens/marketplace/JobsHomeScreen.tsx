@@ -36,6 +36,7 @@ import {
   updateJobSavedSearch,
 } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 const FILTERS = [
   { id: "all", label: "All jobs" },
@@ -50,6 +51,8 @@ const FILTERS = [
 type FilterId = (typeof FILTERS)[number]["id"];
 
 export function JobsHomeScreen() {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
@@ -234,7 +237,7 @@ export function JobsHomeScreen() {
       />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
       >
         <View className="px-4 pb-4">
           <Text className="text-2xl font-bold text-lantern-text">

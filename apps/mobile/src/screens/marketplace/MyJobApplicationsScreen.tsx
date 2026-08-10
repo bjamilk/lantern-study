@@ -31,6 +31,7 @@ import {
   updateJobApplicationStatus,
 } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 const CLOSED_STATUSES = new Set<JobApplicationStatus>([
   "hired",
@@ -51,6 +52,8 @@ const STATUS_STYLES: Record<JobApplicationStatus, string> = {
 };
 
 export function MyJobApplicationsScreen() {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const [apps, setApps] = useState<JobApplication[]>([]);
@@ -230,7 +233,7 @@ export function MyJobApplicationsScreen() {
       />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
       >
         <View className="px-4">
           <Text className="text-2xl font-bold text-lantern-text">

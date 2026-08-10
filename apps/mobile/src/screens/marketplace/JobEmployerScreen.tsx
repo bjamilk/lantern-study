@@ -24,8 +24,11 @@ import {
   updateJobCompany,
 } from '../../services/jobsBoard';
 import type { MarketStackParamList } from '../../navigation/types';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 export function JobEmployerScreen() {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const navigation = useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const [companies, setCompanies] = useState<
     Array<{ role: JobCompanyMemberRole; company: JobCompany }>
@@ -67,7 +70,7 @@ export function JobEmployerScreen() {
   return (
     <View className="flex-1 bg-lantern-background">
       <ScreenHeader title="Employer" onBack={() => navigation.goBack()} />
-      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
         <Text className="text-xs text-lantern-text-tertiary mb-3">{JOBS_COMPANY_EEO_NOTICE}</Text>
         <Card className="mb-3">
           <Text className="font-semibold text-lantern-text mb-2">Your companies</Text>

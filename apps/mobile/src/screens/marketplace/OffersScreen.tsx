@@ -14,6 +14,7 @@ import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lanter
 import { useMarketplaceStore, useAuthStore, type MarketplaceOffer } from '../../stores';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   goBack: () => void;
@@ -23,6 +24,8 @@ type NavigationProp = {
 type Tab = 'seller' | 'buyer';
 
 export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
   const { buyerOffers, sellerOffers, isLoading, fetchOffers, respondToOffer } = useMarketplaceStore();
   const [tab, setTab] = useState<Tab>('seller');
@@ -219,7 +222,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
           data={offers}
           keyExtractor={item => item.id}
           renderItem={renderOffer}
-          contentContainerStyle={{ paddingBottom: 24 }}
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
           ListEmptyComponent={
             <Text className="text-center text-lantern-text-secondary mt-12 px-6">
               No {tab === 'seller' ? 'received' : 'sent'} offers yet.

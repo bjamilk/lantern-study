@@ -43,8 +43,11 @@ import {
 } from "../../services/jobsBoard";
 import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
 import type { MarketStackParamList } from "../../navigation/types";
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 export function JobDetailScreen() {
+  // Scroll content must clear the absolutely-positioned bottom tab bar.
+  const tabBarClearance = useTabBarClearance(16);
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const route = useRoute<RouteProp<MarketStackParamList, "JobDetail">>();
@@ -105,7 +108,7 @@ export function JobDetailScreen() {
       <ScreenHeader title="Job" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
       >
         {error ? (
           <View className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3">
