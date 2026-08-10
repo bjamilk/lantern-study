@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMarketplaceStore } from '../../stores';
 import { Button, Card } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   goBack: () => void;
@@ -25,6 +26,8 @@ interface Props {
 }
 
 export function MakeOfferScreen({ navigation, route }: Props) {
+  // The submit button is the last scroll child; clear the floating tab bar.
+  const tabBarClearance = useTabBarClearance(32);
   const listingId = route.params?.listingId ?? '';
   const { currentListing, fetchListing, createMarketplaceOffer, isLoading } = useMarketplaceStore();
 
@@ -85,7 +88,7 @@ export function MakeOfferScreen({ navigation, route }: Props) {
           <Text className="text-xl font-bold text-lantern-text">Make an Offer</Text>
         </View>
 
-        <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 32 }}>
+        <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
           {listing ? (
             <Card className="mb-4">
               <Text className="text-xs text-lantern-text-secondary mb-1">Making an offer on</Text>

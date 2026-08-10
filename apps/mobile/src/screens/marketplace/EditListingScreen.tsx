@@ -29,6 +29,7 @@ import {
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { fetchMarketplaceCampuses } from '../../services/api';
 import { CampusPicker } from './CampusPicker';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   goBack: () => void;
@@ -44,6 +45,8 @@ export function EditListingScreen({
   navigation: NavigationProp;
   route: { params?: { listingId?: string } };
 }) {
+  // Publish sits at the end of the scroll; clear the floating tab bar.
+  const tabBarClearance = useTabBarClearance(32);
   const listingId = route.params?.listingId ?? '';
   const { user } = useAuthStore();
   const { currentListing, fetchListing, updateListing, isLoading } = useMarketplaceStore();
@@ -216,7 +219,7 @@ export function EditListingScreen({
           <Text className="text-xl font-bold text-lantern-text">Edit Listing</Text>
         </View>
 
-        <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 32 }}>
+        <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
           <Text className="text-sm font-semibold text-lantern-text mb-2">Photos</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
             {images.map((uri, i) => (

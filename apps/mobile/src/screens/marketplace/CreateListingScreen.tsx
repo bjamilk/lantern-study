@@ -31,6 +31,7 @@ import {
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { Button } from '../../components/ui';
 import { CampusPicker } from './CampusPicker';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -58,6 +59,8 @@ function draftStorageKey(userId?: string | null): string {
 }
 
 export function CreateListingScreen({ navigation }: { navigation: NavigationProp & { goBack: () => void } }) {
+  // The submit button is the last scroll child; clear the floating tab bar.
+  const tabBarClearance = useTabBarClearance(32);
   const { user } = useAuthStore();
   const { createListing, isLoading } = useMarketplaceStore();
 
@@ -411,7 +414,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         <Text className="text-xl font-bold text-lantern-text flex-1">Create Listing</Text>
       </View>
 
-      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
         {draftRestored ? (
           <View className="flex-row items-center justify-between bg-lantern-primary-background rounded-xl px-3 py-2 mb-4">
             <View className="flex-row items-center flex-1 mr-2">

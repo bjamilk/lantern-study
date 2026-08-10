@@ -661,7 +661,13 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 key={listing.id}
                 listing={listing}
                 isFavorite={favorites.has(listing.id)}
-                isOwner={listing.user_id === currentUser?.id || listing.seller_id === currentUser?.id}
+                isOwner={
+                  // Guard on the viewer first: in guest mode currentUser?.id is
+                  // undefined, and a listing payload without user_id made this
+                  // `undefined === undefined` — every card said "Your Listing".
+                  !!currentUser?.id &&
+                  (listing.user_id === currentUser.id || listing.seller_id === currentUser.id)
+                }
                 categoryName={getCategoryName(listing.category)}
                 CategoryIcon={IconComponent}
                 onPress={() => handleListingClick(listing)}

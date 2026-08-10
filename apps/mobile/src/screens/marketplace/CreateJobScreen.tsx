@@ -39,8 +39,11 @@ import {
   updateJobPosting,
 } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 export function CreateJobScreen() {
+  // The submit button is the last scroll child; clear the floating tab bar.
+  const tabBarClearance = useTabBarClearance(32);
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const route = useRoute<RouteProp<MarketStackParamList, "CreateJob">>();
@@ -276,7 +279,7 @@ export function CreateJobScreen() {
       />
       <ScrollView
         className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
       >
         <Card className="mb-3 space-y-3">
           {isEdit ? (
