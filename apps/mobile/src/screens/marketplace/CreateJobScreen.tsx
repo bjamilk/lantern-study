@@ -273,7 +273,7 @@ export function CreateJobScreen() {
 
   return (
     <View className="flex-1 bg-lantern-background">
-      <ScreenHeader
+      <ScreenHeader safeTop
         title={isEdit ? "Edit job" : "Post a job"}
         onBack={() => navigation.goBack()}
       />

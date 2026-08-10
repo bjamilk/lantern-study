@@ -105,7 +105,7 @@ export function JobDetailScreen() {
 
   return (
     <View className="flex-1 bg-lantern-background">
-      <ScreenHeader title="Job" onBack={() => navigation.goBack()} />
+      <ScreenHeader safeTop title="Job" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
         contentContainerStyle={{ paddingBottom: tabBarClearance }}

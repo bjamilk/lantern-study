@@ -227,7 +227,7 @@ export function MyJobApplicationsScreen() {
 
   return (
     <View className="flex-1 bg-lantern-background">
-      <ScreenHeader
+      <ScreenHeader safeTop
         title="My applications"
         onBack={() => navigation.goBack()}
       />

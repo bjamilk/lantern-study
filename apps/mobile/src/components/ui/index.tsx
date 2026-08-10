@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Pressable, Text, ActivityIndicator, View, Modal } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToastStore } from '../../stores/toastStore';
 import { useConfirmStore } from '../../stores/confirmStore';
 
@@ -103,15 +104,22 @@ export function ScreenHeader({
   right,
   onBack,
   className = '',
+  safeTop = false,
 }: {
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
   onBack?: () => void;
   className?: string;
+  /** For screens whose root is a plain View: inset below the status bar. */
+  safeTop?: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View className={`px-4 pt-2 pb-3 flex-row items-start ${className}`}>
+    <View
+      style={safeTop ? { paddingTop: insets.top + 8 } : undefined}
+      className={`px-4 pt-2 pb-3 flex-row items-start ${className}`}
+    >
       {onBack ? (
         <Pressable onPress={onBack} className="p-1 mr-2 mt-1">
           <Text className="text-lantern-primary text-lg">←</Text>

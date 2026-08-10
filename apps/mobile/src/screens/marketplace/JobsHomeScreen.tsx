@@ -222,7 +222,7 @@ export function JobsHomeScreen() {
 
   return (
     <View className="flex-1 bg-lantern-background">
-      <ScreenHeader
+      <ScreenHeader safeTop
         title="Jobs"
         subtitle="Explore opportunities"
         onBack={() => navigation.navigate("MarketplaceHome")}

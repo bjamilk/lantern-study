@@ -95,7 +95,7 @@ export function MyJobPostingsScreen() {
 
   return (
     <View className="flex-1 bg-lantern-background">
-      <ScreenHeader
+      <ScreenHeader safeTop
         title="My job posts"
         onBack={() => navigation.goBack()}
         right={

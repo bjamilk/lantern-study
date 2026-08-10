@@ -69,7 +69,7 @@ export function JobEmployerScreen() {
 
   return (
     <View className="flex-1 bg-lantern-background">
-      <ScreenHeader title="Employer" onBack={() => navigation.goBack()} />
+      <ScreenHeader safeTop title="Employer" onBack={() => navigation.goBack()} />
       <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
         <Text className="text-xs text-lantern-text-tertiary mb-3">{JOBS_COMPANY_EEO_NOTICE}</Text>
         <Card className="mb-3">
