@@ -36,7 +36,8 @@ import { useTheme } from '../../theme';
 import { supabase } from '../../services/supabase';
 import { exportUserData, fetchMarketplaceCampuses, fetchUserProfile } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
-import { MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
+import { marketplaceComplianceBanner } from '@lantern/shared';
+import { usePaystackEnabled } from '../../hooks/usePaystackEnabled';
 import { filterCampusesByQuery, isOtherCityCampus } from '@lantern/shared/marketplace';
 import { AccountLifecycleModals, AccountPausedBannerMobile } from '../../components/AccountLifecycleModals';
 import { reactivateUserAccount } from '../../services/accountLifecycle';
@@ -143,6 +144,7 @@ export default function SettingsScreen() {
   
   // Theme
   const { colors, isDark, themeMode, setThemeMode } = useTheme();
+  const paystackEnabled = usePaystackEnabled();
 
   const modalTheme = useMemo(
     () => ({
@@ -889,7 +891,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <View style={[styles.complianceBanner, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
               <Text style={[styles.complianceText, { color: colors.textSecondary }]}>
-                {MARKETPLACE_COMPLIANCE_BANNER}
+                {marketplaceComplianceBanner(paystackEnabled)}
               </Text>
             </View>
             <SettingItem

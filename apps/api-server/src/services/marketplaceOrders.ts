@@ -1,6 +1,9 @@
 import type { SupabaseService } from './supabase';
 import { cacheService } from './cache';
 import { logger } from '../utils/logger';
+// PublicError messages survive production error masking (clientErrorMessage);
+// every throw in this service is written for the end user.
+import { PublicError } from '../utils/safeError';
 
 export async function invalidateSellerAnalyticsCache(sellerId: string): Promise<void> {
   if (!sellerId) return;
@@ -49,19 +52,19 @@ export class MarketplaceOrdersService {
     requestedQty = 1
   ): void {
     if (listing.status !== 'active') {
-      throw new Error('Listing is not available for purchase');
+      throw new PublicError('Listing is not available for purchase');
     }
     if (listing.quantity == null) {
       if (requestedQty !== 1) {
-        throw new Error('This listing can only be purchased as a single item');
+        throw new PublicError('This listing can only be purchased as a single item');
       }
       return;
     }
     if (listing.quantity <= 0) {
-      throw new Error('This listing is out of stock');
+      throw new PublicError('This listing is out of stock');
     }
     if (listing.quantity < requestedQty) {
-      throw new Error('Not enough stock for the requested quantity');
+      throw new PublicError('Not enough stock for the requested quantity');
     }
   }
 
@@ -80,12 +83,12 @@ export class MarketplaceOrdersService {
     proofUrl: string
   ): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderById(orderId, userId);
-    if (!order) throw new Error('Order not found');
-    if (order.buyer_id !== userId) throw new Error('Only the buyer can submit payment proof');
+    if (!order) throw new PublicError('Order not found');
+    if (order.buyer_id !== userId) throw new PublicError('Only the buyer can submit payment proof');
     if (order.status !== 'pending_payment') {
-      throw new Error('Order is not awaiting payment proof');
+      throw new PublicError('Order is not awaiting payment proof');
     }
-    if (!proofUrl?.trim()) throw new Error('Payment proof URL is required');
+    if (!proofUrl?.trim()) throw new PublicError('Payment proof URL is required');
 
     const now = new Date().toISOString();
     const { data, error } = await this.db
@@ -130,11 +133,11 @@ export class MarketplaceOrdersService {
 
   async assertNoOpenOrderForListing(listingId: string): Promise<void> {
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
-    if (!listing) throw new Error('Listing not found');
+    if (!listing) throw new PublicError('Listing not found');
     // Multi-qty: remaining quantity is the stock; unique (null qty) allows one open order.
     if (listing.quantity != null) {
       if (listing.status !== 'active' || listing.quantity <= 0) {
-        throw new Error('This listing is out of stock');
+        throw new PublicError('This listing is out of stock');
       }
       return;
     }
@@ -147,7 +150,7 @@ export class MarketplaceOrdersService {
 
     if (error) throw error;
     if (data && data.length > 0) {
-      throw new Error('This listing already has an open order');
+      throw new PublicError('This listing already has an open order');
     }
   }
 
@@ -230,8 +233,8 @@ export class MarketplaceOrdersService {
   ): Promise<MarketplaceOrderRow> {
     const quantity = Math.max(1, Math.floor(Number(quantityInput) || 1));
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
-    if (!listing) throw new Error('Listing not found');
-    if (listing.user_id === buyerId) throw new Error('Cannot buy your own listing');
+    if (!listing) throw new PublicError('Listing not found');
+    if (listing.user_id === buyerId) throw new PublicError('Cannot buy your own listing');
     this.assertListingInStock(listing, quantity);
 
     await this.assertNoOpenOrderForListing(listingId);
@@ -275,7 +278,7 @@ export class MarketplaceOrdersService {
         const existing = await this.getOpenOrderForListing(listingId);
         if (existing) {
           if (existing.buyer_id === buyerId) return existing;
-          throw new Error('This listing already has an open order');
+          throw new PublicError('This listing already has an open order');
         }
       }
       throw rpcError;
@@ -283,7 +286,7 @@ export class MarketplaceOrdersService {
 
     const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
     const orderId = rpcRow?.order_id as string | undefined;
-    if (!orderId) throw new Error('Failed to create marketplace order');
+    if (!orderId) throw new PublicError('Failed to create marketplace order');
 
     const { data: order, error: orderError } = await this.db
       .from('marketplace_orders')
@@ -332,11 +335,11 @@ export class MarketplaceOrdersService {
       .eq('id', offerId)
       .single();
 
-    if (error || !offer) throw new Error('Offer not found');
+    if (error || !offer) throw new PublicError('Offer not found');
 
     const listingRaw = offer.listing as any;
     if (!listingRaw || Array.isArray(listingRaw)) {
-      throw new Error('Listing not found for offer');
+      throw new PublicError('Listing not found for offer');
     }
 
     const sellerId = offer.seller_id as string;
@@ -364,7 +367,7 @@ export class MarketplaceOrdersService {
 
     const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
     const orderId = rpcRow?.order_id as string | undefined;
-    if (!orderId) throw new Error('Failed to create order from offer');
+    if (!orderId) throw new PublicError('Failed to create order from offer');
 
     const { data: order, error: orderError } = await this.db
       .from('marketplace_orders')
@@ -435,7 +438,7 @@ export class MarketplaceOrdersService {
     if (!data) return null;
     const row = data as MarketplaceOrderRow;
     if (row.buyer_id !== userId && row.seller_id !== userId) {
-      throw new Error('Unauthorized');
+      throw new PublicError('Unauthorized');
     }
     return row;
   }
@@ -468,7 +471,7 @@ export class MarketplaceOrdersService {
       | 'open_dispute'
   ): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderById(orderId, userId);
-    if (!order) throw new Error('Order not found');
+    if (!order) throw new PublicError('Order not found');
 
     const isSeller = order.seller_id === userId;
     const isBuyer = order.buyer_id === userId;
@@ -480,27 +483,27 @@ export class MarketplaceOrdersService {
       case 'mark_paid': {
         const { marketplacePaystackEnabled } = await import('./marketplacePayments');
         if (marketplacePaystackEnabled() && order.payment_id) {
-          throw new Error(
+          throw new PublicError(
             'This order is paid via Paystack. Manual mark-paid is disabled; wait for payment confirmation.'
           );
         }
-        if (!isSeller && !isBuyer) throw new Error('Unauthorized');
-        if (order.status !== 'pending_payment') throw new Error('Order is not awaiting payment');
+        if (!isSeller && !isBuyer) throw new PublicError('Unauthorized');
+        if (order.status !== 'pending_payment') throw new PublicError('Order is not awaiting payment');
         nextStatus = 'paid';
         break;
       }
       case 'mark_ready':
-        if (!isSeller) throw new Error('Only the seller can mark ready for pickup');
+        if (!isSeller) throw new PublicError('Only the seller can mark ready for pickup');
         if (!['paid', 'pending_payment'].includes(order.status)) {
-          throw new Error('Order cannot be marked ready in current status');
+          throw new PublicError('Order cannot be marked ready in current status');
         }
         nextStatus = 'ready_for_pickup';
         patch.seller_confirmed_at = now;
         break;
       case 'confirm_received': {
-        if (!isBuyer) throw new Error('Only the buyer can confirm receipt');
+        if (!isBuyer) throw new PublicError('Only the buyer can confirm receipt');
         if (!['ready_for_pickup', 'paid', 'buyer_confirmed'].includes(order.status)) {
-          throw new Error('Order is not ready for buyer confirmation');
+          throw new PublicError('Order is not ready for buyer confirmation');
         }
         patch.buyer_confirmed_at = now;
         await this.db.from('marketplace_orders').update({ buyer_confirmed_at: now }).eq('id', orderId);
@@ -516,9 +519,9 @@ export class MarketplaceOrdersService {
         return this.releaseEscrow(orderId, userId);
       }
       case 'cancel': {
-        if (!isSeller && !isBuyer) throw new Error('Unauthorized');
+        if (!isSeller && !isBuyer) throw new PublicError('Unauthorized');
         if (['completed', 'cancelled'].includes(order.status)) {
-          throw new Error('Order cannot be cancelled');
+          throw new PublicError('Order cannot be cancelled');
         }
         nextStatus = 'cancelled';
         const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
@@ -535,7 +538,7 @@ export class MarketplaceOrdersService {
         break;
       }
       case 'open_dispute':
-        if (!isBuyer && !isSeller) throw new Error('Unauthorized');
+        if (!isBuyer && !isSeller) throw new PublicError('Unauthorized');
         nextStatus = 'disputed';
         if (order.transaction_id) {
           await this.db
@@ -545,7 +548,7 @@ export class MarketplaceOrdersService {
         }
         break;
       default:
-        throw new Error('Invalid action');
+        throw new PublicError('Invalid action');
     }
 
     patch.status = nextStatus;
@@ -606,9 +609,9 @@ export class MarketplaceOrdersService {
 
   async releaseEscrow(orderId: string, userId: string): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderById(orderId, userId);
-    if (!order) throw new Error('Order not found');
+    if (!order) throw new PublicError('Order not found');
     if (order.buyer_id !== userId && order.seller_id !== userId) {
-      throw new Error('Unauthorized');
+      throw new PublicError('Unauthorized');
     }
     if (order.status === 'completed') return order;
 
@@ -641,7 +644,7 @@ export class MarketplaceOrdersService {
     if (rpcError) throw rpcError;
 
     const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-    if (!rpcRow?.order_id) throw new Error('Failed to release marketplace escrow');
+    if (!rpcRow?.order_id) throw new PublicError('Failed to release marketplace escrow');
 
     const { data, error } = await this.db
       .from('marketplace_orders')
@@ -753,10 +756,10 @@ export class MarketplaceOrdersService {
     userId: string
   ): Promise<{ orderId: string; amount: number; deepLink: string }> {
     const order = await this.getOrderById(orderId, userId);
-    if (!order) throw new Error('Order not found');
-    if (order.seller_id !== userId) throw new Error('Only the seller can request payment');
+    if (!order) throw new PublicError('Order not found');
+    if (order.seller_id !== userId) throw new PublicError('Only the seller can request payment');
     if (['completed', 'cancelled'].includes(order.status)) {
-      throw new Error('Order is closed');
+      throw new PublicError('Order is closed');
     }
 
     if (order.status === 'pending_payment') {
@@ -1277,9 +1280,9 @@ export class MarketplaceOrdersService {
     adminNote?: string
   ): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderByIdAdmin(orderId);
-    if (!order) throw new Error('Order not found');
+    if (!order) throw new PublicError('Order not found');
     if (order.status !== 'disputed') {
-      throw new Error('Only disputed orders can be resolved by admin');
+      throw new PublicError('Only disputed orders can be resolved by admin');
     }
 
     if (resolution === 'release_to_seller') {

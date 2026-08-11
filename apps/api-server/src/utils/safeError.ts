@@ -20,8 +20,22 @@ export function isProductionEnv(): boolean {
   return process.env.NODE_ENV === 'production';
 }
 
+/**
+ * An error whose message is written for end users and safe to return verbatim
+ * in production. Throw this (instead of Error) for actionable validation and
+ * state errors — "Only the seller can request payment", "Order is closed" —
+ * so clientErrorMessage doesn't collapse them into the generic fallback.
+ */
+export class PublicError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PublicError';
+  }
+}
+
 /** Return a client-safe error message (hide internals in production). */
 export function clientErrorMessage(error: unknown, fallback = 'Something went wrong'): string {
+  if (error instanceof PublicError) return error.message;
   if (!isProductionEnv()) {
     if (error instanceof Error) return error.message;
     return String(error);
