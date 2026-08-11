@@ -4,6 +4,7 @@
  * expense splits, wallet balance, and category budgets.
  * Uses local-first approach: data is stored in AsyncStorage and synced with Supabase.
  */
+import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
@@ -161,7 +162,7 @@ const DEMO_TRANSACTIONS: Transaction[] = [
     amount: 5500,
     category: 'food_feeding',
     description: 'Lunch at restaurant',
-    date: new Date().toISOString().split('T')[0],
+    date: toDateOnlyLocal(new Date()),
   },
   {
     id: 'trans-2',
@@ -170,7 +171,7 @@ const DEMO_TRANSACTIONS: Transaction[] = [
     amount: 15000,
     category: 'transport',
     description: 'Uber rides this week',
-    date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    date: toDateOnlyLocal(new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)),
   },
   {
     id: 'trans-3',
@@ -179,7 +180,7 @@ const DEMO_TRANSACTIONS: Transaction[] = [
     amount: 150000,
     category: 'allowance',
     description: 'Monthly salary',
-    date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    date: toDateOnlyLocal(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)),
   },
   {
     id: 'trans-4',
@@ -188,7 +189,7 @@ const DEMO_TRANSACTIONS: Transaction[] = [
     amount: 25000,
     category: 'clothing_fashion',
     description: 'New shoes',
-    date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    date: toDateOnlyLocal(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
   },
   {
     id: 'trans-5',
@@ -197,7 +198,7 @@ const DEMO_TRANSACTIONS: Transaction[] = [
     amount: 8000,
     category: 'social_entertainment',
     description: 'Movie tickets',
-    date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    date: toDateOnlyLocal(new Date(Date.now() - 4 * 24 * 60 * 60 * 1000)),
   },
   {
     id: 'trans-6',
@@ -206,7 +207,7 @@ const DEMO_TRANSACTIONS: Transaction[] = [
     amount: 12000,
     category: 'bills_utilities',
     description: 'Internet subscription',
-    date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    date: toDateOnlyLocal(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)),
   },
   {
     id: 'trans-7',
@@ -215,7 +216,7 @@ const DEMO_TRANSACTIONS: Transaction[] = [
     amount: 25000,
     category: 'freelance',
     description: 'Side project payment',
-    date: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    date: toDateOnlyLocal(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)),
   },
 ];
 

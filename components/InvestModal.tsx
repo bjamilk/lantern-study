@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useBudgetStore } from '../stores/budgetStore';
 import Modal from './ui/Modal';
@@ -167,7 +168,7 @@ const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onClose, cu
                           <div className="flex-1 min-w-0">
                             <h4 className="font-medium text-sm text-lantern-text truncate">{goal.name}</h4>
                             {goal.deadline && (
-                              <p className="text-xs text-lantern-text-tertiary">Due {new Date(goal.deadline).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                              <p className="text-xs text-lantern-text-tertiary">Due {parseDateOnlyLocal(goal.deadline).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                             )}
                           </div>
                           <button onClick={() => void handleRemove(goal.id)} disabled={busy} className="text-lantern-text-tertiary hover:text-red-500 text-xs">✕</button>

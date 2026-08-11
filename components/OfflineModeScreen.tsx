@@ -1,4 +1,5 @@
 
+import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import React, { useRef, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { OfflineSessionBundle, Deck } from '../types';
@@ -43,7 +44,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
 
   const handleExportBundle = (bundle: OfflineSessionBundle) => {
     const displayName = bundle.displayName || bundle.groupName;
-    const filename = `lantern-bundle-${displayName.replace(/\s+/g, '-')}-${new Date(bundle.downloadedAt).toISOString().split('T')[0]}.json`;
+    const filename = `lantern-bundle-${displayName.replace(/\s+/g, '-')}-${toDateOnlyLocal(new Date(bundle.downloadedAt))}.json`;
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

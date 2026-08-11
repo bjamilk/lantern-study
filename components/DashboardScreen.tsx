@@ -1,4 +1,5 @@
 
+import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, AppMode, OfflineSessionBundle, DailyQuizSession, StudyGoalMode, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
@@ -1068,14 +1069,14 @@ export default function DashboardScreen({
   const studyStreak = useMemo(() => {
     const days = new Set<string>();
     filteredTestResults.forEach(r => {
-      days.add(new Date(r.session.startTime).toISOString().split('T')[0]);
+      days.add(toDateOnlyLocal(new Date(r.session.startTime)));
     });
     let streak = 0;
     const today = new Date();
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      if (days.has(d.toISOString().split('T')[0])) {
+      if (days.has(toDateOnlyLocal(d))) {
         streak++;
       } else if (i > 0) {
         break;
