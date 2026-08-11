@@ -1,6 +1,6 @@
 # Step 4: Deploy the web app (Cloudflare Pages)
 
-Host the Lantern Study Vite web app on **Cloudflare Pages** with GitHub auto-deploy from `main`.
+Host the Lantern Study Vite web app on **Cloudflare Pages**. The Pages project is **NOT git-connected** — pushing to `main` deploys nothing. Deploys happen via the `Deploy web (Cloudflare Pages)` GitHub workflow (`.github/workflows/deploy-web.yml`, manual `workflow_dispatch`) or, as a fallback, a manual `wrangler pages deploy` from a machine.
 
 ## What gets deployed
 

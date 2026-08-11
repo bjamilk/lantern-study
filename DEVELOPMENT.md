@@ -91,14 +91,21 @@ grep -l "supabase-demo\|127.0.0.1:55421" dist/assets/*.js   # must print nothing
 
 ## Deploying
 
-Nothing deploys automatically. Pushing to `main` does **not** publish the web app.
+Nothing deploys automatically. Pushing to `main` does **not** publish the web
+app — Cloudflare Pages is **not** git-connected. Deploys are explicit actions.
 
-**Web → Cloudflare Pages → lanternstudy.com**
+**Web → Cloudflare Pages → lanternstudy.com** — canonical path: the
+**`Deploy web (Cloudflare Pages)` GitHub workflow**
+([.github/workflows/deploy-web.yml](.github/workflows/deploy-web.yml)).
+GitHub → Actions → "Deploy web (Cloudflare Pages)" → Run workflow (pick the
+ref, defaults to `main`). It builds with the repository's production env vars,
+verifies the bundle points at production Supabase, publishes via wrangler, and
+polls the live `sw.js` until the new build is confirmed serving — all with an
+audit trail.
 
-Dashboard: Workers & Pages → `lantern-study` → Deployments → Create deployment
-(branch `main`). Preferred, because it builds with the correct env.
-
-Or from a machine, after a verified build:
+Fallback only — local wrangler deploy from a machine, after a verified build.
+Use this only when Actions is unavailable; a locally built dist once shipped
+local dev values to production:
 
 ```bash
 npx wrangler login                    # opens a browser; token stays in your keychain
@@ -106,15 +113,20 @@ npm run build:web
 npx wrangler pages deploy dist --project-name lantern-study --branch main
 ```
 
-Confirm the deploy landed — this must change after every release:
+Whichever path you use, confirm the deploy landed — this must change after
+every release:
 
 ```bash
 curl -s https://lanternstudy.com/sw.js | grep -oE 'lantern-[a-z0-9]+-[a-z0-9]+' | head -1
 ```
 
-**API → Render** (`lantern-study-api`, Docker, built from `main`): Manual Deploy
-→ Deploy latest commit. A failed deploy keeps the previous version serving, so a
-healthy `/health` does **not** prove your commit is live.
+**API → Render** (`lantern-study-api`, Docker, built from `main`) — canonical
+path: the **`Deploy API (Render)` GitHub workflow**
+([.github/workflows/deploy-api.yml](.github/workflows/deploy-api.yml)), which
+compiles and tests the ref before triggering Render. Fallback: Render dashboard
+→ Manual Deploy → Deploy latest commit. Either way, a failed deploy keeps the
+previous version serving, so a healthy `/health` does **not** prove your commit
+is live.
 
 **Mobile.** Full release recipe (Android local build + public releases repo,
 iOS via EAS cloud + TestFlight, OTA safety rules) lives in

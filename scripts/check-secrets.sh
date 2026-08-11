@@ -7,6 +7,10 @@ cd "$ROOT"
 
 ALLOWLIST=(
   'packages/shared/src/config/index.ts'
+  # Tests for the config above: asserts against the same public anon key
+  # (role=anon, governed by RLS) and the supabase-demo dev token. No
+  # service_role material.
+  'packages/shared/src/config/supabaseConfig.test.ts'
   'apps/mobile/src/services/supabase.ts'
   # Same public Supabase anon key as supabase.ts above, kept as the
   # PRODUCTION_ENDPOINTS fallback so preview/production builds never ship empty
@@ -15,6 +19,9 @@ ALLOWLIST=(
   # service_role check above still applies to this file.
   'apps/mobile/app.config.ts'
   'scripts/verify-rls-privileges.sql'
+  # This scanner itself: its grep patterns contain the literal strings it
+  # hunts for, so it must not scan itself.
+  'scripts/check-secrets.sh'
   'apps/api-server/src/utils/safeError.ts'
   'render.yaml'
 )
@@ -55,10 +62,17 @@ scan_dir() {
         exit 1
       fi
     fi
-  done < <(find "$dir" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.ps1' -o -name '*.sh' -o -name '*.json' -o -name '*.yml' -o -name '*.yaml' \) -print0)
+  done < <(find "$dir" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.ps1' -o -name '*.sh' -o -name '*.json' -o -name '*.yml' -o -name '*.yaml' -o -name '*.sql' \) -print0)
 }
 
 scan_dir "apps"
 scan_dir "services"
+scan_dir "packages"
+scan_dir "components"
+scan_dir "hooks"
+scan_dir "utils"
+scan_dir "scripts"
+scan_dir "stores"
+scan_dir "functions"
 
 echo "Secret scan passed."

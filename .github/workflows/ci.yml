@@ -5,6 +5,12 @@ on:
     branches: [main, master]
   pull_request:
 
+# Supersede in-flight runs of the same branch/PR — a newer push makes the older
+# run's verdict irrelevant, so cancel it instead of queueing behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-typecheck:
     runs-on: ubuntu-latest
@@ -58,3 +64,26 @@ jobs:
       - run: npm ci
       - run: npm run build --workspace=@lantern/shared
       - run: npm test --workspace=@lantern/api-server --if-present
+
+  mobile-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm test --workspace=@lantern/mobile
+
+  web-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=@lantern/shared
+      - run: npm test --workspace=@lantern/web
