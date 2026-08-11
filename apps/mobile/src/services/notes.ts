@@ -368,10 +368,13 @@ export const transcribeAudioForNote = async (
   );
 };
 
-export const summarizeNote = (noteId: string) =>
+export const summarizeNote = (
+  noteId: string,
+  options?: import('@lantern/shared/utils/smartNotes').SmartNotesRequestOptions
+) =>
   notesRequest<{ summary: string; note: StudyNote }>(`/${noteId}/summarize`, {
     method: 'POST',
-    body: JSON.stringify({}),
+    body: JSON.stringify(options ?? {}),
   });
 
 export const generateDailyQuizFromContent = (

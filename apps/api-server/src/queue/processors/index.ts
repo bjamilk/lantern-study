@@ -181,13 +181,15 @@ async function processAiJob(job: Job): Promise<unknown> {
       return { reply, actions, provider, conversationId: conversation.id };
     }
     case "notes.ai.summarize": {
-      const { content, title, noteId, sourceType } = job.data as {
+      const { content, title, noteId, sourceType, guidance, depth } = job.data as {
         content: string;
         title?: string;
         noteId?: string;
         sourceType?: string;
+        guidance?: string;
+        depth?: "concise" | "standard" | "deep";
       };
-      const result = await summarizeNoteContent(content, { title, sourceType });
+      const result = await summarizeNoteContent(content, { title, sourceType, guidance, depth });
       await recordInference(userId, "summarize-note", result);
       if (noteId && userId && supabaseService) {
         const latest = await supabaseService.getNote(noteId, userId);

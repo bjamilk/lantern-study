@@ -50,7 +50,10 @@ interface NoteEditorScreenProps {
   onBack: () => void;
   onSave: (updates: { title?: string; body?: string }) => void;
   onDelete: () => void;
-  onSmartNote: (editorState?: { title?: string; body?: string }) => Promise<string | void>;
+  onSmartNote: (
+    editorState?: { title?: string; body?: string },
+    options?: import('@lantern/shared/utils/smartNotes').SmartNotesRequestOptions
+  ) => Promise<string | void>;
   onChatWithNote: () => void;
   onGenerateFlashcards: (editorState?: { title?: string; body?: string }) => Promise<void>;
   onGenerateQuiz: (editorState?: { title?: string; body?: string }) => Promise<void>;

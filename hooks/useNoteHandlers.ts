@@ -130,7 +130,11 @@ export function useNoteHandlers(currentUserId?: string) {
   );
 
   const handleSmartNote = useCallback(
-    async (noteId: string, editorState?: { title?: string; body?: string }) => {
+    async (
+      noteId: string,
+      editorState?: { title?: string; body?: string },
+      options?: import('@lantern/shared/utils/smartNotes').SmartNotesRequestOptions
+    ) => {
       cancelAutoSave();
       if (editorState) {
         await saveNote(noteId, editorState);
@@ -144,7 +148,7 @@ export function useNoteHandlers(currentUserId?: string) {
           `Need at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content. For scanned PDFs, wait for OCR or add your own notes.`
         );
       }
-      const result = await notesApi.summarizeNote(noteId);
+      const result = await notesApi.summarizeNote(noteId, options);
       const latest = useNotesStore.getState().selectedNote;
       if (latest?.id === noteId) {
         setSelectedNote({

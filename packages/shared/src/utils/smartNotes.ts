@@ -8,6 +8,21 @@ export const SMART_NOTES_CHUNK_SIZE = 6000;
 export const SMART_NOTES_CHUNK_OVERLAP = 200;
 export const SMART_NOTES_MAX_CHUNKS = 6;
 
+/** Output depth presets for Smart Notes generation. */
+export type SmartNotesDepth = 'concise' | 'standard' | 'deep';
+
+export const SMART_NOTES_DEPTHS: readonly SmartNotesDepth[] = ['concise', 'standard', 'deep'];
+
+/** Max characters of free-text guidance accepted by the summarize endpoint. */
+export const SMART_NOTES_GUIDANCE_MAX_CHARS = 500;
+
+/** Client-side request options for POST /notes/:id/summarize. */
+export interface SmartNotesRequestOptions {
+  /** Free-text goals, e.g. "focus on clinical applications". Server-sanitized. */
+  guidance?: string;
+  depth?: SmartNotesDepth;
+}
+
 const MARKER_SECTION_RE = new RegExp(
   `${escapeRegExp(SMART_NOTES_START)}[\\s\\S]*?${escapeRegExp(SMART_NOTES_END)}`,
   'gi'

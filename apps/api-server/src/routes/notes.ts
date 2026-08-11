@@ -33,6 +33,8 @@ import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import {
   summarizeNoteContent,
+  SMART_NOTES_GUIDANCE_MAX_CHARS,
+  type SmartNotesDepth,
   generateDailyQuiz,
   generateFlashcardsFromNotes,
   resolveAudioUploadMeta,
@@ -1866,6 +1868,11 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
     });
     return;
   }
+  // Optional steering: free-text guidance (sanitized server-side) + depth preset.
+  const guidanceRaw = typeof req.body?.guidance === 'string' ? req.body.guidance.trim() : '';
+  const guidance = guidanceRaw ? guidanceRaw.slice(0, SMART_NOTES_GUIDANCE_MAX_CHARS) : undefined;
+  const depth: SmartNotesDepth =
+    req.body?.depth === 'concise' || req.body?.depth === 'deep' ? req.body.depth : 'standard';
   const outcome = await runSyncOrEnqueue(
     'notes.ai.summarize',
     {
@@ -1873,12 +1880,16 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
       title: note.title,
       noteId: note.id,
       sourceType: note.sourceType,
+      guidance,
+      depth,
     },
     userId,
     async () => {
       const result = await summarizeNoteContent(content, {
         title: note.title,
         sourceType: note.sourceType,
+        guidance,
+        depth,
       });
       const latest = await supabaseService.getNote(note.id, userId);
       const nextBody = upsertSmartNotesSection(latest.body || '', result.summary);

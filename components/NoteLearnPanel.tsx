@@ -6,6 +6,11 @@ import {
   MarkdownRenderer,
 } from '@lantern/shared';
 import {
+  SMART_NOTES_GUIDANCE_MAX_CHARS,
+  type SmartNotesDepth,
+  type SmartNotesRequestOptions,
+} from '@lantern/shared/utils/smartNotes';
+import {
   SparklesIcon,
   ChatBubbleLeftRightIcon,
   RectangleStackIcon,
@@ -18,7 +23,10 @@ interface NoteLearnPanelProps {
   note: StudyNote & { attachments?: Array<{ extractedText?: string | null }> };
   studyContentLength?: number;
   theme: 'light' | 'dark';
-  onSmartNote: (editorState?: { title?: string; body?: string }) => Promise<string | void>;
+  onSmartNote: (
+    editorState?: { title?: string; body?: string },
+    options?: SmartNotesRequestOptions
+  ) => Promise<string | void>;
   onChatWithNote: () => void;
   onGenerateFlashcards: () => void;
   onGenerateQuiz: () => void;
@@ -36,6 +44,8 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   isBusy = false,
 }) => {
   const [smartNoting, setSmartNoting] = useState(false);
+  const [guidance, setGuidance] = useState('');
+  const [depth, setDepth] = useState<SmartNotesDepth>('standard');
   const isDark = theme === 'dark';
   const studyContent = getNoteStudyContent({
     sourceType: note.sourceType,
@@ -54,7 +64,10 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   const handleSmartNote = async () => {
     setSmartNoting(true);
     try {
-      await onSmartNote({ title: note.title, body: note.body });
+      await onSmartNote(
+        { title: note.title, body: note.body },
+        { guidance: guidance.trim() || undefined, depth }
+      );
     } finally {
       setSmartNoting(false);
     }
@@ -87,6 +100,52 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           Need {MIN_NOTE_STUDY_CONTENT_CHARS}+ characters — add notes or wait for import/extraction.
         </p>
       )}
+
+      <div className="mb-3 space-y-2">
+        <input
+          type="text"
+          value={guidance}
+          onChange={(e) => setGuidance(e.target.value)}
+          maxLength={SMART_NOTES_GUIDANCE_MAX_CHARS}
+          placeholder='Optional guidance — e.g. "focus on clinical applications"'
+          className={`w-full px-3 py-2 rounded-lg text-sm border ${
+            isDark
+              ? 'bg-lantern-background border-lantern-border text-lantern-text placeholder:text-lantern-text-tertiary'
+              : 'bg-lantern-surface border-lantern-border text-lantern-text placeholder:text-lantern-text-secondary'
+          }`}
+        />
+        <div className="flex gap-1" role="radiogroup" aria-label="Smart Notes depth">
+          {(
+            [
+              ['concise', 'Concise'],
+              ['standard', 'Standard'],
+              ['deep', 'Deep dive'],
+            ] as Array<[SmartNotesDepth, string]>
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={depth === value}
+              onClick={() => setDepth(value)}
+              className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                depth === value
+                  ? 'bg-lantern-primary text-white border-lantern-primary'
+                  : isDark
+                    ? 'bg-lantern-background text-lantern-text-tertiary border-lantern-border hover:text-lantern-text'
+                    : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:text-lantern-text'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {depth === 'deep' && (
+          <p className={`text-[11px] ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+            Deep dive covers more of long sources and adds a review pass — generation takes longer.
+          </p>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <button

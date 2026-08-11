@@ -1223,9 +1223,9 @@ export const App: React.FC = () => {
                                 showToast(e?.message || 'Failed to delete note', 'error');
                             }
                         }}
-                        onSmartNote={async (editorState) => {
+                        onSmartNote={async (editorState, options) => {
                             try {
-                                const summary = await noteHandlers.handleSmartNote(selectedNote.id, editorState);
+                                const summary = await noteHandlers.handleSmartNote(selectedNote.id, editorState, options);
                                 if (summary && String(summary).trim().length >= 50) {
                                     showToast('Smart notes ready!', 'success');
                                 } else {

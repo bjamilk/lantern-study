@@ -10,6 +10,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 
@@ -119,6 +120,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   bodyRef.current = body;
 
   const [summarizing, setSummarizing] = useState(false);
+
+  const [smartNotesGuidance, setSmartNotesGuidance] = useState('');
+
+  const [smartNotesDepth, setSmartNotesDepth] =
+    useState<import('@lantern/shared/utils/smartNotes').SmartNotesDepth>('standard');
 
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
@@ -590,7 +596,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
       await saveNote(noteId, { title, body });
 
-      const result = await summarizeNote(noteId);
+      const result = await summarizeNote(noteId, {
+        guidance: smartNotesGuidance.trim() || undefined,
+        depth: smartNotesDepth,
+      });
 
       const newSummary = result.summary || result.note?.summary || '';
 
@@ -1160,6 +1169,43 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               AI tools to turn this note into study materials.
 
             </Text>
+
+            <TextInput
+              className="w-full px-3 py-2 mb-2 rounded-lg text-sm border border-lantern-border bg-lantern-background text-lantern-text"
+              placeholder='Optional guidance — e.g. "focus on clinical applications"'
+              placeholderTextColor={colors.textTertiary}
+              value={smartNotesGuidance}
+              onChangeText={setSmartNotesGuidance}
+              maxLength={500}
+            />
+
+            <View className="flex-row gap-1 mb-3">
+              {(
+                [
+                  ['concise', 'Concise'],
+                  ['standard', 'Standard'],
+                  ['deep', 'Deep dive'],
+                ] as Array<[typeof smartNotesDepth, string]>
+              ).map(([value, label]) => (
+                <TouchableOpacity
+                  key={value}
+                  onPress={() => setSmartNotesDepth(value)}
+                  className={`flex-1 px-2 py-1.5 rounded-lg border items-center ${
+                    smartNotesDepth === value
+                      ? 'bg-lantern-primary border-lantern-primary'
+                      : 'bg-lantern-background border-lantern-border'
+                  }`}
+                >
+                  <Text
+                    className={`text-xs font-medium ${
+                      smartNotesDepth === value ? 'text-white' : 'text-lantern-text-secondary'
+                    }`}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <View className="flex-row flex-wrap gap-2">
 

@@ -503,10 +503,13 @@ export async function waitForPresentationPreview(
   }
 }
 
-export async function summarizeNote(noteId: string): Promise<{ summary: string; note: StudyNote }> {
+export async function summarizeNote(
+  noteId: string,
+  options?: import('@lantern/shared/utils/smartNotes').SmartNotesRequestOptions
+): Promise<{ summary: string; note: StudyNote }> {
   const result = await notesAiRequest<{ summary: string; note?: StudyNote; provider?: string }>(
     `/${noteId}/summarize`,
-    {}
+    options ?? {}
   );
   if (result.note) {
     return { summary: result.summary, note: result.note };
