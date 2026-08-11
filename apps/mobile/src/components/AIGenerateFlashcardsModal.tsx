@@ -16,6 +16,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
@@ -40,6 +41,11 @@ export default function AIGenerateFlashcardsModal({
   onFlashcardsGenerated,
 }: AIGenerateFlashcardsModalProps) {
   const { colors } = useTheme();
+  // Definite px height, not maxHeight '92%': the maxHeight+flex:1-scroll combo
+  // collapses the body to zero height on Android release builds (same failure
+  // family as the offline Download Options footer, 5fd746d).
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetHeight = Math.round(windowHeight * 0.92);
   const { handleAIGenerateFlashcards, isAILoading, aiError, setAiError } = useAIHandlers();
 
   const [notes, setNotes] = useState('');
@@ -84,7 +90,7 @@ export default function AIGenerateFlashcardsModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}
       >
-        <View style={[styles.container, { backgroundColor: colors.modalBackground }]}>
+        <View style={[styles.container, { backgroundColor: colors.modalBackground, height: sheetHeight }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
@@ -278,7 +284,8 @@ export default function AIGenerateFlashcardsModal({
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  container: { maxHeight: '92%', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  // Height set inline as a definite px value — see sheetHeight comment.
+  container: { borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
   closeBtn: { padding: 4 },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 },

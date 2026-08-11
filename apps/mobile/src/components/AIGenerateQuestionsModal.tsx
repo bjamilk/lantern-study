@@ -16,6 +16,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -46,6 +47,12 @@ export default function AIGenerateQuestionsModal({
   subject,
 }: AIGenerateQuestionsModalProps) {
   const { colors } = useTheme();
+  // Definite px height, not maxHeight '92%': with maxHeight and auto height,
+  // Yoga clamps AFTER measuring children, so the flex:1 ScrollView body
+  // resolves to zero height on release builds — only the header rendered.
+  // Same failure family as the offline Download Options footer (5fd746d).
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetHeight = Math.round(windowHeight * 0.92);
   const { handleAIGenerateQuestions, isAILoading, aiError, setAiError } = useAIHandlers();
 
   const [notes, setNotes] = useState('');
@@ -144,7 +151,7 @@ export default function AIGenerateQuestionsModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}
       >
-        <View style={[styles.container, { backgroundColor: colors.modalBackground }]}>
+        <View style={[styles.container, { backgroundColor: colors.modalBackground, height: sheetHeight }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
@@ -438,9 +445,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   container: {
-    maxHeight: '92%',
+    // Height set inline as a definite px value (92% of window) — see the
+    // comment at the sheetHeight computation for why maxHeight breaks here.
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
