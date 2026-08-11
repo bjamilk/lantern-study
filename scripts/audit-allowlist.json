@@ -1,0 +1,28 @@
+{
+  "//": [
+    "Curated allowlist for scripts/check-audit.mjs (the CI security-audit job).",
+    "Every entry is a HIGH/CRITICAL npm-audit advisory that is upstream-blocked:",
+    "the fix requires a major upgrade we have deliberately ruled out (see each",
+    "entry's 'unblockedBy'). A high/critical advisory NOT listed here still",
+    "fails CI. Prune entries when check-audit.mjs reports them as stale."
+  ],
+  "failLevel": "high",
+  "allowlist": [
+    {
+      "id": "GHSA-w3rx-r6r6-pgpr",
+      "package": "image-size",
+      "title": "ICNS parser allows denial of service through an infinite loop",
+      "reason": "Dev-toolchain only: image-size is bundled by metro/@expo/cli (Expo SDK 54 / react-native 0.81); it never runs in the deployed API or web app. No patched image-size release exists yet (npm reports the vulnerable range as '*').",
+      "unblockedBy": "expo@57 major upgrade (forbidden: it would undo the Reanimated 3 / Legacy Architecture downgrade) once metro picks up a patched image-size. Re-check whenever Expo SDK is bumped.",
+      "added": "2026-08-11"
+    },
+    {
+      "id": "GHSA-5p2g-fcmc-qvqq",
+      "package": "image-size",
+      "title": "JXL and HEIF parsers allow denial of service through infinite loops",
+      "reason": "Same chain as GHSA-w3rx-r6r6-pgpr: metro -> image-size, build-time only. No patched image-size release exists yet (vulnerable range '*').",
+      "unblockedBy": "expo@57 major upgrade (forbidden for now) once metro picks up a patched image-size. Re-check whenever Expo SDK is bumped.",
+      "added": "2026-08-11"
+    }
+  ]
+}

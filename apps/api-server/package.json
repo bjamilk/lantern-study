@@ -43,7 +43,7 @@
     "libreoffice-convert": "^1.8.1",
     "lru-cache": "^11.2.2",
     "morgan": "^1.10.0",
-    "officeparser": "^7.2.1",
+    "officeparser": "^7.5.1",
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^6.2.108",
     "pg": "^8.20.0",

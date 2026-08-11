@@ -41,8 +41,11 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - name: npm audit (high severity)
-        run: npm audit --audit-level=high
+      - name: npm audit (high severity, curated allowlist)
+        # Fails on any high/critical advisory NOT listed in
+        # scripts/audit-allowlist.json. Each allowlisted GHSA id documents the
+        # forbidden major upgrade (e.g. expo@57) that would unblock it.
+        run: node scripts/check-audit.mjs
 
   api-tests:
     runs-on: ubuntu-latest
