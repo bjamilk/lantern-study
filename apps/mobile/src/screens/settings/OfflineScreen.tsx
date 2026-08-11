@@ -15,6 +15,7 @@ import {
   Modal,
   TextInput,
   Switch,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -44,6 +45,11 @@ export default function OfflineScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'downloads' | 'pending'>('downloads');
   const { colors } = useTheme();
+  // Pixel height, not '85%': percentage heights resolved against the themed
+  // overlay have already burned us on release builds (footer collapsed to
+  // zero). A definite px height cannot be mis-resolved.
+  const { height: windowHeight } = useWindowDimensions();
+  const modalSheetHeight = Math.round(windowHeight * 0.85);
   const network = useNetworkStatus();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
 
@@ -524,7 +530,7 @@ export default function OfflineScreen() {
         onRequestClose={() => setShowDownloadModal(false)}
       >
         <ThemeScope style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, height: modalSheetHeight }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 Download Options
@@ -534,7 +540,15 @@ export default function OfflineScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalBody}
+              // Padding must live on the content container, NOT the ScrollView
+              // style: vertical padding on the outer style clips the scrollable
+              // extent on Android, which is how the old inside-the-scroll footer
+              // ended up unreachable on Pixel-8-sized screens.
+              contentContainerStyle={styles.modalBodyContent}
+              showsVerticalScrollIndicator={false}
+            >
               {/* Group Name */}
               <View style={styles.modalSection}>
                 <Text style={[styles.modalSectionTitle, { color: colors.text }]}>
@@ -748,11 +762,13 @@ export default function OfflineScreen() {
                   />
                 </View>
               </View>
-            {/* Download Button — rendered inside the ScrollView on purpose.
-                As a sibling it measured zero height on device (release build,
-                Pixel 8) and the modal footer vanished entirely, making offline
-                downloads impossible. Inside the scroll content it is always
-                reachable. */}
+            </ScrollView>
+
+            {/* Pinned footer. Sibling of the ScrollView on purpose: the old
+                zero-height collapse happened under a maxHeight/auto parent and
+                a '85%' percentage height; with the definite px height above
+                plus minHeight here it cannot collapse, and the buttons stay
+                visible without scrolling. */}
             <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 style={[styles.cancelButton, { backgroundColor: colors.background }]}
@@ -800,7 +816,6 @@ export default function OfflineScreen() {
                 )}
               </TouchableOpacity>
             </View>
-            </ScrollView>
           </View>
         </ThemeScope>
       </Modal>
@@ -1162,12 +1177,12 @@ const styles = StyleSheet.create({
   modalContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    // A fixed height (not maxHeight) is required: with maxHeight and auto
-    // height, Yoga clamps this container AFTER measuring children, so the
-    // body never shrinks and the Cancel/Download footer is pushed off-screen
-    // — offline downloads were impossible on a Pixel 8. A definite height
-    // with a flex:1 body pins the footer and lets the body scroll.
-    height: '85%',
+    // Height is set inline as a definite px value (85% of the window, via
+    // useWindowDimensions). A fixed height (not maxHeight) is required: with
+    // maxHeight and auto height, Yoga clamps this container AFTER measuring
+    // children, so the body never shrinks and the Cancel/Download footer is
+    // pushed off-screen — offline downloads were impossible on a Pixel 8.
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1186,7 +1201,12 @@ const styles = StyleSheet.create({
     // the space between header and footer; flexShrink alone was not enough
     // because the maxHeight clamp happened after child measurement.
     flex: 1,
+  },
+  modalBodyContent: {
+    // Scroll padding lives here, not on the ScrollView style — vertical
+    // padding on the outer style clips the scrollable extent on Android.
     padding: 20,
+    paddingBottom: 24,
   },
   modalSection: {
     marginBottom: 24,
@@ -1279,6 +1299,9 @@ const styles = StyleSheet.create({
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: 'transparent',
+    // Belt and suspenders against the release-build zero-height collapse:
+    // a definite floor means the footer can never measure to nothing.
+    minHeight: 76,
   },
   cancelButton: {
     flex: 1,
