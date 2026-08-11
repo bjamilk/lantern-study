@@ -15,6 +15,11 @@ interface LandingPageProps {
   onContinue: () => void;
 }
 
+// Stable URL: always resolves to the newest APK asset named lantern-study.apk
+// in the public releases repo (source repo stays private).
+const ANDROID_APK_URL =
+  'https://github.com/bjamilk/lantern-study-releases/releases/latest/download/lantern-study.apk';
+
 const features = [
   { icon: DocumentTextIcon, title: 'Import PDF & PowerPoint', description: 'Turn lectures and slides into organized notes instantly.' },
   { icon: SparklesIcon, title: 'AI flashcards & quizzes', description: 'Generate study materials from any note in seconds.' },
@@ -28,6 +33,7 @@ const faqs = [
   { q: 'Is Lantern Study free?', a: 'Core study features — notes, flashcards, learn mode, and AI import — are free to use.' },
   { q: 'How is my data handled?', a: 'Your notes and study data are stored securely. See our Privacy Policy for details.' },
   { q: 'Can I study offline?', a: 'Yes. Download flashcard decks for offline review in the app.' },
+  { q: 'Is there a mobile app?', a: 'Yes. The Android app is available to download directly from this site — tests, flashcards, and offline study included. iOS is coming via TestFlight.' },
 ];
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }) => {
@@ -92,7 +98,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
       <div className="relative mt-9 flex flex-col sm:flex-row gap-3 justify-center">
         <Button size="lg" onClick={onContinue}>Continue on the website</Button>
         <Button size="lg" variant="secondary" onClick={onSignIn}>Sign in</Button>
+        <a
+          href={ANDROID_APK_URL}
+          className="inline-flex items-center justify-center gap-2 font-semibold tracking-tight transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-lantern-background bg-lantern-surface/90 border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary hover:border-lantern-primary/30 shadow-lantern px-6 py-3 text-base rounded-lantern"
+        >
+          Download for Android
+        </a>
       </div>
+      <p className="relative mt-3 text-xs text-lantern-text-tertiary">
+        Android APK, direct download — no store account needed. iOS coming via TestFlight.
+      </p>
     </section>
 
     <section className="max-w-6xl mx-auto px-4 py-12">
@@ -133,6 +148,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
     <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-tertiary space-y-2">
       <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
         <a href="/marketplace" className="hover:text-lantern-text-secondary transition-colors">Explore marketplace</a>
+        <a href={ANDROID_APK_URL} className="hover:text-lantern-text-secondary transition-colors">Android app</a>
         <a href="/privacy" className="hover:text-lantern-text-secondary transition-colors">Privacy</a>
         <a href="/terms" className="hover:text-lantern-text-secondary transition-colors">Terms</a>
         <a href="/cookies" className="hover:text-lantern-text-secondary transition-colors">Cookies</a>
