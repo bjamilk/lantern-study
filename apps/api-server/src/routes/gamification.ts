@@ -10,6 +10,7 @@ import {
   assertLivePlatformAdmin,
   isSelfOrLivePlatformAdmin,
 } from '../utils/platformAdminAuth';
+import { computeActivityXp } from '@lantern/shared/utils/xp';
 import { canViewStudyActivity } from '@lantern/shared/settings';
 import {
   WALLET_COINS,
@@ -507,6 +508,16 @@ router.get(
 
 const VALID_ACTIVITY_TYPES = new Set(['test', 'flashcard', 'flashcard_new', 'study_question', 'game', 'daily_quiz']);
 
+/** study_activity column holding the day's running count for each type. */
+const ACTIVITY_TYPE_COUNT_FIELD: Record<string, string> = {
+  test: 'test_count',
+  flashcard: 'flashcard_count',
+  flashcard_new: 'flashcard_count',
+  study_question: 'question_count',
+  game: 'game_count',
+  daily_quiz: 'daily_quiz_count',
+};
+
 const DAILY_QUEST_TEMPLATES = [
   { quest_type: 'review_cards', target_count: 10, reward_xp: 15 },
   { quest_type: 'answer_questions', target_count: 3, reward_xp: 20 },
@@ -609,7 +620,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { type, amount = 1, activityDate } = req.body ?? {};
+    const { type, amount = 1, activityDate, scorePercent } = req.body ?? {};
     if (!type || !VALID_ACTIVITY_TYPES.has(type)) {
       return res.status(400).json({ success: false, error: 'Invalid activity type' });
     }
@@ -617,6 +628,12 @@ router.post(
     const parsedAmount = Number(amount);
     if (!Number.isFinite(parsedAmount) || parsedAmount < 1 || parsedAmount > 500) {
       return res.status(400).json({ success: false, error: 'Invalid activity amount' });
+    }
+
+    const parsedScore =
+      scorePercent === undefined || scorePercent === null ? undefined : Number(scorePercent);
+    if (parsedScore !== undefined && (!Number.isFinite(parsedScore) || parsedScore < 0 || parsedScore > 100)) {
+      return res.status(400).json({ success: false, error: 'Invalid scorePercent' });
     }
 
     const date = resolveAllowedActivityDate(activityDate);
@@ -628,6 +645,32 @@ router.post(
       date
     );
     const streak = await supabaseService.recomputeUserStreak(userId, date);
+
+    // Volume XP with diminishing returns and quality weighting. The activity
+    // row returns post-increment counts, so prior = updated − this recording.
+    let xpAwarded = 0;
+    try {
+      const countField = ACTIVITY_TYPE_COUNT_FIELD[type];
+      const updatedCount = Number(data?.[countField] ?? 0);
+      const priorAmountToday = Math.max(0, updatedCount - Math.floor(parsedAmount));
+      xpAwarded = computeActivityXp({
+        type,
+        amount: Math.floor(parsedAmount),
+        priorAmountToday,
+        scorePercent: parsedScore,
+      });
+      if (xpAwarded > 0) {
+        await supabaseService.awardPoints(userId, xpAwarded, `Study activity: ${type}`, 'study_activity');
+        await cacheService.delete(`user:stats:${userId}`);
+      }
+    } catch (xpError) {
+      // XP is a bonus — never fail the activity recording over it.
+      logger.warn('Volume XP award failed', {
+        userId,
+        type,
+        message: xpError instanceof Error ? xpError.message : String(xpError),
+      });
+    }
 
     let awarded = 0;
     let walletBalance = 0;
@@ -679,6 +722,7 @@ router.post(
         ...data,
         walletBalance,
         awarded,
+        xpAwarded,
         current_streak: streak.current_streak,
         longest_streak: streak.longest_streak,
       },

@@ -87,13 +87,19 @@ export const incrementQuestProgress = (questType: string, increment = 1) =>
     }),
   });
 
-export const recordStudyActivity = (type: ActivityType, amount = 1) =>
+export const recordStudyActivity = (
+  type: ActivityType,
+  amount = 1,
+  opts?: { scorePercent?: number }
+) =>
   gamificationRequest<any>('/activity/record', {
     method: 'POST',
     body: JSON.stringify({
       type,
       amount,
       activityDate: formatActivityLocalDate(new Date()),
+      // Quality-weighted XP: tests/duels earn more for higher scores.
+      ...(typeof opts?.scorePercent === 'number' ? { scorePercent: opts.scorePercent } : {}),
     }),
   });
 

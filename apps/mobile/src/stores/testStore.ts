@@ -1590,7 +1590,7 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
 
     if (testMode !== 'study') {
-      trackStudyActivity('test', 1);
+      trackStudyActivity('test', 1, { scorePercent: Math.round(percentage) });
     }
 
     trackTestCompleted({

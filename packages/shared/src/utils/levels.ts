@@ -17,9 +17,13 @@ export const XP_LEVELS: XPLevel[] = [
   { level: 5,  title: 'Practitioner',   icon: '🔬', minPoints: 2000,   maxPoints: 3499,   color: 'from-lantern-primary-light to-lantern-primary' },
   { level: 6,  title: 'Expert',         icon: '🏅', minPoints: 3500,   maxPoints: 5999,   color: 'from-violet-400 to-violet-500' },
   { level: 7,  title: 'Master',         icon: '⭐', minPoints: 6000,   maxPoints: 9999,   color: 'from-purple-400 to-purple-600' },
-  { level: 8,  title: 'Grandmaster',    icon: '🌟', minPoints: 10000,  maxPoints: 14999,  color: 'from-yellow-400 to-orange-400' },
-  { level: 9,  title: 'Champion',       icon: '🏆', minPoints: 15000,  maxPoints: 24999,  color: 'from-orange-400 to-red-500' },
-  { level: 10, title: 'Legend',         icon: '👑', minPoints: 25000,  maxPoints: -1,     color: 'from-yellow-300 to-yellow-500' },
+  // Grandmaster's span previously broke the curve: every other level multiplies
+  // the prior span by 1.5–2×, but 10000→15000 was only 1.25× — the cheapest
+  // relative climb in the ladder sat near the top. Re-sloped to keep relative
+  // cost non-decreasing: spans …2500, 4000, 6500, 10500.
+  { level: 8,  title: 'Grandmaster',    icon: '🌟', minPoints: 10000,  maxPoints: 16499,  color: 'from-yellow-400 to-orange-400' },
+  { level: 9,  title: 'Champion',       icon: '🏆', minPoints: 16500,  maxPoints: 26999,  color: 'from-orange-400 to-red-500' },
+  { level: 10, title: 'Legend',         icon: '👑', minPoints: 27000,  maxPoints: -1,     color: 'from-yellow-300 to-yellow-500' },
 ];
 
 export function getXPLevel(points: number): XPLevel & { progressPercent: number; pointsIntoLevel: number; pointsToNextLevel: number } {

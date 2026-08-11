@@ -388,7 +388,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 setAppMode(AppMode.TEST_REVIEW);
                 setActiveTestSession(null);
                 trackQuestProgress('complete_test');
-                trackStudyActivity('test', 1);
+                trackStudyActivity('test', 1, { scorePercent: Math.round(score) });
                 trackTestCompleted({ score, totalQuestions: finalSessionData.questions.length, offline: true });
                 addNotification(`Offline test complete! Score: ${Math.round(score)}%. Your result will sync when you go online.`);
             } else {

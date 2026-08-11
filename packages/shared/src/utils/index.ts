@@ -2,6 +2,7 @@
 export * from './srs';
 export * from './gamification';
 export * from './levels';
+export * from './xp';
 export * from './testHelpers';
 export * from './apiMappers';
 export * from './deckFormats';

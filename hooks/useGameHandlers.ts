@@ -92,7 +92,13 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
   const { activeGameSession, setActiveGameSession } = useTestStore();
 
   const finalizeSoloGame = useCallback((finalSession: GameSession) => {
-    trackStudyActivity('game', 1);
+    const totalQs = finalSession.questions?.length ?? 0;
+    const correct = Object.values(finalSession.userAnswers ?? {}).filter(
+      (a: any) => a?.isCorrect
+    ).length;
+    trackStudyActivity('game', 1, {
+      scorePercent: totalQs > 0 ? Math.round((correct / totalQs) * 100) : undefined,
+    });
     setActiveGameSession({ ...finalSession, isComplete: true });
     setAppMode(AppMode.GAME_RESULTS);
   }, [setActiveGameSession, setAppMode]);

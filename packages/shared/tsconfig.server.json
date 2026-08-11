@@ -22,6 +22,7 @@
     "src/utils/activity.ts",
     "src/utils/aiCredits.ts",
     "src/utils/aiUsage.ts",
+    "src/utils/xp.ts",
     "src/utils/noteStudyContent.ts",
     "src/utils/smartNotes.ts",
     "src/utils/youtube.ts",

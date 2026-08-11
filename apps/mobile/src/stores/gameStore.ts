@@ -361,8 +361,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const total = updated.questions.length;
     if (Object.keys(userAnswers).length < total) return;
 
+    const gameScorePercent =
+      total > 0
+        ? Math.round(
+            (Object.values(userAnswers).filter((a: any) => a?.isCorrect).length / total) * 100
+          )
+        : undefined;
+
     if (updated.isSoloPractice) {
-      trackStudyActivity('game', 1);
+      trackStudyActivity('game', 1, { scorePercent: gameScorePercent });
       set({
         activeSession: {
           ...updated,
@@ -376,7 +383,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (updated.challengeId) {
       try {
         const result = await submitChallenge(updated.challengeId, userAnswers);
-        trackStudyActivity('game', 1);
+        trackStudyActivity('game', 1, { scorePercent: gameScorePercent });
         const completed = mapChallengeToSession(result, updated.user);
         set({
           activeSession: {

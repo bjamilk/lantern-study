@@ -87,13 +87,19 @@ export const purchaseStreakFreeze = () =>
     headers: { 'Idempotency-Key': createIdempotencyKey('streak-freeze-purchase') },
   });
 
-export const recordStudyActivity = (type: ActivityType, amount = 1) =>
+export const recordStudyActivity = (
+  type: ActivityType,
+  amount = 1,
+  opts?: { scorePercent?: number }
+) =>
   gamificationRequest<any>('/activity/record', {
     method: 'POST',
     body: JSON.stringify({
       type,
       amount,
       activityDate: formatActivityLocalDate(new Date()),
+      // Quality-weighted XP: tests/duels earn more for higher scores.
+      ...(typeof opts?.scorePercent === 'number' ? { scorePercent: opts.scorePercent } : {}),
     }),
   });
 
@@ -102,8 +108,12 @@ export const fetchStudyActivity = async (days = ACTIVITY_DAYS) => {
   return (raw || []).map(normalizeStudyActivityDay).filter((day) => Boolean(day.date));
 };
 
-export function trackStudyActivity(type: ActivityType, amount = 1): void {
-  recordStudyActivity(type, amount)
+export function trackStudyActivity(
+  type: ActivityType,
+  amount = 1,
+  opts?: { scorePercent?: number }
+): void {
+  recordStudyActivity(type, amount, opts)
     .then((result) => {
       if (result && typeof result.walletBalance === 'number') {
         void import('../stores/budgetStore').then(({ useBudgetStore }) => {
