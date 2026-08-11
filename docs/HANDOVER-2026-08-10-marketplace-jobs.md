@@ -1,8 +1,15 @@
 # Handover — marketplace & jobs audit, plus the chat loose ends
 
-Written Aug 10 2026. Everything below is **on `main` and pushed** (`origin/main`
-level, 0/0). Continues [`HANDOVER-2026-08-09-loose-ends.md`](./HANDOVER-2026-08-09-loose-ends.md),
+Written Aug 10 2026. Everything below is **on `main` and pushed**. Continues
+[`HANDOVER-2026-08-09-loose-ends.md`](./HANDOVER-2026-08-09-loose-ends.md),
 which covers the chat-phase items and should be read first for that context.
+
+> **Superseded for current state** by
+> [`HANDOVER-2026-08-10-mobile-offline-payments.md`](./HANDOVER-2026-08-10-mobile-offline-payments.md).
+> Read that one for what is live now; this file is the record of the
+> marketplace/jobs work and the reasoning behind it. Two items in "Outstanding"
+> below were closed by later commits: the malformed job id returning 500
+> (`f76a03a`) and the jobs-board polish gaps (`580dceb`).
 
 ## Commits
 
@@ -126,10 +133,18 @@ pre-change JavaScript while reporting success.** Fixed in `apps/web/turbo.json`
 `index-*.js` chunk hash changing — never by the build having run, and never by
 the `sw.js` cache id, which is date-based, not content-based.
 
-**The Pages project is git-connected**, contradicting the older note that web
-deploys are manual-only. Pushing to `main` triggers a Pages build that goes live
-minutes later and **supersedes any direct `npx wrangler pages deploy`**. Wrangler
-is a stopgap; the git build is what production ends up serving.
+> **CORRECTION (Aug 11 2026).** The paragraph that stood here claimed the Pages
+> project was git-connected and that pushing to `main` deployed the web app. That
+> was **wrong**, and acting on it cost a later session a deploy cycle with
+> production sitting stale. Verified with `npx wrangler pages project list` →
+> `Git Provider: No` for `lantern-study`.
+>
+> **Pushing to `main` deploys ONLY the API (Render).** Web still needs, from the
+> repo root after `npm run build:web`:
+> `npx wrangler pages deploy dist --project-name lantern-study --branch main`.
+> Check what production actually serves with
+> `npx wrangler pages deployment list --project-name lantern-study` — the top
+> row's commit is the truth, and it is routinely behind `main`.
 
 **The in-app Browser pane holds a signed-in lanternstudy.com session** (the
 user's own account). Invaluable for authed prod checks without touching
