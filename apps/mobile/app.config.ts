@@ -40,7 +40,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: IS_DEV_VARIANT ? 'Lantern Study Dev' : 'Lantern Study',
   slug: 'lantern-study',
-  version: '1.0.2',
+  // 1.0.3: new OTA runtime fence. 1.0.2 binaries pair with the pre-Reanimated-3
+  // update channel state and must never receive JS built from this tree.
+  version: '1.0.3',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
