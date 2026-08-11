@@ -116,14 +116,13 @@ curl -s https://lanternstudy.com/sw.js | grep -oE 'lantern-[a-z0-9]+-[a-z0-9]+' 
 → Deploy latest commit. A failed deploy keeps the previous version serving, so a
 healthy `/health` does **not** prove your commit is live.
 
-**Mobile → EAS.** After an architecture or native dependency change this needs a
-**new native build**, not an OTA update — an OTA would push new JS onto old
-native binaries and break live users.
-
-```bash
-npx eas build --platform android --profile production
-npx eas build --platform ios --profile production
-```
+**Mobile.** Full release recipe (Android local build + public releases repo,
+iOS via EAS cloud + TestFlight, OTA safety rules) lives in
+[docs/RELEASING.md](docs/RELEASING.md). The short version: Android builds
+locally and ships as an APK through `bjamilk/lantern-study-releases`; after an
+architecture or native dependency change you need a **new native build**, not
+an OTA update — an OTA would push new JS onto old native binaries and break
+live users.
 
 ## Dependency changes — read this first
 
