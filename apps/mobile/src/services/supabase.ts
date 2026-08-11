@@ -177,25 +177,41 @@ export const getSession = async () => {
   return session;
 };
 
+// Refresh cooldown: without it every getAuthHeaders call re-attempts a failing
+// refresh, which is how one bad session turned into a 27-request 401 cascade.
+let lastFailedRefreshAt = 0;
+const REFRESH_RETRY_COOLDOWN_MS = 30_000;
+let missingAuthOccurrences = 0;
+
 // Helper to get auth headers for API calls
 export const getAuthHeaders = async (): Promise<Record<string, string>> => {
   let session = await getSession();
 
-  if (!session?.access_token) {
+  if (!session?.access_token && Date.now() - lastFailedRefreshAt > REFRESH_RETRY_COOLDOWN_MS) {
     const { data, error } = await supabase.auth.refreshSession();
     if (!error && data.session) {
       session = data.session;
+    } else {
+      lastFailedRefreshAt = Date.now();
     }
   }
-  
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  
+
   if (session?.access_token) {
     headers['Authorization'] = `Bearer ${session.access_token}`;
+  } else {
+    // Never silent: an unauthenticated header set means every consumer 401s.
+    // Loud log (and a counter, so a cascade is obvious in one glance at logcat).
+    missingAuthOccurrences += 1;
+    console.error(
+      `[auth] getAuthHeaders has NO access token (occurrence ${missingAuthOccurrences}); ` +
+        'request will be sent unauthenticated and will 401. Session missing and refresh unavailable.'
+    );
   }
-  
+
   return headers;
 };
 

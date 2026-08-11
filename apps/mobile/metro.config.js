@@ -7,9 +7,13 @@ const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 const isExpoGoRuntime = process.env.EXPO_PUBLIC_APP_RUNTIME === 'expo-go';
 const expoNotificationsStub = path.resolve(projectRoot, 'src/stubs/expo-notifications.ts');
-// @react-native-community/netinfo's legacy TurboReactPackage native module does not
-// register under RN 0.81 bridgeless on Android (crashes boot). Route Android to a shim;
-// iOS keeps the real module.
+// netinfo stub history: under RN 0.81 BRIDGELESS the module's legacy
+// TurboReactPackage failed to register on Android and crashed boot, so Android
+// was routed to a shim. The app has since moved to the Legacy Architecture
+// (newArchEnabled: false), where the real module registers fine — and the shim
+// hardcodes "online, wifi", which silently broke offline detection and the
+// sync-on-wifi-only setting in every shipped Android APK. The stub is now
+// Expo Go-only, matching the notifications stub above.
 const netInfoStub = path.resolve(projectRoot, 'src/stubs/netinfo.ts');
 
 function resolvePackageDir(packageName) {
@@ -42,7 +46,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (isExpoGoRuntime && moduleName === 'expo-notifications') {
     return { type: 'sourceFile', filePath: expoNotificationsStub };
   }
-  if (platform === 'android' && moduleName === '@react-native-community/netinfo') {
+  if (isExpoGoRuntime && platform === 'android' && moduleName === '@react-native-community/netinfo') {
     return { type: 'sourceFile', filePath: netInfoStub };
   }
   if (Object.hasOwn(pinnedNativeModules, moduleName)) {

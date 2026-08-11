@@ -53,21 +53,42 @@ async function getChunkCount(key: string): Promise<number | null> {
   return Number.isFinite(count) && count > 0 ? count : null;
 }
 
+// In-memory write-through layer. The Keychain/Keystore is flaky under timeout
+// pressure (a slow read degrades to "no session", which cascades into 401s and
+// silent logouts — the exact iOS incident of Aug 10). Values written or read
+// once in this app run are served from memory thereafter, so a later Keychain
+// hiccup cannot lose a session the app already holds. Memory never outlives
+// the process, so this changes durability semantics only in the failure case.
+const memoryCache = new Map<string, string | null>();
+
 export const ExpoSecureStoreAdapter = {
   getItem: async (key: string): Promise<string | null> => {
+    if (memoryCache.has(key)) return memoryCache.get(key) ?? null;
     const chunkCount = await getChunkCount(key);
+    let value: string | null;
     if (chunkCount) {
       const parts: string[] = [];
+      let complete = true;
       for (let i = 0; i < chunkCount; i += 1) {
         const part = await getItemSafe(`${key}_${i}`);
-        if (part == null) return null;
+        if (part == null) {
+          complete = false;
+          break;
+        }
         parts.push(part);
       }
-      return parts.join('');
+      value = complete ? parts.join('') : null;
+    } else {
+      value = await getItemSafe(key);
     }
-    return getItemSafe(key);
+    // Cache hits AND misses: a miss cached here is overwritten by the next
+    // setItem, while an uncached miss would re-hit a possibly-hung Keystore on
+    // every getSession() call.
+    memoryCache.set(key, value);
+    return value;
   },
   setItem: async (key: string, value: string): Promise<void> => {
+    memoryCache.set(key, value);
     await deleteItemSafe(`${key}_count`);
     for (let i = 0; i < 32; i += 1) {
       await deleteItemSafe(`${key}_${i}`);
@@ -86,6 +107,7 @@ export const ExpoSecureStoreAdapter = {
     await deleteItemSafe(key);
   },
   removeItem: async (key: string): Promise<void> => {
+    memoryCache.set(key, null);
     const chunkCount = await getChunkCount(key);
     if (chunkCount) {
       for (let i = 0; i < chunkCount; i += 1) {
