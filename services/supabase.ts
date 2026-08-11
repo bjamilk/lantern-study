@@ -2934,7 +2934,7 @@ export const fetchMarketplaceListingsPage = async (filters: {
           total: (result.data || []).length,
         },
       };
-    }) as Promise<ListingsPage>;
+    });
   } catch (error) {
     if (error instanceof RateLimitError) throw error;
     console.error('Error fetching listings:', error);

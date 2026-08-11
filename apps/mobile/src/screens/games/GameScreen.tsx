@@ -14,6 +14,9 @@ import {
   Image,
   Dimensions,
   Animated,
+  type StyleProp,
+  type ViewStyle,
+  type TextStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
@@ -96,6 +99,8 @@ interface GameSession {
   opponentTime: number;
   isComplete: boolean;
   winnerId?: string;
+  /** Set by gameStore.startSoloPractice — practice sessions have no real opponent. */
+  isSoloPractice?: boolean;
 }
 
 type GameScreenRouteParams = {
@@ -334,8 +339,8 @@ export default function GameScreen() {
       const isSelected = currentSelections.includes(opt.id);
       const isCorrectOption = currentQuestion.correctAnswerIds?.includes(opt.id);
 
-      let optionStyle = [styles.optionButton, { backgroundColor: colors.card, borderColor: colors.border }];
-      let textStyle = [styles.optionText, { color: colors.text }];
+      let optionStyle: StyleProp<ViewStyle>[] = [styles.optionButton, { backgroundColor: colors.card, borderColor: colors.border }];
+      const textStyle: StyleProp<TextStyle>[] = [styles.optionText, { color: colors.text }];
       let iconName: string | null = null;
       let iconColor = '';
 

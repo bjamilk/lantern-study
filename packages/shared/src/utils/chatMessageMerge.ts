@@ -3,11 +3,13 @@
  * slightly-stale fetch, and optimistic temp ids can be reconciled.
  */
 
+// No index signature: it would stop callers' interface types (which lack
+// implicit index signatures) from satisfying the generic constraint. The merge
+// only reads the declared keys.
 export type MergeableChatMessage = {
   id: string;
   clientMessageId?: string | null;
   timestamp?: Date | string | number | null;
-  [key: string]: unknown;
 };
 
 function messageTimeMs(message: MergeableChatMessage): number {

@@ -5,7 +5,9 @@ export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 export function navigate(name: keyof RootStackParamList, params?: object) {
   if (navigationRef.isReady()) {
-    navigationRef.navigate(name as never, params as never);
+    // CommonActions.navigate takes an untyped route descriptor, sidestepping
+    // the typed overloads that reject a dynamic (name, params) pair.
+    navigationRef.dispatch(CommonActions.navigate({ name: name as string, params }));
   }
 }
 

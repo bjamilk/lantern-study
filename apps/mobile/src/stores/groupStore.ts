@@ -887,12 +887,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
       const existing = get().messagesCache[groupId] || [];
       // Always merge by id so a late fetch cannot wipe realtime/optimistic rows.
-      const merged = mergeChatMessagesById(
+      const merged = mergeChatMessagesById<Message>(
         refresh ? [] : existing,
-        mapped as any
-      ) as Message[];
+        mapped
+      );
       const withLocalOptimistic = refresh
-        ? mergeChatMessagesById(merged as any, existing as any) as Message[]
+        ? mergeChatMessagesById<Message>(merged, existing)
         : merged;
 
       const hasMore = pagination?.hasMore ?? mapped.length >= limit;
@@ -1642,7 +1642,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       );
       if (requestId !== dmFetchSeqByThread[threadId]) return true;
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
-      const mapped = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
+      const mapped: DirectMessage[] = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
       set(state => {
         const historyClearedAt = resolveDmHistoryClearedAt(
           threadId,
@@ -1660,7 +1660,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           return state;
         }
         const merged = filterMessagesAfterDmHistoryCutoff(
-          mergeChatMessagesById(existing as any, incoming as any) as DirectMessage[],
+          mergeChatMessagesById<DirectMessage>(existing, incoming),
           historyClearedAt,
         );
         return {

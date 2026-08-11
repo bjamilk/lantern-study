@@ -37,14 +37,16 @@ export type {
   MarketplaceTab 
 } from './marketplaceStore';
 export { useBudgetStore, TransactionType, EXPENSE_CATEGORIES, INCOME_CATEGORIES } from './budgetStore';
-export { useGameStore, QuestionType } from './gameStore';
-export type { 
-  GameSession, 
-  GameQuestion, 
-  GameUser, 
-  GameConfig, 
-  UserAnswerRecord as GameAnswerRecord 
+export { useGameStore } from './gameStore';
+export type {
+  GameSession,
+  GameQuestion,
+  GameUser,
+  GameConfig,
 } from './gameStore';
+// Game sessions use the shared question-type enum and answer records.
+export { QuestionType as GameQuestionType } from '@lantern/shared/types';
+export type { UserAnswerRecord as GameAnswerRecord } from '@lantern/shared/types';
 export type { Transaction, Budget } from './budgetStore';
 export { useSettingsStore, DEFAULT_SETTINGS, useNotificationSettings, useStudySettings, useAppearanceSettings, usePrivacySettings, useAccessibilitySettings, useSyncSettings } from './settingsStore';
 export type { UserSettings, NotificationSettings, StudySettings, AppearanceSettings, PrivacySettings, AccessibilitySettings, SyncSettings } from './settingsStore';

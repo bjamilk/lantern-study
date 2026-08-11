@@ -1639,20 +1639,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         return;
       }
 
-      const profile = await api.fetchSellerProfile(sellerId);
-      const data = profile as {
-        user?: { id: string; name: string; avatar_url?: string; created_at?: string };
-        shop?: { shopName?: string; bio?: string | null; coverImageUrl?: string | null };
-        stats?: {
-          totalListings: number;
-          activeListings: number;
-          soldListings: number;
-          avgRating?: number;
-          totalReviews?: number;
-          isVerified?: boolean;
-        };
-        badges?: Array<{ id: string; label: string }>;
-      };
+      const data = await api.fetchSellerProfile(sellerId);
       set({
         sellerProfile: {
           id: data.user?.id || sellerId,

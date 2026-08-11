@@ -1,9 +1,14 @@
 import { describe, expect, it } from '@jest/globals';
-import { isOptimisticDmThread, mergeDmThreadLists, withTransientRetry } from './dmThreads';
+import {
+  isOptimisticDmThread,
+  mergeDmThreadLists,
+  withTransientRetry,
+  type MergeableDmThread,
+} from './dmThreads';
 
 describe('mergeDmThreadLists', () => {
   it('merges by id and prefers server unread counts', () => {
-    const existing = [
+    const existing: MergeableDmThread[] = [
       {
         id: 't1',
         lastMessage: 'old',
@@ -29,8 +34,8 @@ describe('mergeDmThreadLists', () => {
   });
 
   it('keeps optimistic locals in soft and server modes', () => {
-    const existing = [{ id: 'local-opt', participants: {} }];
-    const fetched = [
+    const existing: MergeableDmThread[] = [{ id: 'local-opt', participants: {} }];
+    const fetched: MergeableDmThread[] = [
       {
         id: 't1',
         lastMessage: 'hi',
@@ -91,7 +96,7 @@ describe('mergeDmThreadLists', () => {
   });
 
   it('clears clientPending when server returns the thread', () => {
-    const existing = [
+    const existing: MergeableDmThread[] = [
       {
         id: 'a-b',
         lastMessage: 'hello',

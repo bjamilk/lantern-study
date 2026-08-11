@@ -261,12 +261,14 @@ const scheduleBudgetExtrasSync = (userId: string, getState: () => BudgetState) =
 
 const cacheBudgetExtrasLocally = async (
   userId: string,
-  extras: { savingsGoals: SavingsGoal[]; expenseSplits: ExpenseSplit[]; walletBalance: number }
+  // walletBalance is optional to match BudgetExtras; fetchBudgetExtras always
+  // supplies a number, so the 0 fallback only guards the type.
+  extras: { savingsGoals: SavingsGoal[]; expenseSplits: ExpenseSplit[]; walletBalance?: number }
 ) => {
   await Promise.all([
     AsyncStorage.setItem(`savingsGoals_${userId}`, JSON.stringify(extras.savingsGoals)),
     AsyncStorage.setItem(`expenseSplits_${userId}`, JSON.stringify(extras.expenseSplits)),
-    AsyncStorage.setItem(`walletBalance_${userId}`, extras.walletBalance.toString()),
+    AsyncStorage.setItem(`walletBalance_${userId}`, (extras.walletBalance ?? 0).toString()),
   ]);
 };
 
@@ -296,7 +298,11 @@ interface BudgetState {
 
   // Savings goals actions
   loadSavingsGoals: (userId: string) => Promise<void>;
-  addSavingsGoal: (goal: Omit<SavingsGoal, 'id' | 'createdAt'>) => Promise<void>;
+  addSavingsGoal: (
+    // icon/deadline are accepted by the API (POST /budget/goals) but are not
+    // part of the locally persisted SavingsGoal shape.
+    goal: Omit<SavingsGoal, 'id' | 'createdAt'> & { icon?: string; deadline?: string }
+  ) => Promise<void>;
   contributeToGoal: (goalId: string, amount: number) => Promise<void>;
   removeSavingsGoal: (goalId: string) => Promise<void>;
 

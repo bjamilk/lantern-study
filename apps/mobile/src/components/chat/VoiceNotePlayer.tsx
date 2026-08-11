@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, type AVPlaybackStatus } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
@@ -33,7 +33,7 @@ export function VoiceNotePlayer({ url, isOwn }: { url: string; isOwn: boolean })
   const [positionMs, setPositionMs] = useState(0);
   const [loadError, setLoadError] = useState(false);
 
-  const onStatus = useCallback((status: Audio.AVPlaybackStatus) => {
+  const onStatus = useCallback((status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
     if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
       setDurationMs(status.durationMillis);

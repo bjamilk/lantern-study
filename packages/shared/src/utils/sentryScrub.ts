@@ -19,9 +19,15 @@ function scrubObject(obj: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-/** Redact tokens/passwords from Sentry event payloads before upload. */
-export function scrubSentryEvent(event: Record<string, unknown>): Record<string, unknown> {
-  const next: Record<string, unknown> = { ...event };
+/**
+ * Redact tokens/passwords from Sentry event payloads before upload.
+ *
+ * Generic so SDK-specific event types (e.g. @sentry/react-native ErrorEvent)
+ * pass through without callers double-casting; the scrub only rewrites the
+ * user/request/breadcrumbs fields it inspects.
+ */
+export function scrubSentryEvent<T extends object>(event: T): T {
+  const next = { ...event } as Record<string, unknown>;
 
   if (next.user && typeof next.user === 'object') {
     const user = { ...(next.user as Record<string, unknown>) };
@@ -52,5 +58,5 @@ export function scrubSentryEvent(event: Record<string, unknown>): Record<string,
     });
   }
 
-  return next;
+  return next as T;
 }

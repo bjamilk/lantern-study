@@ -113,7 +113,9 @@ const darkBase = {
 
 export const lightTheme = lightBase;
 export const darkTheme = darkBase;
-export type ThemePalette = typeof lightBase;
+// Widen values to `string` so both palettes (and accent/contrast-adjusted
+// copies) are assignable; `typeof lightBase` would pin the light literals.
+export type ThemePalette = { [K in keyof typeof lightBase]: string };
 
 /** Backwards-compatible exports for mobile ThemeContext */
 export const lightColors = lightTheme;

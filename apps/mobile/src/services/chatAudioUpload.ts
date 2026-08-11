@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { api } from './api';
 
 export async function uploadChatAudio(
@@ -17,7 +17,7 @@ export async function uploadChatAudio(
   }
 
   const base64Data = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
+    encoding: FileSystem.EncodingType.Base64,
   });
   if (!base64Data || base64Data.length < 64) {
     throw new Error('Recording was empty. Hold a bit longer, then stop again.');

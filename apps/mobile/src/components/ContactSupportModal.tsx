@@ -63,7 +63,8 @@ export function ContactSupportModal({
         subject,
         message,
         source: 'mobile',
-        _hp: '',
+        // The `_hp` honeypot is injected by submitContactForm itself; its input
+        // type deliberately omits it so callers can't accidentally trip it.
       });
       setSuccess(result);
       setSubject('');

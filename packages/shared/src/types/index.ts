@@ -1121,10 +1121,16 @@ export interface SavedSearch {
 }
 
 export interface SellerProfile {
-  user: { id: string; name: string; avatar_url?: string; created_at: string };
+  user: { id: string; name: string; avatar_url?: string; created_at?: string };
   shop?: SellerShop;
-  stats: SellerStats & { avgRating: number; totalReviews: number };
-  badges: Badge[];
+  /** Owner scope gets full SellerStats; public scope only the fields below. */
+  stats: Partial<SellerStats> & {
+    avgRating: number;
+    totalReviews: number;
+    isVerified?: boolean;
+  };
+  /** Seller reputation chips (trusted/top seller) — not gamification Badges. */
+  badges: Array<{ id: string; label: string; icon?: string }>;
   recentListings: MarketplaceListing[];
   recentReviews: (MarketplaceReview & { listing_title?: string })[];
 }

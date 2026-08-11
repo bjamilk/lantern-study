@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import type { GroupChallenge, TestQuestion, UserAnswerRecord } from '@lantern/shared/types';
+import type { QuestionType as SharedQuestionType } from '@lantern/shared/types';
 import { computeDuelQuestionPoints, checkAnswerIsCorrect } from '@lantern/shared/utils';
 import {
   createChallenge,
@@ -14,7 +15,13 @@ import {
 } from '../services/challenges';
 import { trackStudyActivity } from '../services/gamification';
 import { useGroupStore } from './groupStore';
-import { selectGroupQuestions, webQuestionTypesToMobile } from '../utils/questionHelpers';
+import {
+  MOBILE_TO_WEB_QUESTION_TYPE,
+  normalizeQuestionType,
+  selectGroupQuestionMessages,
+  webQuestionTypesToMobile,
+  type GroupQuestionMessage,
+} from '../utils/questionHelpers';
 import { useAuthStore } from './authStore';
 
 const pendingChallengeSends = new Map<string, Promise<GroupChallenge>>();
@@ -32,6 +39,72 @@ export interface GameConfig {
   selectedTags?: string[];
 }
 
+/**
+ * The question contract GameScreen and answer grading rely on: the shared
+ * message-shaped TestQuestion fields (questionStem, {id,text} options,
+ * correctAnswerIds, …) without the chat-message envelope (sender, timestamp)
+ * that only server-built challenge questions carry.
+ */
+export type GameQuestion = Pick<
+  TestQuestion,
+  | 'id'
+  | 'text'
+  | 'questionStem'
+  | 'questionType'
+  | 'options'
+  | 'correctAnswerIds'
+  | 'acceptableAnswers'
+  | 'matchingPromptItems'
+  | 'matchingAnswerItems'
+  | 'correctMatches'
+  | 'diagramLabels'
+  | 'imageUrl'
+  | 'explanation'
+  | 'tags'
+> &
+  Partial<Pick<TestQuestion, 'questionNumber'>>;
+
+/**
+ * Map a group chat question message to the GameQuestion contract. Mirrors the
+ * server's challengeService question mapping so solo practice feeds GameScreen
+ * and checkAnswerIsCorrect the same shape as real challenges: previously solo
+ * sessions used the test-taking shape (plain-text options, no questionType or
+ * correctAnswerIds), which rendered blank options and graded every answer
+ * incorrect.
+ */
+function groupMessageToGameQuestion(msg: GroupQuestionMessage, index: number): GameQuestion {
+  const mobileType = normalizeQuestionType(msg.questionType);
+  const options = msg.optionItems?.length
+    ? msg.optionItems
+    // Plain-string options use their text as the id (same convention the
+    // server and groupStore mapping apply), so correctAnswerIds still match.
+    : msg.options?.map((text) => ({ id: text, text }));
+  return {
+    id: msg.id,
+    questionNumber: index + 1,
+    text: msg.text,
+    questionStem: msg.questionStem || msg.text,
+    questionType: mobileType
+      ? (MOBILE_TO_WEB_QUESTION_TYPE[mobileType] as SharedQuestionType)
+      : undefined,
+    options,
+    correctAnswerIds: msg.correctAnswerIds,
+    acceptableAnswers: msg.acceptableAnswers,
+    matchingPromptItems: msg.matchingPromptItems,
+    matchingAnswerItems: msg.matchingAnswerItems,
+    correctMatches: msg.correctMatches,
+    diagramLabels: msg.diagramLabels?.map((label) => ({
+      id: label.id,
+      text: label.text ?? label.label ?? '',
+      x: label.x ?? 0,
+      y: label.y ?? 0,
+    })),
+    imageUrl: msg.imageUrl,
+    explanation: msg.explanation,
+    tags: msg.tags,
+  };
+}
+
 export interface GameSession {
   id: string;
   challengeId?: string;
@@ -39,7 +112,7 @@ export interface GameSession {
   awaitingOpponent?: boolean;
   user: GameUser;
   opponent: GameUser;
-  questions: TestQuestion[];
+  questions: GameQuestion[];
   userAnswers: Record<string, UserAnswerRecord>;
   opponentAnswers: Record<string, UserAnswerRecord>;
   userScore: number;
@@ -213,7 +286,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ? webQuestionTypesToMobile(config.allowedQuestionTypes)
         : undefined;
 
-      const fromGroup = selectGroupQuestions(groupMessages as any, {
+      const fromGroup = selectGroupQuestionMessages(groupMessages, {
         numberOfQuestions: config.questionCount,
         selectedQuestionTypes: mobileTypes,
         selectedTags: config.selectedTags,
@@ -228,7 +301,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         isSoloPractice: true,
         user: currentUser,
         opponent: { id: 'solo', name: 'Solo Practice' },
-        questions: fromGroup as TestQuestion[],
+        questions: fromGroup.map(groupMessageToGameQuestion),
         userAnswers: {},
         opponentAnswers: {},
         userScore: 0,

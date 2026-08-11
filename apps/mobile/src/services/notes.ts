@@ -76,6 +76,8 @@ export interface StudyNote {
   createdAt?: string;
   accessRole?: 'owner' | 'editor' | 'viewer' | 'group_member';
   owner?: { id: string; name?: string; username?: string; avatarUrl?: string };
+  /** Included on note detail and upload responses. */
+  attachments?: NoteAttachment[];
 }
 
 export interface NoteAttachment {
@@ -443,9 +445,15 @@ export const refreshNoteAttachmentUrl = (
 };
 
 export const fetchNoteCollaborators = (noteId: string) =>
-  notesRequest<Array<{ noteId: string; userId: string; role: string; user?: { id: string; name?: string } }>>(
-    `/${noteId}/collaborators`
-  );
+  // Server constrains collaborator roles to viewer | editor.
+  notesRequest<
+    Array<{
+      noteId: string;
+      userId: string;
+      role: 'viewer' | 'editor';
+      user?: { id: string; name?: string; avatarUrl?: string };
+    }>
+  >(`/${noteId}/collaborators`);
 
 export const addNoteCollaborator = (
   noteId: string,
@@ -678,7 +686,7 @@ export interface YoutubeNoteImportResult {
 async function resolveYoutubeImportAfterJob(
   noteId: string,
   attachmentId: string | undefined,
-  jobResult: { status?: 'ready' | 'failed'; error?: string }
+  jobResult: { status?: 'ready' | 'failed' | 'processing'; error?: string }
 ): Promise<YoutubeNoteImportResult> {
   const note = await fetchNote(noteId);
   const attachment =

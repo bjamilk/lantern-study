@@ -16,6 +16,7 @@ import {
   ACCOUNT_EXPORT_COPY,
   isSignedExportV2,
   type AccountLifecycleInfo,
+  type SignedAccountExportV2,
 } from '@lantern/shared';
 import { Button } from './ui';
 import {
@@ -96,7 +97,7 @@ export function AccountLifecycleModals({
   const [confirmText, setConfirmText] = useState('');
   const [password, setPassword] = useState('');
   const [importPassword, setImportPassword] = useState('');
-  const [importDoc, setImportDoc] = useState<Record<string, unknown> | null>(null);
+  const [importDoc, setImportDoc] = useState<SignedAccountExportV2 | null>(null);
   const [importFileName, setImportFileName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,12 +174,11 @@ export function AccountLifecycleModals({
       const text = await response.text();
       const parsed = JSON.parse(text) as Record<string, unknown>;
       const nested = parsed.data;
-      const doc =
-        nested && typeof nested === 'object' && isSignedExportV2(nested)
-          ? (nested as Record<string, unknown>)
-          : isSignedExportV2(parsed)
-            ? parsed
-            : null;
+      const doc = isSignedExportV2(nested)
+        ? nested
+        : isSignedExportV2(parsed)
+          ? parsed
+          : null;
 
       if (!doc) {
         setError('Choose a valid Lantern Study JSON export from Settings → Export my data.');

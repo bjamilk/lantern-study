@@ -1,5 +1,8 @@
 export type RootStackParamList = {
-  Auth: undefined;
+  // Auth hosts a nested stack; deep links target e.g. { screen: 'ResetPassword' }.
+  Auth:
+    | import("@react-navigation/native").NavigatorScreenParams<AuthStackParamList>
+    | undefined;
   Main: undefined;
   Onboarding: undefined;
   Settings: undefined;

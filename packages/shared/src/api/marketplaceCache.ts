@@ -41,11 +41,17 @@ export function createReadCache<T>(defaultOptions: CachedFetchOptions) {
   const backoffByKey = new Map<string, number>();
 
   return {
-    async get(
+    /**
+     * Generic over the fetcher's return type so callers get back the concrete
+     * endpoint shape instead of the cache's base T (typically `unknown`).
+     * A given key is always populated by the same fetcher, so the cached-value
+     * casts below are sound.
+     */
+    async get<V extends T>(
       key: string,
-      fetcher: () => Promise<T>,
+      fetcher: () => Promise<V>,
       options?: Partial<CachedFetchOptions>
-    ): Promise<T> {
+    ): Promise<V> {
       const ttlMs = options?.ttlMs ?? defaultOptions.ttlMs;
       const backoffMs = options?.backoffMs ?? defaultOptions.backoffMs ?? 30_000;
       const now = Date.now();
@@ -53,16 +59,16 @@ export function createReadCache<T>(defaultOptions: CachedFetchOptions) {
       const backoffUntil = backoffByKey.get(key) ?? 0;
       if (now < backoffUntil) {
         const cached = cacheByKey.get(key);
-        if (cached) return cached.value;
+        if (cached) return cached.value as V;
       }
 
       const cached = cacheByKey.get(key);
       if (cached && now - cached.at < ttlMs) {
-        return cached.value;
+        return cached.value as V;
       }
 
       const existing = inflightByKey.get(key);
-      if (existing) return existing;
+      if (existing) return existing as Promise<V>;
 
       const promise = fetcher()
         .then((value) => {

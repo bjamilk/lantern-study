@@ -6,32 +6,32 @@ export async function createChallenge(payload: {
   opponentId: string;
   config: ChallengeConfig;
 }): Promise<GroupChallenge> {
-  return api.createChallenge(payload) as Promise<GroupChallenge>;
+  return api.createChallenge(payload);
 }
 
 export async function fetchChallenges(status?: string): Promise<GroupChallenge[]> {
-  return api.fetchChallenges(status) as Promise<GroupChallenge[]>;
+  return api.fetchChallenges(status);
 }
 
 export async function fetchChallenge(challengeId: string): Promise<GroupChallenge> {
-  return api.fetchChallenge(challengeId) as Promise<GroupChallenge>;
+  return api.fetchChallenge(challengeId);
 }
 
 export async function acceptChallenge(challengeId: string): Promise<GroupChallenge> {
-  return api.acceptChallenge(challengeId) as Promise<GroupChallenge>;
+  return api.acceptChallenge(challengeId);
 }
 
 export async function declineChallenge(challengeId: string): Promise<GroupChallenge> {
-  return api.declineChallenge(challengeId) as Promise<GroupChallenge>;
+  return api.declineChallenge(challengeId);
 }
 
 export async function submitChallenge(
   challengeId: string,
   answers: Record<string, UserAnswerRecord>
 ): Promise<GroupChallenge> {
-  return api.submitChallenge(challengeId, answers) as Promise<GroupChallenge>;
+  return api.submitChallenge(challengeId, answers);
 }
 
 export async function forfeitChallenge(challengeId: string): Promise<GroupChallenge> {
-  return api.forfeitChallenge(challengeId) as Promise<GroupChallenge>;
+  return api.forfeitChallenge(challengeId);
 }

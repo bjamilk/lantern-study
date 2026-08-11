@@ -50,7 +50,7 @@ export function useDailyStudyReminder(): void {
         if (status !== 'granted' || cancelled) return;
 
         // Persist first so overlapping interval ticks / effect remounts cannot spam.
-        const todayKey = formatActivityLocalDate();
+        const todayKey = formatActivityLocalDate(new Date());
         writeLastReminderDateKey(AsyncStorage, userId, todayKey);
         firedRef.current = todayKey;
 

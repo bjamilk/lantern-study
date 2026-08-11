@@ -23,6 +23,7 @@ interface Contact {
   id: string;
   userId: string;
   name: string;
+  username?: string;
   email?: string;
   avatarUrl?: string;
   status?: 'online' | 'offline' | 'away';
@@ -160,7 +161,7 @@ export default function NewDirectMessageModal({
     }
   };
 
-  const renderContact = ({ item }: { item: Contact & { username?: string } }) => (
+  const renderContact = ({ item }: { item: Contact }) => (
     <TouchableOpacity
       style={[styles.contactItem, { backgroundColor: colors.background, borderColor: colors.border }]}
       onPress={() => handleSelectContact(item)}

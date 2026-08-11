@@ -14,7 +14,8 @@ export type MergeableDmThread = {
    * Survives first-send lastMessage updates so server merges cannot drop the thread.
    */
   clientPending?: boolean | null;
-  [key: string]: unknown;
+  // No index signature — see MergeableChatMessage: interfaces without implicit
+  // index signatures must still satisfy the generic constraint.
 };
 
 function threadTimeMs(thread: MergeableDmThread): number {

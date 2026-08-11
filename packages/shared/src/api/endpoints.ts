@@ -404,6 +404,12 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<{
         id: string;
         name: string;
+        // Server returns both camelCase and snake_case aliases for these.
+        firstName?: string;
+        first_name?: string;
+        lastName?: string;
+        last_name?: string;
+        username?: string;
         avatar_url?: string;
         phone?: string;
         points: number;
@@ -1923,6 +1929,7 @@ export function createApiEndpoints(client: ApiClient) {
           totalListings: number;
           activeListings: number;
           soldListings: number;
+          completedOrders: number;
           totalViews: number;
           totalInquiries: number;
           totalFavorites: number;
@@ -2186,6 +2193,9 @@ export function createApiEndpoints(client: ApiClient) {
           amount: number;
           message?: string;
           status: string;
+          // Server selects * from marketplace_offers; these drive offer threading.
+          proposed_by?: string | null;
+          parent_offer_id?: string | null;
           created_at: string;
           updated_at?: string;
         }>
@@ -2853,23 +2863,26 @@ export function createApiEndpoints(client: ApiClient) {
         selectedTags?: string[];
       };
     }) =>
-      apiRequest<{ id: string } & Record<string, unknown>>("/challenges", {
+      // challengeService serializes rows to the camelCase GroupChallenge shape.
+      apiRequest<import("../types").GroupChallenge>("/challenges", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
 
     fetchChallenges: (status?: string) => {
       const q = status ? `?status=${encodeURIComponent(status)}` : "";
-      return apiRequest<Array<Record<string, unknown>>>(`/challenges${q}`);
+      return apiRequest<Array<import("../types").GroupChallenge>>(
+        `/challenges${q}`,
+      );
     },
 
     fetchChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(
+      apiRequest<import("../types").GroupChallenge>(
         `/challenges/${encodeURIComponent(challengeId)}`,
       ),
 
     acceptChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(
+      apiRequest<import("../types").GroupChallenge>(
         `/challenges/${encodeURIComponent(challengeId)}/accept`,
         {
           method: "POST",
@@ -2877,15 +2890,18 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     declineChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(
+      apiRequest<import("../types").GroupChallenge>(
         `/challenges/${encodeURIComponent(challengeId)}/decline`,
         {
           method: "POST",
         },
       ),
 
-    submitChallenge: (challengeId: string, answers: Record<string, unknown>) =>
-      apiRequest<Record<string, unknown>>(
+    submitChallenge: (
+      challengeId: string,
+      answers: Record<string, import("../types").UserAnswerRecord>,
+    ) =>
+      apiRequest<import("../types").GroupChallenge>(
         `/challenges/${encodeURIComponent(challengeId)}/submit`,
         {
           method: "POST",
@@ -2894,7 +2910,7 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     forfeitChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(
+      apiRequest<import("../types").GroupChallenge>(
         `/challenges/${encodeURIComponent(challengeId)}/forfeit`,
         {
           method: "POST",

@@ -396,6 +396,21 @@ export function selectGroupQuestions(
   config: TestConfigFilter,
   userQuestionStats: Record<string, { correctAttempts: number; incorrectAttempts: number }> = {}
 ): TestQuestion[] {
+  return selectGroupQuestionMessages(messages, config, userQuestionStats).map(
+    groupMessageToTestQuestion
+  );
+}
+
+/**
+ * Same selection/shuffle pipeline as selectGroupQuestions, but returns the raw
+ * group messages so callers that need the message-shaped question contract
+ * (e.g. game sessions graded via correctAnswerIds) can map them themselves.
+ */
+export function selectGroupQuestionMessages(
+  messages: GroupQuestionMessage[],
+  config: TestConfigFilter,
+  userQuestionStats: Record<string, { correctAttempts: number; incorrectAttempts: number }> = {}
+): GroupQuestionMessage[] {
   const allTestable = poolForVisibility(messages, config.visibilityMode, config.sessionMode);
 
   const typeFilter = (msg: GroupQuestionMessage) => {
@@ -451,7 +466,9 @@ export function selectGroupQuestions(
       ? finalSelected
       : shuffleArray(candidateQuestions).slice(0, config.numberOfQuestions);
 
-  return createShuffledQuestionSet(selected.slice(0, config.numberOfQuestions));
+  // Final shuffle mirrors createShuffledQuestionSet so selectGroupQuestions
+  // keeps its historical ordering behavior.
+  return shuffleArray(selected.slice(0, config.numberOfQuestions));
 }
 
 export function extractTagsFromQuestions(

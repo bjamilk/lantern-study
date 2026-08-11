@@ -294,7 +294,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         buildSavedMarketplaceFilters({
           searchQuery,
           selectedCategory,
-          activeTab,
+          // Saved searches only cover the two browse tabs; a search saved from
+          // the shops tab already round-trips to 'academic' via
+          // normalizeSavedMarketplaceFilters, so coerce it explicitly.
+          activeTab: activeTab === 'shops' ? 'academic' : activeTab,
           minPrice,
           maxPrice,
           locationFilter,

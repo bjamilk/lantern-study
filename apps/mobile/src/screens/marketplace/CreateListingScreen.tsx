@@ -350,7 +350,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           quantity: parsedQuantity,
           images: [],
           status: 'active',
-        } as Omit<MarketplaceListing, 'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count'>,
+        },
         user.id
       );
 

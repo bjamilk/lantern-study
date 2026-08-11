@@ -82,7 +82,16 @@ export const checkAndAwardBadges = (user: User): { updatedUser: User, awardedBad
     return { updatedUser, awardedBadges };
 };
 
-export const checkAnswerIsCorrect = (question: TestQuestion, answer: UserAnswerRecord): boolean => {
+/**
+ * The subset of a question that answer grading actually reads. Narrower than
+ * TestQuestion so lighter game/practice question shapes can be graded too.
+ */
+export type AnswerCheckQuestion = Pick<
+    TestQuestion,
+    'questionType' | 'correctAnswerIds' | 'acceptableAnswers' | 'correctMatches' | 'diagramLabels'
+>;
+
+export const checkAnswerIsCorrect = (question: AnswerCheckQuestion, answer: UserAnswerRecord): boolean => {
     switch (question.questionType) {
         case QuestionType.MULTIPLE_CHOICE_SINGLE:
         case QuestionType.TRUE_FALSE:
