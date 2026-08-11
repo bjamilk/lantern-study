@@ -7,11 +7,13 @@ import {
 } from '../../../scripts/buildContentSecurityPolicy.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const headersPath = path.resolve(rootDir, 'dist/_headers');
+const headersPath = path.resolve(rootDir, 'apps/web/dist/_headers');
 
 if (!fs.existsSync(headersPath)) {
-  console.warn('[inject-csp-headers] dist/_headers not found, skipping');
-  process.exit(0);
+  // Hard failure: deploying with the __CONTENT_SECURITY_POLICY__ placeholder
+  // ships an unsubstituted (i.e. broken) CSP header to production.
+  console.error('[inject-csp-headers] FATAL: apps/web/dist/_headers not found — build did not produce it');
+  process.exit(1);
 }
 
 const env = loadWebBuildEnv(rootDir, fs, path);

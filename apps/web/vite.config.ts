@@ -63,6 +63,12 @@ export default defineConfig(({ mode }) => {
         dedupe: ['react', 'react-dom', 'zustand', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
       },
       build: {
+        // Write into apps/web/dist (path is relative to `root`, the repo root).
+        // Turbo's outputs: ["dist/**"] resolves relative to apps/web, so without
+        // this the cache captured NOTHING and a warm cache hit "succeeded" while
+        // restoring no artifacts — a stale-deploy trap.
+        outDir: 'apps/web/dist',
+        emptyOutDir: true,
         rollupOptions: {
           output: {
             manualChunks: {

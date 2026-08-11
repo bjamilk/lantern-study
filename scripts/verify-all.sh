@@ -60,11 +60,11 @@ if [ "$QUICK" != "--quick" ]; then
   # not, getEnvironment() falls through to DEV_CONFIG and the deployed app sends
   # the demo anon key, which Supabase rejects with "Invalid API key".
   check_bundle_config() {
-    [ -d dist/assets ] || { echo "  no dist/assets — build first"; return 1; }
+    [ -d apps/web/dist/assets ] || { echo "  no dist/assets — build first"; return 1; }
     local url key issuer
-    url=$(grep -oh '__LANTERN_VITE_SUPABASE_URL__:"[^"]*"' dist/assets/index-*.js 2>/dev/null |
+    url=$(grep -oh '__LANTERN_VITE_SUPABASE_URL__:"[^"]*"' apps/web/dist/assets/index-*.js 2>/dev/null |
           head -1 | sed 's/.*:"//;s/"//')
-    key=$(grep -oh '__LANTERN_VITE_SUPABASE_ANON_KEY__:"[^"]*"' dist/assets/index-*.js 2>/dev/null |
+    key=$(grep -oh '__LANTERN_VITE_SUPABASE_ANON_KEY__:"[^"]*"' apps/web/dist/assets/index-*.js 2>/dev/null |
           head -1 | sed 's/.*:"//;s/"//')
 
     if [ -z "$url" ] || [ -z "$key" ]; then

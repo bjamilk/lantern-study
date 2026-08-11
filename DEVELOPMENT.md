@@ -86,7 +86,7 @@ Two defences:
    bundle contains local dev config. Confirm before shipping:
 
 ```bash
-grep -l "supabase-demo\|127.0.0.1:55421" dist/assets/*.js   # must print nothing
+grep -l "supabase-demo\|127.0.0.1:55421" apps/web/dist/assets/*.js   # must print nothing
 ```
 
 ## Deploying
@@ -110,7 +110,7 @@ local dev values to production:
 ```bash
 npx wrangler login                    # opens a browser; token stays in your keychain
 npm run build:web
-npx wrangler pages deploy dist --project-name lantern-study --branch main
+npx wrangler pages deploy apps/web/dist --project-name lantern-study --branch main
 ```
 
 Whichever path you use, confirm the deploy landed — this must change after
