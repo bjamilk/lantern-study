@@ -120,6 +120,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         ]);
       } catch (e) {
         console.warn('[Auth] session restore timed out/failed, continuing unauthenticated:', String(e));
+        // Transient stall (e.g. QUIC hang to Supabase on emulators): leave the
+        // persisted session untouched and retry in the background. A slow
+        // network must never become a logout. When the retry succeeds the
+        // onAuthStateChange listener below restores the authenticated state.
+        setTimeout(() => {
+          void supabase.auth.refreshSession().catch(() => {});
+        }, 10000);
       }
 
       if (session) {
@@ -176,7 +183,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ user: session.user, session });
           void get().refreshProfileName(session.user.id);
         } else {
-          set({ user: null, session: null, profileName: null, profileFirstName: null, isPasswordRecovery: false });
+          // Null session on anything other than an explicit SIGNED_OUT (handled
+          // above) is a race, not a logout: INITIAL_SESSION before a slow
+          // storage read resolves, or a transient refresh failure. Wiping state
+          // here is how a network stall signed users out (and how demo mode got
+          // cleared moments after entering it). Keep the current state.
+          console.warn('[Auth] ignoring null-session auth event:', event);
         }
       });
       }, 0);
