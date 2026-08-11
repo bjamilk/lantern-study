@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {
   View,
   Text,
@@ -43,7 +44,7 @@ export default function AddInvestmentScreen() {
         amount: amountNum,
         category: 'other',
         description: description.trim(),
-        date: date.toISOString().split('T')[0],
+        date: toDateOnlyLocal(date),
       });
       Alert.alert('Success', 'Investment logged!', [
         { text: 'OK', onPress: () => navigation.goBack() },

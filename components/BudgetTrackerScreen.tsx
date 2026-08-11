@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
+import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { User, Transaction, Budget, TransactionType, SavingsGoal, STUDENT_EXPENSE_CATEGORIES, STUDENT_INCOME_CATEGORIES, FinancialTip } from '../types';
 import {
   CreditCardIcon, ArrowUpIcon, ArrowDownIcon, PlusCircleIcon,
@@ -455,7 +456,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                           </div>
                           <div className="min-w-0">
                             <p className="font-medium text-sm text-lantern-text truncate">{t.description}</p>
-                            <p className="text-xs text-lantern-text-tertiary">{cat.label} &middot; {new Date(t.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</p>
+                            <p className="text-xs text-lantern-text-tertiary">{cat.label} &middot; {parseDateOnlyLocal(t.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -506,7 +507,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                           <h4 className="font-semibold text-lantern-text">{goal.name}</h4>
                           {goal.deadline && (
                             <p className="text-xs text-lantern-text-tertiary">
-                              Due {new Date(goal.deadline).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              Due {parseDateOnlyLocal(goal.deadline).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                             </p>
                           )}
                         </div>

@@ -1,4 +1,5 @@
 // ===========================================
+import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 // Lantern Study Mobile - Add Expense Screen
 // ===========================================
 
@@ -61,7 +62,7 @@ export default function AddExpenseScreen() {
         amount: amountNum,
         category,
         description: description.trim(),
-        date: date.toISOString().split('T')[0],
+        date: toDateOnlyLocal(date),
       });
 
       Alert.alert('Success', 'Expense added successfully!', [

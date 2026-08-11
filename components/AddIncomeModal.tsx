@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { useToastStore } from '../stores/toastStore';
 import { TransactionType, Transaction, STUDENT_INCOME_CATEGORIES } from '../types';
 import { XMarkIcon } from '@heroicons/react/24/outline';
@@ -14,7 +15,7 @@ const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose, onSubm
   const [amount, setAmount] = useState<number | ''>('');
   const [category, setCategory] = useState(STUDENT_INCOME_CATEGORIES[0].id);
   const [description, setDescription] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(todayDateOnlyLocal());
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +32,7 @@ const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose, onSubm
     });
     setAmount('');
     setDescription('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(todayDateOnlyLocal());
   };
 
   const selectedCat = STUDENT_INCOME_CATEGORIES.find(c => c.id === category);

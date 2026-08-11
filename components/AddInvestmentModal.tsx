@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { useToastStore } from '../stores/toastStore';
 import { TransactionType, Transaction } from '../types';
 import { XMarkIcon } from '@heroicons/react/24/outline';
@@ -13,7 +14,7 @@ interface AddInvestmentModalProps {
 const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({ isOpen, onClose, onSubmit }) => {
   const [amount, setAmount] = useState<number | ''>('');
   const [description, setDescription] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(todayDateOnlyLocal());
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +31,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({ isOpen, onClose
     });
     setAmount('');
     setDescription('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(todayDateOnlyLocal());
   };
 
   return (

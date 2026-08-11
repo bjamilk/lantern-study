@@ -1,4 +1,5 @@
 // ===========================================
+import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 // Lantern Study Mobile - Budget Tracker Screen
 // ===========================================
 
@@ -121,7 +122,7 @@ export default function BudgetScreen() {
   }, [deleteTransaction]);
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-NG', {
+    return parseDateOnlyLocal(dateString).toLocaleDateString('en-NG', {
       month: 'short',
       day: 'numeric',
     });
