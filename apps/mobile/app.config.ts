@@ -40,9 +40,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: IS_DEV_VARIANT ? 'Lantern Study Dev' : 'Lantern Study',
   slug: 'lantern-study',
-  // 1.0.3: new OTA runtime fence. 1.0.2 binaries pair with the pre-Reanimated-3
-  // update channel state and must never receive JS built from this tree.
-  version: '1.0.3',
+  // This field is also the OTA runtime fence (runtimeVersion.policy: appVersion):
+  // updates only reach binaries built from the same version. 1.0.2 binaries pair
+  // with the pre-Reanimated-3 channel state and must never receive JS from here.
+  // 1.0.4: real NetInfo on Android, auth hardening, typecheck-debt bug fixes.
+  version: '1.0.4',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
