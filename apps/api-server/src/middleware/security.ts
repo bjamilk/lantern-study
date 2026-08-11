@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { getAllowedCorsOrigins } from '../utils/corsOrigins';
+import { AI_USAGE_EXPOSED_HEADERS } from './aiRateLimit';
 
 // Extended Request type
 interface AuthenticatedRequest extends Request {
@@ -112,15 +113,8 @@ export const corsConfig = cors({
     'X-Request-ID',
     'X-RateLimit-Limit',
     'X-RateLimit-Remaining',
-    // Feature routes send X-AI-Feature + feature X-AI-Usage-*; global badge
-    // reads X-AI-Global-Usage-* so companion/quiz/etc. still move the counter.
-    'X-AI-Feature',
-    'X-AI-Usage-Used',
-    'X-AI-Usage-Limit',
-    'X-AI-Usage-Resets-At',
-    'X-AI-Global-Usage-Used',
-    'X-AI-Global-Usage-Limit',
-    'X-AI-Global-Usage-Resets-At',
+    // Single source of truth — any header aiRateLimit.ts sets must be exposed.
+    ...AI_USAGE_EXPOSED_HEADERS,
   ],
   maxAge: 86400,
 });

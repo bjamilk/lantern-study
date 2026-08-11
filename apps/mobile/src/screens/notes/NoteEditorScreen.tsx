@@ -52,6 +52,10 @@ import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
+import AIUsageBadge from '../../components/AIUsageBadge';
+import { getLatestAIUsage, subscribeToAIUsage } from '../../services/ai';
+import { SMART_NOTES_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
+import { SMART_NOTES_GUIDANCE_MAX_CHARS } from '@lantern/shared/utils/smartNotes';
 import { useAuthStore } from '../../stores/authStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import {
@@ -125,6 +129,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const [smartNotesDepth, setSmartNotesDepth] =
     useState<import('@lantern/shared/utils/smartNotes').SmartNotesDepth>('standard');
+
+  const [aiUsage, setAiUsage] = useState(getLatestAIUsage());
+
+  useEffect(() => subscribeToAIUsage(setAiUsage), []);
+
+  const remainingCredits = Math.max(0, aiUsage.remaining);
+  const shortForSmartNote =
+    aiUsage.limit > 0 && remainingCredits < SMART_NOTES_CREDIT_COST[smartNotesDepth];
+  const shortForOneCredit = aiUsage.limit > 0 && remainingCredits < 1;
 
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
@@ -1176,7 +1189,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               placeholderTextColor={colors.textTertiary}
               value={smartNotesGuidance}
               onChangeText={setSmartNotesGuidance}
-              maxLength={500}
+              maxLength={SMART_NOTES_GUIDANCE_MAX_CHARS}
             />
 
             <View className="flex-row gap-1 mb-3">
@@ -1201,7 +1214,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                       smartNotesDepth === value ? 'text-white' : 'text-lantern-text-secondary'
                     }`}
                   >
-                    {label}
+                    {label} · {SMART_NOTES_CREDIT_COST[value]}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -1209,7 +1222,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             <View className="flex-row flex-wrap gap-2">
 
-              <Button size="sm" variant="secondary" loading={summarizing} onPress={() => void handleSummarize()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={summarizing}
+                disabled={shortForSmartNote}
+                onPress={() => void handleSummarize()}
+              >
 
                 Smart Note
 
@@ -1223,7 +1242,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 size="sm"
                 variant="secondary"
                 loading={generatingCards}
-                disabled={isAILoading || !canGenerateStudyMaterials}
+                disabled={isAILoading || !canGenerateStudyMaterials || shortForOneCredit}
                 onPress={() => void handleGenerateFlashcards()}
               >
                 Flashcards
@@ -1233,7 +1252,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 size="sm"
                 variant="secondary"
                 loading={generatingQuiz}
-                disabled={!canGenerateStudyMaterials}
+                disabled={!canGenerateStudyMaterials || shortForOneCredit}
                 onPress={() => void handleGenerateQuiz()}
               >
 
@@ -1241,6 +1260,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
               </Button>
 
+            </View>
+
+            <View className="mt-3">
+              <AIUsageBadge variant="inline" cost={SMART_NOTES_CREDIT_COST[smartNotesDepth]} />
             </View>
 
           </Card> : null}

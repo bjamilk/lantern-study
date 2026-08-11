@@ -21,6 +21,7 @@ import { SupabaseService } from './services/supabase';
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from './middleware/rateLimit';
 import { authMiddleware, optionalAuthMiddleware, requirePlatformAdmin } from './middleware/auth';
+import { AI_USAGE_EXPOSED_HEADERS } from './middleware/aiRateLimit';
 import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
 import { skipTimeoutForLongRunningNotes } from './middleware/timeout';
@@ -222,7 +223,11 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID', 'X-Requested-With', 'Idempotency-Key'],
-  exposedHeaders: ['X-AI-Usage-Used', 'X-AI-Usage-Limit', 'X-AI-Usage-Resets-At'],
+  // Expose EVERY AI usage header (single source of truth in aiRateLimit.ts).
+  // The old three-item list hid X-AI-Global-Usage-* and X-AI-Feature from
+  // browsers, so on feature routes the web badge showed feature counts (x/15)
+  // instead of the global counter (x/100).
+  exposedHeaders: ['X-Request-ID', ...AI_USAGE_EXPOSED_HEADERS],
 }));
 
 // Compression middleware

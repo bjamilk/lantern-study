@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { getAIResetLabel } from '@lantern/shared/utils';
+import { formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import { subscribeToAIUsage, getLatestAIUsage, fetchAIUsage, AIUsageInfo } from '../services/ai';
 
 /**
  * Compact inline AI usage indicator — "✨ 7 left · Resets in 4h 23m"
  * Color-coded: green (>5), amber (3-5), red (<=2).
- * Use next to AI action buttons.
+ * Use next to AI action buttons. Pass `cost` to show what the action spends
+ * ("Costs 3 credits") and to force the short-of-credits state.
  */
-const AIUsageInline: React.FC<{ className?: string }> = ({ className = '' }) => {
+const AIUsageInline: React.FC<{ className?: string; cost?: number }> = ({
+  className = '',
+  cost,
+}) => {
   const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -25,8 +30,9 @@ const AIUsageInline: React.FC<{ className?: string }> = ({ className = '' }) => 
   if (!usage.limit) return null;
 
   const remaining = Math.max(0, usage.limit - usage.used);
+  const shortOfCredits = cost != null && remaining < cost;
   let color = 'text-emerald-600 dark:text-emerald-400';
-  if (remaining <= 2) color = 'text-red-600 dark:text-red-400';
+  if (remaining <= 2 || shortOfCredits) color = 'text-red-600 dark:text-red-400';
   else if (remaining <= 5) color = 'text-amber-600 dark:text-amber-400';
 
   const resetLabel = getAIResetLabel(usage.resetsAt, {
@@ -46,6 +52,12 @@ const AIUsageInline: React.FC<{ className?: string }> = ({ className = '' }) => 
           <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
         </svg>
         <span className="font-medium">{remaining} left</span>
+        {cost != null && (
+          <span className="text-[10px] font-normal">
+            · costs {formatCreditCost(cost)}
+            {shortOfCredits ? ' — not enough credits' : ''}
+          </span>
+        )}
       </span>
       <span className="text-[10px] text-lantern-text-secondary pl-4">{resetLabel}</span>
     </span>

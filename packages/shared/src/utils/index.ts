@@ -11,6 +11,7 @@ export * from './flashcardReviewAdvance';
 export * from './flashcardGeneration';
 export * from './occlusionHelpers';
 export * from './activity';
+export * from './aiCredits';
 export * from './aiUsage';
 export * from './marketplaceBudget';
 export * from './walletCoins';

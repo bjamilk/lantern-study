@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { SparklesIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { AI_CREDIT_COSTS } from '@lantern/shared/utils/aiCredits';
 import Modal from './ui/Modal';
+import AIUsageInline from './AIUsageInline';
 
 interface GenerateFlashcardsModalProps {
   isOpen: boolean;
@@ -79,7 +81,9 @@ const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpe
             className="w-full min-h-[44px] p-2 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
           />
         </div>
-        <div className="flex justify-end gap-3 pt-2 sticky bottom-0 bg-lantern-surface">
+        <div className="flex items-center justify-between gap-3 pt-2 sticky bottom-0 bg-lantern-surface">
+          <AIUsageInline cost={AI_CREDIT_COSTS.generate_flashcards} />
+          <div className="flex gap-3">
           <button
             type="button"
             onClick={onClose}
@@ -96,6 +100,7 @@ const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpe
             {isGenerating && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" aria-hidden />}
             {isGenerating ? 'Generating...' : 'Generate Cards'}
           </button>
+          </div>
         </div>
       </form>
     </Modal>

@@ -8,7 +8,7 @@ import type {
   StudyGoalMode,
   StudyNote,
 } from '../types';
-import { applyAIUsageFromResponse, applyAIUsageFromXhr } from './ai';
+import { applyAIUsageFromResponse, applyAIUsageFromXhr, applyAIUsageFromErrorBody } from './ai';
 import { getAuthHeaders, supabase } from './supabase';
 import { pollApiJob } from './jobPoll';
 import { applyJsonXhrHeaders } from '../utils/xhrHeaders';
@@ -185,6 +185,9 @@ async function notesLongRequest<T>(
         resolve((data.data ?? data) as T);
         return;
       }
+      if (xhr.status === 429) {
+        applyAIUsageFromErrorBody(data);
+      }
       let message =
         data.message ||
         (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
@@ -220,6 +223,9 @@ async function notesRequest<T>(
   const data = await response.json().catch(() => ({}));
   if (response.ok || response.status === 202) {
     applyAIUsageFromResponse(response);
+  } else if (response.status === 429) {
+    // A refused request must still correct the badge.
+    applyAIUsageFromErrorBody(data);
   }
   if (response.status === 202 && typeof data.jobId === 'string') {
     return pollApiJob<T>(data.jobId);

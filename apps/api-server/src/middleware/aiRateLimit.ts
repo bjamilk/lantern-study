@@ -7,6 +7,7 @@ import { Request, Response, NextFunction } from 'express';
 import { getRedisClient, redisKey } from '../services/redisStore';
 
 import { DEFAULT_AI_DAILY_LIMIT, DEFAULT_AI_FEATURE_LIMITS } from '@lantern/shared/utils/aiUsage';
+import { AI_CREDIT_COSTS, MAX_AI_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
 
 const userAIUsage = new Map<string, { count: number; dateKey: string }>();
 
@@ -47,9 +48,16 @@ function toResetsAt(resetTime: number): string {
   return new Date(resetTime).toISOString();
 }
 
-async function incrementUsage(
+/**
+ * Atomically reserve `cost` credits against `key`, all-or-nothing.
+ * Redis path: a single INCRBY, rolled back in full if it overshoots the limit —
+ * a denial can never partially consume credits (the old per-credit loop could).
+ * Negative cost releases credits (see refundAiCredits) and never goes below 0.
+ */
+async function reserveUsage(
   key: string,
-  limit: number
+  limit: number,
+  cost: number
 ): Promise<{ allowed: boolean; count: number; resetTime: number }> {
   const now = Date.now();
   const dateKey = getUtcDateKey(new Date(now));
@@ -58,34 +66,45 @@ async function incrementUsage(
 
   if (redis?.isOpen) {
     const rKey = redisKey(`ai:${dateKey}:${key}`);
-    const raw = await redis.get(rKey);
-    const current = raw ? parseInt(raw, 10) : 0;
-
-    if (current >= limit) {
-      return { allowed: false, count: current, resetTime };
+    const count = await redis.incrBy(rKey, cost);
+    const ttlSec = Math.ceil(msUntilNextUtcMidnight(now) / 1000);
+    if (count === cost || (await redis.ttl(rKey)) < 0) {
+      await redis.expire(rKey, ttlSec);
     }
-
-    const count = current === 0 ? 1 : await redis.incr(rKey);
-    if (current === 0) {
-      const ttlSec = Math.ceil(msUntilNextUtcMidnight(now) / 1000);
-      await redis.set(rKey, '1', { EX: ttlSec });
-      return { allowed: 1 <= limit, count: 1, resetTime };
+    if (cost < 0 && count < 0) {
+      // Refund below zero (double refund): clamp back to 0.
+      await redis.incrBy(rKey, -count);
+      return { allowed: true, count: 0, resetTime };
     }
-
-    return { allowed: count <= limit, count, resetTime };
+    if (cost > 0 && count > limit) {
+      await redis.incrBy(rKey, -cost);
+      return { allowed: false, count: count - cost, resetTime };
+    }
+    return { allowed: true, count, resetTime };
   }
 
   const usage = userAIUsage.get(key);
   if (usage && usage.dateKey === dateKey) {
-    if (usage.count >= limit) {
+    if (cost > 0 && usage.count + cost > limit) {
       return { allowed: false, count: usage.count, resetTime };
     }
-    usage.count++;
+    usage.count = Math.max(0, usage.count + cost);
     return { allowed: true, count: usage.count, resetTime };
   }
 
-  userAIUsage.set(key, { count: 1, dateKey });
-  return { allowed: true, count: 1, resetTime };
+  if (cost > limit) {
+    return { allowed: false, count: 0, resetTime };
+  }
+  userAIUsage.set(key, { count: Math.max(0, cost), dateKey });
+  return { allowed: true, count: Math.max(0, cost), resetTime };
+}
+
+async function incrementUsage(
+  key: string,
+  limit: number
+): Promise<{ allowed: boolean; count: number; resetTime: number }> {
+  // `current >= limit` (old predicate) ⇔ `current + 1 > limit` — behavior-identical.
+  return reserveUsage(key, limit, 1);
 }
 
 async function readUsage(
@@ -174,35 +193,108 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
 /** Soft credit cost for local OCR imports (default 2). Set NOTE_OCR_CREDIT_COST=0 to disable. */
 export const NOTE_OCR_CREDIT_COST = Math.max(
   0,
-  Math.min(10, parseInt(process.env.NOTE_OCR_CREDIT_COST || '2', 10) || 2)
+  Math.min(
+    MAX_AI_CREDIT_COST,
+    parseInt(process.env.NOTE_OCR_CREDIT_COST || String(AI_CREDIT_COSTS.note_ocr), 10) ||
+      AI_CREDIT_COSTS.note_ocr
+  )
 );
 
 /**
- * Charge multiple daily AI credits (used for OCR imports). Returns null when allowed,
- * or a 429 payload when the user would exceed the daily limit.
+ * Charge multiple daily AI credits atomically (all-or-nothing). Returns null
+ * when allowed, or a 429 payload when the user would exceed the daily limit —
+ * in which case NOTHING was consumed.
  */
 export async function chargeAiCredits(
   userId: string,
-  amount: number
+  amount: number,
+  label = 'OCR'
 ): Promise<null | { error: string; limit: number; used: number; resetsAt: string }> {
   const credits = Math.max(0, Math.floor(amount));
   if (credits <= 0) return null;
 
-  for (let i = 0; i < credits; i++) {
-    const result = await incrementUsage(userId, AI_DAILY_LIMIT);
+  const result = await reserveUsage(userId, AI_DAILY_LIMIT, credits);
+  if (!result.allowed) {
+    const remaining = Math.max(0, AI_DAILY_LIMIT - result.count);
+    return {
+      error:
+        credits > 1
+          ? `Daily AI limit reached. ${label} needs ${credits} credits — you have ${remaining} left today.`
+          : 'Daily AI limit reached. Try again tomorrow.',
+      limit: AI_DAILY_LIMIT,
+      used: result.count,
+      resetsAt: toResetsAt(result.resetTime),
+    };
+  }
+  return null;
+}
+
+/** Give back credits already reserved when a request bails before doing AI work. */
+export async function refundAiCredits(userId: string, amount: number): Promise<void> {
+  const credits = Math.max(0, Math.floor(amount));
+  if (credits <= 0) return;
+  await reserveUsage(userId, Number.MAX_SAFE_INTEGER, -credits);
+}
+
+export const AI_COST_HEADER = 'X-AI-Cost';
+
+/** Every response header this module can set. CORS must expose all of these. */
+export const AI_USAGE_EXPOSED_HEADERS = [
+  'X-AI-Feature',
+  'X-AI-Cost',
+  'X-AI-Usage-Used',
+  'X-AI-Usage-Limit',
+  'X-AI-Usage-Resets-At',
+  'X-AI-Global-Usage-Used',
+  'X-AI-Global-Usage-Limit',
+  'X-AI-Global-Usage-Resets-At',
+] as const;
+
+/**
+ * Charge a variable number of global AI credits based on the request, reserved
+ * atomically BEFORE the handler runs: a user who cannot afford the action is
+ * refused with a 429 without consuming anything or doing any work.
+ */
+export function aiRateLimitWithCost(
+  getCost: (req: Request) => number,
+  options: { label?: string } = {}
+) {
+  const label = options.label || 'This action';
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    const raw = Number(getCost(req));
+    const cost = Math.max(
+      1,
+      Math.min(MAX_AI_CREDIT_COST, Number.isFinite(raw) ? Math.floor(raw) : 1)
+    );
+
+    const result = await reserveUsage(userId, AI_DAILY_LIMIT, cost);
+    res.setHeader(AI_COST_HEADER, String(cost));
+    setLegacyAndGlobalUsageHeaders(res, result);
+
     if (!result.allowed) {
-      return {
+      const remaining = Math.max(0, AI_DAILY_LIMIT - result.count);
+      res.status(429).json({
         error:
-          credits > 1
-            ? `Daily AI limit reached. OCR needs ${credits} credits; try again tomorrow.`
+          cost > 1
+            ? `${label} needs ${cost} AI credits — you have ${remaining} left today.`
             : 'Daily AI limit reached. Try again tomorrow.',
         limit: AI_DAILY_LIMIT,
         used: result.count,
+        remaining,
+        cost,
         resetsAt: toResetsAt(result.resetTime),
-      };
+      });
+      return;
     }
-  }
-  return null;
+
+    (res.locals as Record<string, unknown>).aiCreditsCharged = cost;
+    next();
+  };
 }
 
 /** Attach current global AI usage headers (for OCR and other non-middleware charges). */

@@ -9,10 +9,13 @@ import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/ide
 import {
   aiRateLimit,
   aiRateLimitForFeature,
+  aiRateLimitWithCost,
   applyGlobalUsageHeaders,
   chargeAiCredits,
+  refundAiCredits,
   NOTE_OCR_CREDIT_COST,
 } from '../middleware/aiRateLimit';
+import { getSmartNotesCreditCost } from '@lantern/shared/utils/aiCredits';
 import {
   aiPostBurstRateLimit,
   collaboratorInviteRateLimit,
@@ -1855,14 +1858,22 @@ router.post(
   })
 );
 
-// AI-powered learn actions (Smart Notes). Counts as one daily AI credit via aiRateLimit;
-// long sources may use multiple internal model calls under this single route.
-router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+// AI-powered learn actions (Smart Notes). Credits scale with depth
+// (SMART_NOTES_CREDIT_COST: concise/standard 1, deep 3), reserved atomically
+// before any work; long sources may use multiple internal model calls under
+// this single charged action.
+router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitWithCost((req) => getSmartNotesCreditCost(req.body?.depth), { label: 'Deep dive Smart Notes' }), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
   const content = await resolveNoteStudyContent(note.id, note, { forSmartNotes: true });
   if (!content || content.length < MIN_NOTE_STUDY_CONTENT_CHARS) {
+    // No AI work happened — give the reserved credits back.
+    const charged = Number((res.locals as Record<string, unknown>).aiCreditsCharged) || 0;
+    if (charged > 0) {
+      await refundAiCredits(userId, charged);
+      await applyGlobalUsageHeaders(res, userId);
+    }
     res.status(400).json({
       error: `Note needs at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content to summarize. For scanned PDFs, wait for OCR or add your own notes.`,
     });

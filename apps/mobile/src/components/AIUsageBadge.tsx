@@ -27,6 +27,8 @@ interface AIUsageBadgeProps {
   showLoading?: boolean;
   /** When true, tapping the badge opens a detail modal with reset timing */
   interactive?: boolean;
+  /** Credits the adjacent action costs; shown inline, and remaining < cost renders as exhausted. */
+  cost?: number;
 }
 
 function useAIUsageTick(hasQuota: boolean, detailOpen: boolean) {
@@ -46,6 +48,7 @@ export default function AIUsageBadge({
   variant = 'badge',
   showLoading = false,
   interactive = false,
+  cost,
 }: AIUsageBadgeProps) {
   const { user } = useAuthStore();
   const { colors } = useTheme();
@@ -69,8 +72,9 @@ export default function AIUsageBadge({
   if (!usage.limit && !showLoading) return null;
 
   const ratio = usage.limit > 0 ? usage.remaining / usage.limit : 1;
+  const shortOfCredits = cost != null && usage.remaining < cost;
   const isLow = usage.remaining <= 2;
-  const isExhausted = usage.remaining <= 0;
+  const isExhausted = usage.remaining <= 0 || shortOfCredits;
 
   const statusColor = isExhausted
     ? colors.error
@@ -152,7 +156,11 @@ export default function AIUsageBadge({
   if (variant === 'inline') {
     return (
       <Text style={[styles.inlineText, { color: statusColor }]}>
-        {usage.remaining}/{usage.limit} AI uses left · {resetLabel}
+        {usage.remaining}/{usage.limit} AI uses left
+        {cost != null
+          ? ` · costs ${cost} credit${cost === 1 ? '' : 's'}${shortOfCredits ? ' — not enough' : ''}`
+          : ''}{' '}
+        · {resetLabel}
       </Text>
     );
   }

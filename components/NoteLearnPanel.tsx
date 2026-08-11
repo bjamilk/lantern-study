@@ -11,6 +11,13 @@ import {
   type SmartNotesRequestOptions,
 } from '@lantern/shared/utils/smartNotes';
 import {
+  SMART_NOTES_CREDIT_COST,
+  AI_CREDIT_COSTS,
+  formatCreditCost,
+} from '@lantern/shared/utils/aiCredits';
+import { subscribeToAIUsage, getLatestAIUsage, type AIUsageInfo } from '../services/ai';
+import AIUsageInline from './AIUsageInline';
+import {
   SparklesIcon,
   ChatBubbleLeftRightIcon,
   RectangleStackIcon,
@@ -46,6 +53,14 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   const [smartNoting, setSmartNoting] = useState(false);
   const [guidance, setGuidance] = useState('');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
+  const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
+
+  React.useEffect(() => subscribeToAIUsage(setUsage), []);
+
+  const remainingCredits = Math.max(0, usage.limit - usage.used);
+  const smartNotesCost = SMART_NOTES_CREDIT_COST[depth];
+  const shortForSmartNote = usage.limit > 0 && remainingCredits < smartNotesCost;
+  const shortForOneCredit = usage.limit > 0 && remainingCredits < 1;
   const isDark = theme === 'dark';
   const studyContent = getNoteStudyContent({
     sourceType: note.sourceType,
@@ -127,6 +142,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
               type="button"
               role="radio"
               aria-checked={depth === value}
+              aria-label={`${label}, ${formatCreditCost(SMART_NOTES_CREDIT_COST[value])}`}
               onClick={() => setDepth(value)}
               className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 depth === value
@@ -136,13 +152,14 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
                     : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:text-lantern-text'
               }`}
             >
-              {label}
+              {label} · {SMART_NOTES_CREDIT_COST[value]}
             </button>
           ))}
         </div>
         {depth === 'deep' && (
           <p className={`text-[11px] ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-            Deep dive covers more of long sources and adds a review pass — generation takes longer.
+            Deep dive covers more of long sources and adds a review pass — takes longer and costs{' '}
+            {formatCreditCost(SMART_NOTES_CREDIT_COST.deep)}.
           </p>
         )}
       </div>
@@ -150,8 +167,13 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
-          disabled={isBusy || smartNoting || contentLength < 30}
+          disabled={isBusy || smartNoting || contentLength < 30 || shortForSmartNote}
           onClick={handleSmartNote}
+          title={
+            shortForSmartNote
+              ? `Needs ${formatCreditCost(smartNotesCost)} — you have ${remainingCredits} left today`
+              : undefined
+          }
           className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-lantern-primary text-white hover:bg-lantern-primary-dark disabled:opacity-50"
         >
           {smartNoting ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <SparklesIcon className="w-4 h-4" />}
@@ -168,12 +190,14 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </button>
         <button
           type="button"
-          disabled={isBusy || !canGenerateStudyMaterials}
+          disabled={isBusy || !canGenerateStudyMaterials || shortForOneCredit}
           onClick={onGenerateFlashcards}
           title={
-            canGenerateStudyMaterials
-              ? undefined
-              : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
+            shortForOneCredit
+              ? 'No AI credits left today'
+              : canGenerateStudyMaterials
+                ? `Costs ${formatCreditCost(AI_CREDIT_COSTS.generate_flashcards)}`
+                : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
           }
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
@@ -182,18 +206,24 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </button>
         <button
           type="button"
-          disabled={isBusy || !canGenerateStudyMaterials}
+          disabled={isBusy || !canGenerateStudyMaterials || shortForOneCredit}
           onClick={onGenerateQuiz}
           title={
-            canGenerateStudyMaterials
-              ? undefined
-              : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
+            shortForOneCredit
+              ? 'No AI credits left today'
+              : canGenerateStudyMaterials
+                ? `Costs ${formatCreditCost(AI_CREDIT_COSTS.generate_questions)}`
+                : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
           }
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
           <QuestionMarkCircleIcon className="w-4 h-4" />
           Practice test
         </button>
+      </div>
+
+      <div className="mt-3">
+        <AIUsageInline cost={smartNotesCost} />
       </div>
     </div>
   );

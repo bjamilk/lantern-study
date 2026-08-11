@@ -37,6 +37,24 @@ export function applyAIUsageFromResponse(response: Response): void {
   parseGlobalAIUsageFromHeaders(response, updateUsage);
 }
 
+/**
+ * Apply usage from a 429 error body ({ used, limit, resetsAt }) so a refused
+ * request corrects the badge. Feature denials (body.feature set) use a
+ * different scale and are skipped.
+ */
+export function applyAIUsageFromErrorBody(data: unknown): void {
+  const body = data as { used?: number; limit?: number; resetsAt?: string; feature?: string };
+  if (!body || typeof body.used !== 'number' || typeof body.limit !== 'number') return;
+  if (body.feature) return;
+  if (body.limit !== _latestUsage.limit) return;
+  updateUsage({
+    used: body.used,
+    limit: body.limit,
+    remaining: Math.max(0, body.limit - body.used),
+    resetsAt: body.resetsAt || _latestUsage.resetsAt,
+  });
+}
+
 async function getCurrentUserId(): Promise<string | undefined> {
   const {
     data: { session },
