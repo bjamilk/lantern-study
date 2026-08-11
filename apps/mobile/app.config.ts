@@ -43,8 +43,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // This field is also the OTA runtime fence (runtimeVersion.policy: appVersion):
   // updates only reach binaries built from the same version. 1.0.2 binaries pair
   // with the pre-Reanimated-3 channel state and must never receive JS from here.
-  // 1.0.5: AI generate sheets no longer collapse on Android release builds.
-  version: '1.0.5',
+  // 1.0.6: Smart Notes guidance + depth presets, AI credit costs surfaced in
+  // the UI, and XP that tracks real study work.
+  version: '1.0.6',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

@@ -61,3 +61,6 @@ xcuserdata/
 build/
 DerivedData/
 *.xcuserstate
+
+# Agent worktrees / local session scratch
+.claude/
