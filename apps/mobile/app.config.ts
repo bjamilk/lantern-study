@@ -57,7 +57,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // other note.
   // 1.0.10: browse previous months in the budget, and a budget no longer leaks
   // into the month after the one it was set for.
-  version: '1.0.10',
+  // 1.0.11: deck exports share a real .json/.csv file instead of pasting the
+  // whole deck into a chat as message text (adds expo-sharing — native build).
+  version: '1.0.11',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

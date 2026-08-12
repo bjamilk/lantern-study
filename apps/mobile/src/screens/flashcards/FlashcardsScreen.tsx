@@ -6,7 +6,6 @@ import {
   Modal,
   Pressable,
   RefreshControl,
-  Share,
   Text,
   TextInput,
   View,
@@ -20,6 +19,7 @@ import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { exportDeck } from '../../services/api';
+import { shareTextFile, toSafeFileName, SharingUnavailableError } from '../../utils/shareFile';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import { FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
@@ -233,8 +233,16 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const handleShareDeck = async (deckId: string, name: string) => {
     try {
       const data = await exportDeck(deckId);
-      await Share.share({ message: JSON.stringify(data, null, 2), title: `${name}.json` });
+      await shareTextFile({
+        fileName: toSafeFileName(name || 'deck', 'json'),
+        contents: JSON.stringify(data, null, 2),
+        dialogTitle: `Share ${name}`,
+      });
     } catch (e) {
+      if (e instanceof SharingUnavailableError) {
+        Alert.alert('Sharing unavailable', 'This device cannot open a share sheet.');
+        return;
+      }
       Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export deck');
     }
   };

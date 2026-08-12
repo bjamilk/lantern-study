@@ -5,7 +5,6 @@ import {
   FlatList,
   Modal,
   Pressable,
-  Share,
   Text,
   TextInput,
   View,
@@ -14,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { shareTextFile, toSafeFileName, SharingUnavailableError } from '../../utils/shareFile';
 import { useAuthStore, useFlashcardStore, type Flashcard } from '../../stores';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import {
@@ -240,11 +240,16 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     setExporting(true);
     try {
       const data = await exportDeck(deckId);
-      await Share.share({
-        message: JSON.stringify(data, null, 2),
-        title: `${deckName}.json`,
+      await shareTextFile({
+        fileName: toSafeFileName(deckName || 'deck', 'json'),
+        contents: JSON.stringify(data, null, 2),
+        dialogTitle: `Share ${deckName}`,
       });
     } catch (e: unknown) {
+      if (e instanceof SharingUnavailableError) {
+        Alert.alert('Sharing unavailable', 'This device cannot open a share sheet.');
+        return;
+      }
       Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export deck');
     } finally {
       setExporting(false);
@@ -256,8 +261,16 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     setExporting(true);
     try {
       const csv = await exportDeckCsv(deckId);
-      await Share.share({ message: csv, title: `${deckName}.csv` });
+      await shareTextFile({
+        fileName: toSafeFileName(deckName || 'deck', 'csv'),
+        contents: csv,
+        dialogTitle: `Share ${deckName}`,
+      });
     } catch (e: unknown) {
+      if (e instanceof SharingUnavailableError) {
+        Alert.alert('Sharing unavailable', 'This device cannot open a share sheet.');
+        return;
+      }
       Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export CSV');
     } finally {
       setExporting(false);
