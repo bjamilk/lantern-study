@@ -241,6 +241,33 @@ export function isBudgetForMonth(
   return Boolean(budgetMonth) && budgetMonth === monthYear;
 }
 
+/**
+ * Step a `yyyy-mm` by whole months, rolling the year over correctly.
+ * `addMonths('2026-01', -1)` is `'2025-12'`.
+ */
+export function addMonths(monthYear: MonthYear, delta: number): MonthYear {
+  const parsed = parseMonthYear(monthYear);
+  if (!parsed) return monthYear;
+  // Date handles the year rollover; month is 0-indexed here.
+  const d = new Date(parsed.year, parsed.month - 1 + delta, 1);
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}`;
+}
+
+/** `2026-08` -> `August 2026`, for month pickers and headers. */
+export function formatMonthYear(monthYear: MonthYear, locale = 'en-US'): string {
+  const parsed = parseMonthYear(monthYear);
+  if (!parsed) return monthYear;
+  return new Date(parsed.year, parsed.month - 1, 1).toLocaleDateString(locale, {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/** Chronological `yyyy-mm` comparison: negative when `a` is earlier. */
+export function compareMonthYear(a: MonthYear, b: MonthYear): number {
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
 /** `yyyy-mm` for a date, using its LOCAL calendar fields. */
 export function toMonthYear(date: Date): MonthYear {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}`;

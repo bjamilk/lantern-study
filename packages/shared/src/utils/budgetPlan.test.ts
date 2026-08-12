@@ -1,5 +1,8 @@
 import {
+  addMonths,
+  compareMonthYear,
   computePeriodPace,
+  formatMonthYear,
   isBudgetForMonth,
   computeSpendPace,
   normalizeBudgetPlan,
@@ -212,5 +215,34 @@ describe('isBudgetForMonth', () => {
     expect(isBudgetForMonth(undefined, '2026-08')).toBe(false);
     expect(isBudgetForMonth(null, '2026-08')).toBe(false);
     expect(isBudgetForMonth('', '2026-08')).toBe(false);
+  });
+});
+
+describe('month navigation', () => {
+  it('steps backwards and forwards within a year', () => {
+    expect(addMonths('2026-08', -1)).toBe('2026-07');
+    expect(addMonths('2026-08', 1)).toBe('2026-09');
+    expect(addMonths('2026-08', -7)).toBe('2026-01');
+  });
+
+  it('rolls the year over in both directions', () => {
+    expect(addMonths('2026-01', -1)).toBe('2025-12');
+    expect(addMonths('2026-12', 1)).toBe('2027-01');
+    expect(addMonths('2026-01', -13)).toBe('2024-12');
+  });
+
+  it('leaves a malformed month alone rather than inventing one', () => {
+    expect(addMonths('nonsense', -1)).toBe('nonsense');
+  });
+
+  it('formats a month for a header', () => {
+    expect(formatMonthYear('2026-08')).toBe('August 2026');
+    expect(formatMonthYear('2026-01')).toBe('January 2026');
+  });
+
+  it('orders months chronologically, including across a year boundary', () => {
+    expect(compareMonthYear('2026-07', '2026-08')).toBeLessThan(0);
+    expect(compareMonthYear('2027-01', '2026-12')).toBeGreaterThan(0);
+    expect(compareMonthYear('2026-08', '2026-08')).toBe(0);
   });
 });

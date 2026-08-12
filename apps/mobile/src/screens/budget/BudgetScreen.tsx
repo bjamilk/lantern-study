@@ -22,6 +22,7 @@ import {
   useBudgetStore,
   formatCurrency,
   getProgressBarColor,
+  CATEGORY_COLORS,
   getCategoryLabel,
   type Transaction,
 } from '../../stores/budgetStore';
@@ -30,12 +31,16 @@ import { useAuthStore } from '../../stores/authStore';
 import { FeatureHero } from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import {
+  addMonths,
+  compareMonthYear,
   computePeriodPace,
   computeSpendPace,
+  formatMonthYear,
   isBudgetForMonth,
   normalizeBudgetPlan,
   summarizeBudgetPlan,
 } from '@lantern/shared/utils';
+import * as api from '../../services/api';
 import { featureAccents } from '@lantern/shared/design';
 
 const { width } = Dimensions.get('window');
@@ -63,10 +68,6 @@ export default function BudgetScreen() {
     transactions,
     budget,
     isLoading,
-    monthlyExpenses,
-    monthlyIncome,
-    budgetProgress,
-    expensesByCategory,
     savingsGoals,
     expenseSplits,
     walletBalance,
@@ -95,11 +96,65 @@ export default function BudgetScreen() {
   }, [userId, fetchTransactions, fetchBudget, loadBudgetExtras]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const monthlyTransactions = useMemo(() => 
-    transactions.filter(t => t.date.startsWith(currentMonth))
+  // Which month is on screen. Everything below reads this, not the clock, so
+  // history is the same view as today rather than a separate screen.
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const isCurrentMonth = selectedMonth === currentMonth;
+
+  const monthlyTransactions = useMemo(() =>
+    transactions.filter(t => t.date.startsWith(selectedMonth))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    [transactions, currentMonth]
+    [transactions, selectedMonth]
   );
+
+  // The store's totals only ever describe the current month, so a past month
+  // computes its own from the transactions already held.
+  const monthExpenses = useMemo(
+    () => monthlyTransactions.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0),
+    [monthlyTransactions]
+  );
+  const monthIncome = useMemo(
+    () => monthlyTransactions.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0),
+    [monthlyTransactions]
+  );
+  const monthCategories = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const t of monthlyTransactions) {
+      if (t.type !== 'EXPENSE') continue;
+      totals[t.category] = (totals[t.category] || 0) + t.amount;
+    }
+    return Object.entries(totals)
+      .map(([categoryId, amount], i) => ({
+        name: getCategoryLabel(categoryId, 'EXPENSE'),
+        amount,
+        color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [monthlyTransactions]);
+
+  // A past month's cap lives in user_budgets, keyed by month. Fetch it on demand.
+  const [historicalLimit, setHistoricalLimit] = useState<number | null>(null);
+  useEffect(() => {
+    if (isCurrentMonth || !userId) {
+      setHistoricalLimit(null);
+      return;
+    }
+    let cancelled = false;
+    setHistoricalLimit(null);
+    void api
+      .fetchUserBudget(userId, selectedMonth)
+      .then(row => {
+        if (cancelled) return;
+        const limit = Number((row as any)?.monthly_limit ?? (row as any)?.monthlyLimit ?? 0);
+        setHistoricalLimit(Number.isFinite(limit) ? limit : 0);
+      })
+      .catch(() => {
+        if (!cancelled) setHistoricalLimit(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCurrentMonth, selectedMonth, userId]);
 
   const filteredTransactions = useMemo(() => {
     if (txFilter === 'income') return monthlyTransactions.filter(t => t.type === 'INCOME');
@@ -107,11 +162,11 @@ export default function BudgetScreen() {
     return monthlyTransactions;
   }, [monthlyTransactions, txFilter]);
 
-  const biggestCategory = expensesByCategory[0];
-  const avgDailySpend = monthlyExpenses / Math.max(1, new Date().getDate());
+  const biggestCategory = monthCategories[0];
+  const avgDailySpend = monthExpenses / Math.max(1, new Date().getDate());
   const projectedMonth = avgDailySpend * 30;
 
-  const netAmount = monthlyIncome - monthlyExpenses;
+  const netAmount = monthIncome - monthExpenses;
 
   // Zero-based view of the month: what is planned, and how far the calendar has
   // run against how much has been spent. Both come from @lantern/shared so the
@@ -119,21 +174,33 @@ export default function BudgetScreen() {
   // A budget belongs to the month it was saved for. Last month's cap must not
   // score this month's spending, and last month's plan must not reappear as if
   // it were this month's.
-  const activeBudget = useMemo(
-    () => (budget && isBudgetForMonth(budget.month, currentMonth) ? budget : null),
-    [budget, currentMonth]
-  );
+  const activeBudget = useMemo(() => {
+    if (isCurrentMonth) {
+      return budget && isBudgetForMonth(budget.month, currentMonth) ? budget : null;
+    }
+    // Past months: only the cap is recoverable. The plan (expected income and
+    // planned savings) is stored as a single current blob, not per month, so
+    // history shows what you spent against the limit you had — not a plan.
+    return historicalLimit && historicalLimit > 0
+      ? { userId, month: selectedMonth, monthlyLimit: historicalLimit }
+      : null;
+  }, [isCurrentMonth, budget, currentMonth, historicalLimit, selectedMonth, userId]);
 
   const plan = useMemo(
-    () => normalizeBudgetPlan(activeBudget, currentMonth),
-    [activeBudget, currentMonth]
+    () => normalizeBudgetPlan(activeBudget, selectedMonth),
+    [activeBudget, selectedMonth]
   );
   const planSummary = useMemo(() => summarizeBudgetPlan(plan), [plan]);
-  const pace = useMemo(() => computePeriodPace(currentMonth, new Date()), [currentMonth]);
+  const pace = useMemo(() => computePeriodPace(selectedMonth, new Date()), [selectedMonth]);
   const spendPace = useMemo(
-    () => computeSpendPace(monthlyExpenses, planSummary.totalPlannedExpenses, pace),
-    [monthlyExpenses, planSummary.totalPlannedExpenses, pace]
+    () => computeSpendPace(monthExpenses, planSummary.totalPlannedExpenses, pace),
+    [monthExpenses, planSummary.totalPlannedExpenses, pace]
   );
+
+  const monthProgress =
+    activeBudget && activeBudget.monthlyLimit > 0
+      ? (monthExpenses / activeBudget.monthlyLimit) * 100
+      : 0;
 
   const handleDeleteTransaction = useCallback((transaction: Transaction) => {
     Alert.alert(
@@ -159,20 +226,20 @@ export default function BudgetScreen() {
 
   // Prepare pie chart data
   const pieData = useMemo(() => {
-    if (expensesByCategory.length === 0) return [];
-    return expensesByCategory.map(cat => ({
+    if (monthCategories.length === 0) return [];
+    return monthCategories.map(cat => ({
       value: cat.amount,
       color: cat.color,
       text: cat.name,
     }));
-  }, [expensesByCategory]);
+  }, [monthCategories]);
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2">
         <FeatureHero
           title="Campus Pocket"
-          subtitle={new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          subtitle={formatMonthYear(selectedMonth)}
           accentColor={featureAccents.budget}
           right={
             <TouchableOpacity
@@ -185,10 +252,10 @@ export default function BudgetScreen() {
         >
           <View className="flex-row flex-wrap gap-2">
             <View className="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30">
-              <Text className="text-xs font-medium text-lantern-success">Income {formatCurrency(monthlyIncome)}</Text>
+              <Text className="text-xs font-medium text-lantern-success">Income {formatCurrency(monthIncome)}</Text>
             </View>
             <View className="px-2.5 py-1 rounded-full bg-lantern-accent-background">
-              <Text className="text-xs font-medium text-lantern-accent">Spent {formatCurrency(monthlyExpenses)}</Text>
+              <Text className="text-xs font-medium text-lantern-accent">Spent {formatCurrency(monthExpenses)}</Text>
             </View>
             <View className="px-2.5 py-1 rounded-full bg-lantern-primary-background">
               <Text className="text-xs font-medium text-lantern-primary">Net {formatCurrency(netAmount)}</Text>
@@ -236,23 +303,60 @@ export default function BudgetScreen() {
       >
         {activeTab === 'overview' && (
           <>
+        {/* Month switcher — forward stops at the current month; there is nothing
+            to show in the future, and pretending otherwise reads as a bug. */}
+        <View style={[styles.monthSwitcher, { backgroundColor: colors.card }]}>
+          <TouchableOpacity
+            onPress={() => setSelectedMonth(m => addMonths(m, -1))}
+            style={styles.monthArrow}
+            accessibilityLabel="Previous month"
+          >
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <View style={styles.monthLabelWrap}>
+            <Text style={[styles.monthLabel, { color: colors.text }]}>
+              {formatMonthYear(selectedMonth)}
+            </Text>
+            {!isCurrentMonth && (
+              <TouchableOpacity onPress={() => setSelectedMonth(currentMonth)}>
+                <Text style={styles.monthTodayLink}>Back to this month</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={() => setSelectedMonth(m => addMonths(m, 1))}
+            disabled={compareMonthYear(selectedMonth, currentMonth) >= 0}
+            style={[
+              styles.monthArrow,
+              compareMonthYear(selectedMonth, currentMonth) >= 0 && styles.monthArrowDisabled,
+            ]}
+            accessibilityLabel="Next month"
+          >
+            <Ionicons name="chevron-forward" size={20} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
         {/* Budget Progress Card */}
         <View style={[styles.budgetCard, { backgroundColor: colors.card }]}>
           <View style={styles.budgetHeader}>
-            <Text style={[styles.budgetTitle, { color: colors.text }]}>This Month's Budget</Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('SetBudget')}
-            >
-              <Text style={styles.editBudgetText}>
-                {budget ? 'Edit' : 'Set Budget'}
-              </Text>
-            </TouchableOpacity>
+            <Text style={[styles.budgetTitle, { color: colors.text }]}>
+              {isCurrentMonth ? "This Month's Budget" : `${formatMonthYear(selectedMonth)} Budget`}
+            </Text>
+            {isCurrentMonth && (
+              <TouchableOpacity
+                onPress={() => navigation.navigate('SetBudget')}
+              >
+                <Text style={styles.editBudgetText}>
+                  {budget ? 'Edit' : 'Set Budget'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {activeBudget ? (
             <>
               <View style={styles.budgetAmounts}>
-                <Text style={[styles.spentAmount, { color: colors.text }]}>{formatCurrency(monthlyExpenses)}</Text>
+                <Text style={[styles.spentAmount, { color: colors.text }]}>{formatCurrency(monthExpenses)}</Text>
                 <Text style={[styles.totalAmount, { color: colors.textSecondary }]}>/ {formatCurrency(activeBudget.monthlyLimit)}</Text>
               </View>
 
@@ -262,8 +366,8 @@ export default function BudgetScreen() {
                     style={[
                       styles.progressBar,
                       {
-                        width: `${Math.min(budgetProgress, 100)}%`,
-                        backgroundColor: getProgressBarColor(budgetProgress),
+                        width: `${Math.min(monthProgress, 100)}%`,
+                        backgroundColor: getProgressBarColor(monthProgress),
                       },
                     ]}
                   />
@@ -271,9 +375,9 @@ export default function BudgetScreen() {
               </View>
 
               <Text style={[styles.budgetStatus, { color: colors.textSecondary }]}>
-                {budgetProgress <= 100
-                  ? `${formatCurrency(activeBudget.monthlyLimit - monthlyExpenses)} left to spend`
-                  : `${formatCurrency(monthlyExpenses - activeBudget.monthlyLimit)} over budget`}
+                {monthProgress <= 100
+                  ? `${formatCurrency(activeBudget.monthlyLimit - monthExpenses)} left to spend`
+                  : `${formatCurrency(monthExpenses - activeBudget.monthlyLimit)} over budget`}
               </Text>
 
               {/* Pace — "85% spent" means nothing without knowing it is day 3. */}
@@ -360,14 +464,14 @@ export default function BudgetScreen() {
             <View style={styles.summaryItem}>
               <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Income</Text>
               <Text style={[styles.summaryValue, { color: '#22c55e' }]}>
-                {formatCurrency(monthlyIncome)}
+                {formatCurrency(monthIncome)}
               </Text>
             </View>
             <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
             <View style={styles.summaryItem}>
               <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Expenses</Text>
               <Text style={[styles.summaryValue, { color: '#ef4444' }]}>
-                {formatCurrency(monthlyExpenses)}
+                {formatCurrency(monthExpenses)}
               </Text>
             </View>
             <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
@@ -442,14 +546,14 @@ export default function BudgetScreen() {
                 centerLabelComponent={() => (
                   <View style={styles.chartCenter}>
                     <Text style={[styles.chartCenterAmount, { color: colors.text }]}>
-                      {formatCurrency(monthlyExpenses)}
+                      {formatCurrency(monthExpenses)}
                     </Text>
                     <Text style={[styles.chartCenterLabel, { color: colors.textSecondary }]}>Total</Text>
                   </View>
                 )}
               />
               <View style={styles.legendContainer}>
-                {expensesByCategory.slice(0, 5).map((cat, index) => (
+                {monthCategories.slice(0, 5).map((cat, index) => (
                   <View key={cat.name} style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: cat.color }]} />
                     <Text style={[styles.legendText, { color: colors.text }]} numberOfLines={1}>
@@ -644,7 +748,7 @@ export default function BudgetScreen() {
               <View style={styles.insightsGrid}>
                 <View style={[styles.insightItem, { backgroundColor: colors.backgroundSecondary }]}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Budget used</Text>
-                  <Text style={[styles.summaryValue, { color: colors.text }]}>{Math.round(budgetProgress)}%</Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>{Math.round(monthProgress)}%</Text>
                 </View>
                 <View style={[styles.insightItem, { backgroundColor: colors.backgroundSecondary }]}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Avg daily</Text>
@@ -692,7 +796,7 @@ export default function BudgetScreen() {
                     innerCircleColor={colors.card}
                   />
                   <View style={styles.legendContainer}>
-                    {expensesByCategory.slice(0, 6).map(cat => (
+                    {monthCategories.slice(0, 6).map(cat => (
                       <View key={cat.name} style={styles.legendItem}>
                         <View style={[styles.legendDot, { backgroundColor: cat.color }]} />
                         <Text style={[styles.legendText, { color: colors.text }]} numberOfLines={1}>{cat.name}</Text>
@@ -780,6 +884,36 @@ const styles = StyleSheet.create({
   totalAmount: {
     fontSize: 16,
     color: '#9ca3af',
+  },
+  monthSwitcher: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  monthArrow: {
+    padding: 8,
+    minWidth: 44,
+    alignItems: 'center',
+  },
+  monthArrowDisabled: {
+    opacity: 0.25,
+  },
+  monthLabelWrap: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  monthLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  monthTodayLink: {
+    fontSize: 11,
+    color: '#6366f1',
+    marginTop: 2,
   },
   paceRow: {
     flexDirection: 'row',

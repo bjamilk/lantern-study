@@ -1,12 +1,16 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {
+  addMonths,
+  compareMonthYear,
   computePeriodPace,
   computeSpendPace,
+  formatMonthYear,
   isBudgetForMonth,
   normalizeBudgetPlan,
   summarizeBudgetPlan,
 } from '@lantern/shared/utils';
+import { fetchUserBudget } from '../services/supabase';
 import { User, Transaction, Budget, TransactionType, SavingsGoal, STUDENT_EXPENSE_CATEGORIES, STUDENT_INCOME_CATEGORIES, FinancialTip } from '../types';
 import {
   CreditCardIcon, ArrowUpIcon, ArrowDownIcon, PlusCircleIcon,
@@ -108,30 +112,63 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   }, [currentUser?.id, refreshBudgetTransactions, refreshBudgetWallet, claimUnderBudgetAward]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const monthName = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  // Which month is on screen. Everything below reads this rather than the clock.
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const isCurrentMonth = selectedMonth === currentMonth;
+  const monthName = formatMonthYear(selectedMonth);
 
   const { monthlyExpenses, monthlyIncome, monthlyTransactions } = useMemo(() => {
-    const filtered = transactions.filter(t => t.date.startsWith(currentMonth));
+    const filtered = transactions.filter(t => t.date.startsWith(selectedMonth));
     const expenses = filtered.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + t.amount, 0);
     const income = filtered.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + t.amount, 0);
     return { monthlyExpenses: expenses, monthlyIncome: income, monthlyTransactions: filtered };
-  }, [transactions, currentMonth]);
+  }, [transactions, selectedMonth]);
+
+  // A past month's cap lives in user_budgets, keyed by month.
+  const [historicalBudget, setHistoricalBudget] = useState<Budget | null>(null);
+  useEffect(() => {
+    if (isCurrentMonth || !currentUser?.id) {
+      setHistoricalBudget(null);
+      return;
+    }
+    let cancelled = false;
+    setHistoricalBudget(null);
+    void fetchUserBudget(currentUser.id, selectedMonth)
+      .then((row: any) => {
+        if (cancelled) return;
+        const limit = Number(row?.monthlyLimit ?? row?.monthly_limit ?? 0);
+        setHistoricalBudget(
+          limit > 0 ? { monthlyLimit: limit, monthYear: selectedMonth, userId: currentUser.id } : null
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setHistoricalBudget(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCurrentMonth, selectedMonth, currentUser?.id]);
 
   // A budget belongs to the month it was saved for; a stored one from an earlier
   // month must not become this month's cap when the calendar rolls over.
-  const activeBudget =
-    budget && isBudgetForMonth(budget.monthYear, currentMonth) ? budget : null;
+  // Past months recover only the cap: the plan (expected income, planned
+  // savings) is stored as one current blob, not per month.
+  const activeBudget = isCurrentMonth
+    ? budget && isBudgetForMonth(budget.monthYear, currentMonth)
+      ? budget
+      : null
+    : historicalBudget;
   const budgetLimit = activeBudget?.monthlyLimit || 0;
   const budgetProgress = budgetLimit > 0 ? (monthlyExpenses / budgetLimit) * 100 : 0;
 
   // Zero-based view of the month plus calendar pace. Both come from
   // @lantern/shared so mobile renders exactly the same figures.
   const plan = React.useMemo(
-    () => normalizeBudgetPlan(activeBudget, currentMonth),
-    [activeBudget, currentMonth]
+    () => normalizeBudgetPlan(activeBudget, selectedMonth),
+    [activeBudget, selectedMonth]
   );
   const planSummary = React.useMemo(() => summarizeBudgetPlan(plan), [plan]);
-  const pace = React.useMemo(() => computePeriodPace(currentMonth, new Date()), [currentMonth]);
+  const pace = React.useMemo(() => computePeriodPace(selectedMonth, new Date()), [selectedMonth]);
   const spendPace = React.useMemo(
     () => computeSpendPace(monthlyExpenses, planSummary.totalPlannedExpenses, pace),
     [monthlyExpenses, planSummary.totalPlannedExpenses, pace]
@@ -305,12 +342,47 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
       <div className="p-4 md:p-6 flex-1 min-h-0 overflow-y-auto">
         <TabPanel value="overview" className="space-y-6">
+            {/* Month switcher — forward stops at the current month. */}
+            <div className="flex items-center justify-between bg-lantern-surface rounded-2xl px-2 py-2 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(m => addMonths(m, -1))}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-lantern-text hover:bg-lantern-background-secondary"
+                aria-label="Previous month"
+              >
+                ‹
+              </button>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-lantern-text">{monthName}</p>
+                {!isCurrentMonth && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMonth(currentMonth)}
+                    className="text-xs text-lantern-primary hover:underline"
+                  >
+                    Back to this month
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(m => addMonths(m, 1))}
+                disabled={compareMonthYear(selectedMonth, currentMonth) >= 0}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-25"
+                aria-label="Next month"
+              >
+                ›
+              </button>
+            </div>
+
             {/* Budget Progress */}
             {budgetLimit > 0 ? (
               <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold text-lantern-text">Monthly Budget</h3>
-                  {onOpenSetMonthlyPlan && (
+                  <h3 className="font-semibold text-lantern-text">
+                    {isCurrentMonth ? 'Monthly Budget' : `${monthName} Budget`}
+                  </h3>
+                  {isCurrentMonth && onOpenSetMonthlyPlan && (
                     <button onClick={onOpenSetMonthlyPlan} className="text-xs text-lantern-primary hover:underline">Category Budgets</button>
                   )}
                 </div>
@@ -401,8 +473,14 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             ) : (
               <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm text-center">
                 <div className="text-4xl mb-2">💰</div>
-                <p className="text-lantern-text-secondary">No budget set for this month</p>
-                <button onClick={onOpenSetBudget} className="mt-2 text-lantern-primary font-semibold hover:underline text-sm">Set your monthly budget</button>
+                <p className="text-lantern-text-secondary">
+                  {isCurrentMonth
+                    ? 'No budget set for this month'
+                    : `No budget was set for ${monthName}`}
+                </p>
+                {isCurrentMonth && (
+                  <button onClick={onOpenSetBudget} className="mt-2 text-lantern-primary font-semibold hover:underline text-sm">Set your monthly budget</button>
+                )}
               </div>
             )}
 
