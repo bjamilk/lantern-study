@@ -48,6 +48,8 @@ import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpd
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner';
+import { shareTextFile, SharingUnavailableError } from '../../utils/shareFile';
+import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 
 const ACCENT_PRESETS = ['#6569EE', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
 const THEME_OPTIONS = [
@@ -291,18 +293,45 @@ export default function SettingsScreen() {
     );
   }, [signOut]);
 
+  /**
+   * Hand the export to the share sheet so it can actually leave the phone.
+   * It used to write the file and then only print the path in an alert — a
+   * sandboxed path the user has no way to open, which for a GDPR data export
+   * means the right to obtain your data stopped one step short of delivering it.
+   */
   const handleExportData = useCallback(async () => {
     const userId = useAuthStore.getState().user?.id;
     if (!userId) return;
+    let payload: unknown;
     try {
       const res = await exportUserData(userId);
-      const payload = (res as any)?.data ?? res;
-      const FileSystem = await import('expo-file-system/legacy');
-      const path = `${FileSystem.documentDirectory}lantern-export-${Date.now()}.json`;
-      await FileSystem.writeAsStringAsync(path, JSON.stringify(payload, null, 2));
-      Alert.alert('Export saved', `Your data was saved to:\n${path}`);
+      payload = (res as any)?.data ?? res;
     } catch {
       Alert.alert('Export failed', 'You may only export once every 24 hours.');
+      return;
+    }
+
+    // The export itself succeeded; a sharing problem must not be reported as a
+    // rate limit, and must not lose the data.
+    try {
+      const stamp = toDateOnlyLocal(new Date());
+      await shareTextFile({
+        fileName: `lantern-export-${stamp}.json`,
+        contents: JSON.stringify(payload, null, 2),
+        dialogTitle: 'Export your Lantern Study data',
+      });
+    } catch (shareError) {
+      if (shareError instanceof SharingUnavailableError) {
+        Alert.alert(
+          'Sharing unavailable',
+          'This device cannot open a share sheet, so the export could not be sent anywhere.'
+        );
+        return;
+      }
+      Alert.alert(
+        'Export failed',
+        shareError instanceof Error ? shareError.message : 'Could not share your data.'
+      );
     }
   }, []);
 
