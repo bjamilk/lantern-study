@@ -59,7 +59,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // into the month after the one it was set for.
   // 1.0.11: deck exports share a real .json/.csv file instead of pasting the
   // whole deck into a chat as message text (adds expo-sharing — native build).
-  version: '1.0.11',
+  // 1.0.12: the applicant CSV and the account data export share real files too,
+  // and a sharing failure no longer reports itself as an export rate limit.
+  version: '1.0.12',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
