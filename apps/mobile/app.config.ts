@@ -52,7 +52,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.8: the budget is a plan, not just a cap — expected income and planned
   // savings, a live "left to allocate", and spend measured against the calendar.
   // The monthly limit finally syncs with the web (its API route did not exist).
-  version: '1.0.8',
+  // 1.0.9: photo notes are read by OCR — text is pulled off photographs
+  // automatically and feeds Smart Notes, flashcards and quizzes like any
+  // other note.
+  version: '1.0.9',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
