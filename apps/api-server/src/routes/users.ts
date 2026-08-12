@@ -1474,4 +1474,117 @@ router.delete(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Monthly budget (user_budgets)
+//
+// The mobile client has always called these two paths, but nothing served them:
+// both returned 404 and both clients swallow the failure (fetch catches to null,
+// save logs a warning). The web client sidesteps the API and writes user_budgets
+// through Supabase directly, so a budget set on web was invisible on mobile and
+// a budget set on mobile never left the device. Serving them here puts both
+// clients on one source of truth.
+// ---------------------------------------------------------------------------
+
+export const MONTH_YEAR_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** Current month as `yyyy-mm` (UTC — callers should pass their own month). */
+export function currentMonthYear(now: Date = new Date()): string {
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+// GET /api/v1/users/:userId/budget?monthYear=YYYY-MM
+router.get(
+  '/:userId/budget',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const requested = typeof req.query.monthYear === 'string' ? req.query.monthYear : '';
+    if (requested && !MONTH_YEAR_RE.test(requested)) {
+      return res.status(400).json({ success: false, error: 'monthYear must be YYYY-MM' });
+    }
+    const monthYear = requested || currentMonthYear();
+
+    const { data, error } = await supabaseService.getClient()
+      .from('user_budgets')
+      .select('monthly_limit, month_year')
+      .eq('user_id', userId)
+      .eq('month_year', monthYear)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    // No budget for the month is a normal state, not an error — the clients
+    // treat a null payload as "keep what you have".
+    res.json({
+      success: true,
+      data: data
+        ? { monthly_limit: Number(data.monthly_limit) || 0, month_year: data.month_year }
+        : null,
+    });
+  })
+);
+
+// PUT /api/v1/users/:userId/budget
+router.put(
+  '/:userId/budget',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const { monthlyLimit, monthYear } = req.body ?? {};
+    const limit = Number(monthlyLimit);
+    if (!Number.isFinite(limit) || limit < 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: 'monthlyLimit must be a non-negative number' });
+    }
+    if (typeof monthYear !== 'string' || !MONTH_YEAR_RE.test(monthYear)) {
+      return res.status(400).json({ success: false, error: 'monthYear must be YYYY-MM' });
+    }
+
+    logger.debug('Saving user budget', { userId, monthYear, requestingUserId });
+
+    const { data, error } = await supabaseService.getClient()
+      .from('user_budgets')
+      .upsert(
+        {
+          user_id: userId,
+          month_year: monthYear,
+          monthly_limit: limit,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,month_year' }
+      )
+      .select('monthly_limit, month_year')
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: {
+        monthly_limit: Number(data?.monthly_limit ?? limit) || 0,
+        month_year: data?.month_year ?? monthYear,
+      },
+    });
+  })
+);
+
 export default router;
