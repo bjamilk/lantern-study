@@ -3,7 +3,6 @@ import {
   Linking,
   Pressable,
   ScrollView,
-  Share,
   Text,
   TextInput,
   View,
@@ -28,6 +27,11 @@ import {
   type JobPosting,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
+import {
+  sanitizeFileName,
+  shareTextFile,
+  SharingUnavailableError,
+} from "../../utils/shareFile";
 import { JobApplicantNotes } from "../../components/jobs/JobApplicantNotes";
 import { JobBulkActionsBar } from "../../components/jobs/JobBulkActionsBar";
 import { JobInterviewScheduler } from "../../components/jobs/JobInterviewScheduler";
@@ -161,8 +165,25 @@ export function JobApplicantsScreen() {
     }
   };
 
+  /**
+   * Share the applicant list as a real .csv. It used to go out as message text,
+   * which for a spreadsheet is useless — the recipient cannot open it in Excel
+   * or Sheets, and a long list simply becomes an unreadable wall in a chat.
+   */
   const shareCsv = async (csv: string, filename: string) => {
-    await Share.share({ message: csv, title: filename });
+    try {
+      await shareTextFile({
+        fileName: sanitizeFileName(filename, 'csv'),
+        contents: csv,
+        dialogTitle: posting?.title ? `Applicants — ${posting.title}` : 'Applicants',
+      });
+    } catch (shareError) {
+      if (shareError instanceof SharingUnavailableError) {
+        setError('This device cannot open a share sheet.');
+        return;
+      }
+      throw shareError;
+    }
   };
 
   const exportSelected = async () => {

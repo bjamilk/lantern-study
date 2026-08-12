@@ -10,30 +10,13 @@
  */
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import {
+  MIME_BY_EXTENSION,
+  sanitizeFileName,
+  UTI_BY_EXTENSION,
+} from './shareFileName';
 
-/** Strip anything a file system would object to, and keep it recognisable. */
-export function toSafeFileName(name: string, extension: string): string {
-  const base = (name || 'export')
-    .replace(/[^a-z0-9]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase()
-    .slice(0, 60);
-  return `${base || 'export'}.${extension}`;
-}
-
-const MIME_BY_EXTENSION: Record<string, string> = {
-  json: 'application/json',
-  csv: 'text/csv',
-  txt: 'text/plain',
-  apkg: 'application/octet-stream',
-};
-
-/** iOS needs a Uniform Type Identifier to offer sensible share targets. */
-const UTI_BY_EXTENSION: Record<string, string> = {
-  json: 'public.json',
-  csv: 'public.comma-separated-values-text',
-  txt: 'public.plain-text',
-};
+export { sanitizeFileName, toSafeFileName } from './shareFileName';
 
 export interface ShareTextFileOptions {
   /** File name without a path; the extension decides the MIME type. */
@@ -60,10 +43,11 @@ export async function shareTextFile({
   contents,
   dialogTitle,
 }: ShareTextFileOptions): Promise<string> {
-  const extension = fileName.split('.').pop()?.toLowerCase() || 'txt';
+  const safeName = sanitizeFileName(fileName);
+  const extension = safeName.split('.').pop()?.toLowerCase() || 'txt';
   // cacheDirectory, not documentDirectory: an export is a hand-off, not a
   // document the app needs to keep, and the OS can reclaim it.
-  const path = `${FileSystem.cacheDirectory}${fileName}`;
+  const path = `${FileSystem.cacheDirectory}${safeName}`;
 
   await FileSystem.writeAsStringAsync(path, contents);
 
@@ -74,7 +58,7 @@ export async function shareTextFile({
   await Sharing.shareAsync(path, {
     mimeType: MIME_BY_EXTENSION[extension] || 'application/octet-stream',
     UTI: UTI_BY_EXTENSION[extension],
-    dialogTitle: dialogTitle || fileName,
+    dialogTitle: dialogTitle || safeName,
   });
 
   return path;
