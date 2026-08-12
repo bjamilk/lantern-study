@@ -32,6 +32,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import {
   computePeriodPace,
   computeSpendPace,
+  isBudgetForMonth,
   normalizeBudgetPlan,
   summarizeBudgetPlan,
 } from '@lantern/shared/utils';
@@ -115,12 +116,17 @@ export default function BudgetScreen() {
   // Zero-based view of the month: what is planned, and how far the calendar has
   // run against how much has been spent. Both come from @lantern/shared so the
   // web client shows identical numbers.
-  const plan = useMemo(
-    () => normalizeBudgetPlan(
-      budget,
-      currentMonth
-    ),
+  // A budget belongs to the month it was saved for. Last month's cap must not
+  // score this month's spending, and last month's plan must not reappear as if
+  // it were this month's.
+  const activeBudget = useMemo(
+    () => (budget && isBudgetForMonth(budget.month, currentMonth) ? budget : null),
     [budget, currentMonth]
+  );
+
+  const plan = useMemo(
+    () => normalizeBudgetPlan(activeBudget, currentMonth),
+    [activeBudget, currentMonth]
   );
   const planSummary = useMemo(() => summarizeBudgetPlan(plan), [plan]);
   const pace = useMemo(() => computePeriodPace(currentMonth, new Date()), [currentMonth]);
@@ -243,11 +249,11 @@ export default function BudgetScreen() {
             </TouchableOpacity>
           </View>
 
-          {budget ? (
+          {activeBudget ? (
             <>
               <View style={styles.budgetAmounts}>
                 <Text style={[styles.spentAmount, { color: colors.text }]}>{formatCurrency(monthlyExpenses)}</Text>
-                <Text style={[styles.totalAmount, { color: colors.textSecondary }]}>/ {formatCurrency(budget.monthlyLimit)}</Text>
+                <Text style={[styles.totalAmount, { color: colors.textSecondary }]}>/ {formatCurrency(activeBudget.monthlyLimit)}</Text>
               </View>
 
               <View style={styles.progressContainer}>
@@ -266,8 +272,8 @@ export default function BudgetScreen() {
 
               <Text style={[styles.budgetStatus, { color: colors.textSecondary }]}>
                 {budgetProgress <= 100
-                  ? `${formatCurrency(budget.monthlyLimit - monthlyExpenses)} left to spend`
-                  : `${formatCurrency(monthlyExpenses - budget.monthlyLimit)} over budget`}
+                  ? `${formatCurrency(activeBudget.monthlyLimit - monthlyExpenses)} left to spend`
+                  : `${formatCurrency(monthlyExpenses - activeBudget.monthlyLimit)} over budget`}
               </Text>
 
               {/* Pace — "85% spent" means nothing without knowing it is day 3. */}

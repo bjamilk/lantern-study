@@ -3,6 +3,7 @@ import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {
   computePeriodPace,
   computeSpendPace,
+  isBudgetForMonth,
   normalizeBudgetPlan,
   summarizeBudgetPlan,
 } from '@lantern/shared/utils';
@@ -116,14 +117,18 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
     return { monthlyExpenses: expenses, monthlyIncome: income, monthlyTransactions: filtered };
   }, [transactions, currentMonth]);
 
-  const budgetLimit = budget?.monthlyLimit || 0;
+  // A budget belongs to the month it was saved for; a stored one from an earlier
+  // month must not become this month's cap when the calendar rolls over.
+  const activeBudget =
+    budget && isBudgetForMonth(budget.monthYear, currentMonth) ? budget : null;
+  const budgetLimit = activeBudget?.monthlyLimit || 0;
   const budgetProgress = budgetLimit > 0 ? (monthlyExpenses / budgetLimit) * 100 : 0;
 
   // Zero-based view of the month plus calendar pace. Both come from
   // @lantern/shared so mobile renders exactly the same figures.
   const plan = React.useMemo(
-    () => normalizeBudgetPlan(budget, currentMonth),
-    [budget, currentMonth]
+    () => normalizeBudgetPlan(activeBudget, currentMonth),
+    [activeBudget, currentMonth]
   );
   const planSummary = React.useMemo(() => summarizeBudgetPlan(plan), [plan]);
   const pace = React.useMemo(() => computePeriodPace(currentMonth, new Date()), [currentMonth]);
@@ -372,9 +377,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                   </div>
                 )}
                 {/* Category budget bars */}
-                {budget?.categoryBudgets && Object.keys(budget.categoryBudgets).length > 0 && (
+                {activeBudget?.categoryBudgets && Object.keys(activeBudget.categoryBudgets).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-lantern-border space-y-2">
-                    {Object.entries(budget.categoryBudgets).slice(0, 5).map(([catId, limit]) => {
+                    {Object.entries(activeBudget.categoryBudgets).slice(0, 5).map(([catId, limit]) => {
                       const spent = monthlyTransactions.filter(t => t.type === TransactionType.EXPENSE && t.category === catId).reduce((s, t) => s + t.amount, 0);
                       const cat = getCategoryInfo(catId, TransactionType.EXPENSE);
                       const pct = limit > 0 ? (spent / limit) * 100 : 0;

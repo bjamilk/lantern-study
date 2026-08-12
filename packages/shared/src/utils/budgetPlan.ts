@@ -226,6 +226,21 @@ export function computeSpendPace(
   return { spentRatio, elapsedRatio: pace.elapsedRatio, expectedSpendToDate, spendVsExpected, verdict };
 }
 
+/**
+ * True when a stored budget belongs to the month being viewed.
+ *
+ * The budget object is cached locally and reloaded on launch, but nothing used
+ * to check which month it was for — so on the 1st of a new month last month's
+ * limit, category budgets and plan silently became this month's, and the
+ * progress bar compared new spending against an old cap.
+ */
+export function isBudgetForMonth(
+  budgetMonth: string | undefined | null,
+  monthYear: MonthYear
+): boolean {
+  return Boolean(budgetMonth) && budgetMonth === monthYear;
+}
+
 /** `yyyy-mm` for a date, using its LOCAL calendar fields. */
 export function toMonthYear(date: Date): MonthYear {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}`;

@@ -1,5 +1,6 @@
 import {
   computePeriodPace,
+  isBudgetForMonth,
   computeSpendPace,
   normalizeBudgetPlan,
   summarizeBudgetPlan,
@@ -195,5 +196,21 @@ describe('toMonthYear', () => {
   it('pads single-digit months and uses local calendar fields', () => {
     expect(toMonthYear(new Date(2026, 0, 31))).toBe('2026-01');
     expect(toMonthYear(new Date(2026, 11, 1))).toBe('2026-12');
+  });
+});
+
+describe('isBudgetForMonth', () => {
+  it('accepts a budget saved for the month being viewed', () => {
+    expect(isBudgetForMonth('2026-08', '2026-08')).toBe(true);
+  });
+
+  it('rejects last month\u2019s budget — the carry-over bug', () => {
+    expect(isBudgetForMonth('2026-07', '2026-08')).toBe(false);
+  });
+
+  it('rejects a budget with no month rather than assuming it is current', () => {
+    expect(isBudgetForMonth(undefined, '2026-08')).toBe(false);
+    expect(isBudgetForMonth(null, '2026-08')).toBe(false);
+    expect(isBudgetForMonth('', '2026-08')).toBe(false);
   });
 });

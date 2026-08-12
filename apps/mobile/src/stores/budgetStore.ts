@@ -5,6 +5,7 @@
  * Uses local-first approach: data is stored in AsyncStorage and synced with Supabase.
  */
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
+import { isBudgetForMonth } from '@lantern/shared/utils';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
@@ -433,7 +434,8 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
 
       // Sync with API
       try {
-        const apiBudget = await api.fetchUserBudget(userId);
+        // Ask for THIS month explicitly rather than relying on the default.
+        const apiBudget = await api.fetchUserBudget(userId, new Date().toISOString().slice(0, 7));
         if (apiBudget) {
           const existing = get().budget;
           const budget: Budget = {
@@ -639,8 +641,14 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       .filter(t => t.type === 'INCOME')
       .reduce((sum, t) => sum + t.amount, 0);
 
-    // Calculate budget progress
-    const budgetProgress = budget ? (monthlyExpenses / budget.monthlyLimit) * 100 : 0;
+    // Only a budget saved FOR this month may score this month. Without the
+    // check, on the 1st the previous month's cap silently became the new one.
+    const activeBudget =
+      budget && isBudgetForMonth(budget.month, currentMonth) ? budget : null;
+    const budgetProgress =
+      activeBudget && activeBudget.monthlyLimit > 0
+        ? (monthlyExpenses / activeBudget.monthlyLimit) * 100
+        : 0;
 
     // Calculate expenses by category
     const categoryMap: { [key: string]: number } = {};
