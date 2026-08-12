@@ -16,23 +16,69 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useBudgetStore, formatCurrency } from '../../stores/budgetStore';
+import { ScrollView } from 'react-native';
+import {
+  useBudgetStore,
+  formatCurrency,
+  INCOME_CATEGORIES,
+} from '../../stores/budgetStore';
+import { summarizeBudgetPlan } from '@lantern/shared/utils';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 
 export default function SetBudgetScreen() {
   const navigation = useNavigation<any>();
   const userId = useAuthStore(s => s.user?.id) || '';
-  const { budget, setBudget, isLoading } = useBudgetStore();
+  const { budget, setBudget, setBudgetPlan, isLoading } = useBudgetStore();
   const { colors } = useTheme();
 
   const [amount, setAmount] = useState('');
+  // Planned income per category and a savings allocation — the half that turns a
+  // spending cap into a plan you can balance.
+  const [income, setIncome] = useState<Record<string, string>>({});
+  const [savings, setSavings] = useState('');
 
   useEffect(() => {
-    if (budget?.targetAmount) {
-      setAmount(budget.targetAmount.toString());
+    if (budget?.monthlyLimit) {
+      setAmount(budget.monthlyLimit.toString());
+    }
+    if (budget?.plannedIncome) {
+      setIncome(
+        Object.fromEntries(
+          Object.entries(budget.plannedIncome).map(([k, v]) => [k, String(v)])
+        )
+      );
+    }
+    if (budget?.plannedSavings) {
+      setSavings(String(budget.plannedSavings));
     }
   }, [budget]);
+
+  const toNumber = (value: string) => {
+    const n = parseFloat(value);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
+  const plannedIncome = React.useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(income)) {
+      const n = toNumber(value);
+      if (n > 0) out[key] = n;
+    }
+    return out;
+  }, [income]);
+
+  const planSummary = React.useMemo(
+    () =>
+      summarizeBudgetPlan({
+        monthYear: budget?.month ?? new Date().toISOString().slice(0, 7),
+        monthlyLimit: toNumber(amount),
+        plannedExpenses: budget?.categoryBudgets ?? {},
+        plannedIncome,
+        plannedSavings: toNumber(savings),
+      }),
+    [amount, savings, plannedIncome, budget?.categoryBudgets, budget?.month]
+  );
 
   const formatAmountInput = (value: string) => {
     const numericValue = value.replace(/[^0-9.]/g, '');
@@ -52,13 +98,17 @@ export default function SetBudgetScreen() {
 
     try {
       await setBudget(userId, amountNum);
+      await setBudgetPlan(userId, {
+        plannedIncome,
+        plannedSavings: toNumber(savings),
+      });
       Alert.alert('Success', 'Budget saved successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (error) {
       Alert.alert('Error', 'Failed to save budget. Please try again.');
     }
-  }, [amount, setBudget, navigation]);
+  }, [amount, setBudget, setBudgetPlan, userId, plannedIncome, savings, navigation]);
 
   const currentMonth = new Date().toLocaleDateString('en-NG', {
     month: 'long',
@@ -90,7 +140,11 @@ export default function SetBudgetScreen() {
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.content}>
+        <ScrollView
+          style={styles.keyboardView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Month Display */}
           <View style={[styles.monthContainer, { backgroundColor: colors.card }]}>
             <Ionicons name="calendar" size={20} color="#6366f1" />
@@ -116,6 +170,103 @@ export default function SetBudgetScreen() {
               Set a spending limit for this month
             </Text>
           </View>
+
+          {/* Planned income — without it there is nothing to balance against. */}
+          <View style={styles.planSection}>
+            <Text style={[styles.suggestionsTitle, { color: colors.text }]}>
+              Expected income
+            </Text>
+            <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
+              What you expect to receive this month. Leave a row blank if it does
+              not apply.
+            </Text>
+            {INCOME_CATEGORIES.map(cat => (
+              <View
+                key={cat.id}
+                style={[styles.planRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Text style={[styles.planRowLabel, { color: colors.text }]} numberOfLines={1}>
+                  {cat.icon}  {cat.label}
+                </Text>
+                <View style={styles.planRowInputWrap}>
+                  <Text style={[styles.planRowCurrency, { color: colors.textSecondary }]}>₦</Text>
+                  <TextInput
+                    style={[styles.planRowInput, { color: colors.text }]}
+                    placeholder="0"
+                    placeholderTextColor={colors.textSecondary}
+                    value={income[cat.id] ?? ''}
+                    onChangeText={val =>
+                      setIncome(prev => ({ ...prev, [cat.id]: val.replace(/[^0-9.]/g, '') }))
+                    }
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* Savings as a planned allocation, competing with expenses. */}
+          <View style={styles.planSection}>
+            <Text style={[styles.suggestionsTitle, { color: colors.text }]}>
+              Planned savings
+            </Text>
+            <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
+              <Text style={styles.currencySymbol}>₦</Text>
+              <TextInput
+                style={[styles.amountInput, { color: colors.text }]}
+                placeholder="0.00"
+                placeholderTextColor={colors.textSecondary}
+                value={savings}
+                onChangeText={val => setSavings(val.replace(/[^0-9.]/g, ''))}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
+              Set aside first, rather than hoping for leftovers
+            </Text>
+          </View>
+
+          {/* The zero-based check, live as you type. */}
+          {planSummary.totalPlannedIncome > 0 && (
+            <View
+              style={[
+                styles.balanceCard,
+                {
+                  backgroundColor: planSummary.isBalanced ? '#22c55e18' : colors.card,
+                  borderColor: planSummary.isBalanced ? '#22c55e' : colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>
+                {planSummary.isBalanced
+                  ? 'Balanced — every naira has a job'
+                  : planSummary.leftToAllocate > 0
+                    ? 'Left to allocate'
+                    : 'Over-committed by'}
+              </Text>
+              <Text
+                style={[
+                  styles.balanceValue,
+                  {
+                    color: planSummary.isBalanced
+                      ? '#22c55e'
+                      : planSummary.leftToAllocate > 0
+                        ? colors.text
+                        : '#ef4444',
+                  },
+                ]}
+              >
+                {planSummary.isBalanced
+                  ? '✓'
+                  : formatCurrency(Math.abs(Math.round(planSummary.leftToAllocate)))}
+              </Text>
+              <Text style={[styles.balanceHint, { color: colors.textSecondary }]}>
+                {formatCurrency(planSummary.totalPlannedIncome)} income −{' '}
+                {formatCurrency(planSummary.totalPlannedExpenses)} expenses −{' '}
+                {formatCurrency(planSummary.plannedSavings)} savings
+              </Text>
+            </View>
+          )}
 
           {/* Quick Amount Suggestions */}
           <View style={styles.suggestionsSection}>
@@ -157,7 +308,7 @@ export default function SetBudgetScreen() {
               </Text>
             </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -211,6 +362,14 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+  // flexGrow, not flex: as a contentContainerStyle, `flex: 1` pins the content
+  // to the viewport height and the form silently refuses to scroll — which hid
+  // the savings input and the balance card below the fold.
+  scrollContent: {
+    flexGrow: 1,
+    padding: 20,
+    paddingBottom: 48,
+  },
   monthContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -253,6 +412,62 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
     marginTop: 12,
+  },
+  planSection: {
+    marginBottom: 24,
+  },
+  planRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 8,
+    gap: 8,
+  },
+  planRowLabel: {
+    fontSize: 13,
+    flexShrink: 1,
+    flexGrow: 1,
+  },
+  planRowInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 110,
+  },
+  planRowCurrency: {
+    fontSize: 14,
+    marginRight: 2,
+  },
+  planRowInput: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+    paddingVertical: 4,
+    textAlign: 'right',
+  },
+  balanceCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  balanceLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  balanceValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  balanceHint: {
+    fontSize: 11,
+    marginTop: 6,
+    textAlign: 'center',
   },
   suggestionsSection: {
     marginBottom: 32,

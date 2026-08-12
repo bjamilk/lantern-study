@@ -61,8 +61,8 @@ export default function SetCategoryBudgetScreen() {
           </Card>
         ))}
         <Button onPress={() => void save()}>Save category plan</Button>
-        {budget?.targetAmount ? (
-          <Text className="text-center text-xs text-lantern-text-secondary">Overall budget: {formatCurrency(budget.targetAmount)}</Text>
+        {budget?.monthlyLimit ? (
+          <Text className="text-center text-xs text-lantern-text-secondary">Overall budget: {formatCurrency(budget.monthlyLimit)}</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>

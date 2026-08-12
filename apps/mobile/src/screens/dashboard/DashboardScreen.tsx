@@ -662,7 +662,7 @@ export function DashboardScreen({ navigation }: Props) {
           hasDecks={decks.length > 0}
           hasTests={(stats?.totalTestsTaken ?? 0) > 0}
           hasGroups={groups.length > 0}
-          hasBudget={Boolean(budget?.targetAmount && budget.targetAmount > 0) || transactions.length > 0}
+          hasBudget={Boolean(budget?.monthlyLimit && budget.monthlyLimit > 0) || transactions.length > 0}
           hasTriedCompanion={companionOpen}
           onCreateDeck={() => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'flashcards' } })}
           onTakeTest={() => parent?.navigate('StudyTab', { screen: 'TestsList' })}

@@ -43,6 +43,9 @@ export function useBudgetHandlers() {
                     monthYear: currentMonth,
                     userId: currentUser.id,
                     categoryBudgets: budget?.categoryBudgets,
+                    // A bare amount must not silently wipe the plan.
+                    plannedIncome: budget?.plannedIncome,
+                    plannedSavings: budget?.plannedSavings,
                 }
                 : {
                     ...input,
@@ -66,6 +69,8 @@ export function useBudgetHandlers() {
             savingsGoals,
             expenseSplits,
             categoryBudgets: newBudget.categoryBudgets,
+            plannedIncome: newBudget.plannedIncome,
+            plannedSavings: newBudget.plannedSavings,
         }).catch(error => {
             console.error('[Budget Sync] Failed to save category budgets:', error);
         });

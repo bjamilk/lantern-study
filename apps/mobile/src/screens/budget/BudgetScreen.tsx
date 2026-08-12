@@ -117,7 +117,7 @@ export default function BudgetScreen() {
   // web client shows identical numbers.
   const plan = useMemo(
     () => normalizeBudgetPlan(
-      budget ? { ...budget, monthlyLimit: budget.targetAmount } : null,
+      budget,
       currentMonth
     ),
     [budget, currentMonth]
@@ -247,7 +247,7 @@ export default function BudgetScreen() {
             <>
               <View style={styles.budgetAmounts}>
                 <Text style={[styles.spentAmount, { color: colors.text }]}>{formatCurrency(monthlyExpenses)}</Text>
-                <Text style={[styles.totalAmount, { color: colors.textSecondary }]}>/ {formatCurrency(budget.targetAmount)}</Text>
+                <Text style={[styles.totalAmount, { color: colors.textSecondary }]}>/ {formatCurrency(budget.monthlyLimit)}</Text>
               </View>
 
               <View style={styles.progressContainer}>
@@ -266,8 +266,8 @@ export default function BudgetScreen() {
 
               <Text style={[styles.budgetStatus, { color: colors.textSecondary }]}>
                 {budgetProgress <= 100
-                  ? `${formatCurrency(budget.targetAmount - monthlyExpenses)} left to spend`
-                  : `${formatCurrency(monthlyExpenses - budget.targetAmount)} over budget`}
+                  ? `${formatCurrency(budget.monthlyLimit - monthlyExpenses)} left to spend`
+                  : `${formatCurrency(monthlyExpenses - budget.monthlyLimit)} over budget`}
               </Text>
 
               {/* Pace — "85% spent" means nothing without knowing it is day 3. */}

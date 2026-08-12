@@ -45,7 +45,8 @@ export interface Transaction {
 export interface Budget {
   userId: string;
   month: string; // YYYY-MM format
-  targetAmount: number;
+  /** Monthly expense cap. Same field the API and web client call monthlyLimit. */
+  monthlyLimit: number;
   categoryBudgets?: Record<string, number>; // category -> allocated amount
   /** Planned income per category — the other half of a zero-based plan. */
   plannedIncome?: Record<string, number>;
@@ -233,8 +234,23 @@ const DEMO_TRANSACTIONS: Transaction[] = [
 const DEMO_BUDGET: Budget = {
   userId: 'demo-user',
   month: new Date().toISOString().slice(0, 7),
-  targetAmount: 100000,
+  monthlyLimit: 100000,
 };
+
+/** Accept both the current and pre-rename cached budget shapes. */
+function normalizeStoredBudget(raw: unknown): Budget | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const b = raw as Partial<Budget> & { targetAmount?: number };
+  const limit = Number(b.monthlyLimit ?? b.targetAmount ?? 0);
+  return {
+    userId: String(b.userId ?? ''),
+    month: String(b.month ?? new Date().toISOString().slice(0, 7)),
+    monthlyLimit: Number.isFinite(limit) ? limit : 0,
+    categoryBudgets: b.categoryBudgets,
+    plannedIncome: b.plannedIncome,
+    plannedSavings: b.plannedSavings,
+  };
+}
 
 // Helper function to merge local and remote transactions
 const mergeTransactions = (local: Transaction[], remote: Transaction[]): Transaction[] => {
@@ -409,7 +425,9 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
 
       // Load from local storage first
       const stored = await AsyncStorage.getItem('monthlyBudget');
-      const localBudget = stored ? JSON.parse(stored) : null;
+      // Payloads cached before the rename carry targetAmount; without this an
+      // upgrading user's budget reads as undefined until the next server fetch.
+      const localBudget = stored ? normalizeStoredBudget(JSON.parse(stored)) : null;
       set({ budget: localBudget });
       get().computeStats();
 
@@ -421,7 +439,7 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
           const budget: Budget = {
             userId: userId,
             month: (apiBudget as any).month_year || (apiBudget as any).monthYear || existing?.month || new Date().toISOString().slice(0, 7),
-            targetAmount: Number((apiBudget as any).monthly_limit ?? (apiBudget as any).monthlyLimit ?? 0),
+            monthlyLimit: Number((apiBudget as any).monthly_limit ?? (apiBudget as any).monthlyLimit ?? 0),
             // The budget row holds only the limit; the plan lives in budgetExtras.
             categoryBudgets: existing?.categoryBudgets,
             plannedIncome: existing?.plannedIncome,
@@ -546,7 +564,7 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       const newBudget: Budget = {
         userId,
         month: currentMonth,
-        targetAmount: amount,
+        monthlyLimit: amount,
         categoryBudgets: categoryBudgets ?? get().budget?.categoryBudgets,
         plannedIncome: get().budget?.plannedIncome,
         plannedSavings: get().budget?.plannedSavings,
@@ -589,7 +607,7 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
     const next: Budget = {
       userId,
       month: current?.month ?? new Date().toISOString().slice(0, 7),
-      targetAmount: current?.targetAmount ?? 0,
+      monthlyLimit: current?.monthlyLimit ?? 0,
       categoryBudgets: current?.categoryBudgets,
       plannedIncome: plan.plannedIncome ?? current?.plannedIncome,
       plannedSavings: plan.plannedSavings ?? current?.plannedSavings,
@@ -622,7 +640,7 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       .reduce((sum, t) => sum + t.amount, 0);
 
     // Calculate budget progress
-    const budgetProgress = budget ? (monthlyExpenses / budget.targetAmount) * 100 : 0;
+    const budgetProgress = budget ? (monthlyExpenses / budget.monthlyLimit) * 100 : 0;
 
     // Calculate expenses by category
     const categoryMap: { [key: string]: number } = {};
@@ -672,7 +690,7 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
               ? {
                   userId,
                   month: new Date().toISOString().slice(0, 7),
-                  targetAmount: 0,
+                  monthlyLimit: 0,
                   categoryBudgets: cloudExtras.categoryBudgets,
                   plannedIncome: cloudExtras.plannedIncome,
                   plannedSavings: cloudExtras.plannedSavings,
