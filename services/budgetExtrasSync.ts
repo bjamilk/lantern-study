@@ -7,6 +7,10 @@ export interface BudgetExtras {
   /** Display-only on client; server preferences POST preserves authoritative balance. */
   walletBalance?: number;
   categoryBudgets?: Record<string, number>;
+  /** Planned income per category — the other half of a zero-based plan. */
+  plannedIncome?: Record<string, number>;
+  /** Planned savings allocation for the month. */
+  plannedSavings?: number;
   walletAwards?: Record<string, number>;
 }
 
@@ -18,6 +22,12 @@ export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | 
     savingsGoals: Array.isArray(extras.savingsGoals) ? extras.savingsGoals : [],
     expenseSplits: Array.isArray(extras.expenseSplits) ? extras.expenseSplits : [],
     walletBalance: typeof extras.walletBalance === 'number' ? extras.walletBalance : 0,
+    plannedIncome:
+      extras.plannedIncome && typeof extras.plannedIncome === 'object'
+        ? (extras.plannedIncome as Record<string, number>)
+        : undefined,
+    plannedSavings:
+      typeof extras.plannedSavings === 'number' ? extras.plannedSavings : undefined,
     categoryBudgets:
       extras.categoryBudgets && typeof extras.categoryBudgets === 'object'
         ? extras.categoryBudgets
@@ -43,6 +53,8 @@ export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Pr
         savingsGoals: extras.savingsGoals,
         expenseSplits: extras.expenseSplits,
         categoryBudgets: extras.categoryBudgets,
+        plannedIncome: extras.plannedIncome,
+        plannedSavings: extras.plannedSavings,
         // Pass through existing server values so merge has a fallback if needed
         walletBalance:
           typeof existingExtras?.walletBalance === 'number' ? existingExtras.walletBalance : 0,

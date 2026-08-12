@@ -9,7 +9,12 @@ export interface BudgetExtrasState {
   savingsGoals: any[];
   expenseSplits: any[];
   walletBalance: number;
+  /** Planned expenses per category (legacy name, kept for stored data). */
   categoryBudgets?: Record<string, number>;
+  /** Planned income per category — the other half of a zero-based plan. */
+  plannedIncome?: Record<string, number>;
+  /** Planned savings allocation for the month. */
+  plannedSavings?: number;
   walletAwards?: Record<string, number>;
 }
 
@@ -90,6 +95,14 @@ export class WalletService {
         extras.categoryBudgets && typeof extras.categoryBudgets === 'object'
           ? extras.categoryBudgets
           : undefined,
+      plannedIncome:
+        extras.plannedIncome && typeof extras.plannedIncome === 'object'
+          ? extras.plannedIncome
+          : undefined,
+      plannedSavings:
+        typeof extras.plannedSavings === 'number' && Number.isFinite(extras.plannedSavings)
+          ? Math.max(0, extras.plannedSavings)
+          : undefined,
       walletAwards:
         extras.walletAwards && typeof extras.walletAwards === 'object' ? extras.walletAwards : {},
     };
@@ -114,6 +127,8 @@ export class WalletService {
         expenseSplits: extras.expenseSplits,
         walletBalance: Math.max(0, extras.walletBalance),
         categoryBudgets: extras.categoryBudgets,
+        plannedIncome: extras.plannedIncome,
+        plannedSavings: extras.plannedSavings,
         walletAwards: extras.walletAwards || {},
       },
     };

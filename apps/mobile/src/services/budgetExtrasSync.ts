@@ -11,6 +11,10 @@ export interface BudgetExtras {
   expenseSplits: ExpenseSplit[];
   walletBalance?: number;
   categoryBudgets?: Record<string, number>;
+  /** Planned income per category — the other half of a zero-based plan. */
+  plannedIncome?: Record<string, number>;
+  /** Planned savings allocation for the month. */
+  plannedSavings?: number;
   walletAwards?: Record<string, number>;
 }
 
@@ -27,6 +31,12 @@ export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | 
         extras.categoryBudgets && typeof extras.categoryBudgets === 'object'
           ? (extras.categoryBudgets as Record<string, number>)
           : undefined,
+      plannedIncome:
+        extras.plannedIncome && typeof extras.plannedIncome === 'object'
+          ? (extras.plannedIncome as Record<string, number>)
+          : undefined,
+      plannedSavings:
+        typeof extras.plannedSavings === 'number' ? extras.plannedSavings : undefined,
       walletAwards:
         extras.walletAwards && typeof extras.walletAwards === 'object'
           ? (extras.walletAwards as Record<string, number>)
@@ -56,6 +66,8 @@ export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Pr
           savingsGoals: extras.savingsGoals,
           expenseSplits: extras.expenseSplits,
           categoryBudgets: extras.categoryBudgets,
+          plannedIncome: extras.plannedIncome,
+          plannedSavings: extras.plannedSavings,
           walletBalance:
             typeof existingExtras.walletBalance === 'number' ? existingExtras.walletBalance : 0,
           walletAwards:

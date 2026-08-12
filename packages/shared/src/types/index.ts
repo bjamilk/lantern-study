@@ -725,7 +725,15 @@ export interface Budget {
   monthlyLimit: number;
   monthYear: string;
   userId?: string;
+  /** Planned expenses per category. Legacy name; see BudgetPlan.plannedExpenses. */
   categoryBudgets?: Record<string, number>;
+  /**
+   * Planned income per category. Without this the budget is only a spending
+   * cap — it is what makes "income − (expenses + savings)" answerable.
+   */
+  plannedIncome?: Record<string, number>;
+  /** Planned savings allocation for the month. */
+  plannedSavings?: number;
 }
 
 export interface SavingsGoal {

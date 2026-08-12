@@ -16,6 +16,7 @@ export * from './aiCredits';
 export * from './aiUsage';
 export * from './marketplaceBudget';
 export * from './walletCoins';
+export * from './budgetPlan';
 export * from './marketplacePromo';
 export * from './storageUrl';
 export * from './sentryScrub';

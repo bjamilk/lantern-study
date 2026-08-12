@@ -36,11 +36,21 @@ export interface Transaction {
   date: string; // ISO Date string
 }
 
+/**
+ * NOTE: `targetAmount` here is the same concept the web client and the API call
+ * `monthlyLimit` (mapped in fetchBudget below). The plan fields deliberately use
+ * the shared names so both clients feed @lantern/shared's budgetPlan helpers
+ * unchanged; folding targetAmount into that shared shape is the remaining step.
+ */
 export interface Budget {
   userId: string;
   month: string; // YYYY-MM format
   targetAmount: number;
   categoryBudgets?: Record<string, number>; // category -> allocated amount
+  /** Planned income per category — the other half of a zero-based plan. */
+  plannedIncome?: Record<string, number>;
+  /** Planned savings allocation for the month. */
+  plannedSavings?: number;
 }
 
 export interface SavingsGoal {
@@ -253,6 +263,8 @@ const scheduleBudgetExtrasSync = (userId: string, getState: () => BudgetState) =
       savingsGoals,
       expenseSplits,
       categoryBudgets: budget?.categoryBudgets,
+      plannedIncome: budget?.plannedIncome,
+      plannedSavings: budget?.plannedSavings,
     }).catch(err => {
       console.warn('Failed to sync budget extras:', err);
     });
@@ -293,6 +305,10 @@ interface BudgetState {
   addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
   deleteTransaction: (transactionId: string) => Promise<void>;
   setBudget: (userId: string, amount: number, categoryBudgets?: Record<string, number>) => Promise<void>;
+  setBudgetPlan: (
+    userId: string,
+    plan: { plannedIncome?: Record<string, number>; plannedSavings?: number }
+  ) => Promise<void>;
   computeStats: () => void;
   clearError: () => void;
 
@@ -406,7 +422,10 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
             userId: userId,
             month: (apiBudget as any).month_year || (apiBudget as any).monthYear || existing?.month || new Date().toISOString().slice(0, 7),
             targetAmount: Number((apiBudget as any).monthly_limit ?? (apiBudget as any).monthlyLimit ?? 0),
+            // The budget row holds only the limit; the plan lives in budgetExtras.
             categoryBudgets: existing?.categoryBudgets,
+            plannedIncome: existing?.plannedIncome,
+            plannedSavings: existing?.plannedSavings,
           };
           await AsyncStorage.setItem('monthlyBudget', JSON.stringify(budget));
           set({ budget, isLoading: false });
@@ -529,6 +548,8 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
         month: currentMonth,
         targetAmount: amount,
         categoryBudgets: categoryBudgets ?? get().budget?.categoryBudgets,
+        plannedIncome: get().budget?.plannedIncome,
+        plannedSavings: get().budget?.plannedSavings,
       };
 
       // Update local storage immediately
@@ -556,6 +577,32 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       set({ error: error.message, isLoading: false });
       throw error;
     }
+  },
+
+  /**
+   * Save the planning half of the budget: what income is expected and how much
+   * of it is earmarked for savings. Stored in budgetExtras alongside the
+   * per-category expense plan — the user_budgets row only holds the limit.
+   */
+  setBudgetPlan: async (userId, plan) => {
+    const current = get().budget;
+    const next: Budget = {
+      userId,
+      month: current?.month ?? new Date().toISOString().slice(0, 7),
+      targetAmount: current?.targetAmount ?? 0,
+      categoryBudgets: current?.categoryBudgets,
+      plannedIncome: plan.plannedIncome ?? current?.plannedIncome,
+      plannedSavings: plan.plannedSavings ?? current?.plannedSavings,
+    };
+
+    set({ budget: next });
+    get().computeStats();
+    try {
+      await AsyncStorage.setItem('monthlyBudget', JSON.stringify(next));
+    } catch (error) {
+      console.warn('Failed to cache budget plan locally:', error);
+    }
+    if (!DEMO_MODE) scheduleBudgetExtrasSync(userId, get);
   },
 
   computeStats: () => {
@@ -618,13 +665,17 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
             ? {
                 ...currentBudget,
                 categoryBudgets: cloudExtras.categoryBudgets ?? currentBudget.categoryBudgets,
+                plannedIncome: cloudExtras.plannedIncome ?? currentBudget.plannedIncome,
+                plannedSavings: cloudExtras.plannedSavings ?? currentBudget.plannedSavings,
               }
-            : cloudExtras.categoryBudgets
+            : cloudExtras.categoryBudgets || cloudExtras.plannedIncome || cloudExtras.plannedSavings
               ? {
                   userId,
                   month: new Date().toISOString().slice(0, 7),
                   targetAmount: 0,
                   categoryBudgets: cloudExtras.categoryBudgets,
+                  plannedIncome: cloudExtras.plannedIncome,
+                  plannedSavings: cloudExtras.plannedSavings,
                 }
               : currentBudget,
         });

@@ -29,6 +29,12 @@ import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { FeatureHero } from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import {
+  computePeriodPace,
+  computeSpendPace,
+  normalizeBudgetPlan,
+  summarizeBudgetPlan,
+} from '@lantern/shared/utils';
 import { featureAccents } from '@lantern/shared/design';
 
 const { width } = Dimensions.get('window');
@@ -105,6 +111,23 @@ export default function BudgetScreen() {
   const projectedMonth = avgDailySpend * 30;
 
   const netAmount = monthlyIncome - monthlyExpenses;
+
+  // Zero-based view of the month: what is planned, and how far the calendar has
+  // run against how much has been spent. Both come from @lantern/shared so the
+  // web client shows identical numbers.
+  const plan = useMemo(
+    () => normalizeBudgetPlan(
+      budget ? { ...budget, monthlyLimit: budget.targetAmount } : null,
+      currentMonth
+    ),
+    [budget, currentMonth]
+  );
+  const planSummary = useMemo(() => summarizeBudgetPlan(plan), [plan]);
+  const pace = useMemo(() => computePeriodPace(currentMonth, new Date()), [currentMonth]);
+  const spendPace = useMemo(
+    () => computeSpendPace(monthlyExpenses, planSummary.totalPlannedExpenses, pace),
+    [monthlyExpenses, planSummary.totalPlannedExpenses, pace]
+  );
 
   const handleDeleteTransaction = useCallback((transaction: Transaction) => {
     Alert.alert(
@@ -246,6 +269,35 @@ export default function BudgetScreen() {
                   ? `${formatCurrency(budget.targetAmount - monthlyExpenses)} left to spend`
                   : `${formatCurrency(monthlyExpenses - budget.targetAmount)} over budget`}
               </Text>
+
+              {/* Pace — "85% spent" means nothing without knowing it is day 3. */}
+              {spendPace.verdict !== 'no-budget' && (
+                <View style={styles.paceRow}>
+                  <Ionicons
+                    name={
+                      spendPace.verdict === 'over'
+                        ? 'alert-circle'
+                        : spendPace.verdict === 'ahead'
+                          ? 'trending-up'
+                          : 'checkmark-circle'
+                    }
+                    size={14}
+                    color={
+                      spendPace.verdict === 'over'
+                        ? '#ef4444'
+                        : spendPace.verdict === 'ahead'
+                          ? '#f59e0b'
+                          : '#22c55e'
+                    }
+                  />
+                  <Text style={[styles.paceText, { color: colors.textSecondary }]}>
+                    {`Day ${pace.daysElapsed} of ${pace.daysInPeriod} (${Math.round(pace.elapsedRatio * 100)}%) · ${Math.round(spendPace.spentRatio * 100)}% spent`}
+                    {spendPace.verdict === 'ahead'
+                      ? ` — ${formatCurrency(Math.round(spendPace.spendVsExpected))} ahead of pace`
+                      : ''}
+                  </Text>
+                </View>
+              )}
             </>
           ) : (
             <View style={[styles.noBudgetContainer, { borderColor: colors.border }]}>
@@ -257,6 +309,43 @@ export default function BudgetScreen() {
               >
                 <Text style={styles.setBudgetButtonText}>Set a monthly budget</Text>
               </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Zero-based check: every unit of planned income needs a job. */}
+          {planSummary.totalPlannedIncome > 0 && (
+            <View
+              style={[
+                styles.allocateRow,
+                {
+                  borderTopColor: colors.border,
+                  backgroundColor: planSummary.isBalanced ? '#22c55e18' : 'transparent',
+                },
+              ]}
+            >
+              <Text style={[styles.allocateLabel, { color: colors.textSecondary }]}>
+                {planSummary.isBalanced
+                  ? 'Every naira has a job'
+                  : planSummary.leftToAllocate > 0
+                    ? 'Left to allocate'
+                    : 'Over-committed by'}
+              </Text>
+              <Text
+                style={[
+                  styles.allocateValue,
+                  {
+                    color: planSummary.isBalanced
+                      ? '#22c55e'
+                      : planSummary.leftToAllocate > 0
+                        ? colors.text
+                        : '#ef4444',
+                  },
+                ]}
+              >
+                {planSummary.isBalanced
+                  ? '✓'
+                  : formatCurrency(Math.abs(Math.round(planSummary.leftToAllocate)))}
+              </Text>
             </View>
           )}
 
@@ -685,6 +774,35 @@ const styles = StyleSheet.create({
   totalAmount: {
     fontSize: 16,
     color: '#9ca3af',
+  },
+  paceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  paceText: {
+    fontSize: 12,
+    flexShrink: 1,
+  },
+  allocateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    marginTop: 14,
+    paddingTop: 12,
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+    borderRadius: 10,
+  },
+  allocateLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  allocateValue: {
+    fontSize: 16,
+    fontWeight: '700',
   },
   progressContainer: {
     marginTop: 12,

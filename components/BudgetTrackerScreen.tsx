@@ -1,5 +1,11 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
+import {
+  computePeriodPace,
+  computeSpendPace,
+  normalizeBudgetPlan,
+  summarizeBudgetPlan,
+} from '@lantern/shared/utils';
 import { User, Transaction, Budget, TransactionType, SavingsGoal, STUDENT_EXPENSE_CATEGORIES, STUDENT_INCOME_CATEGORIES, FinancialTip } from '../types';
 import {
   CreditCardIcon, ArrowUpIcon, ArrowDownIcon, PlusCircleIcon,
@@ -112,6 +118,19 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
   const budgetLimit = budget?.monthlyLimit || 0;
   const budgetProgress = budgetLimit > 0 ? (monthlyExpenses / budgetLimit) * 100 : 0;
+
+  // Zero-based view of the month plus calendar pace. Both come from
+  // @lantern/shared so mobile renders exactly the same figures.
+  const plan = React.useMemo(
+    () => normalizeBudgetPlan(budget, currentMonth),
+    [budget, currentMonth]
+  );
+  const planSummary = React.useMemo(() => summarizeBudgetPlan(plan), [plan]);
+  const pace = React.useMemo(() => computePeriodPace(currentMonth, new Date()), [currentMonth]);
+  const spendPace = React.useMemo(
+    () => computeSpendPace(monthlyExpenses, planSummary.totalPlannedExpenses, pace),
+    [monthlyExpenses, planSummary.totalPlannedExpenses, pace]
+  );
 
   useEffect(() => {
     if (budgetLimit <= 0) {
@@ -302,6 +321,56 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                     ? `₦${(budgetLimit - monthlyExpenses).toLocaleString('en-NG')} remaining`
                     : `⚠️ ₦${(monthlyExpenses - budgetLimit).toLocaleString('en-NG')} over budget!`}
                 </p>
+
+                {/* Pace — a percentage spent is only meaningful beside the date. */}
+                {spendPace.verdict !== 'no-budget' && (
+                  <p
+                    className={`text-xs mt-1 ${
+                      spendPace.verdict === 'over'
+                        ? 'text-red-500'
+                        : spendPace.verdict === 'ahead'
+                          ? 'text-amber-500'
+                          : 'text-emerald-500'
+                    }`}
+                  >
+                    Day {pace.daysElapsed} of {pace.daysInPeriod} ({Math.round(pace.elapsedRatio * 100)}%)
+                    {' · '}
+                    {Math.round(spendPace.spentRatio * 100)}% spent
+                    {spendPace.verdict === 'ahead'
+                      ? ` — ₦${Math.round(spendPace.spendVsExpected).toLocaleString('en-NG')} ahead of pace`
+                      : ''}
+                  </p>
+                )}
+
+                {/* Zero-based check: unassigned income is money without a job. */}
+                {planSummary.totalPlannedIncome > 0 && (
+                  <div
+                    className={`mt-4 pt-3 border-t border-lantern-border flex items-center justify-between ${
+                      planSummary.isBalanced ? 'text-emerald-500' : ''
+                    }`}
+                  >
+                    <span className="text-sm text-lantern-text-secondary">
+                      {planSummary.isBalanced
+                        ? 'Every naira has a job'
+                        : planSummary.leftToAllocate > 0
+                          ? 'Left to allocate'
+                          : 'Over-committed by'}
+                    </span>
+                    <span
+                      className={`text-base font-bold ${
+                        planSummary.isBalanced
+                          ? 'text-emerald-500'
+                          : planSummary.leftToAllocate > 0
+                            ? 'text-lantern-text'
+                            : 'text-red-500'
+                      }`}
+                    >
+                      {planSummary.isBalanced
+                        ? '✓'
+                        : `₦${Math.abs(Math.round(planSummary.leftToAllocate)).toLocaleString('en-NG')}`}
+                    </span>
+                  </div>
+                )}
                 {/* Category budget bars */}
                 {budget?.categoryBudgets && Object.keys(budget.categoryBudgets).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-lantern-border space-y-2">
