@@ -103,7 +103,7 @@ export function resolveDeepLinkNavigation(url: string): { screen: string; params
     case 'deck':
       return { screen: 'StudyTab', params: { screen: 'DeckDetail', params: { deckId: parsed.id } } as any };
     case 'group':
-      return { screen: 'ChatTab', params: { screen: 'GroupChat', params: { groupId: parsed.id } } as any };
+      return { screen: 'ChatTab', params: { screen: 'GroupChat', params: { groupId: parsed.id }, initial: false } as any };
     case 'listing':
       return { screen: 'MarketTab', params: { screen: 'ListingDetail', params: { listingId: parsed.id } } as any };
     case 'flashcard':

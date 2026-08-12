@@ -53,8 +53,13 @@ export function LectureRecordingBanner() {
 
   return (
     <View
-      className="absolute left-0 right-0 z-50 bg-red-600 px-3 py-2 flex-row items-center gap-2"
-      style={{ top: insets.top }}
+      // Laid out in flow above the tab navigator (see MainTabs), not absolutely
+      // over it. As an overlay this bar sat exactly on top of whatever screen
+      // header was showing and swallowed its back button, so a recording left
+      // the user with no way out of the note. In flow it pushes the screen down
+      // instead, and every header stays reachable.
+      className="bg-red-600 px-3 py-2 flex-row items-center gap-2"
+      style={{ paddingTop: insets.top + 8 }}
     >
       <Pressable onPress={openNote} className="flex-1 min-w-0 active:opacity-80">
         <Text className="text-white text-sm font-semibold" numberOfLines={1}>

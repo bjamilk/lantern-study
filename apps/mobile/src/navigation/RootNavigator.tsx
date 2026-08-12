@@ -34,6 +34,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useFeatureTipStore } from '../stores/featureTipStore';
 import { setSentryUser } from '../services/sentry';
 import { fetchAIUsage } from '../services/ai';
+import { refreshUserData, resetDataRefresh } from '../services/dataRefresh';
 
 import { useFlashcardStore } from '../stores/flashcardStore';
 
@@ -723,7 +724,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
       <View className="absolute top-12 right-3 z-40">
         <SyncStatusIndicator compact />
       </View>
-      <LectureRecordingBanner />
       <ToastHost />
       <ConfirmSheetHost />
 
@@ -740,6 +740,10 @@ function MainTabs() {
   return (
 
     <View className="flex-1 bg-lantern-background dark:bg-lantern-background">
+
+      {/* Above the navigator in flow so it shifts screens down rather than
+          covering their headers — a recording used to hide the back button. */}
+      <LectureRecordingBanner />
 
       <Tab.Navigator
         tabBar={props => <CustomTabBar {...props} />}
@@ -841,6 +845,8 @@ function RootNavigatorInner() {
 
       clearTestPresets();
 
+      resetDataRefresh();
+
       setOnboardingChecked(true);
 
       setShowOnboarding(false);
@@ -887,6 +893,10 @@ function RootNavigatorInner() {
       if (hasUnsyncedChanges) {
         void syncSettings(userId, { force: true });
       }
+      // Bootstrap runs once per login, so without this the app shows whatever
+      // it fetched then: notifications read on the web stay unread here and
+      // cards reviewed elsewhere stay due until the app is force-quit.
+      void refreshUserData(userId);
     });
 
     AsyncStorage.getItem('lantern_onboarding_complete').then(v => {

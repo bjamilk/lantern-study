@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { CommonActions, useNavigation } from "@react-navigation/native";
+import {
+  CommonActions,
+  useFocusEffect,
+  useNavigation,
+} from "@react-navigation/native";
 import type { CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import {
@@ -88,9 +92,14 @@ export default function NotificationsScreen() {
     }
   }, [user?.id, setUnread]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // The screen stays mounted inside the navigator, so a mount effect would only
+  // ever run once: re-opening Notifications would show the list (and the badge)
+  // as it was on first visit, ignoring anything read on another device since.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -175,6 +184,8 @@ export default function NotificationsScreen() {
               params: {
                 screen: "DirectMessage",
                 params: { userId: parsed.id, threadId: parsed.threadId },
+                // Keep the chat list beneath, so back reaches it.
+                initial: false,
               },
             },
           }),
@@ -209,6 +220,7 @@ export default function NotificationsScreen() {
                           params: {
                             screen: "GroupChat",
                             params: { groupId: parsed.id },
+                            initial: false,
                           },
                         },
                       }),
@@ -232,6 +244,7 @@ export default function NotificationsScreen() {
               params: {
                 screen: "GroupChat",
                 params: { groupId: parsed.id },
+                initial: false,
               },
             },
           }),

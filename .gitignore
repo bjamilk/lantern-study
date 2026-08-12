@@ -13,6 +13,8 @@ dist-ssr
 **/dist/
 .turbo/
 *.apk
+# Local iOS simulator build artifacts (packaged .app bundles)
+*-iphonesimulator.tar.gz
 *.local
 
 # Environment variables

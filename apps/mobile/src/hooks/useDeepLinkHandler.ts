@@ -77,7 +77,7 @@ async function handleIncomingUrl(url: string, userId?: string) {
           name: 'Main',
           params: {
             screen: 'ChatTab',
-            params: { screen: 'GroupChat', params: { groupId } },
+            params: { screen: 'GroupChat', params: { groupId }, initial: false },
           },
         });
       }
@@ -98,7 +98,7 @@ async function handleIncomingUrl(url: string, userId?: string) {
     case 'group':
       navigateWhenReady({
         name: 'Main',
-        params: { screen: 'ChatTab', params: { screen: 'GroupChat', params: { groupId: parsed.id } } },
+        params: { screen: 'ChatTab', params: { screen: 'GroupChat', params: { groupId: parsed.id }, initial: false } },
       });
       break;
     case 'listing':

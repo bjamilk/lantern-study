@@ -54,9 +54,11 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
   }, [load]);
 
   const openDm = (buyerId: string) => {
+    // initial:false so the chat list sits under this DM — see InquiriesScreen.
     navigation.getParent?.()?.navigate('ChatTab', {
       screen: 'DirectMessage',
       params: { recipientId: buyerId },
+      initial: false,
     });
   };
 

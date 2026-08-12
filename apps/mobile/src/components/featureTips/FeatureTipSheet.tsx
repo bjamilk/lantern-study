@@ -8,6 +8,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FEATURE_TIP_CATALOG, type FeatureTipId } from '@lantern/shared/featureTips';
 import { useTheme } from '../../theme';
 import { useFeatureTipStore, getTipCopy } from '../../stores/featureTipStore';
@@ -22,6 +23,7 @@ interface FeatureTipSheetProps {
  */
 export function FeatureTipSheet({ tipId }: FeatureTipSheetProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const dismiss = useFeatureTipStore((s) => s.dismiss);
   const skipAll = useFeatureTipStore((s) => s.skipAll);
@@ -50,7 +52,11 @@ export function FeatureTipSheet({ tipId }: FeatureTipSheetProps) {
           className="rounded-t-2xl px-4 pt-3 pb-6"
           style={{
             backgroundColor: colors.modalBackground,
-            paddingBottom: Platform.OS === 'ios' ? 28 : 20,
+            // Sits flush with the bottom of the screen, so the action row lands
+            // under the system navigation bar / gesture pill on devices that
+            // have one — "Got it" and "Skip all" were hard or impossible to
+            // tap. Clear the real inset instead of a fixed guess.
+            paddingBottom: insets.bottom + (Platform.OS === 'ios' ? 28 : 20),
             borderTopWidth: 2,
             borderTopColor: colors.primary,
             maxHeight: Math.min(windowHeight * 0.7, 420),

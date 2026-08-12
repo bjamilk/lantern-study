@@ -63,6 +63,7 @@ type ThreadInquiry = Awaited<ReturnType<typeof fetchInquiryByThread>>;
 type NavigationProp = {
   goBack: () => void;
   canGoBack?: () => boolean;
+  getState?: () => { index?: number } | undefined;
   navigate: (screen: string) => void;
   getParent?: () =>
     | { navigate: (tab: string, params?: Record<string, unknown>) => void }
@@ -784,7 +785,12 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   );
 
   const handleBack = useCallback(() => {
-    if (navigation.canGoBack?.()) {
+    // canGoBack() is true whenever *any* navigator up the tree can go back, so
+    // on a DM opened straight from the marketplace it pops the tab instead of
+    // the chat stack and dumps the user back in Explore. Only pop when there is
+    // genuinely a chat screen underneath; otherwise go to the chat list.
+    const hasScreenBelow = (navigation.getState?.()?.index ?? 0) > 0;
+    if (hasScreenBelow) {
       navigation.goBack();
     } else {
       navigation.navigate('GroupsList');

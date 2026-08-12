@@ -505,8 +505,13 @@ export function useRealtimeSubscriptions(
   const handleNotification = useCallback((notification: Notification) => {
     const { increment, loadUnreadCount } = useNotificationStore.getState();
     if (!notification.isRead) {
+      // Bump straight away so the badge reacts instantly...
       increment();
-    } else if (user?.id) {
+    }
+    // ...then reconcile against the server. Incrementing alone only ever drives
+    // the badge up: a redelivered event double-counts, and a notification read
+    // on another device is never subtracted, so the badge drifts and stays wrong.
+    if (user?.id) {
       void loadUnreadCount(user.id);
     }
     onNotification?.(notification);

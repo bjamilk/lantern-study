@@ -111,9 +111,14 @@ export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) 
 
   const openChat = (item: InquiryItem) => {
     const recipientId = tab === 'seller' ? item.buyer_id : item.seller_id;
+    // initial:false keeps the chat list under this DM. Without it, opening a DM
+    // before the Chat tab has been visited makes DirectMessage the only route in
+    // that stack — back then exits to the marketplace, and tapping Chat drops
+    // you straight back into the same DM with no way to reach the list.
     navigation.getParent?.()?.navigate('ChatTab', {
       screen: 'DirectMessage',
       params: { threadId: item.dm_thread_id, recipientId },
+      initial: false,
     });
   };
 

@@ -53,6 +53,7 @@ import { GroupPerformanceChartCard } from '../../components/dashboard/GroupPerfo
 import { AIStudyCoachCard } from '../../components/dashboard/AIStudyCoachCard';
 import { useCompanionStore } from '../../stores/companionStore';
 import * as api from '../../services/api';
+import { refreshUserData } from '../../services/dataRefresh';
 
 import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
 
@@ -426,6 +427,10 @@ export function DashboardScreen({ navigation }: Props) {
     useCallback(() => {
       if (!user?.id) return;
       void fetchStats(user.id, selectedPeriod, { force: true }).catch(() => {});
+      // The hero's due count and the tab badges come from decks + notifications,
+      // which bootstrap only loads once — refresh them alongside the chart so
+      // Home cannot keep showing a stale "N due" or unread count.
+      void refreshUserData(user.id, { only: ['flashcards', 'notifications'] });
     }, [user?.id, selectedPeriod, fetchStats])
   );
 
@@ -537,6 +542,9 @@ export function DashboardScreen({ navigation }: Props) {
 
         params: { groupId: availableGroups[0].id, groupName: availableGroups[0].name },
 
+        // Keep the chat list beneath, so back reaches it.
+        initial: false,
+
       });
 
       return;
@@ -553,7 +561,7 @@ export function DashboardScreen({ navigation }: Props) {
 
     setGroupPickerOpen(false);
 
-    parent?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId, groupName } });
+    parent?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId, groupName }, initial: false });
 
   };
 

@@ -158,9 +158,11 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const images = listing?.images?.length ? listing.images : [];
 
   const openDm = (threadId: string, recipientId: string, recipientName?: string) => {
+    // initial:false so the chat list sits under this DM — see InquiriesScreen.
     navigation.getParent?.()?.navigate('ChatTab', {
       screen: 'DirectMessage',
       params: { threadId, recipientId, recipientName },
+      initial: false,
     });
   };
 

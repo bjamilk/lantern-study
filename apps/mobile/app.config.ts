@@ -45,7 +45,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // with the pre-Reanimated-3 channel state and must never receive JS from here.
   // 1.0.6: Smart Notes guidance + depth presets, AI credit costs surfaced in
   // the UI, and XP that tracks real study work.
-  version: '1.0.6',
+  // 1.0.7: the app no longer rebuilds itself on every foreground (which reset
+  // navigation to Home and made the record button look like it ejected you from
+  // a note), stale notification/deck state now refreshes, chat is reachable from
+  // marketplace DMs, and bottom sheets clear the system navigation bar.
+  version: '1.0.7',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

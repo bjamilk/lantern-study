@@ -8,6 +8,8 @@ import { NotesScreen } from '../notes/NotesScreen';
 import { FlashcardsScreen } from '../flashcards/FlashcardsScreen';
 import { FeatureHero } from '../../components/ui';
 import { useUIStore, type LibraryTab } from '../../stores/uiStore';
+import { useAuthStore } from '../../stores/authStore';
+import { refreshUserData } from '../../services/dataRefresh';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
@@ -30,6 +32,7 @@ const tabs: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] =
 export function LibraryScreen({ navigation, route }: Props) {
   const tab = useUIStore(s => s.libraryTab);
   const setLibraryTab = useUIStore(s => s.setLibraryTab);
+  const userId = useAuthStore(s => s.user?.id);
   const decks = useFlashcardStore(s => s.decks);
   const notes = useNotesStore(s => s.notes);
   const { colors } = useTheme();
@@ -49,6 +52,15 @@ export function LibraryScreen({ navigation, route }: Props) {
         setLibraryTab(paramTab);
       }
     }, [route?.params?.tab, setLibraryTab])
+  );
+
+  // Decks and their due counts are only fetched at login bootstrap, so without
+  // this a card reviewed on the web still reads as due here (and a deck created
+  // elsewhere never appears) until the app is force-quit. Throttled internally.
+  useFocusEffect(
+    React.useCallback(() => {
+      void refreshUserData(userId, { only: ['flashcards'] });
+    }, [userId])
   );
 
   // Getting-started checklist: visiting the Library counts as "open library".

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
   Appearance,
@@ -32,6 +32,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { setColorScheme } = useColorScheme();
   const user = useAuthStore(s => s.user);
   const [fontRevision, setFontRevision] = useState(0);
+  // Seeded with the module's initial scale (installFontScale starts at 1) so a
+  // default-sized boot does not remount the tree before it has even rendered.
+  const appliedFontScale = useRef(1);
   const effectivePref = user ? themePref : 'light';
 
   const isDark =
@@ -53,7 +56,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // top of the app's own 1.15 would be 3.5x and shred every fixed-height row.
     const applyScale = () => {
       const osScale = clamp(PixelRatio.getFontScale(), 1, MAX_OS_FONT_SCALE);
-      setFontScale(clamp(getFontScale(fontSize) * osScale, MIN_FONT_SCALE, MAX_FONT_SCALE));
+      const nextScale = clamp(
+        getFontScale(fontSize) * osScale,
+        MIN_FONT_SCALE,
+        MAX_FONT_SCALE
+      );
+      // Bumping fontRevision re-keys the View wrapping the whole app, which
+      // remounts everything below it — NavigationContainer included. That is the
+      // only way patched Text picks up a new scale (setFontScale mutates a
+      // module-level value read at render time), but it must stay rare.
+      //
+      // This ran unconditionally on every foreground, so returning from the mic
+      // permission dialog — or any app switch — tore down the tree: the boot
+      // screen flashed and every tab reset to its initial route, dropping the
+      // user on Home instead of the note they were recording into. Only remount
+      // when the scale genuinely changed.
+      if (appliedFontScale.current === nextScale) return;
+      appliedFontScale.current = nextScale;
+      setFontScale(nextScale);
       setFontRevision((revision) => revision + 1);
     };
     applyScale();

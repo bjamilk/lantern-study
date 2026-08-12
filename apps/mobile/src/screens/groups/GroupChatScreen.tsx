@@ -60,6 +60,7 @@ import {
 type NavigationProp = {
   goBack: () => void;
   canGoBack?: () => boolean;
+  getState?: () => { index?: number } | undefined;
   getParent: () => { navigate: (tab: string, params?: Record<string, unknown>) => void } | undefined;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
   setParams: (params: Partial<{ groupId: string; groupName?: string; openAddMembers?: boolean }>) => void;
@@ -1059,7 +1060,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, [isAdmin]);
 
   const handleBack = useCallback(() => {
-    if (navigation.canGoBack?.()) {
+    // canGoBack() also reports the parent tab's history, so a chat opened from a
+    // notification or deep link would pop out of chat entirely. Only pop when a
+    // chat screen actually sits underneath.
+    const hasScreenBelow = (navigation.getState?.()?.index ?? 0) > 0;
+    if (hasScreenBelow) {
       navigation.goBack();
     } else {
       navigation.navigate('GroupsList');
