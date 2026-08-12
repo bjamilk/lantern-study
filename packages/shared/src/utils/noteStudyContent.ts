@@ -121,26 +121,45 @@ export function getExtractionStatusMessage(
   status: NoteExtractionStatus | null | undefined,
   sourceType?: string
 ): string | null {
+  const isPhotos = sourceType === 'photos';
   switch (status) {
     case 'needs_ocr':
+      if (isPhotos) {
+        return 'Text has not been read from these photos yet — OCR can pull it out (first 10 photos).';
+      }
       return sourceType === 'presentation'
         ? 'This deck looks image-based — OCR can read text from slides (first 20 slides).'
         : 'Scanned PDF — text not readable yet. OCR can extract text from the first 15 pages.';
     case 'empty':
+      if (isPhotos) {
+        return 'No text found in these photos. Try OCR again, or type your own notes.';
+      }
       return sourceType === 'presentation'
         ? 'No slide text found. Try OCR, or add your own notes before using Smart Notes.'
         : 'No readable text found. Try OCR for scanned pages, or open a text-based PDF.';
     case 'ocr_processing':
-      return 'Running local OCR… this can take a minute for longer documents.';
+      return isPhotos
+        ? 'Reading text from your photos…'
+        : 'Running local OCR… this can take a minute for longer documents.';
     case 'ocr_failed':
-      return 'Local OCR could not read this file. Add notes manually, or try a text-based export.';
+      return isPhotos
+        ? 'Could not read text from these photos. Try clearer, well-lit shots, or type your notes.'
+        : 'Local OCR could not read this file. Add notes manually, or try a text-based export.';
     default:
       return null;
   }
 }
 
 function isDocumentSource(sourceType?: string): boolean {
-  return sourceType === 'pdf' || sourceType === 'presentation' || sourceType === 'youtube';
+  return (
+    sourceType === 'pdf' ||
+    sourceType === 'presentation' ||
+    sourceType === 'youtube' ||
+    // Photo notes carry OCR'd text on their image attachments. Without this the
+    // extracted text is only used when the body is empty, so typing a single
+    // line of your own would hide everything OCR read off the photographs.
+    sourceType === 'photos'
+  );
 }
 
 function normalizeBody(
@@ -173,6 +192,37 @@ export function getNoteStudyContent(
   if (bodyText) return bodyText;
   if (extracted) return extracted;
   return summaryText;
+}
+
+/** True for notes whose extracted text comes from photographs. */
+export function isPhotoNoteSource(sourceType?: string): boolean {
+  return sourceType === 'photos';
+}
+
+/**
+ * A photo note has one attachment per photograph, so its OCR state is the state
+ * of several jobs at once. Collapse them the way a reader would: still working
+ * if any is, otherwise worth retrying if any failed or was never attempted, and
+ * ready only once something was actually read.
+ */
+export function aggregatePhotoOcrStatus(
+  attachments: Array<{
+    type?: string;
+    metadata?: Record<string, unknown> | null;
+    extractedText?: string | null;
+  }> | undefined | null
+): NoteExtractionStatus | null {
+  const images = (attachments || []).filter((a) => a.type === 'image');
+  if (images.length === 0) return null;
+
+  const statuses = images.map((a) => getAttachmentExtractionStatus(a));
+  if (statuses.some((s) => s === 'ocr_processing')) return 'ocr_processing';
+  if (statuses.some((s) => s === 'ocr_failed')) return 'ocr_failed';
+  // A null status means that photograph has never been through OCR. Treat it
+  // like needs_ocr: one unread photo in a set must not read as "ready", or the
+  // note silently claims to contain text it never captured.
+  if (statuses.some((s) => s === null || s === 'needs_ocr' || s === 'empty')) return 'needs_ocr';
+  return 'ok';
 }
 
 /**

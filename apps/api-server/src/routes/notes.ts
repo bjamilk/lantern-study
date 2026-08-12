@@ -63,11 +63,13 @@ import {
   imageContentTypeFromFileName,
   assertNoteImageUpload,
   warmGotenberg,
+  MAX_OCR_IMAGES,
   MAX_OCR_PDF_PAGES,
   MAX_OCR_SLIDES,
 } from '../services/noteFiles';
 import { detectImageMime } from '../utils/fileValidation';
 import {
+  aggregatePhotoOcrStatus,
   getNoteStudyContent,
   getNoteStudyContentForSmartNotes,
   hasEnoughNoteStudyContent,
@@ -309,6 +311,91 @@ async function startNoteOcrJob(params: {
     return { mode: 'async', jobId: outcome.jobId };
   }
   return { mode: 'sync' };
+}
+
+/**
+ * Photo notes hold one attachment per photograph, so OCR is a batch: one job per
+ * image, capped at MAX_OCR_IMAGES. Credits are charged once for the batch by the
+ * caller, not per photograph — a ten-photo note should not cost ten times a PDF.
+ *
+ * Returns the number of images queued.
+ */
+async function startPhotoNoteOcr(params: {
+  noteId: string;
+  userId: string;
+  attachments: Array<{ id: string; type: string; fileName?: string | null; metadata?: Record<string, unknown> | null; extractedText?: string | null }>;
+  /** Only re-run images that have no usable text yet (manual retry passes false). */
+  skipAlreadyRead?: boolean;
+}): Promise<number> {
+  const images = params.attachments.filter((a) => a.type === 'image');
+  const pending = images.filter((a) => {
+    if (!params.skipAlreadyRead) return true;
+    const status = (a.metadata as Record<string, unknown> | null)?.extractionStatus;
+    return status !== 'ok' && status !== 'ocr_processing';
+  });
+  const targets = pending.slice(0, MAX_OCR_IMAGES);
+  if (targets.length === 0) return 0;
+
+  for (const attachment of targets) {
+    const meta = (attachment.metadata || {}) as Record<string, unknown>;
+    const storagePath = typeof meta.storagePath === 'string' ? meta.storagePath : null;
+    if (!storagePath) continue;
+
+    const fileName = attachment.fileName || 'photo.jpg';
+    const processingMeta = {
+      ...meta,
+      extractionStatus: 'ocr_processing',
+      ocrProvider: 'tesseract',
+      ocrStartedAt: new Date().toISOString(),
+      ocrError: undefined,
+      ocrFailedAt: undefined,
+      ocrMaxImages: MAX_OCR_IMAGES,
+      ocrCreditCost: NOTE_OCR_CREDIT_COST,
+    };
+
+    await supabaseService.updateNoteAttachment(attachment.id, {
+      extractedText: ocrPlaceholder(fileName),
+      metadata: processingMeta,
+    });
+
+    await startNoteOcrJob({
+      noteId: params.noteId,
+      attachmentId: attachment.id,
+      storagePath,
+      fileName,
+      sourceKind: 'image',
+      meta: processingMeta,
+      userId: params.userId,
+    });
+  }
+
+  if (pending.length > MAX_OCR_IMAGES) {
+    logger.info('Photo note OCR capped', {
+      noteId: params.noteId,
+      requested: pending.length,
+      queued: targets.length,
+      cap: MAX_OCR_IMAGES,
+    });
+  }
+  return targets.length;
+}
+
+/**
+ * Queue OCR for freshly added photographs, charging the batch once. Best-effort:
+ * a photo note must still be created when OCR cannot start.
+ */
+function autoOcrPhotoNote(noteId: string, userId: string, attachments: any[]): void {
+  void tryChargeAutoOcrCredits(userId)
+    .then((charged) => {
+      if (!charged) return 0;
+      return startPhotoNoteOcr({ noteId, userId, attachments, skipAlreadyRead: true });
+    })
+    .catch((err) => {
+      logger.warn('Photo note OCR could not be started', {
+        noteId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 }
 
 const OCR_PROCESSING_STALE_MS = 10 * 60 * 1000;
@@ -873,6 +960,8 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
     throw err;
   }
 
+  autoOcrPhotoNote(note.id, userId, attachments);
+
   logger.info('Photo note finalized', {
     userId,
     imageCount: validated.length,
@@ -921,6 +1010,8 @@ router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Req
     }
     throw err;
   }
+
+  autoOcrPhotoNote(note.id, userId, attachments);
 
   logger.info('Photo note uploaded via API', {
     userId,
@@ -1567,6 +1658,7 @@ router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), up
     ) + 1;
 
   const attachments = await createPhotoNoteAttachments(req.params.noteId, validated, startOrder);
+  autoOcrPhotoNote(req.params.noteId, userId, attachments);
   res.json({ success: true, data: { attachments } });
 }));
 
@@ -1606,6 +1698,7 @@ router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), upl
       ) + 1;
 
     const attachments = await createPhotoNoteAttachments(req.params.noteId, validated, startOrder);
+    autoOcrPhotoNote(req.params.noteId, userId, attachments);
     res.json({ success: true, data: { attachments } });
   } catch (err) {
     for (const image of validated) {
@@ -2200,12 +2293,63 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const note = await supabaseService.getNote(req.params.noteId, userId);
-    if (note.sourceType !== 'pdf' && note.sourceType !== 'presentation') {
-      res.status(400).json({ error: 'OCR is only available for PDF and presentation notes.' });
+    if (
+      note.sourceType !== 'pdf' &&
+      note.sourceType !== 'presentation' &&
+      note.sourceType !== 'photos'
+    ) {
+      res
+        .status(400)
+        .json({ error: 'OCR is only available for PDF, presentation and photo notes.' });
       return;
     }
 
     const attachments = await supabaseService.getNoteAttachments(note.id);
+
+    // Photo notes are a batch of images rather than one document.
+    if (note.sourceType === 'photos') {
+      const images = attachments.filter((a) => a.type === 'image');
+      if (images.length === 0) {
+        res.status(404).json({ error: 'This note has no photographs to read.' });
+        return;
+      }
+      if (aggregatePhotoOcrStatus(images) === 'ocr_processing') {
+        res.status(202).json({ success: true, data: { status: 'processing' } });
+        return;
+      }
+
+      if (NOTE_OCR_CREDIT_COST > 0) {
+        const denied = await chargeAiCredits(userId, NOTE_OCR_CREDIT_COST);
+        if (denied) {
+          res.status(429).json(denied);
+          return;
+        }
+        await applyGlobalUsageHeaders(res, userId);
+      }
+
+      // Manual run re-reads every photograph — the user asked for a retry.
+      const queued = await startPhotoNoteOcr({
+        noteId: note.id,
+        userId,
+        attachments: images,
+        skipAlreadyRead: false,
+      });
+
+      const refreshed = await supabaseService.getNoteAttachments(note.id);
+      const status = aggregatePhotoOcrStatus(refreshed.filter((a) => a.type === 'image'));
+      res.status(status === 'ocr_processing' ? 202 : 200).json({
+        success: true,
+        data: {
+          status: status === 'ok' ? 'ready' : status,
+          attachments: refreshed.filter((a) => a.type === 'image'),
+          imageCount: images.length,
+          queued,
+          ocrMaxImages: MAX_OCR_IMAGES,
+          creditCost: NOTE_OCR_CREDIT_COST,
+        },
+      });
+      return;
+    }
     const attachment =
       note.sourceType === 'pdf'
         ? attachments.find((a) => a.type === 'pdf')
@@ -2334,8 +2478,37 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const note = await supabaseService.getNote(req.params.noteId, userId);
-    if (note.sourceType !== 'pdf' && note.sourceType !== 'presentation') {
-      res.status(400).json({ error: 'OCR status is only available for PDF and presentation notes.' });
+    if (
+      note.sourceType !== 'pdf' &&
+      note.sourceType !== 'presentation' &&
+      note.sourceType !== 'photos'
+    ) {
+      res.status(400).json({
+        error: 'OCR status is only available for PDF, presentation and photo notes.',
+      });
+      return;
+    }
+
+    if (note.sourceType === 'photos') {
+      const images = (await supabaseService.getNoteAttachments(note.id)).filter(
+        (a) => a.type === 'image'
+      );
+      const aggregated = aggregatePhotoOcrStatus(images);
+      const failed = images.find(
+        (a) => (a.metadata as Record<string, unknown> | null)?.ocrError
+      );
+      res.json({
+        success: true,
+        data: {
+          status: aggregated === 'ok' ? 'ready' : aggregated === 'ocr_processing' ? 'processing' : aggregated === 'ocr_failed' ? 'failed' : aggregated ?? 'none',
+          imageCount: images.length,
+          attachments: images,
+          ocrError:
+            aggregated === 'ocr_failed' && failed
+              ? String((failed.metadata as Record<string, unknown>).ocrError)
+              : undefined,
+        },
+      });
       return;
     }
 

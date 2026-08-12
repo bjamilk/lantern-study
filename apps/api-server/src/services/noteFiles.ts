@@ -17,6 +17,11 @@ export const MAX_OCR_PDF_PAGES = Math.max(
   1,
   parseInt(process.env.NOTE_OCR_MAX_PDF_PAGES || '15', 10) || 15
 );
+/** Photographs OCR'd per note. Each one is a full Tesseract pass. */
+export const MAX_OCR_IMAGES = Math.max(
+  1,
+  parseInt(process.env.NOTE_OCR_MAX_IMAGES || '10', 10) || 10
+);
 export const MAX_OCR_SLIDES = Math.max(
   1,
   parseInt(process.env.NOTE_OCR_MAX_SLIDES || '20', 10) || 20

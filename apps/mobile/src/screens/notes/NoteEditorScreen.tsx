@@ -19,9 +19,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import {
+  aggregatePhotoOcrStatus,
   FlashcardType,
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
+  isPhotoNoteSource,
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
   MarkdownRenderer,
@@ -210,7 +212,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     [selectedNote?.attachments, presentationAttachment]
   );
 
-  const extractionStatus = getAttachmentExtractionStatus(documentSourceAttachment);
+  // Photo notes read text from several photographs, so the status is the batch's.
+  const extractionStatus = isPhotoNoteSource(selectedNote?.sourceType)
+    ? aggregatePhotoOcrStatus(selectedNote?.attachments)
+    : getAttachmentExtractionStatus(documentSourceAttachment);
   const extractionMessage = getExtractionStatusMessage(
     extractionStatus,
     selectedNote?.sourceType
@@ -339,7 +344,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   // Poll while local OCR is processing after a scanned upload.
   useEffect(() => {
     if (!selectedNote) return;
-    if (selectedNote.sourceType !== 'pdf' && selectedNote.sourceType !== 'presentation') return;
+    if (
+      selectedNote.sourceType !== 'pdf' &&
+      selectedNote.sourceType !== 'presentation' &&
+      !isPhotoNoteSource(selectedNote.sourceType)
+    )
+      return;
     if (extractionStatus !== 'ocr_processing') return;
     if (ocrPollAttemptedRef.current.has(noteId)) return;
     ocrPollAttemptedRef.current.add(noteId);
@@ -1047,7 +1057,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           ) : null}
 
           {extractionMessage &&
-          (selectedNote?.sourceType === 'pdf' || selectedNote?.sourceType === 'presentation') ? (
+          (selectedNote?.sourceType === 'pdf' ||
+            selectedNote?.sourceType === 'presentation' ||
+            isPhotoNoteSource(selectedNote?.sourceType)) ? (
             <View className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
               <Text className="text-sm text-lantern-text mb-2">
                 {runningOcr || extractionStatus === 'ocr_processing'

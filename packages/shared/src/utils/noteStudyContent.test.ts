@@ -1,4 +1,5 @@
 import {
+  aggregatePhotoOcrStatus,
   assessPdfTextExtraction,
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
@@ -226,5 +227,83 @@ describe('extraction status helpers', () => {
         attachments: [{ metadata: { extractionStatus: 'needs_ocr' } }],
       })
     ).toBe(false);
+  });
+});
+
+/**
+ * Photo notes were the one source type OCR never reached: the service had an
+ * `image` branch but no route passed it, and extracted text on image
+ * attachments was only consulted when the note body was empty.
+ */
+describe('photo note OCR', () => {
+  const photo = (over: Record<string, unknown> = {}) => ({
+    type: 'image',
+    extractedText: 'Text read off the photograph, long enough to be usable study content.',
+    metadata: { extractionStatus: 'ok' },
+    ...over,
+  });
+
+  it('combines OCR text with the body instead of hiding it', () => {
+    const content = getNoteStudyContent({
+      sourceType: 'photos',
+      body: 'My own annotation',
+      attachments: [photo()],
+    });
+    expect(content).toContain('Text read off the photograph');
+    expect(content).toContain('My own annotation');
+  });
+
+  it('still returns OCR text when the note has no body', () => {
+    const content = getNoteStudyContent({ sourceType: 'photos', attachments: [photo()] });
+    expect(content).toContain('Text read off the photograph');
+  });
+
+  it('ignores the OCR placeholder while a photo is still processing', () => {
+    const content = getNoteStudyContent({
+      sourceType: 'photos',
+      body: 'My own annotation',
+      attachments: [photo({ extractedText: '[Running OCR on scanned pages…]', metadata: { extractionStatus: 'ocr_processing' } })],
+    });
+    expect(content).toBe('My own annotation');
+  });
+
+  describe('aggregatePhotoOcrStatus', () => {
+    it('is null when the note has no images', () => {
+      expect(aggregatePhotoOcrStatus([])).toBeNull();
+      expect(aggregatePhotoOcrStatus([{ type: 'pdf', metadata: { extractionStatus: 'ok' } }])).toBeNull();
+    });
+
+    it('reports processing while any photo is still running', () => {
+      expect(
+        aggregatePhotoOcrStatus([
+          photo(),
+          photo({ metadata: { extractionStatus: 'ocr_processing' } }),
+        ])
+      ).toBe('ocr_processing');
+    });
+
+    it('surfaces a failure once nothing is still running', () => {
+      expect(
+        aggregatePhotoOcrStatus([photo(), photo({ metadata: { extractionStatus: 'ocr_failed' } })])
+      ).toBe('ocr_failed');
+    });
+
+    it('prefers processing over failure so the banner does not flap', () => {
+      expect(
+        aggregatePhotoOcrStatus([
+          photo({ metadata: { extractionStatus: 'ocr_failed' } }),
+          photo({ metadata: { extractionStatus: 'ocr_processing' } }),
+        ])
+      ).toBe('ocr_processing');
+    });
+
+    it('offers OCR when a photo has never been through it', () => {
+      expect(aggregatePhotoOcrStatus([{ type: 'image' }])).toBe('needs_ocr');
+      expect(aggregatePhotoOcrStatus([photo(), { type: 'image' }])).toBe('needs_ocr');
+    });
+
+    it('is ready only when every photo has been read', () => {
+      expect(aggregatePhotoOcrStatus([photo(), photo()])).toBe('ok');
+    });
   });
 });

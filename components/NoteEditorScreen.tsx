@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  aggregatePhotoOcrStatus,
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
+  isPhotoNoteSource,
   isPlaceholderExtractedText,
 } from '@lantern/shared';
 import {
@@ -175,7 +177,11 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     (generatingPreview || isPreviewProcessing);
   const documentSourceAttachment =
     note.attachments?.find((a) => a.type === 'pdf') || presentationAttachment;
-  const extractionStatus = getAttachmentExtractionStatus(documentSourceAttachment);
+  // A photo note's text comes from several photographs at once, so its status is
+  // the batch's, not any single attachment's.
+  const extractionStatus = isPhotoNoteSource(note.sourceType)
+    ? aggregatePhotoOcrStatus(note.attachments)
+    : getAttachmentExtractionStatus(documentSourceAttachment);
   const extractionMessage = getExtractionStatusMessage(extractionStatus, note.sourceType);
   const [runningOcr, setRunningOcr] = useState(false);
   const ocrPollAttemptedRef = useRef<Set<string>>(new Set());
@@ -358,7 +364,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   ]);
 
   useEffect(() => {
-    if (note.sourceType !== 'pdf' && note.sourceType !== 'presentation') return;
+    if (
+      note.sourceType !== 'pdf' &&
+      note.sourceType !== 'presentation' &&
+      !isPhotoNoteSource(note.sourceType)
+    )
+      return;
     if (extractionStatus !== 'ocr_processing') return;
     if (ocrPollAttemptedRef.current.has(note.id)) return;
     ocrPollAttemptedRef.current.add(note.id);
@@ -789,7 +800,10 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             </>
           )}
 
-          {extractionMessage && (note.sourceType === 'pdf' || note.sourceType === 'presentation') && (
+          {extractionMessage &&
+            (note.sourceType === 'pdf' ||
+              note.sourceType === 'presentation' ||
+              isPhotoNoteSource(note.sourceType)) && (
             <div
               className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${
                 isDark
