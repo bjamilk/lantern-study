@@ -134,13 +134,18 @@ export default function BudgetScreen() {
 
   // A past month's cap lives in user_budgets, keyed by month. Fetch it on demand.
   const [historicalLimit, setHistoricalLimit] = useState<number | null>(null);
+  // A failed lookup is not the same as "that month had no budget", and the user
+  // must be able to tell them apart.
+  const [historyError, setHistoryError] = useState<string | null>(null);
   useEffect(() => {
     if (isCurrentMonth || !userId) {
       setHistoricalLimit(null);
+      setHistoryError(null);
       return;
     }
     let cancelled = false;
     setHistoricalLimit(null);
+    setHistoryError(null);
     void api
       .fetchUserBudget(userId, selectedMonth)
       .then(row => {
@@ -148,8 +153,12 @@ export default function BudgetScreen() {
         const limit = Number((row as any)?.monthly_limit ?? (row as any)?.monthlyLimit ?? 0);
         setHistoricalLimit(Number.isFinite(limit) ? limit : 0);
       })
-      .catch(() => {
-        if (!cancelled) setHistoricalLimit(0);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn('[BudgetHistory] lookup failed', selectedMonth, err);
+        // Kept deliberately: this path was invisible for an entire debug cycle.
+        setHistoricalLimit(0);
+        setHistoryError(err instanceof Error ? err.message : 'Could not load that month.');
       });
     return () => {
       cancelled = true;
@@ -411,14 +420,34 @@ export default function BudgetScreen() {
             </>
           ) : (
             <View style={[styles.noBudgetContainer, { borderColor: colors.border }]}>
-              <Ionicons name="wallet-outline" size={40} color={colors.textSecondary} />
-              <Text style={[styles.noBudgetText, { color: colors.textSecondary }]}>No budget set for this month</Text>
-              <TouchableOpacity
-                style={styles.setBudgetButton}
-                onPress={() => navigation.navigate('SetBudget')}
-              >
-                <Text style={styles.setBudgetButtonText}>Set a monthly budget</Text>
-              </TouchableOpacity>
+              <Ionicons
+                name={historyError ? 'cloud-offline-outline' : 'wallet-outline'}
+                size={40}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.noBudgetText, { color: colors.textSecondary }]}>
+                {historyError
+                  ? `Couldn't load ${formatMonthYear(selectedMonth)} — ${historyError}`
+                  : isCurrentMonth
+                    ? 'No budget set for this month'
+                    : `No budget was set for ${formatMonthYear(selectedMonth)}`}
+              </Text>
+              {isCurrentMonth && !historyError && (
+                <TouchableOpacity
+                  style={styles.setBudgetButton}
+                  onPress={() => navigation.navigate('SetBudget')}
+                >
+                  <Text style={styles.setBudgetButtonText}>Set a monthly budget</Text>
+                </TouchableOpacity>
+              )}
+              {historyError && (
+                <TouchableOpacity
+                  style={styles.setBudgetButton}
+                  onPress={() => setSelectedMonth(m => m)}
+                >
+                  <Text style={styles.setBudgetButtonText}>Retry</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 

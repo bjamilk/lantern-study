@@ -2682,16 +2682,20 @@ export function createApiEndpoints(client: ApiClient) {
 
     // ========== BUDGET API ==========
 
-    fetchUserBudget: async (userId: string, monthYear?: string) => {
+    /**
+     * The server answers 200 with a null payload for a month that was never
+     * budgeted, so a thrown error here means the request genuinely failed.
+     * This used to swallow every error and return null, which made "no budget
+     * for July" indistinguishable from "could not reach the server" — the
+     * screen then asserted a fact about the user's finances it had not checked.
+     * Callers must handle the throw.
+     */
+    fetchUserBudget: (userId: string, monthYear?: string) => {
       const params = monthYear ? `?monthYear=${monthYear}` : "";
-      try {
-        return await apiRequest<{
-          monthly_limit: number;
-          month_year: string;
-        }>(`/users/${userId}/budget${params}`);
-      } catch {
-        return null;
-      }
+      return apiRequest<{
+        monthly_limit: number;
+        month_year: string;
+      } | null>(`/users/${userId}/budget${params}`);
     },
 
     saveUserBudget: (
