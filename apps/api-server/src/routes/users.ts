@@ -1503,7 +1503,9 @@ router.get(
     if (!requestingUserId) return;
 
     const { userId } = req.params;
-    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
+    // Self only — deliberately stricter than the settings routes above. Nothing
+    // in support needs to read someone's finances, so do not grant it.
+    if (requestingUserId !== userId) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
@@ -1544,7 +1546,8 @@ router.put(
     if (!requestingUserId) return;
 
     const { userId } = req.params;
-    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
+    // Self only. An admin silently rewriting someone's budget is not a feature.
+    if (requestingUserId !== userId) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
