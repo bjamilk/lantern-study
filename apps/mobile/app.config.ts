@@ -49,7 +49,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // navigation to Home and made the record button look like it ejected you from
   // a note), stale notification/deck state now refreshes, chat is reachable from
   // marketplace DMs, and bottom sheets clear the system navigation bar.
-  version: '1.0.7',
+  // 1.0.8: the budget is a plan, not just a cap — expected income and planned
+  // savings, a live "left to allocate", and spend measured against the calendar.
+  // The monthly limit finally syncs with the web (its API route did not exist).
+  version: '1.0.8',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
