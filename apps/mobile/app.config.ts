@@ -55,7 +55,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.9: photo notes are read by OCR — text is pulled off photographs
   // automatically and feeds Smart Notes, flashcards and quizzes like any
   // other note.
-  version: '1.0.9',
+  // 1.0.10: browse previous months in the budget, and a budget no longer leaks
+  // into the month after the one it was set for.
+  version: '1.0.10',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
