@@ -57,14 +57,25 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
     try {
       const result = await respondToOffer(offer.id, action, user.id);
       if (action === 'accept') {
-        const orderId = (result as { orderId?: string } | undefined)?.orderId;
-        await load();
-        Alert.alert(
-          'Offer accepted',
-          'An order has been created — arrange payment and handover directly with the other party.'
-        );
-        if (orderId) navigation.navigate('OrderDetail', { orderId });
-        return;
+        const payUrl =
+          (result as { authorizationUrl?: string } | void)?.authorizationUrl ||
+          (result as { checkout?: { authorizationUrl?: string } } | void)?.checkout
+            ?.authorizationUrl;
+        const isBuyer = offer.buyer_id === user.id;
+        if (payUrl && isBuyer) {
+          const WebBrowser = await import('expo-web-browser');
+          await WebBrowser.openBrowserAsync(payUrl);
+          const orderId = (result as { orderId?: string } | void)?.orderId;
+          if (orderId) {
+            navigation.navigate('OrderDetail', { orderId, paymentReturn: true });
+          }
+          return;
+        }
+        if (payUrl && !isBuyer) {
+          Alert.alert('Offer accepted', 'The buyer will complete Paystack checkout.');
+          await load();
+          return;
+        }
       }
       await load();
       Alert.alert('Done', `Offer ${action}ed.`);

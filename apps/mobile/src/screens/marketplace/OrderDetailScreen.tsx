@@ -3,12 +3,14 @@ import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Share, Text, Vi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import {
   fetchMarketplaceOrder,
   updateMarketplaceOrder,
   requestOrderPayment,
   addMarketplaceReview,
   submitOrderPaymentProof,
+  resumeMarketplaceOrderCheckout,
   verifyMarketplacePayment,
 } from '../../services/api';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
@@ -84,7 +86,7 @@ export function OrderDetailScreen({
       try {
         if (reference) {
           await verifyMarketplacePayment(reference);
-          if (!cancelled) Alert.alert('Payment confirmed', 'Your payment was verified.');
+          if (!cancelled) Alert.alert('Payment confirmed', 'Your Paystack payment was verified.');
         }
         if (!cancelled) await load();
       } catch (err: unknown) {
@@ -127,9 +129,30 @@ export function OrderDetailScreen({
     }
   };
 
+  const continuePaystack = async () => {
+    setActing(true);
+    try {
+      const session = await resumeMarketplaceOrderCheckout(route.params.orderId);
+      if (session?.authorizationUrl) {
+        await WebBrowser.openBrowserAsync(session.authorizationUrl);
+        await load();
+        return;
+      }
+      Alert.alert('Checkout unavailable', 'Could not open Paystack checkout.');
+    } catch (err: unknown) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Could not start checkout');
+    } finally {
+      setActing(false);
+    }
+  };
+
   const isSeller = user?.id === order?.seller_id;
   const isBuyer = user?.id === order?.buyer_id;
   const stepIndex = order ? timelineIndexForStatus(order.status) : -1;
+  const needsPaystack =
+    isBuyer &&
+    (order?.status === 'awaiting_payment' ||
+      (order?.status === 'pending_payment' && Boolean(order.payment_id)));
 
   const uploadPaymentProof = async () => {
     if (!order) return;
@@ -191,7 +214,7 @@ export function OrderDetailScreen({
               : order.status === 'cancelled'
                 ? 'Cancelled'
                 : order.status === 'awaiting_payment'
-                  ? 'Sale in progress — awaiting payment'
+                  ? 'Awaiting Paystack payment'
                   : `Sale in progress — ${order.status.replace(/_/g, ' ')}`}
           </Text>
           {order.discount_amount ? (
@@ -242,7 +265,25 @@ export function OrderDetailScreen({
           </View>
         ) : null}
 
-        {(order.status === 'pending_payment' || order.status === 'awaiting_payment') && (
+        {needsPaystack ? (
+          <View className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 gap-3">
+            <Text className="font-semibold text-indigo-900 dark:text-indigo-200">
+              Pay with Paystack
+            </Text>
+            <Text className="text-sm text-indigo-800 dark:text-indigo-300">
+              Item total plus a 5% Lantern service charge. Funds go to the seller after you confirm
+              delivery.
+            </Text>
+            <Button loading={acting} onPress={() => void continuePaystack()}>
+              Continue to Paystack
+            </Button>
+            <Button variant="secondary" loading={acting} onPress={() => runAction('cancel')}>
+              Cancel order
+            </Button>
+          </View>
+        ) : null}
+
+        {order.status === 'pending_payment' && !order.payment_id && (
           <View className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 gap-3">
             <Text className="font-semibold text-amber-900 dark:text-amber-200">Payment required</Text>
             <Text className="text-sm text-amber-800 dark:text-amber-300">

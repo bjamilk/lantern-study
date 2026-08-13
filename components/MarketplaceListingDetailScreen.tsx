@@ -313,10 +313,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     const unitPay = couponPreview?.finalAmount ?? pricing.effective;
     const qty = listing.quantity == null ? 1 : selectedQuantity;
     const itemTotal = Math.round(unitPay * qty * 100) / 100;
+    const serviceFee = Math.round(itemTotal * 0.05 * 100) / 100;
+    const payAmount = Math.round((itemTotal + serviceFee) * 100) / 100;
     const confirmed = await confirmDialog({
-      title: 'Confirm order',
-      message: `Order ${listing.title}${qty > 1 ? ` ×${qty}` : ''}?\n\nTotal: ₦${itemTotal.toLocaleString()}\n\nYou pay the seller directly and arrange pickup or delivery with them. Lantern does not process this payment.`,
-      confirmLabel: 'Place order',
+      title: 'Confirm purchase',
+      message: `Confirm purchase of ${listing.title}${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ₦${itemTotal.toLocaleString()}\nService charge (5%): ₦${serviceFee.toLocaleString()}\nTotal: ₦${payAmount.toLocaleString()}`,
+      confirmLabel: 'Pay now',
     });
     if (!confirmed) return;
 
@@ -330,7 +332,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
         couponPreview ? couponCode.trim() : undefined,
         qty
       );
-      showToast('Order placed. Arrange payment, pickup or delivery with the seller.');
+      if (result?.authorizationUrl) {
+        showToast('Redirecting to Paystack to complete payment…');
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      showToast('Order placed. Arrange pickup or delivery with the seller.');
       if (result?.order?.id) {
         onNavigate('MarketplaceOrderDetail', { orderId: result.order.id });
       } else {

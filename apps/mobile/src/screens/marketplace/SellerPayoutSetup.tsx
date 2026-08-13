@@ -95,9 +95,8 @@ export function SellerPayoutSetup() {
       <View>
         <Text className="text-sm font-semibold text-lantern-text">Payout bank account</Text>
         <Text className="text-xs text-lantern-text-secondary mt-1">
-          Buyers pay you directly for each order — Lantern does not collect or transfer payment.
-          These details are stored only for future payout features and are not used to move money
-          today.
+          Buyers pay via Paystack. After they confirm delivery, your listing amount is transferred
+          here. Lantern keeps a 5% service charge.
         </Text>
       </View>
 
