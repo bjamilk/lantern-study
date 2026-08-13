@@ -9,7 +9,6 @@
  * share sheet by URI.
  */
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import {
   MIME_BY_EXTENSION,
   sanitizeFileName,
@@ -43,6 +42,18 @@ export async function shareTextFile({
   contents,
   dialogTitle,
 }: ShareTextFileOptions): Promise<string> {
+  // Loaded lazily, and deliberately so: expo-sharing is a native module, and a
+  // top-level import evaluates it at app boot. On any binary built before the
+  // module existed (the dev client, an old install) that crashed the whole app
+  // with "Cannot find native module 'ExpoSharing'" — turning "sharing is
+  // unavailable" into "the app will not start".
+  let Sharing: typeof import('expo-sharing');
+  try {
+    Sharing = await import('expo-sharing');
+  } catch {
+    throw new SharingUnavailableError();
+  }
+
   const safeName = sanitizeFileName(fileName);
   const extension = safeName.split('.').pop()?.toLowerCase() || 'txt';
   // cacheDirectory, not documentDirectory: an export is a hand-off, not a

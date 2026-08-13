@@ -5,7 +5,14 @@
  * Uses local-first approach: data is stored in AsyncStorage and synced with Supabase.
  */
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
-import { isBudgetForMonth } from '@lantern/shared/utils';
+import {
+  isBudgetForMonth,
+  normalizeMonthlyPlans,
+  readPlanForMonth,
+  toMonthYear,
+  writePlanForMonth,
+  type MonthlyPlans,
+} from '@lantern/shared/utils';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
@@ -275,13 +282,14 @@ const scheduleBudgetExtrasSync = (userId: string, getState: () => BudgetState) =
   if (DEMO_MODE || !userId) return;
   if (budgetExtrasSyncTimer) clearTimeout(budgetExtrasSyncTimer);
   budgetExtrasSyncTimer = setTimeout(() => {
-    const { savingsGoals, expenseSplits, budget } = getState();
+    const { savingsGoals, expenseSplits, budget, plansByMonth } = getState();
     saveBudgetExtras(userId, {
       savingsGoals,
       expenseSplits,
       categoryBudgets: budget?.categoryBudgets,
       plannedIncome: budget?.plannedIncome,
       plannedSavings: budget?.plannedSavings,
+      plansByMonth,
     }).catch(err => {
       console.warn('Failed to sync budget extras:', err);
     });
@@ -304,6 +312,8 @@ const cacheBudgetExtrasLocally = async (
 interface BudgetState {
   transactions: Transaction[];
   budget: Budget | null;
+  /** Per-month plans, keyed yyyy-mm — the source of truth for history. */
+  plansByMonth: MonthlyPlans;
   savingsGoals: SavingsGoal[];
   expenseSplits: ExpenseSplit[];
   walletBalance: number;
@@ -324,8 +334,12 @@ interface BudgetState {
   setBudget: (userId: string, amount: number, categoryBudgets?: Record<string, number>) => Promise<void>;
   setBudgetPlan: (
     userId: string,
-    plan: { plannedIncome?: Record<string, number>; plannedSavings?: number }
+    plan: { plannedIncome?: Record<string, number>; plannedSavings?: number },
+    /** Which month the plan belongs to; defaults to the current month. */
+    monthYear?: string
   ) => Promise<void>;
+  /** The stored plan for a month, with the legacy fallback for the current one. */
+  getPlanForMonth: (monthYear: string) => ReturnType<typeof readPlanForMonth>;
   computeStats: () => void;
   clearError: () => void;
 
@@ -355,6 +369,7 @@ interface BudgetState {
 export const useBudgetStore = create<BudgetState>((set, get) => ({
   transactions: [],
   budget: null,
+  plansByMonth: {},
   savingsGoals: [],
   expenseSplits: [],
   walletBalance: 0,
@@ -599,23 +614,55 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
     }
   },
 
+  getPlanForMonth: (monthYear: string) => {
+    const { plansByMonth, budget } = get();
+    return readPlanForMonth(
+      {
+        plansByMonth,
+        categoryBudgets: budget?.categoryBudgets,
+        plannedIncome: budget?.plannedIncome,
+        plannedSavings: budget?.plannedSavings,
+      },
+      monthYear,
+      toMonthYear(new Date())
+    );
+  },
+
   /**
    * Save the planning half of the budget: what income is expected and how much
    * of it is earmarked for savings. Stored in budgetExtras alongside the
    * per-category expense plan — the user_budgets row only holds the limit.
    */
-  setBudgetPlan: async (userId, plan) => {
+  setBudgetPlan: async (userId, plan, monthYear) => {
+    const currentMonth = toMonthYear(new Date());
+    const targetMonth = monthYear ?? currentMonth;
     const current = get().budget;
+
+    // The per-month map is the source of truth; writePlanForMonth also mirrors
+    // a current-month edit into the flat fields for older builds.
+    const written = writePlanForMonth(
+      { plansByMonth: get().plansByMonth },
+      targetMonth,
+      {
+        plannedExpenses: current?.categoryBudgets,
+        plannedIncome: plan.plannedIncome,
+        plannedSavings: plan.plannedSavings,
+      },
+      currentMonth
+    );
+
     const next: Budget = {
       userId,
-      month: current?.month ?? new Date().toISOString().slice(0, 7),
+      month: current?.month ?? currentMonth,
       monthlyLimit: current?.monthlyLimit ?? 0,
       categoryBudgets: current?.categoryBudgets,
-      plannedIncome: plan.plannedIncome ?? current?.plannedIncome,
-      plannedSavings: plan.plannedSavings ?? current?.plannedSavings,
+      plannedIncome:
+        targetMonth === currentMonth ? plan.plannedIncome : current?.plannedIncome,
+      plannedSavings:
+        targetMonth === currentMonth ? plan.plannedSavings : current?.plannedSavings,
     };
 
-    set({ budget: next });
+    set({ budget: next, plansByMonth: written.plansByMonth ?? {} });
     get().computeStats();
     try {
       await AsyncStorage.setItem('monthlyBudget', JSON.stringify(next));
@@ -687,6 +734,7 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
           savingsGoals: cloudExtras.savingsGoals,
           expenseSplits: cloudExtras.expenseSplits,
           walletBalance: cloudExtras.walletBalance,
+          plansByMonth: normalizeMonthlyPlans(cloudExtras.plansByMonth),
           budget: currentBudget
             ? {
                 ...currentBudget,

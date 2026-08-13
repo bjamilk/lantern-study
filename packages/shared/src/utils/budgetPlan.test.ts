@@ -1,5 +1,9 @@
 import {
   addMonths,
+  normalizeMonthlyPlans,
+  plannedMonths,
+  readPlanForMonth,
+  writePlanForMonth,
   compareMonthYear,
   computePeriodPace,
   formatMonthYear,
@@ -244,5 +248,117 @@ describe('month navigation', () => {
     expect(compareMonthYear('2026-07', '2026-08')).toBeLessThan(0);
     expect(compareMonthYear('2027-01', '2026-12')).toBeGreaterThan(0);
     expect(compareMonthYear('2026-08', '2026-08')).toBe(0);
+  });
+});
+
+describe('per-month plan storage', () => {
+  const AUG = '2026-08';
+  const JUL = '2026-07';
+
+  const legacyExtras = {
+    categoryBudgets: { food_feeding: 20000 },
+    plannedIncome: { allowance: 80000 },
+    plannedSavings: 10000,
+  };
+
+  describe('readPlanForMonth', () => {
+    it('reads a stored per-month plan', () => {
+      const extras = {
+        plansByMonth: { [JUL]: { plannedSavings: 5000, plannedIncome: { allowance: 60000 } } },
+      };
+      expect(readPlanForMonth(extras, JUL, AUG)).toEqual({
+        plannedExpenses: undefined,
+        plannedIncome: { allowance: 60000 },
+        plannedSavings: 5000,
+      });
+    });
+
+    it('falls back to the legacy flat fields for the CURRENT month only', () => {
+      expect(readPlanForMonth(legacyExtras, AUG, AUG)).toEqual({
+        plannedExpenses: { food_feeding: 20000 },
+        plannedIncome: { allowance: 80000 },
+        plannedSavings: 10000,
+      });
+    });
+
+    it('does NOT let the legacy fields impersonate a past month', () => {
+      // This is the bug the per-month store exists to fix: July must not
+      // inherit whatever the user most recently planned.
+      expect(readPlanForMonth(legacyExtras, JUL, AUG)).toBeNull();
+    });
+
+    it('prefers a stored month over the legacy fields', () => {
+      const extras = {
+        ...legacyExtras,
+        plansByMonth: { [AUG]: { plannedSavings: 99999 } },
+      };
+      expect(readPlanForMonth(extras, AUG, AUG)?.plannedSavings).toBe(99999);
+    });
+
+    it('returns null when nothing was ever planned', () => {
+      expect(readPlanForMonth({}, AUG, AUG)).toBeNull();
+      expect(readPlanForMonth(null, AUG, AUG)).toBeNull();
+    });
+  });
+
+  describe('writePlanForMonth', () => {
+    it('stores the plan under its month', () => {
+      const next = writePlanForMonth({}, JUL, { plannedSavings: 5000 }, AUG);
+      expect(next.plansByMonth?.[JUL]?.plannedSavings).toBe(5000);
+    });
+
+    it('mirrors a current-month write into the legacy fields for older builds', () => {
+      const next = writePlanForMonth({}, AUG, {
+        plannedExpenses: { transport: 3000 },
+        plannedIncome: { allowance: 50000 },
+        plannedSavings: 7000,
+      }, AUG);
+      expect(next.categoryBudgets).toEqual({ transport: 3000 });
+      expect(next.plannedIncome).toEqual({ allowance: 50000 });
+      expect(next.plannedSavings).toBe(7000);
+    });
+
+    it('does NOT touch the legacy fields when editing a past month', () => {
+      const next = writePlanForMonth(legacyExtras, JUL, { plannedSavings: 1 }, AUG);
+      expect(next.plannedSavings).toBe(10000);
+      expect(next.categoryBudgets).toEqual({ food_feeding: 20000 });
+      expect(next.plansByMonth?.[JUL]?.plannedSavings).toBe(1);
+    });
+
+    it('keeps other months intact', () => {
+      const first = writePlanForMonth({}, JUL, { plannedSavings: 1 }, AUG);
+      const second = writePlanForMonth(first, AUG, { plannedSavings: 2 }, AUG);
+      expect(second.plansByMonth?.[JUL]?.plannedSavings).toBe(1);
+      expect(second.plansByMonth?.[AUG]?.plannedSavings).toBe(2);
+    });
+  });
+
+  describe('normalizeMonthlyPlans', () => {
+    it('drops junk keys and malformed entries', () => {
+      expect(
+        normalizeMonthlyPlans({
+          '2026-08': { plannedSavings: 5 },
+          'not-a-month': { plannedSavings: 5 },
+          '2026-13': { plannedSavings: 5 },
+          '2026-07': 'garbage',
+        })
+      ).toEqual({ '2026-08': { plannedExpenses: undefined, plannedIncome: undefined, plannedSavings: 5 } });
+    });
+
+    it('is safe on non-objects', () => {
+      expect(normalizeMonthlyPlans(null)).toEqual({});
+      expect(normalizeMonthlyPlans('x')).toEqual({});
+      expect(normalizeMonthlyPlans([1])).toEqual({});
+    });
+  });
+
+  it('lists planned months newest first', () => {
+    const extras = writePlanForMonth(
+      writePlanForMonth({}, JUL, { plannedSavings: 1 }, AUG),
+      AUG,
+      { plannedSavings: 2 },
+      AUG
+    );
+    expect(plannedMonths(extras)).toEqual([AUG, JUL]);
   });
 });

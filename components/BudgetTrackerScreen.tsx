@@ -8,6 +8,7 @@ import {
   formatMonthYear,
   isBudgetForMonth,
   normalizeBudgetPlan,
+  readPlanForMonth,
   summarizeBudgetPlan,
 } from '@lantern/shared/utils';
 import { fetchUserBudget } from '../services/supabase';
@@ -153,11 +154,38 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   // month must not become this month's cap when the calendar rolls over.
   // Past months recover only the cap: the plan (expected income, planned
   // savings) is stored as one current blob, not per month.
+  // Plans are stored per month, so a past month recovers its whole plan —
+  // expected income, planned savings and category budgets — not just the cap.
+  const plansByMonth = useBudgetStore(s => s.plansByMonth);
+  const monthPlan = useMemo(
+    () =>
+      readPlanForMonth(
+        {
+          plansByMonth,
+          categoryBudgets: budget?.categoryBudgets,
+          plannedIncome: budget?.plannedIncome,
+          plannedSavings: budget?.plannedSavings,
+        },
+        selectedMonth,
+        currentMonth
+      ),
+    [plansByMonth, budget, selectedMonth, currentMonth]
+  );
+
   const activeBudget = isCurrentMonth
     ? budget && isBudgetForMonth(budget.monthYear, currentMonth)
       ? budget
       : null
-    : historicalBudget;
+    : historicalBudget || monthPlan
+      ? {
+          monthlyLimit: historicalBudget?.monthlyLimit ?? 0,
+          monthYear: selectedMonth,
+          userId: currentUser.id,
+          categoryBudgets: monthPlan?.plannedExpenses,
+          plannedIncome: monthPlan?.plannedIncome,
+          plannedSavings: monthPlan?.plannedSavings,
+        }
+      : null;
   const budgetLimit = activeBudget?.monthlyLimit || 0;
   const budgetProgress = budgetLimit > 0 ? (monthlyExpenses / budgetLimit) * 100 : 0;
 

@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Budget, Transaction, TransactionType } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
+import { writePlanForMonth } from '@lantern/shared/utils';
 import { useUIStore } from '../stores/uiStore';
 import { saveUserBudget, saveBudgetTransaction, deleteBudgetTransaction, fetchBudgetTransactions } from '../services/supabase';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
@@ -56,6 +57,19 @@ export function useBudgetHandlers() {
         setBudget(newBudget);
         localStorage.setItem('monthlyBudget', JSON.stringify(newBudget));
 
+        // Record the plan against its month, so history can recover it later.
+        const written = writePlanForMonth(
+            { plansByMonth: useBudgetStore.getState().plansByMonth },
+            newBudget.monthYear,
+            {
+                plannedExpenses: newBudget.categoryBudgets,
+                plannedIncome: newBudget.plannedIncome,
+                plannedSavings: newBudget.plannedSavings,
+            },
+            currentMonth
+        );
+        useBudgetStore.getState().setPlansByMonth(written.plansByMonth ?? {});
+
         saveUserBudget(currentUser.id, {
             monthlyLimit: newBudget.monthlyLimit,
             monthYear: newBudget.monthYear,
@@ -71,6 +85,7 @@ export function useBudgetHandlers() {
             categoryBudgets: newBudget.categoryBudgets,
             plannedIncome: newBudget.plannedIncome,
             plannedSavings: newBudget.plannedSavings,
+            plansByMonth: written.plansByMonth ?? {},
         }).catch(error => {
             console.error('[Budget Sync] Failed to save category budgets:', error);
         });

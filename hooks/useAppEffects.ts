@@ -47,6 +47,7 @@ import { mapUserStatsFromApi, normalizeTestPresets } from '@lantern/shared/utils
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
+import { normalizeMonthlyPlans, readPlanForMonth } from '@lantern/shared/utils';
 import { fetchBudgetWalletData } from '../services/budgetApi';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { DirectMessage } from '../types';
@@ -885,13 +886,27 @@ export function useAppEffects({
                         if (extras && typeof extras === 'object') {
                             if (Array.isArray(extras.savingsGoals)) setSavingsGoals(extras.savingsGoals);
                             if (Array.isArray(extras.expenseSplits)) setExpenseSplits(extras.expenseSplits);
-                            if (extras.categoryBudgets && typeof extras.categoryBudgets === 'object') {
+                            useBudgetStore.getState().setPlansByMonth(
+                                normalizeMonthlyPlans(extras.plansByMonth)
+                            );
+                            // Read the CURRENT month's plan through the per-month
+                            // store (with the legacy flat fields as fallback).
+                            // Hydration used to restore only categoryBudgets, so
+                            // plannedIncome/plannedSavings vanished on reload.
+                            const monthPlan = readPlanForMonth(
+                                extras,
+                                currentMonthYear,
+                                currentMonthYear
+                            );
+                            if (monthPlan) {
                                 const currentBudget = useBudgetStore.getState().budget;
                                 setBudget({
                                     monthlyLimit: currentBudget?.monthlyLimit ?? 0,
                                     monthYear: currentBudget?.monthYear ?? currentMonthYear,
                                     userId,
-                                    categoryBudgets: extras.categoryBudgets,
+                                    categoryBudgets: monthPlan.plannedExpenses,
+                                    plannedIncome: monthPlan.plannedIncome,
+                                    plannedSavings: monthPlan.plannedSavings,
                                 });
                             }
                         }

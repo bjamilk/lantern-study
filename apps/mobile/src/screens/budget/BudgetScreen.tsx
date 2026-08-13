@@ -38,6 +38,7 @@ import {
   formatMonthYear,
   isBudgetForMonth,
   normalizeBudgetPlan,
+  readPlanForMonth,
   summarizeBudgetPlan,
 } from '@lantern/shared/utils';
 import * as api from '../../services/api';
@@ -183,17 +184,41 @@ export default function BudgetScreen() {
   // A budget belongs to the month it was saved for. Last month's cap must not
   // score this month's spending, and last month's plan must not reappear as if
   // it were this month's.
+  // Plans are stored per month, so history recovers the whole plan — expected
+  // income, planned savings and category budgets — not just the cap. Subscribe
+  // to the map itself: a bare getPlanForMonth() call would read fresh state but
+  // never re-render when a plan syncs in from another device.
+  const plansByMonth = useBudgetStore(s => s.plansByMonth);
+  const monthPlan = useMemo(
+    () =>
+      readPlanForMonth(
+        {
+          plansByMonth,
+          categoryBudgets: budget?.categoryBudgets,
+          plannedIncome: budget?.plannedIncome,
+          plannedSavings: budget?.plannedSavings,
+        },
+        selectedMonth,
+        currentMonth
+      ),
+    [plansByMonth, budget, selectedMonth, currentMonth]
+  );
+
   const activeBudget = useMemo(() => {
     if (isCurrentMonth) {
       return budget && isBudgetForMonth(budget.month, currentMonth) ? budget : null;
     }
-    // Past months: only the cap is recoverable. The plan (expected income and
-    // planned savings) is stored as a single current blob, not per month, so
-    // history shows what you spent against the limit you had — not a plan.
-    return historicalLimit && historicalLimit > 0
-      ? { userId, month: selectedMonth, monthlyLimit: historicalLimit }
-      : null;
-  }, [isCurrentMonth, budget, currentMonth, historicalLimit, selectedMonth, userId]);
+    const hasLimit = Boolean(historicalLimit && historicalLimit > 0);
+    if (!hasLimit && !monthPlan) return null;
+    return {
+      userId,
+      month: selectedMonth,
+      monthlyLimit: historicalLimit ?? 0,
+      categoryBudgets: monthPlan?.plannedExpenses,
+      plannedIncome: monthPlan?.plannedIncome,
+      plannedSavings: monthPlan?.plannedSavings,
+    };
+  }, [isCurrentMonth, budget, currentMonth, historicalLimit, selectedMonth, userId, monthPlan]);
 
   const plan = useMemo(
     () => normalizeBudgetPlan(activeBudget, selectedMonth),

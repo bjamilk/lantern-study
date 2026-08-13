@@ -272,3 +272,127 @@ export function compareMonthYear(a: MonthYear, b: MonthYear): number {
 export function toMonthYear(date: Date): MonthYear {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}`;
 }
+
+// ---------------------------------------------------------------------------
+// Per-month storage
+//
+// Plans were first stored as one flat blob on budgetExtras — a single
+// plannedIncome / plannedSavings / categoryBudgets that always described "now".
+// That made history impossible: browsing to July could recover the cap (which
+// user_budgets keys by month) but never the plan, and editing this month
+// silently rewrote what July claimed to have planned.
+//
+// Plans are now keyed by month. The flat fields are still read as the CURRENT
+// month's plan so nothing is lost on upgrade, and still written alongside so an
+// older build of the app keeps working.
+// ---------------------------------------------------------------------------
+
+/** The stored half of a plan — the cap lives in user_budgets, keyed by month. */
+export interface StoredMonthPlan {
+  plannedExpenses?: Record<string, number>;
+  plannedIncome?: Record<string, number>;
+  plannedSavings?: number;
+}
+
+export type MonthlyPlans = Record<MonthYear, StoredMonthPlan>;
+
+/** The plan-bearing shape of budgetExtras, old and new fields together. */
+export interface PlanBearingExtras {
+  plansByMonth?: MonthlyPlans | null;
+  /** Legacy flat fields — the pre-per-month plan, meaning "the current month". */
+  categoryBudgets?: Record<string, number> | null;
+  plannedIncome?: Record<string, number> | null;
+  plannedSavings?: number | null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Keep only `yyyy-mm` keys holding an object, so junk cannot reach the UI. */
+export function normalizeMonthlyPlans(value: unknown): MonthlyPlans {
+  if (!isPlainObject(value)) return {};
+  const out: MonthlyPlans = {};
+  for (const [month, plan] of Object.entries(value)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !isPlainObject(plan)) continue;
+    out[month] = {
+      plannedExpenses: isPlainObject(plan.plannedExpenses)
+        ? (plan.plannedExpenses as Record<string, number>)
+        : undefined,
+      plannedIncome: isPlainObject(plan.plannedIncome)
+        ? (plan.plannedIncome as Record<string, number>)
+        : undefined,
+      plannedSavings:
+        typeof plan.plannedSavings === 'number' && Number.isFinite(plan.plannedSavings)
+          ? plan.plannedSavings
+          : undefined,
+    };
+  }
+  return out;
+}
+
+/**
+ * The stored plan for a month.
+ *
+ * The legacy flat fields describe the current month and nothing else — falling
+ * back to them for a past month is what made July appear to have been planned
+ * exactly like today.
+ */
+export function readPlanForMonth(
+  extras: PlanBearingExtras | null | undefined,
+  monthYear: MonthYear,
+  currentMonth: MonthYear
+): StoredMonthPlan | null {
+  const plans = normalizeMonthlyPlans(extras?.plansByMonth);
+  const stored = plans[monthYear];
+  if (stored) return stored;
+
+  if (monthYear !== currentMonth) return null;
+
+  const legacy: StoredMonthPlan = {
+    plannedExpenses: extras?.categoryBudgets ?? undefined,
+    plannedIncome: extras?.plannedIncome ?? undefined,
+    plannedSavings:
+      typeof extras?.plannedSavings === 'number' ? extras.plannedSavings : undefined,
+  };
+  const hasAnything =
+    Object.keys(legacy.plannedExpenses || {}).length > 0 ||
+    Object.keys(legacy.plannedIncome || {}).length > 0 ||
+    (legacy.plannedSavings ?? 0) > 0;
+  return hasAnything ? legacy : null;
+}
+
+/**
+ * Store a plan against its month, returning the fields to persist.
+ *
+ * Editing the current month also refreshes the flat fields, so a user still on
+ * an older build sees the same plan rather than an empty one.
+ */
+export function writePlanForMonth(
+  extras: PlanBearingExtras | null | undefined,
+  monthYear: MonthYear,
+  plan: StoredMonthPlan,
+  currentMonth: MonthYear
+): PlanBearingExtras {
+  const plans = normalizeMonthlyPlans(extras?.plansByMonth);
+  plans[monthYear] = {
+    plannedExpenses: plan.plannedExpenses,
+    plannedIncome: plan.plannedIncome,
+    plannedSavings: plan.plannedSavings,
+  };
+
+  const next: PlanBearingExtras = { ...extras, plansByMonth: plans };
+  if (monthYear === currentMonth) {
+    next.categoryBudgets = plan.plannedExpenses;
+    next.plannedIncome = plan.plannedIncome;
+    next.plannedSavings = plan.plannedSavings;
+  }
+  return next;
+}
+
+/** Months that have a stored plan, newest first — for a history list. */
+export function plannedMonths(extras: PlanBearingExtras | null | undefined): MonthYear[] {
+  return Object.keys(normalizeMonthlyPlans(extras?.plansByMonth)).sort((a, b) =>
+    compareMonthYear(b, a)
+  );
+}

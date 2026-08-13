@@ -15,6 +15,8 @@ export interface BudgetExtras {
   plannedIncome?: Record<string, number>;
   /** Planned savings allocation for the month. */
   plannedSavings?: number;
+  /** Per-month plans, keyed yyyy-mm. */
+  plansByMonth?: Record<string, unknown>;
   walletAwards?: Record<string, number>;
 }
 
@@ -37,6 +39,10 @@ export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | 
           : undefined,
       plannedSavings:
         typeof extras.plannedSavings === 'number' ? extras.plannedSavings : undefined,
+      plansByMonth:
+        extras.plansByMonth && typeof extras.plansByMonth === 'object'
+          ? (extras.plansByMonth as Record<string, unknown>)
+          : undefined,
       walletAwards:
         extras.walletAwards && typeof extras.walletAwards === 'object'
           ? (extras.walletAwards as Record<string, number>)
@@ -68,6 +74,7 @@ export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Pr
           categoryBudgets: extras.categoryBudgets,
           plannedIncome: extras.plannedIncome,
           plannedSavings: extras.plannedSavings,
+          plansByMonth: extras.plansByMonth,
           walletBalance:
             typeof existingExtras.walletBalance === 'number' ? existingExtras.walletBalance : 0,
           walletAwards:

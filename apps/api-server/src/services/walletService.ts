@@ -15,6 +15,8 @@ export interface BudgetExtrasState {
   plannedIncome?: Record<string, number>;
   /** Planned savings allocation for the month. */
   plannedSavings?: number;
+  /** Per-month plans, keyed yyyy-mm. The flat fields above mirror the current month. */
+  plansByMonth?: Record<string, unknown>;
   walletAwards?: Record<string, number>;
 }
 
@@ -103,6 +105,10 @@ export class WalletService {
         typeof extras.plannedSavings === 'number' && Number.isFinite(extras.plannedSavings)
           ? Math.max(0, extras.plannedSavings)
           : undefined,
+      plansByMonth:
+        extras.plansByMonth && typeof extras.plansByMonth === 'object'
+          ? (extras.plansByMonth as Record<string, unknown>)
+          : undefined,
       walletAwards:
         extras.walletAwards && typeof extras.walletAwards === 'object' ? extras.walletAwards : {},
     };
@@ -129,6 +135,7 @@ export class WalletService {
         categoryBudgets: extras.categoryBudgets,
         plannedIncome: extras.plannedIncome,
         plannedSavings: extras.plannedSavings,
+        plansByMonth: extras.plansByMonth,
         walletAwards: extras.walletAwards || {},
       },
     };

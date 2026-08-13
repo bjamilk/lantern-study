@@ -5,12 +5,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Transaction, Budget, TransactionType, SavingsGoal, ExpenseSplit } from '../types';
+import type { MonthlyPlans } from '@lantern/shared/utils';
 
 interface BudgetState {
   // State
   ownerUserId: string | null;
   transactions: Transaction[];
   budget: Budget | null;
+  /** Per-month plans, keyed yyyy-mm — the source of truth for history. */
+  plansByMonth: MonthlyPlans;
   savingsGoals: SavingsGoal[];
   expenseSplits: ExpenseSplit[];
   walletBalance: number; // virtual study-reward coins
@@ -24,6 +27,7 @@ interface BudgetState {
   
   // Actions — Budget
   setBudget: (budget: Budget | null) => void;
+  setPlansByMonth: (plans: MonthlyPlans) => void;
   
   // Actions — Savings Goals
   setSavingsGoals: (goals: SavingsGoal[]) => void;
@@ -65,6 +69,7 @@ export const useBudgetStore = create<BudgetState>()(
       ownerUserId: null,
       transactions: [],
       budget: null,
+      plansByMonth: {},
       savingsGoals: [],
       expenseSplits: [],
       walletBalance: 0,
@@ -83,6 +88,7 @@ export const useBudgetStore = create<BudgetState>()(
       })),
       
       setBudget: (budget) => set({ budget }),
+      setPlansByMonth: (plans) => set({ plansByMonth: plans }),
       
       // Savings Goals
       setSavingsGoals: (goals) => set({ savingsGoals: goals }),
