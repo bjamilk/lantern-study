@@ -30,7 +30,12 @@ const pinnedNativeModules = {
 
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [monorepoRoot];
+// Append, never replace: assigning a bare [monorepoRoot] dropped the folders
+// expo/metro-config watches by default, which expo-doctor flags as a config
+// error and which can leave legitimate sources unwatched.
+config.watchFolders = [...(config.watchFolders ?? []), monorepoRoot].filter(
+  (folder, index, all) => all.indexOf(folder) === index
+);
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(monorepoRoot, 'node_modules'),

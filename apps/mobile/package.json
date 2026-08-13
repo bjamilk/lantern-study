@@ -6,6 +6,16 @@
   "engines": {
     "node": ">=20.19.4 <21"
   },
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native-reanimated",
+        "@react-native-community/netinfo",
+        "expo",
+        "expo-updates"
+      ]
+    }
+  },
   "scripts": {
     "start": "powershell -ExecutionPolicy Bypass -File ./scripts/start-expo-go.ps1",
     "start:go": "powershell -ExecutionPolicy Bypass -File ./scripts/start-expo-go.ps1",
