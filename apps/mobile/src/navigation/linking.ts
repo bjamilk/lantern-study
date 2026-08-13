@@ -7,7 +7,6 @@ const prefixes = [
   Linking.createURL('/'),
   'lanternstudy://',
   'lanternstudy:/',
-  'https://lanternstudy.app',
   'https://lanternstudy.com',
 ];
 

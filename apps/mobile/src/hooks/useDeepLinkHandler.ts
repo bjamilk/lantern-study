@@ -58,9 +58,9 @@ async function handleIncomingUrl(url: string, userId?: string) {
   let inviteId: string | null = parsed?.type === 'invite' ? parsed.id : null;
   if (!inviteId) {
     try {
-      const normalized = url.replace('lanternstudy:/', 'https://lanternstudy.app/');
+      const normalized = url.replace('lanternstudy:/', 'https://lanternstudy.com/');
       const urlObj = new URL(
-        normalized.startsWith('http') ? normalized : `https://lanternstudy.app/${normalized}`
+        normalized.startsWith('http') ? normalized : `https://lanternstudy.com/${normalized}`
       );
       inviteId = urlObj.searchParams.get('inviteId');
     } catch {

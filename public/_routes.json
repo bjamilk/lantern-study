@@ -3,6 +3,7 @@
   "include": ["/*"],
   "exclude": [
     "/assets/*",
+    "/.well-known/*",
     "/favicon.svg",
     "/favicon-v2.svg",
     "/favicon.png",

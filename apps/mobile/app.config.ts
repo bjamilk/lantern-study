@@ -69,7 +69,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.15: PDFs and slides in a note open fullscreen for reading, and close
   // back to the note — the old "full screen" handed the file to an external
   // browser and left the app.
-  version: '1.0.15',
+  // 1.0.16: shared lanternstudy.com links open in the app — deep linking
+  // pointed at lanternstudy.app, a domain that does not exist, so the app's own
+  // allowlist rejected every link it generated. Also drops two Android
+  // permissions the app never used.
+  version: '1.0.16',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
@@ -93,7 +97,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: IOS_BUNDLE_ID,
-    associatedDomains: ['applinks:lanternstudy.app'],
+    associatedDomains: ['applinks:lanternstudy.com'],
     // Background lecture mic requires a new native build (not OTA-only).
     infoPlist: {
       UIBackgroundModes: ['audio'],
@@ -119,6 +123,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     package: ANDROID_PACKAGE,
     permissions: ['RECORD_AUDIO', 'MODIFY_AUDIO_SETTINGS'],
+    // Both arrive through dependency manifests, not from this app.
+    // SYSTEM_ALERT_WINDOW comes from react-native's *debug* manifest and was
+    // reaching release builds — "display over other apps" is a permission Play
+    // scrutinises and nothing here draws overlays. WRITE_EXTERNAL_STORAGE has
+    // been inert since scoped storage (API 29); uploads and exports go through
+    // the app's own directories and the share sheet.
+    blockedPermissions: [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+    ],
     intentFilters: [
       {
         action: 'VIEW',
@@ -126,7 +140,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         data: [
           {
             scheme: 'https',
-            host: 'lanternstudy.app',
+            host: 'lanternstudy.com',
             pathPrefix: '/',
           },
           {
@@ -146,6 +160,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     // Keeps the fmt C++17 workaround in the generated Podfile — see the plugin.
     './plugins/withFmtCxx17',
+    // Bounds READ_EXTERNAL_STORAGE to API <= 32 — see the plugin.
+    './plugins/withScopedStoragePermission',
     'expo-font',
     'expo-secure-store',
     'expo-web-browser',

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.lanternstudy.app",
+      "sha256_cert_fingerprints": [
+        "E9:C4:62:4B:E8:95:7F:3B:6F:ED:52:C9:58:E2:A5:AB:E0:5A:61:6B:3F:51:F7:1B:FD:42:2F:4D:7B:38:63:3F"
+      ]
+    }
+  }
+]
