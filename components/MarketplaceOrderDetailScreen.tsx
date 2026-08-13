@@ -8,7 +8,6 @@ import {
   submitOrderPaymentProof,
   uploadMarketplaceImage,
   verifyMarketplacePayment,
-  resumeMarketplaceOrderCheckout,
 } from '../services/supabase';
 import { MarketplaceOrder } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -31,7 +30,7 @@ const TIMELINE_STEPS = [
 ] as const;
 
 const STATUS_LABELS: Record<string, string> = {
-  awaiting_payment: 'Awaiting Paystack payment',
+  awaiting_payment: 'Sale in progress — awaiting payment',
   pending_payment: 'Sale in progress — awaiting payment',
   paid: 'Sale in progress — arrange fulfillment',
   ready_for_pickup: 'Sale in progress — ready for pickup',
@@ -243,47 +242,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           ) : null}
         </div>
 
-        {(order.status === 'awaiting_payment' || order.status === 'pending_payment') &&
-          order.payment_id &&
-          isBuyer && (
-          <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40 space-y-3">
-            <h2 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
-              Pay with Paystack
-            </h2>
-            <p className="text-sm text-indigo-800 dark:text-indigo-300">
-              Complete checkout to pay the item total plus a 5% Lantern service charge. Funds are
-              released to the seller after you confirm delivery.
-            </p>
-            <Button
-              size="sm"
-              disabled={acting}
-              onClick={async () => {
-                setActing(true);
-                try {
-                  const session = await resumeMarketplaceOrderCheckout(orderId);
-                  if (session?.authorizationUrl) {
-                    window.location.assign(session.authorizationUrl);
-                    return;
-                  }
-                  useToastStore.getState().showToast('Checkout unavailable', 'error');
-                } catch (err: any) {
-                  useToastStore
-                    .getState()
-                    .showToast(err?.message || 'Could not start checkout', 'error');
-                } finally {
-                  setActing(false);
-                }
-              }}
-            >
-              Continue to Paystack
-            </Button>
-            <Button size="sm" variant="secondary" disabled={acting} onClick={() => runAction('cancel')}>
-              Cancel order
-            </Button>
-          </div>
-        )}
-
-        {order.status === 'pending_payment' && !order.payment_id && (
+        {(order.status === 'pending_payment' || order.status === 'awaiting_payment') && (
           <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 space-y-3">
             <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Payment required</h2>
             <p className="text-sm text-amber-800 dark:text-amber-300">

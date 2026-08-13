@@ -73,18 +73,11 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
       const result = await respondToOffer(offerId, action, counterAmount);
       if (action === 'accept') {
         await refreshBudgetTransactions(userId);
-        const payUrl =
-          (result as { authorizationUrl?: string })?.authorizationUrl ||
-          (result as { checkout?: { authorizationUrl?: string } })?.checkout?.authorizationUrl;
         const offer = offers.find((o) => o.id === offerId);
         const isBuyer = offer?.buyer_id === userId;
-        if (payUrl && isBuyer) {
-          window.location.assign(payUrl);
-          return;
-        }
-        if (payUrl && !isBuyer) {
+        if (!isBuyer) {
           useToastStore.getState().showToast(
-            'Offer accepted. The buyer will complete Paystack checkout.',
+            'Offer accepted. Arrange payment and handover directly with the buyer.',
             'info'
           );
         }

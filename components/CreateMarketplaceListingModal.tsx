@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
-import usePaystackEnabled from './marketplace/usePaystackEnabled';
 import {
-  marketplaceCreateConfirmation,
+  MARKETPLACE_CREATE_CONFIRMATION,
   HEIC_IMAGE_UPLOAD_ERROR,
   isHeicImageUpload,
   isOtherCityCampus,
@@ -80,7 +79,6 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   category,
   onSuccess
 }) => {
-  const paystackEnabled = usePaystackEnabled();
   const [formData, setFormData] = useState<CreateListingFormData>({
     title: '',
     description: '',
@@ -961,7 +959,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 onChange={(e) => setFormData(prev => ({ ...prev, complianceConfirmed: e.target.checked }))}
                 className="mt-1"
               />
-              <span>{marketplaceCreateConfirmation(paystackEnabled)}</span>
+              <span>{MARKETPLACE_CREATE_CONFIRMATION}</span>
             </label>
           </div>
 

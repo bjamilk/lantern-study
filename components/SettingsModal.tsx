@@ -14,8 +14,7 @@ import { compressImage } from '../utils/imageCompression';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { Avatar, Button, Toggle, Tabs, TabList, Tab, TabPanel } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { LEGAL_PATHS, marketplaceComplianceBanner } from '@lantern/shared';
-import usePaystackEnabled from './marketplace/usePaystackEnabled';
+import { LEGAL_PATHS, MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
 import { fetchMarketplaceCampuses, uploadProfileAvatar } from '../services/supabase';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
 import { isOtherCityCampus } from '@lantern/shared/marketplace';
@@ -109,7 +108,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onExportAccount, onResetSettings,
 }) => {
     const { lowDataMode } = useLowDataModeToggle();
-    const paystackEnabled = usePaystackEnabled();
     const activeTab = useUIStore((s) => s.settingsTab);
     const setActiveTab = useUIStore((s) => s.setSettingsTab);
     const [deletionOpen, setDeletionOpen] = useState(false);
@@ -574,7 +572,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </p>
                     </div>
                     <p className="text-sm text-lantern-text-secondary rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-amber-900 dark:text-amber-100">
-                        {marketplaceComplianceBanner(paystackEnabled)}
+                        {MARKETPLACE_COMPLIANCE_BANNER}
                     </p>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Country</label>

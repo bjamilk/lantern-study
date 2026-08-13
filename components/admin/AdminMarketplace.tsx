@@ -218,8 +218,8 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
 
           {orderStatusFilter === 'disputed' ? (
             <p className="text-sm text-lantern-text-muted">
-              Resolve marketplace order disputes by forcing a Paystack payout to the seller (complete sale) or
-              issuing a Paystack refund to the buyer (cancel order and re-list the item). Legacy offline orders
+              Resolve marketplace order disputes by forcing a payout to the seller (complete sale) or
+              refunding the buyer (cancel order and re-list the item). Legacy offline orders
               still use the soft settlement path.
             </p>
           ) : null}
@@ -280,7 +280,7 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
                           loading={actionLoading[`dispute:${order.id}:refund_buyer`]}
                           onClick={() => onResolveDispute(order.id, 'refund_buyer')}
                         >
-                          Refund buyer (Paystack)
+                          Refund buyer
                         </Button>
                       </div>
                     </div>

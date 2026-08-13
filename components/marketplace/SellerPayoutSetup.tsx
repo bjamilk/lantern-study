@@ -78,8 +78,8 @@ export function SellerPayoutSetup({ showToast }: Props) {
       <div>
         <h3 className="text-base font-semibold text-slate-900">Payout bank account</h3>
         <p className="text-sm text-slate-600 mt-1">
-          Buyers pay via Paystack. After they confirm delivery, your listing amount is transferred here.
-          Lantern keeps a 5% service charge.
+          Buyers pay you directly for each order — Lantern does not collect or transfer payment.
+          These details are stored only for future payout features and are not used to move money today.
         </p>
       </div>
 

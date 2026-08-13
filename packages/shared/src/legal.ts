@@ -24,7 +24,7 @@ export const LEGAL_DOCUMENT_TITLES: Record<LegalDocumentId, string> = {
 
 export const PRIVACY_POLICY_MD = `# Privacy Policy
 
-**Last updated:** July 17, 2026
+**Last updated:** August 12, 2026
 
 Lantern Study ("Lantern Study," "Brand," "we," "our," or "us") provides collaborative exam preparation and study tools — including flashcards, tests, notes, study groups, campus marketplace listings, and AI-assisted learning features — through our website at [lanternstudy.com](https://lanternstudy.com) and our mobile applications.
 
@@ -47,9 +47,9 @@ Information may be collected directly from you, automatically from your device o
 | **Personal identifiers** — name, username, email, phone (optional), avatar, profile bio, social handles you choose to share, website login credentials, age indicators (e.g. 16+ eligibility) | Create and maintain your account; deliver the Service; contact you about your account or this Notice; provide support; security and fraud prevention; legal compliance | Supabase (auth/database); Google / Apple (OAuth); customer support tooling; professional advisors; law enforcement when required |
 | **Study & education information** — decks, flashcards, notes, photo notes, test results, study activity, streaks/XP, group membership, campus affiliation for marketplace | Provide study features; sync across devices; personalize learning tools; operate groups and marketplace eligibility | Supabase storage/database; AI providers when you invoke AI on that content |
 | **Social & communications** — group messages, direct messages, discussion content, contact-form submissions | Enable collaboration and support; enforce community rules; respond to privacy or support requests | Supabase realtime/database; email delivery (e.g. Resend) for contact/transactional mail |
-| **Marketplace information** — listings, images, inquiries, campus/location context, orders, payout bank details where applicable | Operate campus marketplace; process checkout via Paystack; seller payouts; abuse prevention | Supabase; Paystack (payment processing); optional image storage |
+| **Marketplace information** — listings, images, inquiries, campus/location context, orders | Operate campus marketplace; abuse prevention | Supabase; optional image storage |
 | **AI usage metadata** — feature used, provider, timestamps, rate-limit counters; prompt-related content only when you run an AI feature | Deliver AI features; rate limiting; auditability; improve reliability | Groq, Google Gemini, Cloudflare Workers AI, Hugging Face (selected by availability) |
-| **Payment information** — marketplace checkout amounts, Paystack references, seller bank account metadata for payouts | Process marketplace payments and seller transfers; fraud prevention; accounting | Paystack; Supabase (payment records; no full card numbers stored by Lantern) |
+| **Seller payout details** — the bank and account number a seller chooses to save, plus the verified account name returned by the bank | Confirm a seller's bank account is valid and ready for any future payout feature. **Lantern does not process marketplace payments** — buyers pay sellers directly, and we never receive, hold, or transfer those funds | Paystack (bank account verification only); Supabase |
 | **Internet / device / geolocation-related** — IP address, device/app version, push tokens, cookies and similar storage, approximate location derived from IP or campus selection you provide, browsing/interaction on our site | Authentication and security; essential site function; analytics **only if you opt in**; abuse detection | Hosting/CDN; Supabase; Expo (push); optional analytics providers if consented; Sentry (optional error monitoring) |
 | **Inferences** — study preferences or product usage patterns derived from activity | Improve product design and (with consent where required) personalize experience | Internal systems; analytics providers if consented |
 
@@ -222,7 +222,7 @@ You may lodge a complaint with your local data protection authority.
 
 export const TERMS_OF_SERVICE_MD = `# Terms of Service
 
-**Last updated:** June 13, 2026
+**Last updated:** August 12, 2026
 
 These Terms of Service ("Terms") govern your use of Lantern Study web and mobile applications ("Service"). By creating an account or using the Service, you agree to these Terms.
 
@@ -258,11 +258,11 @@ AI usage is subject to daily rate limits. We may change providers, models, or li
 
 ## 5. Marketplace
 
-Marketplace listings are user-generated and intended for **Nigerian campus communities** with **on-campus pickup**. Prices are shown in Nigerian Naira (₦). Payments are arranged directly between buyers and sellers unless we explicitly state otherwise.
+Marketplace listings are user-generated and intended for **Nigerian campus communities** with **on-campus pickup**. Prices are shown in Nigerian Naira (₦). Payments are arranged directly between buyers and sellers.
 
 You must be at least **16 years old** to buy or sell on the marketplace. You are responsible for meeting safely on campus, verifying items, and complying with your institution's rules.
 
-We do not guarantee the quality, safety, or legality of items or services offered. Marketplace checkout is processed by Paystack on Lantern’s behalf: buyers pay the item total plus a **5% service charge**. After the buyer confirms receipt, Lantern transfers the item amount to the seller’s registered Nigerian bank account and retains the service charge. Refunds before seller payout follow our dispute process; after payout, remedies may be limited.
+We do not guarantee the quality, safety, or legality of items or services offered. **Lantern does not process marketplace payments, hold funds, or act as an escrow agent, and charges no service fee on marketplace transactions.** Buyers pay sellers directly by a method the two of you agree between yourselves. Lantern is not a party to that transaction: we do not receive, hold, or transfer the money, and refunds, chargebacks and disputes are settled directly between buyer and seller. Order records in the app are a convenience for tracking an agreed sale and are not proof of payment.
 
 ## 6. Privacy
 

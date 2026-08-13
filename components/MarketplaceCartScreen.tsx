@@ -6,12 +6,6 @@ import {
   updateMarketplaceCartItem,
 } from '../services/supabase';
 import type { MarketplaceCartItem } from '@lantern/shared/types';
-import {
-  computeMarketplaceCheckoutFees,
-  MARKETPLACE_DEFAULT_SERVICE_FEE_BPS,
-  nairaToKobo,
-  koboToNaira,
-} from '@lantern/shared/marketplace';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { ArrowLeftIcon, ShoppingCartIcon, TrashIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
@@ -50,12 +44,6 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
   };
 
   const cartTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
-  const fees = computeMarketplaceCheckoutFees(
-    nairaToKobo(cartTotal),
-    MARKETPLACE_DEFAULT_SERVICE_FEE_BPS
-  );
-  const serviceFeeNaira = koboToNaira(fees.serviceFeeKobo);
-  const payTotalNaira = koboToNaira(fees.totalChargeKobo);
 
   const handleQty = async (listingId: string, quantity: number) => {
     try {
@@ -82,23 +70,6 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
       const result = await checkoutMarketplaceCart();
       const orderCount = result?.orders?.length || 0;
       const failCount = result?.failures?.length || 0;
-      const payUrl =
-        result?.authorizationUrl ||
-        result?.sessions?.find((s) => s?.authorizationUrl)?.authorizationUrl;
-
-      if (payUrl) {
-        if (failCount > 0) {
-          showToast(
-            `${orderCount} checkout(s) started; ${failCount} item(s) failed. Redirecting to Paystack…`,
-            'info'
-          );
-        } else {
-          showToast('Redirecting to Paystack…', 'info');
-        }
-        // Per-line sessions: pay the first unpaid session now; remaining open from Orders.
-        window.location.assign(payUrl);
-        return;
-      }
 
       if (failCount > 0) {
         showToast(
@@ -108,8 +79,8 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
       } else {
         showToast(
           orderCount === 1
-            ? 'Order placed. Arrange pickup with the seller.'
-            : `${orderCount} orders placed. Arrange pickup with each seller.`
+            ? 'Order placed. Arrange payment and pickup with the seller.'
+            : `${orderCount} orders placed. Arrange payment and pickup with each seller.`
         );
       }
       if (orderCount === 1 && result.orders[0]?.id) {
@@ -231,31 +202,23 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
       {items.length > 0 && (
         <div className="p-4 border-t border-lantern-border bg-lantern-surface space-y-3">
           <div className="space-y-1 text-sm">
-            <div className="flex justify-between text-lantern-text-secondary">
-              <span>Items</span>
-              <span>₦{cartTotal.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-lantern-text-secondary">
-              <span>Service charge (5%)</span>
-              <span>₦{serviceFeeNaira.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between items-center pt-1">
-              <span className="font-medium">You pay</span>
+            <div className="flex justify-between items-center">
+              <span className="font-medium">Total</span>
               <span className="text-lg font-bold text-lantern-primary">
-                ₦{payTotalNaira.toLocaleString()}
+                ₦{cartTotal.toLocaleString()}
               </span>
             </div>
           </div>
           <p className="text-xs text-lantern-text-tertiary">
-            Checkout creates one Paystack charge per listing (and one order per seller). Multi-item
-            carts open the first payment now; finish the rest from Orders.
+            Placing the order notifies the seller (one order per seller). You pay the seller
+            directly — Lantern does not process the payment or hold your money.
           </p>
           <Button
             className="w-full"
             onClick={() => void handleCheckout()}
             disabled={checkingOut}
           >
-            {checkingOut ? 'Checking out…' : 'Pay with Paystack'}
+            {checkingOut ? 'Placing order…' : 'Place order'}
           </Button>
         </div>
       )}

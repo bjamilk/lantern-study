@@ -26,7 +26,7 @@ export function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { signIn, signInAsDemo, isLoading, error, clearError } = useAuthStore();
+  const { signIn, isLoading, error, clearError } = useAuthStore();
   const cookieNoticeInset = useCookieNoticeBottomInset();
 
   const onSubmit = async () => {
@@ -113,12 +113,6 @@ export function LoginScreen({ navigation }: Props) {
           </View>
 
           <SocialAuthButtons disabled={isLoading} />
-
-          <View className="mt-4">
-            <Button fullWidth variant="ghost" onPress={signInAsDemo}>
-              Try demo mode
-            </Button>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

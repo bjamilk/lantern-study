@@ -17,12 +17,6 @@ import {
   updateMarketplaceCartItem,
 } from '../../services/api';
 import type { MarketplaceCartItem } from '@lantern/shared/types';
-import {
-  computeMarketplaceCheckoutFees,
-  MARKETPLACE_DEFAULT_SERVICE_FEE_BPS,
-  koboToNaira,
-  nairaToKobo,
-} from '@lantern/shared/marketplace';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
@@ -61,12 +55,6 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   const cartTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
-  const fees = computeMarketplaceCheckoutFees(
-    nairaToKobo(cartTotal),
-    MARKETPLACE_DEFAULT_SERVICE_FEE_BPS
-  );
-  const serviceFeeNaira = koboToNaira(fees.serviceFeeKobo);
-  const payTotalNaira = koboToNaira(fees.totalChargeKobo);
 
   const handleCheckout = async () => {
     setCheckingOut(true);
@@ -74,29 +62,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
       const result = await checkoutMarketplaceCart();
       const orderCount = result?.orders?.length || 0;
       const failCount = result?.failures?.length || 0;
-      const payUrl =
-        result?.authorizationUrl ||
-        result?.sessions?.find((s) => s?.authorizationUrl)?.authorizationUrl;
       const firstOrderId = result?.orders?.[0]?.id;
-
-      if (payUrl) {
-        if (failCount > 0) {
-          Alert.alert(
-            'Partial checkout',
-            `${orderCount} checkout(s) started; ${failCount} item(s) failed. Opening Paystack for the first order.`
-          );
-        }
-        await WebBrowser.openBrowserAsync(payUrl);
-        if (firstOrderId) {
-          navigation.navigate('OrderDetail', {
-            orderId: firstOrderId,
-            paymentReturn: true,
-          });
-        } else {
-          navigation.navigate('Orders');
-        }
-        return;
-      }
 
       if (failCount > 0) {
         Alert.alert(
@@ -207,24 +173,16 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
         <View className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
           // pb-8 left the Pay button underneath the tab bar, which swallowed the tap.
           style={{ paddingBottom: tabBarClearance }}>
-          <View className="flex-row justify-between mb-1">
-            <Text className="text-lantern-text-secondary">Items</Text>
-            <Text className="text-lantern-text">{formatPrice(cartTotal)}</Text>
-          </View>
-          <View className="flex-row justify-between mb-1">
-            <Text className="text-lantern-text-secondary">Service charge (5%)</Text>
-            <Text className="text-lantern-text">{formatPrice(serviceFeeNaira)}</Text>
-          </View>
           <View className="flex-row justify-between mb-2">
-            <Text className="font-medium text-lantern-text">You pay</Text>
-            <Text className="font-bold text-lantern-primary">{formatPrice(payTotalNaira)}</Text>
+            <Text className="font-medium text-lantern-text">Total</Text>
+            <Text className="font-bold text-lantern-primary">{formatPrice(cartTotal)}</Text>
           </View>
           <Text className="text-xs text-lantern-text-tertiary mb-3">
-            One Paystack charge per listing. Multi-item carts open the first payment; finish the rest
-            from Orders.
+            Placing the order notifies the seller (one order per seller). You pay the seller
+            directly — Lantern does not process the payment or hold your money.
           </Text>
           <Button loading={checkingOut} onPress={() => void handleCheckout()}>
-            Pay with Paystack
+            Place order
           </Button>
         </View>
       ) : null}

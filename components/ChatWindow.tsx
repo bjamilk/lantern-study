@@ -515,12 +515,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       // Send DM notification for visual history
       let dmContent = '';
       if (action === 'accept') {
-        const payUrl =
-          (acceptResult as { authorizationUrl?: string })?.authorizationUrl ||
-          (acceptResult as { checkout?: { authorizationUrl?: string } })?.checkout?.authorizationUrl;
-        dmContent = payUrl
-          ? `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! Complete Paystack checkout to pay (item + 5% service charge).`
-          : `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! An order has been created — arrange pickup or delivery in Orders.`;
+        dmContent = `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! An order has been created — arrange payment, pickup or delivery in Orders.`;
       } else if (action === 'decline') {
         dmContent = `[Offer] I declined the offer of ₦${activeOffer.amount.toLocaleString()}.`;
       } else if (action === 'withdraw') {
@@ -538,25 +533,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       }
 
       if (action === 'accept') {
-        const payUrl =
-          (acceptResult as { authorizationUrl?: string })?.authorizationUrl ||
-          (acceptResult as { checkout?: { authorizationUrl?: string } })?.checkout?.authorizationUrl;
-        const isBuyer = currentUser?.id === activeOffer.buyer_id;
-        if (payUrl && isBuyer) {
-          window.location.assign(payUrl);
-          return;
-        }
         try {
           await updateInquiryStatus(inquiry.id, 'negotiating');
           const order = await fetchOrderForInquiry(inquiry.id);
           if (order) setActiveOrder(order);
           await refreshBudgetTransactions(currentUser.id);
-          if (payUrl && !isBuyer) {
-            useToastStore.getState().showToast(
-              'Offer accepted. The buyer will complete Paystack checkout.',
-              'info'
-            );
-          }
         } catch (err) {
           console.error('Failed to load order after offer acceptance:', err);
         }

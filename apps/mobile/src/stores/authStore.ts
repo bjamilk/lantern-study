@@ -18,27 +18,6 @@ import { signInWithGoogleOAuth, signInWithAppleNative } from '../services/social
 import type { User, Session } from '@supabase/supabase-js';
 import { isEmailNotConfirmedError } from '@lantern/shared';
 
-// Demo mode flag - set to true for offline testing without backend
-const DEMO_MODE = false;
-
-// Mock user for demo mode
-const DEMO_USER: User = {
-  id: 'demo-user-123',
-  email: 'demo@lanternstudy.app',
-  app_metadata: {},
-  user_metadata: { name: 'Demo User' },
-  aud: 'authenticated',
-  created_at: new Date().toISOString(),
-} as User;
-
-const DEMO_SESSION: Session = {
-  access_token: 'demo-token',
-  refresh_token: 'demo-refresh',
-  expires_in: 3600,
-  token_type: 'bearer',
-  user: DEMO_USER,
-} as Session;
-
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -48,8 +27,7 @@ interface AuthState {
   isInitialized: boolean;
   isPasswordRecovery: boolean;
   error: string | null;
-  isDemoMode: boolean;
-  
+
   // Actions
   initialize: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -57,7 +35,6 @@ interface AuthState {
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
-  signInAsDemo: () => void;
   clearError: () => void;
   setPasswordRecovery: (active: boolean) => void;
   refreshProfileName: (userId: string) => Promise<void>;
@@ -72,7 +49,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isInitialized: false,
   isPasswordRecovery: false,
   error: null,
-  isDemoMode: DEMO_MODE,
 
   refreshProfileName: async (userId: string) => {
     try {
@@ -93,18 +69,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true });
 
-      // In demo mode, auto-login as demo user
-      if (DEMO_MODE) {
-        set({ 
-          user: DEMO_USER,
-          session: DEMO_SESSION,
-          profileName: DEMO_USER.user_metadata?.name ?? 'Demo User',
-          isInitialized: true,
-          isLoading: false,
-        });
-        return;
-      }
-      
       // Refresh session if present, otherwise load current session.
       // Guard with a timeout so a stalled auth call can't hang app boot forever.
       let session = null;
@@ -186,28 +150,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           // Null session on anything other than an explicit SIGNED_OUT (handled
           // above) is a race, not a logout: INITIAL_SESSION before a slow
           // storage read resolves, or a transient refresh failure. Wiping state
-          // here is how a network stall signed users out (and how demo mode got
-          // cleared moments after entering it). Keep the current state.
+          // here is how a network stall signed users out. Keep the current state.
           console.warn('[Auth] ignoring null-session auth event:', event);
         }
       });
       }, 0);
     } catch (error: any) {
       console.error('Failed to initialize auth:', error);
-      
-      // In demo mode fallback, still allow app to work
-      if (DEMO_MODE) {
-        set({ 
-          user: DEMO_USER,
-          session: DEMO_SESSION,
-          profileName: DEMO_USER.user_metadata?.name ?? 'Demo User',
-          isInitialized: true,
-          isLoading: false,
-        });
-        return;
-      }
-      
-      set({ 
+
+      set({
         error: error.message,
         isInitialized: true,
         isLoading: false,
@@ -218,23 +169,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signIn: async (email: string, password: string) => {
     try {
       set({ isLoading: true, error: null });
-      
-      // Demo mode - accept any credentials
-      if (DEMO_MODE) {
-        const demoUser = {
-          ...DEMO_USER,
-          email,
-          user_metadata: { name: email.split('@')[0] },
-        } as User;
-        set({ 
-          user: demoUser,
-          session: { ...DEMO_SESSION, user: demoUser },
-          profileName: demoUser.user_metadata?.name ?? null,
-          isLoading: false,
-        });
-        return;
-      }
-      
+
       const { user, session } = await signInWithEmail(email, password);
 
       let profileName: string | null = null;
@@ -328,23 +263,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signUp: async (email: string, password: string, name?: string) => {
     try {
       set({ isLoading: true, error: null });
-      
-      // Demo mode - auto succeed
-      if (DEMO_MODE) {
-        const demoUser = {
-          ...DEMO_USER,
-          email,
-          user_metadata: { name: name || email.split('@')[0] },
-        } as User;
-        set({ 
-          user: demoUser,
-          session: { ...DEMO_SESSION, user: demoUser },
-          profileName: demoUser.user_metadata?.name ?? null,
-          isLoading: false,
-        });
-        return;
-      }
-      
+
       const { user, session } = await signUpWithEmail(email, password, name);
 
       let profileName: string | null = null;
@@ -389,18 +308,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // continue with local sign-out
       }
 
-      if (!DEMO_MODE) {
-        try {
-          const { API_BASE_URL, getAuthHeaders } = await import('../services/supabase');
-          const headers = await getAuthHeaders();
-          if (headers.Authorization) {
-            await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST', headers });
-          }
-        } catch {
-          // continue with local sign-out
+      try {
+        const { API_BASE_URL, getAuthHeaders } = await import('../services/supabase');
+        const headers = await getAuthHeaders();
+        if (headers.Authorization) {
+          await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST', headers });
         }
-        await supabaseSignOut();
+      } catch {
+        // continue with local sign-out
       }
+      await supabaseSignOut();
 
       const keysToRemove = [
         '@lantern_offline_data',
@@ -452,16 +369,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
     }
-  },
-  
-  signInAsDemo: () => {
-    set({ 
-      user: DEMO_USER,
-      session: DEMO_SESSION,
-      profileName: DEMO_USER.user_metadata?.name ?? 'Demo User',
-      isLoading: false,
-      isInitialized: true,
-    });
   },
   
   clearError: () => set({ error: null }),

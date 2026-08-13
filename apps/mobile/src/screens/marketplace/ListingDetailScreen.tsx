@@ -211,15 +211,13 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     const qty = listing.quantity == null ? 1 : selectedQuantity;
     const unitPay = couponPreview?.finalAmount ?? pricing.effective;
     const itemTotal = Math.round(unitPay * qty * 100) / 100;
-    const serviceFee = Math.round(itemTotal * 0.05 * 100) / 100;
-    const payAmount = Math.round((itemTotal + serviceFee) * 100) / 100;
     Alert.alert(
-      'Buy Now',
-      `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ${formatPrice(itemTotal)}\nService charge (5%): ${formatPrice(serviceFee)}\nTotal: ${formatPrice(payAmount)}`,
+      'Place order',
+      `Order "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nTotal: ${formatPrice(itemTotal)}\n\nYou pay the seller directly and arrange pickup or delivery with them. Lantern does not process this payment.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Pay now',
+          text: 'Place order',
           onPress: async () => {
             setActionLoading(true);
             void import('../../services/productAnalytics').then(({ trackCheckoutStarted }) => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuthStore } from '../../stores/authStore';
 import { isAppleSignInAvailable } from '../../services/socialAuth';
@@ -9,6 +9,32 @@ type SocialProvider = 'google' | 'apple';
 
 interface Props {
   disabled?: boolean;
+}
+
+// Google's four-colour "G". @expo/vector-icons only ships a single-colour glyph,
+// which reads as a generic icon rather than the mark people recognise, so the
+// official artwork is inlined here.
+function GoogleMark({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 48 48">
+      <Path
+        fill="#4285F4"
+        d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"
+      />
+      <Path
+        fill="#34A853"
+        d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"
+      />
+      <Path
+        fill="#FBBC05"
+        d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"
+      />
+      <Path
+        fill="#EA4335"
+        d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"
+      />
+    </Svg>
+  );
 }
 
 export function SocialAuthButtons({ disabled = false }: Props) {
@@ -51,35 +77,47 @@ export function SocialAuthButtons({ disabled = false }: Props) {
         <View className="flex-1 h-px bg-lantern-background-secondary" />
       </View>
 
-      <View className={`flex-row gap-3 ${appleAvailable ? '' : 'justify-center'}`}>
+      {/* Stacked full-width rather than side-by-side: a provider button is
+          recognised by its wordmark, and two half-width buttons squeeze that
+          down to a bare icon. */}
+      <View className="gap-3">
         <Pressable
           onPress={() => void runGoogle()}
           disabled={busy}
-          className={`flex-1 flex-row items-center justify-center gap-2 py-3 rounded-xl border border-lantern-border bg-lantern-surface ${
+          accessibilityRole="button"
+          accessibilityLabel="Continue with Google"
+          accessibilityState={{ disabled: busy, busy: loading('google') }}
+          className={`h-12 flex-row items-center justify-center gap-3 rounded-2xl border border-lantern-border bg-lantern-surface ${
             busy ? 'opacity-50' : ''
-          } ${!appleAvailable ? 'max-w-xs' : ''}`}
+          }`}
+          style={({ pressed }) => (pressed ? { opacity: 0.7 } : undefined)}
         >
           {loading('google') ? (
-            <ActivityIndicator size="small" color="#6366f1" />
+            <ActivityIndicator size="small" color="#4f46e5" />
           ) : (
             <>
-              <Ionicons name="logo-google" size={20} color="#4285F4" />
-              <Text className="text-sm font-medium text-lantern-text">Google</Text>
+              <GoogleMark size={20} />
+              <Text
+                importantForAccessibility="no"
+                className="text-sm font-semibold text-lantern-text"
+              >
+                Continue with Google
+              </Text>
             </>
           )}
         </Pressable>
 
         {appleAvailable ? (
-          <View className="flex-1" style={{ opacity: busy ? 0.5 : 1 }} pointerEvents={busy ? 'none' : 'auto'}>
+          <View style={{ opacity: busy ? 0.5 : 1 }} pointerEvents={busy ? 'none' : 'auto'}>
             {loading('apple') ? (
-              <View className="h-12 items-center justify-center rounded-xl border border-lantern-border">
-                <ActivityIndicator size="small" color="#6366f1" />
+              <View className="h-12 items-center justify-center rounded-2xl border border-lantern-border">
+                <ActivityIndicator size="small" color="#4f46e5" />
               </View>
             ) : (
               <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
                 buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                cornerRadius={12}
+                cornerRadius={16}
                 style={{ width: '100%', height: 48 }}
                 onPress={() => void runApple()}
               />
