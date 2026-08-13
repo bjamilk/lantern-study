@@ -61,7 +61,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // whole deck into a chat as message text (adds expo-sharing — native build).
   // 1.0.12: the applicant CSV and the account data export share real files too,
   // and a sharing failure no longer reports itself as an export rate limit.
-  version: '1.0.12',
+  // 1.0.13: budget plans are stored per month, so browsing history shows what
+  // you had planned as well as what you spent.
+  version: '1.0.13',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
