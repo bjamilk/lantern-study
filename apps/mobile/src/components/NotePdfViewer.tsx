@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,11 +35,17 @@ export function NotePdfViewer({
   onScrollLockChange,
 }: NotePdfViewerProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [webViewFailed, setWebViewFailed] = useState(false);
+  // Fullscreen is a nested RN Modal, which is safe because the note editor is
+  // a plain stack screen — never move this component into a fullScreenModal
+  // screen without turning the viewer into its own route first (nested Modals
+  // fail silently there; see TestResultsScreen.tsx).
+  const [fullscreen, setFullscreen] = useState(false);
   const onScrollLockChangeRef = useRef(onScrollLockChange);
   onScrollLockChangeRef.current = onScrollLockChange;
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,6 +116,22 @@ export function NotePdfViewer({
     }
   }, [signedUrl]);
 
+  const webViewFallback = (fallbackHeight?: number) => (
+    <View className="items-center justify-center px-4 py-10" style={fallbackHeight ? { height: fallbackHeight } : { flex: 1 }}>
+      <Text className="text-sm text-center mb-3" style={{ color: colors.textSecondary }}>
+        In-app preview is unavailable for this file.
+      </Text>
+      <Pressable
+        onPress={() => void openExternally()}
+        className="flex-row items-center gap-2 px-4 py-2 rounded-xl"
+        style={{ backgroundColor: colors.primary }}
+      >
+        <Ionicons name="open-outline" size={18} color="#fff" />
+        <Text className="text-sm font-semibold text-white">Open document</Text>
+      </Pressable>
+    </View>
+  );
+
   if (loading) {
     return (
       <View className="items-center justify-center py-10" style={{ height, backgroundColor: colors.surface }}>
@@ -156,8 +179,20 @@ export function NotePdfViewer({
           {attachment.fileName || 'Document'}
         </Text>
         <Pressable
+          onPress={() => setFullscreen(true)}
+          className="flex-row items-center gap-1 px-2 py-1 rounded-lg"
+          accessibilityRole="button"
+          accessibilityLabel="View document fullscreen"
+        >
+          <Ionicons name="expand-outline" size={16} color={colors.primary} />
+          <Text className="text-xs font-medium" style={{ color: colors.primary }}>
+            Fullscreen
+          </Text>
+        </Pressable>
+        <Pressable
           onPress={() => void openExternally()}
           className="flex-row items-center gap-1 px-2 py-1 rounded-lg"
+          accessibilityRole="button"
           accessibilityLabel="Open document externally"
         >
           <Ionicons name="open-outline" size={16} color={colors.primary} />
@@ -168,19 +203,7 @@ export function NotePdfViewer({
       </View>
 
       {webViewFailed ? (
-        <View className="items-center justify-center px-4 py-10" style={{ height }}>
-          <Text className="text-sm text-center mb-3" style={{ color: colors.textSecondary }}>
-            In-app preview is unavailable for this file.
-          </Text>
-          <Pressable
-            onPress={() => void openExternally()}
-            className="flex-row items-center gap-2 px-4 py-2 rounded-xl"
-            style={{ backgroundColor: colors.primary }}
-          >
-            <Ionicons name="open-outline" size={18} color="#fff" />
-            <Text className="text-sm font-semibold text-white">Open document</Text>
-          </Pressable>
-        </View>
+        webViewFallback(height)
       ) : (
         <View
           style={{ height }}
@@ -225,8 +248,69 @@ export function NotePdfViewer({
         </View>
       )}
       <Text className="text-[11px] px-3 py-2" style={{ color: colors.textTertiary }}>
-        Scroll inside this preview · tap Open for full screen
+        Scroll inside this preview · tap Fullscreen for more room
       </Text>
+
+      <Modal
+        visible={fullscreen}
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => setFullscreen(false)}
+      >
+        <View className="flex-1" style={{ backgroundColor: colors.background, paddingTop: insets.top }}>
+          <View
+            className="px-3 py-2 border-b flex-row items-center justify-between gap-2"
+            style={{ borderBottomColor: colors.border, backgroundColor: colors.surface }}
+          >
+            <Text className="text-sm font-medium flex-1" numberOfLines={1} style={{ color: colors.text }}>
+              {attachment.fileName || 'Document'}
+            </Text>
+            <Pressable
+              onPress={() => void openExternally()}
+              className="p-2"
+              accessibilityRole="button"
+              accessibilityLabel="Open document externally"
+            >
+              <Ionicons name="open-outline" size={20} color={colors.primary} />
+            </Pressable>
+            <Pressable
+              onPress={() => setFullscreen(false)}
+              className="p-2"
+              accessibilityRole="button"
+              accessibilityLabel="Leave fullscreen"
+            >
+              <Ionicons name="close" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          {webViewFailed ? (
+            webViewFallback()
+          ) : (
+            // No parent ScrollView inside the Modal, so none of the
+            // scroll-lock choreography the inline preview needs.
+            <WebView
+              source={{ uri: viewerUri }}
+              style={{ flex: 1 }}
+              originWhitelist={['https://*', 'http://*']}
+              startInLoadingState
+              setSupportMultipleWindows={false}
+              javaScriptEnabled
+              domStorageEnabled
+              mixedContentMode="always"
+              scalesPageToFit
+              onError={() => setWebViewFailed(true)}
+              onHttpError={() => setWebViewFailed(true)}
+              renderLoading={() => (
+                <View
+                  className="absolute inset-0 items-center justify-center"
+                  style={{ backgroundColor: colors.background }}
+                >
+                  <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+              )}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import type { NoteAttachment } from '../types';
 import { fetchNoteAttachmentContent } from '../services/notes';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 const PDFJS_VERSION = '4.10.38';
 
@@ -23,7 +25,21 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [openUrl, setOpenUrl] = useState<string | null>(null);
+  // Fullscreen swaps wrapper classes only. The rendered canvases live in
+  // containerRef's div, appended imperatively — remounting that div (e.g. by
+  // rendering a separate fullscreen tree) would silently drop every page.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const trapRef = useModalFocusTrap(isFullscreen, () => setIsFullscreen(false));
   const isDark = theme === 'dark';
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isFullscreen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,17 +108,62 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
 
   return (
     <div
-      className={`rounded-xl border overflow-hidden ${isDark ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-surface'} ${className}`}
+      ref={trapRef}
+      role={isFullscreen ? 'dialog' : undefined}
+      aria-modal={isFullscreen || undefined}
+      aria-label={isFullscreen ? attachment.fileName || 'Document' : undefined}
+      className={
+        isFullscreen
+          ? // !m-0: the editor stacks attachments with space-y utilities, whose
+            // margin-top still applies once this element goes position:fixed and
+            // would push the overlay 12px below the top of the screen.
+            'fixed inset-0 z-50 !m-0 flex flex-col bg-lantern-background'
+          : `rounded-xl border overflow-hidden ${isDark ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-surface'} ${className}`
+      }
     >
-      <div className={`flex items-center justify-between px-3 py-2 border-b text-sm ${isDark ? 'border-lantern-border text-lantern-text' : 'border-lantern-border text-lantern-text'}`}>
+      <div
+        className={`flex items-center justify-between gap-2 px-3 py-2 border-b text-sm border-lantern-border text-lantern-text ${isFullscreen ? 'bg-lantern-surface' : ''}`}
+      >
         <span className="font-medium truncate">
           {attachment.fileName || 'Document'}
         </span>
-        {numPages > 0 && (
-          <span className="text-xs text-lantern-text-tertiary shrink-0 ml-2">{numPages} pages</span>
-        )}
+        <span className="flex items-center gap-1 shrink-0">
+          {numPages > 0 && (
+            <span className="text-xs text-lantern-text-tertiary mr-1">{numPages} pages</span>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((v) => !v)}
+            className="p-1.5 rounded-lg hover:bg-lantern-background-secondary text-lantern-text-secondary"
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+            title={isFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+          >
+            {isFullscreen ? (
+              <ArrowsPointingInIcon className="w-4 h-4" />
+            ) : (
+              <ArrowsPointingOutIcon className="w-4 h-4" />
+            )}
+          </button>
+          {isFullscreen && (
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(false)}
+              className="p-1.5 rounded-lg hover:bg-lantern-background-secondary text-lantern-text-secondary"
+              aria-label="Close fullscreen"
+              title="Close"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          )}
+        </span>
       </div>
-      <div className="max-h-[min(70vh,720px)] overflow-y-auto p-3">
+      <div
+        className={
+          isFullscreen
+            ? 'flex-1 overflow-y-auto p-4'
+            : 'max-h-[min(70vh,720px)] overflow-y-auto p-3'
+        }
+      >
         {loading && <p className="text-sm text-lantern-text-tertiary py-8 text-center">Loading document...</p>}
         {error && (
           <div className="text-sm text-center py-6 space-y-2">
@@ -119,7 +180,7 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
             )}
           </div>
         )}
-        <div ref={containerRef} />
+        <div ref={containerRef} className={isFullscreen ? 'mx-auto w-full max-w-3xl' : undefined} />
       </div>
     </div>
   );

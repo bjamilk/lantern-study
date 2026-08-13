@@ -66,7 +66,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.14: the sign-in screen drops the demo-mode button, which could never
   // enter the app (its placeholder session was rejected on every request), and
   // Google sign-in now carries the real Google mark and wordmark.
-  version: '1.0.14',
+  // 1.0.15: PDFs and slides in a note open fullscreen for reading, and close
+  // back to the note — the old "full screen" handed the file to an external
+  // browser and left the app.
+  version: '1.0.15',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
