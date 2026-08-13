@@ -63,7 +63,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // and a sharing failure no longer reports itself as an export rate limit.
   // 1.0.13: budget plans are stored per month, so browsing history shows what
   // you had planned as well as what you spent.
-  version: '1.0.13',
+  // 1.0.14: the sign-in screen drops the demo-mode button, which could never
+  // enter the app (its placeholder session was rejected on every request), and
+  // Google sign-in now carries the real Google mark and wordmark.
+  version: '1.0.14',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
