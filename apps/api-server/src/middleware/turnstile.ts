@@ -33,6 +33,27 @@ export function isTurnstileEnforced(): boolean {
 }
 
 /**
+ * Which half of the configuration is missing, for /health.
+ *
+ * A single "off" could not distinguish "no secret" from "no hostnames", and
+ * TURNSTILE_HOSTNAMES is the one people miss — it is not a secret, so it does
+ * not feel like part of the credential. Reports presence only; no value of
+ * either variable is exposed.
+ */
+export function turnstileConfigStatus():
+  | 'enforced'
+  | 'missing-secret'
+  | 'missing-hostnames'
+  | 'off' {
+  const hasSecret = Boolean(process.env.TURNSTILE_SECRET);
+  const hasHostnames = expectedHostnames().size > 0;
+  if (hasSecret && hasHostnames) return 'enforced';
+  if (hasSecret) return 'missing-hostnames';
+  if (hasHostnames) return 'missing-secret';
+  return 'off';
+}
+
+/**
  * Canonical server-side verification. Fails closed on every uncertainty:
  * network error, non-2xx, unparseable body, wrong action, unknown hostname.
  *

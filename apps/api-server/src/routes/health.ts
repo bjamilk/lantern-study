@@ -3,7 +3,7 @@ import { Router, Request, Response } from 'express';
 import { requireOperationalAccess } from '../middleware/operationalAuth';
 import { isProductionEnv } from '../utils/safeError';
 import { concurrencySnapshots } from '../utils/concurrencyGate';
-import { isTurnstileEnforced } from '../middleware/turnstile';
+import { turnstileConfigStatus } from '../middleware/turnstile';
 
 const router = Router();
 const startTime = Date.now();
@@ -27,7 +27,7 @@ router.get('/health', (req: Request, res: Response) => {
   // real contact-form submission, which delivers an email. Enforcement needs
   // TURNSTILE_SECRET and TURNSTILE_HOSTNAMES together, so a half-configured
   // deployment reads "off" here rather than looking configured.
-  const turnstile = isTurnstileEnforced() ? 'enforced' : 'off';
+  const turnstile = turnstileConfigStatus();
 
   if (isProductionEnv()) {
     // Deliberately no build details beyond the commit: this endpoint is public.

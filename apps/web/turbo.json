@@ -29,7 +29,11 @@
         // replays a cached dist after edits to _headers, _redirects,
         // _routes.json or .well-known/assetlinks.json — a green "FULL TURBO"
         // build that silently ships the previous version of those files.
-        "../../public/**"
+        "../../public/**",
+        // buildContentSecurityPolicy.mjs lives here and is baked into
+        // dist/_headers at build time. Same trap: editing the CSP without this
+        // produced a cached dist carrying the previous policy.
+        "../../scripts/**"
       ]
     }
   }
