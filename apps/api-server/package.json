@@ -44,7 +44,7 @@
     "lru-cache": "^11.2.2",
     "morgan": "^1.10.0",
     "officeparser": "^7.5.1",
-    "pdf-parse": "^1.1.1",
+    "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^6.2.108",
     "pg": "^8.20.0",
     "rate-limit-redis": "^4.3.1",
