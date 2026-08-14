@@ -35,6 +35,8 @@ import {
   fetchCookieSession,
   logoutCookieSession,
   restoreCookieSession,
+  migrateLegacyLocalSession,
+  purgeLegacyLocalSession,
 } from './authCookieSession'
 
 // Use shared config for URLs (getConfig reconciles cloud URL + demo anon mismatches)
@@ -350,7 +352,20 @@ export type SessionResolveResult =
 /** Restore the client session from cookies or local tokens without signing out on transient errors. */
 export async function resolveClientSession(): Promise<SessionResolveResult> {
   if (isCookieAuthEnabled()) {
-    return restoreCookieSession();
+    // Users from before the cookie-mode default still hold a full session in
+    // localStorage. Exchange it into cookies once — logging every existing
+    // web user out on deploy is not an acceptable migration.
+    const migrated = await migrateLegacyLocalSession();
+    if (migrated) {
+      return { ok: true, session: migrated };
+    }
+    const restored = await restoreCookieSession();
+    if (restored.ok) {
+      // Cookies are authoritative now; a stale localStorage copy left behind
+      // (e.g. migration raced a parallel tab) is just token exposure.
+      purgeLegacyLocalSession();
+    }
+    return restored;
   }
 
   const { data: { session } } = await supabase.auth.getSession();

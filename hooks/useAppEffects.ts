@@ -382,7 +382,13 @@ export function useAppEffects({
 
                 let authUser = session.user;
                 if (isCookieAuthEnabled()) {
-                    if (shouldRefreshStoredSession()) {
+                    // shouldRefreshStoredSession() reads localStorage, which is
+                    // deliberately empty in cookie mode — judge staleness from
+                    // the restored session itself.
+                    const expiresSoon =
+                        typeof session.expires_at === 'number' &&
+                        session.expires_at - Date.now() / 1000 < 300;
+                    if (expiresSoon) {
                         try {
                             const refreshed = await refreshCookieSession();
                             if (refreshed?.user) {

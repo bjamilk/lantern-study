@@ -108,6 +108,26 @@ router.post(
       return res.status(400).json({ success: false, error: 'Invalid session payload' });
     }
 
+    // 'cookie-managed' is the client-side placeholder for "the real refresh
+    // token lives in the HttpOnly cookie, I never saw it". Writing it into the
+    // refresh cookie would replace the real token with a literal placeholder
+    // string, silently destroying the session's ability to refresh — the
+    // client's SIGNED_IN handler used to do exactly that after every cookie
+    // restore. Treat it as "cookies already correct": succeed without writing.
+    if (refresh_token === 'cookie-managed') {
+      const verified = await supabaseService.verifySupabaseToken(access_token);
+      if (!verified.isValid || !verified.user || verified.user.id !== user.id) {
+        return res.status(401).json({ success: false, error: 'Invalid access token' });
+      }
+      return res.json({
+        success: true,
+        data: {
+          session: serializeClientSession({ access_token, refresh_token: '', expires_in, expires_at, token_type, user }),
+          user,
+        },
+      });
+    }
+
     const verified = await supabaseService.verifySupabaseToken(access_token);
     if (!verified.isValid || !verified.user || verified.user.id !== user.id) {
       return res.status(401).json({ success: false, error: 'Invalid access token' });
@@ -173,6 +193,22 @@ router.get(
 
     const verified = await supabaseService.verifySupabaseToken(accessToken);
     if (!verified.isValid || !verified.user) {
+      // An invalid access token is routine — it expires hourly. Fall through
+      // to the refresh cookie before giving up. The old code cleared BOTH
+      // cookies here, so the refresh cookie a client would have recovered
+      // with was destroyed by this very response: every cookie session died
+      // at access-token expiry, which is why cookie auth "randomly" logged
+      // users out about an hour after login.
+      const refreshToken = readRefreshCookie((req as any).cookies || {});
+      if (refreshToken) {
+        const client = getAnonAuthClient();
+        const { data, error } = await client.auth.refreshSession({ refresh_token: refreshToken });
+        if (!error && data.session) {
+          await applySessionCookies(res, data.session);
+          const session = serializeClientSession(data.session, { includeAccessToken: true });
+          return res.json({ success: true, data: { session, user: data.user } });
+        }
+      }
       clearAuthCookies(res);
       return res.status(401).json({ success: false, error: 'Invalid session', code: 'SESSION_REVOKED' });
     }
