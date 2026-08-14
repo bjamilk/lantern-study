@@ -1,0 +1,44 @@
+version: 2
+
+# scripts/check-audit.mjs gates CI on advisories that already exist. Nothing
+# surfaced NEW ones between manual runs — that is what this adds.
+#
+# Deliberately conservative: majors are ignored for the packages whose versions
+# are pinned by architecture decisions, not by inertia. A Dependabot PR bumping
+# expo or react-native would undo the Reanimated 3 / Legacy Architecture
+# downgrade (Hermes + New Architecture segfaults this app on Android at boot),
+# and those upgrades need a human deciding to take them.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    groups:
+      # One PR per week for the routine noise, so real advisories stand out.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: expo
+        update-types: [version-update:semver-major]
+      - dependency-name: react-native
+        update-types: [version-update:semver-major]
+      - dependency-name: react-native-reanimated
+        update-types: [version-update:semver-major]
+      - dependency-name: "@react-native-community/netinfo"
+        update-types: [version-update:semver-major]
+      # React 19 in the web app is a coordinated migration, not a bump.
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
