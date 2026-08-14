@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express';
 import { requireOperationalAccess } from '../middleware/operationalAuth';
 import { isProductionEnv } from '../utils/safeError';
 import { concurrencySnapshots } from '../utils/concurrencyGate';
+import { isTurnstileEnforced } from '../middleware/turnstile';
 
 const router = Router();
 const startTime = Date.now();
@@ -21,13 +22,21 @@ const COMMIT =
   ).slice(0, 7) || 'unknown';
 
 router.get('/health', (req: Request, res: Response) => {
+  // Whether bot protection is actually switched on. A boolean only — it leaks
+  // no secret, and the alternative was discovering the answer by sending a
+  // real contact-form submission, which delivers an email. Enforcement needs
+  // TURNSTILE_SECRET and TURNSTILE_HOSTNAMES together, so a half-configured
+  // deployment reads "off" here rather than looking configured.
+  const turnstile = isTurnstileEnforced() ? 'enforced' : 'off';
+
   if (isProductionEnv()) {
     // Deliberately no build details beyond the commit: this endpoint is public.
-    return res.status(200).json({ status: 'ok', commit: COMMIT });
+    return res.status(200).json({ status: 'ok', commit: COMMIT, turnstile });
   }
   res.status(200).json({
     status: 'ok',
     commit: COMMIT,
+    turnstile,
     timestamp: new Date().toISOString(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
   });

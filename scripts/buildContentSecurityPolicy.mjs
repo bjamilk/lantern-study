@@ -19,7 +19,11 @@ export function buildContentSecurityPolicy(env = {}) {
     "'self'",
     supabaseUrl,
     // Keep Render host for mobile/direct clients; web prefers same-origin /api proxy.
-    apiUrl,
+    // Only when it is an absolute origin: VITE_API_URL is often the same-origin
+    // proxy path '/__lantern_api', and a relative path is not a legal CSP
+    // source — the browser logs "contains an invalid source" and drops the
+    // entry. Same-origin requests are already covered by 'self'.
+    ...(/^https?:\/\//.test(apiUrl) ? [apiUrl] : []),
     'https://lantern-study-api.onrender.com',
     'https://*.supabase.co',
     'wss://*.supabase.co',
