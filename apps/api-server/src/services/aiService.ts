@@ -761,6 +761,36 @@ export function normalizeQuizCorrectAnswer(
   return trimmed;
 }
 
+/**
+ * Randomise answer order so the correct choice is not predictably first.
+ *
+ * Models copy the shape of the example in the prompt, and every example here
+ * used to list the correct answer first — so generated tests were answerable
+ * without reading the question. The prompts now show the answer in a later
+ * position, but that only shifts the bias; this is the guarantee.
+ *
+ * Safe because correctAnswer is resolved to the option's full text by
+ * normalizeQuizCorrectAnswer BEFORE this runs. Order carries no meaning after
+ * that, so reordering cannot break grading. Call it after resolution, never
+ * before: a letter answer ("A") would then point at whatever landed first.
+ */
+function shuffleGeneratedOptions(
+  type: string,
+  options: string[] | undefined
+): string[] | undefined {
+  // True/False is conventionally ordered; randomising it reads as a bug.
+  if (!options || options.length < 2 || type === 'true_false') return options;
+  const shuffled = [...options];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+/** Exported for tests — the bias is statistical, so it needs many samples. */
+export const __testables = { shuffleGeneratedOptions };
+
 function normalizeGeneratedQuestion(q: any): GeneratedQuestion {
   const type = ['multiple_choice', 'true_false', 'short_answer'].includes(q.type)
     ? q.type
@@ -771,6 +801,8 @@ function normalizeGeneratedQuestion(q: any): GeneratedQuestion {
   }
   const rawCorrect = String(q.correctAnswer || '');
   const correctAnswer = normalizeQuizCorrectAnswer(rawCorrect, options);
+  // Resolution first, then shuffle — see shuffleGeneratedOptions.
+  options = shuffleGeneratedOptions(type, options);
 
   return {
     text: String(q.text || ''),
@@ -816,7 +848,12 @@ ${difficulty !== 'mixed' ? `All questions: ${difficulty} difficulty.` : 'Mix dif
 ${questionTypes?.length ? `Types: ${questionTypes.join(', ')}.` : 'Mix: multiple_choice, true_false, short_answer, fill_in_blank.'}
 ${subject ? `Subject: ${subject}.` : ''}
 
-Return ONLY valid JSON: {"questions":[{"text":"...","type":"multiple_choice","options":["A","B","C","D"],"correctAnswer":"A","explanation":"...","difficulty":"medium","topic":"..."}]}
+Rules:
+- For multiple_choice, "options" must be 4 full answer texts, never letters.
+- "correctAnswer" must exactly match one string from "options".
+- Vary which position holds the correct answer across questions; do not put it first every time.
+
+Return ONLY valid JSON: {"questions":[{"text":"...","type":"multiple_choice","options":["A distractor","Another distractor","The correct statement","A third distractor"],"correctAnswer":"The correct statement","explanation":"...","difficulty":"medium","topic":"..."}]}
 For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit options.`;
 
   const { text, provider } = await chatCompletion(
@@ -832,16 +869,24 @@ For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit o
 
   return {
     provider,
-    questions: questions.slice(0, adjustedCount).map((q: any) => ({
-      text: String(q.text || ''),
-      type: ['multiple_choice', 'true_false', 'short_answer', 'fill_in_blank'].includes(q.type)
-        ? q.type : 'multiple_choice',
-      options: Array.isArray(q.options) ? q.options.map(String) : undefined,
-      correctAnswer: String(q.correctAnswer || ''),
-      explanation: String(q.explanation || 'No explanation available.'),
-      difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : 'medium',
-      topic: String(q.topic || subject || 'General'),
-    })),
+    questions: questions.slice(0, adjustedCount).map((q: any) => {
+      const type = ['multiple_choice', 'true_false', 'short_answer', 'fill_in_blank'].includes(q.type)
+        ? q.type : 'multiple_choice';
+      const rawOptions = Array.isArray(q.options) ? q.options.map(String) : undefined;
+      // Resolve a letter/index answer ("A", "2") to the option's full text
+      // before shuffling, otherwise the stored answer points at a position
+      // that no longer holds it — and grading compares against option text.
+      const correctAnswer = normalizeQuizCorrectAnswer(String(q.correctAnswer || ''), rawOptions);
+      return {
+        text: String(q.text || ''),
+        type,
+        options: shuffleGeneratedOptions(type, rawOptions),
+        correctAnswer,
+        explanation: String(q.explanation || 'No explanation available.'),
+        difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : 'medium',
+        topic: String(q.topic || subject || 'General'),
+      };
+    }),
   };
 }
 
@@ -1543,8 +1588,9 @@ Rules:
 - For multiple_choice, "options" must be 4 full answer texts (not letters A/B/C/D).
 - "correctAnswer" must exactly match one string from "options" (full text, not a letter).
 - For true_false, use options ["True","False"] and correctAnswer must be "True" or "False".
+- Vary which position holds the correct answer across questions; do not put it first every time.
 
-Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"multiple_choice","options":["Converting light to chemical energy","Digesting food","Breathing oxygen","Cell division"],"correctAnswer":"Converting light to chemical energy","explanation":"...","difficulty":"medium","topic":"Biology"},{"text":"Plants need sunlight to grow.","type":"true_false","options":["True","False"],"correctAnswer":"True","explanation":"...","difficulty":"easy","topic":"Biology"}]}`;
+Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"multiple_choice","options":["Digesting food","Breathing oxygen","Converting light to chemical energy","Cell division"],"correctAnswer":"Converting light to chemical energy","explanation":"...","difficulty":"medium","topic":"Biology"},{"text":"Plants need sunlight to grow.","type":"true_false","options":["True","False"],"correctAnswer":"True","explanation":"...","difficulty":"easy","topic":"Biology"}]}`;
 
   const { text, provider } = await chatCompletion(
     systemPrompt,
