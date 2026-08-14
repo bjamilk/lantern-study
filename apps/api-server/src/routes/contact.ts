@@ -7,6 +7,7 @@ import { contactFormRateLimit } from '../middleware/rateLimit';
 import { validateContactForm, CONTACT_CATEGORIES } from '@lantern/shared/contactForm';
 import { sendContactFormEmail, isContactMailConfigured } from '../services/contactMail';
 import { resolveClientIp } from '../middleware/rateLimit';
+import { verifyTurnstileToken } from '../middleware/turnstile';
 import type { AuthenticatedRequest } from '../types';
 import { logger } from '../utils/logger';
 
@@ -25,6 +26,21 @@ router.post(
   body('_hp').optional({ values: 'null' }).isString(),
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    // Bot check before any work: no mail send, no validation feedback that
+    // would let a scripted client probe the form.
+    const turnstile = await verifyTurnstileToken({
+      token: req.body['cf-turnstile-response'],
+      expectedAction: 'contact',
+      clientIp: resolveClientIp(req as any),
+    });
+    if (!turnstile.ok) {
+      logger.warn('Contact form rejected by Turnstile', { reason: turnstile.reason });
+      return res.status(403).json({
+        success: false,
+        error: 'Verification failed. Refresh the page and try again.',
+      });
+    }
+
     if (!isContactMailConfigured()) {
       logger.warn('Contact form submitted but email is not configured');
       return res.status(503).json({

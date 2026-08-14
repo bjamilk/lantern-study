@@ -6,6 +6,7 @@ import type MatterType from 'matter-js';
 import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability, setCachedAuthToken, resendSignupConfirmation, sendPasswordResetEmail, verifySignupOtp, getWebAuthRedirectOrigin } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
 import { LanternIcon } from './ui/LanternIcon';
+import TurnstileWidget, { type TurnstileHandle } from './TurnstileWidget';
 import {
   LEGAL_PATHS,
   isEmailNotConfirmedError,
@@ -204,6 +205,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const isLoginView = authView === 'login';
   const isForgotPasswordView = authView === 'forgotPassword';
   const isVerifyEmailView = authView === 'verifyEmail';
+  const [signupTurnstileToken, setSignupTurnstileToken] = useState('');
+  const signupTurnstileRef = useRef<TurnstileHandle | null>(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
@@ -665,10 +668,17 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           trackSignupStarted();
         });
         
+        // Supabase verifies this token itself, against the secret configured in
+        // its own dashboard — signup never reaches our API, so there is no
+        // handler here to run siteverify in. Sending the token while the
+        // dashboard setting is still off is harmless: Supabase ignores it.
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: signupMetadata },
+          options: {
+            data: signupMetadata,
+            ...(signupTurnstileToken ? { captchaToken: signupTurnstileToken } : {}),
+          },
         });
         if (error) {
           if (error.message.includes('already registered') || error.status === 422) {
@@ -709,6 +719,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
       setError(formatAuthError(err));
     } finally {
       setAuthSubmitLoading(false);
+      // Single-use token, and this screen stays mounted on failure.
+      if (signupTurnstileToken) {
+        setSignupTurnstileToken('');
+        signupTurnstileRef.current?.reset();
+      }
     }
   };
 
@@ -1073,6 +1088,15 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0"/>
                             {verifyMessage}
                         </div>
+                    )}
+
+                    {!isLoginView && !isForgotPasswordView && !isVerifyEmailView && (
+                        <TurnstileWidget
+                            ref={signupTurnstileRef}
+                            action="signup"
+                            onToken={setSignupTurnstileToken}
+                            onExpire={() => setSignupTurnstileToken('')}
+                        />
                     )}
 
                     <div>

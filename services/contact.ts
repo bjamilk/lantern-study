@@ -10,6 +10,8 @@ const API_BASE_URL = getApiBaseUrl();
 
 export type SubmitContactFormInput = Omit<ContactFormInput, '_hp'> & {
   source?: 'web' | 'mobile';
+  /** Turnstile token. Sent under the field name the server reads. */
+  turnstileToken?: string;
 };
 
 export async function submitContactForm(input: SubmitContactFormInput): Promise<string> {
@@ -29,6 +31,7 @@ export async function submitContactForm(input: SubmitContactFormInput): Promise<
       ...validated.value,
       source: input.source ?? 'web',
       _hp: '',
+      'cf-turnstile-response': input.turnstileToken ?? '',
     }),
   });
 

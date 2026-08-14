@@ -2,6 +2,14 @@
  * Build Content-Security-Policy for the web app (production _headers + dev server).
  * Keep connect-src / media-src in sync with third-party services the client actually uses.
  */
+/**
+ * Turnstile needs three directives, not one: the api.js loader (script-src),
+ * the challenge iframe it injects (frame-src), and the calls that script makes
+ * while solving (connect-src). Miss any and the widget fails silently — it
+ * renders nothing and the form simply never gets a token.
+ */
+const TURNSTILE_HOST = 'https://challenges.cloudflare.com';
+
 export function buildContentSecurityPolicy(env = {}) {
   const supabaseUrl = (env.VITE_SUPABASE_URL || 'http://127.0.0.1:55421').replace(/\/$/, '');
   const apiUrl = (env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
@@ -18,6 +26,8 @@ export function buildContentSecurityPolicy(env = {}) {
     'https://unpkg.com',
     'https://*.ingest.us.sentry.io',
     'https://*.ingest.sentry.io',
+    // Turnstile: the widget script calls home while solving the challenge.
+    TURNSTILE_HOST,
   ]);
 
   // Chat voice notes / lecture audio use <audio src> against private Supabase signed URLs.
@@ -35,13 +45,13 @@ export function buildContentSecurityPolicy(env = {}) {
 
   return [
     "default-src 'self'",
-    "script-src 'self' https://static.cloudflareinsights.com",
+    `script-src 'self' https://static.cloudflareinsights.com ${TURNSTILE_HOST}`,
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     `connect-src ${[...connectSrc].join(' ')}`,
     "img-src 'self' data: blob: https:",
     `media-src ${[...mediaSrc].join(' ')}`,
     "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com",
-    "frame-src https://www.youtube-nocookie.com",
+    `frame-src https://www.youtube-nocookie.com ${TURNSTILE_HOST}`,
     "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",

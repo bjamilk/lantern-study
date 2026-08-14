@@ -9,6 +9,7 @@ import {
 } from '@lantern/shared';
 import { Button, Input, Select, Textarea } from './ui';
 import { submitContactForm } from '../services/contact';
+import TurnstileWidget, { getTurnstileSitekey, type TurnstileHandle } from './TurnstileWidget';
 
 export interface ContactFormProps {
   defaultName?: string;
@@ -34,6 +35,9 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = React.useRef<TurnstileHandle | null>(null);
+  const turnstileRequired = Boolean(getTurnstileSitekey());
 
   const mailtoUrl = buildSupportMailtoUrl({
     subject: subject.trim()
@@ -71,6 +75,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
         message,
         source,
         _hp: hp,
+        turnstileToken,
       });
       setSuccess(result);
       setSubject('');
@@ -80,6 +85,10 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       setError(err instanceof Error ? err.message : 'Failed to send message.');
     } finally {
       setLoading(false);
+      // The token is spent whether or not the send succeeded, and the form
+      // stays on screen — without this, a retry replays a dead token.
+      setTurnstileToken('');
+      turnstileRef.current?.reset();
     }
   };
 
@@ -203,8 +212,19 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       )}
       {success && <p className="text-sm text-green-700 dark:text-green-400">{success}</p>}
 
+      <TurnstileWidget
+        ref={turnstileRef}
+        action="contact"
+        onToken={setTurnstileToken}
+        onExpire={() => setTurnstileToken('')}
+      />
+
       <div className="flex flex-col sm:flex-row gap-2">
-        <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+        <Button
+          type="submit"
+          disabled={loading || (turnstileRequired && !turnstileToken)}
+          className="w-full sm:w-auto"
+        >
           {loading ? 'Sending…' : 'Send message'}
         </Button>
         <a
