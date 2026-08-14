@@ -38,10 +38,16 @@ export const AdminAI: React.FC<AdminAIProps> = ({
       return { day, count, widthPct: (count / max) * 100 };
     });
 
-  const companionEvents = analytics?.byEvent?.companion_message || analytics?.byEvent?.companion || 0;
-  const flashcardEvents =
-    (analytics?.byEvent?.generate_flashcards || 0) + (analytics?.byEvent?.enhance_flashcard || 0);
-  const studyEvents = (analytics?.byEvent?.study_recommendations || 0) + (analytics?.byEvent?.study_plan || 0);
+  // Pills must sum event names that are actually written to ai_analytics.
+  // Every writer emits companion_* names (see trackAIAnalyticsEvent callers in
+  // AICompanionPanel) — the previous names (companion_message,
+  // generate_flashcards, study_recommendations…) never existed in the table,
+  // so three of the four pills were hardwired to zero.
+  const byEvent = analytics?.byEvent || {};
+  const messagesSent = byEvent.companion_message_sent || 0;
+  const voiceDictations =
+    (byEvent.companion_voice_dictation || 0) + (byEvent.companion_voice_dictation_start || 0);
+  const noteAttachments = byEvent.companion_note_context_attached || 0;
 
   return (
     <div className="space-y-4">
@@ -61,9 +67,9 @@ export const AdminAI: React.FC<AdminAIProps> = ({
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatPill label="Total events" value={analytics.totalEvents} accent="primary" />
-            <StatPill label="Companion" value={companionEvents} accent="neutral" />
-            <StatPill label="Flashcards AI" value={flashcardEvents} accent="neutral" />
-            <StatPill label="Study AI" value={studyEvents} accent="neutral" />
+            <StatPill label="Messages sent" value={messagesSent} accent="neutral" />
+            <StatPill label="Voice dictations" value={voiceDictations} accent="neutral" />
+            <StatPill label="Notes attached" value={noteAttachments} accent="neutral" />
           </div>
 
           <Card>

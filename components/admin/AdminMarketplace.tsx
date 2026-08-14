@@ -244,10 +244,11 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
                     </div>
                     <div className="flex flex-wrap gap-1.5 items-center">
                       <StatPill
-                        label={ORDER_STATUS_LABELS[order.status] || order.status}
+                        label="Status"
+                        value={ORDER_STATUS_LABELS[order.status] || order.status}
                         accent={isDisputed ? 'warning' : order.status === 'completed' ? 'success' : 'primary'}
                       />
-                      <StatPill label={`₦${Number(order.amount).toLocaleString()}`} accent="primary" />
+                      <StatPill label="Amount" value={`₦${Number(order.amount).toLocaleString()}`} accent="primary" />
                     </div>
                   </div>
 

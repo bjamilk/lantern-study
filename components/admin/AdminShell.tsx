@@ -74,14 +74,19 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
 
   const [tabLoading, setTabLoading] = useState(emptyTabLoading());
   const [loadedTabs, setLoadedTabs] = useState(emptyTabLoading());
-  const tabLoadingRef = useRef(tabLoading);
-  const loadedTabsRef = useRef(loadedTabs);
-  tabLoadingRef.current = tabLoading;
-  loadedTabsRef.current = loadedTabs;
+  // Guard refs are written synchronously by runTabLoad/invalidateTab, never
+  // mirrored from state during render: a render-time mirror lags one commit
+  // behind, so "invalidate then reload" in a single effect saw the stale
+  // loaded=true and skipped the fetch — which is how every filter change
+  // (order status, report status, AI/analytics period, user search) turned
+  // into a silent no-op, and how triple-mounted effects triple-fetched.
+  const tabLoadingRef = useRef(emptyTabLoading());
+  const loadedTabsRef = useRef(emptyTabLoading());
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [activity, setActivity] = useState<AdminActivityItem[]>([]);
+  const [overviewAudit, setOverviewAudit] = useState<AdminAuditEntry[]>([]);
   const [auditEntries, setAuditEntries] = useState<AdminAuditEntry[]>([]);
 
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -140,18 +145,28 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
   const runTabLoad = useCallback(async (tab: AdminTab, fn: () => Promise<void>, force = false) => {
     if (tabLoadingRef.current[tab]) return;
     if (loadedTabsRef.current[tab] && !force) return;
+    tabLoadingRef.current = { ...tabLoadingRef.current, [tab]: true };
     setTabLoading((prev) => ({ ...prev, [tab]: true }));
     if (force) setGlobalLoading(true);
     setError(null);
     try {
       await fn();
+      loadedTabsRef.current = { ...loadedTabsRef.current, [tab]: true };
       setLoadedTabs((prev) => ({ ...prev, [tab]: true }));
     } catch (err: any) {
       setError(err.message || 'Failed to load admin data');
     } finally {
+      tabLoadingRef.current = { ...tabLoadingRef.current, [tab]: false };
       setTabLoading((prev) => ({ ...prev, [tab]: false }));
       if (force) setGlobalLoading(false);
     }
+  }, []);
+
+  /** Mark a tab stale so the next runTabLoad refetches. Must update the ref
+   *  synchronously — callers invoke the load in the same tick. */
+  const invalidateTab = useCallback((tab: AdminTab) => {
+    loadedTabsRef.current = { ...loadedTabsRef.current, [tab]: false };
+    setLoadedTabs((prev) => ({ ...prev, [tab]: false }));
   }, []);
 
   const loadOverview = useCallback(
@@ -164,7 +179,17 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
         ]);
         if (statsResult.status === 'fulfilled') setStats(statsResult.value);
         if (activityResult.status === 'fulfilled') setActivity(activityResult.value);
-        if (auditResult.status === 'fulfilled') setAuditEntries(auditResult.value);
+        // Overview keeps its own audit slice: it fetches 15 rows while the
+        // Audit tab fetches 50, and sharing one state let a later Overview
+        // refresh silently truncate the Audit tab.
+        if (auditResult.status === 'fulfilled') setOverviewAudit(auditResult.value);
+        // Rethrow the first failure so runTabLoad shows the error banner and
+        // leaves the tab un-loaded (retried on next entry). Swallowing it
+        // rendered a fully blank tab that never recovered without Refresh.
+        const failed = [statsResult, activityResult, auditResult].find(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
+        if (failed) throw failed.reason;
       }, force);
     },
     [runTabLoad]
@@ -193,7 +218,10 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
             ? Promise.resolve(null)
             : fetchAdminMarketplaceOrders({ status: 'disputed', page: 1, limit: 1 });
 
-        const [listingsData, ordersData, disputedPeek] = await Promise.all([
+        // Settled, not all-or-nothing: one failing request must not blank the
+        // sections that succeeded. The disputed-count peek is cosmetic and is
+        // never allowed to fail the tab.
+        const [listingsRes, ordersRes, disputedRes] = await Promise.allSettled([
           fetchAdminMarketplaceListings({
             status: listingStatusFilter === 'all' ? undefined : listingStatusFilter,
             page: listingsPage,
@@ -206,15 +234,24 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           }),
           disputedPeekPromise,
         ]);
-        setListings(listingsData.data || []);
-        setListingsPagination(listingsData.pagination || null);
-        setOrders(ordersData.data || []);
-        setOrdersPagination(ordersData.pagination || null);
-        setDisputedOrdersTotal(
-          orderStatusFilter === 'disputed'
-            ? ordersData.pagination?.total ?? 0
-            : disputedPeek?.pagination?.total ?? 0
+        if (listingsRes.status === 'fulfilled') {
+          setListings(listingsRes.value.data || []);
+          setListingsPagination(listingsRes.value.pagination || null);
+        }
+        if (ordersRes.status === 'fulfilled') {
+          setOrders(ordersRes.value.data || []);
+          setOrdersPagination(ordersRes.value.pagination || null);
+          if (orderStatusFilter === 'disputed') {
+            setDisputedOrdersTotal(ordersRes.value.pagination?.total ?? 0);
+          }
+        }
+        if (orderStatusFilter !== 'disputed' && disputedRes.status === 'fulfilled') {
+          setDisputedOrdersTotal(disputedRes.value?.pagination?.total ?? 0);
+        }
+        const failed = [listingsRes, ordersRes].find(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
         );
+        if (failed) throw failed.reason;
       }, force);
     },
     [
@@ -246,12 +283,16 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
   const loadAI = useCallback(
     async (force = false) => {
       await runTabLoad('ai', async () => {
-        const [analyticsData, usageData] = await Promise.all([
+        const [analyticsRes, usageRes] = await Promise.allSettled([
           fetchAdminAIAnalytics(aiPeriodDays),
           fetchAdminAIUserUsage(aiPeriodDays, 10),
         ]);
-        setAiAnalytics(analyticsData);
-        setAiUsageByUser(usageData.users || []);
+        if (analyticsRes.status === 'fulfilled') setAiAnalytics(analyticsRes.value);
+        if (usageRes.status === 'fulfilled') setAiUsageByUser(usageRes.value?.users || []);
+        const failed = [analyticsRes, usageRes].find(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
+        if (failed) throw failed.reason;
       }, force);
     },
     [aiPeriodDays, runTabLoad]
@@ -277,9 +318,6 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
 
   useEffect(() => {
     if (activeTab === 'overview') loadOverview();
-    if (activeTab === 'analytics') loadAnalytics();
-    if (activeTab === 'reports') loadReports();
-    if (activeTab === 'ai') loadAI();
     if (activeTab === 'audit') loadAudit();
     if (activeTab === 'features') {
       setLoadedTabs((p) => (p.features ? p : { ...p, features: true }));
@@ -290,19 +328,40 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     if (activeTab === 'moderation') {
       setLoadedTabs((p) => (p.moderation ? p : { ...p, moderation: true }));
     }
-  }, [activeTab, loadAI, loadAnalytics, loadAudit, loadOverview, loadReports]);
+  }, [activeTab, loadAudit, loadOverview]);
+
+  // Filtered tabs invalidate before loading, so changing a filter, period,
+  // page or search actually refetches. Each load callback's identity changes
+  // with its filter deps, which is what re-fires these effects.
+  useEffect(() => {
+    if (activeTab !== 'analytics') return;
+    invalidateTab('analytics');
+    loadAnalytics();
+  }, [activeTab, loadAnalytics, invalidateTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'reports') return;
+    invalidateTab('reports');
+    loadReports();
+  }, [activeTab, loadReports, invalidateTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'ai') return;
+    invalidateTab('ai');
+    loadAI();
+  }, [activeTab, loadAI, invalidateTab]);
 
   useEffect(() => {
     if (activeTab !== 'users') return;
-    setLoadedTabs((prev) => ({ ...prev, users: false }));
+    invalidateTab('users');
     loadUsers();
-  }, [activeTab, debouncedUserSearch, usersPage, loadUsers]);
+  }, [activeTab, debouncedUserSearch, usersPage, loadUsers, invalidateTab]);
 
   useEffect(() => {
     if (activeTab !== 'marketplace') return;
-    setLoadedTabs((prev) => ({ ...prev, marketplace: false }));
+    invalidateTab('marketplace');
     loadMarketplace();
-  }, [activeTab, listingStatusFilter, listingsPage, orderStatusFilter, ordersPage, loadMarketplace]);
+  }, [activeTab, listingStatusFilter, listingsPage, orderStatusFilter, ordersPage, loadMarketplace, invalidateTab]);
 
   const setOrderStatusFilterAndResetPage = (value: string) => {
     setOrderStatusFilter(value);
@@ -490,11 +549,23 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
   };
 
   const onBulkDismissReports = async () => {
-    for (const report of reports) {
-      await resolveAdminReport(report.id, 'dismiss');
+    let dismissed = 0;
+    try {
+      for (const report of reports) {
+        await resolveAdminReport(report.id, 'dismiss');
+        dismissed += 1;
+      }
+      setReports([]);
+      setSuccess('Visible reports dismissed.');
+    } catch (err: any) {
+      // Partial failure: refetch so the list reflects what actually happened
+      // instead of silently keeping already-dismissed rows on screen.
+      setError(
+        `Dismissed ${dismissed} of ${reports.length} report${reports.length === 1 ? '' : 's'}: ${err.message || 'request failed'}`
+      );
+      invalidateTab('reports');
+      void loadReports();
     }
-    setReports([]);
-    setSuccess('Visible reports dismissed.');
   };
 
   const onResetQuota = async (userId: string) => {
@@ -574,8 +645,8 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           onExportStats={() => stats && exportCsv('admin-stats.csv', statsSummary(stats))}
           onOpenFeatures={() => setActiveTab('features')}
         />
-        {auditEntries.length > 0 && (
-          <AdminAudit entries={auditEntries.slice(0, 8)} />
+        {overviewAudit.length > 0 && (
+          <AdminAudit entries={overviewAudit.slice(0, 8)} />
         )}
       </TabPanel>
 

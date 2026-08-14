@@ -578,7 +578,11 @@ router.get('/reports', async (req: any, res: any) => {
     const { data, error, count } = await supabaseService
       .getClient()
       .from('marketplace_reports')
-      .select('id, listing_id, reporter_id, reason, details, status, created_at, listing:marketplace_listings(id, title, status), reporter:profiles!marketplace_reports_reporter_id_fkey(id, name)', { count: 'exact' })
+      // admin_note and resolved_at are written by PUT /reports/:id below; the
+      // console renders the note, the "[warned]" badge and the CSV column from
+      // them, so omitting them here silently blanked all three. listing.user_id
+      // matches the PUT handler's own join.
+      .select('id, listing_id, reporter_id, reason, details, status, created_at, admin_note, resolved_at, listing:marketplace_listings(id, title, status, user_id), reporter:profiles!marketplace_reports_reporter_id_fkey(id, name)', { count: 'exact' })
       .eq('status', status)
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);

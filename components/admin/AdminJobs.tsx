@@ -19,23 +19,44 @@ export function AdminJobs() {
 
   const load = async () => {
     setError(null);
-    try {
-      const [p, c, r] = await Promise.all([
-        fetchAdminJobPostings({ page: 1, limit: 50 }),
-        fetchAdminJobCompanies({ page: 1, limit: 50, status: 'pending' }),
-        fetchAdminJobReports('pending'),
-      ]);
-      setPostings(p.data || []);
-      setCompanies(c.data || []);
-      setReports(r.data || []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load jobs admin');
+    // Settled, not all-or-nothing: one failing endpoint must not blank the
+    // two sections that loaded fine.
+    const [p, c, r] = await Promise.allSettled([
+      fetchAdminJobPostings({ page: 1, limit: 50 }),
+      fetchAdminJobCompanies({ page: 1, limit: 50, status: 'pending' }),
+      fetchAdminJobReports('pending'),
+    ]);
+    if (p.status === 'fulfilled') setPostings(p.value.data || []);
+    if (c.status === 'fulfilled') setCompanies(c.value.data || []);
+    if (r.status === 'fulfilled') setReports(r.value.data || []);
+    const failed = [p, c, r].find((x): x is PromiseRejectedResult => x.status === 'rejected');
+    if (failed) {
+      const reason = failed.reason;
+      setError(reason instanceof Error ? reason.message : 'Failed to load jobs admin');
     }
   };
 
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Every mutation runs through here: busy always resets (a thrown request
+  // used to leave busy=true forever, disabling all buttons with no feedback),
+  // and failures reach the error banner instead of vanishing as unhandled
+  // rejections.
+  const runAction = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -61,12 +82,9 @@ export function AdminJobs() {
                 disabled={busy}
                 className="text-xs px-2 py-1 rounded bg-emerald-600 text-white"
                 onClick={() =>
-                  void (async () => {
-                    setBusy(true);
+                  void runAction(async () => {
                     await setAdminJobCompanyVerification(c.id, 'verified');
-                    await load();
-                    setBusy(false);
-                  })()
+                  })
                 }
               >
                 Verify
@@ -75,22 +93,13 @@ export function AdminJobs() {
                 type="button"
                 disabled={busy}
                 className="text-xs px-2 py-1 rounded border border-lantern-border"
-                onClick={() =>
-                  void (async () => {
-                    const note =
-                      window.prompt(
-                        "Optional rejection note for the company owners:",
-                      ) || undefined;
-                    setBusy(true);
-                    await setAdminJobCompanyVerification(
-                      c.id,
-                      "rejected",
-                      note,
-                    );
-                    await load();
-                    setBusy(false);
-                  })()
-                }
+                onClick={() => {
+                  const note =
+                    window.prompt('Optional rejection note for the company owners:') || undefined;
+                  void runAction(async () => {
+                    await setAdminJobCompanyVerification(c.id, 'rejected', note);
+                  });
+                }}
               >
                 Reject
               </button>
@@ -116,16 +125,14 @@ export function AdminJobs() {
                 <button
                   type="button"
                   className="text-xs px-2 py-1 rounded border"
+                  disabled={busy}
                   onClick={() =>
-                    void (async () => {
-                      setBusy(true);
+                    void runAction(async () => {
                       if (r.posting_id || r.posting?.id) {
                         await removeAdminJobPosting(r.posting?.id || r.posting_id);
                       }
                       await resolveAdminJobReport(r.id, 'resolved');
-                      await load();
-                      setBusy(false);
-                    })()
+                    })
                   }
                 >
                   Remove job
@@ -133,13 +140,11 @@ export function AdminJobs() {
                 <button
                   type="button"
                   className="text-xs px-2 py-1 rounded border"
+                  disabled={busy}
                   onClick={() =>
-                    void (async () => {
-                      setBusy(true);
+                    void runAction(async () => {
                       await resolveAdminJobReport(r.id, 'dismissed');
-                      await load();
-                      setBusy(false);
-                    })()
+                    })
                   }
                 >
                   Dismiss
@@ -172,9 +177,12 @@ export function AdminJobs() {
                     {p.status === 'pending_school_approval' ? (
                       <button
                         type="button"
+                        disabled={busy}
                         className="text-xs px-2 py-1 rounded border"
                         onClick={() =>
-                          void schoolApproveAdminJobPosting(p.id, true).then(() => load())
+                          void runAction(async () => {
+                            await schoolApproveAdminJobPosting(p.id, true);
+                          })
                         }
                       >
                         School approve
@@ -183,11 +191,12 @@ export function AdminJobs() {
                     {p.status === 'active' ? (
                       <button
                         type="button"
+                        disabled={busy}
                         className="text-xs px-2 py-1 rounded border"
                         onClick={() =>
-                          void updateAdminJobPostingStatus(p.id, 'suspended_by_admin').then(() =>
-                            load()
-                          )
+                          void runAction(async () => {
+                            await updateAdminJobPostingStatus(p.id, 'suspended_by_admin');
+                          })
                         }
                       >
                         Suspend
@@ -195,9 +204,12 @@ export function AdminJobs() {
                     ) : p.status === 'suspended_by_admin' ? (
                       <button
                         type="button"
+                        disabled={busy}
                         className="text-xs px-2 py-1 rounded border"
                         onClick={() =>
-                          void updateAdminJobPostingStatus(p.id, 'active').then(() => load())
+                          void runAction(async () => {
+                            await updateAdminJobPostingStatus(p.id, 'active');
+                          })
                         }
                       >
                         Activate
@@ -205,8 +217,13 @@ export function AdminJobs() {
                     ) : null}
                     <button
                       type="button"
+                      disabled={busy}
                       className="text-xs px-2 py-1 rounded border text-red-600"
-                      onClick={() => void removeAdminJobPosting(p.id).then(() => load())}
+                      onClick={() =>
+                        void runAction(async () => {
+                          await removeAdminJobPosting(p.id);
+                        })
+                      }
                     >
                       Remove
                     </button>

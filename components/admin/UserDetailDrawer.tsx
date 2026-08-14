@@ -55,16 +55,26 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
 
   const reload = async () => {
     if (!userId) return;
-    const data = await fetchAdminUserDetail(userId);
-    setDetail(data);
-    onUpdated?.();
+    try {
+      const data = await fetchAdminUserDetail(userId);
+      setDetail(data);
+      onUpdated?.();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh user');
+    }
   };
 
   const loadCompanion = async () => {
     if (!userId) return;
-    const messages = await fetchAdminCompanionMessages(userId, 15);
-    setCompanionPreview(messages);
-    setShowCompanion(true);
+    try {
+      const messages = await fetchAdminCompanionMessages(userId, 15);
+      setCompanionPreview(messages);
+      setShowCompanion(true);
+    } catch (err: unknown) {
+      // Without this, a failed fetch was an unhandled rejection: no panel, no
+      // message, button appears to do nothing.
+      setError(err instanceof Error ? err.message : 'Failed to load companion messages');
+    }
   };
 
   return (

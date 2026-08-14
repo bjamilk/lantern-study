@@ -157,7 +157,6 @@ export interface AdminAnalytics {
     gmvByCampus: Array<{ campus: string; gmv: number; orders: number }>;
     gmvByZone?: Array<{ zone: string; gmv: number; orders: number }>;
     listingsByZone?: Array<{ zone: string; total: number; active: number; sold: number }>;
-    listingsByZone?: Array<{ zone: string; total: number; active: number; sold: number }>;
   };
   retentionCohorts?: {
     signups: number;
