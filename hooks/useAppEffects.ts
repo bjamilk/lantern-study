@@ -368,10 +368,17 @@ export function useAppEffects({
 
                 const session = resolved.session;
                 if (isCookieAuthEnabled()) {
-                    await supabase.auth.setSession({
+                    // The error was silently discarded here, which cost a day:
+                    // when setSession fails, every direct PostgREST query runs
+                    // as anon (42501) while API calls keep working on the
+                    // cached Bearer token — a half-broken state with no signal.
+                    const { error: setSessionError } = await supabase.auth.setSession({
                         access_token: session.access_token,
                         refresh_token: session.refresh_token,
                     });
+                    if (setSessionError) {
+                        console.warn('[CookieAuth] setSession failed:', setSessionError.message);
+                    }
                 }
 
                 if (session.access_token) {

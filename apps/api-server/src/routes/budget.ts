@@ -282,6 +282,27 @@ router.post(
   })
 );
 
+// GET /api/v1/budget/transactions — the reads used to go straight to PostgREST
+// from the web client, which raced session setup in cookie-auth mode and ran
+// as anon (42501). Reads now share the Bearer custody every other call uses.
+router.get(
+  '/transactions',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { data, error } = await supabaseService.getClient()
+      .from('budget_transactions')
+      .select('id, user_id, type, amount, category, description, date')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+    if (error) throw error;
+
+    res.json({ success: true, data: data || [] });
+  })
+);
+
 // POST /api/v1/budget/transactions — create expense/income with optional category overspend warning
 router.post(
   '/transactions',

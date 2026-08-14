@@ -5273,26 +5273,33 @@ export interface TransactionData {
   date: string;
 }
 
+// Budget reads go through the API, not PostgREST. The direct supabase-js
+// queries raced auth-session setup in cookie mode and ran as anon (42501)
+// while every API-backed fetch on the same screen worked — Bearer custody via
+// getAuthHeaders is the path that is reliable at boot. Writes already moved
+// (budgetApi.ts); these were the stragglers.
 export const fetchUserBudget = async (userId: string, monthYear?: string): Promise<BudgetData | null> => {
   try {
     const targetMonth = monthYear || new Date().toISOString().slice(0, 7); // "YYYY-MM"
-    
-    const { data, error } = await supabase
-      .from('user_budgets')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('month_year', targetMonth)
-      .maybeSingle();
+    const headers = await getAuthHeaders();
+    if (!headers.Authorization) return null;
 
-    if (error) {
-      console.error('Error fetching user budget:', error);
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/users/${userId}/budget?monthYear=${encodeURIComponent(targetMonth)}`,
+      withApiCredentials({ headers })
+    );
+    if (!response.ok) {
+      console.error('Error fetching user budget: HTTP', response.status);
       return null;
     }
-
-    return data ? {
-      monthlyLimit: parseFloat(data.monthly_limit) || 0,
-      monthYear: data.month_year
-    } : null;
+    const body = await response.json().catch(() => ({}));
+    const data = body?.data;
+    return data
+      ? {
+          monthlyLimit: Number(data.monthly_limit) || 0,
+          monthYear: data.month_year,
+        }
+      : null;
   } catch (error) {
     console.error('Error fetching user budget:', error);
     return null;
@@ -5326,42 +5333,32 @@ export const saveUserBudget = async (userId: string, budget: BudgetData): Promis
 
 export const fetchBudgetTransactions = async (userId: string): Promise<TransactionData[]> => {
   try {
-    if (!userId || !(await hasValidSession())) {
+    if (!userId) return [];
+    const headers = await getAuthHeaders();
+    if (!headers.Authorization) {
       console.warn('No valid session available for fetching budget transactions.');
       return [];
     }
 
-    const authUserId = await getAuthenticatedUserId();
-    if (!authUserId) {
-      console.warn('Unable to determine authenticated user ID for budget transactions.');
+    // The route is self-scoped server-side; no client-side user matching needed.
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/budget/transactions`,
+      withApiCredentials({ headers })
+    );
+    if (!response.ok) {
+      console.error('Error fetching budget transactions: HTTP', response.status);
       return [];
     }
+    const body = await response.json().catch(() => ({}));
+    const rows: Array<Record<string, unknown>> = Array.isArray(body?.data) ? body.data : [];
 
-    if (authUserId !== userId) {
-      console.warn('Budget transaction fetch userId does not match authenticated user; using authenticated user id.', {
-        requested: userId,
-        authenticated: authUserId,
-      });
-    }
-
-    const { data, error } = await supabase
-      .from('budget_transactions')
-      .select('*')
-      .eq('user_id', authUserId)
-      .order('date', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching budget transactions:', error);
-      return [];
-    }
-
-    return (data || []).map(t => ({
-      id: t.id,
-      type: t.type.toUpperCase() as 'INCOME' | 'EXPENSE' | 'INVESTMENT',
-      amount: parseFloat(t.amount),
-      category: t.category,
-      description: t.description,
-      date: t.date
+    return rows.map(t => ({
+      id: String(t.id),
+      type: String(t.type).toUpperCase() as 'INCOME' | 'EXPENSE' | 'INVESTMENT',
+      amount: parseFloat(String(t.amount)),
+      category: t.category as string | undefined,
+      description: t.description as string | undefined,
+      date: t.date as string,
     }));
   } catch (error) {
     console.error('Error fetching budget transactions:', error);
