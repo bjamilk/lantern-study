@@ -44,8 +44,14 @@ export const AdminCommunications: React.FC<AdminCommunicationsProps> = ({ onSent
     }
     setLoading(true);
     try {
-      await sendAdminBulkNotifications({ userIds, message: message.trim(), link: link.trim() || undefined, type });
-      onSent(`Sent to ${userIds.length} users.`);
+      const delivered = await sendAdminBulkNotifications({ userIds, message: message.trim(), link: link.trim() || undefined, type });
+      // Report what the server inserted, not what was requested — a partial
+      // insert used to read as full success.
+      if (delivered === userIds.length) {
+        onSent(`Sent to ${delivered} user${delivered === 1 ? '' : 's'}.`);
+      } else {
+        onError(`Delivered ${delivered} of ${userIds.length} notifications.`);
+      }
       setMessage('');
     } catch (err: any) {
       onError(err.message || 'Bulk send failed');

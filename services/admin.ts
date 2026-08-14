@@ -467,6 +467,8 @@ export interface AdminOfflineBundle {
   id: string;
   user_id: string;
   display_name?: string;
+  /** NOT NULL in the schema — the fallback name when display_name is absent. */
+  group_name?: string;
   updated_at?: string;
   created_at: string;
   owner?: { id: string; name?: string; username?: string };
@@ -503,16 +505,19 @@ export async function sendAdminNotification(params: {
   });
 }
 
+/** Returns the number of notifications the server actually inserted, which
+ *  can be lower than userIds.length on a partial failure. */
 export async function sendAdminBulkNotifications(params: {
   userIds: string[];
   message: string;
   link?: string;
   type?: string;
-}): Promise<void> {
-  await adminRequest('/notifications/bulk', {
+}): Promise<number> {
+  const response = await adminRequest<{ success: boolean; count?: number }>('/notifications/bulk', {
     method: 'POST',
     body: JSON.stringify(params),
   });
+  return response.count ?? 0;
 }
 
 export async function awardAdminPoints(userId: string, points: number, reason?: string): Promise<void> {
@@ -583,9 +588,16 @@ export async function removeAdminDeck(deckId: string, reason?: string): Promise<
   });
 }
 
-export async function fetchAdminOfflineSummary(): Promise<AdminOfflineBundle[]> {
-  const response = await adminRequest<{ success: boolean; data: AdminOfflineBundle[] }>('/offline/summary');
-  return response.data || [];
+export async function fetchAdminOfflineSummary(): Promise<{
+  data: AdminOfflineBundle[];
+  pagination?: AdminPagination;
+}> {
+  const response = await adminRequest<{
+    success: boolean;
+    data: AdminOfflineBundle[];
+    pagination?: AdminPagination;
+  }>('/offline/summary');
+  return { data: response.data || [], pagination: response.pagination };
 }
 
 export async function resetAdminAIQuota(userId: string, feature?: string): Promise<void> {

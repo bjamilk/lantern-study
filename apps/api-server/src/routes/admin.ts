@@ -14,6 +14,7 @@ import {
   validateAdminUserRole,
   validateAdminPointsAdjust,
   validateAdminNotification,
+  validateAdminBulkNotification,
 } from '../middleware/validation';
 import { getAIUsage, resetAIUsageForUser, getAllAIUsageForUser } from '../middleware/aiRateLimit';
 import { clientErrorMessage } from '../utils/safeError';
@@ -210,38 +211,74 @@ router.get('/users', async (req: any, res: any) => {
     }
 
     if (search && search.includes('@')) {
-      const authClient: any = client;
-      let matchedUser: any = null;
-      for (let authPage = 1; authPage <= 5 && !matchedUser; authPage++) {
-        const { data: authData } = await authClient.auth.admin.listUsers({ page: authPage, perPage: 200 });
-        matchedUser = (authData?.users || []).find((u: any) =>
-          u.email?.toLowerCase().includes(search.toLowerCase())
-        );
-        if ((authData?.users || []).length < 200) break;
-      }
-      if (matchedUser) {
-        const { data: profile } = await client
+      // Match against auth.users directly via the admin_search_users_by_email
+      // RPC (20260817120000): the old listUsers page scan stopped at 1000
+      // users and silently fell back to name-only matching, so a real email
+      // could return "no results". Returns every match, not just the first.
+      const { data: emailMatches, error: rpcError } = await client.rpc(
+        'admin_search_users_by_email',
+        { search_query: search, result_limit: limit }
+      );
+
+      if (!rpcError && Array.isArray(emailMatches) && emailMatches.length > 0) {
+        const ids = emailMatches.map((m: any) => m.id);
+        const { data: profiles } = await client
           .from('profiles')
           .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at')
-          .eq('id', matchedUser.id)
-          .maybeSingle();
-        const row = profile || {
-          id: matchedUser.id,
-          name: matchedUser.user_metadata?.name || matchedUser.email,
-          created_at: matchedUser.created_at,
-          settings: {},
-        };
-        const normalized = [{
-          ...row,
-          email: matchedUser.email,
-          is_banned: row?.settings?.is_banned === true || row?.settings?.account_status === 'banned',
-          is_platform_admin: matchedUser.app_metadata?.is_platform_admin === true,
-        }];
+          .in('id', ids);
+        const profileById = new Map((profiles || []).map((p: any) => [p.id, p]));
+        const normalized = emailMatches.map((m: any) => {
+          const row = profileById.get(m.id) || { id: m.id, name: m.email, settings: {} };
+          return {
+            ...row,
+            email: m.email,
+            is_banned: row?.settings?.is_banned === true || row?.settings?.account_status === 'banned',
+            is_platform_admin: m.is_platform_admin === true,
+          };
+        });
         return res.json({
           success: true,
           data: normalized,
           pagination: { page: 1, limit, total: normalized.length, pages: 1 },
         });
+      }
+
+      // Function not deployed yet (or no match): legacy bounded page scan so
+      // the search keeps working before the migration is applied.
+      if (rpcError) {
+        const authClient: any = client;
+        let matchedUser: any = null;
+        for (let authPage = 1; authPage <= 5 && !matchedUser; authPage++) {
+          const { data: authData } = await authClient.auth.admin.listUsers({ page: authPage, perPage: 200 });
+          matchedUser = (authData?.users || []).find((u: any) =>
+            u.email?.toLowerCase().includes(search.toLowerCase())
+          );
+          if ((authData?.users || []).length < 200) break;
+        }
+        if (matchedUser) {
+          const { data: profile } = await client
+            .from('profiles')
+            .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at')
+            .eq('id', matchedUser.id)
+            .maybeSingle();
+          const row = profile || {
+            id: matchedUser.id,
+            name: matchedUser.user_metadata?.name || matchedUser.email,
+            created_at: matchedUser.created_at,
+            settings: {},
+          };
+          const normalized = [{
+            ...row,
+            email: matchedUser.email,
+            is_banned: row?.settings?.is_banned === true || row?.settings?.account_status === 'banned',
+            is_platform_admin: matchedUser.app_metadata?.is_platform_admin === true,
+          }];
+          return res.json({
+            success: true,
+            data: normalized,
+            pagination: { page: 1, limit, total: normalized.length, pages: 1 },
+          });
+        }
       }
     }
 
@@ -958,15 +995,9 @@ router.post('/notifications', validateAdminNotification, handleValidationErrors,
 });
 
 // POST /api/v1/admin/notifications/bulk
-router.post('/notifications/bulk', async (req: any, res: any) => {
+router.post('/notifications/bulk', validateAdminBulkNotification, handleValidationErrors, async (req: any, res: any) => {
   try {
     const { userIds, message, link, type = 'info' } = req.body;
-    if (!Array.isArray(userIds) || !userIds.length || !message) {
-      return res.status(400).json({ success: false, error: 'userIds array and message are required' });
-    }
-    if (userIds.length > 100) {
-      return res.status(400).json({ success: false, error: 'Maximum 100 users per bulk send' });
-    }
     const notifications = userIds.map((uid: string) => ({ userId: uid, message, link, type }));
     const created = await supabaseService.createBulkNotifications(notifications);
     for (const uid of userIds) {
@@ -1174,9 +1205,11 @@ router.delete('/decks/:id', async (req: any, res: any) => {
 // GET /api/v1/admin/offline/summary
 router.get('/offline/summary', async (req: any, res: any) => {
   try {
-    const { data: bundles, error } = await supabaseService.getClient()
+    // count:'exact' so the console can say "showing 50 of N" — the hard cap
+    // used to be invisible, indistinguishable from a complete list.
+    const { data: bundles, error, count } = await supabaseService.getClient()
       .from('offline_bundles')
-      .select('id, user_id, display_name, group_name, updated_at, created_at')
+      .select('id, user_id, display_name, group_name, updated_at, created_at', { count: 'exact' })
       .order('updated_at', { ascending: false })
       .limit(50);
     if (error) throw error;
@@ -1200,6 +1233,7 @@ router.get('/offline/summary', async (req: any, res: any) => {
         ...b,
         owner: profileById[b.user_id] || null,
       })),
+      pagination: { page: 1, limit: 50, total: count ?? rows.length, pages: Math.ceil((count ?? rows.length) / 50) || 1 },
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: clientErrorMessage(err) });

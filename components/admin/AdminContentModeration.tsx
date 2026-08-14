@@ -31,6 +31,7 @@ export const AdminContentModeration: React.FC<AdminContentModerationProps> = ({ 
   const [groupSearch, setGroupSearch] = useState('');
   const [deckSearch, setDeckSearch] = useState('');
   const [messageGroupId, setMessageGroupId] = useState('');
+  const [offlineTotal, setOfflineTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
@@ -46,10 +47,18 @@ export const AdminContentModeration: React.FC<AdminContentModerationProps> = ({ 
         const res = await fetchAdminDecks({ search: deckSearch || undefined, limit: 30 });
         setDecks(res.data);
       } else {
-        setOffline(await fetchAdminOfflineSummary());
+        const res = await fetchAdminOfflineSummary();
+        setOffline(res.data);
+        setOfflineTotal(res.pagination?.total ?? null);
       }
     } catch (err: any) {
       onError(err.message || 'Load failed');
+      // Clear the failed section: leaving the previous section's rows on
+      // screen under this section's header presented stale data as current.
+      if (section === 'groups') setGroups([]);
+      else if (section === 'messages') setMessages([]);
+      else if (section === 'decks') setDecks([]);
+      else setOffline([]);
     } finally {
       setLoading(false);
     }
@@ -163,10 +172,17 @@ export const AdminContentModeration: React.FC<AdminContentModerationProps> = ({ 
 
       {section === 'offline' && (
         <Card className="space-y-2">
-          <p className="text-sm text-lantern-text-muted">Recent offline bundles (sync metadata only)</p>
+          <p className="text-sm text-lantern-text-muted">
+            Recent offline bundles (sync metadata only)
+            {offlineTotal != null && offlineTotal > offline.length
+              ? ` — showing ${offline.length} of ${offlineTotal}`
+              : ''}
+          </p>
           {offline.map((b) => (
             <div key={b.id} className="text-sm border-b border-lantern-border pb-2">
-              <p className="font-medium">{b.display_name || b.id}</p>
+              {/* group_name is NOT NULL in the schema — a readable fallback,
+                  where the raw bundle id was shown when display_name was unset. */}
+              <p className="font-medium">{b.display_name || b.group_name || b.id}</p>
               <p className="text-xs text-lantern-text-muted">{b.owner?.name || b.user_id} · updated {formatDateTime(b.updated_at || b.created_at)}</p>
             </div>
           ))}

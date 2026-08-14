@@ -257,6 +257,15 @@ export const validateAdminNotification = [
   body('link').optional().isString().isLength({ max: 500 }),
 ];
 
+// The bulk textarea splits free text on whitespace/commas, so malformed ids
+// used to reach Postgres as FK violations and surface as generic 500s.
+export const validateAdminBulkNotification = [
+  body('message').trim().isLength({ min: 1, max: 500 }).withMessage('Message must be 1-500 characters'),
+  body('userIds').isArray({ min: 1, max: 100 }).withMessage('userIds must contain 1-100 entries'),
+  body('userIds.*').isUUID().withMessage('Every userId must be a valid UUID'),
+  body('link').optional().isString().isLength({ max: 500 }),
+];
+
 export const validateMarketplaceListingWrite = [
   body('title').trim().isLength({ min: 1, max: 200 }).withMessage('Title must be 1-200 characters'),
   // Categories include marketplace subcategories (e.g. textbook_exchange) and

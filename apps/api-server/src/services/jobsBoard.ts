@@ -3204,7 +3204,12 @@ export class JobsBoardService {
     if (status) query = query.eq("status", status);
     const { data, error, count } = await query;
     if (error) throw error;
-    return { data: data || [], pagination: { page, limit, total: count ?? 0 } };
+    // pages: every other admin pagination carries it, and PaginationBar
+    // renders "Page X of pagination.pages" — undefined breaks the guard.
+    return {
+      data: data || [],
+      pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / Math.min(100, limit)) || 1 },
+    };
   }
 
   async adminListCompanies(page = 1, limit = 20, status?: string) {
@@ -3220,7 +3225,7 @@ export class JobsBoardService {
     if (error) throw error;
     return {
       data: (data || []).map((row: any) => mapCompany(row)),
-      pagination: { page, limit, total: count ?? 0 },
+      pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / Math.min(100, limit)) || 1 },
     };
   }
 
