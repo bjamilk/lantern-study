@@ -76,7 +76,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.17: crash reporting goes live — release builds carry the Sentry DSN,
   // so Android crashes stop being invisible (previously observable only over
   // adb logcat on a connected device).
-  version: '1.0.17',
+  // 1.0.18: marketplace question banks — buy/download study bundles that land
+  // in Offline Mode, publish and update banks from the app, per-bank
+  // leaderboards with durable offline score sync, and sessions on other
+  // devices are revoked when the password changes.
+  version: '1.0.18',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
