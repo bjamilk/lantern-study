@@ -73,7 +73,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // pointed at lanternstudy.app, a domain that does not exist, so the app's own
   // allowlist rejected every link it generated. Also drops two Android
   // permissions the app never used.
-  version: '1.0.16',
+  // 1.0.17: crash reporting goes live — release builds carry the Sentry DSN,
+  // so Android crashes stop being invisible (previously observable only over
+  // adb logcat on a connected device).
+  version: '1.0.17',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
