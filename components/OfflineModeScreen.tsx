@@ -3,12 +3,16 @@ import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import React, { useRef, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { OfflineSessionBundle, Deck } from '../types';
-import { CloudArrowDownIcon, ArrowPathIcon, DocumentTextIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
+import { CloudArrowDownIcon, ArrowPathIcon, DocumentTextIcon, ArrowUpTrayIcon, ShoppingBagIcon } from '@heroicons/react/24/outline';
 import { syncCopy, featureAccents } from '@lantern/shared/design';
 import { useUIStore } from '../stores/uiStore';
+import { useAuthStore } from '../stores/authStore';
+import { useTestStore } from '../stores/testStore';
+import { restoreQuestionBanks, fetchOfflineBundles } from '../services/supabase';
 import { FeatureHero } from './ui/FeatureHero';
 import { ConnectionBadge } from './ui/ConnectionBadge';
 import { OfflineBundleCard } from './offline/OfflineBundleCard';
+import PublishQuestionBankModal from './marketplace/PublishQuestionBankModal';
 
 interface OfflineModeScreenProps {
   offlineBundles: OfflineSessionBundle[];
@@ -41,6 +45,32 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
   const importInputRef = useRef<HTMLInputElement>(null);
   const [editingBundleId, setEditingBundleId] = useState<string | null>(null);
   const [editNameValue, setEditNameValue] = useState('');
+  const [publishingBundle, setPublishingBundle] = useState<OfflineSessionBundle | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const currentUserId = useAuthStore((s) => s.currentUser?.id);
+  const setOfflineBundles = useTestStore((s) => s.setOfflineBundles);
+
+  /** Pull purchased question banks back onto this device (new install / cleared storage). */
+  const handleRestorePurchases = async () => {
+    if (!currentUserId) return;
+    setRestoring(true);
+    try {
+      const { restored } = await restoreQuestionBanks();
+      const cloudBundles = await fetchOfflineBundles(currentUserId);
+      setOfflineBundles(cloudBundles as unknown as OfflineSessionBundle[]);
+      useToastStore
+        .getState()
+        .showToast(
+          restored > 0
+            ? `Restored ${restored} question bank${restored !== 1 ? 's' : ''}.`
+            : 'No purchased question banks to restore.'
+        );
+    } catch (err: any) {
+      useToastStore.getState().showToast(err?.message || 'Could not restore purchases', 'error');
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const handleExportBundle = (bundle: OfflineSessionBundle) => {
     const displayName = bundle.displayName || bundle.groupName;
@@ -117,6 +147,16 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
             >
               <ArrowUpTrayIcon className="w-4 h-4" />
               Import Bundle
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRestorePurchases()}
+              disabled={!isOnline || restoring}
+              className="flex items-center gap-2 px-4 py-2 min-h-[44px] border border-lantern-border text-lantern-text hover:border-lantern-primary/40 rounded-lantern text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Re-download question banks you bought on the marketplace"
+            >
+              <ShoppingBagIcon className="w-4 h-4" />
+              {restoring ? 'Restoring…' : 'Restore purchases'}
             </button>
           </>
         }
@@ -222,6 +262,12 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
                 onStartTest={() => onStartOfflineSession(bundle.bundleId, 'test')}
                 onStartStudy={() => onStartOfflineSession(bundle.bundleId, 'study')}
                 onDelete={() => onDeleteBundle(bundle.bundleId)}
+                onPublish={
+                  // Purchased banks (qbank-*) are someone else's product — no re-publishing.
+                  isOnline && !bundle.bundleId.startsWith('qbank-')
+                    ? () => setPublishingBundle(bundle)
+                    : undefined
+                }
               />
             ))}
           </div>
@@ -237,6 +283,14 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
           </div>
         )}
       </section>
+
+      {publishingBundle ? (
+        <PublishQuestionBankModal
+          bundle={publishingBundle}
+          isOpen={!!publishingBundle}
+          onClose={() => setPublishingBundle(null)}
+        />
+      ) : null}
     </div>
   );
 };

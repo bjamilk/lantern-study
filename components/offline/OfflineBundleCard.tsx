@@ -8,6 +8,7 @@ import {
   PencilIcon,
   CheckIcon,
   XMarkIcon,
+  BuildingStorefrontIcon,
 } from '@heroicons/react/24/outline';
 import { featureAccents } from '@lantern/shared/design';
 
@@ -23,6 +24,8 @@ interface OfflineBundleCardProps {
   onStartTest: () => void;
   onStartStudy: () => void;
   onDelete: () => void;
+  /** Publish this bundle as a marketplace question bank (online only). */
+  onPublish?: () => void;
 }
 
 export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
@@ -37,6 +40,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
   onStartTest,
   onStartStudy,
   onDelete,
+  onPublish,
 }) => (
   <div
     className="bg-lantern-surface border border-lantern-border rounded-lantern-xl shadow-lantern p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-shadow duration-200 hover:shadow-lantern-md"
@@ -93,6 +97,16 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
       </p>
     </div>
     <div className="flex space-x-2 flex-shrink-0">
+      {onPublish ? (
+        <button
+          type="button"
+          onClick={onPublish}
+          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-primary-background rounded-lantern transition-colors"
+          title="Publish to marketplace"
+        >
+          <BuildingStorefrontIcon className="w-5 h-5" />
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onExport}

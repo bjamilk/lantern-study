@@ -1383,6 +1383,14 @@ router.post(
     if (listing.user_id === userId) {
       return res.status(400).json({ success: false, error: 'Cannot make an offer on your own listing' });
     }
+    // Question banks are fixed-price digital goods; the offer-accept order path
+    // is meetup-shaped (reserves the listing), so offers are not supported.
+    if (listing.listing_kind === 'question_bank') {
+      return res.status(400).json({
+        success: false,
+        error: 'Question banks are fixed-price — use Buy Now or the free download',
+      });
+    }
 
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
@@ -2061,9 +2069,40 @@ router.get(
       }
     }
 
+    // --- 6. Question-bank meta (digital listings): count/version + ownership ---
+    let questionBank: { questionCount: number; version: number; owned: boolean } | null = null;
+    if (listing.listing_kind === 'question_bank') {
+      try {
+        const { data: bank } = await supabaseService.getClient()
+          .from('marketplace_question_banks')
+          .select('question_count, version')
+          .eq('listing_id', id)
+          .maybeSingle();
+        if (bank) {
+          let owned = false;
+          if (viewerId) {
+            const { data: entitlement } = await supabaseService.getClient()
+              .from('marketplace_question_bank_entitlements')
+              .select('id')
+              .eq('listing_id', id)
+              .eq('user_id', viewerId)
+              .maybeSingle();
+            owned = !!entitlement;
+          }
+          questionBank = {
+            questionCount: bank.question_count,
+            version: bank.version,
+            owned,
+          };
+        }
+      } catch {
+        questionBank = null; // meta is decorative; never block the listing
+      }
+    }
+
     res.json({
       success: true,
-      data: { listing, isFavorited, similarListings, canReview },
+      data: { listing, isFavorited, similarListings, canReview, questionBank },
     });
   })
 );

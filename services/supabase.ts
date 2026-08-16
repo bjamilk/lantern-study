@@ -4100,10 +4100,78 @@ export const fetchSimilarListings = async (listingId: string) => {
 
 // --- Batched listing detail (listing + isFavorited + similar in one request) ---
 
+export interface MarketplaceQuestionBankMeta {
+  questionCount: number;
+  version: number;
+  owned: boolean;
+}
+
+/** Publish an offline bundle as a digital question-bank listing. */
+export const publishQuestionBank = async (input: {
+  title: string;
+  description?: string;
+  price?: number | null;
+  campusId: string;
+  location?: string;
+  groupId?: string | null;
+  content: { config?: Record<string, unknown>; questions: unknown[] };
+}): Promise<{ listing: any; bank: { listing_id: string; question_count: number } }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/question-banks/publish`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify(input),
+    },
+    15000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to publish question bank');
+  }
+  return (await response.json()).data;
+};
+
+/** Free banks and owner re-downloads: grants the entitlement and delivers the offline bundle. */
+export const downloadQuestionBank = async (
+  listingId: string
+): Promise<{ bundleId: string; questionCount: number }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/listings/${encodeURIComponent(listingId)}/question-bank/download`,
+    { method: 'POST', headers: await getAuthHeaders() },
+    15000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to download question bank');
+  }
+  return (await response.json()).data;
+};
+
+/** Re-materialize purchased banks into offline bundles (new device / reinstall). */
+export const restoreQuestionBanks = async (): Promise<{ restored: number }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/question-banks/restore`,
+    { method: 'POST', headers: await getAuthHeaders() },
+    20000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to restore question banks');
+  }
+  return (await response.json()).data;
+};
+
 export const fetchMarketplaceListingFull = async (
   listingId: string,
   userId?: string
-): Promise<{ listing: any; isFavorited: boolean; similarListings: any[]; canReview?: boolean }> => {
+): Promise<{
+  listing: any;
+  isFavorited: boolean;
+  similarListings: any[];
+  canReview?: boolean;
+  questionBank?: MarketplaceQuestionBankMeta | null;
+}> => {
   const params = userId ? `` : '';
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/marketplace/listings/${listingId}/full${params}`,

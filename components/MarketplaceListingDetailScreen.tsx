@@ -15,6 +15,8 @@ import {
   addToMarketplaceCart,
   validateMarketplaceCoupon,
   fetchPickupNudge,
+  downloadQuestionBank,
+  type MarketplaceQuestionBankMeta,
 } from '../services/supabase';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { generateListingLink, formatCampusLabel } from '@lantern/shared';
@@ -92,6 +94,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [boostingListing, setBoostingListing] = useState(false);
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
   const [canReview, setCanReview] = useState(false);
+  const [questionBank, setQuestionBank] = useState<MarketplaceQuestionBankMeta | null>(null);
+  const [downloadingBank, setDownloadingBank] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listingLoadId = useRef(0);
@@ -217,6 +221,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       setIsFavorited(data.isFavorited);
       setSimilarListings(data.similarListings);
       setCanReview(!!data.canReview);
+      setQuestionBank(data.questionBank || null);
       const sellerId = data.listing.user_id || data.listing.seller_id;
       if (sellerId && currentUser?.id && sellerId !== currentUser.id) {
         setPickupNudge(await fetchPickupNudge(sellerId));
@@ -413,6 +418,21 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     }
   };
 
+  const handleDownloadQuestionBank = async () => {
+    if (!listing) return;
+    if (requireAuth()) return;
+    setDownloadingBank(true);
+    try {
+      await downloadQuestionBank(listing.id);
+      setQuestionBank(prev => (prev ? { ...prev, owned: true } : prev));
+      showToast('Added to your Offline Mode — available on all your devices.');
+    } catch (error: any) {
+      showToast(error?.message || 'Could not download question bank.', 'error');
+    } finally {
+      setDownloadingBank(false);
+    }
+  };
+
   const handleBoostListing = async () => {
     if (!listing) return;
     setBoostingListing(true);
@@ -474,6 +494,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     : 0;
 
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
+  const isDigital = listing.listing_kind === 'question_bank';
 
   return (
     <div className="flex-1 bg-lantern-background overflow-y-auto">
@@ -895,8 +916,49 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   ) : null}
                 </div>
               ) : null}
-              {/* Free / unpriced listings: chat is the only path, so it stays primary. */}
-              {!isOwner && listing.status !== 'reserved' && !(listing.price && listing.price > 0) && (
+              {/* Digital question banks: download/own panel replaces physical CTAs. */}
+              {isDigital && (
+                <div className="p-3 rounded-xl bg-lantern-primary-background border border-lantern-primary/20 text-xs sm:text-sm text-lantern-text-secondary">
+                  <span className="font-semibold text-lantern-primary">Digital question bank</span>
+                  {questionBank ? ` · ${questionBank.questionCount} questions` : ''} · delivered
+                  instantly to Offline Mode on all your devices
+                </div>
+              )}
+              {isDigital && !isOwner && questionBank?.owned && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 space-y-2">
+                  <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
+                    You own this question bank
+                  </p>
+                  <p className="text-xs text-emerald-800 dark:text-emerald-300">
+                    Find it under Offline Mode → Downloaded Test Bundles.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadQuestionBank()}
+                    disabled={downloadingBank}
+                    className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+                  >
+                    {downloadingBank ? 'Downloading…' : 'Download again'}
+                  </button>
+                </div>
+              )}
+              {isDigital &&
+                !isOwner &&
+                !questionBank?.owned &&
+                !(listing.price && listing.price > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadQuestionBank()}
+                    disabled={downloadingBank}
+                    className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                  >
+                    <CheckBadgeIcon className="w-4 h-4" />
+                    {downloadingBank ? 'Downloading…' : 'Download free'}
+                  </button>
+                )}
+
+              {/* Free / unpriced physical listings: chat is the only path, so it stays primary. */}
+              {!isDigital && !isOwner && listing.status !== 'reserved' && !(listing.price && listing.price > 0) && (
                 <button
                   onClick={handleContactSeller}
                   className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
@@ -938,7 +1000,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   </div>
                 </div>
               )}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && (
                 <div className="p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border space-y-2">
                   <p className="text-xs font-semibold text-lantern-text-secondary">Have a coupon?</p>
                   <div className="flex gap-2">
@@ -981,7 +1043,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               {/* Purchase actions, strongest first: Buy Now is the one path with
                   buyer protection, so it leads; cart and offer are secondary;
                   chat is the fallback, not the headline. */}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && (
                 <>
                   <button
                     onClick={handleBuyNow}
@@ -1004,40 +1066,44 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         })()}
                   </button>
 
-                  <div className="flex gap-2 sm:gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => void handleAddToCart()}
-                      disabled={addingToCart || buyingNow}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-lantern-primary ring-1 ring-lantern-primary/30 hover:bg-lantern-primary-background disabled:opacity-50 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
-                    >
-                      <ShoppingBagIcon className="w-4 h-4" />
-                      {addingToCart
-                        ? 'Adding…'
-                        : `Add to cart${
-                            listing.quantity != null && selectedQuantity > 1
-                              ? ` · ${selectedQuantity}`
-                              : ''
-                          }`}
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (requireAuth()) return;
-                        setShowOfferModal(true);
-                      }}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-600/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
-                    >
-                      <CurrencyDollarIcon className="w-4 h-4" />
-                      Make an Offer
-                    </button>
-                  </div>
+                  {/* Digital banks are fixed-price with instant delivery — no cart, no offers. */}
+                  {!isDigital && (
+                    <div className="flex gap-2 sm:gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => void handleAddToCart()}
+                        disabled={addingToCart || buyingNow}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-lantern-primary ring-1 ring-lantern-primary/30 hover:bg-lantern-primary-background disabled:opacity-50 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
+                      >
+                        <ShoppingBagIcon className="w-4 h-4" />
+                        {addingToCart
+                          ? 'Adding…'
+                          : `Add to cart${
+                              listing.quantity != null && selectedQuantity > 1
+                                ? ` · ${selectedQuantity}`
+                                : ''
+                            }`}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (requireAuth()) return;
+                          setShowOfferModal(true);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-600/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
+                      >
+                        <CurrencyDollarIcon className="w-4 h-4" />
+                        Make an Offer
+                      </button>
+                    </div>
+                  )}
 
                   <p className="flex items-start gap-1.5 text-[11px] sm:text-xs text-lantern-text-secondary px-1">
                     <CheckBadgeIcon className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                     <span>
                       <span className="font-semibold text-lantern-text">Buyer protection:</span>{' '}
-                      pay in the app and Lantern holds your payment until you confirm
-                      you received the item. Payments made outside the app aren't covered.
+                      {isDigital
+                        ? 'pay in the app and your question bank is delivered instantly to Offline Mode.'
+                        : "pay in the app and Lantern holds your payment until you confirm you received the item. Payments made outside the app aren't covered."}
                     </span>
                   </p>
 
