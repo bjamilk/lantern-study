@@ -6,6 +6,7 @@ import { Router } from "express";
 import { asyncHandler } from "../middleware/errorHandler";
 import { authMiddleware, optionalAuthMiddleware } from "../middleware/auth";
 import { requireAuthUserId } from "../utils/requestAuth";
+import { isLivePlatformAdmin } from "../utils/platformAdminAuth";
 import { SupabaseService } from "../services/supabase";
 import { CacheService } from "../services/cache";
 import { getJobsBoardService } from "../services/jobsBoard";
@@ -57,6 +58,33 @@ export function statusCode(err: unknown, fallback = 500): number {
 export function errorMessage(err: unknown): string {
   if (isMalformedId(err)) return "Invalid id";
   return clientErrorMessage(err);
+}
+
+/**
+ * Sponsored/featured placement is a paid promotion slot that also sorts
+ * postings first — it must never be self-service. Only live platform admins
+ * may set it; anyone else's values are dropped silently so a stray client
+ * flag degrades to a normal posting instead of failing the whole create.
+ * (Live lookup, not the cached JWT claim — see SEC-09 in middleware/auth.)
+ */
+// Exported for the regression test covering the sponsored-placement gate.
+export async function sponsoredFieldsFor(
+  userId: string,
+  body: { isSponsored?: unknown; sponsoredUntil?: unknown },
+): Promise<{ isSponsored?: boolean; sponsoredUntil?: string | null }> {
+  if (body?.isSponsored == null && body?.sponsoredUntil === undefined) {
+    return {};
+  }
+  if (await isLivePlatformAdmin(userId)) {
+    return {
+      isSponsored: body.isSponsored == null ? undefined : !!body.isSponsored,
+      sponsoredUntil:
+        body.sponsoredUntil === undefined
+          ? undefined
+          : (body.sponsoredUntil as string | null),
+    };
+  }
+  return {};
 }
 
 // GET /postings
@@ -164,6 +192,11 @@ router.post(
         .json({ success: false, error: "Invalid employmentType" });
     }
 
+    const sponsored = await sponsoredFieldsFor(userId, {
+      isSponsored,
+      sponsoredUntil,
+    });
+
     try {
       const posting = await jobs().createPosting(userId, {
         title,
@@ -182,8 +215,8 @@ router.post(
         status,
         requiresSchoolApproval,
         screeningQuestions,
-        isSponsored,
-        sponsoredUntil,
+        isSponsored: sponsored.isSponsored,
+        sponsoredUntil: sponsored.sponsoredUntil,
         atsProvider,
         atsExternalId,
         atsWebhookUrl,
@@ -205,11 +238,20 @@ router.patch(
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
+    const updates = { ...(req.body || {}) };
+    // Same gate as create: sponsored placement is admin-set only. Deleting the
+    // keys (rather than nulling) also keeps an admin-featured posting featured
+    // when its owner edits other fields.
+    delete updates.isSponsored;
+    delete updates.sponsoredUntil;
+    const sponsored = await sponsoredFieldsFor(userId, req.body || {});
+    if (sponsored.isSponsored !== undefined) updates.isSponsored = sponsored.isSponsored;
+    if (sponsored.sponsoredUntil !== undefined) updates.sponsoredUntil = sponsored.sponsoredUntil;
     try {
       const posting = await jobs().updatePosting(
         req.params.id,
         userId,
-        req.body || {},
+        updates,
       );
       res.json({ success: true, data: posting });
     } catch (err) {

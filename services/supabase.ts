@@ -119,6 +119,15 @@ const fetchWithTimeout = async (
         notifySessionExpired();
         return response;
       }
+      // A guest never had a session, so a 401 here is just an endpoint that
+      // needs auth — "session expired" (and its redirect off public pages)
+      // must only fire for viewers who actually held a token. Signed-in users
+      // always have _cachedAccessToken warmed by getAuthHeaders in both auth
+      // modes before any call can 401.
+      const hadSession = _cachedAccessToken !== null;
+      if (!hadSession) {
+        return response;
+      }
       let refreshed = false;
       if (cookieAuthEnabled) {
         const session = await refreshCookieSession();
@@ -4094,7 +4103,7 @@ export const fetchSimilarListings = async (listingId: string) => {
 export const fetchMarketplaceListingFull = async (
   listingId: string,
   userId?: string
-): Promise<{ listing: any; isFavorited: boolean; similarListings: any[] }> => {
+): Promise<{ listing: any; isFavorited: boolean; similarListings: any[]; canReview?: boolean }> => {
   const params = userId ? `` : '';
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/marketplace/listings/${listingId}/full${params}`,

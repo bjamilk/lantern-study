@@ -140,8 +140,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'inquiries' ? 'page' : undefined}
         >
           <ChatBubbleLeftIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-          <span className="hidden sm:inline">Inquiries</span>
-          <span className="sm:hidden">Offers</span>
+          <span>Inquiries</span>
         </button>
         {showFavorites ? (
           <button

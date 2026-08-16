@@ -9366,11 +9366,74 @@ export class SupabaseService {
     return true;
   }
 
+  /**
+   * Verified-purchase check: a review requires a delivered order
+   * (buyer_confirmed/completed) or an inquiry the seller marked purchased —
+   * the legacy chat-deal path predating orders. Sellers cannot review
+   * their own listings.
+   */
+  async canUserReviewListing(
+    listingId: string,
+    userId: string,
+  ): Promise<{ eligible: boolean; reason?: string }> {
+    const listing = await this.getMarketplaceListingById(listingId);
+    if (!listing) return { eligible: false, reason: "Listing not found" };
+    if (listing.user_id === userId || listing.seller_id === userId) {
+      return { eligible: false, reason: "You cannot review your own listing" };
+    }
+
+    const { data: orderRows, error: orderError } = await this.supabase
+      .from("marketplace_orders")
+      .select("id")
+      .eq("listing_id", listingId)
+      .eq("buyer_id", userId)
+      .in("status", ["buyer_confirmed", "completed"])
+      .limit(1);
+    if (orderError) throw orderError;
+    if (orderRows && orderRows.length > 0) return { eligible: true };
+
+    const { data: inquiryRows, error: inquiryError } = await this.supabase
+      .from("marketplace_inquiries")
+      .select("id")
+      .eq("listing_id", listingId)
+      .eq("buyer_id", userId)
+      .eq("status", "purchased")
+      .limit(1);
+    if (inquiryError) throw inquiryError;
+    if (inquiryRows && inquiryRows.length > 0) return { eligible: true };
+
+    return {
+      eligible: false,
+      reason: "Reviews are limited to buyers who completed a purchase",
+    };
+  }
+
   async addMarketplaceReview(
     listingId: string,
     reviewerId: string,
     review: { rating: number; comment?: string },
   ): Promise<any> {
+    const rating = Number(review.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      const err: any = new Error("Rating must be a whole number from 1 to 5");
+      err.statusCode = 400;
+      throw err;
+    }
+    if (review.comment != null && String(review.comment).length > 2000) {
+      const err: any = new Error("Comment is too long (2000 characters max)");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const eligibility = await this.canUserReviewListing(listingId, reviewerId);
+    if (!eligibility.eligible) {
+      const err: any = new Error(
+        eligibility.reason || "You are not eligible to review this listing",
+      );
+      err.statusCode = 403;
+      throw err;
+    }
+
     const { MARKETPLACE_REVIEW_SELECT, mapMarketplaceReviewRow } =
       await import("./marketplaceReviewMapping");
     const { data, error } = await this.supabase
@@ -9379,7 +9442,7 @@ export class SupabaseService {
         {
           listing_id: listingId,
           reviewer_id: reviewerId,
-          rating: review.rating,
+          rating,
           comment: review.comment,
         },
         { onConflict: "listing_id,reviewer_id" },
@@ -9470,13 +9533,21 @@ export class SupabaseService {
     reporterId: string,
     report: { reason: string; details?: string },
   ): Promise<any> {
+    const { normalizeMarketplaceReportReason } = await import(
+      "../utils/marketplaceReportReason"
+    );
+    const { reason, details } = normalizeMarketplaceReportReason(
+      report.reason,
+      report.details,
+    );
+
     const { data, error } = await this.supabase
       .from("marketplace_reports")
       .insert({
         listing_id: listingId,
         reporter_id: reporterId,
-        reason: report.reason,
-        details: report.details,
+        reason,
+        details,
       })
       .select()
       .single();

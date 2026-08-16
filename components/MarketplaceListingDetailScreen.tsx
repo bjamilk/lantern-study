@@ -91,12 +91,20 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [boostingListing, setBoostingListing] = useState(false);
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
+  const [canReview, setCanReview] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listingLoadId = useRef(0);
   const { currentUser } = useAuthStore();
   const { refreshBudgetTransactions } = useBudgetHandlers();
-  const isOwner = listing?.user_id === currentUser?.id || listing?.seller_id === currentUser?.id;
+  // Guard on the viewer AND the loaded listing: before the listing arrives
+  // (and always in guest mode) both sides are undefined, which made isOwner
+  // true — firing owner-only fetches that 401 and, via notifySessionExpired,
+  // bounced every guest off public listing pages to /welcome.
+  const isOwner =
+    !!currentUser?.id &&
+    !!listing &&
+    (listing.user_id === currentUser.id || listing.seller_id === currentUser.id);
 
   const seoPricing = listing ? resolveListingDisplayPrice(listing).effective : null;
   const campusLabel = listing?.campus
@@ -208,6 +216,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       setReviews(data.listing.reviews || []);
       setIsFavorited(data.isFavorited);
       setSimilarListings(data.similarListings);
+      setCanReview(!!data.canReview);
       const sellerId = data.listing.user_id || data.listing.seller_id;
       if (sellerId && currentUser?.id && sellerId !== currentUser.id) {
         setPickupNudge(await fetchPickupNudge(sellerId));
@@ -237,11 +246,32 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     }
   };
 
+  /**
+   * The reports table only accepts scam/spam/inappropriate/other, so the more
+   * specific UI choices ride on 'other' with the label folded into details —
+   * admins can still tell a wrong-category report from a prohibited-item one.
+   */
+  const REPORT_REASON_OPTIONS: Array<{ value: string; label: string; dbReason: string }> = [
+    { value: 'spam', label: 'Spam or misleading', dbReason: 'spam' },
+    { value: 'inappropriate', label: 'Inappropriate content', dbReason: 'inappropriate' },
+    { value: 'scam', label: 'Potential scam', dbReason: 'scam' },
+    { value: 'wrong_category', label: 'Wrong category', dbReason: 'other' },
+    { value: 'prohibited_item', label: 'Prohibited item', dbReason: 'other' },
+    { value: 'other', label: 'Other', dbReason: 'other' },
+  ];
+
   const handleReport = async () => {
     if (!listing) return;
 
+    const option = REPORT_REASON_OPTIONS.find(o => o.value === reportForm.reason);
+    if (!option) return;
+    const details =
+      option.dbReason === option.value
+        ? reportForm.details
+        : `[${option.label}] ${reportForm.details}`.trim();
+
     try {
-      await reportMarketplaceListing(listing.id, reportForm);
+      await reportMarketplaceListing(listing.id, { reason: option.dbReason, details });
       setReportForm({ reason: '', details: '' });
       setShowReportForm(false);
       showToast('Report submitted successfully.');
@@ -865,28 +895,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   ) : null}
                 </div>
               ) : null}
-              {!isOwner && listing.status !== 'reserved' && (
+              {/* Free / unpriced listings: chat is the only path, so it stays primary. */}
+              {!isOwner && listing.status !== 'reserved' && !(listing.price && listing.price > 0) && (
                 <button
                   onClick={handleContactSeller}
                   className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                 >
                   <ChatBubbleLeftIcon className="w-4 h-4" />
                   Contact Seller
-                  {listing.price && listing.price > 0 && (
-                    <span className="ml-1 opacity-80">· ₦{listing.price?.toLocaleString()}</span>
-                  )}
-                </button>
-              )}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
-                <button
-                  onClick={() => {
-                    if (requireAuth()) return;
-                    setShowOfferModal(true);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
-                >
-                  <CurrencyDollarIcon className="w-4 h-4" />
-                  Make an Offer
                 </button>
               )}
               {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 && (
@@ -962,43 +978,77 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   )}
                 </div>
               )}
+              {/* Purchase actions, strongest first: Buy Now is the one path with
+                  buyer protection, so it leads; cart and offer are secondary;
+                  chat is the fallback, not the headline. */}
               {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void handleAddToCart()}
-                  disabled={addingToCart || buyingNow}
-                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-surface text-lantern-primary ring-1 ring-lantern-primary/30 hover:bg-lantern-primary-background disabled:opacity-50 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
-                >
-                  <ShoppingBagIcon className="w-4 h-4" />
-                  {addingToCart
-                    ? 'Adding…'
-                    : `Add to cart${
-                        listing.quantity != null && selectedQuantity > 1
-                          ? ` · ${selectedQuantity}`
-                          : ''
-                      }`}
-                </button>
-              )}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
-                <button
-                  onClick={handleBuyNow}
-                  disabled={buyingNow}
-                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary-dark hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
-                >
-                  <CheckBadgeIcon className="w-4 h-4" />
-                  {buyingNow
-                    ? 'Processing Purchase...'
-                    : (() => {
-                        const qty = listing.quantity == null ? 1 : selectedQuantity;
-                        const unit =
-                          couponPreview?.finalAmount ??
-                          (pricing?.onSale ? pricing.effective : null);
-                        if (unit == null) return 'Buy Now';
-                        return `Buy Now · ₦${(unit * qty).toLocaleString()}${
-                          qty > 1 ? ` (${qty})` : ''
-                        }`;
-                      })()}
-                </button>
+                <>
+                  <button
+                    onClick={handleBuyNow}
+                    disabled={buyingNow}
+                    className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                  >
+                    <CheckBadgeIcon className="w-4 h-4" />
+                    {buyingNow
+                      ? 'Processing Purchase...'
+                      : (() => {
+                          const qty = listing.quantity == null ? 1 : selectedQuantity;
+                          const unit =
+                            couponPreview?.finalAmount ??
+                            pricing?.effective ??
+                            listing.price;
+                          if (unit == null) return 'Buy Now';
+                          return `Buy Now · ₦${(unit * qty).toLocaleString()}${
+                            qty > 1 ? ` (${qty})` : ''
+                          }`;
+                        })()}
+                  </button>
+
+                  <div className="flex gap-2 sm:gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => void handleAddToCart()}
+                      disabled={addingToCart || buyingNow}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-lantern-primary ring-1 ring-lantern-primary/30 hover:bg-lantern-primary-background disabled:opacity-50 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
+                    >
+                      <ShoppingBagIcon className="w-4 h-4" />
+                      {addingToCart
+                        ? 'Adding…'
+                        : `Add to cart${
+                            listing.quantity != null && selectedQuantity > 1
+                              ? ` · ${selectedQuantity}`
+                              : ''
+                          }`}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (requireAuth()) return;
+                        setShowOfferModal(true);
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-600/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
+                    >
+                      <CurrencyDollarIcon className="w-4 h-4" />
+                      Make an Offer
+                    </button>
+                  </div>
+
+                  <p className="flex items-start gap-1.5 text-[11px] sm:text-xs text-lantern-text-secondary px-1">
+                    <CheckBadgeIcon className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                    <span>
+                      <span className="font-semibold text-lantern-text">Buyer protection:</span>{' '}
+                      pay in the app and Lantern holds your payment until you confirm
+                      you received the item. Payments made outside the app aren't covered.
+                    </span>
+                  </p>
+
+                  <button
+                    onClick={handleContactSeller}
+                    className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 text-lantern-text-secondary hover:text-lantern-text ring-1 ring-lantern-border hover:ring-lantern-primary/30 rounded-xl font-medium transition-colors duration-150 text-xs sm:text-sm"
+                  >
+                    <ChatBubbleLeftIcon className="w-4 h-4" />
+                    Ask the seller a question
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1006,18 +1056,25 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
         {/* Reviews Section */}
         <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60">
-          <div className="flex items-center justify-between mb-4 sm:mb-5">
+          <div className="flex items-center justify-between mb-4 sm:mb-5 gap-3">
             <div>
               <h2 className="text-base sm:text-lg font-bold text-lantern-text">Reviews</h2>
               <p className="text-sm text-lantern-text-secondary">{reviews.length} review{reviews.length !== 1 ? 's' : ''}</p>
             </div>
-            <button
-              onClick={() => setShowReviewForm(true)}
-              className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center gap-1.5 transition-colors duration-150 text-sm shadow-sm"
-            >
-              <StarIcon className="w-4 h-4" />
-              Write Review
-            </button>
+            {/* Verified purchases only — the API enforces the same rule. */}
+            {canReview ? (
+              <button
+                onClick={() => setShowReviewForm(true)}
+                className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center gap-1.5 transition-colors duration-150 text-sm shadow-sm"
+              >
+                <StarIcon className="w-4 h-4" />
+                Write Review
+              </button>
+            ) : !isOwner ? (
+              <p className="text-xs text-lantern-text-tertiary text-right max-w-[180px]">
+                Reviews open after a completed purchase
+              </p>
+            ) : null}
           </div>
 
           {reviews.length === 0 ? (
@@ -1025,7 +1082,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               <div className="w-14 h-14 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-2xl flex items-center justify-center mb-3">
                 <StarIcon className="w-7 h-7 text-lantern-text-tertiary" />
               </div>
-              <p className="text-sm text-lantern-text-secondary">No reviews yet. Be the first to leave one!</p>
+              <p className="text-sm text-lantern-text-secondary">
+                {canReview ? 'No reviews yet. Be the first to leave one!' : 'No reviews yet.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1205,12 +1264,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
                 >
                   <option value="">Select a reason</option>
-                  <option value="spam">Spam or misleading</option>
-                  <option value="inappropriate">Inappropriate content</option>
-                  <option value="scam">Potential scam</option>
-                  <option value="other">Wrong category</option>
-                  <option value="other">Prohibited item</option>
-                  <option value="other">Other</option>
+                  {REPORT_REASON_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1236,7 +1294,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 </button>
                 <button
                   onClick={handleReport}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors duration-200"
+                  disabled={!reportForm.reason}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors duration-200"
                 >
                   Submit Report
                 </button>
@@ -1318,6 +1377,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary resize-none"
                 />
               </div>
+
+              {listing?.price && listing.price > 0 ? (
+                <p className="text-xs text-lantern-text-secondary bg-lantern-background-secondary/60 rounded-lg px-3 py-2">
+                  Tip: pay through the app when you're ready — Lantern holds the payment
+                  until you confirm delivery. Payments arranged in chat aren't covered
+                  by buyer protection.
+                </p>
+              ) : null}
 
               <div className="flex justify-end space-x-3 pt-4">
                 <button

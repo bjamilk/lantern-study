@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import {
   fetchMarketplaceOrder,
+  fetchMarketplaceOrders,
   updateMarketplaceOrder,
   requestOrderPayment,
   addMarketplaceReview,
@@ -64,6 +65,42 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [proofUploading, setProofUploading] = useState(false);
+  // Multi-item cart checkout opens one Paystack session per listing; after
+  // paying one, surface the rest so the buyer can chain through them.
+  const [otherUnpaidOrders, setOtherUnpaidOrders] = useState<MarketplaceOrder[]>([]);
+  const [payingNextId, setPayingNextId] = useState<string | null>(null);
+
+  const loadOtherUnpaidOrders = useCallback(async () => {
+    try {
+      const all = await fetchMarketplaceOrders('buyer');
+      setOtherUnpaidOrders(
+        (all || []).filter(
+          (o: MarketplaceOrder) =>
+            o.id !== orderId &&
+            (o.status === 'awaiting_payment' ||
+              (o.status === 'pending_payment' && o.payment_id))
+        )
+      );
+    } catch {
+      setOtherUnpaidOrders([]);
+    }
+  }, [orderId]);
+
+  const handlePayNext = async (nextOrderId: string) => {
+    setPayingNextId(nextOrderId);
+    try {
+      const session = await resumeMarketplaceOrderCheckout(nextOrderId);
+      if (session?.authorizationUrl) {
+        window.location.assign(session.authorizationUrl);
+        return;
+      }
+      onNavigate('MarketplaceOrderDetail', { orderId: nextOrderId });
+    } catch (err: any) {
+      useToastStore.getState().showToast(err?.message || 'Could not open checkout', 'error');
+    } finally {
+      setPayingNextId(null);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,6 +131,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         if (!cancelled) {
           useToastStore.getState().showToast('Payment confirmed');
           await load();
+          await loadOtherUnpaidOrders();
           onOrderUpdated?.();
         }
       } catch (err: any) {
@@ -111,7 +149,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
     return () => {
       cancelled = true;
     };
-  }, [load, onOrderUpdated]);
+  }, [load, loadOtherUnpaidOrders, onOrderUpdated]);
 
   const isSeller = currentUser?.id === order?.seller_id;
   const isBuyer = currentUser?.id === order?.buyer_id;
@@ -242,6 +280,38 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
             </p>
           ) : null}
         </div>
+
+        {/* Cart checkouts create one payment per listing — chain the rest here. */}
+        {isBuyer && otherUnpaidOrders.length > 0 && (
+          <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 space-y-3">
+            <h2 className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
+              {otherUnpaidOrders.length === 1
+                ? '1 more order is awaiting payment'
+                : `${otherUnpaidOrders.length} more orders are awaiting payment`}
+            </h2>
+            <ul className="space-y-2">
+              {otherUnpaidOrders.map((o) => (
+                <li key={o.id} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-emerald-900 dark:text-emerald-100 line-clamp-1">
+                      {o.listing?.title || 'Listing'}
+                    </p>
+                    <p className="text-xs text-emerald-800 dark:text-emerald-300">
+                      ₦{Number(o.amount).toLocaleString()}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={payingNextId !== null}
+                    onClick={() => void handlePayNext(o.id)}
+                  >
+                    {payingNextId === o.id ? 'Opening…' : 'Pay now'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {(order.status === 'awaiting_payment' || order.status === 'pending_payment') &&
           order.payment_id &&

@@ -144,6 +144,9 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
             navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
           } else if (screen === 'SellerProfile' && params?.userId) {
             navigateToPath(`/marketplace/seller/${encodeURIComponent(params.userId)}`);
+          } else if (screen === 'MarketplaceJobs') {
+            // Jobs browsing is public — don't bounce guests to sign-in.
+            navigateToPath('/marketplace/jobs');
           } else {
             promptSignIn();
           }

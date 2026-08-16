@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchMarketplaceOrders } from '../services/supabase';
+import { fetchMarketplaceOrders, resumeMarketplaceOrderCheckout } from '../services/supabase';
 import { MarketplaceOrder } from '../types';
 import { ArrowLeftIcon, ShoppingBagIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
@@ -11,6 +11,7 @@ interface MarketplaceOrdersScreenProps {
 }
 
 const STATUS_LABELS: Record<string, string> = {
+  awaiting_payment: 'Awaiting Paystack payment',
   pending_payment: 'Awaiting payment',
   paid: 'Paid — arrange fulfillment',
   ready_for_pickup: 'Ready for pickup or delivery',
@@ -20,11 +21,34 @@ const STATUS_LABELS: Record<string, string> = {
   disputed: 'Disputed',
 };
 
+/** Paystack-payable: a session exists (payment_id) and the money hasn't moved yet. */
+const isPayable = (order: MarketplaceOrder) =>
+  (order.status === 'awaiting_payment' ||
+    (order.status === 'pending_payment' && (order as any).payment_id)) as boolean;
+
 const MarketplaceOrdersScreen: React.FC<MarketplaceOrdersScreenProps> = ({ onBack, onNavigate }) => {
   const [role, setRole] = useState<'buyer' | 'seller'>('buyer');
   const [orders, setOrders] = useState<MarketplaceOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [payingId, setPayingId] = useState<string | null>(null);
   const showToast = useToastStore((s) => s.showToast);
+
+  const handlePayNow = async (order: MarketplaceOrder, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPayingId(order.id);
+    try {
+      const session = await resumeMarketplaceOrderCheckout(order.id);
+      if (session?.authorizationUrl) {
+        window.location.assign(session.authorizationUrl);
+        return;
+      }
+      onNavigate('MarketplaceOrderDetail', { orderId: order.id });
+    } catch (err: any) {
+      showToast(err?.message || 'Could not open checkout', 'error');
+    } finally {
+      setPayingId(null);
+    }
+  };
 
   const handleBuyAgain = (order: MarketplaceOrder, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -120,6 +144,17 @@ const MarketplaceOrdersScreen: React.FC<MarketplaceOrdersScreenProps> = ({ onBac
                 {new Date(order.created_at).toLocaleDateString()}
               </p>
             </button>
+            {role === 'buyer' && isPayable(order) ? (
+              <div className="mt-3 pt-3 border-t border-lantern-border">
+                <Button
+                  size="sm"
+                  disabled={payingId !== null}
+                  onClick={(e) => void handlePayNow(order, e)}
+                >
+                  {payingId === order.id ? 'Opening…' : 'Pay now'}
+                </Button>
+              </div>
+            ) : null}
             {role === 'buyer' && order.status === 'completed' ? (
               <div className="mt-3 pt-3 border-t border-lantern-border">
                 <Button size="sm" variant="secondary" onClick={(e) => handleBuyAgain(order, e)}>

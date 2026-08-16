@@ -332,7 +332,28 @@ export default function JobsBoardScreen({
             onNavigate={onNavigate}
             onPostJob={() => onNavigate("CreateMarketplaceJob")}
           />
-        ) : null}
+        ) : (
+          /* Guests get the Goods/Jobs switch the signed-in workspace nav provides. */
+          <div
+            role="group"
+            aria-label="Explore section"
+            className="inline-flex rounded-lg border border-lantern-border bg-lantern-surface p-0.5"
+          >
+            <button
+              type="button"
+              onClick={() => onNavigate("Marketplace")}
+              className="inline-flex items-center rounded-md px-3 py-1.5 text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text transition-colors"
+            >
+              Goods
+            </button>
+            <span
+              aria-current="page"
+              className="inline-flex items-center rounded-md bg-lantern-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
+            >
+              Jobs
+            </span>
+          </div>
+        )}
 
         <section className="overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface shadow-sm">
           <div className="bg-gradient-to-br from-lantern-primary/10 via-lantern-surface to-lantern-surface px-5 py-6 sm:px-7">

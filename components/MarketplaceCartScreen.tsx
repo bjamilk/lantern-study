@@ -248,7 +248,8 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
           </div>
           <p className="text-xs text-lantern-text-tertiary">
             Checkout creates one Paystack charge per listing (and one order per seller). Multi-item
-            carts open the first payment now; finish the rest from Orders.
+            carts open the first payment now — after paying, you'll be prompted to pay the rest,
+            and every unpaid order also has a Pay now button in Orders.
           </p>
           <Button
             className="w-full"

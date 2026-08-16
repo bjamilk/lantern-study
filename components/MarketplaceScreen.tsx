@@ -149,9 +149,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   }, [currentUser?.settings]);
 
   usePageSeo({
-    title: 'Explore Marketplace — Buy and sell across Nigeria | Lantern Study',
+    title: 'Explore — Buy, sell, and find work across Nigeria | Lantern Study',
     description:
-      'Browse marketplace listings across Nigeria for textbooks, notes, accommodation, and student essentials. Arrange pickup or delivery directly with sellers.',
+      'Browse marketplace listings and job opportunities across Nigeria — textbooks, notes, accommodation, student essentials, internships, and part-time work.',
     canonicalUrl: 'https://lanternstudy.com/marketplace',
     ogType: 'website',
   });
@@ -456,7 +456,12 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   };
 
   const handleListingClick = (listing: MarketplaceListing) => {
-    const isOwnListing = listing.user_id === currentUser?.id || listing.seller_id === currentUser?.id;
+    // Guard on the viewer first: in guest mode currentUser?.id is undefined,
+    // and a listing payload without user_id made this `undefined === undefined`
+    // — every guest tap bounced to sign-in instead of the public listing page.
+    const isOwnListing =
+      !!currentUser?.id &&
+      (listing.user_id === currentUser.id || listing.seller_id === currentUser.id);
     if (isOwnListing) {
       onNavigate('MyListings');
     } else {
@@ -753,20 +758,45 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           <div className="min-w-0">
             <h1 className="text-lg sm:text-xl font-bold text-lantern-text truncate">Explore</h1>
             <p className="text-[11px] sm:text-xs text-lantern-text-secondary truncate">
-              Buy and sell across Nigeria
+              Buy, sell, and find work across Nigeria
             </p>
           </div>
-          {topCategories.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => setShowPulse(v => !v)}
-              aria-expanded={showPulse}
-              className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-[11px] sm:text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 transition-colors"
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Jobs is a full sibling surface, not a marketplace sub-feature —
+                give it equal billing so job seekers can actually find it. */}
+            <div
+              role="group"
+              aria-label="Explore section"
+              className="inline-flex rounded-lg border border-lantern-border bg-lantern-surface p-0.5"
             >
-              Pulse
-              <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showPulse ? 'rotate-180' : ''}`} />
-            </button>
-          ) : null}
+              <span
+                aria-current="page"
+                className="inline-flex items-center gap-1 rounded-md bg-lantern-primary px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-white shadow-sm"
+              >
+                <ShoppingBagIcon className="w-3.5 h-3.5" aria-hidden />
+                Goods
+              </span>
+              <button
+                type="button"
+                onClick={() => onNavigate('MarketplaceJobs')}
+                className="inline-flex items-center gap-1 rounded-md px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text transition-colors"
+              >
+                <BriefcaseIcon className="w-3.5 h-3.5" aria-hidden />
+                Jobs
+              </button>
+            </div>
+            {topCategories.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowPulse(v => !v)}
+                aria-expanded={showPulse}
+                className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-[11px] sm:text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 transition-colors"
+              >
+                Pulse
+                <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showPulse ? 'rotate-180' : ''}`} />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <MarketplaceWorkspaceBar

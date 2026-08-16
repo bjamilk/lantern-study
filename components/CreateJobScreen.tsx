@@ -234,7 +234,8 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
       applyMode,
       externalUrl: externalUrl || null,
       requiresSchoolApproval,
-      isSponsored: companyId ? isSponsored : false,
+      // isSponsored is deliberately not sent: featured placement is granted by
+      // platform admins, and the API drops the field from non-admin requests.
       atsWebhookUrl: atsWebhookUrl || null,
       screeningQuestions: screener1.trim()
         ? [
@@ -581,14 +582,14 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
                       />
                     </label>
                   )}
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={isSponsored}
-                      onChange={(e) => setIsSponsored(e.target.checked)}
-                    />
-                    Sponsored / featured placement
-                  </label>
+                  {isSponsored ? (
+                    <p className="text-sm text-lantern-text-secondary">
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                        Featured
+                      </span>{" "}
+                      This posting has featured placement (granted by Lantern).
+                    </p>
+                  ) : null}
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
