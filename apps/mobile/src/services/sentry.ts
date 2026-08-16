@@ -8,8 +8,17 @@ function parseSampleRate(raw: string | undefined, fallback: number): number {
   return Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
 }
 
+/**
+ * lantern-study-mobile project DSN — publishable, baked in like the other
+ * production endpoints in app.config.ts so release builds monitor without any
+ * EAS env plumbing. EXPO_PUBLIC_SENTRY_DSN overrides; dev builds (__DEV__)
+ * stay silent unless it is set explicitly.
+ */
+const PRODUCTION_DSN =
+  'https://8e12c234d92b8a2cc5d47ac8dc3819a3@o4511609954893824.ingest.us.sentry.io/4511610107002880';
+
 export function initSentry(): void {
-  const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+  const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN || (__DEV__ ? '' : PRODUCTION_DSN);
   if (!dsn || initialized) return;
 
   const isProd = process.env.NODE_ENV === 'production';

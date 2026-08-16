@@ -28,15 +28,19 @@ router.get('/health', (req: Request, res: Response) => {
   // TURNSTILE_SECRET and TURNSTILE_HOSTNAMES together, so a half-configured
   // deployment reads "off" here rather than looking configured.
   const turnstile = turnstileConfigStatus();
+  // Presence only, same lesson as turnstile: whether error monitoring is
+  // actually on should be checkable without triggering a real error.
+  const sentry = Boolean(process.env.SENTRY_DSN) ? 'on' : 'off';
 
   if (isProductionEnv()) {
     // Deliberately no build details beyond the commit: this endpoint is public.
-    return res.status(200).json({ status: 'ok', commit: COMMIT, turnstile });
+    return res.status(200).json({ status: 'ok', commit: COMMIT, turnstile, sentry });
   }
   res.status(200).json({
     status: 'ok',
     commit: COMMIT,
     turnstile,
+    sentry,
     timestamp: new Date().toISOString(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
   });
