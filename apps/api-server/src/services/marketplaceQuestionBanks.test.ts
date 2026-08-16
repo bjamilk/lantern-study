@@ -406,6 +406,43 @@ describe('recordScore', () => {
   });
 });
 
+describe('getLeaderboard', () => {
+  it('returns an empty board when the scores table is missing (migration not applied)', async () => {
+    const { service } = makeService({
+      tables: {
+        marketplace_question_bank_scores: {
+          data: null,
+          error: { code: 'PGRST205', message: "Could not find the table 'marketplace_question_bank_scores'" },
+        },
+      },
+    });
+    await expect(service.getLeaderboard('l1', 'u1')).resolves.toEqual({
+      entries: [],
+      viewerEntry: null,
+    });
+  });
+
+  it('ranks entries and flags the viewer', async () => {
+    const { service } = makeService({
+      tables: {
+        marketplace_question_bank_scores: {
+          data: [
+            { user_id: 'u2', best_score_pct: 90, best_correct: 9, best_total: 10, attempts: 1, best_at: '2026-08-01' },
+            { user_id: 'u1', best_score_pct: 70, best_correct: 7, best_total: 10, attempts: 3, best_at: '2026-08-02' },
+          ],
+          error: null,
+        },
+        profiles: { data: [{ id: 'u2', name: 'Ada' }], error: null },
+      },
+    });
+    const board = await service.getLeaderboard('l1', 'u1');
+    expect(board.entries.map((e) => [e.rank, e.name, e.isViewer])).toEqual([
+      [1, 'Ada', false],
+      [2, 'Student', true],
+    ]);
+  });
+});
+
 describe('listAvailableUpdates', () => {
   it('returns only banks newer than the held version', async () => {
     const { service } = makeService({

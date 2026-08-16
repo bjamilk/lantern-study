@@ -13,6 +13,16 @@ import { logger } from '../utils/logger';
 const MAX_QUESTIONS = 1000;
 const MAX_CONTENT_BYTES = 2_000_000;
 
+/** PostgREST/Postgres "relation does not exist" — i.e. migration not applied yet. */
+function isMissingRelationError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return (
+    error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    /does not exist|could not find the table/i.test(error.message || '')
+  );
+}
+
 export interface QuestionBankContent {
   config?: Record<string, unknown>;
   questions: unknown[];
@@ -539,7 +549,16 @@ export class MarketplaceQuestionBanksService {
       .order('best_score_pct', { ascending: false })
       .order('best_at', { ascending: true })
       .limit(capped);
-    if (error) throw error;
+    if (error) {
+      // Before the leaderboard migration is applied the table is absent.
+      // An unprovisioned feature is an empty board, not a 500 on every
+      // question-bank listing view.
+      if (isMissingRelationError(error)) {
+        logger.warn('Question bank leaderboard table is missing; run migration 20260819120000');
+        return { entries: [], viewerEntry: null };
+      }
+      throw error;
+    }
 
     const userIds = (rows || []).map((r: any) => String(r.user_id));
     let profiles = new Map<string, { name?: string; avatar_url?: string }>();
