@@ -28,6 +28,14 @@ export interface TestResultSyncOutcome {
  * is preserved. Shared by the manual Sync button and the reconnect auto-sync.
  */
 export async function syncPendingTestResults(userId: string): Promise<TestResultSyncOutcome> {
+  // Question-bank scores ride the same reconnect moment. Independent of the
+  // result replay below: a failure on either side must not block the other.
+  void import('./pendingQuestionBankScores')
+    .then(({ flushPendingQuestionBankScores }) => flushPendingQuestionBankScores())
+    .catch(() => {
+      /* leaderboard is not critical to result sync */
+    });
+
   const pending = useTestStore.getState().pendingSyncResults;
   if (pending.length === 0) return { synced: 0, remaining: 0 };
 

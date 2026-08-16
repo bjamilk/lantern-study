@@ -358,7 +358,15 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
 
   syncPendingResults: async (userId: string) => {
     set({ isSyncing: true });
-    
+
+    // Question-bank scores ride the same reconnect moment, independent of the
+    // result replay below so a failure on either side cannot block the other.
+    void import('../utils/pendingQuestionBankScores')
+      .then(({ flushPendingQuestionBankScores }) => flushPendingQuestionBankScores())
+      .catch(() => {
+        /* leaderboard is not critical to result sync */
+      });
+
     try {
       const unsynced = get().pendingResults.filter(r => !r.synced);
       const syncedIds = new Set<string>();

@@ -707,21 +707,19 @@ export default function TestTakingScreen() {
         groupName: groupName || liveSession.test.name,
         groupId,
       });
-      // Marketplace question bank: attribute the attempt to its leaderboard.
-      // Best-effort — an attempt finished with no connection simply doesn't
-      // post, and the next one made online will.
+      // Marketplace question bank: queue the attempt for its leaderboard.
+      // These sessions are usually finished offline, so the post is deferred
+      // to the pending-results sync rather than attempted here.
       if (offlineTestId && offlineTestId.startsWith('qbank-')) {
         const correct = (attempt.answers || []).filter((a) => a.isCorrect).length;
-        void import('../../services/api')
-          .then(({ recordQuestionBankScore }) =>
-            recordQuestionBankScore(
-              offlineTestId.slice('qbank-'.length),
-              correct,
-              liveSession.questions.length
-            )
-          )
+        void import('../../utils/pendingQuestionBankScores')
+          .then(async ({ enqueueScoreForBundle, flushPendingQuestionBankScores }) => {
+            await enqueueScoreForBundle(offlineTestId, correct, liveSession.questions.length);
+            // Opportunistic flush; failures stay queued for the next sync.
+            await flushPendingQuestionBankScores();
+          })
           .catch(() => {
-            // offline or not entitled — leaderboard is not critical
+            // leaderboard is not critical to finishing a test
           });
       }
       setShowReviewModal(false);
