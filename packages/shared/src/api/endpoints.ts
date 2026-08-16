@@ -2263,6 +2263,96 @@ export function createApiEndpoints(client: ApiClient) {
         }>;
       }>(`/marketplace/listings/${listingId}/question-bank/preview`, {}, 10000),
 
+    /** Publish an offline bundle as a digital question-bank listing. */
+    publishQuestionBank: (input: {
+      title: string;
+      description?: string;
+      price?: number | null;
+      campusId: string;
+      location?: string;
+      groupId?: string | null;
+      content: { config?: Record<string, unknown>; questions: unknown[] };
+    }) =>
+      apiRequest<{
+        listing: { id: string; title: string };
+        bank: { listing_id: string; version: number; question_count: number };
+      }>(
+        `/marketplace/question-banks/publish`,
+        { method: "POST", body: JSON.stringify(input) },
+        20000,
+      ),
+
+    /** Seller republish: replace the snapshot, bumping the version. */
+    updateQuestionBankContent: (
+      listingId: string,
+      content: { config?: Record<string, unknown>; questions: unknown[] },
+    ) =>
+      apiRequest<{ version: number; questionCount: number }>(
+        `/marketplace/question-banks/${listingId}/update-content`,
+        { method: "POST", body: JSON.stringify({ content }) },
+        20000,
+      ),
+
+    /** Question banks the caller has published. */
+    fetchMyQuestionBanks: () =>
+      apiRequest<
+        Array<{
+          listingId: string;
+          sourceGroupId: string | null;
+          version: number;
+          questionCount: number;
+          title: string;
+          price: number | null;
+          status: string;
+        }>
+      >(`/marketplace/question-banks/mine`, {}, 10000),
+
+    /** Record an attempt on an owned bank (best score is kept server-side). */
+    recordQuestionBankScore: (
+      listingId: string,
+      correct: number,
+      total: number,
+    ) =>
+      apiRequest<{
+        bestScorePct: number;
+        bestCorrect: number;
+        bestTotal: number;
+        attempts: number;
+        improved: boolean;
+      }>(
+        `/marketplace/listings/${listingId}/question-bank/scores`,
+        { method: "POST", body: JSON.stringify({ correct, total }) },
+        10000,
+      ),
+
+    /** Top scores for a bank, plus the caller's standing. */
+    fetchQuestionBankLeaderboard: (listingId: string, limit?: number) =>
+      apiRequest<{
+        entries: Array<{
+          rank: number;
+          userId: string;
+          name: string;
+          avatarUrl: string | null;
+          scorePct: number;
+          correct: number;
+          total: number;
+          attempts: number;
+          isViewer: boolean;
+        }>;
+        viewerEntry: {
+          rank: number;
+          name: string;
+          scorePct: number;
+          correct: number;
+          total: number;
+          attempts: number;
+        } | null;
+      }>(
+        `/marketplace/listings/${listingId}/question-bank/leaderboard${limit ? `?limit=${limit}` : ""}`,
+        {},
+        10000,
+      ),
+
     /** Re-materialize owned banks onto this device. */
     restoreQuestionBanks: () =>
       apiRequest<{ restored: number }>(

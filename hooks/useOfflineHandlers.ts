@@ -193,6 +193,9 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
                 ...bundle.config,
                 // Prefer user-set displayName, then the original group name from config/bundle
                 groupName: bundle.displayName || bundle.config.groupName || bundle.groupName,
+                // Carried so completion can attribute the score to a marketplace
+                // question bank (bundleId is "qbank-<listingId>" for purchases).
+                bundleId: bundle.bundleId,
             },
             questions: testQuestions,
             userAnswers: {},

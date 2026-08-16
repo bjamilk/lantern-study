@@ -455,6 +455,12 @@ export interface TestConfig {
   allowedQuestionTypes: QuestionType[];
   selectedTags?: string[];
   focusOnNew?: boolean;
+  /**
+   * Offline bundle this session was started from, when applicable.
+   * "qbank-<listingId>" identifies a marketplace question bank, which is how a
+   * completed session is attributed to that bank's leaderboard.
+   */
+  bundleId?: string;
 }
 
 export type UserAnswerRecord = {

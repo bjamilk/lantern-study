@@ -17,8 +17,10 @@ import {
   fetchPickupNudge,
   downloadQuestionBank,
   fetchQuestionBankPreview,
+  fetchQuestionBankLeaderboard,
   type MarketplaceQuestionBankMeta,
   type QuestionBankPreview,
+  type QuestionBankLeaderboardEntry,
 } from '../services/supabase';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { generateListingLink, formatCampusLabel } from '@lantern/shared';
@@ -99,6 +101,10 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [questionBank, setQuestionBank] = useState<MarketplaceQuestionBankMeta | null>(null);
   const [downloadingBank, setDownloadingBank] = useState(false);
   const [bankPreview, setBankPreview] = useState<QuestionBankPreview | null>(null);
+  const [leaderboard, setLeaderboard] = useState<{
+    entries: QuestionBankLeaderboardEntry[];
+    viewerEntry: QuestionBankLeaderboardEntry | null;
+  } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listingLoadId = useRef(0);
@@ -234,8 +240,16 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             }
           })
           .catch(() => setBankPreview(null));
+        void fetchQuestionBankLeaderboard(listingId, 10)
+          .then((board) => {
+            if (loadId === undefined || loadId === listingLoadId.current) {
+              setLeaderboard(board);
+            }
+          })
+          .catch(() => setLeaderboard(null));
       } else {
         setBankPreview(null);
+        setLeaderboard(null);
       }
       const sellerId = data.listing.user_id || data.listing.seller_id;
       if (sellerId && currentUser?.id && sellerId !== currentUser.id) {
@@ -1169,6 +1183,59 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               Answers and explanations are included with the full bank
               {questionBank?.owned ? ', which you own.' : '.'}
             </p>
+          </div>
+        )}
+
+        {/* Per-bank leaderboard */}
+        {isDigital && leaderboard && (leaderboard.entries.length > 0 || leaderboard.viewerEntry) && (
+          <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60">
+            <h2 className="text-base sm:text-lg font-bold text-lantern-text mb-1">Leaderboard</h2>
+            <p className="text-xs text-lantern-text-tertiary mb-3">
+              Best score per student across offline attempts.
+            </p>
+            {leaderboard.entries.length > 0 ? (
+              <ol className="space-y-1.5">
+                {leaderboard.entries.map((entry) => (
+                  <li
+                    key={entry.userId}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 ${
+                      entry.isViewer
+                        ? 'bg-lantern-primary-background ring-1 ring-lantern-primary/30'
+                        : 'bg-lantern-background-secondary/50'
+                    }`}
+                  >
+                    <span className="w-6 text-sm font-bold text-lantern-text-secondary tabular-nums">
+                      {entry.rank}
+                    </span>
+                    <span className="flex-1 min-w-0 text-sm text-lantern-text truncate">
+                      {entry.isViewer ? 'You' : entry.name}
+                    </span>
+                    <span className="text-xs text-lantern-text-tertiary">
+                      {entry.correct}/{entry.total}
+                    </span>
+                    <span className="text-sm font-semibold text-lantern-primary tabular-nums">
+                      {entry.scorePct.toFixed(0)}%
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-lantern-text-secondary">
+                No scores yet — be the first to run this bank offline.
+              </p>
+            )}
+            {leaderboard.viewerEntry &&
+            !leaderboard.entries.some((entry) => entry.isViewer) ? (
+              <div className="mt-2 pt-2 border-t border-lantern-border flex items-center gap-3 px-3 py-2">
+                <span className="w-6 text-sm font-bold text-lantern-text-secondary tabular-nums">
+                  {leaderboard.viewerEntry.rank}
+                </span>
+                <span className="flex-1 text-sm text-lantern-text">You</span>
+                <span className="text-sm font-semibold text-lantern-primary tabular-nums">
+                  {leaderboard.viewerEntry.scorePct.toFixed(0)}%
+                </span>
+              </div>
+            ) : null}
           </div>
         )}
 

@@ -476,6 +476,128 @@ export class MarketplaceQuestionBanksService {
       }));
   }
 
+  /**
+   * Record an attempt on a bank the user owns. Ownership is required so the
+   * board can't be stuffed by someone who never downloaded the bank.
+   */
+  async recordScore(
+    listingId: string,
+    userId: string,
+    correct: number,
+    total: number
+  ): Promise<{
+    bestScorePct: number;
+    bestCorrect: number;
+    bestTotal: number;
+    attempts: number;
+    improved: boolean;
+  }> {
+    const correctCount = Math.floor(Number(correct));
+    const totalCount = Math.floor(Number(total));
+    if (!Number.isFinite(totalCount) || totalCount <= 0) {
+      throw new PublicError('Invalid question total');
+    }
+    if (!Number.isFinite(correctCount) || correctCount < 0 || correctCount > totalCount) {
+      throw new PublicError('Invalid correct count');
+    }
+
+    const { data: entitlement } = await this.db
+      .from('marketplace_question_bank_entitlements')
+      .select('id')
+      .eq('listing_id', listingId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (!entitlement) {
+      throw new PublicError('You do not own this question bank');
+    }
+
+    const { data, error } = await this.db.rpc('marketplace_record_question_bank_score', {
+      p_listing_id: listingId,
+      p_user_id: userId,
+      p_correct: correctCount,
+      p_total: totalCount,
+    });
+    if (error) throw error;
+
+    const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+    return {
+      bestScorePct: Number(row?.best_score_pct ?? 0),
+      bestCorrect: Number(row?.best_correct ?? 0),
+      bestTotal: Number(row?.best_total ?? totalCount),
+      attempts: Number(row?.attempts ?? 1),
+      improved: !!row?.improved,
+    };
+  }
+
+  /** Top scores for a bank, plus the caller's own standing. */
+  async getLeaderboard(listingId: string, viewerId?: string, limit = 20) {
+    const capped = Math.min(Math.max(1, Math.floor(Number(limit) || 20)), 50);
+    const { data: rows, error } = await this.db
+      .from('marketplace_question_bank_scores')
+      .select('user_id, best_score_pct, best_correct, best_total, attempts, best_at')
+      .eq('listing_id', listingId)
+      .order('best_score_pct', { ascending: false })
+      .order('best_at', { ascending: true })
+      .limit(capped);
+    if (error) throw error;
+
+    const userIds = (rows || []).map((r: any) => String(r.user_id));
+    let profiles = new Map<string, { name?: string; avatar_url?: string }>();
+    if (userIds.length > 0) {
+      const { data: profileRows } = await this.db
+        .from('profiles')
+        .select('id, name, avatar_url')
+        .in('id', userIds);
+      profiles = new Map(
+        (profileRows || []).map((p: any) => [String(p.id), { name: p.name, avatar_url: p.avatar_url }])
+      );
+    }
+
+    const entries = (rows || []).map((row: any, index: number) => ({
+      rank: index + 1,
+      userId: String(row.user_id),
+      name: profiles.get(String(row.user_id))?.name || 'Student',
+      avatarUrl: profiles.get(String(row.user_id))?.avatar_url || null,
+      scorePct: Number(row.best_score_pct),
+      correct: Number(row.best_correct),
+      total: Number(row.best_total),
+      attempts: Number(row.attempts),
+      isViewer: !!viewerId && String(row.user_id) === viewerId,
+    }));
+
+    // A viewer outside the top N still gets their own row (with a true rank).
+    let viewerEntry: (typeof entries)[number] | null =
+      entries.find((e) => e.isViewer) || null;
+    if (viewerId && !viewerEntry) {
+      const { data: own } = await this.db
+        .from('marketplace_question_bank_scores')
+        .select('best_score_pct, best_correct, best_total, attempts, best_at')
+        .eq('listing_id', listingId)
+        .eq('user_id', viewerId)
+        .maybeSingle();
+      if (own) {
+        const { count } = await this.db
+          .from('marketplace_question_bank_scores')
+          .select('id', { count: 'exact', head: true })
+          .eq('listing_id', listingId)
+          .gt('best_score_pct', own.best_score_pct);
+        viewerEntry = {
+          rank: Number(count ?? 0) + 1,
+          userId: viewerId,
+          name: 'You',
+          avatarUrl: null,
+          scorePct: Number(own.best_score_pct),
+          correct: Number(own.best_correct),
+          total: Number(own.best_total),
+          attempts: Number(own.attempts),
+          isViewer: true,
+        };
+      }
+    }
+
+    return { entries, viewerEntry };
+  }
+
   /** True when this listing is a question bank (used by the payments path). */
   async isQuestionBankListing(listingId: string): Promise<boolean> {
     const bank = await this.db

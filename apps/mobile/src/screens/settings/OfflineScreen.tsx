@@ -28,6 +28,7 @@ import { useGroupStore } from '../../stores/groupStore';
 import { ThemeScope, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { restoreQuestionBanks } from '../../services/api';
+import { PublishQuestionBankModal } from './PublishQuestionBankModal';
 import { getConnectionStatus, syncCopy, featureAccents } from '@lantern/shared/design';
 import { useNetworkStatus } from '../../hooks';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -45,6 +46,7 @@ export default function OfflineScreen() {
   const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
   const [restoringBanks, setRestoringBanks] = useState(false);
+  const [publishTarget, setPublishTarget] = useState<OfflineTest | null>(null);
   const [selectedTab, setSelectedTab] = useState<'downloads' | 'pending'>('downloads');
   const { colors } = useTheme();
   // Pixel height, not '85%': percentage heights resolved against the themed
@@ -254,6 +256,16 @@ export default function OfflineScreen() {
       </View>
       
       <View style={styles.testActions}>
+        {/* Purchased banks are someone else's product — not republishable. */}
+        {!test.id.startsWith('qbank-') ? (
+          <TouchableOpacity
+            style={styles.publishButton}
+            onPress={() => setPublishTarget(test)}
+            accessibilityLabel="Publish to marketplace"
+          >
+            <Ionicons name="storefront-outline" size={18} color={colors.primary} />
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={[styles.startButton, { backgroundColor: colors.primary }]}
           onPress={() => handleStartOfflineTest(test)}
@@ -857,6 +869,12 @@ export default function OfflineScreen() {
           </View>
         </ThemeScope>
       </Modal>
+
+      <PublishQuestionBankModal
+        test={publishTarget}
+        onClose={() => setPublishTarget(null)}
+        onPublished={() => void loadOfflineData(userId || undefined)}
+      />
     </SafeAreaView>
   );
 }
@@ -1012,6 +1030,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 999,
+  },
+  publishButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
   },
   restoreButton: {
     flexDirection: 'row',

@@ -761,6 +761,49 @@ router.get(
   })
 );
 
+// POST /api/v1/marketplace/listings/:id/question-bank/scores - Record an attempt
+router.post(
+  '/listings/:id/question-bank/scores',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const data = await getMarketplaceQuestionBanksService(supabaseService).recordScore(
+        req.params.id,
+        userId,
+        req.body?.correct,
+        req.body?.total
+      );
+      res.json({ success: true, data });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// GET /api/v1/marketplace/listings/:id/question-bank/leaderboard - Top scores
+router.get(
+  '/listings/:id/question-bank/leaderboard',
+  optionalAuthMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const data = await getMarketplaceQuestionBanksService(supabaseService).getLeaderboard(
+      req.params.id,
+      req.user?.id,
+      req.query?.limit ? Number(req.query.limit) : undefined
+    );
+    res.json({ success: true, data });
+  })
+);
+
 // GET /api/v1/marketplace/question-banks/mine - Banks published by the caller
 router.get(
   '/question-banks/mine',

@@ -4181,6 +4181,60 @@ export const fetchQuestionBankPreview = async (
   return (await response.json()).data;
 };
 
+export interface QuestionBankLeaderboardEntry {
+  rank: number;
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  scorePct: number;
+  correct: number;
+  total: number;
+  attempts: number;
+  isViewer: boolean;
+}
+
+/** Record an attempt on an owned bank; the server keeps the best score. */
+export const recordQuestionBankScore = async (
+  listingId: string,
+  correct: number,
+  total: number
+): Promise<{ bestScorePct: number; improved: boolean; attempts: number }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/listings/${encodeURIComponent(listingId)}/question-bank/scores`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ correct, total }),
+    },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to record score');
+  }
+  return (await response.json()).data;
+};
+
+/** Top scores for a bank, plus the caller's standing. */
+export const fetchQuestionBankLeaderboard = async (
+  listingId: string,
+  limit?: number
+): Promise<{
+  entries: QuestionBankLeaderboardEntry[];
+  viewerEntry: QuestionBankLeaderboardEntry | null;
+}> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/listings/${encodeURIComponent(listingId)}/question-bank/leaderboard${limit ? `?limit=${limit}` : ''}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load leaderboard');
+  }
+  return (await response.json()).data;
+};
+
 /** Seller republish: replace the published snapshot, bumping the version. */
 export const updateQuestionBankContent = async (
   listingId: string,

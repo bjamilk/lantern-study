@@ -365,7 +365,26 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             totalQuestions: finalSessionData.questions.length,
             correctAnswersCount,
         };
-    
+
+        // Marketplace question bank: attribute the attempt to its leaderboard.
+        // Best-effort — a session finished with no connection simply doesn't
+        // post, and the next attempt made online will.
+        const bundleId = finalSessionData.config?.bundleId;
+        if (bundleId && bundleId.startsWith('qbank-')) {
+            const listingId = bundleId.slice('qbank-'.length);
+            void import('../services/supabase')
+                .then(({ recordQuestionBankScore }) =>
+                    recordQuestionBankScore(
+                        listingId,
+                        correctAnswersCount,
+                        finalSessionData.questions.length
+                    )
+                )
+                .catch(() => {
+                    // offline or not entitled — leaderboard is not critical
+                });
+        }
+
         try {
             if (finalSessionData.isOffline || !isOnline) {
                 // ── OFFLINE PATH ──────────────────────────────────────────

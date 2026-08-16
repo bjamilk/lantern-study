@@ -525,7 +525,7 @@ export default function TestTakingScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const userId = useAuthStore(s => s.user?.id) || '';
-  const { testName, isOffline, groupName, groupId } = route.params;
+  const { testName, isOffline, groupName, groupId, offlineTestId } = route.params;
 
   const {
     activeTest,
@@ -707,13 +707,30 @@ export default function TestTakingScreen() {
         groupName: groupName || liveSession.test.name,
         groupId,
       });
+      // Marketplace question bank: attribute the attempt to its leaderboard.
+      // Best-effort — an attempt finished with no connection simply doesn't
+      // post, and the next one made online will.
+      if (offlineTestId && offlineTestId.startsWith('qbank-')) {
+        const correct = (attempt.answers || []).filter((a) => a.isCorrect).length;
+        void import('../../services/api')
+          .then(({ recordQuestionBankScore }) =>
+            recordQuestionBankScore(
+              offlineTestId.slice('qbank-'.length),
+              correct,
+              liveSession.questions.length
+            )
+          )
+          .catch(() => {
+            // offline or not entitled — leaderboard is not critical
+          });
+      }
       setShowReviewModal(false);
       navigation.replace('TestResults', { attemptId: attempt.id });
     } catch {
       submittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [submitTest, userId, isOffline, groupName, groupId, navigation]);
+  }, [submitTest, userId, isOffline, groupName, groupId, offlineTestId, navigation]);
 
   const handleSubmit = useCallback(async (timeUp = false) => {
     // Session may have been abandoned (exit) while a timer tick was queued.

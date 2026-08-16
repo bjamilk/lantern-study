@@ -351,6 +351,61 @@ describe('updateQuestionBankContent', () => {
   });
 });
 
+describe('recordScore', () => {
+  const rpcOk = {
+    best_score_pct: 80,
+    best_correct: 8,
+    best_total: 10,
+    attempts: 2,
+    improved: true,
+  };
+
+  function serviceWithRpc(entitled: boolean) {
+    const rpc = jest.fn(async () => ({ data: [rpcOk], error: null }));
+    const chain: any = {};
+    const self = () => chain;
+    chain.select = self;
+    chain.eq = self;
+    chain.maybeSingle = async () => ({ data: entitled ? { id: 'ent-1' } : null, error: null });
+    const supabaseService: any = {
+      getClient: () => ({ from: () => chain, rpc }),
+    };
+    return { service: new MarketplaceQuestionBanksService(supabaseService), rpc };
+  }
+
+  it('refuses users who do not own the bank', async () => {
+    const { service, rpc } = serviceWithRpc(false);
+    await expect(service.recordScore('l1', 'u1', 5, 10)).rejects.toThrow('do not own');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [5, 0],
+    [-1, 10],
+    [11, 10],
+  ])('rejects correct=%p total=%p', async (correct, total) => {
+    const { service } = serviceWithRpc(true);
+    await expect(service.recordScore('l1', 'u1', correct, total)).rejects.toBeInstanceOf(
+      PublicError
+    );
+  });
+
+  it('records a valid attempt for an owner', async () => {
+    const { service, rpc } = serviceWithRpc(true);
+    await expect(service.recordScore('l1', 'u1', 8, 10)).resolves.toEqual({
+      bestScorePct: 80,
+      bestCorrect: 8,
+      bestTotal: 10,
+      attempts: 2,
+      improved: true,
+    });
+    expect(rpc).toHaveBeenCalledWith(
+      'marketplace_record_question_bank_score',
+      expect.objectContaining({ p_correct: 8, p_total: 10 })
+    );
+  });
+});
+
 describe('listAvailableUpdates', () => {
   it('returns only banks newer than the held version', async () => {
     const { service } = makeService({
