@@ -647,6 +647,11 @@ export interface OfflineQuestionInput {
   type: string;
   options: { id: string; text: string; isCorrect: boolean }[];
   correctAnswer?: string;
+  acceptableAnswers?: string[];
+  matchingPromptItems?: Array<{ id: string; text: string }>;
+  matchingAnswerItems?: Array<{ id: string; text: string }>;
+  correctMatches?: Array<{ promptItemId: string; answerItemId: string }>;
+  diagramLabels?: Array<{ id?: string; label?: string; text?: string; x?: number; y?: number }>;
   explanation?: string;
   tags: string[];
   imageUrl?: string;
@@ -665,6 +670,30 @@ export function offlineQuestionsToTestQuestions(questions: OfflineQuestionInput[
     const options = q.options?.map(o => o.text) || [];
     const correctFromOptions = q.options?.filter(o => o.isCorrect).map(o => o.text);
 
+    // Matching pairs are rebuilt the same way the online group-test mapper
+    // does it: correctMatches gives the pairing, prompt/answer items the text.
+    const matchingPairs =
+      type === 'matching' && q.correctMatches?.length
+        ? q.correctMatches.map((m, i) => {
+            const left = q.matchingPromptItems?.find(p => p.id === m.promptItemId);
+            const right = q.matchingAnswerItems?.find(a => a.id === m.answerItemId);
+            return {
+              id: m.promptItemId || `pair-${i}`,
+              left: left?.text || m.promptItemId,
+              right: right?.text || m.answerItemId,
+            };
+          })
+        : undefined;
+
+    const diagramLabels = q.diagramLabels?.length
+      ? q.diagramLabels.map((l, i) => ({
+          id: String(l.id || `label-${i}`),
+          label: String(l.label || l.text || ''),
+          x: l.x ?? 50,
+          y: l.y ?? 50,
+        }))
+      : undefined;
+
     return {
       id: q.id,
       type,
@@ -672,6 +701,9 @@ export function offlineQuestionsToTestQuestions(questions: OfflineQuestionInput[
       options: options.length ? options : undefined,
       correctAnswer: q.correctAnswer || correctFromOptions?.[0],
       correctAnswers: correctFromOptions && correctFromOptions.length > 1 ? correctFromOptions : undefined,
+      matchingPairs,
+      diagramLabels,
+      keywords: q.acceptableAnswers?.length ? q.acceptableAnswers : undefined,
       explanation: q.explanation,
       diagramUrl: q.imageUrl,
       imageUrl: q.imageUrl,

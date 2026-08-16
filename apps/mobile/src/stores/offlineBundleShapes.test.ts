@@ -28,6 +28,11 @@ function mapMessageToOfflineQuestion(message: any, index: number) {
     stem: String(stem),
     type: String(payload.questionType || payload.type || 'mcq-single'),
     options,
+    correctAnswer: payload.correctAnswer ?? payload.acceptableAnswers?.[0],
+    acceptableAnswers: Array.isArray(payload.acceptableAnswers) ? payload.acceptableAnswers : undefined,
+    matchingPromptItems: Array.isArray(payload.matchingPromptItems) ? payload.matchingPromptItems : undefined,
+    matchingAnswerItems: Array.isArray(payload.matchingAnswerItems) ? payload.matchingAnswerItems : undefined,
+    correctMatches: Array.isArray(payload.correctMatches) ? payload.correctMatches : undefined,
     tags: payload.tags || message.tags || [],
   };
 }
@@ -72,6 +77,54 @@ describe('cloud offline bundle question shapes', () => {
 
     expect(q.question).toBe('Nigeria has how many states?');
     expect(q.correctAnswer).toBe('36');
+  });
+
+  it('rebuilds playable matching pairs from the web Message structures', () => {
+    const WEB_MATCHING = {
+      id: 'q3',
+      type: 'QUESTION',
+      questionStem: 'Match the capital to the country',
+      questionType: 'matching',
+      matchingPromptItems: [
+        { id: 'p1', text: 'Nigeria' },
+        { id: 'p2', text: 'Ghana' },
+      ],
+      matchingAnswerItems: [
+        { id: 'a1', text: 'Abuja' },
+        { id: 'a2', text: 'Accra' },
+      ],
+      correctMatches: [
+        { promptItemId: 'p1', answerItemId: 'a1' },
+        { promptItemId: 'p2', answerItemId: 'a2' },
+      ],
+      tags: [],
+    };
+
+    const normalized = [mapMessageToOfflineQuestion(WEB_MATCHING, 0)!];
+    const [q] = offlineQuestionsToTestQuestions(normalized as any);
+
+    expect(q.question).toBe('Match the capital to the country');
+    expect(q.matchingPairs).toEqual([
+      { id: 'p1', left: 'Nigeria', right: 'Abuja' },
+      { id: 'p2', left: 'Ghana', right: 'Accra' },
+    ]);
+  });
+
+  it('keeps fill-in-blank answers so grading works', () => {
+    const WEB_FILL = {
+      id: 'q4',
+      type: 'QUESTION',
+      questionStem: 'The sex of Michael is ___?',
+      questionType: 'fill_in_the_blank',
+      acceptableAnswers: ['Male', 'male'],
+      tags: [],
+    };
+
+    const normalized = [mapMessageToOfflineQuestion(WEB_FILL, 0)!];
+    const [q] = offlineQuestionsToTestQuestions(normalized as any);
+
+    expect(q.correctAnswer).toBe('Male');
+    expect(q.keywords).toEqual(['Male', 'male']);
   });
 
   it('drops entries with no stem rather than rendering a blank question', () => {

@@ -33,6 +33,14 @@ export interface OfflineQuestion {
   type: string;
   options: { id: string; text: string; isCorrect: boolean }[];
   correctAnswer?: string;
+  /** Fill-in-blank: every accepted answer (correctAnswer holds the first). */
+  acceptableAnswers?: string[];
+  // Matching questions live as three parallel structures in the source
+  // Message shape; all three are needed to rebuild playable pairs.
+  matchingPromptItems?: Array<{ id: string; text: string }>;
+  matchingAnswerItems?: Array<{ id: string; text: string }>;
+  correctMatches?: Array<{ promptItemId: string; answerItemId: string }>;
+  diagramLabels?: Array<{ id?: string; label?: string; text?: string; x?: number; y?: number }>;
   explanation?: string;
   tags: string[];
   imageUrl?: string;
@@ -157,6 +165,23 @@ const mapMessageToOfflineQuestion = (message: any, index: number): OfflineQuesti
       canonicalOfflineQuestionType(payload.questionType || payload.type || message.questionType) ||
       String(payload.questionType || payload.type || 'mcq-single'),
     options,
+    // Fill-in-blank stores its answers separately from options; without this
+    // the question grades every response as wrong.
+    correctAnswer: payload.correctAnswer ?? payload.acceptableAnswers?.[0],
+    acceptableAnswers: Array.isArray(payload.acceptableAnswers)
+      ? payload.acceptableAnswers
+      : undefined,
+    // Matching and diagram questions keep their structures verbatim; the
+    // test-question converter rebuilds pairs/labels from them. Dropping these
+    // rendered such questions unanswerable (stem with empty item lists).
+    matchingPromptItems: Array.isArray(payload.matchingPromptItems)
+      ? payload.matchingPromptItems
+      : undefined,
+    matchingAnswerItems: Array.isArray(payload.matchingAnswerItems)
+      ? payload.matchingAnswerItems
+      : undefined,
+    correctMatches: Array.isArray(payload.correctMatches) ? payload.correctMatches : undefined,
+    diagramLabels: Array.isArray(payload.diagramLabels) ? payload.diagramLabels : undefined,
     explanation: payload.explanation || message.explanation,
     tags: payload.tags || message.tags || [],
     imageUrl: payload.imageUrl || message.imageUrl,

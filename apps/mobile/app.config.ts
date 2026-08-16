@@ -83,7 +83,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.19: purchased question banks opened with an empty stem and no options.
   // Offline bundles are shared web/mobile storage holding two question shapes;
   // the cloud path cast instead of converting.
-  version: '1.0.19',
+  // 1.0.20: matching questions in offline bundles are playable again (their
+  // pair structures were dropped in storage), fill-in-blank answers grade
+  // correctly, and diagram labels survive the round trip.
+  version: '1.0.20',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
