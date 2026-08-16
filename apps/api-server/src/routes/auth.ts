@@ -259,4 +259,36 @@ router.post(
   })
 );
 
+/**
+ * POST /api/v1/auth/revoke-other-sessions — sign out everywhere else.
+ *
+ * Called after a password change: a credential change must not leave sessions
+ * alive on devices the user may no longer control. Supabase's global signOut
+ * ends every session including this one, so the caller re-authenticates with
+ * the new password immediately after; the fresh token is issued after the
+ * cutoff and therefore survives it.
+ */
+router.post(
+  '/revoke-other-sessions',
+  authSessionRateLimit,
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    await setUserSessionCutoff(userId);
+
+    try {
+      await supabaseService.getClient().auth.admin.signOut(userId, 'global');
+    } catch (err) {
+      logger.warn('Supabase global signOut failed on session revoke', { userId, err });
+    }
+
+    await cacheService.invalidateUserCache(userId);
+    logger.info('Sessions revoked after credential change', { userId });
+
+    res.json({ success: true, message: 'Other sessions revoked' });
+  })
+);
+
 export default router;

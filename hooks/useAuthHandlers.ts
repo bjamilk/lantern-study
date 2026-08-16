@@ -330,7 +330,35 @@ export function useAuthHandlers() {
                 return false;
             }
             await updateAuthPassword(newPass);
-            useToastStore.getState().showToast('Password updated successfully.', 'info');
+
+            // A password change must not leave sessions alive on devices the
+            // user may no longer control. The global revoke ends this session
+            // too, so re-authenticate immediately with the new password —
+            // the fresh token is issued after the cutoff and survives it.
+            const { revokeOtherSessions } = await import('../services/supabase');
+            const revoked = await revokeOtherSessions();
+            if (revoked) {
+                const { error: reAuthError } = await supabase.auth.signInWithPassword({
+                    email: currentUser.email,
+                    password: newPass,
+                });
+                if (reAuthError) {
+                    // Sessions are revoked but this device could not refresh —
+                    // safest outcome is a clean re-login rather than a zombie tab.
+                    useToastStore.getState().showToast(
+                        'Password updated. Please sign in again.',
+                        'info'
+                    );
+                    return true;
+                }
+            }
+
+            useToastStore.getState().showToast(
+                revoked
+                    ? 'Password updated. You have been signed out on other devices.'
+                    : 'Password updated successfully.',
+                'info'
+            );
             return true;
         } catch (error) {
             console.error('Failed to update password:', error);

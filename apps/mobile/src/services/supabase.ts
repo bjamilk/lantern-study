@@ -322,9 +322,43 @@ export const verifySignupOtp = async (email: string, token: string) => {
   return data;
 };
 
-export const updateAuthPassword = async (newPassword: string) => {
+/**
+ * Sign out every other device after a credential change. Best-effort: a
+ * failure must not make a successful password change look failed, but it is
+ * logged because it leaves stale sessions alive.
+ */
+export const revokeOtherSessions = async (): Promise<boolean> => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/auth/revoke-other-sessions`, {
+      method: 'POST',
+      headers,
+    });
+    return response.ok;
+  } catch (e) {
+    console.error('Failed to revoke other sessions after password change:', e);
+    return false;
+  }
+};
+
+export const updateAuthPassword = async (newPassword: string, email?: string) => {
   const { data, error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw error;
+
+  // A password change must not leave sessions alive on devices the user may
+  // no longer control. The global revoke ends this session too, so
+  // re-authenticate right after when we know the account email; the fresh
+  // token is issued after the cutoff and survives it.
+  const revoked = await revokeOtherSessions();
+  const accountEmail = email || data.user?.email;
+  if (revoked && accountEmail) {
+    try {
+      await supabase.auth.signInWithPassword({ email: accountEmail, password: newPassword });
+    } catch (e) {
+      console.warn('Re-authentication after password change failed; sign in again', e);
+    }
+  }
+
   return data;
 };
 

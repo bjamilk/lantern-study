@@ -236,6 +236,25 @@ export function clearLastKnownSettingsVersion(): void {
 }
 
 /** Server-side session invalidation + Supabase global sign-out + local cleanup. */
+/**
+ * Sign out every other device after a credential change. Best-effort: a
+ * failure here must not make a successful password change look failed, but it
+ * is logged loudly because it leaves stale sessions alive.
+ */
+export async function revokeOtherSessions(): Promise<boolean> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/auth/revoke-other-sessions`,
+      withApiCredentials({ method: 'POST', headers })
+    );
+    return response.ok;
+  } catch (e) {
+    console.error('Failed to revoke other sessions after password change:', e);
+    return false;
+  }
+}
+
 export async function apiLogoutSession(): Promise<void> {
   try {
     if (isCookieAuthEnabled()) {
