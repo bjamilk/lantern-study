@@ -2236,6 +2236,52 @@ export function createApiEndpoints(client: ApiClient) {
         },
       ),
 
+    /** Free banks and owner re-downloads; delivers into offline_bundles. */
+    downloadQuestionBank: (listingId: string) =>
+      apiRequest<{ bundleId: string; questionCount: number }>(
+        `/marketplace/listings/${listingId}/question-bank/download`,
+        { method: "POST" },
+        15000,
+      ),
+
+    /** Public sample — answers are stripped server-side. */
+    fetchQuestionBankPreview: (listingId: string) =>
+      apiRequest<{
+        questionCount: number;
+        version: number;
+        owned: boolean;
+        isSeller: boolean;
+        previewCount: number;
+        questions: Array<{
+          id?: string;
+          questionStem?: string;
+          text?: string;
+          questionType?: string;
+          options?: Array<{ id: string; text: string }>;
+          imageUrl?: string;
+          tags?: string[];
+        }>;
+      }>(`/marketplace/listings/${listingId}/question-bank/preview`, {}, 10000),
+
+    /** Re-materialize owned banks onto this device. */
+    restoreQuestionBanks: () =>
+      apiRequest<{ restored: number }>(
+        `/marketplace/question-banks/restore`,
+        { method: "POST" },
+        20000,
+      ),
+
+    /** Owned banks whose published version is newer than the local copy. */
+    fetchQuestionBankUpdates: () =>
+      apiRequest<
+        Array<{
+          listingId: string;
+          bundleId: string;
+          version: number;
+          questionCount: number;
+        }>
+      >(`/marketplace/question-banks/updates`, {}, 10000),
+
     fetchMarketplacePaymentsConfig: () =>
       apiRequest<{
         paystackEnabled: boolean;

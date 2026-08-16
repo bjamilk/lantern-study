@@ -739,6 +739,28 @@ router.post(
   })
 );
 
+// GET /api/v1/marketplace/listings/:id/question-bank/preview - Public sample
+// (answers stripped server-side; safe for guests)
+router.get(
+  '/listings/:id/question-bank/preview',
+  optionalAuthMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    try {
+      const data = await getMarketplaceQuestionBanksService(
+        supabaseService
+      ).getQuestionBankPreview(req.params.id, req.user?.id);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(404).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
 // GET /api/v1/marketplace/question-banks/mine - Banks published by the caller
 router.get(
   '/question-banks/mine',

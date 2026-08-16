@@ -27,6 +27,7 @@ import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useGroupStore } from '../../stores/groupStore';
 import { ThemeScope, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
+import { restoreQuestionBanks } from '../../services/api';
 import { getConnectionStatus, syncCopy, featureAccents } from '@lantern/shared/design';
 import { useNetworkStatus } from '../../hooks';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -43,6 +44,7 @@ export default function OfflineScreen() {
   const navigation = useNavigation<any>();
   const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
+  const [restoringBanks, setRestoringBanks] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'downloads' | 'pending'>('downloads');
   const { colors } = useTheme();
   // Pixel height, not '85%': percentage heights resolved against the themed
@@ -203,12 +205,38 @@ export default function OfflineScreen() {
     );
   };
 
+  /** Pull purchased question banks back onto this device (new install / clear). */
+  const handleRestoreQuestionBanks = async () => {
+    if (!userId) return;
+    setRestoringBanks(true);
+    try {
+      const { restored } = await restoreQuestionBanks();
+      await loadOfflineData(userId);
+      Alert.alert(
+        'Restore complete',
+        restored > 0
+          ? `Restored ${restored} question bank${restored !== 1 ? 's' : ''}.`
+          : 'No purchased question banks to restore.'
+      );
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not restore purchases');
+    } finally {
+      setRestoringBanks(false);
+    }
+  };
+
   const DownloadedTestItem = ({ test }: { test: OfflineTest }) => (
     <View style={[styles.testItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.testInfo}>
         <View style={styles.testHeader}>
           <Ionicons name="document-text" size={20} color={colors.primary} />
           <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{test.testName}</Text>
+          {/* Marketplace purchases carry the qbank- bundle id (see web parity). */}
+          {test.id.startsWith('qbank-') ? (
+            <View style={[styles.purchasedBadge, { backgroundColor: colors.primary + '1a' }]}>
+              <Text style={[styles.purchasedBadgeText, { color: colors.primary }]}>PURCHASED</Text>
+            </View>
+          ) : null}
         </View>
         <Text style={[styles.testMeta, { color: colors.textSecondary }]}>
           {test.groupName} • {test.questionCount} questions
@@ -463,6 +491,16 @@ export default function OfflineScreen() {
                 })}
               </>
             )}
+            <TouchableOpacity
+              style={[styles.restoreButton, { borderColor: colors.border }]}
+              disabled={restoringBanks}
+              onPress={() => void handleRestoreQuestionBanks()}
+            >
+              <Ionicons name="bag-handle-outline" size={16} color={colors.primary} />
+              <Text style={[styles.restoreButtonText, { color: colors.primary }]}>
+                {restoringBanks ? 'Restoring…' : 'Restore marketplace purchases'}
+              </Text>
+            </TouchableOpacity>
             {downloadedTests.length > 0 ? (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Downloaded Tests</Text>
@@ -969,6 +1007,31 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#ffffff',
     flex: 1,
+  },
+  purchasedBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 16,
+    minHeight: 44,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  purchasedBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   testMeta: {
     fontSize: 13,

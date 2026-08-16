@@ -28,6 +28,8 @@ import {
   fetchPickupNudge,
   validateMarketplaceCoupon,
   fetchListingOffersHistory,
+  downloadQuestionBank,
+  fetchQuestionBankPreview,
 } from '../../services/api';
 import type { MarketplacePickupNudge } from '@lantern/shared/types';
 
@@ -107,6 +109,19 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const [couponPreview, setCouponPreview] = useState<{ discountAmount: number; finalAmount: number } | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [negotiationHistory, setNegotiationHistory] = useState<Array<{ id: string; amount?: number; status?: string }>>([]);
+  const [bankPreview, setBankPreview] = useState<{
+    questionCount: number;
+    previewCount: number;
+    owned?: boolean;
+    questions: Array<{
+      id?: string;
+      questionStem?: string;
+      text?: string;
+      options?: Array<{ id: string; text: string }>;
+    }>;
+  } | null>(null);
+  const [bankOwned, setBankOwned] = useState(false);
+  const [downloadingBank, setDownloadingBank] = useState(false);
 
   const load = useCallback(async () => {
     if (!listingId) return;
@@ -139,8 +154,38 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           setNegotiationHistory([]);
         }
       }
+      // Digital banks: sample + ownership in one public request.
+      if (listing.listing_kind === 'question_bank') {
+        try {
+          const preview = await fetchQuestionBankPreview(listingId);
+          setBankPreview(preview);
+          setBankOwned(!!preview.owned);
+        } catch {
+          setBankPreview(null);
+        }
+      } else {
+        setBankPreview(null);
+        setBankOwned(false);
+      }
     }
   }, [listingId, fetchListing, fetchListingReviews, fetchSimilar, user?.id, initialQuantity]);
+
+  const handleDownloadBank = async () => {
+    if (!listingId) return;
+    setDownloadingBank(true);
+    try {
+      await downloadQuestionBank(listingId);
+      setBankOwned(true);
+      Alert.alert(
+        'Added to Offline Mode',
+        'This question bank is now available offline on all your devices.'
+      );
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not download question bank');
+    } finally {
+      setDownloadingBank(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -542,6 +587,38 @@ export function ListingDetailScreen({ navigation, route }: Props) {
             </Text>
           </Card>
 
+          {bankPreview && bankPreview.questions.length > 0 ? (
+            <Card className="mt-4">
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-sm font-semibold text-lantern-text">Sample questions</Text>
+                <Text className="text-xs text-lantern-text-tertiary">
+                  {bankPreview.previewCount} of {bankPreview.questionCount}
+                </Text>
+              </View>
+              {bankPreview.questions.map((question, index) => (
+                <View
+                  key={question.id || index}
+                  className="mb-2 rounded-xl border border-lantern-border p-3"
+                >
+                  <Text className="text-sm font-medium text-lantern-text">
+                    {index + 1}. {question.questionStem || question.text || 'Question'}
+                  </Text>
+                  {question.options?.map((option, optionIndex) => (
+                    <Text
+                      key={option.id || optionIndex}
+                      className="mt-1 text-xs text-lantern-text-secondary"
+                    >
+                      {String.fromCharCode(65 + optionIndex)}. {option.text}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+              <Text className="text-xs text-lantern-text-tertiary">
+                Answers and explanations come with the full bank.
+              </Text>
+            </Card>
+          ) : null}
+
           <Card className="mt-4">
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-sm font-semibold text-lantern-text">Reviews</Text>
@@ -613,7 +690,40 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         </View>
       </ScrollView>
 
-      {!own && listing.status === 'active' ? (
+      {/* Digital question banks: own bar — no cart, no offers, instant delivery. */}
+      {!own && listing.status === 'active' && listing.listing_kind === 'question_bank' ? (
+        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
+          {bankOwned ? (
+            <>
+              <Text className="text-xs text-emerald-700 mb-2">
+                You own this question bank — find it in Offline Mode.
+              </Text>
+              <Button
+                variant="secondary"
+                loading={downloadingBank}
+                onPress={() => void handleDownloadBank()}
+              >
+                Download again
+              </Button>
+            </>
+          ) : listing.price && listing.price > 0 ? (
+            <>
+              <Text className="text-xs text-lantern-text-secondary mb-2">
+                Pay in the app and your question bank is delivered instantly to Offline Mode.
+              </Text>
+              <Button loading={actionLoading} onPress={handleBuyNow}>
+                Buy Now
+              </Button>
+            </>
+          ) : (
+            <Button loading={downloadingBank} onPress={() => void handleDownloadBank()}>
+              Download free
+            </Button>
+          )}
+        </View>
+      ) : null}
+
+      {!own && listing.status === 'active' && listing.listing_kind !== 'question_bank' ? (
         <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
           {listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 ? (
             <View className="flex-row items-center justify-between mb-2">

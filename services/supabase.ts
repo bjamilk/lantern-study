@@ -4148,6 +4148,39 @@ export const downloadQuestionBank = async (
   return (await response.json()).data;
 };
 
+export interface QuestionBankPreview {
+  questionCount: number;
+  version: number;
+  owned?: boolean;
+  isSeller?: boolean;
+  previewCount: number;
+  questions: Array<{
+    id?: string;
+    questionStem?: string;
+    text?: string;
+    questionType?: string;
+    options?: Array<{ id: string; text: string }>;
+    imageUrl?: string;
+    tags?: string[];
+  }>;
+}
+
+/** Public sample of a question bank — answers are stripped server-side. */
+export const fetchQuestionBankPreview = async (
+  listingId: string
+): Promise<QuestionBankPreview> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/listings/${encodeURIComponent(listingId)}/question-bank/preview`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load preview');
+  }
+  return (await response.json()).data;
+};
+
 /** Seller republish: replace the published snapshot, bumping the version. */
 export const updateQuestionBankContent = async (
   listingId: string,

@@ -811,7 +811,8 @@ export interface MarketplaceListing {
   is_boosted?: boolean;
   search_score?: number;
   quantity?: number | null;
-  listing_kind?: 'single' | 'bundle';
+  /** 'question_bank' is a digital listing delivered into offline_bundles. */
+  listing_kind?: 'single' | 'bundle' | 'question_bank';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   created_at: string;
   updated_at: string;

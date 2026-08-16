@@ -382,6 +382,46 @@ export class MarketplaceQuestionBanksService {
     return { version: nextVersion, questionCount };
   }
 
+  /**
+   * Public sample of a bank: the first few questions with every answer key
+   * stripped. Safe for guests — it never reveals correct answers.
+   */
+  async getQuestionBankPreview(listingId: string, viewerId?: string) {
+    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    if (!listing || listing.listing_kind !== 'question_bank') {
+      throw new PublicError('Question bank not found');
+    }
+
+    const bank = await this.getBankForListing(listingId);
+    if (!bank) throw new PublicError('Question bank not found');
+
+    // Ownership rides along so clients that don't call /full (mobile) can
+    // render the owned state from this one request.
+    let owned = false;
+    if (viewerId) {
+      const { data: entitlement } = await this.db
+        .from('marketplace_question_bank_entitlements')
+        .select('id')
+        .eq('listing_id', listingId)
+        .eq('user_id', viewerId)
+        .maybeSingle();
+      owned = !!entitlement;
+    }
+
+    const { buildQuestionBankPreview, QUESTION_BANK_PREVIEW_LIMIT } = await import(
+      '../utils/questionBankPreview'
+    );
+    const questions = (bank.content?.questions || []) as unknown[];
+    return {
+      questionCount: bank.question_count,
+      version: bank.version,
+      owned,
+      isSeller: listing.user_id === viewerId,
+      previewCount: Math.min(questions.length, QUESTION_BANK_PREVIEW_LIMIT),
+      questions: buildQuestionBankPreview(questions),
+    };
+  }
+
   /** Question banks published by this user (drives the republish-as-update UI). */
   async listMyQuestionBanks(userId: string) {
     const { data, error } = await this.db

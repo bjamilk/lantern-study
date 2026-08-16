@@ -58,7 +58,7 @@ export type RemoteListing = {
   effective_price?: number;
   is_on_sale?: boolean;
   quantity?: number | null;
-  listing_kind?: 'single' | 'bundle';
+  listing_kind?: 'single' | 'bundle' | 'question_bank';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
   campus_id?: string | null;
@@ -174,7 +174,7 @@ export interface MarketplaceListing {
   effective_price?: number;
   is_on_sale?: boolean;
   quantity?: number | null;
-  listing_kind?: 'single' | 'bundle';
+  listing_kind?: 'single' | 'bundle' | 'question_bank';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
   campus_id?: string | null;

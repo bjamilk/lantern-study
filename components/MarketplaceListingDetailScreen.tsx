@@ -16,7 +16,9 @@ import {
   validateMarketplaceCoupon,
   fetchPickupNudge,
   downloadQuestionBank,
+  fetchQuestionBankPreview,
   type MarketplaceQuestionBankMeta,
+  type QuestionBankPreview,
 } from '../services/supabase';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { generateListingLink, formatCampusLabel } from '@lantern/shared';
@@ -96,6 +98,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [canReview, setCanReview] = useState(false);
   const [questionBank, setQuestionBank] = useState<MarketplaceQuestionBankMeta | null>(null);
   const [downloadingBank, setDownloadingBank] = useState(false);
+  const [bankPreview, setBankPreview] = useState<QuestionBankPreview | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listingLoadId = useRef(0);
@@ -222,6 +225,18 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       setSimilarListings(data.similarListings);
       setCanReview(!!data.canReview);
       setQuestionBank(data.questionBank || null);
+      if (data.listing?.listing_kind === 'question_bank') {
+        // Preview is decorative; a failure must not block the listing.
+        void fetchQuestionBankPreview(listingId)
+          .then((preview) => {
+            if (loadId === undefined || loadId === listingLoadId.current) {
+              setBankPreview(preview);
+            }
+          })
+          .catch(() => setBankPreview(null));
+      } else {
+        setBankPreview(null);
+      }
       const sellerId = data.listing.user_id || data.listing.seller_id;
       if (sellerId && currentUser?.id && sellerId !== currentUser.id) {
         setPickupNudge(await fetchPickupNudge(sellerId));
@@ -1119,6 +1134,43 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             </div>
           </div>
         </div>
+
+        {/* Question bank preview — answers are stripped server-side */}
+        {isDigital && bankPreview && bankPreview.questions.length > 0 && (
+          <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60">
+            <div className="flex items-baseline justify-between gap-3 mb-3 sm:mb-4">
+              <h2 className="text-base sm:text-lg font-bold text-lantern-text">Sample questions</h2>
+              <p className="text-xs text-lantern-text-tertiary">
+                {bankPreview.previewCount} of {bankPreview.questionCount}
+              </p>
+            </div>
+            <ol className="space-y-3">
+              {bankPreview.questions.map((question, index) => (
+                <li
+                  key={question.id || index}
+                  className="rounded-xl bg-lantern-background-secondary/50 border border-lantern-border p-3"
+                >
+                  <p className="text-sm font-medium text-lantern-text">
+                    {index + 1}. {question.questionStem || question.text || 'Question'}
+                  </p>
+                  {question.options && question.options.length > 0 ? (
+                    <ul className="mt-2 space-y-1">
+                      {question.options.map((option, optionIndex) => (
+                        <li key={option.id || optionIndex} className="text-xs text-lantern-text-secondary">
+                          {String.fromCharCode(65 + optionIndex)}. {option.text}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+            <p className="mt-3 text-xs text-lantern-text-tertiary">
+              Answers and explanations are included with the full bank
+              {questionBank?.owned ? ', which you own.' : '.'}
+            </p>
+          </div>
+        )}
 
         {/* Reviews Section */}
         <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60">
