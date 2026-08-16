@@ -235,6 +235,14 @@ export class MarketplaceOrdersService {
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
     if (!listing) throw new PublicError('Listing not found');
     if (listing.user_id === buyerId) throw new PublicError('Cannot buy your own listing');
+
+    // This method is the non-Paystack path (manual payment + meetup). Question
+    // banks are delivered digitally on payment confirmation, which only the
+    // Paystack flow provides — free banks use the download endpoint instead.
+    if (listing.listing_kind === 'question_bank') {
+      throw new PublicError('Question banks are delivered digitally and require in-app payment');
+    }
+
     this.assertListingInStock(listing, quantity);
 
     await this.assertNoOpenOrderForListing(listingId);
@@ -669,6 +677,25 @@ export class MarketplaceOrdersService {
         marketplaceTransactionId: completed.transaction_id,
         source: completed.source === 'offer_accept' ? 'offer_accept' : 'buy_now',
       });
+    }
+
+    // The inquiry that led to this deal is settled — close the loop so sellers
+    // don't have to hand-mark it. Best-effort: an inquiry-status miss must
+    // never fail an escrow release. Idempotent via the status filter.
+    if (completed.inquiry_id) {
+      try {
+        await this.db
+          .from('marketplace_inquiries')
+          .update({ status: 'purchased' })
+          .eq('id', completed.inquiry_id)
+          .neq('status', 'purchased');
+      } catch (err) {
+        logger.warn('Could not mark inquiry purchased after order completion', {
+          orderId,
+          inquiryId: completed.inquiry_id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     if (!alreadyCompleted && options.notifyCompletion) {

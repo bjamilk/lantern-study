@@ -498,21 +498,90 @@ export class MarketplacePaymentsService {
         .eq('id', payment.order_id)
         .in('status', ['awaiting_payment', 'pending_payment']);
 
-      await this.orders.notifyOrderParty(payment.seller_id, {
-        type: 'marketplace_order_update',
-        message: 'Payment received via Paystack. Mark the order ready when the item is prepared.',
-        link: `marketplace:order:${payment.order_id}`,
-        data: { orderId: payment.order_id, paid: true },
-      });
-      await this.orders.notifyOrderParty(payment.buyer_id, {
-        type: 'marketplace_order_update',
-        message: 'Payment confirmed. Arrange campus pickup with the seller.',
-        link: `marketplace:order:${payment.order_id}`,
-        data: { orderId: payment.order_id, paid: true },
-      });
+      // Digital question banks fulfill instantly: deliver, complete, pay out.
+      // Everything else keeps the meetup flow.
+      const digital = await this.fulfillQuestionBankOrderIfDigital(payment.order_id, updated);
+      if (!digital) {
+        await this.orders.notifyOrderParty(payment.seller_id, {
+          type: 'marketplace_order_update',
+          message: 'Payment received via Paystack. Mark the order ready when the item is prepared.',
+          link: `marketplace:order:${payment.order_id}`,
+          data: { orderId: payment.order_id, paid: true },
+        });
+        await this.orders.notifyOrderParty(payment.buyer_id, {
+          type: 'marketplace_order_update',
+          message: 'Payment confirmed. Arrange campus pickup with the seller.',
+          link: `marketplace:order:${payment.order_id}`,
+          data: { orderId: payment.order_id, paid: true },
+        });
+      }
     }
 
     await invalidateSellerAnalyticsCache(payment.seller_id);
+  }
+
+  /**
+   * Instant fulfillment for question-bank orders. Returns false when the order
+   * is not digital (caller falls back to the meetup flow).
+   *
+   * Delivery comes first and is the one step that matters to the buyer; order
+   * completion and seller payout follow, each isolated so a failure in one
+   * never rolls back delivery. A missed delivery self-heals via
+   * POST /question-banks/restore; a missed payout stays visible as a payment
+   * stuck in 'paid' and is recoverable via forcePayoutForOrder.
+   */
+  private async fulfillQuestionBankOrderIfDigital(
+    orderId: string,
+    payment: Record<string, any>
+  ): Promise<boolean> {
+    const { data: order } = await this.db
+      .from('marketplace_orders')
+      .select('id, listing_id, buyer_id, seller_id')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (!order) return false;
+
+    const { getMarketplaceQuestionBanksService } = await import('./marketplaceQuestionBanks');
+    const qbanks = getMarketplaceQuestionBanksService(this.supabaseService);
+    if (!(await qbanks.isQuestionBankListing(order.listing_id))) return false;
+
+    try {
+      await qbanks.grantEntitlement(order.listing_id, order.buyer_id, order.id);
+      await this.orders.notifyOrderParty(order.buyer_id, {
+        type: 'marketplace_order_update',
+        message: 'Your question bank is ready — find it in Offline Mode on any of your devices.',
+        link: `marketplace:order:${orderId}`,
+        data: { orderId, questionBankDelivered: true },
+      });
+    } catch (err) {
+      logger.error('Question bank delivery failed after payment', {
+        orderId,
+        listingId: order.listing_id,
+        buyerId: order.buyer_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    try {
+      await this.orders.releaseEscrow(orderId, order.buyer_id);
+    } catch (err) {
+      logger.error('Question bank order completion failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    try {
+      await this.transferSellerPayout(orderId, order.seller_id, payment);
+    } catch (err) {
+      logger.error('Question bank payout failed; recover with forcePayoutForOrder', {
+        orderId,
+        sellerId: order.seller_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return true;
   }
 
   /**

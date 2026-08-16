@@ -10,6 +10,8 @@ import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { getMarketplaceCartService } from '../services/marketplaceCart';
+import { getMarketplaceQuestionBanksService } from '../services/marketplaceQuestionBanks';
+import { PublicError } from '../utils/safeError';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
@@ -563,7 +565,18 @@ router.post(
 
     logger.debug('Adding review to listing', { id, userId, rating });
 
-    const review = await supabaseService.addMarketplaceReview(id, userId, { rating, comment });
+    let review;
+    try {
+      review = await supabaseService.addMarketplaceReview(id, userId, { rating, comment });
+    } catch (err: any) {
+      // Eligibility (403) and validation (400) failures are expected outcomes,
+      // not server errors — keep the app's {success, error} shape.
+      const status = typeof err?.statusCode === 'number' ? err.statusCode : 0;
+      if (status === 400 || status === 403) {
+        return res.status(status).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
 
     // Invalidate caches
     await invalidateListingCaches(cacheService, id);
@@ -644,6 +657,84 @@ router.post(
       (result as any)?.order?.seller_id || (result as any)?.seller_id || '';
     await invalidateSellerAnalyticsCache(String(sellerId));
 
+    res.json({ success: true, data: result });
+  })
+);
+
+// ============================================================
+// QUESTION BANKS (digital study bundles)
+// ============================================================
+
+// POST /api/v1/marketplace/question-banks/publish - Publish a bank as a listing
+router.post(
+  '/question-banks/publish',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const result = await getMarketplaceQuestionBanksService(supabaseService).publishQuestionBank(
+        userId,
+        {
+          title: req.body?.title,
+          description: req.body?.description,
+          price: req.body?.price,
+          campusId: req.body?.campusId ?? req.body?.campus_id,
+          location: req.body?.location,
+          groupId: req.body?.groupId ?? req.body?.group_id ?? null,
+          content: req.body?.content,
+        }
+      );
+      await cacheService.deletePattern('marketplace:listings:*');
+      res.status(201).json({ success: true, data: result });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// POST /api/v1/marketplace/listings/:id/question-bank/download - Free download / owner re-download
+router.post(
+  '/listings/:id/question-bank/download',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const result = await getMarketplaceQuestionBanksService(
+        supabaseService
+      ).downloadQuestionBank(req.params.id, userId);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// POST /api/v1/marketplace/question-banks/restore - Re-materialize owned banks
+// into offline bundles (new device / reinstall), self-healing missed fulfillments.
+router.post(
+  '/question-banks/restore',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const result = await getMarketplaceQuestionBanksService(supabaseService).restoreEntitlements(
+      userId
+    );
     res.json({ success: true, data: result });
   })
 );
@@ -1960,9 +2051,19 @@ router.get(
     const reviews = await supabaseService.getMarketplaceReviews(id);
     listing = { ...listing, reviews };
 
+    // --- 5. canReview (verified purchase; drives the Write Review button) ---
+    let canReview = false;
+    if (viewerId) {
+      try {
+        canReview = (await supabaseService.canUserReviewListing(id, viewerId)).eligible;
+      } catch {
+        canReview = false; // never block the listing over an eligibility lookup
+      }
+    }
+
     res.json({
       success: true,
-      data: { listing, isFavorited, similarListings },
+      data: { listing, isFavorited, similarListings, canReview },
     });
   })
 );
