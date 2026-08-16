@@ -18,6 +18,11 @@ function resolveBodyLimits(path: string): { maxKeys: number; maxDepth: number } 
   if (/^\/api\/v1\/offline-bundles(\/|$)/.test(path)) {
     return { maxKeys: OFFLINE_BUNDLE_BODY_MAX_KEYS, maxDepth: OFFLINE_BUNDLE_BODY_MAX_DEPTH };
   }
+  // Question-bank publish/update carries the same full-questions JSON an
+  // offline bundle does (the service adds its own 1000-question/2MB cap).
+  if (/^\/api\/v1\/marketplace\/question-banks(\/|$)/.test(path)) {
+    return { maxKeys: OFFLINE_BUNDLE_BODY_MAX_KEYS, maxDepth: OFFLINE_BUNDLE_BODY_MAX_DEPTH };
+  }
   return { maxKeys: DEFAULT_MAX_KEYS, maxDepth: DEFAULT_MAX_DEPTH };
 }
 
