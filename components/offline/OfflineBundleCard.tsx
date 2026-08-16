@@ -102,15 +102,19 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
         </div>
       )}
       <p className="text-xs text-lantern-text-secondary">
-        {bundle.config.numberOfQuestions} questions · Downloaded{' '}
+        {/* Tolerate partial configs (imported/marketplace bundles) — one bad
+            bundle must not crash the whole Offline screen. */}
+        {bundle.config?.numberOfQuestions ?? bundle.questions?.length ?? 0} questions · Downloaded{' '}
         {new Date(bundle.downloadedAt).toLocaleDateString()}
       </p>
-      <p className="text-xs text-lantern-text-tertiary">
-        Types: {bundle.config.allowedQuestionTypes.join(', ').replace(/_/g, ' ')}
-        {bundle.config.selectedTags && bundle.config.selectedTags.length > 0
-          ? ` · Tags: ${bundle.config.selectedTags.join(', ')}`
-          : ''}
-      </p>
+      {Array.isArray(bundle.config?.allowedQuestionTypes) && bundle.config.allowedQuestionTypes.length > 0 ? (
+        <p className="text-xs text-lantern-text-tertiary">
+          Types: {bundle.config.allowedQuestionTypes.join(', ').replace(/_/g, ' ')}
+          {bundle.config.selectedTags && bundle.config.selectedTags.length > 0
+            ? ` · Tags: ${bundle.config.selectedTags.join(', ')}`
+            : ''}
+        </p>
+      ) : null}
     </div>
     <div className="flex space-x-2 flex-shrink-0">
       {updateAvailable && onUpdate ? (

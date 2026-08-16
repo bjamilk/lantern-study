@@ -208,11 +208,20 @@ export class MarketplaceQuestionBanksService {
       .maybeSingle();
     const title = listing?.title || 'Question bank';
 
-    const config = (bank.content?.config || {}) as Record<string, unknown>;
+    const questions = (bank.content?.questions || []) as Array<{ type?: string }>;
+    const config = { ...((bank.content?.config || {}) as Record<string, unknown>) };
+    // Normalize the fields the offline runtime renders, so a sparse publish
+    // config can never produce a broken bundle on the buyer's device.
+    if (config.numberOfQuestions == null) config.numberOfQuestions = questions.length;
+    if (!Array.isArray(config.allowedQuestionTypes)) {
+      config.allowedQuestionTypes = Array.from(
+        new Set(questions.map((q) => q?.type).filter(Boolean))
+      );
+    }
     await this.supabaseService.saveOfflineBundle(userId, {
       bundleId: this.bundleIdForListing(listingId),
       config: { ...config, groupName: config.groupName || title, source: 'marketplace' },
-      questions: bank.content?.questions || [],
+      questions,
       groupName: title,
       downloadedAt: new Date().toISOString(),
     });
