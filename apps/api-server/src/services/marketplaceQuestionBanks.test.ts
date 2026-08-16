@@ -21,12 +21,23 @@ type TableResult = { data: unknown; error?: unknown };
 
 /**
  * Minimal PostgREST double: per-table canned results plus a log of writes so
- * tests can assert exactly what was inserted/upserted.
+ * tests can assert exactly what was inserted/upserted. A table may map to an
+ * array of results, consumed in call order (the last one repeats) — needed
+ * when a method reads then writes the same table.
  */
-function makeDb(tables: Record<string, TableResult>) {
+function makeDb(tables: Record<string, TableResult | TableResult[]>) {
   const writes: Array<{ table: string; op: string; payload: unknown }> = [];
+  const queues = new Map<string, TableResult[]>();
+  const nextResult = (table: string): TableResult => {
+    const configured = tables[table];
+    if (configured === undefined) return { data: null, error: null };
+    if (!Array.isArray(configured)) return configured;
+    if (!queues.has(table)) queues.set(table, [...configured]);
+    const queue = queues.get(table)!;
+    return queue.length > 1 ? queue.shift()! : queue[0];
+  };
   const from = (table: string) => {
-    const result = tables[table] ?? { data: null, error: null };
+    const result = nextResult(table);
     const api: any = {};
     const self = () => api;
     api.select = self;
@@ -40,6 +51,10 @@ function makeDb(tables: Record<string, TableResult>) {
     };
     api.insert = (payload: unknown) => {
       writes.push({ table, op: 'insert', payload });
+      return api;
+    };
+    api.update = (payload: unknown) => {
+      writes.push({ table, op: 'update', payload });
       return api;
     };
     api.upsert = (payload: unknown) => {
@@ -64,7 +79,7 @@ const CONTENT = {
 };
 
 function makeService(overrides: {
-  tables?: Record<string, TableResult>;
+  tables?: Record<string, TableResult | TableResult[]>;
   listing?: unknown;
   group?: unknown;
   createdListing?: unknown;
@@ -274,5 +289,98 @@ describe('downloadQuestionBank', () => {
     await expect(service.downloadQuestionBank('listing-1', 'buyer-1')).rejects.toThrow(
       'Question bank not found'
     );
+  });
+});
+
+describe('updateQuestionBankContent', () => {
+  const BANK_ROW = {
+    id: 'bank-1',
+    listing_id: 'listing-1',
+    version: 2,
+    question_count: 2,
+    content: CONTENT,
+  };
+
+  it('rejects non-sellers', async () => {
+    const { service } = makeService({
+      listing: { id: 'listing-1', user_id: 'seller-1', category_specific_fields: {} },
+      tables: { marketplace_question_banks: { data: BANK_ROW, error: null } },
+    });
+    await expect(
+      service.updateQuestionBankContent('listing-1', 'someone-else', CONTENT)
+    ).rejects.toThrow('Only the seller');
+  });
+
+  it('bumps the version and updates the snapshot for the seller', async () => {
+    const { service, writes } = makeService({
+      listing: { id: 'listing-1', user_id: 'seller-1', title: 'Bank', category_specific_fields: {} },
+      tables: {
+        // First call reads the bank row; second is update(...).select() where
+        // non-empty rows mean the optimistic lock held.
+        marketplace_question_banks: [
+          { data: BANK_ROW, error: null },
+          { data: [{ listing_id: 'listing-1' }], error: null },
+        ],
+        marketplace_listings: { data: { title: 'Bank' }, error: null },
+      },
+    });
+
+    await expect(
+      service.updateQuestionBankContent('listing-1', 'seller-1', CONTENT)
+    ).resolves.toEqual({ version: 3, questionCount: 2 });
+
+    const bankUpdate = writes.find(
+      (w) => w.table === 'marketplace_question_banks' && w.op === 'update'
+    );
+    expect(bankUpdate?.payload).toMatchObject({ version: 3, question_count: 2 });
+  });
+
+  it('fails when the optimistic lock misses (concurrent update)', async () => {
+    const { service } = makeService({
+      listing: { id: 'listing-1', user_id: 'seller-1', category_specific_fields: {} },
+      tables: {
+        marketplace_question_banks: [
+          { data: BANK_ROW, error: null },
+          { data: [], error: null }, // 0 rows matched the expected version
+        ],
+      },
+    });
+    await expect(
+      service.updateQuestionBankContent('listing-1', 'seller-1', CONTENT)
+    ).rejects.toThrow('updated elsewhere');
+  });
+});
+
+describe('listAvailableUpdates', () => {
+  it('returns only banks newer than the held version', async () => {
+    const { service } = makeService({
+      tables: {
+        marketplace_question_bank_entitlements: {
+          data: [
+            { listing_id: 'l1', version_at_download: 1 },
+            { listing_id: 'l2', version_at_download: 3 },
+          ],
+          error: null,
+        },
+        marketplace_question_banks: {
+          data: [
+            { listing_id: 'l1', version: 2, question_count: 10 },
+            { listing_id: 'l2', version: 3, question_count: 5 },
+          ],
+          error: null,
+        },
+      },
+    });
+
+    await expect(service.listAvailableUpdates('buyer-1')).resolves.toEqual([
+      { listingId: 'l1', bundleId: 'qbank-l1', version: 2, questionCount: 10 },
+    ]);
+  });
+
+  it('returns empty for users with no entitlements', async () => {
+    const { service } = makeService({
+      tables: { marketplace_question_bank_entitlements: { data: [], error: null } },
+    });
+    await expect(service.listAvailableUpdates('buyer-1')).resolves.toEqual([]);
   });
 });

@@ -1,11 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import Modal from '../ui/Modal';
 import { CampusSearchSelect } from './CampusSearchSelect';
-import { publishQuestionBank, fetchMarketplaceCampuses } from '../../services/supabase';
+import {
+  publishQuestionBank,
+  updateQuestionBankContent,
+  fetchMyQuestionBanks,
+  fetchMarketplaceCampuses,
+  type MyQuestionBank,
+} from '../../services/supabase';
 import { useToastStore } from '../../stores/toastStore';
 import type { OfflineSessionBundle } from '../../types';
 import type { MarketplaceCampus } from '@lantern/shared';
-import { BuildingStorefrontIcon } from '@heroicons/react/24/outline';
+import { BuildingStorefrontIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 interface PublishQuestionBankModalProps {
   bundle: OfflineSessionBundle;
@@ -34,25 +40,61 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [attested, setAttested] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Existing listing published from the same group, if any — offered as an
+  // update target so republishing doesn't spawn duplicate listings.
+  const [existingBank, setExistingBank] = useState<MyQuestionBank | null>(null);
+  const [mode, setMode] = useState<'new' | 'update'>('new');
 
   useEffect(() => {
     if (!isOpen) return;
     void fetchMarketplaceCampuses('NG')
       .then(setCampuses)
       .catch(() => setCampuses([]));
-  }, [isOpen]);
+
+    const groupId = (bundle.config as { groupId?: string })?.groupId;
+    if (!groupId) return;
+    void fetchMyQuestionBanks()
+      .then((mine) => {
+        const match = mine.find(
+          (b) => b.sourceGroupId === groupId && b.status !== 'removed'
+        );
+        if (match) {
+          setExistingBank(match);
+          setMode('update');
+        }
+      })
+      .catch(() => setExistingBank(null));
+  }, [isOpen, bundle]);
 
   const questionCount = bundle.questions?.length || 0;
   const priceValue = price.trim() === '' ? null : Number(price);
   const priceInvalid =
     price.trim() !== '' && (!Number.isFinite(priceValue!) || priceValue! < 0);
+  const isUpdate = mode === 'update' && !!existingBank;
   const canSubmit =
-    !busy && !!title.trim() && !!campusId && !priceInvalid && attested && questionCount > 0;
+    !busy &&
+    attested &&
+    questionCount > 0 &&
+    (isUpdate || (!!title.trim() && !!campusId && !priceInvalid));
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setBusy(true);
     try {
+      if (isUpdate && existingBank) {
+        const result = await updateQuestionBankContent(existingBank.listingId, {
+          config: bundle.config as unknown as Record<string, unknown>,
+          questions: bundle.questions,
+        });
+        useToastStore
+          .getState()
+          .showToast(
+            `"${existingBank.title}" updated to version ${result.version}. Buyers will see an update.`
+          );
+        onPublished?.(existingBank.listingId);
+        onClose();
+        return;
+      }
       const result = await publishQuestionBank({
         title: title.trim(),
         description: description.trim() || undefined,
@@ -104,6 +146,49 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
             receive a copy in their Offline Mode instantly — on web and mobile.
           </div>
 
+          {existingBank ? (
+            <div className="rounded-lg border border-lantern-primary/30 bg-lantern-primary/5 p-3 space-y-2">
+              <p className="text-sm text-lantern-text">
+                You already published{' '}
+                <span className="font-semibold">"{existingBank.title}"</span> (v
+                {existingBank.version}, {existingBank.questionCount} questions) from this group.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMode('update')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    mode === 'update'
+                      ? 'bg-lantern-primary text-white'
+                      : 'bg-lantern-background-secondary text-lantern-text-secondary hover:text-lantern-text'
+                  }`}
+                >
+                  <ArrowPathIcon className="w-3.5 h-3.5" aria-hidden />
+                  Update it to v{existingBank.version + 1}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('new')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    mode === 'new'
+                      ? 'bg-lantern-primary text-white'
+                      : 'bg-lantern-background-secondary text-lantern-text-secondary hover:text-lantern-text'
+                  }`}
+                >
+                  Publish as a separate listing
+                </button>
+              </div>
+              {isUpdate ? (
+                <p className="text-xs text-lantern-text-tertiary">
+                  Title, price, and campus stay as they are. Buyers keep their current copy and
+                  get an "Update" button in Offline Mode.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!isUpdate && (
+          <>
           <label className="block text-sm">
             <span className="font-semibold text-lantern-text">Title</span>
             <input
@@ -165,6 +250,8 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
               />
             </div>
           </div>
+          </>
+          )}
 
           <label className="flex items-start gap-2 text-sm cursor-pointer">
             <input
@@ -195,7 +282,13 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
             disabled={!canSubmit}
             className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors"
           >
-            {busy ? 'Publishing…' : priceValue && priceValue > 0 ? `Publish · ₦${priceValue.toLocaleString()}` : 'Publish free'}
+            {busy
+              ? isUpdate ? 'Updating…' : 'Publishing…'
+              : isUpdate && existingBank
+                ? `Update to v${existingBank.version + 1}`
+                : priceValue && priceValue > 0
+                  ? `Publish · ₦${priceValue.toLocaleString()}`
+                  : 'Publish free'}
           </button>
         </div>
       </div>

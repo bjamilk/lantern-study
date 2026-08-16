@@ -9,6 +9,7 @@ import {
   CheckIcon,
   XMarkIcon,
   BuildingStorefrontIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import { featureAccents } from '@lantern/shared/design';
 
@@ -26,6 +27,12 @@ interface OfflineBundleCardProps {
   onDelete: () => void;
   /** Publish this bundle as a marketplace question bank (online only). */
   onPublish?: () => void;
+  /** Marketplace purchase: shows the badge and disables export/sharing. */
+  isPurchased?: boolean;
+  /** A newer version of this purchased bank is published. */
+  updateAvailable?: boolean;
+  onUpdate?: () => void;
+  updating?: boolean;
 }
 
 export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
@@ -41,6 +48,10 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
   onStartStudy,
   onDelete,
   onPublish,
+  isPurchased = false,
+  updateAvailable = false,
+  onUpdate,
+  updating = false,
 }) => (
   <div
     className="bg-lantern-surface border border-lantern-border rounded-lantern-xl shadow-lantern p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-shadow duration-200 hover:shadow-lantern-md"
@@ -72,6 +83,11 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
           <p className="font-semibold text-lantern-text text-lg truncate">
             {bundle.displayName || bundle.groupName}
           </p>
+          {isPurchased ? (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-lantern-primary/10 text-lantern-primary text-[10px] font-bold uppercase tracking-wide">
+              Purchased
+            </span>
+          ) : null}
           {bundle.displayName && bundle.displayName !== bundle.groupName ? (
             <span className="text-xs text-lantern-text-tertiary truncate">({bundle.groupName})</span>
           ) : null}
@@ -97,6 +113,18 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
       </p>
     </div>
     <div className="flex space-x-2 flex-shrink-0">
+      {updateAvailable && onUpdate ? (
+        <button
+          type="button"
+          onClick={onUpdate}
+          disabled={updating}
+          className="px-3 py-2 min-h-[44px] bg-lantern-accent-background text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-lantern text-sm flex items-center transition-colors hover:border-amber-500 disabled:opacity-50"
+          title="A newer version of this question bank is available"
+        >
+          <ArrowPathIcon className={`w-4 h-4 mr-1.5 ${updating ? 'animate-spin' : ''}`} />
+          {updating ? 'Updating…' : 'Update'}
+        </button>
+      ) : null}
       {onPublish ? (
         <button
           type="button"
@@ -107,14 +135,17 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
           <BuildingStorefrontIcon className="w-5 h-5" />
         </button>
       ) : null}
-      <button
-        type="button"
-        onClick={onExport}
-        className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-primary-background rounded-lantern transition-colors"
-        title="Export bundle"
-      >
-        <ArrowDownTrayIcon className="w-5 h-5" />
-      </button>
+      {/* Purchased banks are someone else's product — no export/re-sharing. */}
+      {!isPurchased ? (
+        <button
+          type="button"
+          onClick={onExport}
+          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-primary-background rounded-lantern transition-colors"
+          title="Export bundle"
+        >
+          <ArrowDownTrayIcon className="w-5 h-5" />
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onStartStudy}

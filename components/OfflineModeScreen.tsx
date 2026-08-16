@@ -1,6 +1,6 @@
 
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { OfflineSessionBundle, Deck } from '../types';
 import { CloudArrowDownIcon, ArrowPathIcon, DocumentTextIcon, ArrowUpTrayIcon, ShoppingBagIcon } from '@heroicons/react/24/outline';
@@ -8,7 +8,12 @@ import { syncCopy, featureAccents } from '@lantern/shared/design';
 import { useUIStore } from '../stores/uiStore';
 import { useAuthStore } from '../stores/authStore';
 import { useTestStore } from '../stores/testStore';
-import { restoreQuestionBanks, fetchOfflineBundles } from '../services/supabase';
+import {
+  restoreQuestionBanks,
+  fetchOfflineBundles,
+  fetchQuestionBankUpdates,
+  downloadQuestionBank,
+} from '../services/supabase';
 import { FeatureHero } from './ui/FeatureHero';
 import { ConnectionBadge } from './ui/ConnectionBadge';
 import { OfflineBundleCard } from './offline/OfflineBundleCard';
@@ -47,8 +52,51 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
   const [editNameValue, setEditNameValue] = useState('');
   const [publishingBundle, setPublishingBundle] = useState<OfflineSessionBundle | null>(null);
   const [restoring, setRestoring] = useState(false);
+  // bundleId → new version, for purchased banks the seller has since updated.
+  const [bankUpdates, setBankUpdates] = useState<Record<string, number>>({});
+  const [updatingBundleId, setUpdatingBundleId] = useState<string | null>(null);
   const currentUserId = useAuthStore((s) => s.currentUser?.id);
   const setOfflineBundles = useTestStore((s) => s.setOfflineBundles);
+
+  useEffect(() => {
+    if (!isOnline || !currentUserId) return;
+    let cancelled = false;
+    void fetchQuestionBankUpdates()
+      .then((updates) => {
+        if (cancelled) return;
+        setBankUpdates(
+          Object.fromEntries(updates.map((u) => [u.bundleId, u.version]))
+        );
+      })
+      .catch(() => {
+        // update checks are best-effort; offline copies keep working
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline, currentUserId]);
+
+  const handleUpdateBank = async (bundle: OfflineSessionBundle) => {
+    const listingId = bundle.bundleId.replace(/^qbank-/, '');
+    setUpdatingBundleId(bundle.bundleId);
+    try {
+      await downloadQuestionBank(listingId);
+      if (currentUserId) {
+        const cloudBundles = await fetchOfflineBundles(currentUserId);
+        setOfflineBundles(cloudBundles as unknown as OfflineSessionBundle[]);
+      }
+      setBankUpdates((prev) => {
+        const next = { ...prev };
+        delete next[bundle.bundleId];
+        return next;
+      });
+      useToastStore.getState().showToast('Question bank updated to the latest version.');
+    } catch (err: any) {
+      useToastStore.getState().showToast(err?.message || 'Could not update question bank', 'error');
+    } finally {
+      setUpdatingBundleId(null);
+    }
+  };
 
   /** Pull purchased question banks back onto this device (new install / cleared storage). */
   const handleRestorePurchases = async () => {
@@ -268,6 +316,10 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
                     ? () => setPublishingBundle(bundle)
                     : undefined
                 }
+                isPurchased={bundle.bundleId.startsWith('qbank-')}
+                updateAvailable={isOnline && !!bankUpdates[bundle.bundleId]}
+                onUpdate={() => void handleUpdateBank(bundle)}
+                updating={updatingBundleId === bundle.bundleId}
               />
             ))}
           </div>

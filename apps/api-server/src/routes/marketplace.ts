@@ -739,6 +739,64 @@ router.post(
   })
 );
 
+// GET /api/v1/marketplace/question-banks/mine - Banks published by the caller
+router.get(
+  '/question-banks/mine',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const data = await getMarketplaceQuestionBanksService(supabaseService).listMyQuestionBanks(
+      userId
+    );
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/marketplace/question-banks/updates - Owned banks with a newer version
+router.get(
+  '/question-banks/updates',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const data = await getMarketplaceQuestionBanksService(supabaseService).listAvailableUpdates(
+      userId
+    );
+    res.json({ success: true, data });
+  })
+);
+
+// POST /api/v1/marketplace/question-banks/:id/update-content - Seller republish (version+1)
+router.post(
+  '/question-banks/:id/update-content',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const result = await getMarketplaceQuestionBanksService(
+        supabaseService
+      ).updateQuestionBankContent(req.params.id, userId, req.body?.content);
+      await invalidateListingCaches(cacheService, req.params.id);
+      await cacheService.deletePattern('marketplace:listings:*');
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
 // GET /api/v1/marketplace/cart - Buyer cart lines
 router.get(
   '/cart',

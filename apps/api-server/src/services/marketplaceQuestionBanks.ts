@@ -176,6 +176,23 @@ export class MarketplaceQuestionBanksService {
     if (entitlementError) throw entitlementError;
 
     await this.deliverBundle(userId, listingId, bank);
+
+    // Existing owners re-downloading get the current snapshot, so record the
+    // version they now hold (the insert above is ignored on conflict, which
+    // deliberately protects order_id — this touches only the version).
+    const { error: versionError } = await this.db
+      .from('marketplace_question_bank_entitlements')
+      .update({ version_at_download: bank.version })
+      .eq('listing_id', listingId)
+      .eq('user_id', userId);
+    if (versionError) {
+      logger.warn('Could not record question bank version on re-download', {
+        listingId,
+        userId,
+        error: versionError.message,
+      });
+    }
+
     return { bundleId: this.bundleIdForListing(listingId), questionCount: bank.question_count };
   }
 
@@ -294,6 +311,120 @@ export class MarketplaceQuestionBanksService {
     }
 
     return { restored };
+  }
+
+  /**
+   * Replace a published bank's content and bump its version. Buyers keep the
+   * snapshot they downloaded until they pull the update — nothing is pushed.
+   */
+  async updateQuestionBankContent(
+    listingId: string,
+    userId: string,
+    content: QuestionBankContent
+  ): Promise<{ version: number; questionCount: number }> {
+    const questionCount = this.validateContent(content);
+
+    const bank = await this.getBankForListing(listingId);
+    if (!bank) throw new PublicError('Question bank not found');
+
+    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    if (!listing) throw new PublicError('Listing not found');
+    if (listing.user_id !== userId) {
+      throw new PublicError('Only the seller can update this question bank');
+    }
+
+    const nextVersion = Number(bank.version) + 1;
+    const { data: updatedRows, error } = await this.db
+      .from('marketplace_question_banks')
+      .update({
+        content: { config: content.config || {}, questions: content.questions },
+        question_count: questionCount,
+        version: nextVersion,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('listing_id', listingId)
+      .eq('version', bank.version) // optimistic lock against concurrent updates
+      .select('listing_id');
+    if (error) throw error;
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new PublicError('This question bank was just updated elsewhere — reload and try again');
+    }
+
+    // Keep the browse-card question count honest.
+    const fields = listing.category_specific_fields || {};
+    await this.db
+      .from('marketplace_listings')
+      .update({
+        category_specific_fields: { ...fields, questionCount, digital: true },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', listingId);
+
+    // The seller's own offline copy should reflect what buyers now get.
+    try {
+      await this.deliverBundle(userId, listingId, {
+        content: { config: content.config || {}, questions: content.questions },
+        question_count: questionCount,
+      });
+    } catch {
+      // best-effort; the canonical snapshot is already stored
+    }
+
+    return { version: nextVersion, questionCount };
+  }
+
+  /** Question banks published by this user (drives the republish-as-update UI). */
+  async listMyQuestionBanks(userId: string) {
+    const { data, error } = await this.db
+      .from('marketplace_question_banks')
+      .select('listing_id, source_group_id, version, question_count, updated_at')
+      .eq('published_by', userId)
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+
+    const listingIds = (data || []).map((b: any) => String(b.listing_id));
+    if (listingIds.length === 0) return [];
+    const { data: listings } = await this.db
+      .from('marketplace_listings')
+      .select('id, title, price, status')
+      .in('id', listingIds);
+    const byId = new Map((listings || []).map((l: any) => [String(l.id), l]));
+    return (data || []).map((b: any) => ({
+      listingId: b.listing_id,
+      sourceGroupId: b.source_group_id,
+      version: b.version,
+      questionCount: b.question_count,
+      title: byId.get(String(b.listing_id))?.title || 'Question bank',
+      price: byId.get(String(b.listing_id))?.price ?? null,
+      status: byId.get(String(b.listing_id))?.status || 'active',
+    }));
+  }
+
+  /** Owned banks whose published version is newer than the copy the user holds. */
+  async listAvailableUpdates(userId: string) {
+    const { data: entitlements, error } = await this.db
+      .from('marketplace_question_bank_entitlements')
+      .select('listing_id, version_at_download')
+      .eq('user_id', userId);
+    if (error) throw error;
+    if (!entitlements || entitlements.length === 0) return [];
+
+    const heldVersions = new Map(
+      entitlements.map((e: any) => [String(e.listing_id), Number(e.version_at_download)])
+    );
+    const { data: banks } = await this.db
+      .from('marketplace_question_banks')
+      .select('listing_id, version, question_count')
+      .in('listing_id', Array.from(heldVersions.keys()));
+
+    return (banks || [])
+      .filter((b: any) => Number(b.version) > (heldVersions.get(String(b.listing_id)) ?? 1))
+      .map((b: any) => ({
+        listingId: b.listing_id,
+        bundleId: this.bundleIdForListing(String(b.listing_id)),
+        version: b.version,
+        questionCount: b.question_count,
+      }));
   }
 
   /** True when this listing is a question bank (used by the payments path). */

@@ -4148,6 +4148,72 @@ export const downloadQuestionBank = async (
   return (await response.json()).data;
 };
 
+/** Seller republish: replace the published snapshot, bumping the version. */
+export const updateQuestionBankContent = async (
+  listingId: string,
+  content: { config?: Record<string, unknown>; questions: unknown[] }
+): Promise<{ version: number; questionCount: number }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/question-banks/${encodeURIComponent(listingId)}/update-content`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ content }),
+    },
+    15000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to update question bank');
+  }
+  return (await response.json()).data;
+};
+
+export interface MyQuestionBank {
+  listingId: string;
+  sourceGroupId: string | null;
+  version: number;
+  questionCount: number;
+  title: string;
+  price: number | null;
+  status: string;
+}
+
+/** Question banks the current user has published. */
+export const fetchMyQuestionBanks = async (): Promise<MyQuestionBank[]> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/question-banks/mine`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load your question banks');
+  }
+  return (await response.json()).data;
+};
+
+export interface QuestionBankUpdate {
+  listingId: string;
+  bundleId: string;
+  version: number;
+  questionCount: number;
+}
+
+/** Owned banks whose published version is newer than the local copy. */
+export const fetchQuestionBankUpdates = async (): Promise<QuestionBankUpdate[]> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/question-banks/updates`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to check for updates');
+  }
+  return (await response.json()).data;
+};
+
 /** Re-materialize purchased banks into offline bundles (new device / reinstall). */
 export const restoreQuestionBanks = async (): Promise<{ restored: number }> => {
   const response = await fetchWithTimeout(
