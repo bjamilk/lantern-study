@@ -103,7 +103,14 @@ type ApiOfflineBundle = Awaited<ReturnType<typeof api.fetchOfflineBundles>>[numb
 
 const mapApiBundleToOfflineTest = (bundle: ApiOfflineBundle): OfflineTest => {
   const config = (bundle.config || {}) as Record<string, unknown>;
-  const questions = (bundle.questions || []) as OfflineQuestion[];
+  // Offline bundles are shared storage: web writes the group Message shape
+  // ({questionStem, correctAnswerIds}) while mobile writes {stem, options:
+  // [{isCorrect}]}. A cloud bundle — a web-made one, or a marketplace question
+  // bank delivered to a buyer — can be either, and mapMessageToOfflineQuestion
+  // already reads both. Without this the stem and options render empty.
+  const questions = (bundle.questions || [])
+    .map((q, index) => mapMessageToOfflineQuestion(q, index))
+    .filter(Boolean) as OfflineQuestion[];
   const size = Math.round(JSON.stringify(bundle).length / 1024);
 
   return {

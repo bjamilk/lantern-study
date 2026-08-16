@@ -80,7 +80,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // in Offline Mode, publish and update banks from the app, per-bank
   // leaderboards with durable offline score sync, and sessions on other
   // devices are revoked when the password changes.
-  version: '1.0.18',
+  // 1.0.19: purchased question banks opened with an empty stem and no options.
+  // Offline bundles are shared web/mobile storage holding two question shapes;
+  // the cloud path cast instead of converting.
+  version: '1.0.19',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
