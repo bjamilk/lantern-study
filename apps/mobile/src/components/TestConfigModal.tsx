@@ -80,6 +80,12 @@ interface TestConfigModalProps {
   onSavePreset?: (name: string, config: TestPresetConfig) => void;
   onDeletePreset?: (presetId: string) => void;
   subgroups?: { id: string; name: string; level: number }[];
+  /**
+   * Save this configuration as an offline bundle instead of starting a
+   * session (web parity: the same modal offers Start and Download there).
+   */
+  onDownload?: (config: TestConfigOptions) => void;
+  isDownloading?: boolean;
 }
 
 export default function TestConfigModal({
@@ -95,6 +101,8 @@ export default function TestConfigModal({
   onSavePreset,
   onDeletePreset,
   subgroups = [],
+  onDownload,
+  isDownloading = false,
 }: TestConfigModalProps) {
   const [numberOfQuestions, setNumberOfQuestions] = useState(Math.min(10, maxQuestions));
   const [timerDuration, setTimerDuration] = useState(0);
@@ -335,6 +343,39 @@ export default function TestConfigModal({
     effectiveSessionMode,
     isStudyMode,
     onSubmit,
+  ]);
+
+  /**
+   * Same config assembly as handleSubmit, but no timer requirement: a
+   * downloaded bundle picks its time limit when the session starts.
+   */
+  const handleDownload = useCallback(() => {
+    if (!onDownload || effectiveMaxQuestions === 0) return;
+    if (questionVisibilityMode === 'none') {
+      Alert.alert('No questions', 'Question visibility is set to hide all. Change the filter to download.');
+      return;
+    }
+    onDownload({
+      numberOfQuestions,
+      timerDuration,
+      selectedQuestionTypes: useSpacedRepetition || focusOnNew ? [] : selectedQuestionTypes,
+      selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTags,
+      useSpacedRepetition,
+      focusOnNew,
+      selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
+      visibilityMode: questionVisibilityMode,
+    });
+  }, [
+    onDownload,
+    effectiveMaxQuestions,
+    numberOfQuestions,
+    timerDuration,
+    selectedQuestionTypes,
+    selectedTags,
+    useSpacedRepetition,
+    focusOnNew,
+    selectedSubgroupIds,
+    questionVisibilityMode,
   ]);
 
   const formatTime = (seconds: number): string => {
@@ -804,12 +845,28 @@ export default function TestConfigModal({
                 {validationHint}
               </Text>
             ) : null}
+            {onDownload ? (
+              <TouchableOpacity
+                style={[
+                  styles.downloadButton,
+                  { borderColor: colors.primary },
+                  (isDownloading || effectiveMaxQuestions === 0) && styles.submitButtonDisabled,
+                ]}
+                onPress={handleDownload}
+                disabled={isDownloading || effectiveMaxQuestions === 0}
+              >
+                <Ionicons name="cloud-download-outline" size={18} color={colors.primary} />
+                <Text style={[styles.downloadButtonText, { color: colors.primary }]}>
+                  {isDownloading ? 'Downloading…' : 'Download for offline'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             <View style={styles.footerButtons}>
               <TouchableOpacity style={[styles.cancelButton, { backgroundColor: colors.inputBackground }]} onPress={onClose}>
                 <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={[
                   styles.submitButton,
                   isStudyMode && styles.submitButtonStudy,
@@ -818,10 +875,10 @@ export default function TestConfigModal({
                 onPress={handleSubmit}
                 disabled={!isValid}
               >
-                <Ionicons 
-                  name={isStudyMode ? 'book' : 'play'} 
-                  size={20} 
-                  color="#ffffff" 
+                <Ionicons
+                  name={isStudyMode ? 'book' : 'play'}
+                  size={20}
+                  color="#ffffff"
                 />
                 <Text style={styles.submitButtonText}>
                   {isStudyMode ? 'Start Studying' : 'Start Test'}
@@ -1218,6 +1275,20 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 12,
+  },
+  downloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  downloadButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   footerButtons: {
     flexDirection: 'row',

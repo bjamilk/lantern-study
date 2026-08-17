@@ -16,6 +16,7 @@ import { useAuthStore } from '../../stores';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useGroupStore, type Message, type GroupMember } from '../../stores/groupStore';
 import { useTestStore, type TestMode } from '../../stores/testStore';
+import { useOfflineStore } from '../../stores/offlineStore';
 import TestConfigModal, { type TestConfigOptions, type TestConfigAvailableFilter } from '../../components/TestConfigModal';
 import ChallengeModal from '../../components/ChallengeModal';
 import GroupInfoModal from '../../components/GroupInfoModal';
@@ -361,6 +362,46 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const suppressLoadOlderRef = useRef(true);
 
   const displayName = groupName || currentGroup?.name || 'Group chat';
+
+  const downloadTest = useOfflineStore(s => s.downloadTest);
+  const isDownloadingBundle = useOfflineStore(s => s.isDownloading);
+
+  /**
+   * Web parity: the test config modal can save its selection as an offline
+   * bundle instead of starting a session. Reuses the same download pipeline
+   * as Offline Mode's per-group Customize flow, so the bundle lands in
+   * More -> Offline mode and syncs across devices.
+   */
+  const handleDownloadForOffline = useCallback(
+    async (config: TestConfigOptions) => {
+      try {
+        await downloadTest(
+          `test-${groupId}`,
+          groupId,
+          displayName,
+          `${displayName} Practice Test`,
+          {
+            questionTypes: config.selectedQuestionTypes.length
+              ? config.selectedQuestionTypes
+              : undefined,
+            questionCount: config.numberOfQuestions,
+            timeLimit: config.timerDuration ? Math.round(config.timerDuration / 60) : 0,
+            shuffleQuestions: true,
+            includeExplanations: true,
+          },
+          user?.id
+        );
+        setShowTestConfig(false);
+        Alert.alert(
+          'Downloaded for offline',
+          'Find it under More → Offline mode → Downloaded Tests. It works without a connection and syncs to your other devices.'
+        );
+      } catch (e: unknown) {
+        Alert.alert('Download failed', e instanceof Error ? e.message : 'Could not download questions.');
+      }
+    },
+    [downloadTest, groupId, displayName, user?.id]
+  );
   const messageLimit = lowDataMode ? 30 : 100;
   const hasMoreMessages = messagePagination[groupId]?.hasMore ?? true;
   const { typingUserIds, broadcastTyping } = useTypingIndicator(groupId, user?.id);
@@ -1454,6 +1495,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
       <TestConfigModal
         visible={showTestConfig}
         onClose={() => setShowTestConfig(false)}
+        onDownload={handleDownloadForOffline}
+        isDownloading={isDownloadingBundle}
         mode={testMode}
         maxQuestions={Math.max(1, testableCount)}
         availableTags={availableTags}

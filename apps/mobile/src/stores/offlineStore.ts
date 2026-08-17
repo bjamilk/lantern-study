@@ -70,7 +70,9 @@ export interface PendingResult {
 }
 
 export interface DownloadOptions {
-  questionTypes?: ('mcq-single' | 'mcq-multiple' | 'true-false' | 'fill-blank')[];
+  // Accepts both the UI's kebab ids (mcq-single) and canonical enum types
+  // (multiple_choice_single) — the filter canonicalizes either side.
+  questionTypes?: string[];
   questionCount?: number;
   timeLimit?: number; // in minutes, 0 = no limit
   shuffleQuestions?: boolean;

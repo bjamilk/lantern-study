@@ -86,7 +86,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.20: matching questions in offline bundles are playable again (their
   // pair structures were dropped in storage), fill-in-blank answers grade
   // correctly, and diagram labels survive the round trip.
-  version: '1.0.20',
+  // 1.0.21: the group chat's test setup can save the selection as an offline
+  // bundle ("Download for offline"), matching the web — previously the only
+  // path on mobile was buried in More -> Offline mode.
+  version: '1.0.21',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
