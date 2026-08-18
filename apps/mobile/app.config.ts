@@ -93,7 +93,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // survives the remount that applies the scale), the Offline screen's bottom
   // buttons clear the system navigation bar, and test setup preselects all
   // question types like the web.
-  version: '1.0.22',
+  // 1.0.23: changing the font size no longer flashes the boot screen and
+  // dumps you on Home — the remount that applies the scale re-armed the boot
+  // gate, and the navigator mounting late discarded the restored navigation
+  // state. It also no longer re-fetches every store on each font change.
+  version: '1.0.23',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

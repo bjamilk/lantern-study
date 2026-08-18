@@ -19,6 +19,18 @@ import { navigationRef } from './navigationRef';
  */
 let preservedNavState: NavigationState | undefined;
 
+/**
+ * Same lifetime rationale as preservedNavState. The font-size remount also
+ * resets RootNavigatorInner's local state, which re-armed the boot gate: the
+ * boot screen flashed and — because the navigator then mounted a commit later
+ * than NavigationContainer — the container's initialState went unconsumed and
+ * the user landed on Home anyway. Caching the onboarding answer and the
+ * bootstrapped user lets a remount render the navigator immediately (same
+ * commit as the container) and skip re-fetching every store on a font change.
+ */
+let onboardingCache: { userId: string; showOnboarding: boolean } | null = null;
+let bootstrappedUserId: string | null = null;
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -802,9 +814,13 @@ function RootNavigatorInner() {
   const loadTestPresets = useTestStore(s => s.loadTestPresets);
   const clearTestPresets = useTestStore(s => s.clearTestPresets);
 
-  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(
+    () => !!user?.id && onboardingCache?.userId === user.id
+  );
 
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() =>
+    user?.id && onboardingCache?.userId === user.id ? onboardingCache.showOnboarding : false
+  );
 
   const [userProfile, setUserProfile] = useState<{
     username?: string;
@@ -863,6 +879,9 @@ function RootNavigatorInner() {
 
       setShowOnboarding(false);
 
+      // Next sign-in must bootstrap from scratch (stores are cleared on logout).
+      bootstrappedUserId = null;
+
       return;
 
     }
@@ -876,19 +895,22 @@ function RootNavigatorInner() {
       const headers = await getAuthHeaders();
       if (cancelled || !headers.Authorization) return;
 
-      void loadSettings(userId).then(() => {
-        const { hasUnsyncedChanges } = useSettingsStore.getState();
-        if (!cancelled && hasUnsyncedChanges) {
-          void syncSettings(userId, { force: true });
-        }
-      });
-      // Hydrate account-scoped test presets on bootstrap (not only when opening TestConfig).
-      void loadTestPresets(userId);
-      void fetchDecks(userId);
-      void fetchGroups(userId);
-      void fetchDmThreads(userId);
-      void loadUnreadCount(userId);
-      void fetchAIUsage(userId);
+      if (bootstrappedUserId !== userId) {
+        bootstrappedUserId = userId;
+        void loadSettings(userId).then(() => {
+          const { hasUnsyncedChanges } = useSettingsStore.getState();
+          if (!cancelled && hasUnsyncedChanges) {
+            void syncSettings(userId, { force: true });
+          }
+        });
+        // Hydrate account-scoped test presets on bootstrap (not only when opening TestConfig).
+        void loadTestPresets(userId);
+        void fetchDecks(userId);
+        void fetchGroups(userId);
+        void fetchDmThreads(userId);
+        void loadUnreadCount(userId);
+        void fetchAIUsage(userId);
+      }
 
       if (!isRunningInExpoGo() && pushEnabled) {
         void registerForPushNotifications().then(token => {
@@ -911,13 +933,19 @@ function RootNavigatorInner() {
       void refreshUserData(userId);
     });
 
-    AsyncStorage.getItem('lantern_onboarding_complete').then(v => {
-      if (cancelled) return;
-      const complete = v === 'true';
-      setShowOnboarding(!complete);
+    if (onboardingCache?.userId === userId) {
+      setShowOnboarding(onboardingCache.showOnboarding);
       setOnboardingChecked(true);
-      useFeatureTipStore.getState().setOnboardingComplete(complete);
-    });
+    } else {
+      void AsyncStorage.getItem('lantern_onboarding_complete').then(v => {
+        if (cancelled) return;
+        const complete = v === 'true';
+        onboardingCache = { userId, showOnboarding: !complete };
+        setShowOnboarding(!complete);
+        setOnboardingChecked(true);
+        useFeatureTipStore.getState().setOnboardingComplete(complete);
+      });
+    }
 
     return () => {
       cancelled = true;
@@ -1016,6 +1044,7 @@ function RootNavigatorInner() {
             {() => (
               <OnboardingScreen
                 onComplete={() => {
+                  if (user?.id) onboardingCache = { userId: user.id, showOnboarding: false };
                   setShowOnboarding(false);
                   useFeatureTipStore.getState().setOnboardingComplete(true);
                 }}
