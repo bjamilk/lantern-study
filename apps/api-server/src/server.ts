@@ -22,7 +22,7 @@ import { SupabaseService } from './services/supabase';
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from './middleware/rateLimit';
 import { authMiddleware, optionalAuthMiddleware, requirePlatformAdmin } from './middleware/auth';
 import { AI_USAGE_EXPOSED_HEADERS } from './middleware/aiRateLimit';
-import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler } from './middleware/errorHandler';
+import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler, corsRejection } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
 import { skipTimeoutForLongRunningNotes } from './middleware/timeout';
 import { sanitizationMiddleware } from './middleware/security';
@@ -218,7 +218,7 @@ app.use(cors({
     if (process.env.ALLOW_ALL_CORS === 'true' && process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    return callback(new Error('Not allowed by CORS'));
+    return callback(corsRejection());
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

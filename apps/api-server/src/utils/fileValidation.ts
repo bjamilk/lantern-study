@@ -15,19 +15,30 @@ export function detectImageMime(buffer: Buffer): string | null {
   return null;
 }
 
+/**
+ * A rejected upload is the caller's mistake, not a server fault. Without a
+ * status the error handler reports 500 and Sentry files it as a crash — these
+ * checks working exactly as designed produced a steady stream of issues.
+ */
+function invalidUpload(message: string): Error & { status: number } {
+  const error = new Error(message) as Error & { status: number };
+  error.status = 400;
+  return error;
+}
+
 export function assertImageMagicBytes(buffer: Buffer, declaredContentType?: string): void {
   const detected = detectImageMime(buffer);
   if (!detected) {
-    throw new Error('File content is not a supported image (JPEG, PNG, GIF, or WebP).');
+    throw invalidUpload('File content is not a supported image (JPEG, PNG, GIF, or WebP).');
   }
   if (declaredContentType && declaredContentType !== detected && declaredContentType !== 'image/jpg') {
-    throw new Error('Image content does not match declared content type.');
+    throw invalidUpload('Image content does not match declared content type.');
   }
 }
 
 export function assertPdfMagicBytes(buffer: Buffer): void {
   if (buffer.length < 5 || buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
-    throw new Error('File content is not a valid PDF.');
+    throw invalidUpload('File content is not a valid PDF.');
   }
 }
 

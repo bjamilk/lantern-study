@@ -43,4 +43,31 @@ describe('buildFlashcardUpdateData', () => {
 
     expect(data).toEqual({ front: 'Q', back: 'A' });
   });
+
+  it('drops a null front on BASIC instead of violating the check constraint', () => {
+    const data = buildFlashcardUpdateData('BASIC', {
+      front: null,
+      back: 'A',
+    });
+
+    expect(data).toEqual({ back: 'A' });
+  });
+
+  it('drops a null image_url/front on IMAGE_OCCLUSION but keeps other edits', () => {
+    const data = buildFlashcardUpdateData('IMAGE_OCCLUSION', {
+      imageUrl: null,
+      front: null,
+      tags: ['histology'],
+    });
+
+    expect(data).toEqual({ tags: ['histology'] });
+  });
+
+  it('drops a null clozeText on CLOZE while still nulling front/back', () => {
+    const data = buildFlashcardUpdateData('CLOZE', {
+      clozeText: null,
+    });
+
+    expect(data).toEqual({ front: null, back: null });
+  });
 });

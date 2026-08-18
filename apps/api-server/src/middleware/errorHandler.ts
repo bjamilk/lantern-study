@@ -16,6 +16,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A request from an origin outside the allowlist. Carries 403 deliberately:
+ * the Sentry express handler treats a status-less error as a 500 and reports
+ * it, so the plain Error this used to be filed 4.4k issues — every one of them
+ * a dev server (localhost:5173) pointed at the production API, none of them a
+ * server fault. A rejected origin is the caller's mistake, so say 403 and stay
+ * out of the error budget.
+ */
+export function corsRejection(): ApiError {
+  return new ApiError('Not allowed by CORS', 403);
+}
+
 // Error response interface
 interface ErrorResponse {
   error: string;

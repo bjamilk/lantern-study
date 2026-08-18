@@ -43,5 +43,22 @@ export function buildFlashcardUpdateData(
     if (updates.back !== undefined) updateData.back = updates.back;
   }
 
+  // Blanking a column the constraint requires for this card type is never a
+  // valid edit, but it reached the database and came back as a constraint
+  // violation the client saw as a 500. Drop those writes and keep the rest of
+  // the edit. CLOZE deliberately nulls front/back above — that is what its arm
+  // of the constraint demands — so only cloze_text is protected there.
+  const requiredColumns =
+    cardType === "CLOZE"
+      ? ["cloze_text"]
+      : cardType === "IMAGE_OCCLUSION"
+        ? ["image_url", "front"]
+        : ["front", "back"];
+  for (const column of requiredColumns) {
+    if (column in updateData && updateData[column] == null) {
+      delete updateData[column];
+    }
+  }
+
   return updateData;
 }

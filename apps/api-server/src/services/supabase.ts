@@ -11198,7 +11198,16 @@ export class SupabaseService {
 
   async getNote(noteId: string, userId: string) {
     const access = await this.resolveNoteAccess(noteId, userId);
-    if (!access) throw new Error("Note not found or access denied");
+    if (!access) {
+      // 404, matching the sibling write paths below. Status-less, this read
+      // surfaced to callers as a 500 "Something went wrong" and was reported
+      // to Sentry as a server crash.
+      const err = new Error("Note not found or access denied") as Error & {
+        status?: number;
+      };
+      err.status = 404;
+      throw err;
+    }
 
     const { data, error } = await this.supabase
       .from("notes")

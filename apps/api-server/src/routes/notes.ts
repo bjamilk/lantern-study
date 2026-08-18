@@ -499,7 +499,7 @@ router.delete('/folders/:folderId', validateFolderId, handleValidationErrors, as
 router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { fileName, base64Data, folderId } = req.body;
+  const { fileName, base64Data, folderId } = req.body || {};
   if (!fileName || !base64Data) {
     res.status(400).json({ error: 'fileName and base64Data are required.' });
     return;
@@ -594,7 +594,7 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   warmGotenberg();
-  const { fileName, base64Data, folderId } = req.body;
+  const { fileName, base64Data, folderId } = req.body || {};
   if (!fileName || !base64Data) {
     res.status(400).json({ error: 'fileName and base64Data are required.' });
     return;
@@ -1025,7 +1025,7 @@ router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Req
 router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_questions'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { content, studyGoal, count } = req.body;
+  const { content, studyGoal, count } = req.body || {};
   if (!content || typeof content !== 'string' || content.trim().length < 50) {
     res.status(400).json({ error: 'At least 50 characters of study material required.' });
     return;
@@ -1168,7 +1168,7 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const requestId = (req as { requestId?: string }).requestId;
-  const { audioBase64, mimeType, fileName, noteId } = req.body;
+  const { audioBase64, mimeType, fileName, noteId } = req.body || {};
   if (!audioBase64 || typeof audioBase64 !== 'string') {
     res.status(400).json({ success: false, error: 'audioBase64 is required.', message: 'audioBase64 is required.' });
     return;

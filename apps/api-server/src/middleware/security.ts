@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { getAllowedCorsOrigins } from '../utils/corsOrigins';
 import { AI_USAGE_EXPOSED_HEADERS } from './aiRateLimit';
+import { corsRejection } from './errorHandler';
 
 // Extended Request type
 interface AuthenticatedRequest extends Request {
@@ -103,7 +104,7 @@ export const corsConfig = cors({
     } else if (process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(corsRejection());
     }
   },
   credentials: true,
