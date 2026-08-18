@@ -561,7 +561,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             )}
 
             {/* MC options */}
-            {(message.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE || message.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE) && message.options && (
+            {(message.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE || message.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE) && Array.isArray(message.options) && (
               <div className="space-y-1 mt-1">
                 {message.options.map((opt, i) => (
                   <div key={opt.id} className="flex items-start gap-2 text-sm text-lantern-text">

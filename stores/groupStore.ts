@@ -98,11 +98,17 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
   error: null,
   
   // State Management
-  setGroups: (groups) => set({ groups }),
-  
-  updateGroups: (updater) => set((state) => ({
-    groups: updater(state.groups),
-  })),
+  // Coerced like setDmThreads/updateDmThreads below. Without it a non-array
+  // reaching this store propagates to every consumer that maps over groups —
+  // the sidebar crashed with "k.map is not a function", taking the whole chat
+  // list down rather than showing one empty section.
+  setGroups: (groups) => set({ groups: Array.isArray(groups) ? groups : [] }),
+
+  updateGroups: (updater) => set((state) => {
+    const prev = Array.isArray(state.groups) ? state.groups : [];
+    const next = updater(prev);
+    return { groups: Array.isArray(next) ? next : prev };
+  }),
   
   addGroup: (group) => set((state) => ({
     groups: [...state.groups, group],

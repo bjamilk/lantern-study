@@ -113,9 +113,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   const pausedSessionLabel = pausedTest ? 'Test' : pausedStudy ? 'Study' : 'Game';
 
   const { topLevelChats, messageRequestChats, subGroupsMap, archivedGroups } = useMemo(() => {
+    // Defensive alongside the store's own coercion: this list is the whole
+    // chat navigation, so a bad value here costs the user every conversation.
     const allChats: ChatItem[] = [
-      ...groups.map(g => ({ ...g, chatType: 'group' as const })),
-      ...dmThreads.map(t => ({ ...t, chatType: 'dm' as const }))
+      ...(Array.isArray(groups) ? groups : []).map(g => ({ ...g, chatType: 'group' as const })),
+      ...(Array.isArray(dmThreads) ? dmThreads : []).map(t => ({ ...t, chatType: 'dm' as const }))
     ];
 
     allChats.sort((a, b) => {
