@@ -89,7 +89,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.21: the group chat's test setup can save the selection as an offline
   // bundle ("Download for offline"), matching the web — previously the only
   // path on mobile was buried in More -> Offline mode.
-  version: '1.0.21',
+  // 1.0.22: picking a font size no longer dumps you on Home (navigation state
+  // survives the remount that applies the scale), the Offline screen's bottom
+  // buttons clear the system navigation bar, and test setup preselects all
+  // question types like the web.
+  version: '1.0.22',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

@@ -4,8 +4,20 @@ import { AppState, View } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, type NavigationState } from '@react-navigation/native';
 import { navigationRef } from './navigationRef';
+
+/**
+ * Changing the in-app font size re-keys the View wrapping the whole app
+ * (see ThemeProvider) — the only way the patched Text picks up a new scale —
+ * which remounts this NavigationContainer. Without restoring state, that
+ * dropped the user on Home the moment they picked a font size in Settings.
+ *
+ * Module-level on purpose: it survives the in-process remount but not an app
+ * restart, so cold starts still boot on the initial route and deep links
+ * behave normally.
+ */
+let preservedNavState: NavigationState | undefined;
 
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -1085,7 +1097,9 @@ export function RootNavigator() {
       ref={navigationRef}
       linking={linkingConfig}
       theme={navigationTheme}
-      onStateChange={() => {
+      initialState={preservedNavState}
+      onStateChange={(state) => {
+        preservedNavState = state ?? preservedNavState;
         const route = navigationRef.getCurrentRoute();
         if (route?.name) {
           void import('../services/productAnalytics').then(({ trackScreenView }) => {

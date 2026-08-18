@@ -17,7 +17,7 @@ import {
   Switch,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useOfflineStore, OfflineTest, PendingResult, DownloadOptions } from '../../stores/offlineStore';
@@ -53,6 +53,7 @@ export default function OfflineScreen() {
   // overlay have already burned us on release builds (footer collapsed to
   // zero). A definite px height cannot be mis-resolved.
   const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const modalSheetHeight = Math.round(windowHeight * 0.85);
   const network = useNetworkStatus();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
@@ -380,6 +381,10 @@ export default function OfflineScreen() {
 
       <ScrollView
         style={styles.content}
+        // Padding lives on the content container, not the outer style —
+        // vertical padding there clips the scrollable extent on Android — and
+        // the bottom inset keeps the last buttons above the system nav bar.
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -819,7 +824,12 @@ export default function OfflineScreen() {
                 a '85%' percentage height; with the definite px height above
                 plus minHeight here it cannot collapse, and the buttons stay
                 visible without scrolling. */}
-            <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
+            <View
+              style={[
+                styles.modalActions,
+                { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 16) },
+              ]}
+            >
               <TouchableOpacity
                 style={[styles.cancelButton, { backgroundColor: colors.background }]}
                 onPress={() => setShowDownloadModal(false)}
@@ -906,7 +916,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 16,
   },
   // Storage Card
   storageCard: {

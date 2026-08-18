@@ -155,7 +155,10 @@ export default function TestConfigModal({
     if (visible) {
       setNumberOfQuestions(Math.min(10, Math.max(1, maxQuestions)));
       setTimerDuration(isStudyMode ? 0 : Math.min(600, Math.max(60, Math.min(10, maxQuestions) * 60)));
-      setSelectedQuestionTypes([]);
+      // All types preselected, matching web: the Question Types section sits
+      // below the fold, so an empty default just presented users with disabled
+      // Start/Download buttons and no visible reason why.
+      setSelectedQuestionTypes(QUESTION_TYPE_OPTIONS.map(option => option.type));
       setSelectedTags([]);
       setUseSpacedRepetition(false);
       setFocusOnNew(false);
