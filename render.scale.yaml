@@ -70,7 +70,7 @@ services:
       - key: ADMIN_RATE_LIMIT_MAX
         value: "300"
       - key: AI_DAILY_LIMIT
-        value: "100"
+        value: "20"
       - key: AI_MAX_INFLIGHT
         value: "24"
       - key: COMPANION_STREAM_MAX

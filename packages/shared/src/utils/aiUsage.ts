@@ -3,7 +3,7 @@
  */
 
 /** Default daily AI request quota per user (overridable via API `AI_DAILY_LIMIT` env). */
-export const DEFAULT_AI_DAILY_LIMIT = 100;
+export const DEFAULT_AI_DAILY_LIMIT = 20;
 
 /** Default per-feature daily AI quotas (overridable via `AI_LIMIT_<FEATURE>` env vars). */
 export const DEFAULT_AI_FEATURE_LIMITS = {

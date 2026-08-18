@@ -27,6 +27,7 @@ import {
 } from './companionMessageClarity';
 import { aiInflightGate } from '../utils/concurrencyGate';
 import { logger } from '../utils/logger';
+import { withAiResponseCache } from './aiResponseCache';
 
 const AI_FETCH_TIMEOUT_MS = parseInt(process.env.AI_FETCH_TIMEOUT_MS || '120000', 10);
 
@@ -841,7 +842,23 @@ export async function generateQuestionsFromNotes(
 ): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
   const { count = 10, difficulty = 'mixed', questionTypes, subject } = options;
   const adjustedCount = Math.min(count, 15);
+  const source = notes.substring(0, 6000);
 
+  return withAiResponseCache(
+    'generate_questions',
+    source,
+    { count: adjustedCount, difficulty, questionTypes, subject },
+    async () => generateQuestionsFromNotesUncached(source, adjustedCount, difficulty, questionTypes, subject)
+  );
+}
+
+async function generateQuestionsFromNotesUncached(
+  source: string,
+  adjustedCount: number,
+  difficulty: 'easy' | 'medium' | 'hard' | 'mixed',
+  questionTypes: string[] | undefined,
+  subject: string | undefined
+): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
   const systemPrompt = `You are an expert educator creating test questions.
 Generate exactly ${adjustedCount} questions from the provided study material.
 ${difficulty !== 'mixed' ? `All questions: ${difficulty} difficulty.` : 'Mix difficulties.'}
@@ -858,7 +875,7 @@ For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit o
 
   const { text, provider } = await chatCompletion(
     systemPrompt,
-    `Generate questions from:\n\n${notes.substring(0, 6000)}`,
+    `Generate questions from:\n\n${source}`,
     { temperature: 0.7, jsonOutput: true }
   );
 
@@ -896,35 +913,57 @@ export async function generateFlashcardsFromNotes(
 ): Promise<{ flashcards: GeneratedFlashcard[]; provider: string }> {
   const { count = 15, style = 'concise' } = options;
   const adjustedCount = Math.min(Math.max(count, 10), 20);
+  const source = notes.substring(0, 6000);
 
-  const systemPrompt = `You are an expert educator creating flashcards for spaced repetition.
+  return withAiResponseCache(
+    'generate_flashcards',
+    source,
+    { count: adjustedCount, style },
+    async () => {
+      const systemPrompt = `You are an expert educator creating flashcards for spaced repetition.
 Generate exactly ${adjustedCount} flashcards.
 ${style === 'concise' ? 'Brief, memorable answers.' : 'Detailed with examples.'}
 
 Return ONLY valid JSON: {"flashcards":[{"front":"term","back":"definition","mnemonic":"memory aid or null","example":"example or null"}]}`;
 
-  const { text, provider } = await chatCompletion(
-    systemPrompt,
-    `Create flashcards from:\n\n${notes.substring(0, 6000)}`,
-    { temperature: 0.7, jsonOutput: true }
+      const { text, provider } = await chatCompletion(
+        systemPrompt,
+        `Create flashcards from:\n\n${source}`,
+        { temperature: 0.7, jsonOutput: true }
+      );
+
+      const parsed = extractJSON(text);
+      const cards = parsed.flashcards || parsed;
+      if (!Array.isArray(cards)) throw new Error('Invalid response format');
+
+      return {
+        provider,
+        flashcards: cards.slice(0, adjustedCount).map((c: any) => ({
+          front: String(c.front || ''),
+          back: String(c.back || ''),
+          mnemonic: c.mnemonic ? String(c.mnemonic) : undefined,
+          example: c.example ? String(c.example) : undefined,
+        })),
+      };
+    }
   );
-
-  const parsed = extractJSON(text);
-  const cards = parsed.flashcards || parsed;
-  if (!Array.isArray(cards)) throw new Error('Invalid response format');
-
-  return {
-    provider,
-    flashcards: cards.slice(0, adjustedCount).map((c: any) => ({
-      front: String(c.front || ''),
-      back: String(c.back || ''),
-      mnemonic: c.mnemonic ? String(c.mnemonic) : undefined,
-      example: c.example ? String(c.example) : undefined,
-    })),
-  };
 }
 
 export async function explainAnswer(
+  question: string,
+  userAnswer: string,
+  correctAnswer: string,
+  options?: string[]
+): Promise<{ explanation: string; provider: string }> {
+  return withAiResponseCache(
+    'explain',
+    question,
+    { userAnswer, correctAnswer, options },
+    () => explainAnswerUncached(question, userAnswer, correctAnswer, options)
+  );
+}
+
+async function explainAnswerUncached(
   question: string,
   userAnswer: string,
   correctAnswer: string,
@@ -949,6 +988,21 @@ Explain why the correct answer is right${userAnswer !== correctAnswer ? " and wh
 }
 
 export async function getStudyRecommendations(
+  performanceData: {
+    recentScores: { topic: string; score: number; date: string }[];
+    flashcardAccuracy: { topic: string; correctRate: number }[];
+    studyHoursThisWeek: number;
+  }
+): Promise<{ recommendations: StudyRecommendation; provider: string }> {
+  return withAiResponseCache(
+    'study_recommendations',
+    JSON.stringify(performanceData),
+    null,
+    () => getStudyRecommendationsUncached(performanceData)
+  );
+}
+
+async function getStudyRecommendationsUncached(
   performanceData: {
     recentScores: { topic: string; score: number; date: string }[];
     flashcardAccuracy: { topic: string; correctRate: number }[];
@@ -981,6 +1035,18 @@ export async function askTutor(
   question: string,
   context?: { subject?: string; recentTopics?: string[] }
 ): Promise<{ answer: string; provider: string }> {
+  return withAiResponseCache(
+    'ask_tutor',
+    question,
+    context ?? null,
+    () => askTutorUncached(question, context)
+  );
+}
+
+async function askTutorUncached(
+  question: string,
+  context?: { subject?: string; recentTopics?: string[] }
+): Promise<{ answer: string; provider: string }> {
   const systemPrompt = `You are a friendly study tutor in a student group chat.
 ${context?.subject ? `Subject: ${context.subject}.` : ''}
 ${context?.recentTopics?.length ? `Recent topics: ${context.recentTopics.join(', ')}.` : ''}
@@ -995,6 +1061,38 @@ Keep answers clear, under 150 words. Use bullet points for complex topics.`;
 }
 
 export async function generateListingDescription(details: {
+  title: string;
+  category?: string;
+  subcategory?: string;
+  price?: string;
+  condition?: string;
+  courseCode?: string;
+  isbn?: string;
+  edition?: string;
+  bedrooms?: string;
+  furnished?: string;
+  distanceToCampus?: string;
+}): Promise<{ description: string; provider: string }> {
+  return withAiResponseCache(
+    'listing_description',
+    details.title,
+    {
+      category: details.category,
+      subcategory: details.subcategory,
+      price: details.price,
+      condition: details.condition,
+      courseCode: details.courseCode,
+      isbn: details.isbn,
+      edition: details.edition,
+      bedrooms: details.bedrooms,
+      furnished: details.furnished,
+      distanceToCampus: details.distanceToCampus,
+    },
+    () => generateListingDescriptionUncached(details)
+  );
+}
+
+async function generateListingDescriptionUncached(details: {
   title: string;
   category?: string;
   subcategory?: string;
@@ -1035,6 +1133,18 @@ Do not include a title, headings, hashtags, or emojis. Return only the descripti
 }
 
 export async function enhanceFlashcard(
+  front: string,
+  back: string
+): Promise<{ enhanced: GeneratedFlashcard; provider: string }> {
+  return withAiResponseCache(
+    'enhance_flashcard',
+    front,
+    { back },
+    () => enhanceFlashcardUncached(front, back)
+  );
+}
+
+async function enhanceFlashcardUncached(
   front: string,
   back: string
 ): Promise<{ enhanced: GeneratedFlashcard; provider: string }> {
@@ -1186,11 +1296,23 @@ export async function summarizeGroupChat(
   messages: string[],
   groupName: string
 ): Promise<{ summary: string; provider: string }> {
+  const messagesBlock = messages.slice(-50).join('\n');
+  return withAiResponseCache(
+    'summarize_group_chat',
+    messagesBlock,
+    { groupName },
+    () => summarizeGroupChatUncached(messagesBlock, groupName)
+  );
+}
+
+async function summarizeGroupChatUncached(
+  messagesBlock: string,
+  groupName: string
+): Promise<{ summary: string; provider: string }> {
   const systemPrompt = `You are Lantern, a friendly AI study companion. Summarize the following group chat activity concisely.
 Focus on: key discussion topics, study plans mentioned, important questions posted, and any group decisions.
 Keep the summary to 3–5 bullet points. Be specific and useful to a student who was away.`;
 
-  const messagesBlock = messages.slice(-50).join('\n');
   const userPrompt = `Group: ${groupName}\n\n${messagesBlock}`;
 
   const { text, provider } = await chatCompletion(systemPrompt, userPrompt, { temperature: 0.5, maxTokens: 350 });
@@ -1444,6 +1566,24 @@ export async function generateSmartNoteContent(
   }
 
   const depth = options.depth ?? 'standard';
+  return withAiResponseCache(
+    'summarize_note',
+    cleaned,
+    {
+      title: options.title,
+      sourceType: options.sourceType,
+      guidance: sanitizeSmartNotesGuidance(options.guidance),
+      depth,
+    },
+    () => generateSmartNoteContentUncached(cleaned, options)
+  );
+}
+
+async function generateSmartNoteContentUncached(
+  cleaned: string,
+  options: SmartNoteGenerationOptions
+): Promise<{ summary: string; provider: string }> {
+  const depth = options.depth ?? 'standard';
   const depthConfig = SMART_NOTES_DEPTH_CONFIG[depth];
   const promptOpts = { guidance: options.guidance, depth };
 
@@ -1572,10 +1712,24 @@ export async function generateDailyQuiz(
   options: { count?: number; studyGoal?: string } = {}
 ): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
   const count = Math.min(options.count ?? 5, 5);
+  const source = content.substring(0, 6000);
+  return withAiResponseCache(
+    'daily_quiz',
+    source,
+    { count, studyGoal: options.studyGoal },
+    () => generateDailyQuizUncached(source, count, options.studyGoal)
+  );
+}
+
+async function generateDailyQuizUncached(
+  source: string,
+  count: number,
+  studyGoal?: string
+): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
   const goalHint =
-    options.studyGoal === 'exam_prep'
+    studyGoal === 'exam_prep'
       ? 'Focus on exam-style questions with clear distractors.'
-      : options.studyGoal === 'retention'
+      : studyGoal === 'retention'
         ? 'Focus on long-term retention and conceptual understanding.'
         : 'Keep questions approachable for casual review.';
 
@@ -1594,7 +1748,7 @@ Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"
 
   const { text, provider } = await chatCompletion(
     systemPrompt,
-    `Material:\n\n${content.substring(0, 6000)}`,
+    `Material:\n\n${source}`,
     { temperature: 0.6, jsonOutput: true }
   );
 
@@ -1652,8 +1806,16 @@ function hasOpenAITranscriptionKey(): boolean {
   return Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim());
 }
 
+/** Paid OpenAI Whisper is local/dev only — production uses Groq exclusively. */
+export function isOpenAITranscriptionFallbackEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production';
+}
+
 export function isTranscriptionConfigured(): boolean {
-  return hasGroqTranscriptionKey() || hasOpenAITranscriptionKey();
+  return (
+    hasGroqTranscriptionKey() ||
+    (isOpenAITranscriptionFallbackEnabled() && hasOpenAITranscriptionKey())
+  );
 }
 
 export type TranscribeAudioLogContext = {
@@ -1803,7 +1965,9 @@ export async function transcribeAudioBuffer(
   return withAiInflight(async () => {
     if (!isTranscriptionConfigured()) {
       throw new ApiError(
-        'Audio transcription is not configured. Add GROQ_API_KEY (https://console.groq.com) or OPENAI_API_KEY to apps/api-server/.env.',
+        isOpenAITranscriptionFallbackEnabled()
+          ? 'Audio transcription is not configured. Add GROQ_API_KEY (https://console.groq.com) or OPENAI_API_KEY to apps/api-server/.env.'
+          : 'Audio transcription is not configured. Add GROQ_API_KEY (https://console.groq.com).',
         503
       );
     }
@@ -1824,7 +1988,10 @@ export async function transcribeAudioBuffer(
 
     const meta = resolveAudioUploadMeta(buffer, mimeType);
     const groqKey = hasGroqTranscriptionKey() ? String(process.env.GROQ_API_KEY).trim() : '';
-    const openaiKey = hasOpenAITranscriptionKey() ? String(process.env.OPENAI_API_KEY).trim() : '';
+    const openaiKey =
+      isOpenAITranscriptionFallbackEnabled() && hasOpenAITranscriptionKey()
+        ? String(process.env.OPENAI_API_KEY).trim()
+        : '';
 
     let lastError: unknown;
 
