@@ -30,7 +30,7 @@ router.get('/health', (req: Request, res: Response) => {
   const turnstile = turnstileConfigStatus();
   // Presence only, same lesson as turnstile: whether error monitoring is
   // actually on should be checkable without triggering a real error.
-  const sentry = Boolean(process.env.SENTRY_DSN) ? 'on' : 'off';
+  const sentry = process.env.SENTRY_DSN ? 'on' : 'off';
 
   if (isProductionEnv()) {
     // Deliberately no build details beyond the commit: this endpoint is public.
