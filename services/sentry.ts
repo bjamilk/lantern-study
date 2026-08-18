@@ -36,6 +36,25 @@ export function initSentry(): void {
       // that reason. Error level only: warns are too chatty to be signal.
       Sentry.captureConsoleIntegration({ levels: ['error'] }),
     ],
+    // Capturing console.error also captures conditions the app already handles
+    // and explains to the user. Each entry below is a state we deliberately
+    // reach and recover from, so filing it as an error only buries the real
+    // crashes underneath it.
+    ignoreErrors: [
+      // Shown to the user as a "try again later" message.
+      /Rate limit exceeded/i,
+      // Session expiry — the app routes back to sign-in on its own.
+      'AUTH_UNAUTHORIZED',
+      // The user's connection dropped mid-request; offline mode covers this.
+      /Failed to fetch/i,
+      /NetworkError when attempting to fetch/i,
+      /Load failed/i,
+      // supabase-js contends for its auth-token lock across tabs and retries.
+      /Navigator LockManager lock/i,
+      // A voice note recorded as WebM/Opus cannot decode in Safari. Playback
+      // already falls back to "Could not play voice note" in the message row.
+      /The element has no supported sources/i,
+    ],
     beforeSend(event) {
       return scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event;
     },

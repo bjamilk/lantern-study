@@ -1,3 +1,8 @@
+// Must stay the first import: it installs a working localStorage before any
+// other module is evaluated. Webviews that expose a null localStorage (links
+// opened inside WhatsApp/Instagram) otherwise blanked the page on the theme
+// lookup below, which runs before React mounts.
+import './utils/storageFallback';
 import './env-bootstrap';
 import { initSentry } from './services/sentry';
 import { clearChunkReloadFlag } from './utils/lazyWithRetry';
