@@ -27,6 +27,7 @@ import {
 } from './companionMessageClarity';
 import { aiInflightGate } from '../utils/concurrencyGate';
 import { logger } from '../utils/logger';
+import { withAiResponseCache } from './aiResponseCache';
 
 const AI_FETCH_TIMEOUT_MS = parseInt(process.env.AI_FETCH_TIMEOUT_MS || '120000', 10);
 
@@ -841,7 +842,23 @@ export async function generateQuestionsFromNotes(
 ): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
   const { count = 10, difficulty = 'mixed', questionTypes, subject } = options;
   const adjustedCount = Math.min(count, 15);
+  const source = notes.substring(0, 6000);
 
+  return withAiResponseCache(
+    'generate_questions',
+    source,
+    { count: adjustedCount, difficulty, questionTypes, subject },
+    async () => generateQuestionsFromNotesUncached(source, adjustedCount, difficulty, questionTypes, subject)
+  );
+}
+
+async function generateQuestionsFromNotesUncached(
+  source: string,
+  adjustedCount: number,
+  difficulty: 'easy' | 'medium' | 'hard' | 'mixed',
+  questionTypes: string[] | undefined,
+  subject: string | undefined
+): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
   const systemPrompt = `You are an expert educator creating test questions.
 Generate exactly ${adjustedCount} questions from the provided study material.
 ${difficulty !== 'mixed' ? `All questions: ${difficulty} difficulty.` : 'Mix difficulties.'}
@@ -858,7 +875,7 @@ For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit o
 
   const { text, provider } = await chatCompletion(
     systemPrompt,
-    `Generate questions from:\n\n${notes.substring(0, 6000)}`,
+    `Generate questions from:\n\n${source}`,
     { temperature: 0.7, jsonOutput: true }
   );
 
@@ -896,35 +913,57 @@ export async function generateFlashcardsFromNotes(
 ): Promise<{ flashcards: GeneratedFlashcard[]; provider: string }> {
   const { count = 15, style = 'concise' } = options;
   const adjustedCount = Math.min(Math.max(count, 10), 20);
+  const source = notes.substring(0, 6000);
 
-  const systemPrompt = `You are an expert educator creating flashcards for spaced repetition.
+  return withAiResponseCache(
+    'generate_flashcards',
+    source,
+    { count: adjustedCount, style },
+    async () => {
+      const systemPrompt = `You are an expert educator creating flashcards for spaced repetition.
 Generate exactly ${adjustedCount} flashcards.
 ${style === 'concise' ? 'Brief, memorable answers.' : 'Detailed with examples.'}
 
 Return ONLY valid JSON: {"flashcards":[{"front":"term","back":"definition","mnemonic":"memory aid or null","example":"example or null"}]}`;
 
-  const { text, provider } = await chatCompletion(
-    systemPrompt,
-    `Create flashcards from:\n\n${notes.substring(0, 6000)}`,
-    { temperature: 0.7, jsonOutput: true }
+      const { text, provider } = await chatCompletion(
+        systemPrompt,
+        `Create flashcards from:\n\n${source}`,
+        { temperature: 0.7, jsonOutput: true }
+      );
+
+      const parsed = extractJSON(text);
+      const cards = parsed.flashcards || parsed;
+      if (!Array.isArray(cards)) throw new Error('Invalid response format');
+
+      return {
+        provider,
+        flashcards: cards.slice(0, adjustedCount).map((c: any) => ({
+          front: String(c.front || ''),
+          back: String(c.back || ''),
+          mnemonic: c.mnemonic ? String(c.mnemonic) : undefined,
+          example: c.example ? String(c.example) : undefined,
+        })),
+      };
+    }
   );
-
-  const parsed = extractJSON(text);
-  const cards = parsed.flashcards || parsed;
-  if (!Array.isArray(cards)) throw new Error('Invalid response format');
-
-  return {
-    provider,
-    flashcards: cards.slice(0, adjustedCount).map((c: any) => ({
-      front: String(c.front || ''),
-      back: String(c.back || ''),
-      mnemonic: c.mnemonic ? String(c.mnemonic) : undefined,
-      example: c.example ? String(c.example) : undefined,
-    })),
-  };
 }
 
 export async function explainAnswer(
+  question: string,
+  userAnswer: string,
+  correctAnswer: string,
+  options?: string[]
+): Promise<{ explanation: string; provider: string }> {
+  return withAiResponseCache(
+    'explain',
+    question,
+    { userAnswer, correctAnswer, options },
+    () => explainAnswerUncached(question, userAnswer, correctAnswer, options)
+  );
+}
+
+async function explainAnswerUncached(
   question: string,
   userAnswer: string,
   correctAnswer: string,
