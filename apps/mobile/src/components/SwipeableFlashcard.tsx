@@ -50,12 +50,19 @@ interface Props {
   onGrade: (rating: PerformanceRating, cardId: string) => void;
 }
 
+/**
+ * Runs on the UI thread — the pan gesture's onEnd is a worklet, and a plain
+ * function captured by one is serialized as a remote-function object rather
+ * than a callable. Calling it there threw "Object is not a function" and took
+ * the app down on every swipe-to-grade release.
+ */
 function resolveSwipeGrade(
   translationX: number,
   translationY: number,
   velocityX: number,
   velocityY: number
 ): PerformanceRating | null {
+  'worklet';
   const absX = Math.abs(translationX);
   const absY = Math.abs(translationY);
 
@@ -81,8 +88,11 @@ export function SwipeableFlashcard({
   onToggleBack,
   onGrade,
 }: Props) {
-  const springBack = (toValue: number) =>
-    reduceMotion ? toValue : withSpring(toValue, { damping: 18, stiffness: 180 });
+  // Also called from the gesture worklet — see resolveSwipeGrade above.
+  const springBack = (toValue: number) => {
+    'worklet';
+    return reduceMotion ? toValue : withSpring(toValue, { damping: 18, stiffness: 180 });
+  };
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const flipProgress = useSharedValue(showBack ? 1 : 0);

@@ -97,7 +97,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // dumps you on Home — the remount that applies the scale re-armed the boot
   // gate, and the navigator mounting late discarded the restored navigation
   // state. It also no longer re-fetches every store on each font change.
-  version: '1.0.23',
+  // 1.0.24: swipe-to-grade works. Swiping a flashcard to rate it crashed the
+  // app outright — the gesture ran two ordinary functions on the UI thread,
+  // where they are not callable — so grading was button-only since launch.
+  version: '1.0.24',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
