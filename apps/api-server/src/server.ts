@@ -226,7 +226,7 @@ app.use(cors({
   // Expose EVERY AI usage header (single source of truth in aiRateLimit.ts).
   // The old three-item list hid X-AI-Global-Usage-* and X-AI-Feature from
   // browsers, so on feature routes the web badge showed feature counts (x/15)
-  // instead of the global counter (x/100).
+  // instead of the global counter (x/20).
   exposedHeaders: ['X-Request-ID', ...AI_USAGE_EXPOSED_HEADERS],
 }));
 

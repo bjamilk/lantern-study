@@ -48,12 +48,14 @@ describe('resolveAudioUploadMeta', () => {
 describe('transcribeAudioBuffer', () => {
   const originalGroqKey = process.env.GROQ_API_KEY;
   const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     if (originalGroqKey === undefined) delete process.env.GROQ_API_KEY;
     else process.env.GROQ_API_KEY = originalGroqKey;
     if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = originalOpenAiKey;
+    process.env.NODE_ENV = originalNodeEnv;
     jest.restoreAllMocks();
   });
 
@@ -92,7 +94,8 @@ describe('transcribeAudioBuffer', () => {
     expect(init.body).toBeInstanceOf(FormData);
   });
 
-  it('falls back to OpenAI Whisper when Groq fails', async () => {
+  it('falls back to OpenAI Whisper when Groq fails outside production', async () => {
+    process.env.NODE_ENV = 'test';
     process.env.GROQ_API_KEY = 'groq-key';
     process.env.OPENAI_API_KEY = 'openai-key';
     const fetchSpy = jest
@@ -108,7 +111,8 @@ describe('transcribeAudioBuffer', () => {
     expect(String(fetchSpy.mock.calls[1][0])).toContain('api.openai.com');
   });
 
-  it('uses OpenAI Whisper when only OPENAI_API_KEY is configured', async () => {
+  it('uses OpenAI Whisper when only OPENAI_API_KEY is configured outside production', async () => {
+    process.env.NODE_ENV = 'test';
     delete process.env.GROQ_API_KEY;
     process.env.OPENAI_API_KEY = 'openai-key';
     const fetchSpy = jest
@@ -120,5 +124,28 @@ describe('transcribeAudioBuffer', () => {
     expect(result.provider).toBe('openai-whisper-1');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(String(fetchSpy.mock.calls[0][0])).toContain('api.openai.com');
+  });
+
+  it('does not fall back to OpenAI Whisper in production when Groq fails', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.GROQ_API_KEY = 'groq-key';
+    process.env.OPENAI_API_KEY = 'openai-key';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response('rate limited', { status: 429 }));
+
+    await expect(transcribeAudioBuffer(webmFixture(), 'audio/webm')).rejects.toThrow(/Transcription failed/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('api.groq.com');
+  });
+
+  it('does not use OpenAI Whisper in production when it is the only key', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.GROQ_API_KEY;
+    process.env.OPENAI_API_KEY = 'openai-key';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('openai only', { status: 200 }));
+
+    await expect(transcribeAudioBuffer(webmFixture(), 'audio/webm')).rejects.toThrow(/GROQ_API_KEY/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

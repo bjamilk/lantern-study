@@ -79,8 +79,8 @@ describe('aiRateLimitWithCost', () => {
     expect((await getAIUsage(userId)).used).toBe(2);
   });
 
-  it('refuses deep at 98/100 without consuming anything', async () => {
-    const denied = await chargeAiCredits(userId, 98);
+  it('refuses deep at 18/20 without consuming anything', async () => {
+    const denied = await chargeAiCredits(userId, 18);
     expect(denied).toBeNull();
 
     const res = mockRes();
@@ -89,19 +89,19 @@ describe('aiRateLimitWithCost', () => {
     const body = res.body as { cost: number; remaining: number; used: number; error: string };
     expect(body.cost).toBe(3);
     expect(body.remaining).toBe(2);
-    expect(body.used).toBe(98);
+    expect(body.used).toBe(18);
     expect(body.error).toContain('needs 3 AI credits');
     // 429 still carries global headers so the client badge self-corrects.
-    expect(res.headers['x-ai-global-usage-used']).toBe('98');
-    expect((await getAIUsage(userId)).used).toBe(98);
+    expect(res.headers['x-ai-global-usage-used']).toBe('18');
+    expect((await getAIUsage(userId)).used).toBe(18);
   });
 
-  it('allows deep at exactly 97/100, landing on the limit', async () => {
-    await chargeAiCredits(userId, 97);
+  it('allows deep at exactly 17/20, landing on the limit', async () => {
+    await chargeAiCredits(userId, 17);
     const res = mockRes();
     await run(res, 'deep');
     expect(res.statusCode).toBe(200);
-    expect((await getAIUsage(userId)).used).toBe(100);
+    expect((await getAIUsage(userId)).used).toBe(20);
   });
 });
 
@@ -113,12 +113,12 @@ describe('chargeAiCredits atomicity and refunds', () => {
   });
 
   it('denies a multi-credit charge without partial consumption', async () => {
-    await chargeAiCredits(userId, 97);
+    await chargeAiCredits(userId, 17);
     const denied = await chargeAiCredits(userId, 5, 'OCR');
     expect(denied).not.toBeNull();
-    expect(denied!.used).toBe(97);
+    expect(denied!.used).toBe(17);
     // The old loop implementation left 3 credits burned here.
-    expect((await getAIUsage(userId)).used).toBe(97);
+    expect((await getAIUsage(userId)).used).toBe(17);
   });
 
   it('refunds restore the count and never go below zero', async () => {

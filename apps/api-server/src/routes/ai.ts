@@ -21,6 +21,7 @@ import {
   enhanceFlashcard,
   generateListingDescription,
   getProviderStatus,
+  isTranscriptionConfigured,
 } from '../services/aiService';
 import { handleValidationErrors, validateAIMessage } from '../middleware/validation';
 
@@ -55,10 +56,7 @@ router.get('/health', authMiddleware, (_req: Request, res: Response) => {
     status: totalRemaining > 0 ? 'operational' : 'exhausted',
     totalRemainingToday: totalRemaining,
     // Boolean only — never leak key material.
-    transcriptionConfigured: Boolean(
-      (process.env.GROQ_API_KEY && String(process.env.GROQ_API_KEY).trim()) ||
-        (process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim())
-    ),
+    transcriptionConfigured: isTranscriptionConfigured(),
     providers: status,
   });
 });

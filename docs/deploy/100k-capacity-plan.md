@@ -12,7 +12,7 @@ This is a **blueprint**, not an automatic upgrade of live free/starter services.
 | BullMQ AI worker concurrency | 4 | `AI_WORKER_CONCURRENCY` in `render.yaml` |
 | File / export workers | 1 / 1 | worker env |
 | Auth user RL | 1200 / 15m | Redis-backed |
-| AI daily quota / user | 100 | `AI_DAILY_LIMIT` |
+| AI daily quota / user | 20 | `AI_DAILY_LIMIT` |
 | Topology today | 1× free API + 1× starter worker + free Gotenberg | `render.yaml` |
 
 A single Node process cannot hold 100k concurrent connections. Free Render also cold-starts.

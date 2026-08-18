@@ -56,11 +56,11 @@ describe('aiRateLimitForFeature dual charge', () => {
   it('does not burn a global credit when the feature budget is already spent', async () => {
     const req = { user: { id: userId } } as any;
 
-    // Exhaust companion feature budget (default 75).
-    for (let i = 0; i < 75; i++) {
+    // Exhaust generate_questions (default 15) while staying under the global 20.
+    for (let i = 0; i < 15; i++) {
       const res = mockRes();
       await new Promise<void>((resolve, reject) => {
-        aiRateLimitForFeature('companion')(req, res as any, (err?: unknown) => {
+        aiRateLimitForFeature('generate_questions')(req, res as any, (err?: unknown) => {
           if (err) reject(err);
           else resolve();
         });
@@ -69,17 +69,17 @@ describe('aiRateLimitForFeature dual charge', () => {
     }
 
     const globalAfterFeatureBudget = await getAIUsage(userId);
-    expect(globalAfterFeatureBudget.used).toBe(75);
+    expect(globalAfterFeatureBudget.used).toBe(15);
 
     const blocked = mockRes();
     await new Promise<void>((resolve) => {
-      aiRateLimitForFeature('companion')(req, blocked as any, () => resolve());
+      aiRateLimitForFeature('generate_questions')(req, blocked as any, () => resolve());
       // 429 path does not call next — resolve on next tick.
       setImmediate(resolve);
     });
 
     expect(blocked.statusCode).toBe(429);
     const globalAfterBlock = await getAIUsage(userId);
-    expect(globalAfterBlock.used).toBe(75);
+    expect(globalAfterBlock.used).toBe(15);
   });
 });

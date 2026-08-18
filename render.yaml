@@ -78,7 +78,7 @@ services:
       - key: ADMIN_RATE_LIMIT_MAX
         value: "300"
       - key: AI_DAILY_LIMIT
-        value: "100"
+        value: "20"
       - key: AI_LIMIT_COMPANION
         value: "75"
       - key: AI_LIMIT_GENERATE_QUESTIONS
