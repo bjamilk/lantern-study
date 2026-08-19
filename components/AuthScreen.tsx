@@ -691,24 +691,31 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           return;
         }
         if (data.user) {
-          try {
-            await createUserProfile({
-              id: data.user.id,
-              name: signupName,
-              username: normalizedUsername,
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
-              phone: signupPhone,
-              points: 0,
-              stats: {},
-              settings: {},
-              badges: []
-            });
-          } catch (insertError) {
-            console.log('Profile create error via API (may already exist):', insertError);
-          }
-
+          // Only write the profile when signUp actually returned a session.
+          // With email confirmation on it does not: there is no bearer token
+          // yet, so POST /api/v1/users is guaranteed to 401 — it reported a
+          // failed signup to Sentry while the signup had in fact succeeded.
+          // Nothing is lost by skipping it, because finishAuthSession rebuilds
+          // the profile from the same signup metadata (stored on the auth user)
+          // the first time the confirmed account signs in.
           if (data.session?.user) {
+            try {
+              await createUserProfile({
+                id: data.user.id,
+                name: signupName,
+                username: normalizedUsername,
+                first_name: firstName.trim(),
+                last_name: lastName.trim(),
+                phone: signupPhone,
+                points: 0,
+                stats: {},
+                settings: {},
+                badges: []
+              });
+            } catch (insertError) {
+              console.log('Profile create error via API (may already exist):', insertError);
+            }
+
             await finishAuthSession(data.session.user);
           } else {
             goToVerifyEmail(email);
