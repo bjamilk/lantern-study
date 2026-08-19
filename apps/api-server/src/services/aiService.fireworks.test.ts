@@ -64,11 +64,34 @@ describe('probeProvider', () => {
     expect(result.ok).toBe(true);
     expect(result.configured).toBe(true);
     expect(result.reply).toBe('OK');
-    expect(result.model).toContain('llama');
+    expect(result.model).toContain('nemotron-lightning-3p5-30b-a3b');
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toBe('https://api.fireworks.ai/inference/v1/chat/completions');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-key');
+  });
+
+  it('strips an inline reasoning trace so JSON parsing still works', async () => {
+    process.env.FIREWORKS_API_KEY = 'test-key';
+    mockFetchOnce(async () =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              // Nemotron thinks first; the trace contains braces, which would
+              // otherwise poison the brace-matching fallback in extractJSON.
+              content: '<think>The user wants JSON. Maybe {"a": 1}? No.</think>{"questions":[]}',
+            },
+          },
+        ],
+      })
+    );
+
+    const result = await probeProvider('fireworks');
+
+    expect(result.ok).toBe(true);
+    expect(result.reply).toBe('{"questions":[]}');
+    expect(result.reply).not.toContain('<think>');
   });
 
   it('surfaces a rejected key instead of falling back to another provider', async () => {

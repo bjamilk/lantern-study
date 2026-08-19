@@ -301,7 +301,21 @@ const groqProvider: AIProvider = {
  * with FIREWORKS_DAILY_LIMIT.
  */
 const FIREWORKS_MODEL =
-  process.env.FIREWORKS_MODEL || 'accounts/fireworks/models/llama-v3p3-70b-instruct';
+  process.env.FIREWORKS_MODEL || 'accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b';
+
+/**
+ * Nemotron reasons before it answers. Where the trace lands varies: some
+ * responses carry it in a separate reasoning_content field, others inline it in
+ * the content as <think> tags. Inline traces routinely contain braces, which
+ * defeats the brace-matching fallback in extractJSON and would turn every
+ * JSON-mode feature — quiz and flashcard generation — into a parse error.
+ */
+function stripReasoningTrace(text: string): string {
+  const withoutPairs = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // A truncated trace leaves a dangling close tag; keep only what follows it.
+  const afterClose = withoutPairs.split(/<\/think>/i).pop() ?? withoutPairs;
+  return afterClose.trim();
+}
 
 function fireworksDailyLimit(): number {
   const raw = Number(process.env.FIREWORKS_DAILY_LIMIT);
@@ -348,8 +362,10 @@ const fireworksProvider: AIProvider = {
     }
 
     const data = (await response.json()) as Record<string, any>;
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) throw new Error('Empty Fireworks response');
+    const raw = data.choices?.[0]?.message?.content;
+    if (!raw) throw new Error('Empty Fireworks response');
+    const text = stripReasoningTrace(raw);
+    if (!text) throw new Error('Fireworks returned only a reasoning trace');
 
     this.dailyUsed++;
     return text;
@@ -809,7 +825,10 @@ export async function probeProvider(name: string): Promise<{
     const reply = await provider.chat(
       'You are a connectivity probe. Answer with the single word OK.',
       'Reply with the single word OK.',
-      { temperature: 0, maxTokens: 8 }
+      // Generous budget on purpose: a reasoning model spends tokens thinking
+      // before it answers, so a tight cap truncates it into an empty response
+      // and a perfectly good key would look broken.
+      { temperature: 0, maxTokens: 1024 }
     );
     return {
       provider: name,
