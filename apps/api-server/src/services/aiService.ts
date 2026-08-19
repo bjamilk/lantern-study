@@ -240,7 +240,31 @@ function checkAndResetCounter(provider: AIProvider): void {
   }
 }
 
+/**
+ * Both providers now run reasoning models, which think before they answer.
+ * Where the trace lands varies by model and response: some carry it in a
+ * separate reasoning_content field, others inline it in the content as <think>
+ * tags. Inline traces routinely contain braces, which defeats the
+ * brace-matching fallback in extractJSON and would turn every JSON-mode
+ * feature — quiz and flashcard generation — into a parse error.
+ */
+function stripReasoningTrace(text: string): string {
+  const withoutPairs = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // A truncated trace leaves a dangling close tag; keep only what follows it.
+  const afterClose = withoutPairs.split(/<\/think>/i).pop() ?? withoutPairs;
+  return afterClose.trim();
+}
+
 // ─── Provider 1: Groq (Fastest, highest free limit) ────────
+
+/**
+ * llama-3.3-70b-versatile was decommissioned on 2026-08-16 and every chat
+ * request to it started failing, which is what took AI down. Groq's own
+ * replacement for it is openai/gpt-oss-120b. Overridable so the next
+ * retirement is an env change rather than a deploy — Groq has now retired a
+ * model out from under this service once.
+ */
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 const groqProvider: AIProvider = {
   name: 'groq',
@@ -263,7 +287,7 @@ const groqProvider: AIProvider = {
         'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -280,8 +304,10 @@ const groqProvider: AIProvider = {
     }
 
     const data = (await response.json()) as Record<string, any>;
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) throw new Error('Empty Groq response');
+    const raw = data.choices?.[0]?.message?.content;
+    if (!raw) throw new Error('Empty Groq response');
+    const text = stripReasoningTrace(raw);
+    if (!text) throw new Error('Groq returned only a reasoning trace');
 
     this.dailyUsed++;
     return text;
@@ -302,24 +328,6 @@ const groqProvider: AIProvider = {
  */
 const FIREWORKS_MODEL =
   process.env.FIREWORKS_MODEL || 'accounts/fireworks/models/gpt-oss-120b';
-
-/**
- * gpt-oss reasons before it answers, as did the Nemotron model before it.
- * Where the trace lands varies by model and response: some carry it in a
- * separate reasoning_content field, others inline it in the content as <think>
- * tags. Inline traces routinely contain braces, which defeats the
- * brace-matching fallback in extractJSON and would turn every JSON-mode
- * feature — quiz and flashcard generation — into a parse error.
- *
- * Set FIREWORKS_MODEL to switch models without a code change; anything
- * reasoning-shaped is handled here.
- */
-function stripReasoningTrace(text: string): string {
-  const withoutPairs = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
-  // A truncated trace leaves a dangling close tag; keep only what follows it.
-  const afterClose = withoutPairs.split(/<\/think>/i).pop() ?? withoutPairs;
-  return afterClose.trim();
-}
 
 function fireworksDailyLimit(): number {
   const raw = Number(process.env.FIREWORKS_DAILY_LIMIT);

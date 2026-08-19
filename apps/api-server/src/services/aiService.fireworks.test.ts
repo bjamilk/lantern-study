@@ -114,6 +114,35 @@ describe('probeProvider', () => {
   });
 });
 
+describe('groq provider', () => {
+  const realKey = process.env.GROQ_API_KEY;
+  afterEach(() => {
+    if (realKey === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = realKey;
+  });
+
+  it('requests the configured replacement model and strips its reasoning', async () => {
+    process.env.GROQ_API_KEY = 'groq-test-key';
+    mockFetchOnce(async () =>
+      jsonResponse({
+        choices: [{ message: { content: '<think>weighing {"a":1}</think>{"questions":[]}' } }],
+      })
+    );
+
+    const result = await probeProvider('groq');
+
+    expect(result.ok).toBe(true);
+    // llama-3.3-70b-versatile was decommissioned 2026-08-16; requesting it is
+    // what took AI down, so this must never regress to that id.
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
+    const sent = JSON.parse(init.body as string);
+    expect(sent.model).toBe('openai/gpt-oss-120b');
+    expect(sent.model).not.toContain('llama-3.3');
+    expect(result.reply).toBe('{"questions":[]}');
+  });
+});
+
 describe('classifyProviderFailure', () => {
   it('classifies a Fireworks auth rejection like any other provider', () => {
     expect(
