@@ -35,6 +35,20 @@ export function initSentry(): void {
       // budget-query regression was invisible to default Sentry for exactly
       // that reason. Error level only: warns are too chatty to be signal.
       Sentry.captureConsoleIntegration({ levels: ['error'] }),
+      // Failed fetch/XHR responses. A Supabase 400 on token refresh logged the
+      // user out with nothing thrown and nothing console.error'd, so default
+      // Sentry recorded silence around a real incident. 4xx/5xx both matter:
+      // the failures that hurt here (401 refresh, 400 token, 5xx API) are
+      // mostly 4xx. The leading-slash target covers same-origin /api calls and
+      // the dev proxy path.
+      Sentry.httpClientIntegration({
+        failedRequestStatusCodes: [[400, 599]],
+        failedRequestTargets: [
+          /^https:\/\/lantern-study-api\.onrender\.com/,
+          /supabase\.co/,
+          /^\//,
+        ],
+      }),
     ],
     // Capturing console.error also captures conditions the app already handles
     // and explains to the user. Each entry below is a state we deliberately
@@ -59,7 +73,55 @@ export function initSentry(): void {
       return scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event;
     },
   });
+  // CSP violations are reported by the browser, not thrown by JS — no error
+  // handler or console hook ever sees them, which is how an invalid
+  // connect-src entry sat in the console for weeks with Sentry silent. The
+  // dedicated DOM event is the only client-side way to hear about them.
+  if (typeof document !== 'undefined') {
+    document.addEventListener('securitypolicyviolation', (e) => {
+      Sentry.captureMessage(
+        `CSP violation: ${e.violatedDirective} blocked ${e.blockedURI || '(inline)'}`,
+        {
+          level: 'warning',
+          fingerprint: ['csp-violation', e.violatedDirective, e.blockedURI || 'inline'],
+          extra: {
+            violatedDirective: e.violatedDirective,
+            blockedURI: e.blockedURI,
+            sourceFile: e.sourceFile,
+            lineNumber: e.lineNumber,
+            disposition: e.disposition,
+          },
+        }
+      );
+    });
+  }
+
   initialized = true;
+}
+
+/**
+ * A logout the user did not ask for is an incident, not an auth event — the
+ * refresh-token 400 that forces one never surfaces as an error anywhere else
+ * (supabase-js handles it internally and just emits SIGNED_OUT). Called from
+ * the SIGNED_OUT handler when no user action explains it.
+ */
+let intentionalSignOutAt = 0;
+
+/** Call when the user themselves asks to sign out, before supabase.auth.signOut(). */
+export function markIntentionalSignOut(): void {
+  intentionalSignOutAt = Date.now();
+}
+
+export function reportUnexpectedSignOut(context: Record<string, unknown>): void {
+  if (!initialized) return;
+  // A user-initiated logout fires the same SIGNED_OUT event; a 30s window
+  // separates "clicked Log out" from "session died underneath them".
+  if (Date.now() - intentionalSignOutAt < 30_000) return;
+  Sentry.captureMessage('Unexpected sign-out (session lost without user action)', {
+    level: 'warning',
+    fingerprint: ['unexpected-sign-out'],
+    extra: context,
+  });
 }
 
 export function setSentryUser(user: { id: string; email?: string } | null): void {

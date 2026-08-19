@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { markIntentionalSignOut } from './sentry';
 import { Group, UserQuestionStats } from '../types'
 import {
   getSupabaseUrl,
@@ -256,6 +257,9 @@ export async function revokeOtherSessions(): Promise<boolean> {
 }
 
 export async function apiLogoutSession(): Promise<void> {
+  // Every user-initiated logout funnels through here; marking it lets the
+  // SIGNED_OUT handler tell a clicked logout from a session dying underneath.
+  markIntentionalSignOut();
   try {
     if (isCookieAuthEnabled()) {
       await logoutCookieSession();

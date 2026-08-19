@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState, useRef, type Dispatch, type SetStateAction } from 'react';
 import { AppMode, OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
 import { useAuthStore } from '../stores/authStore';
+import { reportUnexpectedSignOut } from '../services/sentry';
 import { useGroupStore } from '../stores/groupStore';
 import { useTestStore } from '../stores/testStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -505,6 +506,12 @@ export function useAppEffects({
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_OUT') {
+                // Fires for clicked logouts and for sessions that died under the
+                // user (refresh-token 400s) alike; the reporter separates them.
+                reportUnexpectedSignOut({
+                    hadUser: Boolean(useAuthStore.getState().currentUser),
+                    path: typeof window !== 'undefined' ? window.location.pathname : '',
+                });
                 setAuthTokenReady(false);
                 setPasswordRecovery(false);
                 // Always clear — previously skipped while isAuthLoading, leaving stale users on /.
