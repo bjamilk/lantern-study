@@ -64,12 +64,39 @@ interface AIProvider {
   lastReset: string;
 }
 
+/**
+ * Token counts as the provider reports them. cachedTokens is the slice of
+ * promptTokens the provider served from its prefix cache — Groq bills those at
+ * half price on gpt-oss models and Fireworks at ~a fifth, so this is the
+ * number that says whether cached-input pricing is actually doing anything.
+ */
+export interface AiUsage {
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+}
+
+/** OpenAI-compatible usage block (Groq and Fireworks both emit this shape). */
+function parseOpenAiUsage(data: Record<string, any>): AiUsage | undefined {
+  const usage = data?.usage;
+  if (!usage || typeof usage !== 'object') return undefined;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return {
+    promptTokens: num(usage.prompt_tokens),
+    completionTokens: num(usage.completion_tokens),
+    // Field name differs across OpenAI-compatible hosts; take whichever exists.
+    cachedTokens: num(usage.prompt_tokens_details?.cached_tokens ?? usage.cached_prompt_tokens ?? usage.cached_tokens),
+  };
+}
+
 interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   jsonOutput?: boolean;
   /** Prefer this provider first (sticky routing across map-reduce chunks). */
   preferredProvider?: string;
+  /** Receives the provider-reported token usage for this single call, when the provider emits one. */
+  onUsage?: (usage: AiUsage) => void;
 }
 
 type ProviderFailureKind =
@@ -321,6 +348,8 @@ const groqProvider: AIProvider = {
     const text = stripReasoningTrace(raw);
     if (!text) throw new Error('Groq returned only a reasoning trace');
 
+    const usage = parseOpenAiUsage(data);
+    if (usage) options.onUsage?.(usage);
     this.dailyUsed++;
     return text;
   },
@@ -391,6 +420,8 @@ const fireworksProvider: AIProvider = {
     const text = stripReasoningTrace(raw);
     if (!text) throw new Error('Fireworks returned only a reasoning trace');
 
+    const usage = parseOpenAiUsage(data);
+    if (usage) options.onUsage?.(usage);
     this.dailyUsed++;
     return text;
   },
@@ -439,6 +470,14 @@ const geminiProvider: AIProvider = {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('Empty Gemini response');
 
+    const meta = data.usageMetadata;
+    if (meta && typeof meta === 'object') {
+      options.onUsage?.({
+        promptTokens: Number(meta.promptTokenCount) || 0,
+        completionTokens: Number(meta.candidatesTokenCount) || 0,
+        cachedTokens: Number(meta.cachedContentTokenCount) || 0,
+      });
+    }
     this.dailyUsed++;
     return text;
   },
@@ -657,11 +696,43 @@ const providers: AIProvider[] = [
   ...(process.env.NODE_ENV === 'production' ? [] : [mockProvider]),
 ];
 
+/**
+ * Running per-provider token totals for the current UTC day, fed by the
+ * providers' usage reports. In-memory (per instance) on purpose: these are an
+ * operational gauge for "is prompt caching doing anything", not billing — the
+ * per-request truth goes to ai_inference_log.
+ */
+const dailyTokenTotals: {
+  dateKey: string;
+  byProvider: Map<string, { calls: number; promptTokens: number; cachedTokens: number; completionTokens: number }>;
+} = { dateKey: '', byProvider: new Map() };
+
+function recordDailyTokenUsage(provider: string, usage: AiUsage | undefined): void {
+  const today = new Date().toISOString().split('T')[0];
+  if (dailyTokenTotals.dateKey !== today) {
+    dailyTokenTotals.dateKey = today;
+    dailyTokenTotals.byProvider.clear();
+  }
+  const row = dailyTokenTotals.byProvider.get(provider) ?? {
+    calls: 0,
+    promptTokens: 0,
+    cachedTokens: 0,
+    completionTokens: 0,
+  };
+  row.calls += 1;
+  if (usage) {
+    row.promptTokens += usage.promptTokens;
+    row.cachedTokens += usage.cachedTokens;
+    row.completionTokens += usage.completionTokens;
+  }
+  dailyTokenTotals.byProvider.set(provider, row);
+}
+
 async function chatCompletion(
   systemPrompt: string,
   userPrompt: string,
   options: ChatOptions = {}
-): Promise<{ text: string; provider: string }> {
+): Promise<{ text: string; provider: string; usage?: AiUsage }> {
   return withAiInflight(async () => {
     const errors: ProviderAttemptError[] = [];
     const { preferredProvider, ...providerChatOptions } = options;
@@ -727,9 +798,26 @@ async function chatCompletion(
       let rateLimitRetries = 0;
       while (true) {
         try {
-          const text = await provider.chat(systemPrompt, userPrompt, providerChatOptions);
+          let usage: AiUsage | undefined;
+          const text = await provider.chat(systemPrompt, userPrompt, {
+            ...providerChatOptions,
+            onUsage: (u) => {
+              usage = u;
+            },
+          });
           await incrementProviderDailyUsage(provider.name);
-          return { text, provider: provider.name };
+          recordDailyTokenUsage(provider.name, usage);
+          if (usage) {
+            // One line per paid call: enough to grep cache effectiveness out of
+            // Render logs without a dashboard.
+            logger.info('AI call usage', {
+              provider: provider.name,
+              promptTokens: usage.promptTokens,
+              cachedTokens: usage.cachedTokens,
+              completionTokens: usage.completionTokens,
+            });
+          }
+          return { text, provider: provider.name, usage };
         } catch (error: any) {
           const message = error?.message || String(error);
           const kind = classifyProviderFailure(message);
@@ -818,6 +906,7 @@ export async function probeProvider(name: string): Promise<{
   latencyMs: number;
   model?: string;
   reply?: string;
+  usage?: AiUsage;
   error?: string;
 }> {
   const provider = providers.find((p) => p.name === name);
@@ -846,13 +935,20 @@ export async function probeProvider(name: string): Promise<{
 
   const startedAt = Date.now();
   try {
+    let usage: AiUsage | undefined;
     const reply = await provider.chat(
       'You are a connectivity probe. Answer with the single word OK.',
       'Reply with the single word OK.',
       // Generous budget on purpose: a reasoning model spends tokens thinking
       // before it answers, so a tight cap truncates it into an empty response
       // and a perfectly good key would look broken.
-      { temperature: 0, maxTokens: 1024 }
+      {
+        temperature: 0,
+        maxTokens: 1024,
+        onUsage: (u) => {
+          usage = u;
+        },
+      }
     );
     return {
       provider: name,
@@ -861,6 +957,9 @@ export async function probeProvider(name: string): Promise<{
       latencyMs: Date.now() - startedAt,
       model,
       reply: reply.trim().slice(0, 40),
+      // Probe the same provider twice and a working prefix cache shows up here
+      // as cachedTokens > 0 on the second call.
+      usage,
     };
   } catch (error) {
     return {
@@ -880,15 +979,25 @@ export function getProviderStatus(): Array<{
   dailyUsed: number;
   dailyLimit: number;
   remainingToday: number;
+  tokensToday: { calls: number; promptTokens: number; cachedTokens: number; completionTokens: number };
 }> {
   return providers.map(p => {
     checkAndResetCounter(p);
+    const tokens =
+      dailyTokenTotals.dateKey === new Date().toISOString().split('T')[0]
+        ? dailyTokenTotals.byProvider.get(p.name)
+        : undefined;
     return {
       name: p.name,
       available: p.isAvailable(),
       dailyUsed: p.dailyUsed,
       dailyLimit: p.dailyLimit,
       remainingToday: Math.max(0, p.dailyLimit - p.dailyUsed),
+      // Today's provider-reported token totals (this instance). cachedTokens is
+      // the prefix-cache hit volume — the "is cached input working" number.
+      tokensToday: tokens
+        ? { ...tokens }
+        : { calls: 0, promptTokens: 0, cachedTokens: 0, completionTokens: 0 },
     };
   });
 }
@@ -1034,7 +1143,7 @@ export async function generateQuestionsFromNotes(
     questionTypes?: string[];
     subject?: string;
   } = {}
-): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
+): Promise<{ questions: GeneratedQuestion[]; provider: string; usage?: AiUsage }> {
   const { count = 10, difficulty = 'mixed', questionTypes, subject } = options;
   const adjustedCount = Math.min(count, 15);
   const source = notes.substring(0, 6000);
@@ -1053,7 +1162,7 @@ async function generateQuestionsFromNotesUncached(
   difficulty: 'easy' | 'medium' | 'hard' | 'mixed',
   questionTypes: string[] | undefined,
   subject: string | undefined
-): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
+): Promise<{ questions: GeneratedQuestion[]; provider: string; usage?: AiUsage }> {
   const systemPrompt = `You are an expert educator creating test questions.
 Generate exactly ${adjustedCount} questions from the provided study material.
 ${difficulty !== 'mixed' ? `All questions: ${difficulty} difficulty.` : 'Mix difficulties.'}
@@ -1068,7 +1177,7 @@ Rules:
 Return ONLY valid JSON: {"questions":[{"text":"...","type":"multiple_choice","options":["A distractor","Another distractor","The correct statement","A third distractor"],"correctAnswer":"The correct statement","explanation":"...","difficulty":"medium","topic":"..."}]}
 For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit options.`;
 
-  const { text, provider } = await chatCompletion(
+  const { text, provider, usage } = await chatCompletion(
     systemPrompt,
     `Generate questions from:\n\n${source}`,
     { temperature: 0.7, jsonOutput: true }
@@ -1106,13 +1215,13 @@ For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit o
     throw new Error('Question generation produced no answerable questions');
   }
 
-  return { provider, questions: usable };
+  return { provider, usage, questions: usable };
 }
 
 export async function generateFlashcardsFromNotes(
   notes: string,
   options: { count?: number; style?: 'concise' | 'detailed' } = {}
-): Promise<{ flashcards: GeneratedFlashcard[]; provider: string }> {
+): Promise<{ flashcards: GeneratedFlashcard[]; provider: string; usage?: AiUsage }> {
   const { count = 15, style = 'concise' } = options;
   const adjustedCount = Math.min(Math.max(count, 10), 20);
   const source = notes.substring(0, 6000);
@@ -1128,7 +1237,7 @@ ${style === 'concise' ? 'Brief, memorable answers.' : 'Detailed with examples.'}
 
 Return ONLY valid JSON: {"flashcards":[{"front":"term","back":"definition","mnemonic":"memory aid or null","example":"example or null"}]}`;
 
-      const { text, provider } = await chatCompletion(
+      const { text, provider, usage } = await chatCompletion(
         systemPrompt,
         `Create flashcards from:\n\n${source}`,
         { temperature: 0.7, jsonOutput: true }
@@ -1154,7 +1263,7 @@ Return ONLY valid JSON: {"flashcards":[{"front":"term","back":"definition","mnem
         throw new Error('Flashcard generation produced no usable cards');
       }
 
-      return { provider, flashcards: usableCards };
+      return { provider, usage, flashcards: usableCards };
     }
   );
 }
@@ -1164,7 +1273,7 @@ export async function explainAnswer(
   userAnswer: string,
   correctAnswer: string,
   options?: string[]
-): Promise<{ explanation: string; provider: string }> {
+): Promise<{ explanation: string; provider: string; usage?: AiUsage }> {
   return withAiResponseCache(
     'explain',
     question,
@@ -1178,7 +1287,7 @@ async function explainAnswerUncached(
   userAnswer: string,
   correctAnswer: string,
   options?: string[]
-): Promise<{ explanation: string; provider: string }> {
+): Promise<{ explanation: string; provider: string; usage?: AiUsage }> {
   const systemPrompt = `You are a patient tutor explaining test answers.
 Be concise but thorough. Use analogies when helpful.
 Keep under 150 words.`;
@@ -1189,12 +1298,12 @@ Student answered: ${userAnswer}
 Correct answer: ${correctAnswer}
 Explain why the correct answer is right${userAnswer !== correctAnswer ? " and why the student's answer is wrong" : ''}.`;
 
-  const { text, provider } = await chatCompletion(systemPrompt, userPrompt, {
+  const { text, provider, usage } = await chatCompletion(systemPrompt, userPrompt, {
     temperature: 0.5,
     maxTokens: 300,
   });
 
-  return { explanation: text, provider };
+  return { explanation: text, provider, usage };
 }
 
 export async function getStudyRecommendations(
@@ -1203,7 +1312,7 @@ export async function getStudyRecommendations(
     flashcardAccuracy: { topic: string; correctRate: number }[];
     studyHoursThisWeek: number;
   }
-): Promise<{ recommendations: StudyRecommendation; provider: string }> {
+): Promise<{ recommendations: StudyRecommendation; provider: string; usage?: AiUsage }> {
   return withAiResponseCache(
     'study_recommendations',
     JSON.stringify(performanceData),
@@ -1218,11 +1327,11 @@ async function getStudyRecommendationsUncached(
     flashcardAccuracy: { topic: string; correctRate: number }[];
     studyHoursThisWeek: number;
   }
-): Promise<{ recommendations: StudyRecommendation; provider: string }> {
+): Promise<{ recommendations: StudyRecommendation; provider: string; usage?: AiUsage }> {
   const systemPrompt = `You are an AI study coach. Analyze performance and give actionable advice.
 Return ONLY valid JSON: {"weakTopics":["t1"],"suggestedCards":["s1"],"suggestedQuestions":["q1"],"studyTip":"tip","estimatedMinutes":30}`;
 
-  const { text, provider } = await chatCompletion(
+  const { text, provider, usage } = await chatCompletion(
     systemPrompt,
     `Performance:\n${JSON.stringify(performanceData)}`,
     { temperature: 0.6, jsonOutput: true }
@@ -1231,6 +1340,7 @@ Return ONLY valid JSON: {"weakTopics":["t1"],"suggestedCards":["s1"],"suggestedQ
   const parsed = extractJSON(text);
   return {
     provider,
+    usage,
     recommendations: {
       weakTopics: Array.isArray(parsed.weakTopics) ? parsed.weakTopics : [],
       suggestedCards: Array.isArray(parsed.suggestedCards) ? parsed.suggestedCards : [],
@@ -1244,7 +1354,7 @@ Return ONLY valid JSON: {"weakTopics":["t1"],"suggestedCards":["s1"],"suggestedQ
 export async function askTutor(
   question: string,
   context?: { subject?: string; recentTopics?: string[] }
-): Promise<{ answer: string; provider: string }> {
+): Promise<{ answer: string; provider: string; usage?: AiUsage }> {
   return withAiResponseCache(
     'ask_tutor',
     question,
@@ -1256,18 +1366,18 @@ export async function askTutor(
 async function askTutorUncached(
   question: string,
   context?: { subject?: string; recentTopics?: string[] }
-): Promise<{ answer: string; provider: string }> {
+): Promise<{ answer: string; provider: string; usage?: AiUsage }> {
   const systemPrompt = `You are a friendly study tutor in a student group chat.
 ${context?.subject ? `Subject: ${context.subject}.` : ''}
 ${context?.recentTopics?.length ? `Recent topics: ${context.recentTopics.join(', ')}.` : ''}
 Keep answers clear, under 150 words. Use bullet points for complex topics.`;
 
-  const { text, provider } = await chatCompletion(systemPrompt, question, {
+  const { text, provider, usage } = await chatCompletion(systemPrompt, question, {
     temperature: 0.7,
     maxTokens: 300,
   });
 
-  return { answer: text, provider };
+  return { answer: text, provider, usage };
 }
 
 export async function generateListingDescription(details: {
@@ -1282,7 +1392,7 @@ export async function generateListingDescription(details: {
   bedrooms?: string;
   furnished?: string;
   distanceToCampus?: string;
-}): Promise<{ description: string; provider: string }> {
+}): Promise<{ description: string; provider: string; usage?: AiUsage }> {
   return withAiResponseCache(
     'listing_description',
     details.title,
@@ -1314,7 +1424,7 @@ async function generateListingDescriptionUncached(details: {
   bedrooms?: string;
   furnished?: string;
   distanceToCampus?: string;
-}): Promise<{ description: string; provider: string }> {
+}): Promise<{ description: string; provider: string; usage?: AiUsage }> {
   const facts = [
     details.category ? `Category: ${details.category}` : null,
     details.subcategory ? `Subcategory: ${details.subcategory}` : null,
@@ -1333,19 +1443,19 @@ Write 2-4 sentences that are friendly, honest, and specific to the provided deta
 Do not invent details (condition, defects, extras) that were not provided.
 Do not include a title, headings, hashtags, or emojis. Return only the description text.`;
 
-  const { text, provider } = await chatCompletion(
+  const { text, provider, usage } = await chatCompletion(
     systemPrompt,
     `Item title: ${details.title}\n${facts}`,
     { temperature: 0.7, maxTokens: 250 }
   );
 
-  return { description: text.trim(), provider };
+  return { description: text.trim(), provider, usage };
 }
 
 export async function enhanceFlashcard(
   front: string,
   back: string
-): Promise<{ enhanced: GeneratedFlashcard; provider: string }> {
+): Promise<{ enhanced: GeneratedFlashcard; provider: string; usage?: AiUsage }> {
   return withAiResponseCache(
     'enhance_flashcard',
     front,
@@ -1357,11 +1467,11 @@ export async function enhanceFlashcard(
 async function enhanceFlashcardUncached(
   front: string,
   back: string
-): Promise<{ enhanced: GeneratedFlashcard; provider: string }> {
+): Promise<{ enhanced: GeneratedFlashcard; provider: string; usage?: AiUsage }> {
   const systemPrompt = `Improve this flashcard. Make it clearer, more complete, add mnemonic and example.
 Return ONLY valid JSON: {"front":"improved","back":"improved","mnemonic":"aid or null","example":"example or null"}`;
 
-  const { text, provider } = await chatCompletion(
+  const { text, provider, usage } = await chatCompletion(
     systemPrompt,
     `Front: ${front}\nBack: ${back}`,
     { temperature: 0.7, jsonOutput: true }
@@ -1370,6 +1480,7 @@ Return ONLY valid JSON: {"front":"improved","back":"improved","mnemonic":"aid or
   const parsed = extractJSON(text);
   return {
     provider,
+    usage,
     enhanced: {
       front: String(parsed.front || front),
       back: String(parsed.back || back),
@@ -1487,7 +1598,7 @@ Only include ACTIONS when genuinely useful, not on every reply. Never include AC
   const historyText = recentHistory.map(m => `${m.role === 'user' ? userName : 'Lantern'}: ${m.content}`).join('\n');
   const userPrompt = historyText ? `${historyText}\n${userName}: ${userMessage}` : userMessage;
 
-  const { text, provider } = await chatCompletion(systemPrompt, userPrompt, { temperature: 0.55, maxTokens: 512 });
+  const { text, provider, usage } = await chatCompletion(systemPrompt, userPrompt, { temperature: 0.55, maxTokens: 512 });
 
   const actionsMatch = text.match(/\nACTIONS:(\[.*\])\s*$/s);
   let actions: CompanionAction[] = [];
@@ -1525,7 +1636,7 @@ Keep the summary to 3–5 bullet points. Be specific and useful to a student who
 
   const userPrompt = `Group: ${groupName}\n\n${messagesBlock}`;
 
-  const { text, provider } = await chatCompletion(systemPrompt, userPrompt, { temperature: 0.5, maxTokens: 350 });
+  const { text, provider, usage } = await chatCompletion(systemPrompt, userPrompt, { temperature: 0.5, maxTokens: 350 });
   return { summary: text.trim(), provider };
 }
 
@@ -1808,7 +1919,7 @@ async function generateSmartNoteContentUncached(
   if (chunks.length <= 1) {
     const systemPrompt = buildSmartNotesSystemPrompt(options.sourceType, 'full', promptOpts);
     const userPrompt = `${titlePrefix}Source material:\n\n${chunks[0] || cleaned}`;
-    const { text, provider } = await chatCompletion(systemPrompt, userPrompt, {
+    const { text, provider, usage } = await chatCompletion(systemPrompt, userPrompt, {
       temperature: 0.35,
       maxTokens: depthConfig.fullMaxTokens,
     });
@@ -1920,7 +2031,7 @@ async function generateSmartNoteContentUncached(
 export async function generateDailyQuiz(
   content: string,
   options: { count?: number; studyGoal?: string } = {}
-): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
+): Promise<{ questions: GeneratedQuestion[]; provider: string; usage?: AiUsage }> {
   const count = Math.min(options.count ?? 5, 5);
   const source = content.substring(0, 6000);
   return withAiResponseCache(
@@ -1935,7 +2046,7 @@ async function generateDailyQuizUncached(
   source: string,
   count: number,
   studyGoal?: string
-): Promise<{ questions: GeneratedQuestion[]; provider: string }> {
+): Promise<{ questions: GeneratedQuestion[]; provider: string; usage?: AiUsage }> {
   const goalHint =
     studyGoal === 'exam_prep'
       ? 'Focus on exam-style questions with clear distractors.'
@@ -1956,7 +2067,7 @@ Rules:
 
 Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"multiple_choice","options":["Digesting food","Breathing oxygen","Converting light to chemical energy","Cell division"],"correctAnswer":"Converting light to chemical energy","explanation":"...","difficulty":"medium","topic":"Biology"},{"text":"Plants need sunlight to grow.","type":"true_false","options":["True","False"],"correctAnswer":"True","explanation":"...","difficulty":"easy","topic":"Biology"}]}`;
 
-  const { text, provider } = await chatCompletion(
+  const { text, provider, usage } = await chatCompletion(
     systemPrompt,
     `Material:\n\n${source}`,
     // Headroom for a reasoning model: the trace is billed against the same
@@ -1981,7 +2092,7 @@ Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"
     throw new Error('Quiz generation produced no answerable questions');
   }
 
-  return { provider, questions: usable };
+  return { provider, usage, questions: usable };
 }
 
 /**

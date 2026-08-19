@@ -35,7 +35,11 @@ export function initializeAIRoutes(supabase: SupabaseService): void {
 async function recordInference(
   req: AuthenticatedRequest,
   feature: string,
-  result: { provider?: string; model?: string }
+  result: {
+    provider?: string;
+    model?: string;
+    usage?: { promptTokens: number; completionTokens: number; cachedTokens: number };
+  }
 ): Promise<void> {
   const userId = req.user?.id;
   if (!userId || !supabaseService) return;
@@ -44,6 +48,9 @@ async function recordInference(
     feature,
     provider: result.provider,
     model: result.model,
+    // Cache replays arrive with no usage, so their rows record null tokens —
+    // which is the truth: nothing was spent.
+    usage: result.usage,
     requestId: (req as AuthenticatedRequest & { requestId?: string }).requestId,
   });
 }

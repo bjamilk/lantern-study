@@ -138,7 +138,15 @@ export async function withAiResponseCache<T extends { provider?: string }>(
 ): Promise<T> {
   const cached = await getCachedAiResponse<T>(feature, source, options);
   if (cached) {
-    return { ...cached, provider: CACHED_AI_PROVIDER };
+    // The stored result carries the token usage of the call that produced it.
+    // Replaying it costs nothing, so reporting those tokens again would count
+    // spend that never happened — drop usage along with the original provider.
+    const replay: Record<string, unknown> = {
+      ...(cached as unknown as Record<string, unknown>),
+      provider: CACHED_AI_PROVIDER,
+    };
+    delete replay.usage;
+    return replay as unknown as T;
   }
   const result = await produce();
   await setCachedAiResponse(feature, source, options, result);
