@@ -17,6 +17,7 @@ import {
   validateAdminBulkNotification,
 } from '../middleware/validation';
 import { getAIUsage, resetAIUsageForUser, getAllAIUsageForUser } from '../middleware/aiRateLimit';
+import { probeProvider, getProviderStatus } from '../services/aiService';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { setUserSessionCutoff } from '../services/tokenDenylist';
@@ -97,6 +98,31 @@ async function getAuthUserInfoForUserIds(
 
   return result;
 }
+
+// GET /api/v1/admin/ai/provider-probe?provider=fireworks
+// Sends one real request to a single AI provider so a newly added key can be
+// checked without waiting for the fallback chain to reach it in production.
+// Admin-only and rate-limited at mount time; it bills one tiny completion.
+router.get('/ai/provider-probe', async (req: any, res: any) => {
+  const requested = typeof req.query.provider === 'string' ? req.query.provider.trim() : '';
+  if (!requested) {
+    res.status(400).json({
+      success: false,
+      error: 'provider query parameter is required',
+      knownProviders: getProviderStatus().map((p) => p.name),
+    });
+    return;
+  }
+
+  try {
+    const result = await probeProvider(requested);
+    // 200 with ok:false — the probe ran and produced a verdict. A non-2xx here
+    // would be ambiguous with the probe endpoint itself failing.
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: clientErrorMessage(error) });
+  }
+});
 
 // GET /api/v1/admin/stats
 router.get('/stats', async (req: any, res: any) => {

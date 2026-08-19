@@ -287,7 +287,75 @@ const groqProvider: AIProvider = {
   },
 };
 
-// ─── Provider 2: Google Gemini ──────────────────────────────
+// ─── Provider 2: Fireworks (paid standby for Groq) ─────────
+
+/**
+ * Fireworks' serverless inference is OpenAI-compatible, so this is the Groq
+ * block with a different host and model id.
+ *
+ * It sits directly behind Groq deliberately: Groq's free tier carries normal
+ * traffic, and this only bills when Groq is failing or exhausted. dailyLimit is
+ * therefore a spend guard rather than a quota the vendor imposes — an outage
+ * that lasted all day would otherwise bill for every request in it. Raise it
+ * with FIREWORKS_DAILY_LIMIT.
+ */
+const FIREWORKS_MODEL =
+  process.env.FIREWORKS_MODEL || 'accounts/fireworks/models/llama-v3p3-70b-instruct';
+
+function fireworksDailyLimit(): number {
+  const raw = Number(process.env.FIREWORKS_DAILY_LIMIT);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1000;
+}
+
+const fireworksProvider: AIProvider = {
+  name: 'fireworks',
+  dailyLimit: fireworksDailyLimit(),
+  dailyUsed: 0,
+  lastReset: '',
+
+  isAvailable() {
+    checkAndResetCounter(this);
+    // Re-read each call so the limit can be raised without a redeploy.
+    this.dailyLimit = fireworksDailyLimit();
+    return !!process.env.FIREWORKS_API_KEY && this.dailyUsed < this.dailyLimit;
+  },
+
+  async chat(systemPrompt: string, userPrompt: string, options: ChatOptions = {}): Promise<string> {
+    const { temperature = 0.7, maxTokens = 2048 } = options;
+
+    const response = await aiFetch('https://api.fireworks.ai/inference/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.FIREWORKS_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: FIREWORKS_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+        ...(options.jsonOutput ? { response_format: { type: 'json_object' } } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Fireworks error ${response.status}: ${error}`);
+    }
+
+    const data = (await response.json()) as Record<string, any>;
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) throw new Error('Empty Fireworks response');
+
+    this.dailyUsed++;
+    return text;
+  },
+};
+
+// ─── Provider 3: Google Gemini ──────────────────────────────
 
 const geminiProvider: AIProvider = {
   name: 'gemini',
@@ -335,7 +403,7 @@ const geminiProvider: AIProvider = {
   },
 };
 
-// ─── Provider 3: Cloudflare Workers AI ──────────────────────
+// ─── Provider 4: Cloudflare Workers AI ──────────────────────
 
 const cloudflareProvider: AIProvider = {
   name: 'cloudflare',
@@ -384,7 +452,7 @@ const cloudflareProvider: AIProvider = {
   },
 };
 
-// ─── Provider 4: HuggingFace Inference (Fallback) ──────────
+// ─── Provider 5: HuggingFace Inference (Fallback) ──────────
 
 const huggingfaceProvider: AIProvider = {
   name: 'huggingface',
@@ -541,6 +609,7 @@ const mockProvider: AIProvider = {
 
 const providers: AIProvider[] = [
   groqProvider,
+  fireworksProvider,
   geminiProvider,
   cloudflareProvider,
   huggingfaceProvider,
@@ -585,6 +654,7 @@ async function chatCompletion(
             // cheap sync check; Redis sync happens if we reach that provider
             (p.name === 'mock-fallback' ||
               (p.name === 'groq' && !!process.env.GROQ_API_KEY) ||
+              (p.name === 'fireworks' && !!process.env.FIREWORKS_API_KEY) ||
               (p.name === 'gemini' && !!process.env.GEMINI_API_KEY) ||
               (p.name === 'cloudflare' &&
                 !!process.env.CF_API_TOKEN &&
@@ -678,6 +748,75 @@ function extractJSON(text: string): any {
 }
 
 // ─── Provider Status ────────────────────────────────────────
+
+/**
+ * Send one real request to a single provider and report what came back.
+ *
+ * Deliberately calls the provider directly instead of going through
+ * chatCompletion: that walks the fallback chain, so a broken key would be
+ * masked by whichever provider answered next and the probe would report
+ * success. Here a failure is a failure, and the vendor's own message is
+ * returned so a bad key reads differently from an unreachable host.
+ */
+export async function probeProvider(name: string): Promise<{
+  provider: string;
+  configured: boolean;
+  ok: boolean;
+  latencyMs: number;
+  model?: string;
+  reply?: string;
+  error?: string;
+}> {
+  const provider = providers.find((p) => p.name === name);
+  if (!provider) {
+    return {
+      provider: name,
+      configured: false,
+      ok: false,
+      latencyMs: 0,
+      error: `Unknown provider. Known: ${providers.map((p) => p.name).join(', ')}`,
+    };
+  }
+
+  const model = name === 'fireworks' ? FIREWORKS_MODEL : undefined;
+
+  if (!provider.isAvailable()) {
+    return {
+      provider: name,
+      configured: false,
+      ok: false,
+      latencyMs: 0,
+      model,
+      error: `Not configured, or daily cap reached (${provider.dailyUsed}/${provider.dailyLimit}).`,
+    };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const reply = await provider.chat(
+      'You are a connectivity probe. Answer with the single word OK.',
+      'Reply with the single word OK.',
+      { temperature: 0, maxTokens: 8 }
+    );
+    return {
+      provider: name,
+      configured: true,
+      ok: true,
+      latencyMs: Date.now() - startedAt,
+      model,
+      reply: reply.trim().slice(0, 40),
+    };
+  } catch (error) {
+    return {
+      provider: name,
+      configured: true,
+      ok: false,
+      latencyMs: Date.now() - startedAt,
+      model,
+      error: (error instanceof Error ? error.message : String(error)).slice(0, 400),
+    };
+  }
+}
 
 export function getProviderStatus(): Array<{
   name: string;

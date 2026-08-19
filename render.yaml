@@ -53,6 +53,8 @@ services:
         generateValue: true
       - key: GROQ_API_KEY
         sync: false
+      - key: FIREWORKS_API_KEY
+        sync: false
       - key: API_KEY_SALT_ROUNDS
         value: "12"
       - key: API_KEY_MAX_PER_USER
@@ -129,6 +131,8 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: GROQ_API_KEY
+        sync: false
+      - key: FIREWORKS_API_KEY
         sync: false
       - key: ENABLE_MARKETPLACE_JOBS
         value: "true"

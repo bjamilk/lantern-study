@@ -55,6 +55,8 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      - key: FIREWORKS_API_KEY
+        sync: false
       - key: PUBLIC_READ_RATE_LIMIT_MAX
         value: "120"
       - key: PUBLIC_WRITE_RATE_LIMIT_MAX
@@ -105,6 +107,8 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: GROQ_API_KEY
+        sync: false
+      - key: FIREWORKS_API_KEY
         sync: false
       - key: ENABLE_MARKETPLACE_JOBS
         value: "true"
