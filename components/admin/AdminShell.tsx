@@ -10,10 +10,14 @@ import {
   AdminStats,
   AdminUser,
   AdminAnalytics,
+  AdminAITokens,
+  AdminProductEvents,
   fetchAdminActivity,
   fetchAdminAIAnalytics,
+  fetchAdminAITokens,
   fetchAdminAIUserUsage,
   fetchAdminAnalytics,
+  fetchAdminProductEvents,
   fetchAdminAudit,
   fetchAdminMarketplaceListings,
   fetchAdminMarketplaceOrders,
@@ -126,9 +130,11 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     periodDays: number;
   } | null>(null);
   const [aiUsageByUser, setAiUsageByUser] = useState<AdminAIUserUsage[]>([]);
+  const [aiTokens, setAiTokens] = useState<AdminAITokens | null>(null);
   const [aiPeriodDays, setAiPeriodDays] = useState(7);
 
   const [analyticsData, setAnalyticsData] = useState<AdminAnalytics | null>(null);
+  const [productEvents, setProductEvents] = useState<AdminProductEvents | null>(null);
   const [analyticsPeriodDays, setAnalyticsPeriodDays] = useState<7 | 30 | 90>(30);
 
   useEffect(() => {
@@ -283,13 +289,15 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
   const loadAI = useCallback(
     async (force = false) => {
       await runTabLoad('ai', async () => {
-        const [analyticsRes, usageRes] = await Promise.allSettled([
+        const [analyticsRes, usageRes, tokensRes] = await Promise.allSettled([
           fetchAdminAIAnalytics(aiPeriodDays),
           fetchAdminAIUserUsage(aiPeriodDays, 10),
+          fetchAdminAITokens(aiPeriodDays),
         ]);
         if (analyticsRes.status === 'fulfilled') setAiAnalytics(analyticsRes.value);
         if (usageRes.status === 'fulfilled') setAiUsageByUser(usageRes.value?.users || []);
-        const failed = [analyticsRes, usageRes].find(
+        if (tokensRes.status === 'fulfilled') setAiTokens(tokensRes.value);
+        const failed = [analyticsRes, usageRes, tokensRes].find(
           (r): r is PromiseRejectedResult => r.status === 'rejected'
         );
         if (failed) throw failed.reason;
@@ -301,7 +309,13 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
   const loadAnalytics = useCallback(
     async (force = false) => {
       await runTabLoad('analytics', async () => {
-        setAnalyticsData(await fetchAdminAnalytics(analyticsPeriodDays));
+        const [analyticsRes, eventsRes] = await Promise.allSettled([
+          fetchAdminAnalytics(analyticsPeriodDays),
+          fetchAdminProductEvents(analyticsPeriodDays),
+        ]);
+        if (eventsRes.status === 'fulfilled') setProductEvents(eventsRes.value);
+        if (analyticsRes.status === 'fulfilled') setAnalyticsData(analyticsRes.value);
+        else throw analyticsRes.reason;
       }, force);
     },
     [analyticsPeriodDays, runTabLoad]
@@ -657,6 +671,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
       <TabPanel value="analytics">
         <AdminAnalyticsPanel
           analytics={analyticsData}
+          events={productEvents}
           periodDays={analyticsPeriodDays}
           onPeriodChange={setAnalyticsPeriodDays}
         />
@@ -726,6 +741,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
       <TabPanel value="ai">
         <AdminAI
           analytics={aiAnalytics}
+          tokens={aiTokens}
           usageByUser={aiUsageByUser}
           periodDays={aiPeriodDays}
           onPeriodChange={setAiPeriodDays}

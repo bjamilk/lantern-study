@@ -33,6 +33,7 @@ export interface AdminStats {
   aiEventsLast7d: number;
   reportsResolved7d: number;
   estimatedAiCost7d: number;
+  aiTokens7d?: number;
   aiEventEstimatedCostUsd: number;
   activeGroups?: number;
   messagesLast24h?: number;
@@ -381,6 +382,47 @@ export async function fetchAdminAIAnalytics(days = 7): Promise<{
     };
   }>(`/ai-analytics?days=${encodeURIComponent(String(days))}`);
 
+  return response.data;
+}
+
+export interface AdminAITokens {
+  periodDays: number;
+  totalTokens: number;
+  paidCalls: number;
+  cacheServed: number;
+  byFeature: Record<string, { tokens: number; calls: number; cacheServed: number }>;
+  byDay: Record<string, { tokens: number; calls: number }>;
+  byProvider: Record<string, { tokens: number; calls: number }>;
+  providersToday: Array<{
+    name: string;
+    calls: number;
+    promptTokens: number;
+    cachedTokens: number;
+    completionTokens: number;
+  }>;
+  truncated: boolean;
+}
+
+export async function fetchAdminAITokens(days = 7): Promise<AdminAITokens> {
+  const response = await adminRequest<{ success: boolean; data: AdminAITokens }>(
+    `/ai-tokens?days=${encodeURIComponent(String(days))}`
+  );
+  return response.data;
+}
+
+export interface AdminProductEvents {
+  periodDays: number;
+  totalEvents: number;
+  uniqueUsers: number;
+  byEvent: Record<string, { total: number; web: number; mobile: number }>;
+  byDay: Record<string, number>;
+  truncated: boolean;
+}
+
+export async function fetchAdminProductEvents(days = 7): Promise<AdminProductEvents> {
+  const response = await adminRequest<{ success: boolean; data: AdminProductEvents }>(
+    `/events?days=${encodeURIComponent(String(days))}`
+  );
   return response.data;
 }
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import type { Chart as ChartType, ChartConfiguration } from 'chart.js';
-import { AdminAnalytics } from '../../services/admin';
+import { AdminAnalytics, AdminProductEvents } from '../../services/admin';
 import { Card } from '../ui/Card';
 import { Select } from '../ui/Select';
 import { StatPill } from '../ui/StatPill';
@@ -8,6 +8,7 @@ import { exportCsv } from './types';
 
 interface AdminAnalyticsPanelProps {
   analytics: AdminAnalytics | null;
+  events: AdminProductEvents | null;
   periodDays: 7 | 30 | 90;
   onPeriodChange: (days: 7 | 30 | 90) => void;
 }
@@ -213,6 +214,7 @@ const STREAK_ORDER = ['0', '1-3', '4-7', '8-14', '15+'];
 
 export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
   analytics,
+  events,
   periodDays,
   onPeriodChange,
 }) => {
@@ -608,6 +610,38 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
                 <span className="font-medium">{count}</span>
               </div>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {events && (
+        <Card variant="elevated">
+          <div className="flex items-baseline justify-between mb-1">
+            <h3 className="text-sm font-semibold text-lantern-text">Event stream</h3>
+            <span className="text-xs text-lantern-text-muted">
+              {events.totalEvents.toLocaleString()} events · {events.uniqueUsers} users
+              {events.truncated ? ' · most recent 10,000 shown' : ''}
+            </span>
+          </div>
+          <p className="text-xs text-lantern-text-muted mb-3">
+            Everything the clients report, unfiltered — what users are actually doing, before any funnel is built around it.
+          </p>
+          <div className="space-y-1">
+            {Object.entries(events.byEvent)
+              .sort(([, a], [, b]) => b.total - a.total)
+              .slice(0, 25)
+              .map(([event, row]) => (
+                <div key={event} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-lantern-text-muted truncate" title={event}>{event}</span>
+                  <span className="shrink-0">
+                    <span className="font-medium">{row.total.toLocaleString()}</span>
+                    <span className="text-xs text-lantern-text-muted"> · web {row.web} · mobile {row.mobile}</span>
+                  </span>
+                </div>
+              ))}
+            {Object.keys(events.byEvent).length === 0 && (
+              <p className="text-sm text-lantern-text-muted">No events recorded in this period.</p>
+            )}
           </div>
         </Card>
       )}

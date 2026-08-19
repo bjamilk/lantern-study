@@ -18,6 +18,7 @@ import {
 } from '../middleware/validation';
 import { getAIUsage, resetAIUsageForUser, getAllAIUsageForUser } from '../middleware/aiRateLimit';
 import { probeProvider, getProviderStatus } from '../services/aiService';
+import { aggregateAiTokenRows, aggregateProductEventRows } from '../services/adminAggregations';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { setUserSessionCutoff } from '../services/tokenDenylist';
@@ -174,7 +175,25 @@ router.get('/stats', async (req: any, res: any) => {
       .limit(10000);
     const activeUsers7d = new Set((recentStudyUsers || []).map((r: any) => r.user_id).filter(Boolean)).size;
 
-    const estimatedAiCost7d = Number(((aiEventsLast7d ?? 0) * AI_EVENT_ESTIMATED_COST_USD).toFixed(4));
+    // Real token spend when the inference log has it (recorded since the
+    // usage-tracking change); the old events-times-flat-guess only as fallback
+    // for windows that predate token recording. Blended $/1M tokens is
+    // env-tunable because it is pricing, not code.
+    const { data: tokenRows } = await client
+      .from('ai_inference_log')
+      .select('token_estimate')
+      .gte('created_at', last7d)
+      .not('token_estimate', 'is', null)
+      .limit(10000);
+    const aiTokens7d = (tokenRows || []).reduce(
+      (sum: number, r: any) => sum + (typeof r.token_estimate === 'number' ? r.token_estimate : 0),
+      0
+    );
+    const costPerMTokenUsd = Number(process.env.AI_COST_PER_MTOKEN_USD) || 0.3;
+    const estimatedAiCost7d =
+      aiTokens7d > 0
+        ? Number(((aiTokens7d / 1_000_000) * costPerMTokenUsd).toFixed(4))
+        : Number(((aiEventsLast7d ?? 0) * AI_EVENT_ESTIMATED_COST_USD).toFixed(4));
 
     res.json({
       success: true,
@@ -189,6 +208,7 @@ router.get('/stats', async (req: any, res: any) => {
         aiEventsLast7d: aiEventsLast7d ?? 0,
         reportsResolved7d: reportsResolved7d ?? 0,
         estimatedAiCost7d,
+        aiTokens7d,
         aiEventEstimatedCostUsd: AI_EVENT_ESTIMATED_COST_USD,
         activeGroups: groupCount ?? 0,
         messagesLast24h: messageCount24h ?? 0,
@@ -784,6 +804,78 @@ router.get('/ai-analytics', async (req: any, res: any) => {
         byEvent,
         byDay,
         periodDays: days,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/ai-tokens — real token spend from ai_inference_log.
+// token_estimate is provider-reported prompt+completion for paid calls and
+// NULL for cache replays, so "tokens" here is genuine spend, never phantom.
+router.get('/ai-tokens', async (req: any, res: any) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 7));
+    const since = daysAgoIso(days);
+    const ROW_LIMIT = 10000;
+
+    const { data, error } = await supabaseService
+      .getClient()
+      .from('ai_inference_log')
+      .select('feature, provider, token_estimate, created_at')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(ROW_LIMIT);
+    if (error) throw error;
+
+    const rows = data || [];
+    const aggregate = aggregateAiTokenRows(rows);
+
+    res.json({
+      success: true,
+      data: {
+        periodDays: days,
+        ...aggregate,
+        // Live per-provider gauges for TODAY (this instance), straight from the
+        // providers' own usage reports — cachedTokens is the prefix-cache hit
+        // volume that cached-input pricing discounts.
+        providersToday: getProviderStatus().map((p) => ({ name: p.name, ...p.tokensToday })),
+        // The reduce above only saw ROW_LIMIT rows; below that it is complete.
+        truncated: rows.length === ROW_LIMIT,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/events — the raw product-event stream, aggregated.
+// The analytics tab's funnels are curated views; this answers "what are users
+// actually doing" without waiting for a funnel to be built around it.
+router.get('/events', async (req: any, res: any) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 7));
+    const since = daysAgoIso(days);
+    const ROW_LIMIT = 10000;
+
+    const { data, error } = await supabaseService
+      .getClient()
+      .from('product_events')
+      .select('event, surface, user_id, created_at')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(ROW_LIMIT);
+    if (error) throw error;
+
+    const rows = data || [];
+
+    res.json({
+      success: true,
+      data: {
+        periodDays: days,
+        ...aggregateProductEventRows(rows),
+        truncated: rows.length === ROW_LIMIT,
       },
     });
   } catch (err: any) {

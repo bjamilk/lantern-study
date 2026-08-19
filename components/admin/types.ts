@@ -129,6 +129,7 @@ export function statsSummary(stats: AdminStats) {
     { metric: 'messagesLast24h', value: stats.messagesLast24h ?? 0 },
     { metric: 'openReports', value: stats.openReports },
     { metric: 'openDisputes', value: stats.openDisputes ?? 0 },
+    { metric: 'aiTokens7d', value: stats.aiTokens7d ?? 0 },
     { metric: 'estimatedAiCost7d', value: stats.estimatedAiCost7d },
   ];
 }

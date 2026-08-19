@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AdminAIUserUsage } from '../../services/admin';
+import { AdminAITokens, AdminAIUserUsage } from '../../services/admin';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
@@ -13,6 +13,7 @@ interface AdminAIProps {
     byDay: Record<string, number>;
     periodDays: number;
   } | null;
+  tokens: AdminAITokens | null;
   usageByUser: AdminAIUserUsage[];
   periodDays: number;
   onPeriodChange: (days: number) => void;
@@ -23,6 +24,7 @@ interface AdminAIProps {
 
 export const AdminAI: React.FC<AdminAIProps> = ({
   analytics,
+  tokens,
   usageByUser,
   periodDays,
   onPeriodChange,
@@ -44,6 +46,16 @@ export const AdminAI: React.FC<AdminAIProps> = ({
   // generate_flashcards, study_recommendations…) never existed in the table,
   // so three of the four pills were hardwired to zero.
   const byEvent = analytics?.byEvent || {};
+
+  const featureTokenRows = Object.entries(tokens?.byFeature || {})
+    .sort(([, a], [, b]) => b.tokens - a.tokens)
+    .slice(0, 12);
+  const maxFeatureTokens = Math.max(1, ...featureTokenRows.map(([, v]) => v.tokens));
+  const totalCalls = (tokens?.paidCalls || 0) + (tokens?.cacheServed || 0);
+  const cacheServedPct = totalCalls > 0 ? Math.round(((tokens?.cacheServed || 0) / totalCalls) * 100) : 0;
+  const activeProviders = (tokens?.providersToday || []).filter((p) => p.calls > 0);
+  const tokenDayRows = Object.entries(tokens?.byDay || {}).sort(([a], [b]) => a.localeCompare(b));
+  const maxDayTokens = Math.max(1, ...tokenDayRows.map(([, v]) => v.tokens));
   const messagesSent = byEvent.companion_message_sent || 0;
   const voiceDictations =
     (byEvent.companion_voice_dictation || 0) + (byEvent.companion_voice_dictation_start || 0);
@@ -63,17 +75,95 @@ export const AdminAI: React.FC<AdminAIProps> = ({
         </Select>
       </div>
 
+      {tokens && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatPill label={`Tokens (${tokens.periodDays}d)`} value={tokens.totalTokens.toLocaleString()} accent="primary" />
+            <StatPill label="Paid AI calls" value={tokens.paidCalls} accent="neutral" />
+            <StatPill label="Served from cache" value={`${cacheServedPct}%`} accent="neutral" />
+            <StatPill
+              label="Cached input today"
+              value={activeProviders.reduce((sum, p) => sum + p.cachedTokens, 0).toLocaleString()}
+              accent="neutral"
+            />
+          </div>
+
+          <Card>
+            <h3 className="text-sm font-semibold mb-1">Tokens by feature</h3>
+            <p className="text-xs text-lantern-text-muted mb-3">
+              Paid tokens per feature over the period. Cache-served calls cost nothing and are counted separately.
+              {tokens.truncated ? ' Showing the most recent 10,000 calls only.' : ''}
+            </p>
+            <div className="space-y-2">
+              {featureTokenRows.length === 0 && (
+                <p className="text-sm text-lantern-text-muted">No AI calls recorded in this period.</p>
+              )}
+              {featureTokenRows.map(([feature, row]) => (
+                <div key={feature} className="flex items-center gap-2 text-xs">
+                  <span className="w-40 truncate text-lantern-text-muted" title={feature}>{feature}</span>
+                  <div className="flex-1 h-2 bg-lantern-background-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-lantern-primary" style={{ width: `${(row.tokens / maxFeatureTokens) * 100}%` }} />
+                  </div>
+                  <span className="w-20 text-right font-medium">{row.tokens.toLocaleString()}</span>
+                  <span className="w-24 text-right text-lantern-text-muted">
+                    {row.calls} calls{row.cacheServed > 0 ? ` · ${row.cacheServed} cached` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card>
+              <h3 className="text-sm font-semibold mb-3">Token spend by day</h3>
+              <div className="space-y-2">
+                {tokenDayRows.map(([day, row]) => (
+                  <div key={day} className="flex items-center gap-2 text-xs">
+                    <span className="w-20 text-lantern-text-muted">{day}</span>
+                    <div className="flex-1 h-2 bg-lantern-background-secondary rounded-full overflow-hidden">
+                      <div className="h-full bg-lantern-primary" style={{ width: `${(row.tokens / maxDayTokens) * 100}%` }} />
+                    </div>
+                    <span className="w-20 text-right">{row.tokens.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card>
+              <h3 className="text-sm font-semibold mb-1">Providers today</h3>
+              <p className="text-xs text-lantern-text-muted mb-3">
+                Live gauge from the running instance. Cached = input served from the provider&apos;s prefix cache (billed at a discount).
+              </p>
+              <div className="space-y-2 text-xs">
+                {activeProviders.length === 0 && (
+                  <p className="text-sm text-lantern-text-muted">No paid calls yet today.</p>
+                )}
+                {activeProviders.map((p) => (
+                  <div key={p.name} className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{p.name}</span>
+                    <span className="text-lantern-text-muted">
+                      {p.calls} calls · in {p.promptTokens.toLocaleString()} ({p.cachedTokens.toLocaleString()} cached) · out{' '}
+                      {p.completionTokens.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        </>
+      )}
+
       {analytics && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatPill label="Total events" value={analytics.totalEvents} accent="primary" />
+            <StatPill label="Companion events" value={analytics.totalEvents} accent="primary" />
             <StatPill label="Messages sent" value={messagesSent} accent="neutral" />
             <StatPill label="Voice dictations" value={voiceDictations} accent="neutral" />
             <StatPill label="Notes attached" value={noteAttachments} accent="neutral" />
           </div>
 
           <Card>
-            <h3 className="text-sm font-semibold mb-3">By feature</h3>
+            <h3 className="text-sm font-semibold mb-3">Companion events by type</h3>
             <div className="space-y-1">
               {Object.entries(analytics.byEvent)
                 .sort(([, a], [, b]) => b - a)
@@ -87,7 +177,7 @@ export const AdminAI: React.FC<AdminAIProps> = ({
           </Card>
 
           <Card>
-            <h3 className="text-sm font-semibold mb-3">Daily volume</h3>
+            <h3 className="text-sm font-semibold mb-3">Companion events by day</h3>
             <div className="space-y-2">
               {dayEntries.map(({ day, count, widthPct }) => (
                 <div key={day} className="flex items-center gap-2 text-xs">
@@ -104,7 +194,7 @@ export const AdminAI: React.FC<AdminAIProps> = ({
       )}
 
       <Card>
-        <h3 className="text-sm font-semibold mb-3">Top users</h3>
+        <h3 className="text-sm font-semibold mb-3">Top AI users</h3>
         <div className="space-y-2">
           {usageByUser.map((row) => (
             <div key={row.user_id} className="flex items-center justify-between gap-2 text-sm">

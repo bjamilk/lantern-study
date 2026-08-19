@@ -84,7 +84,8 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({
         <StatPill label="Decks" value={stats.totalDecks ?? 0} accent="neutral" />
         <StatPill label="Offline bundles" value={stats.offlineBundles ?? 0} accent="neutral" />
         <StatPill label="Active users (7d)" value={stats.activeUsers7d ?? 0} accent="success" />
-        <StatPill label="AI cost (7d)" value={`$${stats.estimatedAiCost7d.toFixed(2)}`} accent="accent" />
+        <StatPill label="AI tokens (7d)" value={(stats.aiTokens7d ?? 0).toLocaleString()} accent="neutral" />
+        <StatPill label="AI cost (7d, est.)" value={`$${stats.estimatedAiCost7d.toFixed(2)}`} accent="accent" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
