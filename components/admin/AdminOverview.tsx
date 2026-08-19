@@ -47,7 +47,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({
           <div>
             <h3 className="text-sm font-semibold text-lantern-text">Recently shipped product features</h3>
             <p className="text-xs text-lantern-text-muted mt-0.5">
-              Notes folders, pin/archive, group leave, chat menus, and jobs releases.
+              The five most recent entries. Open the Features tab for the full registry.
             </p>
           </div>
           {onOpenFeatures ? (
