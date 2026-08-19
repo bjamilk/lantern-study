@@ -33,6 +33,25 @@ export function initSentry(): void {
   }
 }
 
+/**
+ * Report an error that never reaches the Express error handler.
+ *
+ * The AI routes each catch their own failure and answer 503 directly, so the
+ * whole provider cascade collapsing — the one failure users actually feel —
+ * was invisible in Sentry. Anything swallowed that way should come through
+ * here instead.
+ */
+export function captureException(error: unknown, context?: Record<string, unknown>): void {
+  if (!process.env.SENTRY_DSN) return;
+  try {
+
+    const Sentry = require('@sentry/node');
+    Sentry.captureException(error, context ? { extra: context } : undefined);
+  } catch {
+    // Sentry optional — never let reporting break the request path.
+  }
+}
+
 export function setupSentryExpress(app: import('express').Application): void {
   if (!process.env.SENTRY_DSN) return;
   try {

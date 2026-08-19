@@ -29,6 +29,11 @@ describe('companion AI usage', () => {
       setHeader(name: string, value: string) {
         this.headers[name.toLowerCase()] = value;
       },
+      // Real responses are EventEmitters; the middleware hooks 'finish' to
+      // refund credits when a request does not succeed.
+      on() {
+        return this;
+      },
       status() {
         return this;
       },

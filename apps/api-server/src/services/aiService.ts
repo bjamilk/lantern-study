@@ -27,6 +27,7 @@ import {
 } from './companionMessageClarity';
 import { aiInflightGate } from '../utils/concurrencyGate';
 import { logger } from '../utils/logger';
+import { captureException } from '../utils/sentry';
 import { withAiResponseCache } from './aiResponseCache';
 
 const AI_FETCH_TIMEOUT_MS = parseInt(process.env.AI_FETCH_TIMEOUT_MS || '120000', 10);
@@ -725,7 +726,19 @@ async function chatCompletion(
       'All AI providers exhausted:',
       errors.map((e) => e.message)
     );
-    throw buildCascadeError(errors);
+    const cascadeError = buildCascadeError(errors);
+    // Report explicitly: callers answer 503 from their own catch blocks, so
+    // this never reaches the Express error handler Sentry hooks.
+    captureException(cascadeError, {
+      providerErrors: errors.map((e) => ({ provider: e.provider, kind: e.kind, message: e.message })),
+      providerStatus: providers.map((p) => ({
+        name: p.name,
+        available: p.isAvailable(),
+        dailyUsed: p.dailyUsed,
+        dailyLimit: p.dailyLimit,
+      })),
+    });
+    throw cascadeError;
   });
 }
 

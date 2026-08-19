@@ -19,6 +19,18 @@ describe('aiRateLimitForFeature dual charge', () => {
       setHeader(name: string, value: string) {
         headers[name.toLowerCase()] = value;
       },
+      // Real responses are EventEmitters — the middleware registers a
+      // 'finish' hook to refund credits for requests that did not succeed.
+      listeners: {} as Record<string, Array<() => void>>,
+      on(event: string, cb: () => void) {
+        (this.listeners[event] ||= []).push(cb);
+        return this;
+      },
+      async finish() {
+        for (const cb of this.listeners.finish || []) cb();
+        // Refunds are fire-and-forget inside the hook; let them settle.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      },
       statusCode: 200,
       body: null as unknown,
       status(code: number) {

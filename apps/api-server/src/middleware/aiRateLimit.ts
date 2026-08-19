@@ -5,6 +5,7 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { getRedisClient, redisKey } from '../services/redisStore';
+import { logger } from '../utils/logger';
 
 import { DEFAULT_AI_DAILY_LIMIT, DEFAULT_AI_FEATURE_LIMITS } from '@lantern/shared/utils/aiUsage';
 import { AI_CREDIT_COSTS, MAX_AI_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
@@ -105,6 +106,12 @@ async function incrementUsage(
 ): Promise<{ allowed: boolean; count: number; resetTime: number }> {
   // `current >= limit` (old predicate) ⇔ `current + 1 > limit` — behavior-identical.
   return reserveUsage(key, limit, 1);
+}
+
+/** Hand back credits reserved for work that never happened. */
+async function releaseUsage(key: string, credits: number): Promise<void> {
+  if (credits <= 0) return;
+  await reserveUsage(key, Number.MAX_SAFE_INTEGER, -credits);
 }
 
 async function readUsage(
@@ -355,6 +362,9 @@ export function aiRateLimitForFeature(featureKey: string) {
 
     const featureResult = await incrementUsage(key, limit);
     if (!featureResult.allowed) {
+      // The global credit was reserved a few lines up. Give it back rather than
+      // charging for a request this middleware is itself about to refuse.
+      await releaseUsage(userId, 1);
       res.status(429).json({
         error: `Daily limit reached for this feature (${featureKey}). Try again tomorrow.`,
         feature: featureKey,
@@ -364,6 +374,23 @@ export function aiRateLimitForFeature(featureKey: string) {
       });
       return;
     }
+
+    // Credits are reserved up front because the cap has to be enforced before
+    // the work starts — but a request that never produced a completion must not
+    // keep them. Without this a failing provider burned a user's entire daily
+    // allowance one doomed attempt at a time (and a 400 for a too-short note
+    // cost a credit as well). Anything that does not finish 2xx is refunded.
+    res.on('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) return;
+      void Promise.all([releaseUsage(userId, 1), releaseUsage(key, 1)]).catch((error) => {
+        logger.warn('Failed to refund AI credits for a request that did not succeed', {
+          userId,
+          featureKey,
+          status: res.statusCode,
+          error,
+        });
+      });
+    });
 
     res.setHeader('X-AI-Feature', featureKey);
     // Feature-scoped counts (for inline "N left" next to that tool).
