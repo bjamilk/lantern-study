@@ -410,6 +410,29 @@ export async function fetchAdminAITokens(days = 7): Promise<AdminAITokens> {
   return response.data;
 }
 
+export interface AdminProviderProbe {
+  provider: string;
+  configured: boolean;
+  ok: boolean;
+  latencyMs: number;
+  model?: string;
+  reply?: string;
+  usage?: { promptTokens: number; completionTokens: number; cachedTokens: number };
+  error?: string;
+}
+
+/**
+ * Send one real request to a single AI provider. Fireworks is the standby
+ * behind Groq, so it never runs in normal traffic — this is the only way to
+ * confirm its key works without waiting for Groq to fail.
+ */
+export async function probeAdminAiProvider(provider: string): Promise<AdminProviderProbe> {
+  const response = await adminRequest<{ success: boolean; data: AdminProviderProbe }>(
+    `/ai/provider-probe?provider=${encodeURIComponent(provider)}`
+  );
+  return response.data;
+}
+
 export interface AdminProductEvents {
   periodDays: number;
   totalEvents: number;

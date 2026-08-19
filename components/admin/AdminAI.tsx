@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AdminAITokens, AdminAIUserUsage } from '../../services/admin';
+import { AdminAITokens, AdminAIUserUsage, AdminProviderProbe, probeAdminAiProvider } from '../../services/admin';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
@@ -33,6 +33,23 @@ export const AdminAI: React.FC<AdminAIProps> = ({
   actionLoading,
 }) => {
   const [companionUserId, setCompanionUserId] = useState('');
+  const [probes, setProbes] = useState<Record<string, AdminProviderProbe | { error: string }>>({});
+  const [probing, setProbing] = useState<string | null>(null);
+
+  const runProbe = async (provider: string) => {
+    setProbing(provider);
+    try {
+      const result = await probeAdminAiProvider(provider);
+      setProbes((prev) => ({ ...prev, [provider]: result }));
+    } catch (err) {
+      setProbes((prev) => ({
+        ...prev,
+        [provider]: { error: err instanceof Error ? err.message : 'Probe failed' },
+      }));
+    } finally {
+      setProbing(null);
+    }
+  };
   const dayEntries = Object.entries(analytics?.byDay || {})
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([day, count]) => {
@@ -205,6 +222,47 @@ export const AdminAI: React.FC<AdminAIProps> = ({
               <Button size="sm" variant="ghost" loading={actionLoading[`quota:${row.user_id}`]} onClick={() => onResetQuota(row.user_id)}>
                 Reset quota
               </Button>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card variant="outline" padding="sm" className="space-y-3">
+        <div>
+          <p className="text-sm font-medium">Provider health check</p>
+          <p className="text-xs text-lantern-text-muted">
+            Sends one real request to a single provider. Fireworks is the standby behind Groq, so it never runs in
+            normal traffic — this is the only way to confirm its key works before Groq fails. Costs one tiny completion.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {['groq', 'fireworks'].map((provider) => (
+            <Button
+              key={provider}
+              size="sm"
+              variant="secondary"
+              loading={probing === provider}
+              onClick={() => runProbe(provider)}
+            >
+              Probe {provider}
+            </Button>
+          ))}
+        </div>
+        <div className="space-y-1">
+          {Object.entries(probes).map(([provider, result]) => (
+            <div key={provider} className="text-xs">
+              {'error' in result ? (
+                <span className="text-lantern-error">{provider}: {result.error}</span>
+              ) : (
+                <span className={result.ok ? 'text-lantern-success' : 'text-lantern-error'}>
+                  {provider}: {result.ok ? 'OK' : 'FAILED'}
+                  {result.model ? ` · ${result.model}` : ''}
+                  {result.ok ? ` · ${result.latencyMs}ms` : ''}
+                  {result.usage ? ` · ${result.usage.promptTokens} in / ${result.usage.completionTokens} out` : ''}
+                  {result.usage && result.usage.cachedTokens > 0 ? ` (${result.usage.cachedTokens} cached)` : ''}
+                  {result.error ? ` · ${result.error}` : ''}
+                </span>
+              )}
             </div>
           ))}
         </div>
