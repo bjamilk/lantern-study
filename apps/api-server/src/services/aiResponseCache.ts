@@ -49,8 +49,19 @@ export function stableStringify(value: unknown): string {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`).join(',')}}`;
 }
 
+/**
+ * Bump to invalidate every stored response.
+ *
+ * Entries live for 7 days and nothing validated them on the way in, so a run of
+ * degenerate output — quizzes generated with no answer options while the
+ * provider chain was broken — stayed pinned for a week and survived every
+ * retry, because a cache hit never re-asks the model. Changing this retires
+ * that batch without waiting out the TTL or flushing Redis by hand.
+ */
+const CACHE_VERSION = 'v2';
+
 export function hashAiCacheKey(feature: string, source: string, options?: unknown): string {
-  const payload = `${feature}\n${source}\n${stableStringify(options ?? null)}`;
+  const payload = `${CACHE_VERSION}\n${feature}\n${source}\n${stableStringify(options ?? null)}`;
   return createHash('sha256').update(payload).digest('hex');
 }
 

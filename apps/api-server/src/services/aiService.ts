@@ -1932,17 +1932,43 @@ Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"
   const { text, provider } = await chatCompletion(
     systemPrompt,
     `Material:\n\n${source}`,
-    { temperature: 0.6, jsonOutput: true }
+    // Headroom for a reasoning model: the trace is billed against the same
+    // output budget as the answer, so the default cap can truncate the JSON
+    // mid-array and lose the options.
+    { temperature: 0.6, jsonOutput: true, maxTokens: 4096 }
   );
 
   const parsed = extractJSON(text);
   const questions = parsed.questions || parsed;
   if (!Array.isArray(questions)) throw new Error('Invalid daily quiz response');
 
-  return {
-    provider,
-    questions: questions.slice(0, count).map((q: any) => normalizeGeneratedQuestion(q)),
-  };
+  const normalized = questions.slice(0, count).map((q: any) => normalizeGeneratedQuestion(q));
+  const usable = normalized.filter(isAnswerableQuestion);
+
+  if (usable.length === 0) {
+    // Throwing rather than returning the empty set on purpose: the caller
+    // caches whatever it gets for a week, and a quiz nobody can answer looked
+    // like a success to every layer above — the UI rendered questions with no
+    // options and no error. Failing here lets the provider chain retry and
+    // keeps the bad batch out of the cache.
+    throw new Error('Quiz generation produced no answerable questions');
+  }
+
+  return { provider, questions: usable };
+}
+
+/**
+ * A choice question with nothing to choose from cannot be answered, and the
+ * quiz UI renders exactly that: the prompt, and no options beneath it.
+ */
+function isAnswerableQuestion(q: GeneratedQuestion): boolean {
+  if (!q.text.trim()) return false;
+  if (q.type === 'short_answer') return Boolean(q.correctAnswer.trim());
+  const options = q.options ?? [];
+  if (options.length < 2) return false;
+  if (options.some((option) => !String(option).trim())) return false;
+  // An answer that is not among the options leaves the question ungradeable.
+  return options.some((option) => option === q.correctAnswer);
 }
 
 export function resolveAudioUploadMeta(
