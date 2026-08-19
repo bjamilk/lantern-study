@@ -31,16 +31,29 @@ router.get('/health', (req: Request, res: Response) => {
   // Presence only, same lesson as turnstile: whether error monitoring is
   // actually on should be checkable without triggering a real error.
   const sentry = process.env.SENTRY_DSN ? 'on' : 'off';
+  // Which AI providers hold a key, presence only — same reasoning as turnstile
+  // above. Without this the only way to find out whether a newly added key
+  // reached the running service was to spend a user's daily AI credits on a
+  // request and read the failure, which is a poor diagnostic and costs the
+  // user something. No key material, just configured or not.
+  const ai = {
+    groq: process.env.GROQ_API_KEY ? 'on' : 'off',
+    fireworks: process.env.FIREWORKS_API_KEY ? 'on' : 'off',
+    gemini: process.env.GEMINI_API_KEY ? 'on' : 'off',
+    cloudflare: process.env.CF_API_TOKEN && process.env.CF_ACCOUNT_ID ? 'on' : 'off',
+    huggingface: process.env.HF_API_TOKEN ? 'on' : 'off',
+  };
 
   if (isProductionEnv()) {
     // Deliberately no build details beyond the commit: this endpoint is public.
-    return res.status(200).json({ status: 'ok', commit: COMMIT, turnstile, sentry });
+    return res.status(200).json({ status: 'ok', commit: COMMIT, turnstile, sentry, ai });
   }
   res.status(200).json({
     status: 'ok',
     commit: COMMIT,
     turnstile,
     sentry,
+    ai,
     timestamp: new Date().toISOString(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
   });

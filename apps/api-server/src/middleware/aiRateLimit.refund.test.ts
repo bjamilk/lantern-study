@@ -88,6 +88,31 @@ describe('aiRateLimitForFeature refunds', () => {
     expect((await getFeatureAIUsage(userId, 'generate_questions')).used).toBe(0);
   });
 
+  it('reports the pre-charge counts in the headers of a failed response', async () => {
+    const res = mockRes();
+    await run(res);
+    // Charged up front, as the cap requires.
+    expect(res.headers['x-ai-global-usage-used']).toBe('1');
+
+    res.statusCode = 503;
+    res.json({ error: 'AI is temporarily unavailable. Please try again in a moment.' });
+
+    // The client reads these before it checks response.ok, so a failure that
+    // leaves them at the charged value makes the badge tick down for nothing.
+    expect(res.headers['x-ai-global-usage-used']).toBe('0');
+    expect(res.headers['x-ai-usage-used']).toBe('0');
+  });
+
+  it('leaves the headers alone when the request succeeds', async () => {
+    const res = mockRes();
+    await run(res);
+    res.statusCode = 200;
+    res.json({ ok: true });
+
+    expect(res.headers['x-ai-global-usage-used']).toBe('1');
+    expect(res.headers['x-ai-usage-used']).toBe('1');
+  });
+
   it('does not refund an accepted async job (202)', async () => {
     const res = mockRes();
     await run(res);

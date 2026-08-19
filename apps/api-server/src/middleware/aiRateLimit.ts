@@ -399,6 +399,25 @@ export function aiRateLimitForFeature(featureKey: string) {
     res.setHeader('X-AI-Usage-Resets-At', toResetsAt(featureResult.resetTime));
     // Global counts drive the sidebar / floating AI badge.
     setGlobalUsageHeaders(res, globalResult);
+
+    // These headers are written now but only flushed when the handler answers,
+    // and by then a failed request has been refunded above. The client reads
+    // them before it checks response.ok, so leaving them at the charged value
+    // made the badge tick down for work that was never done — the refund was
+    // real but invisible. Restate the pre-charge counts on the way out.
+    const sendJson = res.json.bind(res);
+    res.json = ((body?: unknown) => {
+      const succeeded = res.statusCode >= 200 && res.statusCode < 300;
+      if (!succeeded && !res.headersSent) {
+        res.setHeader('X-AI-Usage-Used', Math.max(0, featureResult.count - 1).toString());
+        setGlobalUsageHeaders(res, {
+          count: Math.max(0, globalResult.count - 1),
+          resetTime: globalResult.resetTime,
+        });
+      }
+      return sendJson(body);
+    }) as typeof res.json;
+
     next();
   };
 }
