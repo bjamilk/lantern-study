@@ -100,7 +100,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.24: swipe-to-grade works. Swiping a flashcard to rate it crashed the
   // app outright — the gesture ran two ordinary functions on the UI thread,
   // where they are not callable — so grading was button-only since launch.
-  version: '1.0.24',
+  // 1.0.25: the AI credit counter starts from the new 20-request daily
+  // allowance instead of a stale 100 — the server cut the limit and the app
+  // had the old number baked in as its pre-response default.
+  version: '1.0.25',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
