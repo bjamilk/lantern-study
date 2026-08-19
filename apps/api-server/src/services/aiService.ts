@@ -301,14 +301,18 @@ const groqProvider: AIProvider = {
  * with FIREWORKS_DAILY_LIMIT.
  */
 const FIREWORKS_MODEL =
-  process.env.FIREWORKS_MODEL || 'accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b';
+  process.env.FIREWORKS_MODEL || 'accounts/fireworks/models/gpt-oss-120b';
 
 /**
- * Nemotron reasons before it answers. Where the trace lands varies: some
- * responses carry it in a separate reasoning_content field, others inline it in
- * the content as <think> tags. Inline traces routinely contain braces, which
- * defeats the brace-matching fallback in extractJSON and would turn every
- * JSON-mode feature — quiz and flashcard generation — into a parse error.
+ * gpt-oss reasons before it answers, as did the Nemotron model before it.
+ * Where the trace lands varies by model and response: some carry it in a
+ * separate reasoning_content field, others inline it in the content as <think>
+ * tags. Inline traces routinely contain braces, which defeats the
+ * brace-matching fallback in extractJSON and would turn every JSON-mode
+ * feature — quiz and flashcard generation — into a parse error.
+ *
+ * Set FIREWORKS_MODEL to switch models without a code change; anything
+ * reasoning-shaped is handled here.
  */
 function stripReasoningTrace(text: string): string {
   const withoutPairs = text.replace(/<think>[\s\S]*?<\/think>/gi, '');

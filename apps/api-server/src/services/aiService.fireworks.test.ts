@@ -64,7 +64,7 @@ describe('probeProvider', () => {
     expect(result.ok).toBe(true);
     expect(result.configured).toBe(true);
     expect(result.reply).toBe('OK');
-    expect(result.model).toContain('nemotron-lightning-3p5-30b-a3b');
+    expect(result.model).toContain('gpt-oss-120b');
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toBe('https://api.fireworks.ai/inference/v1/chat/completions');
