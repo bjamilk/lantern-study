@@ -248,6 +248,18 @@ function checkAndResetCounter(provider: AIProvider): void {
  * brace-matching fallback in extractJSON and would turn every JSON-mode
  * feature — quiz and flashcard generation — into a parse error.
  */
+/**
+ * Reasoning models bill their trace against the same max_tokens budget as the
+ * answer, so a caller asking for 350 tokens of summary can have all 350 spent
+ * thinking and receive nothing. Call sites budget the answer they want; this
+ * adds room for the model to think first.
+ */
+const REASONING_HEADROOM_TOKENS = 1024;
+
+function withReasoningHeadroom(maxTokens: number): number {
+  return maxTokens + REASONING_HEADROOM_TOKENS;
+}
+
 function stripReasoningTrace(text: string): string {
   const withoutPairs = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
   // A truncated trace leaves a dangling close tag; keep only what follows it.
@@ -293,7 +305,7 @@ const groqProvider: AIProvider = {
           { role: 'user', content: userPrompt },
         ],
         temperature,
-        max_tokens: maxTokens,
+        max_tokens: withReasoningHeadroom(maxTokens),
         ...(options.jsonOutput ? { response_format: { type: 'json_object' } } : {}),
       }),
     });
@@ -363,7 +375,7 @@ const fireworksProvider: AIProvider = {
           { role: 'user', content: userPrompt },
         ],
         temperature,
-        max_tokens: maxTokens,
+        max_tokens: withReasoningHeadroom(maxTokens),
         ...(options.jsonOutput ? { response_format: { type: 'json_object' } } : {}),
       }),
     });
@@ -1067,27 +1079,34 @@ For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit o
 
   if (!Array.isArray(questions)) throw new Error('Invalid AI response format');
 
-  return {
-    provider,
-    questions: questions.slice(0, adjustedCount).map((q: any) => {
-      const type = ['multiple_choice', 'true_false', 'short_answer', 'fill_in_blank'].includes(q.type)
-        ? q.type : 'multiple_choice';
-      const rawOptions = Array.isArray(q.options) ? q.options.map(String) : undefined;
-      // Resolve a letter/index answer ("A", "2") to the option's full text
-      // before shuffling, otherwise the stored answer points at a position
-      // that no longer holds it — and grading compares against option text.
-      const correctAnswer = normalizeQuizCorrectAnswer(String(q.correctAnswer || ''), rawOptions);
-      return {
-        text: String(q.text || ''),
-        type,
-        options: shuffleGeneratedOptions(type, rawOptions),
-        correctAnswer,
-        explanation: String(q.explanation || 'No explanation available.'),
-        difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : 'medium',
-        topic: String(q.topic || subject || 'General'),
-      };
-    }),
-  };
+  const mapped = questions.slice(0, adjustedCount).map((q: any) => {
+    const type = ['multiple_choice', 'true_false', 'short_answer', 'fill_in_blank'].includes(q.type)
+      ? q.type : 'multiple_choice';
+    const rawOptions = Array.isArray(q.options) ? q.options.map(String) : undefined;
+    // Resolve a letter/index answer ("A", "2") to the option's full text
+    // before shuffling, otherwise the stored answer points at a position
+    // that no longer holds it — and grading compares against option text.
+    const correctAnswer = normalizeQuizCorrectAnswer(String(q.correctAnswer || ''), rawOptions);
+    return {
+      text: String(q.text || ''),
+      type,
+      options: shuffleGeneratedOptions(type, rawOptions),
+      correctAnswer,
+      explanation: String(q.explanation || 'No explanation available.'),
+      difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : 'medium',
+      topic: String(q.topic || subject || 'General'),
+    };
+  });
+
+  // Same rule as the daily quiz: a choice question with nothing to choose from
+  // reaches the test UI as a prompt with no answers under it, and is cached for
+  // a week as though it were fine.
+  const usable = mapped.filter(isAnswerableQuestion);
+  if (usable.length === 0) {
+    throw new Error('Question generation produced no answerable questions');
+  }
+
+  return { provider, questions: usable };
 }
 
 export async function generateFlashcardsFromNotes(
@@ -1119,15 +1138,23 @@ Return ONLY valid JSON: {"flashcards":[{"front":"term","back":"definition","mnem
       const cards = parsed.flashcards || parsed;
       if (!Array.isArray(cards)) throw new Error('Invalid response format');
 
-      return {
-        provider,
-        flashcards: cards.slice(0, adjustedCount).map((c: any) => ({
-          front: String(c.front || ''),
-          back: String(c.back || ''),
-          mnemonic: c.mnemonic ? String(c.mnemonic) : undefined,
-          example: c.example ? String(c.example) : undefined,
-        })),
-      };
+      const mappedCards = cards.slice(0, adjustedCount).map((c: any) => ({
+        front: String(c.front || ''),
+        back: String(c.back || ''),
+        mnemonic: c.mnemonic ? String(c.mnemonic) : undefined,
+        example: c.example ? String(c.example) : undefined,
+      }));
+
+      // A card with a blank side cannot be reviewed — it saves and syncs as a
+      // real card and shows up empty in study sessions.
+      const usableCards = mappedCards.filter(
+        (c: GeneratedFlashcard) => c.front.trim().length > 0 && c.back.trim().length > 0
+      );
+      if (usableCards.length === 0) {
+        throw new Error('Flashcard generation produced no usable cards');
+      }
+
+      return { provider, flashcards: usableCards };
     }
   );
 }
@@ -1963,7 +1990,11 @@ Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"
  */
 function isAnswerableQuestion(q: GeneratedQuestion): boolean {
   if (!q.text.trim()) return false;
-  if (q.type === 'short_answer') return Boolean(q.correctAnswer.trim());
+  // short_answer and fill_in_blank are typed, not chosen — they carry no
+  // options by design, so requiring some would discard valid questions.
+  if (q.type === 'short_answer' || q.type === 'fill_in_blank') {
+    return Boolean(q.correctAnswer.trim());
+  }
   const options = q.options ?? [];
   if (options.length < 2) return false;
   if (options.some((option) => !String(option).trim())) return false;
