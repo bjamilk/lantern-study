@@ -8927,6 +8927,7 @@ export class SupabaseService {
       views_count,
       seller,
       is_boosted,
+      category_specific_fields,
     } = listing;
     return {
       id,
@@ -8950,6 +8951,12 @@ export class SupabaseService {
       views_count,
       seller,
       is_boosted,
+      // Only the condition surfaces from the free-form blob (for the card
+      // chip + condition filter); the rest stays stripped to keep cards compact.
+      condition:
+        (category_specific_fields &&
+          (category_specific_fields.condition as string | undefined)) ||
+        null,
     };
   }
 
@@ -8966,6 +8973,7 @@ export class SupabaseService {
       location?: string;
       campusId?: string;
       countryCode?: string;
+      condition?: string;
       sortBy?: string;
       sortOrder?: "asc" | "desc";
       responseProfile?: "compact" | "full";
@@ -8983,6 +8991,7 @@ export class SupabaseService {
       location,
       campusId,
       countryCode,
+      condition,
       sortBy = "trending",
       sortOrder = "desc",
       responseProfile = "full",
@@ -8993,15 +9002,19 @@ export class SupabaseService {
     const categoryList =
       categories && categories.length > 0 ? categories : undefined;
 
+    // Condition lives inside the category_specific_fields JSONB, which the
+    // search RPC can't filter on — route any condition-filtered query through
+    // the fallback path (which can), degrading trending to created_at there.
     const useSearchRpc =
-      Boolean(search) ||
-      Boolean(category) ||
-      Boolean(categoryList) ||
-      minPrice !== undefined ||
-      maxPrice !== undefined ||
-      Boolean(location) ||
-      sortBy === "trending" ||
-      sortBy === "sale_first";
+      !condition &&
+      (Boolean(search) ||
+        Boolean(category) ||
+        Boolean(categoryList) ||
+        minPrice !== undefined ||
+        maxPrice !== undefined ||
+        Boolean(location) ||
+        sortBy === "trending" ||
+        sortBy === "sale_first");
 
     if (useSearchRpc) {
       const { data: rpcRows, error: rpcError } = await this.supabase.rpc(
@@ -9067,6 +9080,7 @@ export class SupabaseService {
         created_at,
         status,
         views_count,
+        category_specific_fields,
         seller:profiles!user_id (
           id,
           name,
@@ -9120,6 +9134,10 @@ export class SupabaseService {
 
     if (location) {
       query = query.ilike("location", `%${location}%`);
+    }
+
+    if (condition) {
+      query = query.eq("category_specific_fields->>condition", condition);
     }
 
     // Fallback path: trending/sale_first require the RPC; degrade to created_at.

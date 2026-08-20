@@ -5,6 +5,12 @@ export interface MarketplaceSearchFilterState {
   maxPrice: string;
   locationFilter: string;
   campusIdFilter: string;
+  /**
+   * Item condition, e.g. 'new' | 'like-new' | 'good' | 'fair'. Empty/undefined
+   * = any. Optional so existing callers that predate the condition filter stay
+   * valid; build/restore treat a missing value as "any".
+   */
+  condition?: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
 }
@@ -16,6 +22,7 @@ export interface MarketplaceSavedSearchFilters {
   maxPrice?: number;
   location?: string;
   campus_id?: string;
+  condition?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
@@ -40,6 +47,7 @@ export const buildMarketplaceSavedSearchFilters = (
   if (state.locationFilter.trim()) filters.location = state.locationFilter.trim();
   // Campus is persisted only when the user explicitly selected a browse filter.
   if (state.campusIdFilter) filters.campus_id = state.campusIdFilter;
+  if (state.condition) filters.condition = state.condition;
   if (state.sortBy !== 'created_at') filters.sortBy = state.sortBy;
   if (state.sortOrder !== 'desc') filters.sortOrder = state.sortOrder;
 
@@ -55,6 +63,7 @@ export const restoreMarketplaceSavedSearchFilters = (
   maxPrice: filters.maxPrice != null ? String(filters.maxPrice) : '',
   locationFilter: filters.location || '',
   campusIdFilter: filters.campus_id || '',
+  condition: filters.condition || '',
   sortBy: filters.sortBy || 'created_at',
   sortOrder: filters.sortOrder || 'desc',
 });

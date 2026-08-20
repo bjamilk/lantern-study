@@ -2,11 +2,24 @@ import React from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { formatCampusLabel, type MarketplaceCampus } from '@lantern/shared';
 
+/**
+ * Item-condition options. Values mirror what the create flow actually writes to
+ * `category_specific_fields.condition` (hyphenated), so the filter is aligned
+ * with stored data if/when the listings API learns to filter on it.
+ */
+export const MARKETPLACE_CONDITION_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'new', label: 'New' },
+  { value: 'like-new', label: 'Like New' },
+  { value: 'good', label: 'Good' },
+  { value: 'fair', label: 'Fair' },
+];
+
 export interface MarketplaceFilterPanelProps {
   minPrice: string;
   maxPrice: string;
   campusIdFilter: string;
   locationFilter: string;
+  condition: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
   campuses: MarketplaceCampus[];
@@ -15,6 +28,7 @@ export interface MarketplaceFilterPanelProps {
   onMaxPriceChange: (v: string) => void;
   onCampusChange: (v: string) => void;
   onLocationChange: (v: string) => void;
+  onConditionChange: (v: string) => void;
   onSortChange: (sortBy: string, sortOrder: 'asc' | 'desc') => void;
   onClearFilters: () => void;
   variant?: 'hero' | 'card';
@@ -25,6 +39,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
   maxPrice,
   campusIdFilter,
   locationFilter,
+  condition,
   sortBy,
   sortOrder,
   campuses,
@@ -33,6 +48,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
   onMaxPriceChange,
   onCampusChange,
   onLocationChange,
+  onConditionChange,
   onSortChange,
   onClearFilters,
   variant = 'card',
@@ -48,7 +64,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
 
   return (
     <div className={shellClass}>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 min-w-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
         <div className="min-w-0">
           <label htmlFor="marketplace-filter-min-price" className={labelClass}>Price range (₦)</label>
           <div className="flex gap-2 min-w-0">
@@ -71,6 +87,23 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
               className={inputClass}
             />
           </div>
+        </div>
+
+        <div className="min-w-0">
+          <label htmlFor="marketplace-filter-condition" className={labelClass}>Condition</label>
+          <select
+            id="marketplace-filter-condition"
+            value={condition}
+            onChange={e => onConditionChange(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Any condition</option>
+            {MARKETPLACE_CONDITION_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>

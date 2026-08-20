@@ -111,6 +111,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [locationFilter, setLocationFilter] = useState<string>('');
   const [campusIdFilter, setCampusIdFilter] = useState<string>('');
+  const [conditionFilter, setConditionFilter] = useState<string>('');
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const ITEMS_PER_PAGE = 20;
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -183,7 +184,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     if (!guestMode) {
       loadFavorites();
     }
-  }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, guestMode, refreshKey]);
+  }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter, guestMode, refreshKey]);
 
   useEffect(() => {
     if (activeTab !== 'shops') return;
@@ -284,6 +285,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       maxPrice,
       locationFilter,
       campusIdFilter,
+      condition: conditionFilter,
       sortBy,
       sortOrder,
     });
@@ -325,6 +327,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setMaxPrice(restored.maxPrice);
     setLocationFilter(restored.locationFilter);
     setCampusIdFilter(restored.campusIdFilter);
+    setConditionFilter(restored.condition);
     setSortBy(restored.sortBy);
     setSortOrder(restored.sortOrder);
     setShowSavedSearches(false);
@@ -366,6 +369,12 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       if (maxPrice) filters.maxPrice = parseFloat(maxPrice);
       if (locationFilter) filters.location = locationFilter;
       if (campusIdFilter) filters.campus_id = campusIdFilter;
+      // Server-side condition filter: sent so the board filters by condition the
+      // moment the listings API supports it. See note in report — the route,
+      // service, RPC, and compact card payload do NOT yet carry condition, so
+      // this param is currently a harmless no-op (unknown query params are
+      // ignored) rather than a working filter.
+      if (conditionFilter) filters.condition = conditionFilter;
       filters.country_code = 'NG';
       filters.responseProfile = 'compact';
 
@@ -476,13 +485,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setMaxPrice('');
     setLocationFilter('');
     setCampusIdFilter('');
+    setConditionFilter('');
     setSortBy('trending');
     setSortOrder('desc');
     setShowFilters(false);
   };
 
   const activeFilterCount =
-    [minPrice, maxPrice, locationFilter, campusIdFilter].filter(Boolean).length +
+    [minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter].filter(Boolean).length +
     (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
 
   const handleCreateListing = () => {
@@ -981,6 +991,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             maxPrice={maxPrice}
             campusIdFilter={campusIdFilter}
             locationFilter={locationFilter}
+            condition={conditionFilter}
             sortBy={sortBy}
             sortOrder={sortOrder}
             campuses={campuses}
@@ -989,6 +1000,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onMaxPriceChange={setMaxPrice}
             onCampusChange={setCampusIdFilter}
             onLocationChange={setLocationFilter}
+            onConditionChange={setConditionFilter}
             onSortChange={(field, order) => {
               setSortBy(field);
               setSortOrder(order);

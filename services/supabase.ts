@@ -2968,6 +2968,8 @@ export const fetchMarketplaceListingsPage = async (filters: {
   location?: string;
   campus_id?: string;
   country_code?: string;
+  /** Filters on category_specific_fields.condition (new/like-new/good/fair). */
+  condition?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
   /** `compact` returns card-shaped rows (first image only) for the browse grid. */

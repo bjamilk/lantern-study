@@ -136,6 +136,7 @@ router.get(
       location,
       campus_id: campusId,
       country_code: countryCode,
+      condition,
       sortBy = 'trending',
       sortOrder = 'desc',
       responseProfile,
@@ -148,7 +149,7 @@ router.get(
 
     logger.debug('Fetching marketplace listings', { page, limit, category, search, profile, campusId, countryCode });
 
-    const cacheKey = `marketplace:listings:v2:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
+    const cacheKey = `marketplace:listings:v2:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${condition || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
     let result = await cacheService.get<{ data: any[]; total: number }>(cacheKey);
 
     if (!result) {
@@ -164,6 +165,7 @@ router.get(
         location,
         campusId: campusId as string | undefined,
         countryCode: (countryCode as string) || undefined,
+        condition: (condition as string) || undefined,
         sortBy,
         sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',
         responseProfile: profile,
