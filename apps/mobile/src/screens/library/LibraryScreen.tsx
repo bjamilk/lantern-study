@@ -89,10 +89,10 @@ export function LibraryScreen({ navigation, route }: Props) {
         >
           <View className="flex-row flex-wrap gap-2">
             <View className="px-2.5 py-1 rounded-full bg-lantern-primary-background">
-              <Text className="text-xs font-medium text-lantern-primary">{notes.length} notes</Text>
+              <Text className="text-xs font-medium text-lantern-primary">{notes.length} {notes.length === 1 ? 'note' : 'notes'}</Text>
             </View>
             <View className="px-2.5 py-1 rounded-full bg-lantern-accent-background">
-              <Text className="text-xs font-medium text-lantern-accent">{decks.length} decks</Text>
+              <Text className="text-xs font-medium text-lantern-accent">{decks.length} {decks.length === 1 ? 'deck' : 'decks'}</Text>
             </View>
             {dueCardsCount > 0 ? (
               <View className="px-2.5 py-1 rounded-full bg-lantern-error/10">

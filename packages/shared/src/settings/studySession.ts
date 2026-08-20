@@ -10,7 +10,11 @@ export interface FlashcardLike {
 }
 
 export function isNewFlashcard(card: FlashcardLike): boolean {
-  return !card.srsData?.repetitions;
+  // repetitions alone cannot distinguish "never reviewed" from "lapsed":
+  // grading Again resets repetitions to 0, but every reviewed card carries a
+  // nextReviewDate. Treating a lapsed card as new let daily new-card caps
+  // silently drop it from the review queue.
+  return !card.srsData?.repetitions && !card.srsData?.nextReviewDate;
 }
 
 export interface TodayStudyCounts {

@@ -46,10 +46,10 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         >
           <div className="flex flex-wrap gap-2">
             {noteCount != null ? (
-              <StatChip label={`${noteCount} notes`} variant="primary" />
+              <StatChip label={`${noteCount} ${noteCount === 1 ? 'note' : 'notes'}`} variant="primary" />
             ) : null}
             {deckCount != null ? (
-              <StatChip label={`${deckCount} decks`} variant="accent" />
+              <StatChip label={`${deckCount} ${deckCount === 1 ? 'deck' : 'decks'}`} variant="accent" />
             ) : null}
             {dueCardsCount > 0 ? (
               <StatChip label={`${dueCardsCount} due`} variant="neutral" className="bg-lantern-error/10 text-lantern-error" />
