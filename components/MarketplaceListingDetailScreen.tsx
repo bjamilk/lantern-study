@@ -13,6 +13,7 @@ import {
   boostMarketplaceListing,
   buyMarketplaceListingNow,
   addToMarketplaceCart,
+  fetchMarketplacePaymentsConfig,
   validateMarketplaceCoupon,
   fetchPickupNudge,
   downloadQuestionBank,
@@ -23,6 +24,12 @@ import {
   type QuestionBankLeaderboardEntry,
 } from '../services/supabase';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
+import {
+  computeMarketplaceCheckoutFees,
+  MARKETPLACE_DEFAULT_SERVICE_FEE_BPS,
+  nairaToKobo,
+  koboToNaira,
+} from '@lantern/shared/marketplace';
 import { generateListingLink, formatCampusLabel } from '@lantern/shared';
 import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
@@ -106,6 +113,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     viewerEntry: QuestionBankLeaderboardEntry | null;
   } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  // Payment mode drives the Buy Now fee quote. Manual/cash mode charges no
+  // service fee server-side, so the confirm dialog must not quote one.
+  const [paymentConfig, setPaymentConfig] = useState<{
+    paystackEnabled: boolean;
+    serviceFeeBps: number;
+  } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listingLoadId = useRef(0);
   const { currentUser } = useAuthStore();
@@ -180,6 +193,25 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     });
     return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
   }, [listingId, guestMode]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchMarketplacePaymentsConfig()
+      .then((config) => {
+        if (alive) {
+          setPaymentConfig({
+            paystackEnabled: !!config.paystackEnabled,
+            serviceFeeBps: config.serviceFeeBps,
+          });
+        }
+      })
+      .catch(() => {
+        if (alive) setPaymentConfig(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (isOwner) {
@@ -377,12 +409,24 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     const unitPay = couponPreview?.finalAmount ?? pricing.effective;
     const qty = listing.quantity == null ? 1 : selectedQuantity;
     const itemTotal = Math.round(unitPay * qty * 100) / 100;
-    const serviceFee = Math.round(itemTotal * 0.05 * 100) / 100;
-    const payAmount = Math.round((itemTotal + serviceFee) * 100) / 100;
+    // Manual/cash mode charges no service fee server-side; only Paystack does.
+    // Default conservative (no fee) until config loads, matching usePaystackEnabled.
+    const paystackEnabled = paymentConfig?.paystackEnabled ?? false;
+    const serviceFeeBps = paymentConfig?.serviceFeeBps ?? MARKETPLACE_DEFAULT_SERVICE_FEE_BPS;
+    const fees = computeMarketplaceCheckoutFees(
+      nairaToKobo(itemTotal),
+      paystackEnabled ? serviceFeeBps : 0
+    );
+    const serviceFee = koboToNaira(fees.serviceFeeKobo);
+    const payAmount = koboToNaira(fees.totalChargeKobo);
+    const showFee = paystackEnabled && fees.serviceFeeKobo > 0;
+    const serviceFeePct = serviceFeeBps / 100;
     const confirmed = await confirmDialog({
       title: 'Confirm purchase',
-      message: `Confirm purchase of ${listing.title}${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ₦${itemTotal.toLocaleString()}\nService charge (5%): ₦${serviceFee.toLocaleString()}\nTotal: ₦${payAmount.toLocaleString()}`,
-      confirmLabel: 'Pay now',
+      message: showFee
+        ? `Confirm purchase of ${listing.title}${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ₦${itemTotal.toLocaleString()}\nService charge (${serviceFeePct}%): ₦${serviceFee.toLocaleString()}\nTotal: ₦${payAmount.toLocaleString()}`
+        : `Confirm purchase of ${listing.title}${qty > 1 ? ` ×${qty}` : ''}?\n\nTotal: ₦${payAmount.toLocaleString()}`,
+      confirmLabel: paystackEnabled ? 'Pay now' : 'Place order',
     });
     if (!confirmed) return;
 
@@ -524,6 +568,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
   const isDigital = listing.listing_kind === 'question_bank';
+  // quantity null = unlimited/digital stock (not sold out); only a literal 0 is sold out.
+  const isSoldOut = listing.quantity === 0;
 
   return (
     <div className="flex-1 bg-lantern-background overflow-y-auto">
@@ -945,6 +991,29 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   ) : null}
                 </div>
               ) : null}
+              {/* Sold out (quantity 0): the buy/cart/offer CTAs and coupon box are
+                  gated off above; mirror the reserved treatment and leave chat open. */}
+              {!isOwner &&
+                listing.status !== 'reserved' &&
+                listing.price &&
+                listing.price > 0 &&
+                !(isDigital && questionBank?.owned) &&
+                isSoldOut && (
+                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 space-y-2">
+                  <p className="text-sm font-semibold text-red-900 dark:text-red-200">Sold out</p>
+                  <p className="text-xs text-red-800 dark:text-red-300">
+                    Every unit of this listing has been sold. Message the seller to ask whether
+                    they'll restock.
+                  </p>
+                  <button
+                    onClick={handleContactSeller}
+                    className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                  >
+                    <ChatBubbleLeftIcon className="w-4 h-4" />
+                    Contact Seller
+                  </button>
+                </div>
+              )}
               {/* Digital question banks: download/own panel replaces physical CTAs. */}
               {isDigital && (
                 <div className="p-3 rounded-xl bg-lantern-primary-background border border-lantern-primary/20 text-xs sm:text-sm text-lantern-text-secondary">
@@ -1029,7 +1098,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   </div>
                 </div>
               )}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && !isSoldOut && (
                 <div className="p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border space-y-2">
                   <p className="text-xs font-semibold text-lantern-text-secondary">Have a coupon?</p>
                   <div className="flex gap-2">
@@ -1072,7 +1141,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               {/* Purchase actions, strongest first: Buy Now is the one path with
                   buyer protection, so it leads; cart and offer are secondary;
                   chat is the fallback, not the headline. */}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && !isSoldOut && (
                 <>
                   <button
                     onClick={handleBuyNow}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   checkoutMarketplaceCart,
   fetchMarketplaceCart,
+  fetchMarketplacePaymentsConfig,
   removeMarketplaceCartItem,
   updateMarketplaceCartItem,
 } from '../services/supabase';
@@ -26,6 +27,12 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
   const [items, setItems] = useState<MarketplaceCartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
+  // Payment mode drives the fee quote and CTA label. When Paystack is off the
+  // server charges no service fee, so the client must not show one either.
+  const [paymentConfig, setPaymentConfig] = useState<{
+    paystackEnabled: boolean;
+    serviceFeeBps: number;
+  } | null>(null);
   const showToast = useToastStore((s) => s.showToast);
 
   const load = async () => {
@@ -43,6 +50,25 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
     void load();
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    fetchMarketplacePaymentsConfig()
+      .then((config) => {
+        if (alive) {
+          setPaymentConfig({
+            paystackEnabled: !!config.paystackEnabled,
+            serviceFeeBps: config.serviceFeeBps,
+          });
+        }
+      })
+      .catch(() => {
+        if (alive) setPaymentConfig(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const lineTotal = (item: MarketplaceCartItem) => {
     if (!item.listing) return 0;
     const unit = resolveListingDisplayPrice(item.listing).effective;
@@ -50,12 +76,18 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
   };
 
   const cartTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
+  // Conservative default (no Paystack) until config loads, matching
+  // usePaystackEnabled: better to under-quote briefly than show a phantom fee.
+  const paystackEnabled = paymentConfig?.paystackEnabled ?? false;
+  const serviceFeeBps = paymentConfig?.serviceFeeBps ?? MARKETPLACE_DEFAULT_SERVICE_FEE_BPS;
   const fees = computeMarketplaceCheckoutFees(
     nairaToKobo(cartTotal),
-    MARKETPLACE_DEFAULT_SERVICE_FEE_BPS
+    paystackEnabled ? serviceFeeBps : 0
   );
   const serviceFeeNaira = koboToNaira(fees.serviceFeeKobo);
   const payTotalNaira = koboToNaira(fees.totalChargeKobo);
+  const showServiceFee = paystackEnabled && fees.serviceFeeKobo > 0;
+  const serviceFeePct = serviceFeeBps / 100;
 
   const handleQty = async (listingId: string, quantity: number) => {
     try {
@@ -235,10 +267,12 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
               <span>Items</span>
               <span>₦{cartTotal.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between text-lantern-text-secondary">
-              <span>Service charge (5%)</span>
-              <span>₦{serviceFeeNaira.toLocaleString()}</span>
-            </div>
+            {showServiceFee && (
+              <div className="flex justify-between text-lantern-text-secondary">
+                <span>Service charge ({serviceFeePct}%)</span>
+                <span>₦{serviceFeeNaira.toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center pt-1">
               <span className="font-medium">You pay</span>
               <span className="text-lg font-bold text-lantern-primary">
@@ -247,16 +281,16 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
             </div>
           </div>
           <p className="text-xs text-lantern-text-tertiary">
-            Checkout creates one Paystack charge per listing (and one order per seller). Multi-item
-            carts open the first payment now — after paying, you'll be prompted to pay the rest,
-            and every unpaid order also has a Pay now button in Orders.
+            {paystackEnabled
+              ? "Checkout creates one Paystack charge per listing (and one order per seller). Multi-item carts open the first payment now — after paying, you'll be prompted to pay the rest, and every unpaid order also has a Pay now button in Orders."
+              : 'Checkout creates one order per seller. Arrange payment and pickup or delivery directly with each seller — no service charge is added.'}
           </p>
           <Button
             className="w-full"
             onClick={() => void handleCheckout()}
             disabled={checkingOut}
           >
-            {checkingOut ? 'Checking out…' : 'Pay with Paystack'}
+            {checkingOut ? 'Checking out…' : paystackEnabled ? 'Pay with Paystack' : 'Place order'}
           </Button>
         </div>
       )}

@@ -361,6 +361,34 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           </div>
         )}
 
+        {/* Seller controls for a buyer who started Paystack checkout then
+            abandoned it: the order sits in pending_payment/awaiting_payment with
+            a payment_id and the seller previously had no actions at all — not
+            even cancel. mark_ready is offered only from pending_payment; the API
+            rejects it from awaiting_payment. */}
+        {(order.status === 'pending_payment' || order.status === 'awaiting_payment') &&
+          order.payment_id &&
+          isSeller && (
+          <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 space-y-3">
+            <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+              Buyer hasn't completed payment
+            </h2>
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              The buyer opened Paystack checkout but hasn't paid yet. You can prepare the item and
+              collect at handover, or cancel to release your stock. Cancelling voids the unpaid
+              Paystack charge — no refund is issued.
+            </p>
+            {order.status === 'pending_payment' && (
+              <Button size="sm" disabled={acting} onClick={() => runAction('mark_ready')}>
+                Mark ready for pickup or delivery
+              </Button>
+            )}
+            <Button size="sm" variant="secondary" disabled={acting} onClick={() => runAction('cancel')}>
+              Cancel order
+            </Button>
+          </div>
+        )}
+
         {order.status === 'pending_payment' && !order.payment_id && (
           <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 space-y-3">
             <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Payment required</h2>
