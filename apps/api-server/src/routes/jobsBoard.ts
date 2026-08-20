@@ -9,7 +9,10 @@ import { requireAuthUserId } from "../utils/requestAuth";
 import { isLivePlatformAdmin } from "../utils/platformAdminAuth";
 import { SupabaseService } from "../services/supabase";
 import { CacheService } from "../services/cache";
-import { getJobsBoardService } from "../services/jobsBoard";
+import {
+  applicationStatusUpdateError,
+  getJobsBoardService,
+} from "../services/jobsBoard";
 import { clientErrorMessage } from "../utils/safeError";
 import {
   isJobEmploymentType,
@@ -132,9 +135,12 @@ router.get(
   "/postings/:id",
   optionalAuthMiddleware,
   asyncHandler(async (req: any, res: any) => {
+    // publicView: private ATS fields are stripped unless the viewer is the
+    // poster or a member of the posting's company (the edit form's load path).
     const posting = await jobs().getPosting(req.params.id, {
       incrementViews: true,
       viewerId: req.user?.id || null,
+      publicView: true,
     });
     // Drafts and moderated posts are owner-only; paused and closed stay
     // readable by link so past applicants can revisit them.
@@ -985,6 +991,14 @@ router.patch(
       return res
         .status(400)
         .json({ success: false, error: "status is required" });
+    }
+    // Whitelist: only real application statuses, and employers cannot set the
+    // candidate-owned ones (withdrawn / interested / chatting).
+    const statusProblem = applicationStatusUpdateError(status, {
+      asApplicant: !!asApplicant,
+    });
+    if (statusProblem) {
+      return res.status(400).json({ success: false, error: statusProblem });
     }
     try {
       const data = await jobs().updateApplicationStatus(

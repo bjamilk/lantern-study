@@ -42,6 +42,8 @@ import {
   countJobApplicationStatuses,
   daysBetween,
   describeJobOffer,
+  describeJobTemplateLeftovers,
+  JOB_APPLICATION_STATUS_LABELS,
   emptyJobApplicationStatusCounts,
   formatJobInterviewSlotList,
   hasOpenJobOffer,
@@ -135,16 +137,218 @@ function httpError(message: string, statusCode = 400): Error {
   return err;
 }
 
-function normalizeCompensation(
+// ─── Input validation (helpers exported for the regression tests) ───────────
+
+/**
+ * ATS webhooks POST the full applicant record to this URL, so the destination
+ * must be a real, public, credential-free https endpoint. Anything else —
+ * plain http, embedded credentials, IP literals, localhost, or internal-only
+ * names — turns the webhook into an SSRF primitive against our own network.
+ * Returns the problem as a string, or null when the URL is acceptable.
+ */
+const PRIVATE_HOSTNAME_SUFFIXES = [
+  ".localhost",
+  ".local",
+  ".internal",
+  ".intranet",
+  ".lan",
+  ".home.arpa",
+];
+
+export function atsWebhookUrlError(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return "atsWebhookUrl must be a valid URL";
+  }
+  if (url.protocol !== "https:") {
+    return "atsWebhookUrl must be an https:// URL";
+  }
+  if (url.username || url.password) {
+    return "atsWebhookUrl must not embed credentials";
+  }
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
+  const isIpV6 = host.includes(":") || host.startsWith("[");
+  const isIpV4Like = host
+    .split(".")
+    .every((label) => /^\d+$/.test(label) || /^0x[0-9a-f]+$/i.test(label));
+  if (
+    isIpV6 ||
+    isIpV4Like ||
+    host === "localhost" ||
+    !host.includes(".") ||
+    PRIVATE_HOSTNAME_SUFFIXES.some((suffix) => host.endsWith(suffix))
+  ) {
+    return "atsWebhookUrl must point at a public host, not an IP address or internal name";
+  }
+  return null;
+}
+
+/** Normalizes an incoming atsWebhookUrl: null/empty clears it, anything else must pass atsWebhookUrlError. */
+function normalizeAtsWebhookUrl(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw !== "string") {
+    throw httpError("atsWebhookUrl must be a URL string");
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const problem = atsWebhookUrlError(trimmed);
+  if (problem) throw httpError(problem);
+  return trimmed;
+}
+
+/** External apply links must actually be clickable web URLs. */
+export function isValidHttpUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+const JOB_APPLY_MODES = ["in_app", "external", "both"] as const;
+
+function isJobApplyMode(
+  value: unknown,
+): value is (typeof JOB_APPLY_MODES)[number] {
+  return (
+    typeof value === "string" &&
+    (JOB_APPLY_MODES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * A posting with applyMode external/both but no working externalUrl is a dead
+ * end nobody can apply to, so both create and patch refuse to store one.
+ */
+function assertApplyModeReachable(
+  applyMode: unknown,
+  externalUrl: string | null,
+) {
+  if (applyMode !== "external" && applyMode !== "both") return;
+  if (!externalUrl?.trim()) {
+    throw httpError("externalUrl is required when applyMode is external or both");
+  }
+  if (!isValidHttpUrl(externalUrl.trim())) {
+    throw httpError(
+      "externalUrl must be a valid http(s) link when applyMode is external or both",
+    );
+  }
+}
+
+/**
+ * The ATS wiring (webhook URL, provider, external id) is employer
+ * configuration: the webhook URL alone lets anyone POST forged applicants
+ * into the poster's ATS. It must never ride along on public or
+ * candidate-facing payloads; the owner's surfaces (my-postings and the edit
+ * form's GET /postings/:id) keep it so the edit form can round-trip it.
+ */
+export function stripPrivatePostingFields<T>(posting: T): T {
+  if (!posting || typeof posting !== "object") return posting;
+  const clean = { ...(posting as Record<string, unknown>) };
+  delete clean.atsProvider;
+  delete clean.atsExternalId;
+  delete clean.atsWebhookUrl;
+  return clean as unknown as T;
+}
+
+/** True when the posting has a deadline and it is already behind us. */
+export function jobPostingDeadlinePassed(
+  deadline: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!deadline) return false;
+  const cutoff = new Date(deadline).getTime();
+  return Number.isFinite(cutoff) && cutoff < now.getTime();
+}
+
+function deadlineClosedError(deadline: string): Error {
+  const day = new Date(deadline).toISOString().slice(0, 10);
+  return httpError(`Applications for this job closed on ${day}`);
+}
+
+/**
+ * Stages that proposing an interview may advance an application from. Later
+ * stages (offer, hired) and terminal ones (rejected, withdrawn) must never be
+ * rewound by a follow-up interview invite.
+ */
+const JOB_PRE_INTERVIEW_STATUSES: readonly JobApplicationStatus[] = [
+  "interested",
+  "chatting",
+  "new",
+  "reviewing",
+];
+
+export function shouldAdvanceApplicationToInterview(status: unknown): boolean {
+  return (
+    typeof status === "string" &&
+    (JOB_PRE_INTERVIEW_STATUSES as readonly string[]).includes(status)
+  );
+}
+
+/**
+ * `withdrawn` is the candidate's own exit and `interested`/`chatting` are
+ * applicant- or system-initiated inbox states — an employer forcing any of
+ * them would fake a candidate action. Employers may only place an application
+ * in a hiring-stage status; applicants keep their withdraw path.
+ */
+const JOB_CANDIDATE_OWNED_STATUSES: ReadonlySet<string> = new Set([
+  "withdrawn",
+  "interested",
+  "chatting",
+]);
+
+export function applicationStatusUpdateError(
+  status: unknown,
+  opts?: { asApplicant?: boolean },
+): string | null {
+  if (
+    typeof status !== "string" ||
+    !(status in JOB_APPLICATION_STATUS_LABELS)
+  ) {
+    return "Unknown application status";
+  }
+  if (!opts?.asApplicant && JOB_CANDIDATE_OWNED_STATUSES.has(status)) {
+    return `Employers cannot set an application to "${status}"`;
+  }
+  return null;
+}
+
+/** Amounts, when present, must be real non-negative numbers — not NaN, Infinity, negatives, or strings. */
+function assertValidPayAmount(value: unknown, field: string) {
+  if (value == null) return;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw httpError(`${field} must be a number of at least 0`);
+  }
+}
+
+// Exported for the regression tests covering pay sanity checks.
+export function normalizeCompensation(
   compensation: JobCompensation | null | undefined,
 ): JobCompensation {
   const c = compensation || { kind: "discuss" as const };
+  // NGN is the only currency this product supports end to end (payouts,
+  // filters, formatting); junk currencies would render as real offers.
+  if (c.currency && c.currency !== "NGN") {
+    throw httpError("Only NGN compensation is supported");
+  }
   if (c.kind !== "paid") {
     return {
       kind: c.kind,
       currency: c.currency || "NGN",
       notes: c.notes || null,
     };
+  }
+  assertValidPayAmount(c.amountMin, "amountMin");
+  assertValidPayAmount(c.amountMax, "amountMax");
+  if (
+    c.amountMin != null &&
+    c.amountMax != null &&
+    c.amountMax < c.amountMin
+  ) {
+    throw httpError("amountMax must be greater than or equal to amountMin");
   }
   if (c.amountMin != null && !isJobCompensationPeriod(c.period)) {
     throw httpError("Pay period is required when a paid amount is set");
@@ -269,7 +473,11 @@ function mapApplication(row: any) {
     dmThreadId: row.dm_thread_id,
     source: row.source,
     profileSnapshot: row.profile_snapshot,
-    posting: row.posting ? mapPosting(row.posting) : undefined,
+    // Application payloads go to candidates (and employer pipelines that have
+    // their own posting surface) — the embedded posting never needs ATS wiring.
+    posting: row.posting
+      ? stripPrivatePostingFields(mapPosting(row.posting))
+      : undefined,
     applicant: row.applicant
       ? {
           id: row.applicant.id,
@@ -529,8 +737,9 @@ export class JobsBoardService {
       ids,
     );
     return {
+      // Browse is a public surface: ATS wiring never ships on it.
       data: (data || []).map((row: any) =>
-        mapPosting(row, savedIds, appliedIds),
+        stripPrivatePostingFields(mapPosting(row, savedIds, appliedIds)),
       ),
       pagination: { page, limit, total: count ?? 0 },
     };
@@ -601,7 +810,10 @@ export class JobsBoardService {
       ordered.map((row) => row.id),
     );
     return {
-      data: ordered.map((row) => mapPosting(row, savedIds, appliedIds)),
+      // Same public browse surface as the non-trending path: strip ATS wiring.
+      data: ordered.map((row) =>
+        stripPrivatePostingFields(mapPosting(row, savedIds, appliedIds)),
+      ),
       pagination: { page, limit, total },
     };
   }
@@ -770,7 +982,8 @@ export class JobsBoardService {
       postings.map((posting: any) => posting.id),
     );
     return postings.map((posting: any) =>
-      mapPosting(posting, savedIds, appliedIds),
+      // Saved postings are (usually other people's) public postings: no ATS wiring.
+      stripPrivatePostingFields(mapPosting(posting, savedIds, appliedIds)),
     );
   }
 
@@ -864,9 +1077,19 @@ export class JobsBoardService {
     return { id };
   }
 
+  /**
+   * `publicView` marks a requester-facing read (GET /postings/:id): private
+   * ATS fields are stripped unless the viewer is the poster or a member of the
+   * posting's company. Internal callers (create/update return values, apply
+   * flow, webhook firing) omit it and keep the full row.
+   */
   async getPosting(
     id: string,
-    opts?: { incrementViews?: boolean; viewerId?: string | null },
+    opts?: {
+      incrementViews?: boolean;
+      viewerId?: string | null;
+      publicView?: boolean;
+    },
   ) {
     const { data, error } = await this.client()
       .from("job_postings")
@@ -910,7 +1133,18 @@ export class JobsBoardService {
       opts?.viewerId,
       [data.id],
     );
-    return mapPosting(data, savedIds, appliedIds);
+    const posting = mapPosting(data, savedIds, appliedIds);
+    if (opts?.publicView && posting) {
+      const canSeeAtsFields =
+        !!opts.viewerId &&
+        (opts.viewerId === data.poster_user_id ||
+          !!(
+            data.company_id &&
+            (await this.getCompanyMembership(data.company_id, opts.viewerId))
+          ));
+      if (!canSeeAtsFields) return stripPrivatePostingFields(posting);
+    }
+    return posting;
   }
 
   async createPosting(userId: string, input: CreateJobPostingInput) {
@@ -927,13 +1161,12 @@ export class JobsBoardService {
       input.engagementDuration,
     );
 
-    if (input.applyMode === "external" || input.applyMode === "both") {
-      if (!input.externalUrl?.trim()) {
-        throw httpError(
-          "externalUrl is required when applyMode is external or both",
-        );
-      }
+    if (input.applyMode != null && !isJobApplyMode(input.applyMode)) {
+      throw httpError("Invalid applyMode");
     }
+    const externalUrl = input.externalUrl?.trim() || null;
+    assertApplyModeReachable(input.applyMode, externalUrl);
+    const atsWebhookUrl = normalizeAtsWebhookUrl(input.atsWebhookUrl);
 
     const companyId = input.companyId || null;
     if (companyId) {
@@ -962,14 +1195,32 @@ export class JobsBoardService {
       : JOBS_MAX_SCREENERS_PHASE1;
     const screeners = (input.screeningQuestions || []).slice(0, maxScreeners);
 
-    let status = input.status || "active";
-    if (input.requiresSchoolApproval) status = "pending_school_approval";
+    const storedTitle = input.title.trim().slice(0, 200);
+    const storedDescription = input.description.trim().slice(0, 10000);
+
+    const requestedStatus: JobPostingStatus = input.status || "active";
+    // Publishing must not ship template boilerplate ("[team / function]" and
+    // friends); drafts may keep placeholders while the poster works on them.
+    if (requestedStatus === "active") {
+      const leftover = describeJobTemplateLeftovers(
+        storedTitle,
+        storedDescription,
+      );
+      if (leftover) throw httpError(leftover);
+    }
+
+    // School approval intercepts a *publication* — "Save as draft" stays a
+    // draft rather than being routed into the approval queue.
+    let status: JobPostingStatus = requestedStatus;
+    if (input.requiresSchoolApproval && requestedStatus === "active") {
+      status = "pending_school_approval";
+    }
 
     const { data, error } = await this.client()
       .from("job_postings")
       .insert({
-        title: input.title.trim().slice(0, 200),
-        description: input.description.trim().slice(0, 10000),
+        title: storedTitle,
+        description: storedDescription,
         employment_type: input.employmentType,
         campus_id: input.campusId || null,
         campus_ids: input.campusIds?.length
@@ -983,7 +1234,7 @@ export class JobsBoardService {
         engagement_duration: engagementDuration,
         deadline: input.deadline || null,
         apply_mode: input.applyMode || "in_app",
-        external_url: input.externalUrl?.trim() || null,
+        external_url: externalUrl,
         poster_user_id: userId,
         company_id: companyId,
         status,
@@ -992,7 +1243,7 @@ export class JobsBoardService {
         sponsored_until: input.sponsoredUntil || null,
         ats_provider: input.atsProvider || null,
         ats_external_id: input.atsExternalId || null,
-        ats_webhook_url: input.atsWebhookUrl || null,
+        ats_webhook_url: atsWebhookUrl,
         country_code: JOBS_DEFAULT_COUNTRY,
       })
       .select("*")
@@ -1111,9 +1362,24 @@ export class JobsBoardService {
       );
     }
     if (updates.deadline !== undefined) patch.deadline = updates.deadline;
-    if (updates.applyMode != null) patch.apply_mode = updates.applyMode;
-    if (updates.externalUrl !== undefined)
-      patch.external_url = updates.externalUrl;
+    if (updates.applyMode != null) {
+      if (!isJobApplyMode(updates.applyMode)) {
+        throw httpError("Invalid applyMode");
+      }
+      patch.apply_mode = updates.applyMode;
+    }
+    // A patch must not strand the posting in an unusable apply mode: whatever
+    // combination of applyMode/externalUrl will be stored after this update
+    // has to leave candidates a working way to apply.
+    const nextExternalUrl =
+      updates.externalUrl !== undefined
+        ? (typeof updates.externalUrl === "string"
+            ? updates.externalUrl.trim()
+            : "") || null
+        : ((existing.externalUrl as string | null) ?? null);
+    const nextApplyMode = updates.applyMode ?? existing.applyMode;
+    assertApplyModeReachable(nextApplyMode, nextExternalUrl);
+    if (updates.externalUrl !== undefined) patch.external_url = nextExternalUrl;
     if (updates.status != null) patch.status = updates.status;
     if (updates.isSponsored != null) patch.is_sponsored = updates.isSponsored;
     if (updates.sponsoredUntil !== undefined)
@@ -1123,9 +1389,21 @@ export class JobsBoardService {
     if (updates.atsExternalId !== undefined)
       patch.ats_external_id = updates.atsExternalId;
     if (updates.atsWebhookUrl !== undefined)
-      patch.ats_webhook_url = updates.atsWebhookUrl;
+      patch.ats_webhook_url = normalizeAtsWebhookUrl(updates.atsWebhookUrl);
     if (updates.requiresSchoolApproval != null) {
       patch.requires_school_approval = updates.requiresSchoolApproval;
+    }
+
+    // Publishing (draft/paused/closed → active) a school-approval posting goes
+    // through the approval queue, exactly as it would have on create. Admin
+    // edits bypass this: moderation must be able to set statuses directly.
+    if (
+      !opts?.asAdmin &&
+      patch.status === "active" &&
+      existing.status !== "active" &&
+      (updates.requiresSchoolApproval ?? existing.requiresSchoolApproval)
+    ) {
+      patch.status = "pending_school_approval";
     }
 
     const checkText = `${(patch.title as string) || existing.title}\n${(patch.description as string) || existing.description}`;
@@ -1133,6 +1411,20 @@ export class JobsBoardService {
       const err = new Error("Updated text matches banned scam patterns.");
       (err as Error & { statusCode?: number }).statusCode = 400;
       throw err;
+    }
+
+    // Same publish gate as create: whatever will be stored while the posting
+    // is (or becomes) publicly visible must not be template boilerplate.
+    if (!opts?.asAdmin) {
+      const targetStatus = (updates.status ??
+        existing.status) as JobPostingStatus;
+      if (targetStatus === "active") {
+        const leftover = describeJobTemplateLeftovers(
+          (patch.title as string | undefined) ?? existing.title,
+          (patch.description as string | undefined) ?? existing.description,
+        );
+        if (leftover) throw httpError(leftover);
+      }
     }
 
     const { error } = await this.client()
@@ -1190,8 +1482,26 @@ export class JobsBoardService {
     if (insertError) throw insertError;
   }
 
-  async listMyPostings(userId: string) {
+  /** Ids of every company the user is a member of (owner or recruiter). */
+  private async userCompanyIds(userId: string): Promise<string[]> {
     const { data, error } = await this.client()
+      .from("job_company_members")
+      .select("company_id")
+      .eq("user_id", userId);
+    if (error) throw error;
+    return (data || []).map((row: any) => row.company_id as string);
+  }
+
+  /**
+   * The employer dashboard covers postings the user authored *and* postings
+   * belonging to companies they are a member of — an invited recruiter must
+   * see the team's jobs (and their pipelines/analytics), not an empty list.
+   * This mirrors the membership rule updatePosting/listApplicantsForPosting
+   * already use for writes and pipeline reads.
+   */
+  async listMyPostings(userId: string) {
+    const companyIds = await this.userCompanyIds(userId);
+    let query = this.client()
       .from("job_postings")
       .select(
         `
@@ -1201,9 +1511,14 @@ export class JobsBoardService {
         company:job_companies(*)
       `,
       )
-      .eq("poster_user_id", userId)
       .neq("status", "removed_by_admin")
       .order("created_at", { ascending: false });
+    query = companyIds.length
+      ? query.or(
+          `poster_user_id.eq.${userId},company_id.in.(${companyIds.join(",")})`,
+        )
+      : query.eq("poster_user_id", userId);
+    const { data, error } = await query;
     if (error) throw error;
     const postings = (data || []).map((row: any) => mapPosting(row));
     return this.attachApplicationCounts(postings);
@@ -1269,6 +1584,11 @@ export class JobsBoardService {
       const err = new Error("You cannot apply to your own job");
       (err as Error & { statusCode?: number }).statusCode = 400;
       throw err;
+    }
+    // The deadline is a real cutoff, not decoration — clients hide the apply
+    // form, but the API is the backstop.
+    if (jobPostingDeadlinePassed(posting.deadline)) {
+      throw deadlineClosedError(posting.deadline);
     }
     if (posting.applyMode === "external") {
       const err = new Error(
@@ -1437,6 +1757,9 @@ export class JobsBoardService {
       const err = new Error("This job has no external apply URL");
       (err as Error & { statusCode?: number }).statusCode = 400;
       throw err;
+    }
+    if (jobPostingDeadlinePassed(posting.deadline)) {
+      throw deadlineClosedError(posting.deadline);
     }
 
     await this.client()
@@ -1657,7 +1980,7 @@ export class JobsBoardService {
     const { data: app, error } = await this.client()
       .from("job_applications")
       .select(
-        "id, applicant_id, posting_id, posting:job_postings(id, title, poster_user_id, company_id)",
+        "id, applicant_id, posting_id, status, posting:job_postings(id, title, poster_user_id, company_id)",
       )
       .eq("id", applicationId)
       .maybeSingle();
@@ -1836,11 +2159,16 @@ export class JobsBoardService {
       .single();
     if (error) throw error;
 
-    // Advancing the application keeps the pipeline and the interview in step.
-    await this.client()
-      .from("job_applications")
-      .update({ status: "interview", updated_at: new Date().toISOString() })
-      .eq("id", applicationId);
+    // Advancing the application keeps the pipeline and the interview in step —
+    // but only forwards from an earlier stage. A follow-up interview must not
+    // rewind a candidate already at offer/hired, or resurrect a rejected or
+    // withdrawn application.
+    if (shouldAdvanceApplicationToInterview(app.status)) {
+      await this.client()
+        .from("job_applications")
+        .update({ status: "interview", updated_at: new Date().toISOString() })
+        .eq("id", applicationId);
+    }
 
     const title = posting?.title || "a job";
     await this.supabase.createNotification(app.applicant_id, {
@@ -2433,7 +2761,12 @@ export class JobsBoardService {
     applicationIds: unknown,
     status: unknown,
   ) {
-    if (!isJobEmployerBulkStatus(status)) {
+    // Same employer whitelist as the single-application route: bulk moves are
+    // hiring-stage only — never candidate-owned states like withdrawn/chatting.
+    if (
+      !isJobEmployerBulkStatus(status) ||
+      applicationStatusUpdateError(status) != null
+    ) {
       const err = new Error(
         "Choose a hiring-stage status (reviewing, interview, offer, hired, or rejected)",
       );
@@ -2483,23 +2816,34 @@ export class JobsBoardService {
       throw err;
     }
 
+    // A candidate who withdrew has left the process — a bulk move must not
+    // drag them back into the pipeline (or notify them it happened).
+    const movable = (existing || []).filter(
+      (row) => (row as { status?: string }).status !== "withdrawn",
+    );
+    const movableIds = movable.map((row) => (row as { id: string }).id);
+    const skippedWithdrawn = ids.length - movableIds.length;
+
     const now = new Date().toISOString();
-    const { data, error: upErr } = await this.client()
-      .from("job_applications")
-      .update({ status, updated_at: now })
-      .eq("posting_id", postingId)
-      .in("id", ids)
-      .select(
-        `
+    let updated: ReturnType<typeof mapApplication>[] = [];
+    if (movableIds.length) {
+      const { data, error: upErr } = await this.client()
+        .from("job_applications")
+        .update({ status, updated_at: now })
+        .eq("posting_id", postingId)
+        .in("id", movableIds)
+        .select(
+          `
         *,
         posting:job_postings(*),
         applicant:profiles!applicant_id(id, name, username, avatar_url)
       `,
-      );
-    if (upErr) throw upErr;
+        );
+      if (upErr) throw upErr;
+      updated = (data || []).map(mapApplication);
+    }
 
-    const updated = (data || []).map(mapApplication);
-    for (const row of existing || []) {
+    for (const row of movable) {
       const applicantId = (row as { applicant_id?: string }).applicant_id;
       const previous = (row as { status?: string }).status;
       if (!applicantId || previous === status) continue;
@@ -2514,6 +2858,7 @@ export class JobsBoardService {
       updated,
       status,
       count: updated.length,
+      skippedWithdrawn,
     };
   }
 
@@ -2929,9 +3274,11 @@ export class JobsBoardService {
 
     return {
       company,
-      jobs: (data || []).map((row: any) =>
-        mapPosting(row, savedIds, appliedIds),
-      ),
+      // Company pages are public; only the company's own members keep ATS wiring.
+      jobs: (data || []).map((row: any) => {
+        const posting = mapPosting(row, savedIds, appliedIds);
+        return isMember ? posting : stripPrivatePostingFields(posting);
+      }),
       myRole: (membership?.role as JobCompanyMemberRole | undefined) ?? null,
     };
   }
@@ -3262,6 +3609,17 @@ export class JobsBoardService {
   private async fireAtsWebhook(posting: any, application: any) {
     try {
       if (!posting.atsWebhookUrl) return;
+      // Defence in depth: rows written before URL validation existed (or
+      // edited around it) are re-checked at fire time — never POST applicant
+      // PII to an unvetted destination.
+      const problem = atsWebhookUrlError(String(posting.atsWebhookUrl));
+      if (problem) {
+        logger.warn("Skipping ATS webhook with unsafe URL", {
+          postingId: posting.id,
+          problem,
+        });
+        return;
+      }
       await fetch(posting.atsWebhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

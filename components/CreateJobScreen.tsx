@@ -13,11 +13,13 @@ import {
   JOB_PHASE2_EMPLOYMENT_TYPES,
   JOB_POSTING_STATUS_LABELS,
   describeJobScamMatches,
+  describeJobTemplateLeftovers,
   findJobScamMatches,
   formatJobCompensation,
   formatJobCompanyVerificationLabel,
   formatJobLocation,
   isJobPostingEditable,
+  jobDescriptionIsTemplateHint,
   jobIntentTemplatesByGroup,
   jobRequiresEngagementDuration,
   textFailsJobScamCheck,
@@ -26,6 +28,7 @@ import {
   type JobEngagementDurationUnit,
   type JobPosting,
   type JobPostingStatus,
+  type JobScreeningQuestion,
 } from "@lantern/shared";
 import {
   createJobPosting,
@@ -47,6 +50,7 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
   const isEdit = !!jobId;
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [templateHint, setTemplateHint] = useState("");
   const [employmentType, setEmploymentType] =
     useState<JobEmploymentType>("part_time");
   const [campusId, setCampusId] = useState("");
@@ -77,9 +81,15 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
   const [requiresSchoolApproval, setRequiresSchoolApproval] = useState(false);
   const [atsWebhookUrl, setAtsWebhookUrl] = useState("");
   const [screener1, setScreener1] = useState("");
+  // Questions beyond the first have no UI here but must survive an edit.
+  const [extraScreeners, setExtraScreeners] = useState<JobScreeningQuestion[]>(
+    [],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingJob, setLoadingJob] = useState(isEdit);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [status, setStatus] = useState<JobPostingStatus>("active");
   const [previewing, setPreviewing] = useState(false);
 
@@ -109,6 +119,7 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
     if (!jobId) return;
     let active = true;
     setLoadingJob(true);
+    setLoadError(null);
     fetchJobPosting(jobId)
       .then((res) => {
         const job = res.data;
@@ -125,6 +136,7 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
         setRequiresSchoolApproval(!!job.requiresSchoolApproval);
         setAtsWebhookUrl(job.atsWebhookUrl || "");
         setScreener1(job.screeningQuestions?.[0]?.prompt || "");
+        setExtraScreeners((job.screeningQuestions || []).slice(1));
 
         const compensation = job.compensation || { kind: "discuss" as const };
         setCompensationKind(compensation.kind);
@@ -145,20 +157,19 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
         // The attestation was already accepted when the post was created.
         setConfirmed(true);
       })
-      .catch((loadError) =>
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Could not load this job",
-        ),
-      )
+      .catch((cause) => {
+        if (!active) return;
+        setLoadError(
+          cause instanceof Error ? cause.message : "Could not load this job",
+        );
+      })
       .finally(() => {
         if (active) setLoadingJob(false);
       });
     return () => {
       active = false;
     };
-  }, [jobId]);
+  }, [jobId, loadAttempt]);
 
   const allowedTypes = useMemo(
     () =>
@@ -185,7 +196,12 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
     }
     setEmploymentType(t.employmentType);
     setTitle(t.title);
-    setDescription(t.descriptionHint);
+    // The hint is guidance, not copy — surface it as the placeholder so it
+    // can't be published verbatim. Only clear text another template wrote.
+    setTemplateHint(t.descriptionHint);
+    setDescription((current) =>
+      jobDescriptionIsTemplateHint(current) ? "" : current,
+    );
     setScreener1(t.suggestedScreeners[0] || "");
   };
 
@@ -237,15 +253,25 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
       // isSponsored is deliberately not sent: featured placement is granted by
       // platform admins, and the API drops the field from non-admin requests.
       atsWebhookUrl: atsWebhookUrl || null,
-      screeningQuestions: screener1.trim()
-        ? [
-            {
-              prompt: screener1.trim(),
-              questionType: "text" as const,
-              required: true,
-            },
-          ]
-        : [],
+      screeningQuestions: [
+        ...(screener1.trim()
+          ? [
+              {
+                prompt: screener1.trim(),
+                questionType: "text" as const,
+                required: true,
+              },
+            ]
+          : []),
+        // The API replaces the whole set, so the questions this form doesn't
+        // edit must be resent or an edit silently deletes them.
+        ...extraScreeners.map((q) => ({
+          prompt: q.prompt,
+          questionType: q.questionType,
+          options: q.options || undefined,
+          required: q.required,
+        })),
+      ],
     };
   };
 
@@ -266,6 +292,18 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
           "This copy matches phrases Lantern blocks. Remove them before publishing.",
       );
       return;
+    }
+    // Drafts may keep template boilerplate; any status that leaves the form
+    // live (active, or an edited paused/closed post) may not.
+    if (nextStatus !== "draft") {
+      const templateLeftovers = describeJobTemplateLeftovers(
+        title,
+        description,
+      );
+      if (templateLeftovers) {
+        setError(templateLeftovers);
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -293,6 +331,31 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
       setBusy(false);
     }
   };
+
+  // A failed edit-load must not fall through to the form: the blank fields
+  // would look editable and saving them would overwrite the real posting.
+  if (isEdit && loadError) {
+    return (
+      <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
+        <div className="max-w-2xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
+          <JobsWorkspaceNav active="my_jobs" onNavigate={onNavigate} />
+          <div className="rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-5">
+            <p className="text-red-600 text-sm">{loadError}</p>
+            <button
+              type="button"
+              className="mt-3 text-sm text-lantern-primary"
+              onClick={() => {
+                setLoadError(null);
+                setLoadAttempt((attempt) => attempt + 1);
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const locked = isEdit && !isJobPostingEditable(status);
 
@@ -384,6 +447,7 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
               className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
               rows={5}
               value={description}
+              placeholder={templateHint || undefined}
               onChange={(e) => setDescription(e.target.value)}
             />
           </label>
