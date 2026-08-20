@@ -45,6 +45,7 @@ export function DmOffersPanel({
   currentUserId,
   isSeller,
   onPostToChat,
+  onDealChanged,
 }: {
   listingId: string;
   /** Buyer on this inquiry — offers from other bidders must not appear here. */
@@ -52,6 +53,8 @@ export function DmOffersPanel({
   currentUserId: string;
   isSeller: boolean;
   onPostToChat: (text: string) => void | Promise<void>;
+  /** Notify the parent to refresh the order after an accept/pay so the order bar appears. */
+  onDealChanged?: () => void | Promise<void>;
 }) {
   const { colors } = useTheme();
   // Past a tablet breakpoint, cap the offers list to a centered column instead
@@ -140,6 +143,8 @@ export function DmOffersPanel({
             : `[Offer] I withdrew my offer of ${amount}.`
       );
       await load();
+      // Accepting an offer creates an order — tell the parent to surface the order bar.
+      if (action === 'accept') await onDealChanged?.();
       if (buyerPayNow && payUrl) {
         try {
           const WebBrowser = await import('expo-web-browser');

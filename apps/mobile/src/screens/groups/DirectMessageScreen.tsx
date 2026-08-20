@@ -47,6 +47,9 @@ import {
   declineDmMessageRequest,
   blockUser,
   fetchInquiryByThread,
+  fetchOrderForInquiry,
+  updateMarketplaceOrder,
+  resumeMarketplaceOrderCheckout,
   getDmBlockStatus,
   getDmMuteStatus,
   muteDmThread,
@@ -222,6 +225,10 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [activeTab, setActiveTab] = useState<'chat' | 'offers'>('chat');
   const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
+  // Order lifecycle in the DM (pay / mark-ready / confirm-received) — mirrors web's
+  // order bar so a mobile deal no longer falls out of the chat at acceptance.
+  const [order, setOrder] = useState<Awaited<ReturnType<typeof fetchOrderForInquiry>> | null>(null);
+  const [orderBusy, setOrderBusy] = useState(false);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
@@ -579,9 +586,19 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    setOrder(null);
     fetchInquiryByThread(threadId)
-      .then(data => {
-        if (!cancelled) setInquiry(data);
+      .then(async data => {
+        if (cancelled) return;
+        setInquiry(data);
+        if (data?.id) {
+          try {
+            const o = await fetchOrderForInquiry(data.id);
+            if (!cancelled) setOrder(o ?? null);
+          } catch {
+            /* no order yet */
+          }
+        }
       })
       .catch(() => {
         /* plain DM or endpoint unavailable — no banner */
@@ -590,6 +607,16 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       cancelled = true;
     };
   }, [threadId]);
+
+  const reloadOrder = useCallback(async () => {
+    if (!inquiry?.id) return;
+    try {
+      const o = await fetchOrderForInquiry(inquiry.id);
+      setOrder(o ?? null);
+    } catch {
+      /* ignore */
+    }
+  }, [inquiry?.id]);
 
   useEffect(() => {
     if (unreadAnchorAt === undefined || messages.length === 0) return;
@@ -966,6 +993,66 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
+      {/* Order lifecycle bar — the deal no longer falls out of the chat at
+          acceptance. Shows the order status plus the one role-scoped action
+          (buyer Pay now / Confirm received; seller Mark ready). Mirrors web. */}
+      {order && order.status !== 'completed' && order.status !== 'cancelled' ? (
+        <View className="px-4 py-2.5 bg-lantern-primary-background border-b border-lantern-border flex-row flex-wrap items-center gap-2">
+          <Text className="text-xs font-semibold text-lantern-text">
+            Order: {order.status.replace(/_/g, ' ')} · ₦{Number(order.amount).toLocaleString()}
+          </Text>
+          {inquiry?.seller_id === user?.id && order.status === 'paid' ? (
+            <Pressable
+              disabled={orderBusy}
+              onPress={async () => {
+                setOrderBusy(true);
+                try { await updateMarketplaceOrder(order.id, { action: 'mark_ready' }); await reloadOrder(); }
+                catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+                finally { setOrderBusy(false); }
+              }}
+              className="px-3 py-1.5 rounded-lantern bg-lantern-primary"
+            >
+              <Text className="text-xs font-semibold text-white">Mark ready</Text>
+            </Pressable>
+          ) : null}
+          {inquiry?.seller_id === user?.id && ['pending_payment', 'awaiting_payment'].includes(order.status) ? (
+            <Text className="text-xs text-lantern-text-secondary">Awaiting buyer payment</Text>
+          ) : null}
+          {inquiry?.buyer_id === user?.id && ['pending_payment', 'awaiting_payment'].includes(order.status) ? (
+            <Pressable
+              disabled={orderBusy}
+              onPress={async () => {
+                setOrderBusy(true);
+                try {
+                  const res = await resumeMarketplaceOrderCheckout(order.id);
+                  const url = res?.authorizationUrl;
+                  if (url) { const WB = await import('expo-web-browser'); await WB.openBrowserAsync(url); }
+                  else Alert.alert('Checkout', 'Could not start checkout. Please try again.');
+                } catch (e: any) { Alert.alert('Error', e?.message || 'Could not start checkout'); }
+                finally { setOrderBusy(false); }
+              }}
+              className="px-3 py-1.5 rounded-lantern bg-emerald-600"
+            >
+              <Text className="text-xs font-semibold text-white">Pay now · ₦{Number(order.amount).toLocaleString()}</Text>
+            </Pressable>
+          ) : null}
+          {inquiry?.buyer_id === user?.id && ['paid', 'ready_for_pickup'].includes(order.status) ? (
+            <Pressable
+              disabled={orderBusy}
+              onPress={async () => {
+                setOrderBusy(true);
+                try { await updateMarketplaceOrder(order.id, { action: 'confirm_received' }); await reloadOrder(); }
+                catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+                finally { setOrderBusy(false); }
+              }}
+              className="px-3 py-1.5 rounded-lantern bg-emerald-600"
+            >
+              <Text className="text-xs font-semibold text-white">Confirm received</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
       {inquiry?.listing && activeTab === 'offers' ? (
         <DmOffersPanel
           listingId={inquiry.listing.id || inquiry.listing_id || ''}
@@ -976,6 +1063,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             if (!user?.id || !recipientId) return;
             await sendDirectMessageTo(user.id, recipientId, text, threadId);
           }}
+          onDealChanged={reloadOrder}
         />
       ) : (
         <>
