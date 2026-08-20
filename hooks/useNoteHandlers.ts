@@ -15,7 +15,7 @@ import { runNoteImagesImport } from '../utils/runNoteImagesImport';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
 import { aiGenerateQuestions } from '../services/ai';
-import { createDeck, createFlashcard, fetchAllFlashcards } from '../services/supabase';
+import { createDeck, createFlashcard, deleteDeck, fetchAllFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackNoteCreated } from '../services/productAnalytics';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
@@ -222,21 +222,42 @@ export function useNoteHandlers(currentUserId?: string) {
         currentUserId
       );
 
-      for (const card of generated) {
-        await createFlashcard({
-          deckId: deck.id,
-          type: FlashcardType.BASIC,
-          front: card.front,
-          back: card.back,
-          userId: currentUserId,
-        });
+      // Per-card creates can partially fail; settle them all so cards that DID
+      // save server-side are never stranded in a deck the store doesn't know about.
+      const results = await Promise.allSettled(
+        generated.map((card) =>
+          createFlashcard({
+            deckId: deck.id,
+            type: FlashcardType.BASIC,
+            front: card.front,
+            back: card.back,
+            userId: currentUserId,
+          })
+        )
+      );
+      const savedCount = results.filter((r) => r.status === 'fulfilled').length;
+
+      if (savedCount === 0) {
+        // Nothing made it: remove the just-created empty deck (best effort) so a
+        // stranded shell doesn't appear after reload, then surface a real failure.
+        try {
+          await deleteDeck(deck.id);
+        } catch {
+          // Best effort only — an empty deck may remain if this also fails.
+        }
+        const firstFailure = results.find(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        )?.reason;
+        throw firstFailure instanceof Error
+          ? firstFailure
+          : new Error('Could not save the generated flashcards.');
       }
 
       const flashcardStore = useFlashcardStore.getState();
       flashcardStore.updateDecks((prev) => [...prev, deck]);
       flashcardStore.setFlashcards(await fetchAllFlashcards(undefined, currentUserId));
 
-      return { deck, count: generated.length };
+      return { deck, count: generated.length, savedCount };
     },
     [selectedNote, currentUserId, cancelAutoSave, saveNote, loadNote]
   );

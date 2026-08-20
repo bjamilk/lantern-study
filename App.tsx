@@ -1266,7 +1266,11 @@ export const App: React.FC = () => {
                                 if (result?.deck) {
                                     setSelectedDeck(result.deck);
                                     setAppMode(AppMode.DECK_DETAIL);
-                                    showToast(`Created ${result.count} flashcards in "${result.deck.name}"`, 'success');
+                                    if (result.savedCount < result.count) {
+                                        showToast(`Saved ${result.savedCount} of ${result.count} cards to "${result.deck.name}"`, 'info');
+                                    } else {
+                                        showToast(`Created ${result.count} flashcards in "${result.deck.name}"`, 'success');
+                                    }
                                 }
                             } catch (e: any) {
                                 showToast(e?.message || 'Failed to generate flashcards', 'error');
@@ -1290,18 +1294,42 @@ export const App: React.FC = () => {
                         onCompleteDailyQuiz={completeDailyQuiz}
                         onRegenerateQuiz={async () => {
                             try {
-                                await noteHandlers.handleStartNoteQuiz({
+                                const session = await noteHandlers.handleStartNoteQuiz({
                                     title: selectedNote.title,
                                     body: selectedNote.body,
                                 });
-                                showToast('New quiz ready!', 'success');
+                                // The API marks an unchanged existing quiz with `reused: true`.
+                                // Older API versions omit the field — treat absent as fresh.
+                                const reused =
+                                    (session as null | (typeof session & { reused?: boolean }))?.reused === true;
+                                if (reused) {
+                                    showToast('Kept your existing quiz — finish or reset it to get new questions', 'info');
+                                } else {
+                                    showToast('New quiz ready!', 'success');
+                                }
                             } catch (e: any) {
                                 showToast(e?.message || 'Failed to generate quiz', 'error');
                             }
                         }}
-                        onPostComment={(text) => { void noteHandlers.handlePostComment(selectedNote.id, text); }}
+                        onPostComment={async (text) => {
+                            try {
+                                await noteHandlers.handlePostComment(selectedNote.id, text);
+                            } catch (e: any) {
+                                // Rethrow a real Error so the editor keeps the draft and
+                                // shows its inline composer error (which catches this).
+                                throw e instanceof Error ? e : new Error(e?.message || 'Failed to post comment');
+                            }
+                        }}
                         onRefreshComments={() => useNotesStore.getState().loadComments(selectedNote.id)}
-                        onShareWithGroup={(groupId) => { void noteHandlers.handleShareWithGroup(selectedNote.id, groupId); }}
+                        onShareWithGroup={async (groupId) => {
+                            try {
+                                await noteHandlers.handleShareWithGroup(selectedNote.id, groupId);
+                                const groupName = groups.find((g) => g.id === groupId)?.name;
+                                showToast(groupName ? `Shared to ${groupName}` : 'Note shared', 'success');
+                            } catch (e: any) {
+                                showToast(e?.message || 'Failed to share note with group', 'error');
+                            }
+                        }}
                         onTranscriptReady={() => {
                             noteHandlers.cancelAutoSave();
                             void useNotesStore.getState().loadNote(selectedNote.id);

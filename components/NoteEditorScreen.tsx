@@ -66,7 +66,7 @@ interface NoteEditorScreenProps {
   onDailyQuizAnswer?: (questionId: string, answer: string) => void;
   onCompleteDailyQuiz?: () => void;
   onRegenerateQuiz?: () => Promise<void>;
-  onPostComment: (comment: string) => void;
+  onPostComment: (comment: string) => Promise<void>;
   onRefreshComments: () => Promise<void>;
   onShareWithGroup: (groupId: string) => void;
   onTranscriptReady: (transcript: string) => void;
@@ -105,7 +105,11 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [body, setBody] = useState(note.body);
   const bodyRef = useRef(body);
   bodyRef.current = body;
+  const titleRef = useRef(title);
+  titleRef.current = title;
   const [commentText, setCommentText] = useState('');
+  const [postingComment, setPostingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [showCollabModal, setShowCollabModal] = useState(false);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
@@ -223,13 +227,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }, [note.id, title, body, canEdit]);
 
   const handleTitleChange = (value: string) => {
-    if (!canEdit) return;
+    // Blocked during transcription: the completion handler replaces title/body
+    // with the server copy, so anything typed meanwhile would be lost.
+    if (!canEdit || transcribingForThisNote) return;
     userEditedRef.current = true;
     setTitle(value);
   };
 
   const handleBodyChange = (value: string) => {
-    if (!canEdit) return;
+    if (!canEdit || transcribingForThisNote) return;
     userEditedRef.current = true;
     setBody(value);
   };
@@ -513,6 +519,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     return () => {
       window.setTimeout(() => {
         saveEnabledRef.current = true;
+        // Save-window gap: edits typed during this cooldown fire the autosave
+        // effect while saving is disabled, so nothing gets scheduled. Flush any
+        // unsaved local edits now that saving is back on.
+        if (userEditedRef.current) {
+          onSaveRef.current({ title: titleRef.current, body: bodyRef.current });
+        }
       }, 4000);
     };
   }, [transcribingForThisNote, onCancelPendingSave]);
@@ -598,6 +610,22 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     }
   };
 
+  const handlePostComment = async () => {
+    const text = commentText.trim();
+    if (!text || postingComment) return;
+    setPostingComment(true);
+    setCommentError(null);
+    try {
+      await onPostComment(text);
+      // Clear only once the POST succeeded; a failure keeps the draft.
+      setCommentText('');
+    } catch {
+      setCommentError("Couldn't post — check your connection and try again");
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
   const handleShareGroup = () => {
     if (groups.length === 0) {
       useToastStore.getState().showToast('Join a group first to share notes.', 'info');
@@ -666,7 +694,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         <input
           value={title}
           onChange={e => handleTitleChange(e.target.value)}
-          readOnly={isViewer}
+          readOnly={isViewer || transcribingForThisNote}
           aria-label="Note title"
           className={`flex-1 min-w-0 text-base sm:text-lg font-semibold bg-transparent outline-none ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}
         />
@@ -886,6 +914,19 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             </div>
           )}
 
+          {transcribingForThisNote && (
+            <div
+              className={`text-sm rounded-lg border px-3 py-2 ${
+                isDark
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+                  : 'border-amber-500/40 bg-amber-50 text-amber-950'
+              }`}
+              role="status"
+            >
+              Editing is paused while the lecture transcribes.
+            </div>
+          )}
+
           {isDocumentNote || isPhotoNote || isYoutubeNote ? (
             <div>
               <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
@@ -894,7 +935,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <textarea
                 value={body}
                 onChange={e => handleBodyChange(e.target.value)}
-                readOnly={isViewer}
+                readOnly={isViewer || transcribingForThisNote}
                 aria-label="Note body"
                 placeholder={
                   isPhotoNote
@@ -912,7 +953,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           <textarea
             value={body}
             onChange={e => handleBodyChange(e.target.value)}
-            readOnly={isViewer}
+            readOnly={isViewer || transcribingForThisNote}
             aria-label="Note body"
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
             className={`w-full min-h-[240px] sm:min-h-[360px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
@@ -985,16 +1026,17 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <Button
                 size="sm"
                 className="shrink-0 self-end sm:self-auto"
-                onClick={() => {
-                  if (!commentText.trim()) return;
-                  onPostComment(commentText.trim());
-                  setCommentText('');
-                }}
-                disabled={isViewer}
+                onClick={() => void handlePostComment()}
+                disabled={isViewer || postingComment}
               >
-                Post
+                {postingComment ? 'Posting…' : 'Post'}
               </Button>
             </div>
+            {commentError && (
+              <p className="mt-2 text-xs text-red-500" role="alert">
+                {commentError}
+              </p>
+            )}
           </div>
         </div>
 

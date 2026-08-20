@@ -18,6 +18,7 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
+import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import type { NoteFolder, StudyNote } from '../types';
@@ -843,7 +844,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                         </span>
                       </div>
                       <p className="text-sm line-clamp-3 text-lantern-text-secondary">
-                        {note.summary || note.body || 'Empty note'}
+                        {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
                       </p>
                       {note.accessRole === 'viewer' || note.accessRole === 'editor' ? (
                         <div className="mt-3 flex items-center gap-2 text-xs">
