@@ -25,9 +25,18 @@ new release updates the site link with no web deploy needed.
 
    If mobile dependencies changed since the last release, regenerate
    `scripts/package-lock.eas-mobile.json` first (recipe in commit `8ea492d`).
-3. **Smoke-test the APK on the emulator** before publishing: install with
+3. **Record what shipped** in `components/admin/productFeatures.ts`
+   (`PRODUCT_FEATURES`). Admin → Features is what support and QA read to find
+   out what a release contains, and nothing generates it from git — the
+   registry silently fell a month behind once, leaving the Marketplace and
+   Platform filters empty while both had shipped work. Use `status: 'partial'`
+   for a feature that shipped incomplete and say what is missing in
+   `adminNotes`. CI enforces this: the `feature-registry` job fails when
+   `version` moves and that file is untouched. For a bump that genuinely ships
+   nothing user-visible, put `[skip registry]` in a commit message.
+4. **Smoke-test the APK on the emulator** before publishing: install with
    `adb install -r`, cold boot, sign in, download an offline test.
-4. **Publish** (stable asset name is what makes the latest-URL work):
+5. **Publish** (stable asset name is what makes the latest-URL work):
 
    ```bash
    VERSION=1.0.x

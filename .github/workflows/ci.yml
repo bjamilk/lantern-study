@@ -31,6 +31,25 @@ jobs:
       - run: npm run typecheck --workspace=@lantern/web --if-present
       - run: node scripts/migrate-design-tokens.mjs --check
 
+  feature-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needs the base commit to diff against; the default shallow clone
+          # has only one, and the script skips rather than fails without it.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: A mobile release must touch the admin feature registry
+        # Admin -> Features is hand-maintained and support reads it as the
+        # record of what shipped. It fell a month behind once; this catches the
+        # next time. [skip registry] in a commit message opts a no-op bump out.
+        env:
+          REGISTRY_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-feature-registry.mjs
+
   secret-scan:
     runs-on: ubuntu-latest
     steps:
