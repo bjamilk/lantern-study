@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon, PhotoIcon, PencilSquareIcon } from '@heroicons/react/24/solid';
 import {
   buildChatAudioMarkdown,
   chatMessagePreview,
@@ -7,7 +7,7 @@ import {
   parseAiQuery,
 } from '@lantern/shared/utils';
 import type { MessageReplyPreview } from '../types';
-import { uploadChatAudio } from '../services/supabase';
+import { uploadChatAudio, uploadChatImage } from '../services/supabase';
 
 export type MentionCandidate = {
   id: string;
@@ -59,6 +59,9 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [trayOpen, setTrayOpen] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -319,6 +322,43 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     }
   };
 
+  const handlePickImage = async (file: File) => {
+    if (isUploadingImage || isUploadingAudio || isSending || isAIThinking || isRecording) return;
+    if (!file.type.startsWith('image/')) {
+      setRecordError('Please choose an image file.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setRecordError('Image is too large (max 8MB).');
+      return;
+    }
+    setIsUploadingImage(true);
+    setRecordError(null);
+    try {
+      const base64Data = await blobToBase64(file);
+      const contentType = (file.type || 'image/jpeg').split(';')[0].trim().toLowerCase() || 'image/jpeg';
+      const ext = contentType.includes('png')
+        ? 'png'
+        : contentType.includes('webp')
+          ? 'webp'
+          : contentType.includes('gif')
+            ? 'gif'
+            : 'jpg';
+      const { url } = await uploadChatImage({
+        fileName: `image-${Date.now()}.${ext}`,
+        base64Data,
+        contentType,
+        groupId,
+      });
+      // Media messages are plain text of `![image](url)` (matches mobile + the parser).
+      await handleSend(`![image](${url})`);
+    } catch (err: any) {
+      setRecordError(err?.message || 'Could not upload image');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const startRecording = async () => {
     setRecordError(null);
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -392,8 +432,10 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     }
   };
 
-  const busy = isAIThinking || isSending || isUploadingAudio;
+  const busy = isAIThinking || isSending || isUploadingAudio || isUploadingImage;
   const showMic = !editingMessage && !inputText.trim() && !busy;
+  // The "+" tray collapses insert actions (question + photo). Hidden while editing.
+  const showTray = !editingMessage;
 
   return (
     <div className="px-4 md:px-6 py-3 bg-lantern-surface border-t border-lantern-border">
@@ -473,16 +515,66 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       )}
 
       <div className="flex items-end gap-2">
-        {onOpenQuestionModal && !editingMessage && (
-          <button
-            type="button"
-            onClick={onOpenQuestionModal}
-            className="flex-shrink-0 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-primary hover:bg-lantern-primary-background rounded-lantern-xl transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-            aria-label="Submit a question"
-            title="Submit Question"
-          >
-            <PlusCircleIcon className="w-6 h-6" />
-          </button>
+        {showTray && (
+          <div className="relative flex-shrink-0">
+            {trayOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setTrayOpen(false)} aria-hidden />
+                <div
+                  role="menu"
+                  className="absolute bottom-full left-0 mb-2 min-w-[11rem] rounded-xl border border-lantern-border bg-lantern-surface shadow-lg overflow-hidden z-30"
+                >
+                  {onOpenQuestionModal && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setTrayOpen(false); onOpenQuestionModal(); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                    >
+                      <PencilSquareIcon className="w-4 h-4 text-lantern-primary" />
+                      Submit a question
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setTrayOpen(false); imageInputRef.current?.click(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                  >
+                    <PhotoIcon className="w-4 h-4 text-lantern-primary" />
+                    Attach photo
+                  </button>
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setTrayOpen((v) => !v)}
+              disabled={busy || isRecording}
+              className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-primary hover:bg-lantern-primary-background rounded-lantern-xl transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Add to message"
+              aria-haspopup="menu"
+              aria-expanded={trayOpen}
+              title="Add"
+            >
+              {isUploadingImage ? (
+                <span className="w-5 h-5 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
+              ) : (
+                <PlusCircleIcon className="w-6 h-6" />
+              )}
+            </button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void handlePickImage(file);
+              }}
+            />
+          </div>
         )}
         <div className="flex-1">
           <textarea
@@ -505,11 +597,13 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                 ? 'Recording… tap mic to stop'
                 : isUploadingAudio
                   ? 'Uploading voice note…'
-                  : isAIThinking
-                    ? 'AI is thinking...'
-                    : isSending
-                      ? 'Sending...'
-                      : 'Type a message… (@ to mention)'
+                  : isUploadingImage
+                    ? 'Uploading image…'
+                    : isAIThinking
+                      ? 'AI is thinking...'
+                      : isSending
+                        ? 'Sending...'
+                        : 'Type a message… (@ to mention)'
             }
             rows={1}
             disabled={busy || isRecording}
