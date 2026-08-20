@@ -45,7 +45,6 @@ import {
 } from '@lantern/shared';
 import {
   getInquiryByThread,
-  threadMayHaveMarketplaceInquiry,
   fetchOffers,
   respondToOffer,
   updateInquiryStatus,
@@ -600,15 +599,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
-  // Stable boolean: does this DM look like a marketplace inquiry? Depending on this
-  // (not the messages array, which is rebuilt every render for DMs) keeps the loader
-  // and the tab/state reset from firing on every unrelated parent re-render — which
-  // used to bounce the user off the Offers tab mid-flow and refetch everything.
-  const hasMarketplaceMarker = useMemo(
-    () => chat?.chatType === 'dm' && threadMayHaveMarketplaceInquiry(messages.map((m) => m.text)),
-    [chat?.chatType, messages]
-  );
-
   // Reset offer/order UI only when the conversation itself changes.
   useEffect(() => {
     setActiveTab('chat');
@@ -621,10 +611,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setActiveOrder(null);
   }, [chat?.id]);
 
-  // Load marketplace inquiry context for a DM that looks like one. Fires on chat
-  // change or when the marker first appears — never on every render.
+  // Resolve marketplace inquiry context durably: ask the server whether THIS thread
+  // is an inquiry (source of truth) rather than substring-matching a fragile "[Offer]"
+  // marker in message text, which false-negatives on seed drift and false-positives on
+  // a literally typed "[Offer]". Depends only on the chat id, so it never re-fires on an
+  // unrelated parent re-render (which used to bounce the user off the Offers tab).
   useEffect(() => {
-    if (!chat || chat.chatType !== 'dm' || !hasMarketplaceMarker) return;
+    if (!chat || chat.chatType !== 'dm') return;
     let cancelled = false;
     const loadInquiryContext = async () => {
       try {
@@ -645,7 +638,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     };
     void loadInquiryContext();
     return () => { cancelled = true; };
-  }, [chat?.id, chat?.chatType, hasMarketplaceMarker]);
+  }, [chat?.id, chat?.chatType]);
 
 
   // build top‑level vs subgroup map once
