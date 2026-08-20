@@ -103,6 +103,50 @@ function fromSearchFilters(filters: JobSearchFilters): PortalFilters {
   };
 }
 
+/**
+ * Filters live in the URL query string so a search survives a refresh and can
+ * be shared or bookmarked. Only set params are written, so a clean browse URL
+ * stays clean.
+ */
+function parseFiltersFromUrl(): PortalFilters {
+  if (typeof window === "undefined") return EMPTY_FILTERS;
+  const p = new URLSearchParams(window.location.search);
+  const loc = p.get("loc");
+  const comp = p.get("comp");
+  const sort = p.get("sort");
+  return {
+    search: p.get("q") || "",
+    employmentType: isJobEmploymentType(p.get("type") || "")
+      ? p.get("type")!
+      : "",
+    location: loc === "remote" || loc === "onsite" ? loc : "",
+    compensationKind:
+      comp === "paid" || comp === "discuss" || comp === "unpaid" ? comp : "",
+    minPay: Number(p.get("minPay")) > 0 ? String(Number(p.get("minPay"))) : "",
+    companyOnly: p.get("companyOnly") === "1",
+    sort: sort === "newest" || sort === "closing" ? sort : "trending",
+  };
+}
+
+function writeFiltersToUrl(portal: PortalFilters): void {
+  if (typeof window === "undefined") return;
+  const p = new URLSearchParams();
+  if (portal.search.trim()) p.set("q", portal.search.trim());
+  if (portal.employmentType) p.set("type", portal.employmentType);
+  if (portal.location) p.set("loc", portal.location);
+  if (portal.compensationKind) p.set("comp", portal.compensationKind);
+  if (portal.minPay && Number(portal.minPay) > 0) p.set("minPay", portal.minPay);
+  if (portal.companyOnly) p.set("companyOnly", "1");
+  if (portal.sort && portal.sort !== "trending") p.set("sort", portal.sort);
+  const qs = p.toString();
+  // replaceState (not push) so filter tweaks don't stack up in Back history.
+  window.history.replaceState(
+    window.history.state,
+    "",
+    window.location.pathname + (qs ? `?${qs}` : ""),
+  );
+}
+
 function formatDeadline(
   value?: string | null,
 ): { label: string; closed: boolean } | null {
@@ -145,9 +189,10 @@ export default function JobsBoardScreen({
   // Failures of save/alert actions must not unmount the loaded list the way a
   // list-load error does, so they report through their own channel.
   const [actionError, setActionError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<PortalFilters>(EMPTY_FILTERS);
+  // Seed from the URL so a shared/bookmarked search (or a refresh) restores it.
+  const [filters, setFilters] = useState<PortalFilters>(parseFiltersFromUrl);
   const [appliedFilters, setAppliedFilters] =
-    useState<PortalFilters>(EMPTY_FILTERS);
+    useState<PortalFilters>(parseFiltersFromUrl);
   const [view, setView] = useState<"browse" | "saved">("browse");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -236,13 +281,18 @@ export default function JobsBoardScreen({
     event.preventDefault();
     setPage(1);
     setAppliedFilters(filters);
+    writeFiltersToUrl(filters);
   };
 
   // Sort and the company-only toggle read as live controls, so they take
   // effect immediately instead of waiting for the Search button.
   const applyFilterPatch = (patch: Partial<PortalFilters>) => {
     setFilters((current) => ({ ...current, ...patch }));
-    setAppliedFilters((current) => ({ ...current, ...patch }));
+    setAppliedFilters((current) => {
+      const next = { ...current, ...patch };
+      writeFiltersToUrl(next);
+      return next;
+    });
     setPage(1);
   };
 
@@ -250,6 +300,7 @@ export default function JobsBoardScreen({
     setFilters(EMPTY_FILTERS);
     setAppliedFilters(EMPTY_FILTERS);
     setPage(1);
+    writeFiltersToUrl(EMPTY_FILTERS);
   };
 
   const saveCurrentSearch = async (name: string) => {
@@ -279,6 +330,7 @@ export default function JobsBoardScreen({
     setAppliedFilters(portal);
     setView("browse");
     setPage(1);
+    writeFiltersToUrl(portal);
   };
 
   const toggleSearchAlerts = async (saved: JobSavedSearch) => {
