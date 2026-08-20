@@ -18,7 +18,47 @@ export interface ListingCardProps {
 // scrollbar stable. Ignored by browsers without content-visibility support.
 const cardRenderStyle: React.CSSProperties = {
   contentVisibility: 'auto',
-  containIntrinsicSize: 'auto 320px',
+  containIntrinsicSize: 'auto 280px',
+};
+
+// Values written by the create flow are hyphenated; underscore variants are the
+// API's Joi enum. Accept both so the chip labels correctly whichever is present.
+const CONDITION_LABELS: Record<string, string> = {
+  new: 'New',
+  'like-new': 'Like New',
+  like_new: 'Like New',
+  good: 'Good',
+  fair: 'Fair',
+  poor: 'Poor',
+};
+
+/** Read the item condition from whichever field shape the payload carries. */
+const readListingCondition = (listing: MarketplaceListing): string | null => {
+  const fields = (listing.category_specific_fields ?? listing.categorySpecificFields) as
+    | Record<string, unknown>
+    | undefined;
+  const raw = fields?.condition;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const key = raw.trim();
+  return CONDITION_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
+};
+
+/** Compact "posted X ago" freshness, mirroring Jiji/Vinted tiles. */
+const formatPostedAge = (iso?: string): string => {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const diffMs = Date.now() - then;
+  if (diffMs < 60_000) return 'Just now';
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
 };
 
 const ListingCardComponent: React.FC<ListingCardProps> = ({
@@ -34,6 +74,9 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
     listing.reviews && listing.reviews.length > 0
       ? listing.reviews.reduce((sum, r) => sum + r.rating, 0) / listing.reviews.length
       : 0;
+
+  const conditionLabel = readListingCondition(listing);
+  const postedAge = formatPostedAge(listing.created_at);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -115,15 +158,11 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
         onKeyDown={handleKeyDown}
         className="w-full p-2 sm:p-3 text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lantern-primary"
       >
-        <h3 className="font-semibold text-xs sm:text-sm text-lantern-text mb-0.5 sm:mb-1 line-clamp-2 group-hover:text-lantern-primary transition-colors duration-150">
+        <h3 className="font-semibold text-xs sm:text-sm text-lantern-text mb-1 line-clamp-1 group-hover:text-lantern-primary transition-colors duration-150">
           {listing.title}
         </h3>
 
-        <p className="hidden sm:block text-lantern-text-secondary text-xs mb-2 line-clamp-2 leading-relaxed">
-          {listing.description}
-        </p>
-
-        <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center justify-between gap-2 mb-1.5">
           <span className="text-base sm:text-lg font-bold text-lantern-primary truncate">
             {listing.is_on_sale && listing.effective_price != null ? (
               <>
@@ -153,17 +192,22 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-3 text-[10px] sm:text-xs text-lantern-text-tertiary">
+        <div className="flex items-center gap-2 min-w-0 text-[10px] sm:text-xs text-lantern-text-tertiary">
+          {conditionLabel ? (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-lantern-background-secondary text-lantern-text-secondary font-medium">
+              {conditionLabel}
+            </span>
+          ) : null}
           {listing.location ? (
-            <span className="flex items-center gap-0.5 truncate">
+            <span className="flex items-center gap-0.5 truncate min-w-0">
               <MapPinIcon className="w-3 h-3 shrink-0" />
               <span className="truncate">{listing.location}</span>
             </span>
           ) : null}
-          {listing.created_at ? (
-            <span className="flex items-center gap-0.5 shrink-0">
+          {postedAge ? (
+            <span className="flex items-center gap-0.5 shrink-0 ml-auto">
               <ClockIcon className="w-3 h-3" />
-              {new Date(listing.created_at).toLocaleDateString()}
+              {postedAge}
             </span>
           ) : null}
         </div>
