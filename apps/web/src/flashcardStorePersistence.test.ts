@@ -120,7 +120,7 @@ describe('flashcard store persistence', () => {
     expect(restored.decks.map(d => d.id)).toEqual(['d1', 'd2']);
     expect(restored.flashcards.map(c => c.id)).toEqual(['c1', 'c2']);
     expect(restored.pendingFlashcardReviews).toHaveLength(1);
-    expect(restored.pendingFlashcardReviews[0].flashcardId).toBe('c1');
+    expect(restored.pendingFlashcardReviews[0]?.flashcardId).toBe('c1');
   });
 
   it('reset clears persisted data as well as memory', () => {

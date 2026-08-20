@@ -134,6 +134,6 @@ describe('syncPendingFlashcardReviews', () => {
     const result = await syncPendingFlashcardReviews();
 
     expect(result).toEqual({ synced: 1, remaining: 0, dropped: 0 });
-    expect(useFlashcardStore.getState().flashcards[0].version).toBe(2);
+    expect(useFlashcardStore.getState().flashcards[0]?.version).toBe(2);
   });
 });
