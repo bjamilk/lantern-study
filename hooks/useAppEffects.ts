@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useRef, type Dispatch, type SetStateAction } from 'react';
 import { AppMode, OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
 import { useAuthStore } from '../stores/authStore';
-import { reportUnexpectedSignOut } from '../services/sentry';
+import { reportUnexpectedSignOut, wasRecentIntentionalSignOut } from '../services/sentry';
 import { useGroupStore } from '../stores/groupStore';
 import { useTestStore } from '../stores/testStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -75,6 +75,12 @@ import {
     sendPresenceHeartbeat,
     shouldRunPresenceHeartbeat,
 } from '../services/presenceHeartbeat';
+
+// A spurious SIGNED_OUT (refresh-token 400) can be recovered when a valid session
+// still lives in storage. Bound the recovery so a session that is genuinely dying
+// can't ping-pong recover→fail→recover: only attempt it once per this window.
+const SPURIOUS_SIGNOUT_RECOVERY_COOLDOWN_MS = 15_000;
+let lastSpuriousSignoutRecoveryAt = 0;
 
 function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
   return Object.values(state).every((status) => status !== 'pending');
@@ -506,10 +512,45 @@ export function useAppEffects({
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_OUT') {
+                // A refresh-token 400 — commonly a cross-tab rotation race — can fire
+                // a spurious SIGNED_OUT even though a valid session still lives in
+                // storage (the refresh that won the race wrote a fresh token another
+                // tab now holds). Before tearing the session down, re-read the stored
+                // session; if one is still live, treat this as spurious and keep the
+                // user in. Legacy (localStorage) token mode only — that is where the
+                // Supabase /auth/v1/token refresh race happens; cookie mode is a
+                // different flow. Bounded by a cooldown so a genuinely dying session
+                // still signs out instead of looping.
+                const hadUser = Boolean(useAuthStore.getState().currentUser);
+                if (
+                    hadUser &&
+                    !isCookieAuthEnabled() &&
+                    // Never "recover" a logout the user actually asked for.
+                    !wasRecentIntentionalSignOut() &&
+                    Date.now() - lastSpuriousSignoutRecoveryAt > SPURIOUS_SIGNOUT_RECOVERY_COOLDOWN_MS
+                ) {
+                    try {
+                        const { data: { session: liveSession } } = await supabase.auth.getSession();
+                        const stillValid =
+                            !!liveSession?.user &&
+                            !!liveSession.access_token &&
+                            typeof liveSession.expires_at === 'number' &&
+                            liveSession.expires_at * 1000 > Date.now() + 5_000;
+                        if (stillValid && liveSession) {
+                            lastSpuriousSignoutRecoveryAt = Date.now();
+                            setCachedAuthToken(liveSession.access_token, liveSession.user.id);
+                            setAuthTokenReady(true);
+                            // Recovered a live session — do not report or clear the user.
+                            return;
+                        }
+                    } catch {
+                        // Fall through to the normal sign-out below.
+                    }
+                }
                 // Fires for clicked logouts and for sessions that died under the
                 // user (refresh-token 400s) alike; the reporter separates them.
                 reportUnexpectedSignOut({
-                    hadUser: Boolean(useAuthStore.getState().currentUser),
+                    hadUser,
                     path: typeof window !== 'undefined' ? window.location.pathname : '',
                 });
                 setAuthTokenReady(false);
