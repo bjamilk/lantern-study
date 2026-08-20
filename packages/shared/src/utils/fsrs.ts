@@ -98,3 +98,42 @@ export function calculateSrsWithFsrs(
   }
   return calculateFsrsData(current, rating, options);
 }
+
+const RATING_ORDER: readonly PerformanceRating[] = ['again', 'hard', 'good', 'easy'];
+
+/**
+ * Interval (in whole days) each grade WOULD schedule for a card, without
+ * persisting — powers the Anki-style interval preview under the grade buttons.
+ * Day-granular because that is this scheduler's resolution (interval is
+ * clamped to a minimum of 1 day), so "Again" reads "1d", not "10m".
+ */
+export function previewFsrsIntervals(
+  current: SrsData | undefined,
+  options?: FsrsCalculationOptions
+): Record<PerformanceRating, number> {
+  const out = {} as Record<PerformanceRating, number>;
+  for (const rating of RATING_ORDER) {
+    out[rating] = calculateFsrsData(current, rating, options).interval;
+  }
+  return out;
+}
+
+/**
+ * Compact human label for a day-count interval (Anki-style): 1d, 6d, 2w, 3mo,
+ * 1y. Used on grade-button previews and interval chips; keep both clients on
+ * this one formatter so web and mobile read identically.
+ */
+export function formatStudyInterval(days: number): string {
+  const d = Math.max(1, Math.round(days));
+  if (d < 7) return `${d}d`;
+  if (d < 30) {
+    const w = Math.round(d / 7);
+    return `${w}w`;
+  }
+  if (d < 365) {
+    const mo = Math.round(d / 30);
+    return `${mo}mo`;
+  }
+  const y = Math.round((d / 365) * 10) / 10;
+  return `${Number.isInteger(y) ? y : y.toFixed(1)}y`;
+}
