@@ -202,6 +202,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     const question = editingMessage ? null : parseAiQuery(trimmed);
     if (question && onAIQuery) {
       setInputText('');
+      setRecordError(null);
       setIsAIThinking(true);
       try {
         const answer = await onAIQuery(question);
@@ -215,7 +216,18 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
           } finally {
             setIsSending(false);
           }
+        } else {
+          // Empty answer: restore the prompt so the message is never silently lost.
+          setInputText(trimmed);
+          setRecordError('The AI tutor could not answer that. Your message was restored — try again.');
         }
+      } catch (error) {
+        setInputText(trimmed);
+        setRecordError(
+          error instanceof Error
+            ? error.message
+            : 'The AI tutor is unavailable right now. Your message was restored.'
+        );
       } finally {
         setIsAIThinking(false);
       }

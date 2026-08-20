@@ -114,6 +114,7 @@ interface ChatWindowProps {
     patch: { status: 'open' | 'pending' | 'declined'; requestedBy?: string | null }
   ) => void;
   onLoadMoreMessages?: (groupId: string) => Promise<number>;
+  onLoadMoreDirectMessages?: (threadId: string) => Promise<number>;
   /**
    * Prior last_read_at for the open group or DM chat.
    * - undefined: mark-as-read still pending (wait before anchoring)
@@ -144,6 +145,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onUnarchiveDmThread,
   onDmThreadStatusChange,
   onLoadMoreMessages,
+  onLoadMoreDirectMessages,
   onPeerChatRead,
 }) => {
   const messages = Array.isArray(messagesProp) ? messagesProp : [];
@@ -175,7 +177,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadReplyTo, setThreadReplyTo] = useState<MessageReplyPreview | null>(null);
   const [threadEditingMessage, setThreadEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  // Separate mention seed for the thread composer so tapping an author's name
+  // seeds only the visible composer (main vs thread), not both at once.
+  const [threadSeedMentionUsername, setThreadSeedMentionUsername] = useState<string | null>(null);
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Thread panel scroll: its own node map (so a reply-quote click scrolls within
+  // the thread, not to the hidden main-list copy) plus a container + bottom sentinel.
+  const threadMessageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const threadScrollRef = useRef<HTMLDivElement>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const threadCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -436,24 +446,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       setNewMessagesBelow(0);
     }
 
-    // Load more when scrolled to the top
-    if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat && chat.chatType === 'group') {
+    // Load more when scrolled to the top (groups and DMs both page older history)
+    if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat) {
+      const loadOlder =
+        chat.chatType === 'group'
+          ? onLoadMoreMessages
+          : chat.chatType === 'dm'
+            ? onLoadMoreDirectMessages
+            : undefined;
+      if (!loadOlder) {
+        // No pager for this chat type — stop implying more history exists.
+        setHasMore(false);
+        return;
+      }
       setIsLoadingMore(true);
       const prevScrollHeight = container.scrollHeight;
-      
+
       try {
-        if (onLoadMoreMessages) {
-          const count = await onLoadMoreMessages(chat.id);
-          if (count === 0) {
-            setHasMore(false);
-          } else {
-            // Restore scroll position to prevent jumping
-            requestAnimationFrame(() => {
-              if (container) {
-                container.scrollTop = container.scrollHeight - prevScrollHeight;
-              }
-            });
-          }
+        const count = await loadOlder(chat.id);
+        if (count === 0) {
+          setHasMore(false);
+        } else {
+          // Restore scroll position to prevent jumping
+          requestAnimationFrame(() => {
+            if (container) {
+              container.scrollTop = container.scrollHeight - prevScrollHeight;
+            }
+          });
         }
       } catch (err) {
         console.error('Error loading older messages:', err);
@@ -696,6 +715,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     threadMessages.find((message) => message.id === threadRootId) || threadMessages[0];
   const isThreadRootRemoved =
     !!threadRootMessage?.isRemoved || !!threadRootMessage?.removedAt;
+
+  // Keep the thread panel pinned to the newest reply: scroll to the bottom
+  // sentinel when the thread opens and whenever it grows, but only if the reader
+  // is already near the bottom so an incoming peer reply never yanks them away.
+  useEffect(() => {
+    if (!threadRootId || threadLoading) return;
+    const container = threadScrollRef.current;
+    const end = threadEndRef.current;
+    if (!end) return;
+    const nearBottom =
+      !container || container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+    if (nearBottom) end.scrollIntoView({ block: 'end' });
+  }, [threadRootId, threadLoading, visibleThreadMessages.length]);
 
   // Compute first unread once the prior marker and messages are available (group + DM).
   useEffect(() => {
@@ -1466,41 +1498,54 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+        <div ref={threadScrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
           {threadLoading ? (
             <div className="flex justify-center py-10">
               <div className="w-8 h-8 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
             </div>
           ) : (
             visibleThreadMessages.map((msg) => (
-              <MessageItem
+              <div
                 key={msg.id}
-                message={msg}
-                isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                currentUserVote={userVotes[msg.id]}
-                onVoteQuestion={onVoteQuestion}
-                onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
-                currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                group={group}
-                currentUser={currentUser}
-                isGroupChat={chat.chatType === 'group'}
-                onEditMessage={(m) => beginEditingMessage(m, true)}
-                onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
-                onReply={(m) => {
-                  setThreadEditingMessage(null);
-                  setThreadReplyTo({
-                    id: m.id,
-                    senderId: m.sender?.id,
-                    senderName: m.sender?.name || m.sender?.username,
-                    type: m.type,
-                    text: m.text,
-                    questionStem: m.questionStem,
-                  });
+                ref={(el) => {
+                  threadMessageNodeRefs.current[msg.id] = el;
                 }}
-                onMentionUser={(username) => setSeedMentionUsername(username)}
-              />
+              >
+                <MessageItem
+                  message={msg}
+                  isCurrentUserMessage={msg.sender?.id === currentUser.id}
+                  currentUserVote={userVotes[msg.id]}
+                  onVoteQuestion={onVoteQuestion}
+                  onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                  currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
+                  group={group}
+                  currentUser={currentUser}
+                  isGroupChat={chat.chatType === 'group'}
+                  onEditMessage={(m) => beginEditingMessage(m, true)}
+                  onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
+                  onReply={(m) => {
+                    setThreadEditingMessage(null);
+                    setThreadReplyTo({
+                      id: m.id,
+                      senderId: m.sender?.id,
+                      senderName: m.sender?.name || m.sender?.username,
+                      type: m.type,
+                      text: m.text,
+                      questionStem: m.questionStem,
+                    });
+                  }}
+                  onMentionUser={(username) => setThreadSeedMentionUsername(username)}
+                  onScrollToMessage={(messageId) => {
+                    threadMessageNodeRefs.current[messageId]?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'center',
+                    });
+                  }}
+                />
+              </div>
             ))
           )}
+          <div ref={threadEndRef} />
         </div>
         {!isArchived && !isThreadRootRemoved && (
           <div className="flex-shrink-0 border-t border-lantern-border">
@@ -1508,8 +1553,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               onSendMessage={handleThreadSend}
               onAIQuery={chat.chatType === 'group' ? onAIQuery : undefined}
               mentionCandidates={mentionCandidates}
-              seedMentionUsername={seedMentionUsername}
-              onSeedMentionConsumed={() => setSeedMentionUsername(null)}
+              seedMentionUsername={threadSeedMentionUsername}
+              onSeedMentionConsumed={() => setThreadSeedMentionUsername(null)}
               replyTo={threadReplyTo}
               onClearReply={() => {
                 const root = threadMessages.find((m) => m.id === threadRootId) || threadMessages[0];

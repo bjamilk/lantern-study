@@ -94,7 +94,11 @@ export function canEditChatMessage(
 ): boolean {
   return (
     canRemoveChatMessage(message, currentUserId, nowMs) &&
-    !isChatAudioMessage(message.text)
+    !isChatAudioMessage(message.text) &&
+    // Media messages are stored as `![image](signed-url)` text. Editing one would
+    // seed the composer with the raw markdown (leaking the signed URL) and let a
+    // send replace the image with plain text. Remove stays allowed.
+    !isChatImageMessage(message.text)
   );
 }
 
