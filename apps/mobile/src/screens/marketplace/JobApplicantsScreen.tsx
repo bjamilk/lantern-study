@@ -334,6 +334,28 @@ export function JobApplicantsScreen() {
             <Text className="mt-3 text-sm font-medium text-lantern-text">
               {JOB_APPLICATION_STATUS_LABELS[app.status]}
             </Text>
+            {Object.keys(app.answers || {}).length ? (
+              <View className="mt-3">
+                <Text className="mb-1 text-xs font-semibold text-lantern-text">
+                  Screening answers
+                </Text>
+                {Object.entries(app.answers || {}).map(
+                  ([questionId, answer]) => (
+                    <View
+                      key={questionId}
+                      className="mb-1.5 rounded-lg border border-lantern-border bg-lantern-background p-3"
+                    >
+                      <Text className="text-xs font-medium text-lantern-text-secondary">
+                        {questionLabels[questionId] || "Screening answer"}
+                      </Text>
+                      <Text className="mt-1 text-sm text-lantern-text">
+                        {answer}
+                      </Text>
+                    </View>
+                  ),
+                )}
+              </View>
+            ) : null}
             <View className="mt-3 flex-row flex-wrap gap-2">
               {app.resumePath || app.resumeUrl ? (
                 <Pressable

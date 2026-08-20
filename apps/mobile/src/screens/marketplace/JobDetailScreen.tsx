@@ -45,6 +45,27 @@ import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
 import type { MarketStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
+/** Days until the deadline (ceil), negative once it has passed; null when unset. */
+function jobDeadlineDaysLeft(value?: string | null): number | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.ceil((date.getTime() - Date.now()) / 86_400_000);
+}
+
+// Mirrors the board's deadline copy in JobsHomeScreen so the two screens agree.
+function formatJobDeadline(value?: string | null) {
+  const daysLeft = jobDeadlineDaysLeft(value);
+  if (daysLeft === null || daysLeft < 0) return null;
+  if (daysLeft === 0) return "Closes today";
+  if (daysLeft <= 7)
+    return `Closes in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+  return `Apply by ${new Date(value!).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  })}`;
+}
+
 export function JobDetailScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
@@ -94,6 +115,9 @@ export function JobDetailScreen() {
       .then((res) => setApplicantProfile(res.data))
       .catch(() => setApplicantProfile(null));
   }, []);
+
+  const deadlineDaysLeft = jobDeadlineDaysLeft(job?.deadline);
+  const applicationsClosed = deadlineDaysLeft !== null && deadlineDaysLeft < 0;
 
   // Keep the loaded screen's shell while fetching: a bare spinner leaves the
   // user with no back affordance and no status-bar inset, then jumps when the
@@ -248,6 +272,26 @@ export function JobDetailScreen() {
                     {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]}
                   </Text>
                 </View>
+                <View className="rounded-xl bg-lantern-background p-3">
+                  <Text className="text-xs font-medium uppercase text-lantern-text-tertiary">
+                    Location
+                  </Text>
+                  <Text className="mt-1 text-sm font-semibold text-lantern-text">
+                    {formatJobLocation(job)}
+                  </Text>
+                </View>
+                {job.deadline ? (
+                  <View className="rounded-xl bg-lantern-background p-3">
+                    <Text className="text-xs font-medium uppercase text-lantern-text-tertiary">
+                      Application deadline
+                    </Text>
+                    <Text className="mt-1 text-sm font-semibold text-lantern-text">
+                      {applicationsClosed
+                        ? "Applications closed"
+                        : formatJobDeadline(job.deadline)}
+                    </Text>
+                  </View>
+                ) : null}
                 {formatJobEngagementDuration(job.engagementDuration) ? (
                   <View className="rounded-xl bg-lantern-background p-3">
                     <Text className="text-xs font-medium uppercase text-lantern-text-tertiary">
@@ -290,8 +334,17 @@ export function JobDetailScreen() {
             </Pressable>
           </Card>
         ) : null}
+        {job && applicationsClosed && !job.hasApplied ? (
+          <View className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <Text className="text-sm text-amber-900">
+              <Text className="font-semibold">Applications closed</Text> — the
+              deadline for this job has passed.
+            </Text>
+          </View>
+        ) : null}
         {job &&
         !job.hasApplied &&
+        !applicationsClosed &&
         isJobPostingPubliclyVisible(job.status) &&
         (job.applyMode === "in_app" || job.applyMode === "both") ? (
           <Card className="mb-3 border border-lantern-border">
@@ -389,15 +442,19 @@ export function JobDetailScreen() {
                         `Answer “${missingRequired.prompt}” before applying.`,
                       );
                     }
-                    await applyToJob(job.id, {
+                    const res = await applyToJob(job.id, {
                       message: message.trim() || undefined,
                       answers,
                       resumePath: applicantProfile?.resumePath || null,
                       resumeFilename: applicantProfile?.resumeFilename || null,
                     });
                     setJob({ ...job, hasApplied: true });
+                    // Mobile never opens the chat thread here, so don't
+                    // promise one on the duplicate path.
                     setSuccess(
-                      "Application sent. Track it from My applications.",
+                      res.existing
+                        ? "You already applied to this job."
+                        : "Application sent. Track it from My applications.",
                     );
                   } catch (e) {
                     setError(e instanceof Error ? e.message : "Apply failed");
@@ -415,6 +472,7 @@ export function JobDetailScreen() {
         ) : null}
         {job?.externalUrl &&
         !job.hasApplied &&
+        !applicationsClosed &&
         isJobPostingPubliclyVisible(job.status) &&
         (job.applyMode === "external" || job.applyMode === "both") ? (
           <Pressable

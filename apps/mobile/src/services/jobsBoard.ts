@@ -198,6 +198,8 @@ export async function applyToJob(
   return jobsRequest<{
     success: boolean;
     data: JobApplication;
+    /** True when the server found a previous application instead of creating one. */
+    existing?: boolean;
     threadId?: string;
   }>(`/postings/${encodeURIComponent(id)}/apply`, {
     method: "POST",

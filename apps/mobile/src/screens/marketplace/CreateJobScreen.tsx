@@ -20,12 +20,14 @@ import {
   JOB_PHASE2_EMPLOYMENT_TYPES,
   JOB_POSTING_STATUS_LABELS,
   describeJobScamMatches,
+  describeJobTemplateLeftovers,
   findJobScamMatches,
   formatJobCompanyVerificationLabel,
   isJobPostingEditable,
   jobIntentTemplatesByGroup,
   jobRequiresEngagementDuration,
   textFailsJobScamCheck,
+  type JobApplyMode,
   type JobCompensationPeriod,
   type JobEmploymentType,
   type JobEngagementDurationUnit,
@@ -51,6 +53,16 @@ export function CreateJobScreen() {
   const isEdit = !!jobId;
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // Template hints seed the description's placeholder, never its value, so
+  // hint text can't ship on the board as if the poster wrote it.
+  const [descriptionHint, setDescriptionHint] = useState<string | null>(null);
+  // Mobile has no UI for apply-mode settings; carry whatever the posting
+  // already has through edits instead of resetting it to in-app defaults.
+  const [applySettings, setApplySettings] = useState<{
+    applyMode: JobApplyMode;
+    externalUrl: string | null;
+    atsWebhookUrl: string | null;
+  }>({ applyMode: "in_app", externalUrl: null, atsWebhookUrl: null });
   const [employmentType, setEmploymentType] =
     useState<JobEmploymentType>("part_time");
   const [companyId, setCompanyId] = useState("");
@@ -108,6 +120,11 @@ export function CreateJobScreen() {
         setStatus(job.status);
         setCompanyId(job.companyId || "");
         setScreener1(job.screeningQuestions?.[0]?.prompt || "");
+        setApplySettings({
+          applyMode: job.applyMode || "in_app",
+          externalUrl: job.externalUrl ?? null,
+          atsWebhookUrl: job.atsWebhookUrl ?? null,
+        });
 
         const compensation = job.compensation || { kind: "discuss" as const };
         setCompensationKind(compensation.kind);
@@ -195,7 +212,9 @@ export function CreateJobScreen() {
               unit: durationUnit,
             }
         : null,
-      applyMode: "in_app" as const,
+      applyMode: applySettings.applyMode,
+      externalUrl: applySettings.externalUrl,
+      atsWebhookUrl: applySettings.atsWebhookUrl,
       screeningQuestions: screener1.trim()
         ? [
             {
@@ -219,6 +238,17 @@ export function CreateJobScreen() {
           "This copy matches phrases Lantern blocks. Remove them before publishing.",
       );
       return;
+    }
+    // Drafts may keep template boilerplate; the board must not.
+    if (nextStatus !== "draft") {
+      const templateLeftovers = describeJobTemplateLeftovers(
+        title,
+        description,
+      );
+      if (templateLeftovers) {
+        setError(templateLeftovers);
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -258,7 +288,8 @@ export function CreateJobScreen() {
     }
     setEmploymentType(t.employmentType);
     setTitle(t.title);
-    setDescription(t.descriptionHint);
+    setDescription("");
+    setDescriptionHint(t.descriptionHint);
     setScreener1(t.suggestedScreeners[0] || "");
   };
 
@@ -332,7 +363,7 @@ export function CreateJobScreen() {
           />
           <TextInput
             className="rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text min-h-[100px]"
-            placeholder="Description"
+            placeholder={descriptionHint || "Description"}
             placeholderTextColor="#94a3b8"
             value={description}
             onChangeText={setDescription}
