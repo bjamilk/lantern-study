@@ -439,10 +439,18 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       )}
 
       {mentionMatches.length > 0 && (
-        <div className="mb-2 rounded-xl border border-lantern-border bg-lantern-surface shadow-sm overflow-hidden">
+        <div
+          id="mention-listbox"
+          role="listbox"
+          aria-label="Mention suggestions"
+          className="mb-2 rounded-xl border border-lantern-border bg-lantern-surface shadow-sm overflow-hidden"
+        >
           {mentionMatches.map((m, i) => (
             <button
               key={m.id}
+              id={`mention-option-${m.id}`}
+              role="option"
+              aria-selected={i === mentionIndex}
               type="button"
               onClick={() => insertMention(m)}
               className={`w-full text-left px-3 py-2 text-sm ${
@@ -506,6 +514,13 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             rows={1}
             disabled={busy || isRecording}
             aria-label="Message text"
+            role="combobox"
+            aria-expanded={mentionMatches.length > 0}
+            aria-controls="mention-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              mentionMatches.length > 0 ? `mention-option-${mentionMatches[mentionIndex]?.id}` : undefined
+            }
             className="w-full resize-none px-4 py-2.5 border border-lantern-border rounded-2xl bg-lantern-background text-lantern-text text-sm placeholder:text-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary focus-visible:border-transparent transition-colors duration-200"
             style={{ maxHeight: '120px' }}
           />
