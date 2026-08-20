@@ -14,6 +14,8 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -40,7 +42,6 @@ interface GroupInfoModalProps {
   onAddMembers: () => void;
   onChallenge: (member: GroupMember) => void;
   onCreateSubgroup?: () => void;
-  onMessageMember?: (member: GroupMember) => void;
   onAvatarUpdated?: (groupId: string, avatarUrl: string) => void;
 }
 
@@ -59,7 +60,6 @@ export default function GroupInfoModal({
   onAddMembers,
   onChallenge,
   onCreateSubgroup,
-  onMessageMember,
   onAvatarUpdated,
 }: GroupInfoModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('details');
@@ -423,19 +423,6 @@ export default function GroupInfoModal({
           {/* Member Actions */}
           {member.userId !== currentUserId && (
             <View style={styles.memberActions}>
-              {/* Message Button */}
-              {onMessageMember && (
-                <TouchableOpacity
-                  style={styles.actionIcon}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Message ${member.name}`}
-                  onPress={() => onMessageMember(member)}
-                >
-                  <Ionicons name="chatbubble" size={18} color="#6366f1" />
-                </TouchableOpacity>
-              )}
-
               {/* Challenge Button */}
               <TouchableOpacity
                 style={styles.actionIcon}
@@ -589,6 +576,10 @@ export default function GroupInfoModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}
+        >
         <View style={[styles.container, { backgroundColor: colors.card }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -621,6 +612,7 @@ export default function GroupInfoModal({
             {activeTab === 'danger' && renderDangerTab()}
           </ScrollView>
         </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -638,12 +630,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
   },
+  keyboardView: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   container: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '90%',
     minHeight: '60%',
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',

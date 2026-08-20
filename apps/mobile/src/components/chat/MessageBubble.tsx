@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import type { GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import {
@@ -11,7 +11,7 @@ import {
 } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
-import { ChatTextBody } from './ChatMessageBody';
+import { ChatImageThumbnail, ChatTextBody } from './ChatMessageBody';
 import { QuestionVoteBar } from './QuestionVoteBar';
 import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
@@ -66,7 +66,10 @@ function MessageBubbleComponent({
   onRetry,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
-  const [imageFailed, setImageFailed] = useState(false);
+  const { width: windowWidth } = useWindowDimensions();
+  // On tablets / landscape, cap the row in absolute points so bubbles don't
+  // stretch full-bleed. Phones keep the percentage max (max-w-[92%]/[82%]) below.
+  const wideMaxWidth = windowWidth >= 768 ? { maxWidth: 520 } : undefined;
   const isQuestion = message.type === 'question';
   const audioUrl = !isQuestion ? parseChatAudioUrl(message.text) : null;
   const isRemoved = !!message.isRemoved || !!message.removedAt;
@@ -117,7 +120,10 @@ function MessageBubbleComponent({
 
   if (isRemoved) {
     return (
-      <View className={`max-w-[82%] mb-3 ${isOwn ? 'self-end' : 'self-start'}`}>
+      <View
+        className={`max-w-[82%] mb-3 ${isOwn ? 'self-end' : 'self-start'}`}
+        style={wideMaxWidth}
+      >
         <View
           className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
           style={{ borderColor: colors.border, borderWidth: 1, borderStyle: 'dashed' }}
@@ -192,6 +198,7 @@ function MessageBubbleComponent({
       accessibilityLabel={rowLabel}
       accessibilityHint={onReply ? 'Double tap and hold for message options' : undefined}
       className={`flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'} ${isGroupedWithPrevious ? 'mb-1' : 'mb-3'}`}
+      style={wideMaxWidth}
     >
       {!isOwn ? (
         isGroupedWithPrevious ? (
@@ -314,19 +321,15 @@ function MessageBubbleComponent({
                 {message.questionStem || message.text}
               </Text>
 
-              {questionImageUri && !imageFailed ? (
-                <Image
-                  source={{ uri: questionImageUri }}
+              {questionImageUri ? (
+                <ChatImageThumbnail
+                  uri={questionImageUri}
                   accessibilityLabel="Question visual"
-                  resizeMode="contain"
-                  onError={() => setImageFailed(true)}
-                  style={{
-                    width: '100%',
-                    maxHeight: 200,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
+                  maxWidth={260}
+                  maxHeight={220}
+                  borderColor={colors.border}
+                  borderWidth={1}
+                  borderRadius={8}
                 />
               ) : null}
 

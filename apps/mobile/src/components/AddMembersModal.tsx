@@ -14,8 +14,11 @@ import {
   ScrollView,
   FlatList,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { ThemeScope, useTheme } from '../theme';
 import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
 import * as api from '../services/api';
@@ -40,6 +43,7 @@ interface AddMembersModalProps {
   inviteId?: string;
   groupMemberIds: string[];
   currentUserId: string;
+  lowDataMode?: boolean;
   onAddMembers: (userIds: string[]) => void;
 }
 
@@ -51,6 +55,7 @@ export default function AddMembersModal({
   inviteId,
   groupMemberIds,
   currentUserId,
+  lowDataMode = false,
   onAddMembers,
 }: AddMembersModalProps) {
   const [view, setView] = useState<'initial' | 'search' | 'invite'>('initial');
@@ -124,11 +129,6 @@ export default function AddMembersModal({
       onAddMembers(selectedUserIds);
     }
     onClose();
-  };
-
-  const getAvatarUrl = (user: SearchResult) => {
-    if (user.avatarUrl) return user.avatarUrl;
-    return null;
   };
 
   const renderInitialView = () => (
@@ -241,7 +241,7 @@ export default function AddMembersModal({
                 <View style={styles.userAvatarContainer}>
                   <ResolvedAvatar
                     name={item.name || item.firstName || 'User'}
-                    uri={getAvatarUrl(item)}
+                    uri={resolveAvatarSrc(item.avatarUrl, lowDataMode)}
                     size={44}
                   />
                   {isSelected && (
@@ -309,6 +309,10 @@ export default function AddMembersModal({
       onRequestClose={onClose}
     >
       <ThemeScope style={styles.overlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}
+        >
         <View style={[styles.container, { backgroundColor: colors.card }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -334,6 +338,7 @@ export default function AddMembersModal({
             {view === 'invite' && renderInviteView()}
           </View>
         </View>
+        </KeyboardAvoidingView>
       </ThemeScope>
     </Modal>
   );
@@ -345,10 +350,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
   },
+  keyboardView: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   container: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '85%',
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',

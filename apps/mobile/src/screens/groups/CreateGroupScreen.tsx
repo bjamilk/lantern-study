@@ -81,6 +81,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [pickingAvatar, setPickingAvatar] = useState(false);
   const [permissions, setPermissions] = useState<GroupPermissions>(DEFAULT_PERMISSIONS);
+  const [permissionsExpanded, setPermissionsExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -89,6 +90,16 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
   const selectedUserIds = useMemo(() => selectedUsers.map(u => u.id), [selectedUsers]);
   const selectedUserIdSet = useMemo(() => new Set(selectedUserIds), [selectedUserIds]);
+
+  const permissionsSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (permissions.canSendMessages) parts.push('send messages');
+    if (permissions.canAddMembers) parts.push('add members');
+    if (permissions.canEditSettings) parts.push('edit info');
+    if (permissions.canApproveMembers) parts.push('approve members');
+    if (parts.length === 0) return 'Members have limited permissions';
+    return `Members can ${parts.join(', ')}`;
+  }, [permissions]);
 
   useEffect(() => {
     if (searchTerm.trim().replace(/^@+/, '').length < 2) {
@@ -309,18 +320,14 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         </ScrollView>
 
         <StepFooter>
-          {selectedUsers.length > 0 ? (
-            <Button fullWidth onPress={() => setStep('group_details')}>
-              Next
-            </Button>
-          ) : (
-            <Pressable
-              onPress={() => setStep('group_details')}
-              className="w-full py-3 bg-slate-500 rounded-2xl items-center active:opacity-90"
-            >
-              <Text className="font-semibold text-sm text-white">Skip - Create Group Without Members</Text>
-            </Pressable>
-          )}
+          <Button fullWidth onPress={() => setStep('group_details')}>
+            Next
+          </Button>
+          {selectedUsers.length === 0 ? (
+            <Text className="text-xs text-lantern-text-secondary text-center mt-2">
+              You can add members later
+            </Text>
+          ) : null}
         </StepFooter>
       </SafeAreaView>
     );
@@ -381,27 +388,52 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         </View>
 
         <View className="p-4 rounded-2xl bg-lantern-surface border border-lantern-border mb-4">
-          <Text className="font-semibold text-lantern-text mb-2">Member permissions</Text>
-          <PermissionToggle
-            label="Send messages"
-            enabled={permissions.canSendMessages}
-            onChange={val => setPermissions(p => ({ ...p, canSendMessages: val }))}
-          />
-          <PermissionToggle
-            label="Add other members"
-            enabled={permissions.canAddMembers}
-            onChange={val => setPermissions(p => ({ ...p, canAddMembers: val }))}
-          />
-          <PermissionToggle
-            label="Edit group info"
-            enabled={permissions.canEditSettings}
-            onChange={val => setPermissions(p => ({ ...p, canEditSettings: val }))}
-          />
-          <PermissionToggle
-            label="Approve new members"
-            enabled={permissions.canApproveMembers}
-            onChange={val => setPermissions(p => ({ ...p, canApproveMembers: val }))}
-          />
+          <Pressable
+            onPress={() => setPermissionsExpanded(v => !v)}
+            className="flex-row items-center active:opacity-90"
+          >
+            <View className="flex-1 min-w-0 pr-3">
+              <Text className="font-semibold text-lantern-text">Member permissions</Text>
+              {!permissionsExpanded ? (
+                <Text
+                  className="text-sm text-lantern-text-secondary mt-0.5"
+                  numberOfLines={1}
+                >
+                  {permissionsSummary}
+                </Text>
+              ) : null}
+            </View>
+            <Ionicons
+              name={permissionsExpanded ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color="#94a3b8"
+            />
+          </Pressable>
+
+          {permissionsExpanded ? (
+            <View className="mt-2">
+              <PermissionToggle
+                label="Send messages"
+                enabled={permissions.canSendMessages}
+                onChange={val => setPermissions(p => ({ ...p, canSendMessages: val }))}
+              />
+              <PermissionToggle
+                label="Add other members"
+                enabled={permissions.canAddMembers}
+                onChange={val => setPermissions(p => ({ ...p, canAddMembers: val }))}
+              />
+              <PermissionToggle
+                label="Edit group info"
+                enabled={permissions.canEditSettings}
+                onChange={val => setPermissions(p => ({ ...p, canEditSettings: val }))}
+              />
+              <PermissionToggle
+                label="Approve new members"
+                enabled={permissions.canApproveMembers}
+                onChange={val => setPermissions(p => ({ ...p, canApproveMembers: val }))}
+              />
+            </View>
+          ) : null}
         </View>
       </ScrollView>
 

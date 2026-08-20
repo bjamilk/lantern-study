@@ -28,26 +28,23 @@ interface SwipeToReplyProps {
 export function SwipeToReply({ enabled = true, onReply, children }: SwipeToReplyProps) {
   const { colors } = useTheme();
   const translateX = useSharedValue(0);
-  const triggered = useSharedValue(false);
 
   const pan = Gesture.Pan()
     .enabled(enabled)
     .activeOffsetX(18)
     .failOffsetY([-12, 12])
-    .onBegin(() => {
-      triggered.value = false;
-    })
     .onUpdate((event) => {
-      const next = Math.max(0, Math.min(event.translationX, MAX_DRAG));
-      translateX.value = next;
-      if (!triggered.value && next >= REPLY_THRESHOLD) {
-        triggered.value = true;
-        runOnJS(onReply)();
-      }
+      // Track the drag only; the reply is committed on release below so that
+      // dragging back under the threshold aborts and the keyboard never yanks
+      // up mid-gesture.
+      translateX.value = Math.max(0, Math.min(event.translationX, MAX_DRAG));
     })
     .onEnd(() => {
+      // Commit only if the row was still held past the threshold at release.
+      if (translateX.value >= REPLY_THRESHOLD) {
+        runOnJS(onReply)();
+      }
       translateX.value = withSpring(0, { damping: 18, stiffness: 220 });
-      triggered.value = false;
     })
     .onFinalize(() => {
       translateX.value = withSpring(0, { damping: 18, stiffness: 220 });
