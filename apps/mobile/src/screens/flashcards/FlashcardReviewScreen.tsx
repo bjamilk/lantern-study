@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -6,10 +6,13 @@ import { FlashcardType, FLASHCARD_GRADE_LABELS } from '@lantern/shared';
 import type { PerformanceRating } from '@lantern/shared/utils';
 import {
   FlashcardReviewAdvanceGuard,
+  formatStudyInterval,
+  previewFsrsIntervals,
   resolveAutoAdvanceDelayMs,
 } from '@lantern/shared/utils';
 import {
   buildFlashcardReviewQueue,
+  getSrsMaxInterval,
   getTodayStudyCounts,
   isNewFlashcard,
 } from '@lantern/shared/settings';
@@ -76,6 +79,28 @@ const GRADE_TEXT_CLASS: Record<(typeof GRADE_BUTTONS)[number]['variant'], string
 
 const EMPTY_CARDS: Flashcard[] = [];
 
+type GradeCounts = Record<PerformanceRating, number>;
+const ZERO_GRADE_COUNTS: GradeCounts = { again: 0, hard: 0, good: 0, easy: 0 };
+
+interface UndoSnapshot {
+  cardId: string;
+  deckId: string;
+  /** Queue position the graded card occupied, to return to on undo. */
+  index: number;
+  /** Pre-grade card (with its pre-grade srsData) to restore into the store. */
+  card: Flashcard;
+  rating: PerformanceRating;
+  wasNew: boolean;
+}
+
+/** mm:ss elapsed label for the end-of-session summary. */
+function formatElapsed(ms: number): string {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
   if (!cards.length) return [];
   const settings = useSettingsStore.getState().settings;
@@ -97,6 +122,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const isLoading = useFlashcardStore(s => s.isLoading);
   const fetchFlashcards = useFlashcardStore(s => s.fetchFlashcards);
   const reviewFlashcard = useFlashcardStore(s => s.reviewFlashcard);
+  const srsMaxInterval = useSettingsStore(s => s.settings.study.srsMaxInterval);
 
   const queueSnapshotRef = useRef<Flashcard[] | null>(null);
   const startTrackedRef = useRef(false);
@@ -105,10 +131,15 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
+  const sessionStartRef = useRef<number | null>(null);
   const [index, setIndex] = useState(0);
   const [showBack, setShowBack] = useState(false);
   const [grading, setGrading] = useState(false);
   const [showSwipeHint, setShowSwipeHint] = useState(true);
+  const [gradeCounts, setGradeCounts] = useState<GradeCounts>(ZERO_GRADE_COUNTS);
+  const [newCount, setNewCount] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null);
 
   const clearAutoAdvanceTimer = useCallback(() => {
     if (autoAdvanceTimerRef.current != null) {
@@ -129,12 +160,17 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     queueSnapshotRef.current = null;
     startTrackedRef.current = false;
     completeTrackedRef.current = false;
+    sessionStartRef.current = null;
     advanceGuardRef.current.reset();
     clearAutoAdvanceTimer();
     setIndex(0);
     setShowBack(false);
     setGrading(false);
     setShowSwipeHint(true);
+    setGradeCounts(ZERO_GRADE_COUNTS);
+    setNewCount(0);
+    setElapsedMs(0);
+    setUndoSnapshot(null);
   }, [deckId, clearAutoAdvanceTimer]);
 
   // Lock the queue once cards are available (=== null so an intentional empty queue stays locked)
@@ -148,6 +184,23 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const isComplete = sessionTotal > 0 && index >= sessionTotal;
   const progress = sessionTotal ? Math.min(index + 1, sessionTotal) : 0;
   const nextCard = queue[index + 1];
+  const canUndo = undoSnapshot != null;
+
+  // Anki-style interval preview: what each grade would schedule for THIS card,
+  // computed once per card. Uses the same maxInterval source the store schedules
+  // with (getSrsMaxInterval on study settings), so the preview matches grading.
+  const intervalPreview = useMemo<Record<PerformanceRating, string> | null>(() => {
+    if (!currentCard) return null;
+    const days = previewFsrsIntervals(currentCard.srsData, {
+      maxInterval: getSrsMaxInterval({ srsMaxInterval }),
+    });
+    return {
+      again: formatStudyInterval(days.again),
+      hard: formatStudyInterval(days.hard),
+      good: formatStudyInterval(days.good),
+      easy: formatStudyInterval(days.easy),
+    };
+  }, [currentCard, srsMaxInterval]);
 
   useEffect(() => {
     const { setTipReady } = useFeatureTipStore.getState();
@@ -159,6 +212,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (sessionTotal > 0 && !startTrackedRef.current) {
       startTrackedRef.current = true;
+      sessionStartRef.current = Date.now();
       trackStudyModeSelected('smart_review');
       trackFlashcardReviewStarted(sessionTotal, deckId);
     }
@@ -167,6 +221,9 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (isComplete && !completeTrackedRef.current) {
       completeTrackedRef.current = true;
+      if (sessionStartRef.current != null) {
+        setElapsedMs(Date.now() - sessionStartRef.current);
+      }
       trackFlashcardReviewCompleted(sessionTotal);
       trackStudyModeCompleted('smart_review');
     }
@@ -214,6 +271,25 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
 
       const wasNew = isNewFlashcard(currentCard);
       const cardId = currentCard.id;
+
+      // Single-level undo snapshot: capture the pre-grade card (srsData intact —
+      // the store schedules into a fresh object, so this queue reference stays
+      // pre-grade) plus this position, before the store mutates. Count the grade
+      // for the end-of-session summary here so undo can reverse it exactly.
+      setUndoSnapshot({
+        cardId,
+        deckId,
+        index,
+        card: {
+          ...currentCard,
+          srsData: currentCard.srsData ? { ...currentCard.srsData } : currentCard.srsData,
+        },
+        rating,
+        wasNew,
+      });
+      setGradeCounts(prev => ({ ...prev, [rating]: prev[rating] + 1 }));
+      if (wasNew) setNewCount(prev => prev + 1);
+
       const delayMs = resolveAutoAdvanceDelayMs(
         useSettingsStore.getState().settings.study.autoAdvanceDelay
       );
@@ -246,8 +322,45 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
           console.error('Failed to save review:', err);
         });
     },
-    [currentCard, user?.id, reviewFlashcard, deckId, clearAutoAdvanceTimer]
+    [currentCard, user?.id, reviewFlashcard, deckId, index, clearAutoAdvanceTimer]
   );
+
+  const handleUndo = useCallback(() => {
+    const snap = undoSnapshot;
+    if (!snap) return;
+
+    clearAutoAdvanceTimer();
+    // Void any pending auto-advance and re-open the card for grading: reset()
+    // clears the guard's rated-id set and bumps its generation, then re-arm the
+    // restored card as active so a re-grade can claim it.
+    advanceGuardRef.current.reset();
+    advanceGuardRef.current.setActiveCard(snap.cardId);
+
+    // Restore the pre-grade card locally so the user can re-grade. This is a
+    // LOCAL restore only — the server may already hold the graded review (see
+    // report). saveToStorage persists the revert so a remount can't resurrect it.
+    useFlashcardStore.setState(current => {
+      const cards = current.flashcards[snap.deckId];
+      if (!cards) return current;
+      return {
+        flashcards: {
+          ...current.flashcards,
+          [snap.deckId]: cards.map(c => (c.id === snap.cardId ? snap.card : c)),
+        },
+      };
+    });
+    void useFlashcardStore.getState().saveToStorage();
+
+    // Reverse the summary counters so undo never double-counts.
+    setGradeCounts(prev => ({ ...prev, [snap.rating]: Math.max(0, prev[snap.rating] - 1) }));
+    if (snap.wasNew) setNewCount(prev => Math.max(0, prev - 1));
+
+    withHaptic(() => Haptics.selectionAsync());
+    setUndoSnapshot(null);
+    setShowBack(false);
+    setGrading(false);
+    setIndex(snap.index);
+  }, [undoSnapshot, clearAutoAdvanceTimer]);
 
   const shellStyle = { flex: 1, backgroundColor: colors.background };
 
@@ -316,18 +429,70 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   }
 
   if (isComplete || !currentCard) {
+    const reviewedCount = gradeCounts.again + gradeCounts.hard + gradeCounts.good + gradeCounts.easy;
+    const reviewCount = Math.max(0, reviewedCount - newCount);
+    const summaryBreakdown: { rating: PerformanceRating; textClass: string }[] = [
+      { rating: 'again', textClass: 'text-red-500' },
+      { rating: 'hard', textClass: 'text-orange-500' },
+      { rating: 'good', textClass: 'text-green-500' },
+      { rating: 'easy', textClass: 'text-blue-500' },
+    ];
     return (
       <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
-        <Text className="text-2xl font-bold text-lantern-primary mb-2" style={{ color: colors.primary }}>
+        <Text className="text-2xl font-bold text-lantern-primary mb-1" style={{ color: colors.primary }}>
           Session complete
         </Text>
         <Text
-          className="text-sm text-lantern-text-secondary text-center mb-6"
+          className="text-sm text-lantern-text-secondary text-center mb-5"
           style={{ color: colors.textSecondary }}
         >
-          You reviewed {sessionTotal} card{sessionTotal !== 1 ? 's' : ''} in {deckName}.
+          {reviewedCount} card{reviewedCount !== 1 ? 's' : ''} reviewed in {deckName}
+          {elapsedMs > 0 ? ` · ${formatElapsed(elapsedMs)}` : ''}
         </Text>
-        <Button onPress={() => navigation.goBack()}>Done</Button>
+
+        <View
+          className="w-full max-w-sm rounded-2xl bg-lantern-surface border border-lantern-border p-4 mb-6"
+          style={{ backgroundColor: colors.surface, borderColor: colors.border }}
+        >
+          <View className="flex-row justify-between">
+            {summaryBreakdown.map(({ rating, textClass }) => (
+              <View key={rating} className="flex-1 items-center">
+                <Text className={`text-xl font-bold ${textClass}`}>{gradeCounts[rating]}</Text>
+                <Text
+                  className="text-xs text-lantern-text-secondary mt-0.5"
+                  style={{ color: colors.textSecondary }}
+                >
+                  {FLASHCARD_GRADE_LABELS[rating].label}
+                </Text>
+              </View>
+            ))}
+          </View>
+          <View className="h-px my-3 bg-lantern-border" style={{ backgroundColor: colors.border }} />
+          <View className="flex-row justify-between">
+            <Text className="text-xs text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
+              New: {newCount}
+            </Text>
+            <Text className="text-xs text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
+              Review: {reviewCount}
+            </Text>
+          </View>
+        </View>
+
+        <View className="w-full max-w-sm gap-3">
+          {canUndo ? (
+            <Button
+              fullWidth
+              variant="secondary"
+              accessibilityLabel="Undo last grade"
+              onPress={handleUndo}
+            >
+              Undo last card
+            </Button>
+          ) : null}
+          <Button fullWidth onPress={() => navigation.goBack()}>
+            Done
+          </Button>
+        </View>
       </SafeAreaView>
     );
   }
@@ -335,15 +500,59 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const { front, back } = getCardDisplayText(currentCard);
   const isImageOcclusion = currentCard.type === FlashcardType.IMAGE_OCCLUSION;
 
+  const renderGradeButton = ({
+    rating,
+    variant,
+    accessibilityLabel,
+  }: (typeof GRADE_BUTTONS)[number]) => (
+    <Button
+      key={rating}
+      variant={variant}
+      size="lg"
+      className="flex-1"
+      disabled={grading}
+      accessibilityLabel={
+        intervalPreview ? `${accessibilityLabel}, next in ${intervalPreview[rating]}` : accessibilityLabel
+      }
+      onPress={() => handleRate(rating)}
+    >
+      <View className="items-center">
+        <Text className={`text-sm font-semibold ${GRADE_TEXT_CLASS[variant]}`}>
+          {FLASHCARD_GRADE_LABELS[rating].label}
+        </Text>
+        <Text className={`text-xs opacity-80 ${GRADE_TEXT_CLASS[variant]}`}>
+          {FLASHCARD_GRADE_LABELS[rating].meaning}
+        </Text>
+        {intervalPreview ? (
+          <Text className={`text-[11px] mt-0.5 opacity-70 ${GRADE_TEXT_CLASS[variant]}`}>
+            {intervalPreview[rating]}
+          </Text>
+        ) : null}
+      </View>
+    </Button>
+  );
+
   return (
     <SafeAreaView style={shellStyle} edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
         </Button>
-        <Text className="text-sm font-medium text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
-          {progress} / {sessionTotal}
-        </Text>
+        <View className="flex-row items-center gap-2">
+          {canUndo ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              accessibilityLabel="Undo last grade"
+              onPress={handleUndo}
+            >
+              Undo
+            </Button>
+          ) : null}
+          <Text className="text-sm font-medium text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
+            {progress} / {sessionTotal}
+          </Text>
+        </View>
       </View>
 
       <View className="h-1 mx-4 rounded-full bg-lantern-background-secondary overflow-hidden mb-2">
@@ -406,48 +615,10 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         ) : (
           <>
             <View className="flex-row gap-2">
-              {GRADE_BUTTONS.slice(0, 2).map(({ rating, variant, accessibilityLabel }) => (
-                <Button
-                  key={rating}
-                  variant={variant}
-                  size="lg"
-                  className="flex-1"
-                  disabled={grading}
-                  accessibilityLabel={accessibilityLabel}
-                  onPress={() => handleRate(rating)}
-                >
-                  <View className="items-center">
-                    <Text className={`text-sm font-semibold ${GRADE_TEXT_CLASS[variant]}`}>
-                      {FLASHCARD_GRADE_LABELS[rating].label}
-                    </Text>
-                    <Text className={`text-xs opacity-80 ${GRADE_TEXT_CLASS[variant]}`}>
-                      {FLASHCARD_GRADE_LABELS[rating].meaning}
-                    </Text>
-                  </View>
-                </Button>
-              ))}
+              {GRADE_BUTTONS.slice(0, 2).map(renderGradeButton)}
             </View>
             <View className="flex-row gap-2">
-              {GRADE_BUTTONS.slice(2).map(({ rating, variant, accessibilityLabel }) => (
-                <Button
-                  key={rating}
-                  variant={variant}
-                  size="lg"
-                  className="flex-1"
-                  disabled={grading}
-                  accessibilityLabel={accessibilityLabel}
-                  onPress={() => handleRate(rating)}
-                >
-                  <View className="items-center">
-                    <Text className={`text-sm font-semibold ${GRADE_TEXT_CLASS[variant]}`}>
-                      {FLASHCARD_GRADE_LABELS[rating].label}
-                    </Text>
-                    <Text className={`text-xs opacity-80 ${GRADE_TEXT_CLASS[variant]}`}>
-                      {FLASHCARD_GRADE_LABELS[rating].meaning}
-                    </Text>
-                  </View>
-                </Button>
-              ))}
+              {GRADE_BUTTONS.slice(2).map(renderGradeButton)}
             </View>
           </>
         )}
