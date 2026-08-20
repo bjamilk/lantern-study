@@ -64,6 +64,8 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
         : '/marketplace/orders';
     case AppMode.MY_LISTINGS:
       return '/marketplace/my-listings';
+    case AppMode.MARKETPLACE_FAVORITES:
+      return '/marketplace/favorites';
     case AppMode.MARKETPLACE_INQUIRIES:
       return '/marketplace/inquiries';
     case AppMode.SELLER_PROFILE:
@@ -135,6 +137,7 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/marketplace/orders') return { mode: AppMode.MARKETPLACE_ORDERS, params: {} };
   if (path === '/marketplace/cart') return { mode: AppMode.MARKETPLACE_CART, params: {} };
   if (path === '/marketplace/my-listings') return { mode: AppMode.MY_LISTINGS, params: {} };
+  if (path === '/marketplace/favorites') return { mode: AppMode.MARKETPLACE_FAVORITES, params: {} };
   if (path === '/marketplace/inquiries') return { mode: AppMode.MARKETPLACE_INQUIRIES, params: {} };
   if (path === '/marketplace/new') return { mode: AppMode.CREATE_MARKETPLACE_LISTING, params: {} };
   if (path === '/marketplace/seller/customers') return { mode: AppMode.SELLER_CUSTOMERS, params: {} };

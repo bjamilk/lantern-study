@@ -2936,11 +2936,6 @@ export const fetchMarketplaceListingsPage = async (filters: {
   responseProfile?: 'compact' | 'full';
 } = {}): Promise<{ data: any[]; pagination: { page: number; limit: number; total: number } }> => {
   const cacheKey = listingsCacheKey(filters as Record<string, unknown>);
-  const emptyPagination = {
-    page: Number(filters.page || 1),
-    limit: Number(filters.limit || 20),
-    total: 0,
-  };
 
   type ListingsPage = { data: any[]; pagination: { page: number; limit: number; total: number } };
 
@@ -2984,8 +2979,12 @@ export const fetchMarketplaceListingsPage = async (filters: {
     });
   } catch (error) {
     if (error instanceof RateLimitError) throw error;
+    // Previously this swallowed non-429 failures and returned an empty page,
+    // which rendered as a genuine "no listings" empty state and hid real
+    // network/server errors. Propagate so the browse grid can show a distinct
+    // "Couldn't load — Retry" state instead of a false empty.
     console.error('Error fetching listings:', error);
-    return { data: [], pagination: emptyPagination };
+    throw error;
   }
 };
 
@@ -3233,8 +3232,12 @@ export const fetchMyFavorites = async () => {
     const result = await response.json();
     return (result.data || []).map(normalizeFavoriteRecord);
   } catch (error) {
+    // Propagate so the Favorites screen can distinguish a real load failure
+    // (show "Couldn't load — Retry") from a genuinely empty favorites list.
+    // MarketplaceScreen's heart-state prefetch still guards this in its own
+    // try/catch, so a failure there degrades gracefully without hearts.
     console.error('Error fetching favorites:', error);
-    return []; // Return empty array on error
+    throw error;
   }
 };
 
@@ -3744,9 +3747,13 @@ export const submitOrderPaymentProof = async (orderId: string, proofUrl: string)
   return result.data;
 };
 
-export const checkSavedSearchMatches = async (searchId: string) => {
+export const checkSavedSearchMatches = async (searchId: string, peek = false) => {
+  // `peek=1` returns the same match count WITHOUT bumping last_checked_at
+  // server-side. The badge poll must peek — otherwise every Explore mount
+  // consumes the alerts job's "since" cursor and silently kills notifications.
+  const query = peek ? '?peek=1' : '';
   const response = await fetchWithTimeout(
-    `${getApiRoot()}/api/v1/marketplace/saved-searches/${searchId}/matches`,
+    `${getApiRoot()}/api/v1/marketplace/saved-searches/${searchId}/matches${query}`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );

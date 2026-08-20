@@ -79,6 +79,7 @@ const BudgetTrackerScreen = lazyWithRetry(() => import('./components/BudgetTrack
 const MarketplaceScreen = lazyWithRetry(() => import('./components/MarketplaceScreen'));
 const MarketplaceListingDetailScreen = lazyWithRetry(() => import('./components/MarketplaceListingDetailScreen'));
 const MyListingsScreen = lazyWithRetry(() => import('./components/MyListingsScreen'));
+const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
 const MarketplaceCartScreen = lazyWithRetry(() => import('./components/MarketplaceCartScreen'));
@@ -1384,6 +1385,8 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     } else if (screen === 'MyListings') {
                         setAppMode(AppMode.MY_LISTINGS);
+                    } else if (screen === 'MarketplaceFavorites') {
+                        setAppMode(AppMode.MARKETPLACE_FAVORITES);
                     } else if (screen === 'MarketplaceInquiries') {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
                     } else if (screen === 'MarketplaceOrders') {
@@ -1461,6 +1464,33 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE);
                     }
                 }} onBack={() => setAppMode(AppMode.MARKETPLACE)} refreshKey={myListingsRefreshKey} />;
+            case AppMode.MARKETPLACE_FAVORITES:
+                return <MarketplaceFavoritesScreen
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setSelectedMarketplaceListingInitialQuantity(
+                              params?.quantity != null ? Number(params.quantity) : null
+                            );
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        } else if (screen === 'CreateMarketplaceListing') {
+                            setMarketplaceListingCategory(params?.category || 'academic');
+                            openModal('createMarketplaceListing');
+                        } else if (screen === 'MyListings') {
+                            setAppMode(AppMode.MY_LISTINGS);
+                        } else if (screen === 'MarketplaceInquiries') {
+                            setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                        } else if (screen === 'MarketplaceOrders') {
+                            setAppMode(AppMode.MARKETPLACE_ORDERS);
+                        } else if (screen === 'MarketplaceCart') {
+                            setAppMode(AppMode.MARKETPLACE_CART);
+                        } else if (screen === 'MarketplaceJobs') {
+                            navigateTo(AppMode.MARKETPLACE_JOBS);
+                        } else if (screen === 'Marketplace') {
+                            setAppMode(AppMode.MARKETPLACE);
+                        }
+                    }} />;
             case AppMode.MARKETPLACE_ORDERS:
                 return <MarketplaceOrdersScreen
                     onBack={() => setAppMode(AppMode.MARKETPLACE)}

@@ -41,6 +41,8 @@ import {
   PlusIcon,
   BuildingStorefrontIcon,
   StarIcon,
+  ExclamationTriangleIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 
 interface MarketplaceScreenProps {
@@ -123,6 +125,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [showPulse, setShowPulse] = useState(false);
   const [savedSearchNewMatches, setSavedSearchNewMatches] = useState(0);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [primaryListingsLoaded, setPrimaryListingsLoaded] = useState(false);
 
   const academicCategories = [
@@ -174,6 +177,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setHasMore(true);
     setPrimaryListingsLoaded(false);
     setRateLimitMessage(null);
+    setLoadError(null);
     loadListings(1, true, requestId);
     if (!guestMode) {
       loadFavorites();
@@ -255,9 +259,12 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     try {
       const data = await fetchSavedSearches();
       setSavedSearches(data);
+      // Badge poll only — peek so it does NOT bump last_checked_at, which is the
+      // alerts job's "since" cursor. Consuming it here would silently kill
+      // saved-search notifications every time Explore mounts.
       const counts = await Promise.all(
         data.map((search) =>
-          checkSavedSearchMatches(search.id)
+          checkSavedSearchMatches(search.id, true)
             .then((result) => result.count || 0)
             .catch(() => 0)
         )
@@ -404,8 +411,10 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       setHasMore((pageNum * ITEMS_PER_PAGE) < (pagination?.total || 0));
       setPage(pageNum);
       setRateLimitMessage(null);
+      setLoadError(null);
       if (reset) setPrimaryListingsLoaded(true);
     } catch (error) {
+      if (requestId !== undefined && requestId !== listingsRequestId.current) return;
       if (error instanceof RateLimitError) {
         const retrySec = Math.ceil(error.retryAfterMs / 1000);
         setRateLimitMessage(
@@ -414,7 +423,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         if (reset) setPrimaryListingsLoaded(true);
       } else {
         console.error('Error loading listings:', error);
-        if (reset) setListings([]);
+        // Surface a distinct error state with Retry instead of a false "empty".
+        // Keep any previously-loaded listings on a refresh failure rather than
+        // blanking the grid.
+        setLoadError(
+          error instanceof Error && error.message
+            ? error.message
+            : 'Something went wrong while loading listings.'
+        );
         if (reset) setPrimaryListingsLoaded(true);
       }
     } finally {
@@ -428,6 +444,13 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     if (!loadingMore && hasMore) {
       loadListings(page + 1, false, listingsRequestId.current);
     }
+  };
+
+  const retryLoadListings = () => {
+    const requestId = ++listingsRequestId.current;
+    setRateLimitMessage(null);
+    setLoadError(null);
+    loadListings(1, true, requestId);
   };
 
   const handleSearchChange = (value: string) => {
@@ -471,8 +494,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   const toggleFavorite = async (listingId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Guests can't have favorites — their POST 401s and silently no-ops. Prompt
+    // sign-in before the optimistic update instead of faking a saved heart.
+    if (guestMode) {
+      onSignInRequired?.();
+      return;
+    }
     const isFavorited = favorites.has(listingId);
-    
+
     // Optimistic update
     setFavorites(prev => {
       const newFavorites = new Set(prev);
@@ -502,6 +531,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         }
         return newFavorites;
       });
+      useToastStore.getState().showToast('Could not update favorites. Please try again.', 'error');
     }
   };
 
@@ -657,6 +687,21 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         </div>
       )}
 
+      {/* Keep the last-loaded grid visible but flag that the refresh failed. */}
+      {loadError && listings.length > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-lantern-error/30 bg-lantern-error/5 px-4 py-3 text-sm text-lantern-error">
+          <span className="min-w-0">Couldn't refresh listings. {loadError}</span>
+          <button
+            type="button"
+            onClick={retryLoadListings}
+            className="shrink-0 inline-flex items-center gap-1 font-semibold underline hover:no-underline"
+          >
+            <ArrowPathIcon className="w-3.5 h-3.5" />
+            Retry
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full py-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -668,6 +713,26 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      ) : listings.length === 0 && loadError ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-20 h-20 bg-lantern-error/10 rounded-2xl flex items-center justify-center mb-5">
+            <ExclamationTriangleIcon className="w-10 h-10 text-lantern-error" />
+          </div>
+          <h3 className="text-lg font-semibold text-lantern-text mb-2">
+            Couldn't load listings
+          </h3>
+          <p className="text-sm text-lantern-text-secondary mb-6 max-w-sm">
+            {loadError}
+          </p>
+          <button
+            type="button"
+            onClick={retryLoadListings}
+            className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center transition-colors duration-150 text-sm shadow-sm"
+          >
+            <ArrowPathIcon className="w-4 h-4 mr-2" />
+            Retry
+          </button>
         </div>
       ) : listings.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -806,6 +871,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           guestMode={guestMode}
           onSignInRequired={onSignInRequired}
           primaryLabel="Sell"
+          showFavorites={!guestMode}
         />
 
         <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full">
