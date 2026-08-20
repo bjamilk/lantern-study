@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useToastStore } from '../stores/toastStore';
+import { useFlashcardStore } from '../stores/flashcardStore';
 import { Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
 import { ArrowUturnLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { escapeHtml } from '../utils/helpers';
@@ -10,11 +11,14 @@ import { FLASHCARD_GRADE_LABELS } from '@lantern/shared';
 import {
   FlashcardReviewAdvanceGuard,
   formatFreeformPointsForSvg,
+  formatStudyInterval,
   getBlurRegions,
   getFreeformPaths,
+  previewFsrsIntervals,
   resolveAutoAdvanceDelayMs,
 } from '@lantern/shared/utils';
 import { normalizeUserSettings } from '@lantern/shared/settings/userSettings';
+import { getSrsMaxInterval, isNewFlashcard } from '@lantern/shared/settings';
 import { useCompanionStore } from '../stores/companionStore';
 import { trackFlashcardReviewCompleted, trackStudyModeCompleted } from '../services/productAnalytics';
 import { useRegisterFeatureTip } from './featureTips/FeatureTip';
@@ -26,6 +30,35 @@ interface FlashcardReviewScreenProps {
   onEndSession: () => void;
 }
 
+type ReviewGrade = 'again' | 'hard' | 'good' | 'easy';
+type GradeCounts = Record<ReviewGrade, number>;
+
+const EMPTY_GRADE_COUNTS: GradeCounts = { again: 0, hard: 0, good: 0, easy: 0 };
+const REVIEW_GRADES: readonly ReviewGrade[] = ['again', 'hard', 'good', 'easy'];
+
+/**
+ * One-step undo history: everything needed to rewind the most recent grade so
+ * the card can be re-rated. Counts are snapshotted (not decremented) so undo
+ * can never double-count or drift.
+ */
+interface UndoSnapshot {
+  cardId: string;
+  index: number;
+  srsData: Flashcard['srsData'];
+  version: Flashcard['version'];
+  wasNew: boolean;
+  gradeCounts: GradeCounts;
+  newCount: number;
+}
+
+/** mm:ss elapsed label for the end-of-session summary. */
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, onUpdateSrs, onEndSession }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnswerShown, setIsAnswerShown] = useState(false);
@@ -34,9 +67,17 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   const [newComment, setNewComment] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  // Session stats for the end-of-session summary (grade breakdown + new vs review).
+  const [gradeCounts, setGradeCounts] = useState<GradeCounts>(EMPTY_GRADE_COUNTS);
+  const [newCount, setNewCount] = useState(0);
+  const [canUndo, setCanUndo] = useState(false);
 
   const currentUser = useAuthStore(state => state.currentUser);
   const advanceGuardRef = useRef(new FlashcardReviewAdvanceGuard());
+  // One-step undo of the most recent grade (Anki's 'z'). Ref so it doesn't
+  // re-render; `canUndo` mirrors its presence for the button's enabled state.
+  const undoRef = useRef<UndoSnapshot | null>(null);
+  const sessionStartRef = useRef<number>(Date.now());
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAdvanceGenerationRef = useRef<number | null>(null);
   const gradingRegionRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +92,16 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     pendingAdvanceGenerationRef.current == null;
   const canFlushPendingAdvance = pendingAdvanceGenerationRef.current != null;
   const canGoForward = canBrowseForward || canFlushPendingAdvance;
+
+  // Anki-style interval preview: what each grade WOULD schedule from here.
+  // Computed once per card (keyed on id + srsData + the user's max-interval
+  // setting) using the exact same maxInterval the real scheduler uses, so the
+  // dimmed chip under each button matches what grading will actually do.
+  const intervalPreview = useMemo(() => {
+    if (!currentCard) return null;
+    const maxInterval = getSrsMaxInterval(normalizeUserSettings(currentUser?.settings).study);
+    return previewFsrsIntervals(currentCard.srsData, { maxInterval });
+  }, [currentCard?.id, currentCard?.srsData, currentUser?.settings]);
 
   useRegisterFeatureTip('flashcards.grading', !isSessionComplete && session.cardQueue.length > 0);
 
@@ -96,10 +147,25 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     return true;
   }, [clearAutoAdvanceTimer, applyAdvance]);
 
-  const handleRatePerformance = useCallback((rating: 'again' | 'hard' | 'good' | 'easy') => {
+  const handleRatePerformance = useCallback((rating: ReviewGrade) => {
     if (!currentCard || ratingLocked) return;
     const claim = advanceGuardRef.current.tryClaimAdvance(currentCard.id);
     if (!claim.ok || claim.generation == null) return;
+
+    // Capture one-step undo history BEFORE the grade mutates store/session state.
+    const wasNew = isNewFlashcard(currentCard);
+    undoRef.current = {
+      cardId: currentCard.id,
+      index: currentIndex,
+      srsData: currentCard.srsData ? { ...currentCard.srsData } : undefined,
+      version: currentCard.version,
+      wasNew,
+      gradeCounts,
+      newCount,
+    };
+    setCanUndo(true);
+    setGradeCounts(prev => ({ ...prev, [rating]: prev[rating] + 1 }));
+    if (wasNew) setNewCount(prev => prev + 1);
 
     setRatingLocked(true);
     onUpdateSrs(currentCard.id, rating);
@@ -119,12 +185,57 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     }, delayMs);
   }, [
     currentCard,
+    currentIndex,
+    gradeCounts,
+    newCount,
     ratingLocked,
     onUpdateSrs,
     currentUser?.settings,
     clearAutoAdvanceTimer,
     applyAdvance,
   ]);
+
+  const handleUndo = useCallback(() => {
+    const snap = undoRef.current;
+    if (!snap) return;
+
+    // Cancel any in-flight auto-advance so it cannot fire after we rewind.
+    clearAutoAdvanceTimer();
+    pendingAdvanceGenerationRef.current = null;
+
+    // Restore the card's pre-grade srsData in the store so it becomes due again
+    // and can be re-rated. Server-sync nuance: if the grade was already POSTed
+    // we do NOT unsend it — clearing the pending local review stops a refetch
+    // from resurrecting the graded schedule, and the user's next grade re-posts
+    // the authoritative result over the old one.
+    const store = useFlashcardStore.getState();
+    store.clearPendingLocalReview(snap.cardId);
+    store.updateFlashcardInState(snap.cardId, { srsData: snap.srsData, version: snap.version });
+
+    // Un-rate exactly this card in the advance guard (the shared guard exposes
+    // no single-card un-rate, only a full reset that would break forward-browse
+    // over earlier graded cards — so reach the one flag out of its private set).
+    const guard = advanceGuardRef.current as unknown as { ratedCardIds?: Set<string> };
+    guard.ratedCardIds?.delete(snap.cardId);
+
+    // Restore session counters to their exact pre-grade values (no double count).
+    setGradeCounts(snap.gradeCounts);
+    setNewCount(snap.newCount);
+
+    undoRef.current = null;
+    setCanUndo(false);
+    setRatingLocked(false);
+
+    if (currentIndex === snap.index) {
+      // Auto-advance had not fired yet — we are still on the graded card, so
+      // just re-arm it in place (answer stays revealed for an immediate re-rate).
+      advanceGuardRef.current.setActiveCard(snap.cardId);
+    } else {
+      // Already advanced (or session ended) — rewind; the index-change effect
+      // resets answer/lock/guard state for the restored card.
+      setCurrentIndex(snap.index);
+    }
+  }, [clearAutoAdvanceTimer, currentIndex]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -136,6 +247,14 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
         target?.isContentEditable;
 
       if (isTypingTarget || isSessionComplete) return;
+
+      // Undo the most recent grade (Anki's 'z'). Single level, matches the button.
+      if ((event.key === 'z' || event.key === 'Z') && canUndo) {
+        if (event.repeat) return;
+        event.preventDefault();
+        handleUndo();
+        return;
+      }
 
       if (event.key === 'ArrowLeft' && canGoBack) {
         event.preventDefault();
@@ -188,6 +307,8 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   }, [
     canGoBack,
     canGoForward,
+    canUndo,
+    handleUndo,
     isSessionComplete,
     isAnswerShown,
     currentCard,
@@ -360,16 +481,74 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   };
 
   if (isSessionComplete) {
+    const reviewedCount = REVIEW_GRADES.reduce((sum, grade) => sum + gradeCounts[grade], 0);
+    const reviewOldCount = Math.max(0, reviewedCount - newCount);
+    const elapsedLabel = formatElapsed(Date.now() - sessionStartRef.current);
+
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-lantern-background">
-        <h2 className="text-2xl font-bold text-green-500 dark:text-green-400">Session Complete!</h2>
-        <p className="text-lantern-text-secondary mt-2">You've reviewed all due cards for this deck. Great work!</p>
-        <button
-          onClick={onEndSession}
-          className="mt-6 px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold transition-colors"
-        >
-          <ArrowUturnLeftIcon className="w-5 h-5 mr-2" /> Back to Decks
-        </button>
+        <div className="w-full max-w-md bg-lantern-surface rounded-lantern-xl shadow-lg border border-lantern-border p-6">
+          <h2 className="text-2xl font-bold text-green-500 dark:text-green-400">Session Complete!</h2>
+          <p className="text-lantern-text-secondary mt-1">
+            {reviewedCount === 0
+              ? 'No cards were rated this session.'
+              : `You reviewed ${reviewedCount} card${reviewedCount === 1 ? '' : 's'}. Great work!`}
+          </p>
+
+          <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Grade breakdown">
+            {REVIEW_GRADES.map((grade) => (
+              <div
+                key={grade}
+                className={`rounded-lg py-2 ${
+                  grade === 'again'
+                    ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                    : grade === 'hard'
+                      ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300'
+                      : grade === 'good'
+                        ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                        : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                }`}
+              >
+                <div className="text-xl font-bold tabular-nums">{gradeCounts[grade]}</div>
+                <div className="text-[11px] font-medium">{FLASHCARD_GRADE_LABELS[grade].label}</div>
+              </div>
+            ))}
+          </div>
+
+          <dl className="mt-5 flex items-stretch justify-center divide-x divide-lantern-border text-center">
+            <div className="px-4">
+              <dt className="text-[11px] uppercase tracking-wide text-lantern-text-tertiary">New</dt>
+              <dd className="text-lg font-semibold text-lantern-text tabular-nums">{newCount}</dd>
+            </div>
+            <div className="px-4">
+              <dt className="text-[11px] uppercase tracking-wide text-lantern-text-tertiary">Review</dt>
+              <dd className="text-lg font-semibold text-lantern-text tabular-nums">{reviewOldCount}</dd>
+            </div>
+            <div className="px-4">
+              <dt className="text-[11px] uppercase tracking-wide text-lantern-text-tertiary">Time</dt>
+              <dd className="text-lg font-semibold text-lantern-text tabular-nums">{elapsedLabel}</dd>
+            </div>
+          </dl>
+
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            {canUndo && (
+              <button
+                type="button"
+                onClick={handleUndo}
+                title="Undo last grade (Z)"
+                className="px-5 py-2.5 border border-lantern-border text-lantern-text rounded-md font-semibold hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors inline-flex items-center gap-2"
+              >
+                <ArrowUturnLeftIcon className="w-4 h-4" /> Undo last card
+              </button>
+            )}
+            <button
+              onClick={onEndSession}
+              className="px-6 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold transition-colors"
+            >
+              <ArrowUturnLeftIcon className="w-5 h-5 mr-2" /> Back to Decks
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -411,6 +590,15 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
         <h1 className="text-xl font-semibold text-rose-600 dark:text-rose-400">{session.deck.name}</h1>
         <div className="flex items-center gap-2">
           <span className="text-xs text-lantern-text-secondary mr-2">{currentIndex + 1} / {session.cardQueue.length}</span>
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={!canUndo}
+            title={canUndo ? 'Undo last grade (Z)' : 'Nothing to undo'}
+            className="px-3 py-1 text-sm font-medium rounded-full border border-lantern-border text-lantern-text disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors inline-flex items-center gap-1"
+          >
+            <ArrowUturnLeftIcon className="w-3.5 h-3.5" /> Undo
+          </button>
           <button
             type="button"
             onClick={handlePreviousCard}
@@ -485,6 +673,11 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
                   >
                     <span className="block">{FLASHCARD_GRADE_LABELS[grade].label}</span>
                     <span className="block text-xs font-normal opacity-80">{FLASHCARD_GRADE_LABELS[grade].meaning}</span>
+                    {intervalPreview && (
+                      <span className="mt-0.5 block text-[11px] font-normal tabular-nums opacity-60">
+                        {formatStudyInterval(intervalPreview[grade])}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
