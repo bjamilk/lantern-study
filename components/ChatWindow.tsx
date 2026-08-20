@@ -22,8 +22,6 @@ import {
   EllipsisVerticalIcon,
   UserGroupIcon,
   PencilSquareIcon,
-  QuestionMarkCircleIcon,
-  AcademicCapIcon,
   PlusCircleIcon,
   ArchiveBoxIcon,
   ChatBubbleLeftRightIcon,
@@ -1198,6 +1196,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   };
 
   const questionCount = visibleMessages.filter(m => m.questionType).length;
+  // Fold the question count into the header subtitle so we can drop the separate
+  // stats strip row (member count already backs `description` when unset).
+  const headerSubtitle = isGroup && !isArchived && questionCount > 0
+    ? `${description} · ${questionCount} question${questionCount !== 1 ? 's' : ''}`
+    : description;
 
   const chatPanelContent = (
     <>
@@ -1564,37 +1567,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-semibold truncate text-lantern-text" title={name}>{name}</h2>
-              <p className="text-xs text-lantern-text-secondary truncate" title={description}>
-                {isArchived ? <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span> : description}
+              <p className="text-xs text-lantern-text-secondary truncate" title={headerSubtitle}>
+                {isArchived ? <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span> : headerSubtitle}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Quick-action toolbar for groups (visible on md+) */}
+            {/* Quick-action toolbar for groups. Only the primary action (Question)
+                stays exposed on small screens; Test/Study fan out at lg+, and
+                everything else (visibility, Summarize) lives in the overflow menu
+                so each action sits in exactly one place per breakpoint. */}
             {isGroup && group && !isArchived && (
               <div className="flex items-center gap-1 mr-2">
-                <label className="hidden md:flex items-center" title="Question visibility">
-                  <span className="sr-only">Question visibility</span>
-                  <select
-                    value={questionVisibilityMode}
-                    onChange={(e) =>
-                      setQuestionVisibilityMode(e.target.value as QuestionVisibilityMode)
-                    }
-                    className="max-w-[9.5rem] text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary border border-lantern-border rounded-lantern px-2 py-1.5 hover:text-lantern-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-                    aria-label="Question visibility filter"
-                  >
-                    {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value} title={opt.helper}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <button
                   onClick={onOpenQuestionModal}
                   data-tip-id="chat.question"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
+                  className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Submit question"
                   title="Submit Question"
                 >
@@ -1604,7 +1593,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button
                   onClick={onOpenTestConfigModal}
                   data-tip-id="chat.test"
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Take a test"
                   title="Take a Test"
                 >
@@ -1614,25 +1603,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button
                   onClick={onOpenStudyConfigModal}
                   data-tip-id="chat.study"
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Study mode"
                   title="Study Mode"
                 >
                   <BookOpenIcon className="w-4 h-4" />
                   <span className="hidden lg:inline">Study</span>
                 </button>
-                <button
-                  onClick={handleSummarizeGroup}
-                  disabled={isSummarizingChat}
-                  data-tip-id="chat.summarize"
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-lantern transition-colors duration-200"
-                  aria-label="Summarize group chat with AI"
-                  title="AI Summary"
-                >
-                  <SparklesIcon className="w-4 h-4" />
-                  <span className="hidden lg:inline">{isSummarizingChat ? 'Summarizing…' : 'Summarize'}</span>
-                </button>
-
               </div>
             )}
 
@@ -1713,14 +1690,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         Create Sub-group
                       </MenuItem>
                       <MenuSeparator />
-                      <div className="md:hidden">
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenQuestionModal)} icon={<PencilSquareIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
-                          Submit New Question
-                        </MenuItem>
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<QuestionMarkCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                      <div className="lg:hidden">
+                        <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<ClipboardDocumentCheckIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                           Take a Test
                         </MenuItem>
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<AcademicCapIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                        <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<BookOpenIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                           Study Mode
                         </MenuItem>
                       </div>
@@ -1737,6 +1711,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         onSelect={() => handleDropdownAction(handleSummarizeGroup)}
                         icon={<SparklesIcon className="w-4 h-4" />}
                         className="text-lantern-primary"
+                        disabled={isSummarizingChat}
                       >
                         {isSummarizingChat ? 'Summarizing…' : 'Summarize Group Chat'}
                       </MenuItem>
@@ -1845,24 +1820,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </Menu>
           </div>
         </div>
-        {isGroup && !isArchived && (
-          <div className="flex items-center gap-4 px-4 md:px-6 py-2 bg-lantern-background-secondary/80 dark:bg-lantern-surface-secondary/50 border-b border-lantern-border/60 dark:border-lantern-border/60 text-xs text-lantern-text-secondary">
-            <span className="flex items-center gap-1">
-              <UserGroupIcon className="w-3.5 h-3.5" />
-              {memberCountText || 'Group'}
-            </span>
-            <span className="flex items-center gap-1">
-              <ChatBubbleLeftRightIcon className="w-3.5 h-3.5" />
-              {visibleMessages.length} message{visibleMessages.length !== 1 ? 's' : ''}
-            </span>
-            {questionCount > 0 && (
-              <span className="flex items-center gap-1">
-                <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
-                {questionCount} question{questionCount !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-        )}
         {chatMuted && (
           <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300">
             <span className="inline-flex items-center gap-1.5 min-w-0">

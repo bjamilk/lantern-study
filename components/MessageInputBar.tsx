@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon } from '@heroicons/react/24/solid';
-import { featureAccents } from '@lantern/shared/design';
 import {
   buildChatAudioMarkdown,
   chatMessagePreview,
@@ -525,14 +524,6 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             <PaperAirplaneIcon className="w-5 h-5" />
           </button>
         )}
-      </div>
-      <div className="flex items-center justify-between mt-1.5 ml-1">
-        <p className="text-[11px] text-lantern-text-tertiary hidden sm:block">
-          Press <kbd className="px-1 py-0.5 rounded bg-lantern-background-secondary text-lantern-text-secondary text-[10px] font-mono">Enter</kbd> to send
-        </p>
-        <p className="text-[10px] hidden sm:block" style={{ color: featureAccents.groups }}>
-          Tip: @username to mention · mic for voice note
-        </p>
       </div>
     </div>
   );
