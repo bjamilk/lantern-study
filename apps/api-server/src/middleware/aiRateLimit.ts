@@ -243,6 +243,19 @@ export async function refundAiCredits(userId: string, amount: number): Promise<v
   await reserveUsage(userId, Number.MAX_SAFE_INTEGER, -credits);
 }
 
+/**
+ * Give back the one global + one feature credit reserved by
+ * aiRateLimitForFeature, for handlers that answer 2xx without doing AI work
+ * (e.g. a quiz regenerate that returns the existing quiz untouched). Non-2xx
+ * responses are refunded automatically by the middleware itself.
+ */
+export async function refundFeatureAiCredit(userId: string, featureKey: string): Promise<void> {
+  await Promise.all([
+    releaseUsage(userId, 1),
+    releaseUsage(buildUsageKey(userId, featureKey), 1),
+  ]);
+}
+
 export const AI_COST_HEADER = 'X-AI-Cost';
 
 /** Every response header this module can set. CORS must expose all of these. */

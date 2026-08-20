@@ -13,6 +13,7 @@ import {
   applyGlobalUsageHeaders,
   chargeAiCredits,
   refundAiCredits,
+  refundFeatureAiCredit,
   NOTE_OCR_CREDIT_COST,
 } from '../middleware/aiRateLimit';
 import { getSmartNotesCreditCost } from '@lantern/shared/utils/aiCredits';
@@ -280,6 +281,109 @@ async function tryChargeAutoOcrCredits(userId: string): Promise<boolean> {
     return false;
   }
   return true;
+}
+
+/**
+ * The upload response already told the client OCR is running
+ * (extractionStatus 'ocr_processing', ocrQueued: true) — but the credit charge
+ * happens after that response, fire-and-forget. If the job can never start
+ * (daily AI limit hit, enqueue failure), nothing would revert that metadata:
+ * resolveOcrStatus kept answering 'processing', and the client polled a doomed
+ * 240s "Running OCR on scanned pages…" loop. Revert the attachment to
+ * 'needs_ocr' so the poll exits and the editor offers the manual Run OCR
+ * button instead.
+ *
+ * Exported for tests.
+ */
+export async function revertAttachmentToNeedsOcr(params: {
+  noteId: string;
+  attachmentId: string;
+  /** Metadata written at upload time; fallback when the attachment cannot be re-read. */
+  meta: Record<string, unknown>;
+  /** Replaces the "[Running OCR…]" placeholder (usually the thin extracted text). */
+  fallbackText?: string;
+  reason: string;
+}): Promise<void> {
+  try {
+    let latest = params.meta;
+    try {
+      const current = await supabaseService.getNoteAttachment(params.noteId, params.attachmentId);
+      if (current?.metadata && typeof current.metadata === 'object') {
+        latest = current.metadata as Record<string, unknown>;
+      }
+    } catch {
+      // Re-read is best-effort; fall back to the meta we wrote at upload.
+    }
+    // Never clobber a state some other path already resolved (a worker that
+    // did run, a manual OCR, a concurrent revert).
+    if (latest.extractionStatus !== 'ocr_processing') return;
+    await supabaseService.updateNoteAttachment(params.attachmentId, {
+      ...(params.fallbackText !== undefined ? { extractedText: params.fallbackText } : {}),
+      metadata: {
+        ...latest,
+        extractionStatus: 'needs_ocr',
+        ocrError: params.reason,
+        ocrStartedAt: undefined,
+        ocrProvider: undefined,
+      },
+    });
+  } catch (err) {
+    logger.warn('Failed to revert attachment to needs_ocr after OCR could not start', {
+      noteId: params.noteId,
+      attachmentId: params.attachmentId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Fire-and-forget auto-OCR for a freshly uploaded PDF: charge credits, then
+ * start the job — and on either failing, revert the attachment out of
+ * 'ocr_processing' (see revertAttachmentToNeedsOcr). Callers `void` the
+ * returned promise; it never rejects. Exported for tests.
+ */
+export async function autoStartPdfOcrOrRevert(params: {
+  noteId: string;
+  attachmentId: string;
+  storagePath: string;
+  fileName: string;
+  meta: Record<string, unknown>;
+  userId: string;
+  /** Text to restore over the OCR placeholder when OCR cannot start. */
+  fallbackText: string;
+}): Promise<void> {
+  const { noteId, attachmentId, storagePath, fileName, meta, userId, fallbackText } = params;
+  try {
+    const charged = await tryChargeAutoOcrCredits(userId);
+    if (!charged) {
+      await revertAttachmentToNeedsOcr({
+        noteId,
+        attachmentId,
+        meta,
+        fallbackText,
+        reason: 'Daily AI limit reached — run OCR manually when credits reset',
+      });
+      return;
+    }
+    await startNoteOcrJob({
+      noteId,
+      attachmentId,
+      storagePath,
+      fileName,
+      sourceKind: 'pdf',
+      meta,
+      userId,
+    });
+  } catch (err) {
+    logger.error('Failed to start PDF OCR job', { noteId, err });
+    await revertAttachmentToNeedsOcr({
+      noteId,
+      attachmentId,
+      meta,
+      fallbackText,
+      reason: 'OCR could not be started. Run OCR manually to retry.',
+    });
+  }
 }
 
 async function startNoteOcrJob(params: {
@@ -563,19 +667,14 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
   }
 
   if (willOcr) {
-    void tryChargeAutoOcrCredits(userId).then((charged) => {
-      if (!charged) return;
-      return startNoteOcrJob({
-        noteId: note.id,
-        attachmentId: attachment.id,
-        storagePath,
-        fileName: String(fileName),
-        sourceKind: 'pdf',
-        meta: attachmentMeta,
-        userId,
-      });
-    }).catch((err) => {
-      logger.error('Failed to start PDF OCR job', { noteId: note.id, err });
+    void autoStartPdfOcrOrRevert({
+      noteId: note.id,
+      attachmentId: attachment.id,
+      storagePath,
+      fileName: String(fileName),
+      meta: attachmentMeta,
+      userId,
+      fallbackText: studyText,
     });
   }
 
@@ -877,19 +976,14 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   }
 
   if (willOcr) {
-    void tryChargeAutoOcrCredits(userId).then((charged) => {
-      if (!charged) return;
-      return startNoteOcrJob({
-        noteId: note.id,
-        attachmentId: attachment.id,
-        storagePath: ownedPath,
-        fileName: safeName,
-        sourceKind: 'pdf',
-        meta: attachmentMeta,
-        userId,
-      });
-    }).catch((err) => {
-      logger.error('Failed to start PDF OCR job', { noteId: note.id, err });
+    void autoStartPdfOcrOrRevert({
+      noteId: note.id,
+      attachmentId: attachment.id,
+      storagePath: ownedPath,
+      fileName: safeName,
+      meta: attachmentMeta,
+      userId,
+      fallbackText: studyText,
     });
   }
 
@@ -2031,6 +2125,20 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
     return;
   }
   const { studyGoal, count } = req.body || {};
+
+  // REL-02: a quiz with answers or a completed run is never overwritten by
+  // regenerate. Check BEFORE generating — the old order generated first and
+  // let upsertNoteQuiz refuse afterwards, burning an AI generation (and the
+  // middleware-reserved credits) for questions that were thrown away.
+  const existingQuiz = await supabaseService.getNoteQuiz(userId, note.id);
+  if (existingQuiz && supabaseService.isNoteQuizProtected(existingQuiz)) {
+    // No AI work happened — give the reserved feature + global credits back.
+    await refundFeatureAiCredit(userId, 'generate_questions');
+    await applyGlobalUsageHeaders(res, userId);
+    res.json({ success: true, data: { ...existingQuiz, reused: true } });
+    return;
+  }
+
   const sliced = content.slice(0, 8000);
   const outcome = await runSyncOrEnqueue(
     'notes.ai.quiz',

@@ -310,7 +310,7 @@ router.put(
     if (!userId) return;
 
     const { flashcardId } = req.params;
-    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags, expectedVersion } =
+    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags, expectedVersion, type, deckId } =
       req.body;
 
     if (srsData !== undefined) {
@@ -318,6 +318,31 @@ router.put(
         success: false,
         error: 'Use POST /flashcards/:flashcardId/review to update SRS scheduling data',
       });
+    }
+
+    // `type` and `deckId` are not updatable, and used to be silently dropped —
+    // clients showed the edit as saved while the server discarded it. Refuse
+    // loudly instead; identical values pass through as no-ops.
+    if (type !== undefined || deckId !== undefined) {
+      const existing = await supabaseService.getFlashcardForUser(flashcardId, userId);
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          error: 'Flashcard not found',
+        });
+      }
+      if (type !== undefined && type !== existing.type) {
+        return res.status(400).json({
+          success: false,
+          error: "Card type can't be changed — recreate the card as the new type",
+        });
+      }
+      if (deckId !== undefined && deckId !== existing.deck_id) {
+        return res.status(400).json({
+          success: false,
+          error: "Moving cards between decks isn't supported yet",
+        });
+      }
     }
 
     logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), imageUrl, userId });

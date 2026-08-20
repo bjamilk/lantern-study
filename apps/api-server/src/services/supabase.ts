@@ -4583,6 +4583,23 @@ export class SupabaseService {
 
     if (cardError) throw cardError;
 
+    // Reviews read the card (and its version) through the per-card caches
+    // (`flashcard:{id}` and `flashcard:{id}:user:{userId}`). The bulk update
+    // above just changed every card underneath those entries, so a review
+    // graded after a reset would validate against a stale version and be
+    // dropped. Purge each card's cache entries so the next read is fresh.
+    const { data: deckCards, error: deckCardsError } = await this.supabase
+      .from("flashcards")
+      .select("id")
+      .eq("deck_id", deckId);
+    if (deckCardsError) throw deckCardsError;
+    await Promise.all(
+      ((deckCards || []) as Array<{ id: string }>).flatMap((card) => [
+        cacheService.delete(`flashcard:${card.id}`),
+        cacheService.deletePattern(`flashcard:${card.id}:user:*`),
+      ]),
+    );
+
     // also invalidate any related cache entries
     await cacheService.deletePattern(`flashcards:*`);
     await cacheService.delete(`deck:${deckId}`);
@@ -12382,6 +12399,25 @@ export class SupabaseService {
     return data ? this.mapNoteQuiz(data) : null;
   }
 
+  /**
+   * REL-02: a quiz with recorded answers or a completed run must never be
+   * overwritten by regenerate. Shared by upsertNoteQuiz and the quiz route's
+   * pre-generation check (so a refused regenerate never burns an AI call).
+   */
+  isNoteQuizProtected(
+    quiz:
+      | { completed?: boolean; answers?: Record<string, unknown> | null }
+      | null
+      | undefined,
+  ): boolean {
+    if (!quiz) return false;
+    const answerCount =
+      quiz.answers && typeof quiz.answers === "object"
+        ? Object.keys(quiz.answers).length
+        : 0;
+    return Boolean(quiz.completed) || answerCount > 0;
+  }
+
   async upsertNoteQuiz(
     userId: string,
     noteId: string,
@@ -12393,16 +12429,19 @@ export class SupabaseService {
     await this.getNote(noteId, userId);
 
     // REL-02: never wipe an in-progress or completed quiz on regenerate.
+    // `reused: true` tells the client the questions it got back are the old
+    // ones, not a fresh generation (absent means fresh).
     const existing = await this.getNoteQuiz(userId, noteId);
     if (existing) {
-      const answerCount =
-        existing.answers && typeof existing.answers === "object"
-          ? Object.keys(existing.answers).length
-          : 0;
-      if (existing.completed || answerCount > 0) {
-        return existing;
+      if (this.isNoteQuizProtected(existing)) {
+        return { ...existing, reused: true };
       }
 
+      // Race guard is `completed = false` only. Do NOT add a jsonb equality
+      // filter here: postgrest-js serializes `.eq("answers", {})` as
+      // `answers=eq.[object Object]`, which Postgres cannot cast to jsonb, so
+      // every regenerate of an untouched quiz 500'd after the AI had already
+      // generated the new questions.
       const { data, error } = await this.supabase
         .from("note_quizzes")
         .update({
@@ -12415,13 +12454,14 @@ export class SupabaseService {
         .eq("note_id", noteId)
         .eq("user_id", userId)
         .eq("completed", false)
-        .eq("answers", {})
         .select()
         .maybeSingle();
       if (error) throw error;
       if (!data) {
+        // The quiz was completed between the pre-check and the update; hand
+        // back the winner's quiz rather than wipe it.
         const raced = await this.getNoteQuiz(userId, noteId);
-        if (raced) return raced;
+        if (raced) return { ...raced, reused: true };
         throw new Error("Failed to update note quiz");
       }
       return this.mapNoteQuiz(data);

@@ -50,6 +50,12 @@ interface FlashcardState {
   dueCardsCount: number;
   isLoading: boolean;
   error: string | null;
+  /** Bootstrap deck/flashcard fetch failure; FlashcardsScreen renders it with Retry. */
+  deckLoadError: string | null;
+  setDeckLoadError: (error: string | null) => void;
+  /** Registered by the bootstrap effect so the error panel's Retry can re-run the fetches. */
+  retryDeckBootstrap?: () => void;
+  setRetryDeckBootstrap: (fn: (() => void) | undefined) => void;
 
   // offline-related IDs
   offlineDeckIds: string[];
@@ -107,7 +113,11 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
   error: null,
   offlineDeckIds: [],
   pendingFlashcardReviews: [],
-  
+  deckLoadError: null,
+  setDeckLoadError: (error) => set({ deckLoadError: error }),
+  retryDeckBootstrap: undefined,
+  setRetryDeckBootstrap: (fn) => set({ retryDeckBootstrap: fn }),
+
   // State Management - Decks
   // Every mutating action persists via saveToStorage() so offline users keep
   // their library across reloads (plain zustand has no selector subscriptions).

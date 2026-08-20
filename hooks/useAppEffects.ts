@@ -800,6 +800,42 @@ export function useAppEffects({
                     // affordances survive the bootstrap load.
                     setDecks(mapDecksFromApi(decksResult.value || []));
                 }
+                // A failed deck/card load must render as an error with Retry,
+                // never as the "No flashcard decks yet" empty state.
+                {
+                    const flashcardStore = useFlashcardStore.getState();
+                    const loadFailure =
+                        decksResult.status === 'rejected'
+                            ? decksResult.reason
+                            : flashcardsResult.status === 'rejected'
+                              ? flashcardsResult.reason
+                              : null;
+                    flashcardStore.setDeckLoadError(
+                        loadFailure
+                            ? (loadFailure instanceof Error && loadFailure.message) ||
+                                  "Couldn't load your decks — check your connection."
+                            : null
+                    );
+                    flashcardStore.setRetryDeckBootstrap(() => {
+                        void (async () => {
+                            const store = useFlashcardStore.getState();
+                            try {
+                                const [freshDecks, freshCards] = await Promise.all([
+                                    fetchDecks(userId, { includeShared: true }),
+                                    fetchAllFlashcards(undefined, userId),
+                                ]);
+                                store.setDecks(mapDecksFromApi(freshDecks || []));
+                                store.setFlashcards(freshCards);
+                                store.setDeckLoadError(null);
+                            } catch (retryErr) {
+                                store.setDeckLoadError(
+                                    (retryErr instanceof Error && retryErr.message) ||
+                                        "Couldn't load your decks — check your connection."
+                                );
+                            }
+                        })();
+                    });
+                }
                 void useNotesStore.getState().loadFolders();
                 void useNotesStore.getState().loadNotes();
 
