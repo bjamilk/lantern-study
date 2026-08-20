@@ -1946,6 +1946,55 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </TabList>
           </div>
 
+          {/* Sticky deal bar — surfaces the ONE primary action in the chat view so a
+              buyer/seller never has to hunt in the Offers tab. Hidden once an order
+              exists (the order bar below drives those states). */}
+          {!activeOrder && (() => {
+            const pending = activeOffer && activeOffer.status === 'pending' ? activeOffer : null;
+            const canRespond = pending ? canRespondToOffer(pending, currentUser.id) : false;
+            const canWithdraw = pending ? canWithdrawOffer(pending, currentUser.id) : false;
+            const isBuyer = currentUser.id === inquiry.buyer_id;
+            if (inquiry.status === 'purchased' || inquiry.status === 'closed') return null;
+            return (
+              <div className="flex-shrink-0 px-4 py-2.5 bg-lantern-surface border-b border-lantern-border flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                {pending ? (
+                  <>
+                    <span className="text-xs font-semibold text-lantern-text">
+                      {getOfferProposedBy(pending) === 'seller' ? 'Counter-offer' : 'Offer'}: ₦{pending.amount.toLocaleString()}
+                    </span>
+                    {canRespond ? (
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('accept')} className="text-xs font-semibold px-3 py-1.5 rounded-lantern bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">Accept</button>
+                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('decline')} className="text-xs font-semibold px-3 py-1.5 rounded-lantern border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background-secondary disabled:opacity-50">Decline</button>
+                        <button type="button" onClick={() => setActiveTab('offers')} className="text-xs font-medium px-2 py-1.5 text-lantern-primary hover:underline">Counter</button>
+                      </div>
+                    ) : canWithdraw ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-lantern-text-secondary">Waiting for a response</span>
+                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('withdraw')} className="text-xs font-medium px-2 py-1.5 text-lantern-text-secondary hover:text-red-600 hover:underline disabled:opacity-50">Withdraw</button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-lantern-text-secondary">Awaiting a response</span>
+                    )}
+                  </>
+                ) : isBuyer ? (
+                  <>
+                    <span className="text-xs text-lantern-text-secondary">No active offer.</span>
+                    <button type="button" onClick={() => setShowMakeOfferModal(true)} className="text-xs font-semibold px-3 py-1.5 rounded-lantern bg-emerald-600 text-white hover:bg-emerald-700 inline-flex items-center gap-1.5">
+                      <CurrencyDollarIcon className="w-3.5 h-3.5" /> Make an offer
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-xs text-lantern-text-secondary">Waiting for the buyer to make an offer.</span>
+                )}
+                <button type="button" onClick={() => setActiveTab(activeTab === 'offers' ? 'chat' : 'offers')} className="ml-auto text-[11px] font-medium text-lantern-primary hover:underline">
+                  {activeTab === 'offers' ? 'View chat' : 'View details'}
+                </button>
+                <span className="basis-full text-[10px] text-lantern-text-tertiary">Paystack-protected · 5% service charge on purchase</span>
+              </div>
+            );
+          })()}
+
           {activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
             <div className="flex-shrink-0 px-4 py-2 bg-lantern-primary-background dark:bg-lantern-primary-background border-b border-lantern-primary/20 dark:border-lantern-primary/30 flex flex-wrap gap-2 items-center">
               <span className="text-xs font-medium text-lantern-primary-dark dark:text-lantern-primary-light">
