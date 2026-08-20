@@ -580,6 +580,29 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     commits: ['3cfaebd', 'a2fa9a5', '5af0573'],
   },
   {
+    id: 'mobile-marketplace-study-1-0-26',
+    title: 'Mobile — marketplace, jobs, and study release (1.0.26)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-08-20',
+    summary:
+      'The 1.0.26 build lands the session-long marketplace/jobs/library work on mobile: full jobs filters and employer tools, honest sold-out/expired/offer states, and Anki-style flashcard review polish.',
+    details: [
+      'Jobs browse gained the full filter set (all 8 employment types, pay, compensation, location, and sort — the minPay filter and closing-soon sort were previously unreachable on phones), plus employer logo/company/member tools, the applicant-profile editor, and in-app reading of applicants’ screening answers.',
+      'Jobs safety/honesty: template placeholders can no longer be published as real jobs, a passed deadline closes applications, deleting a note now confirms first, the editor’s Quiz button stores a quiz that actually opens on the dashboard, reviews are gated to real buyers (no more hardcoded 5-star), and Pay now / View order reach the order an accepted offer created.',
+      'Marketplace: sold-out and expired listings drop their purchase CTAs, editing a listing no longer rewrites its sale end date, bundle creation works (it now sends the required campus), and item condition is filterable.',
+      'Study: flashcard review shows the interval each grade would schedule, an undo-last-grade, and an end-of-session summary; a lapsed card no longer silently falls out of the review queue; Import & Study actually saves what it generates; and note previews render clean text instead of raw markdown.',
+    ],
+    howToUse: ['Explore → Jobs (filters, employer hub); Explore → Goods (condition filter); Library → study a deck (grade previews, undo, summary).'],
+    surfaces: ['mobile'],
+    adminNotes: [
+      'APKs are published to the bjamilk/lantern-study-releases repo; the site’s download link tracks the latest release asset.',
+      'Ship via full builds, never OTA — OTA from main has crash-looped Android before.',
+      'The web + API halves of this work were already deployed; 1.0.26 is the mobile binary that captures it.',
+    ],
+    commits: ['0e9eec4', 'e31ac98', '9af6337', 'b49f3b8', '05f5792'],
+  },
+  {
     id: 'mobile-stability-1-0-25',
     title: 'Mobile — stability and UX fixes through 1.0.25',
     area: 'platform',

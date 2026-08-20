@@ -103,7 +103,21 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.25: the AI credit counter starts from the new 20-request daily
   // allowance instead of a stale 100 — the server cut the limit and the app
   // had the old number baked in as its pre-response default.
-  version: '1.0.25',
+  // 1.0.26: a big marketplace + study release. JOBS: browse now has the full
+  // filter set (all job types, pay, compensation, location, sort — the minPay
+  // filter and 'closing soon' sort were unreachable before); employers get
+  // logo/company/member tools and can read applicants' screening answers;
+  // deleting a note asks first; the Quiz button's quiz now actually opens on
+  // your dashboard; template placeholders can't be posted as real jobs; a
+  // passed deadline closes applications; and Pay now / View order reach the
+  // order an accepted offer created. MARKETPLACE: sold-out and expired states
+  // are honest, editing a listing no longer wipes its sale end date, bundle
+  // creation works, and item condition is filterable. STUDY: flashcard review
+  // gains an interval preview on each grade button, undo-last-grade, and an
+  // end-of-session summary; a lapsed card no longer silently drops out of the
+  // review queue; imported study material is actually saved (not just counted);
+  // and note previews read as clean text instead of raw markdown.
+  version: '1.0.26',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
