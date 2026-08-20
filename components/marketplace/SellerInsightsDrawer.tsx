@@ -224,14 +224,14 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
 
         <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border space-y-3">
           <p className="text-xs font-semibold text-lantern-text-secondary">Seller preferences</p>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={requirePaymentConfirmation}
-              onChange={e => onRequirePaymentConfirmationChange(e.target.checked)}
-            />
-            Require payment proof before marking orders paid (legacy offline path)
-          </label>
+          {/* The require-payment-confirmation toggle is gone: every order now
+              starts pending_payment and only the seller can confirm payment
+              received, so the preference no longer changes anything — a toggle
+              that does nothing is worse than none. The stored preference is
+              kept server-side for compatibility. */}
+          <p className="text-xs text-lantern-text-tertiary">
+            Every sale now waits for you to confirm payment before it counts as paid — cash at pickup included.
+          </p>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"

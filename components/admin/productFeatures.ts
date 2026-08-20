@@ -328,6 +328,35 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     commits: ['1bd5159'],
   },
   {
+    id: 'marketplace-honest-payment-states',
+    title: 'Marketplace — honest payment states (Paystack groundwork)',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-08-20',
+    summary:
+      'Orders can no longer claim payment that never happened: every sale starts unpaid, only the seller (or a verified Paystack settlement) can mark it paid, and timelines show payment evidence rather than inferring it.',
+    details: [
+      'Orders are always created pending_payment. Previously they were born status "paid" unless the seller had opted into confirmation — clicking Pay recorded a payment with no money moving.',
+      'mark_paid is seller-only (the receiving party attests; cash at pickup counts) and stamps paid_at after the status commits. The buyer can no longer flip their own order to paid.',
+      'The seller\u2019s "Request payment" no longer flips the order to paid as a side effect of asking.',
+      'Both clients\u2019 order timelines show "Paid" only on evidence (paid_at or current paid status), distinguishing "Paid via Paystack" from "Payment confirmed by seller". A Paystack session id alone is not evidence — it exists from checkout initialization.',
+      'Paystack settlement hardening for go-live: currency validated with amount, settlement mismatches reported to Sentry and stamped on the payment row, checkout retries reuse the open session instead of leaking rows, webhook signature compared in constant time.',
+    ],
+    howToUse: [
+      'Buyer: Pay now \u2192 order shows "Payment required" \u2192 pay by transfer (upload receipt) or cash at pickup.',
+      'Seller: order detail \u2192 Confirm payment received (no receipt needed for cash) \u2192 Mark ready \u2192 buyer confirms.',
+      'Go-live for real payments: set PAYSTACK_SECRET_KEY, PAYSTACK_PUBLIC_KEY, MARKETPLACE_PAYSTACK_CHECKOUT=true in Render and point the Paystack webhook at /webhooks/paystack.',
+    ],
+    surfaces: ['web', 'mobile', 'api', 'database'],
+    adminNotes: [
+      'Migration 20260820120000 (orders.paid_at + backfill from settled payments) is hand-applied; until it lands, seller confirmations log a warning and timelines fall back to current status.',
+      'Legacy orders that reached paid/completed through the old no-evidence paths keep paid_at NULL on purpose — stamping them would fabricate the record this change removes.',
+      'Mobile UI changes ride the next app release; shipped builds still gate seller actions behind a proof upload.',
+      'The seller "require payment confirmation" preference is now inert (every order requires it); the toggle was replaced with a note.',
+    ],
+    commits: [],
+  },
+  {
     id: 'marketplace-question-banks',
     title: 'Marketplace — question banks (digital study bundles)',
     area: 'marketplace',

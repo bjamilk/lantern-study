@@ -186,15 +186,13 @@ export function SellerInsightsModal({
 
             <View className="p-3 rounded-xl bg-lantern-background border border-lantern-border">
               <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Seller preferences</Text>
-              <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-sm text-lantern-text flex-1 mr-2">
-                  Require payment proof before marking paid
-                </Text>
-                <Switch
-                  value={requirePaymentConfirmation}
-                  onValueChange={onRequirePaymentConfirmationChange}
-                />
-              </View>
+              {/* The require-payment-confirmation switch is gone: every order
+                  now starts pending_payment and only the seller can confirm
+                  payment, so the preference no longer changes anything. Props
+                  stay wired for compatibility with the stored preference. */}
+              <Text className="text-xs text-lantern-text-secondary mb-2">
+                Every sale now waits for you to confirm payment before it counts as paid — cash at pickup included.
+              </Text>
               <View className="flex-row items-center justify-between mb-2">
                 <Text className="text-sm text-lantern-text flex-1 mr-2">Offer hall dropoff</Text>
                 <Switch value={hallDropoffEnabled} onValueChange={onHallDropoffEnabledChange} />

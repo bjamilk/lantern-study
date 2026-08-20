@@ -283,18 +283,48 @@ export class MarketplacePaymentsService {
     if (order.buyer_id !== input.buyerId) throw new Error('Unauthorized');
     await this.assertSellerCanReceivePayout(order.seller_id);
 
+    const itemAmountKobo = nairaToKobo(Number(order.amount));
+
     if (order.payment_id) {
       const { data: existing } = await this.db
         .from('marketplace_payments')
         .select('*')
         .eq('id', order.payment_id)
         .maybeSingle();
-      if (existing?.status === 'initialized' && existing.paystack_access_code) {
-        // Re-init if needed — return verify path; for simplicity create new only when missing URL
+      // Reuse the open Paystack session when nothing about the charge changed.
+      // This block used to be empty — a comment and no code — so every retry
+      // inserted a fresh 'initialized' payment row and re-pointed the order at
+      // it, leaving orphans that a late charge.success could still settle.
+      const existingUrl =
+        (existing?.metadata as Record<string, any> | null)?.authorizationUrl ||
+        (existing?.paystack_access_code
+          ? `https://checkout.paystack.com/${existing.paystack_access_code}`
+          : null);
+      if (
+        existing?.status === 'initialized' &&
+        existing.paystack_access_code &&
+        existingUrl &&
+        Number(existing.item_amount_kobo) === itemAmountKobo
+      ) {
+        const refreshedOrder = await this.orders.getOrderById(order.id, input.buyerId);
+        return {
+          order: refreshedOrder || order,
+          payment: {
+            id: existing.id,
+            reference: existing.paystack_reference,
+            status: 'initialized',
+            itemAmountKobo: Number(existing.item_amount_kobo),
+            serviceFeeKobo: Number(existing.service_fee_kobo),
+            totalChargeKobo: Number(existing.total_charged_kobo),
+            currency: existing.currency,
+          },
+          authorizationUrl: existingUrl,
+          accessCode: existing.paystack_access_code,
+          publicKey: getPaystackPublicKey(),
+        };
       }
     }
 
-    const itemAmountKobo = nairaToKobo(Number(order.amount));
     const fees = computeMarketplaceCheckoutFees(
       itemAmountKobo,
       resolveMarketplaceServiceFeeBps(process.env.MARKETPLACE_SERVICE_FEE_BPS)
@@ -440,11 +470,17 @@ export class MarketplacePaymentsService {
     if (verified.status !== 'success') {
       throw new Error(`Payment not successful (${verified.status})`);
     }
-    if (Number(verified.amount) !== Number(payment.total_charged_kobo)) {
-      logger.error('Paystack amount mismatch', {
+    if (
+      Number(verified.amount) !== Number(payment.total_charged_kobo) ||
+      (verified.currency && verified.currency !== payment.currency)
+    ) {
+      await this.recordSettlementMismatch(payment, {
+        source: 'verify',
         reference,
-        expected: payment.total_charged_kobo,
-        got: verified.amount,
+        expectedAmount: Number(payment.total_charged_kobo),
+        gotAmount: Number(verified.amount),
+        expectedCurrency: payment.currency,
+        gotCurrency: verified.currency,
       });
       throw new Error('Payment amount mismatch');
     }
@@ -497,6 +533,7 @@ export class MarketplacePaymentsService {
         .update({ status: 'paid' })
         .eq('id', payment.order_id)
         .in('status', ['awaiting_payment', 'pending_payment']);
+      await this.orders.stampOrderPaidAt(payment.order_id, now);
 
       // Digital question banks fulfill instantly: deliver, complete, pay out.
       // Everything else keeps the meetup flow.
@@ -779,6 +816,50 @@ export class MarketplacePaymentsService {
     }
   }
 
+  /**
+   * A settlement arrived whose amount or currency does not match what we
+   * initialized. Money may have been captured without the order settling —
+   * the worst silent failure a payment system can have — so this both reports
+   * to Sentry and stamps the payment row's metadata for reconciliation.
+   */
+  private async recordSettlementMismatch(
+    payment: Record<string, any>,
+    details: {
+      source: 'verify' | 'webhook';
+      reference: string;
+      expectedAmount: number;
+      gotAmount: number;
+      expectedCurrency?: string;
+      gotCurrency?: string;
+    }
+  ): Promise<void> {
+    logger.error('Paystack settlement mismatch', details);
+    try {
+      const { captureException } = await import('../utils/sentry');
+      captureException(new Error('Paystack settlement mismatch — captured funds did not settle an order'), {
+        ...details,
+        paymentId: payment.id,
+        orderId: payment.order_id,
+      });
+    } catch {
+      // reporting must never break the webhook path
+    }
+    try {
+      await this.db
+        .from('marketplace_payments')
+        .update({
+          metadata: {
+            ...(payment.metadata || {}),
+            settlement_mismatch: { ...details, at: new Date().toISOString() },
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', payment.id);
+    } catch {
+      // best-effort stamp
+    }
+  }
+
   async handleWebhook(rawBody: string | Buffer, signature: string | undefined) {
     if (!verifyPaystackSignature(rawBody, signature)) {
       const err = new Error('Invalid Paystack webhook signature');
@@ -817,8 +898,21 @@ export class MarketplacePaymentsService {
         .eq('paystack_reference', reference)
         .maybeSingle();
       if (payment) {
-        if (Number(data.amount) !== Number(payment.total_charged_kobo)) {
-          logger.error('Webhook amount mismatch', { reference, expected: payment.total_charged_kobo, got: data.amount });
+        const amountMismatch = Number(data.amount) !== Number(payment.total_charged_kobo);
+        const currencyMismatch = Boolean(data.currency && data.currency !== payment.currency);
+        if (amountMismatch || currencyMismatch) {
+          // The event is already consumed by the dedupe row above and Paystack
+          // gets a 200, so this is the ONLY trace that money was captured
+          // without settling the order. Make it impossible to miss: Sentry
+          // event + a mismatch stamp on the payment row for reconciliation.
+          await this.recordSettlementMismatch(payment, {
+            source: 'webhook',
+            reference,
+            expectedAmount: Number(payment.total_charged_kobo),
+            gotAmount: Number(data.amount),
+            expectedCurrency: payment.currency,
+            gotCurrency: data.currency,
+          });
         } else {
           await this.markPaymentPaid(payment.id, String(data.id || reference), data.paid_at);
         }

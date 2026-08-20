@@ -241,10 +241,16 @@ export function OrderDetailScreen({
               Accepted {order.created_at ? '✓' : '—'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
-              Paid{' '}
-              {order.status !== 'pending_payment' && order.status !== 'awaiting_payment'
-                ? '✓'
-                : '—'}
+              {/* Only evidence counts: a paid_at stamp or the order currently
+                  in 'paid'. payment_id is NOT evidence — it is written when a
+                  Paystack session is initialized, before any money moves, and
+                  survives abandonment. Status ordering alone is not evidence
+                  either: ready-before-payment used to display as paid. */}
+              {(order as { paid_at?: string | null }).paid_at || order.status === 'paid'
+                ? (order as { payment_id?: string | null }).payment_id
+                  ? 'Paid via Paystack ✓'
+                  : 'Payment confirmed by seller ✓'
+                : 'Paid —'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
               Ready for pickup{' '}
@@ -287,26 +293,36 @@ export function OrderDetailScreen({
           <View className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 gap-3">
             <Text className="font-semibold text-amber-900 dark:text-amber-200">Payment required</Text>
             <Text className="text-sm text-amber-800 dark:text-amber-300">
-              Pay the seller, then upload your transfer receipt.
+              {isBuyer
+                ? 'Pay the seller using the agreed method. For transfers, upload your receipt; for cash, pay at pickup and the seller confirms.'
+                : 'Confirm below once you receive the payment — cash at pickup counts. Transfer receipts the buyer uploads appear here.'}
             </Text>
             {order.payment_proof_url ? (
-              <>
-                <Image
-                  source={{ uri: order.payment_proof_url }}
-                  className="w-full h-40 rounded-lg"
-                  resizeMode="contain"
-                />
-                {isSeller && (
-                  <Button loading={acting} onPress={() => runAction('mark_paid')}>
-                    Confirm payment received
-                  </Button>
-                )}
-              </>
+              <Image
+                source={{ uri: order.payment_proof_url }}
+                className="w-full h-40 rounded-lg"
+                resizeMode="contain"
+              />
             ) : isBuyer ? (
               <Button loading={proofUploading} onPress={() => void uploadPaymentProof()}>
                 Upload payment proof
               </Button>
             ) : null}
+            {isSeller && (
+              /* No longer gated on an uploaded proof: cash at pickup has no
+                 receipt, and every manual order now starts pending_payment —
+                 proof-gating this button dead-ended the standard cash sale. */
+              <Button loading={acting} onPress={() => runAction('mark_paid')}>
+                Confirm payment received
+              </Button>
+            )}
+            {isSeller && (
+              /* The API has always allowed mark_ready from pending_payment;
+                 the button was just unreachable in this state. */
+              <Button variant="secondary" loading={acting} onPress={() => runAction('mark_ready')}>
+                Mark ready for pickup or delivery
+              </Button>
+            )}
             {(isBuyer || isSeller) && (
               <Button variant="secondary" loading={acting} onPress={() => runAction('cancel')}>
                 Cancel order

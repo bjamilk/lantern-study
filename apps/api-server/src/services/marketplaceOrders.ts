@@ -68,13 +68,44 @@ export class MarketplaceOrdersService {
     }
   }
 
-  private async resolveInitialOrderStatus(sellerId: string): Promise<'pending_payment' | 'paid'> {
-    const { data } = await this.db
-      .from('marketplace_seller_preferences')
-      .select('require_payment_confirmation')
-      .eq('seller_id', sellerId)
-      .maybeSingle();
-    return data?.require_payment_confirmation ? 'pending_payment' : 'paid';
+  private async resolveInitialOrderStatus(_sellerId: string): Promise<'pending_payment' | 'paid'> {
+    // Always pending_payment. This used to return 'paid' unless the seller had
+    // opted into require_payment_confirmation — which meant clicking "Pay now"
+    // created an order already recorded as paid with no money moving anywhere,
+    // the exact bug users reported. Payment state must only ever be asserted
+    // by a verified Paystack settlement (markPaymentPaid) or by the seller
+    // explicitly confirming they received the money (mark_paid).
+    return 'pending_payment';
+  }
+
+  /**
+   * Record when an order actually became paid. Best-effort on purpose: the
+   * paid_at column arrives in a hand-applied migration (20260820), and this
+   * code can reach production first — a missing column must not break the
+   * payment flow it documents. Timelines fall back to status when it is null.
+   */
+  async stampOrderPaidAt(orderId: string, when?: string): Promise<void> {
+    try {
+      const { error } = await this.db
+        .from('marketplace_orders')
+        .update({ paid_at: when || new Date().toISOString() })
+        .eq('id', orderId)
+        .is('paid_at', null);
+      if (error) {
+        // supabase-js returns errors rather than throwing, so without this log
+        // a missing column silently discarded every seller confirmation's
+        // timestamp — permanently, since mark_paid only fires once per order.
+        logger.warn('Could not stamp marketplace_orders.paid_at — is migration 20260820120000 applied?', {
+          orderId,
+          error: error.message,
+        });
+      }
+    } catch (err) {
+      logger.warn('Could not stamp marketplace_orders.paid_at', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   async submitPaymentProof(
@@ -495,7 +526,11 @@ export class MarketplaceOrdersService {
             'This order is paid via Paystack. Manual mark-paid is disabled; wait for payment confirmation.'
           );
         }
-        if (!isSeller && !isBuyer) throw new PublicError('Unauthorized');
+        // Seller-only: mark_paid is the receiving party attesting the money
+        // arrived (cash at pickup, direct transfer). The buyer could previously
+        // flip their own order to paid with one API call — the seller then got
+        // a "Payment confirmed" notification for money that never moved.
+        if (!isSeller) throw new PublicError('Only the seller can confirm payment was received');
         if (order.status !== 'pending_payment') throw new PublicError('Order is not awaiting payment');
         nextStatus = 'paid';
         break;
@@ -569,6 +604,13 @@ export class MarketplaceOrdersService {
 
     if (error) throw error;
 
+    // Evidence only after the transition committed: stamping before it (the
+    // first version of this change) could leave paid_at on an order whose
+    // status write failed — fabricated payment evidence on a pending order.
+    if (action === 'mark_paid') {
+      await this.stampOrderPaidAt(orderId, now);
+    }
+
     const listingTitle =
       (order.listing as { title?: string } | null)?.title || 'your order';
     const amountStr = `₦${Number(order.amount).toLocaleString()}`;
@@ -576,7 +618,7 @@ export class MarketplaceOrdersService {
 
     const statusMessages: Record<string, { self?: string; other: string }> = {
       mark_paid: {
-        other: `Payment confirmed for "${listingTitle}" (${amountStr}). The seller will prepare your item.`,
+        other: `The seller confirmed receiving your payment for "${listingTitle}" (${amountStr}) and will prepare your item.`,
       },
       mark_ready: {
         other: `"${listingTitle}" is ready for campus pickup (${amountStr}). Tap to view meetup details.`,
@@ -789,12 +831,10 @@ export class MarketplaceOrdersService {
       throw new PublicError('Order is closed');
     }
 
-    if (order.status === 'pending_payment') {
-      await this.db
-        .from('marketplace_orders')
-        .update({ status: 'paid' })
-        .eq('id', orderId);
-    }
+    // Deliberately no status change here. Requesting payment used to flip a
+    // pending_payment order to 'paid' as a side effect of this notification —
+    // the seller asking for money marked it received, silently defeating the
+    // payment-confirmation flow that same seller had opted into.
 
     await this.notifyOrderParty(order.buyer_id, {
       type: 'marketplace_order_update',

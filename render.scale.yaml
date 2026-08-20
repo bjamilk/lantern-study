@@ -57,6 +57,15 @@ services:
         sync: false
       - key: FIREWORKS_API_KEY
         sync: false
+      # Paystack marketplace checkout: all three must be set for real payments
+      # (see docs/RELEASING.md and the payments audit). sync:false on the flag
+      # too, so a blueprint sync can never switch live checkout on by itself.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: MARKETPLACE_PAYSTACK_CHECKOUT
+        sync: false
       - key: PUBLIC_READ_RATE_LIMIT_MAX
         value: "120"
       - key: PUBLIC_WRITE_RATE_LIMIT_MAX
@@ -109,6 +118,15 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: FIREWORKS_API_KEY
+        sync: false
+      # Paystack marketplace checkout: all three must be set for real payments
+      # (see docs/RELEASING.md and the payments audit). sync:false on the flag
+      # too, so a blueprint sync can never switch live checkout on by itself.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: MARKETPLACE_PAYSTACK_CHECKOUT
         sync: false
       - key: ENABLE_MARKETPLACE_JOBS
         value: "true"

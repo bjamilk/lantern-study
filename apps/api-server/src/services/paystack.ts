@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { logger } from '../utils/logger';
 
 const PAYSTACK_BASE = 'https://api.paystack.co';
@@ -49,7 +49,11 @@ export function createPaystackReference(prefix = 'ls_mkt'): string {
 export function verifyPaystackSignature(rawBody: string | Buffer, signature: string | undefined): boolean {
   if (!signature) return false;
   const hash = createHmac('sha512', secretKey()).update(rawBody).digest('hex');
-  return hash === signature;
+  // Constant-time compare: a === on hex strings leaks match length through
+  // timing. Buffer lengths must match first or timingSafeEqual throws.
+  const a = Buffer.from(hash, 'utf8');
+  const b = Buffer.from(String(signature), 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 async function paystackFetch<T>(

@@ -266,10 +266,18 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           <ul className="mt-3 space-y-1 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
             <li>Accepted {order.created_at ? '✓' : '—'}</li>
             <li>
-              Paid{' '}
-              {order.status !== 'pending_payment' && order.status !== 'cancelled'
-                ? '✓'
-                : '—'}
+              {/* Only evidence counts: a paid_at stamp or the order currently
+                  in 'paid'. payment_id is NOT evidence — it is written when a
+                  Paystack session is initialized, before any money moves, and
+                  it survives abandonment and cancellation. Status ordering
+                  alone is not evidence either: an order marked ready before
+                  any payment used to show "Paid ✓" to both parties. */}
+              {(() => {
+                const paidEvidence =
+                  Boolean((order as { paid_at?: string | null }).paid_at) || order.status === 'paid';
+                if (!paidEvidence) return <>Paid —</>;
+                return order.payment_id ? <>Paid via Paystack ✓</> : <>Payment confirmed by seller ✓</>;
+              })()}
             </li>
             <li>Ready for pickup {order.seller_confirmed_at || order.status === 'ready_for_pickup' || order.status === 'completed' ? '✓' : '—'}</li>
             <li>Completed {order.completed_at ? '✓' : '—'}</li>
@@ -357,7 +365,9 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 space-y-3">
             <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Payment required</h2>
             <p className="text-sm text-amber-800 dark:text-amber-300">
-              Pay the seller using the agreed method, then upload your receipt screenshot.
+              {isBuyer
+                ? 'Pay the seller using the agreed method. For transfers, upload your receipt; for cash, pay at pickup and the seller confirms.'
+                : 'Confirm below once you receive the payment — cash at pickup counts. Transfer receipts the buyer uploads appear here.'}
             </p>
             {order.payment_proof_url && (
               <div className="space-y-2">
@@ -396,9 +406,20 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
                 {proofUploading ? 'Uploading…' : 'Upload payment proof'}
               </label>
             )}
-            {isSeller && order.payment_proof_url && (
+            {isSeller && (
+              /* No longer gated on an uploaded proof: cash at pickup has no
+                 receipt, and every manual order now starts pending_payment —
+                 proof-gating this button dead-ended the standard cash sale. */
               <Button size="sm" disabled={acting} onClick={() => runAction('mark_paid')}>
                 Confirm payment received
+              </Button>
+            )}
+            {isSeller && (
+              /* The API has always allowed mark_ready from pending_payment
+                 (prepare the item, collect cash at handover); the button was
+                 just unreachable in this state. */
+              <Button size="sm" variant="secondary" disabled={acting} onClick={() => runAction('mark_ready')}>
+                Mark ready for pickup or delivery
               </Button>
             )}
             {(isBuyer || isSeller) && (
