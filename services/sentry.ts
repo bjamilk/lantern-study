@@ -112,6 +112,11 @@ export function markIntentionalSignOut(): void {
   intentionalSignOutAt = Date.now();
 }
 
+/** True within 30s of a user-initiated sign-out — used to skip spurious-signout recovery. */
+export function wasRecentIntentionalSignOut(): boolean {
+  return Date.now() - intentionalSignOutAt < 30_000;
+}
+
 export function reportUnexpectedSignOut(context: Record<string, unknown>): void {
   if (!initialized) return;
   // A user-initiated logout fires the same SIGNED_OUT event; a 30s window
