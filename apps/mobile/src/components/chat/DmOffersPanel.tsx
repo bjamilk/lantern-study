@@ -123,16 +123,31 @@ export function DmOffersPanel({
     }
     setBusyOfferId(offer.id);
     try {
-      await respondToOffer(offer.id, action, currentUserId);
+      const result = await respondToOffer(offer.id, action, currentUserId);
       const amount = formatPrice(offer.amount);
+      // A buyer accepting a counter gets a Paystack checkout back — open it so
+      // they pay in-app (the biggest mobile conversion gap), instead of only
+      // being told to "arrange in Orders" while the order sits unpaid.
+      const payUrl = result?.authorizationUrl || result?.checkout?.authorizationUrl;
+      const buyerPayNow = action === 'accept' && !isSeller && !!payUrl;
       await announce(
         action === 'accept'
-          ? `[Offer] I accepted the offer of ${amount}. An order has been created — arrange pickup or delivery in Orders.`
+          ? buyerPayNow
+            ? `[Offer] I accepted the offer of ${amount} — completing payment now.`
+            : `[Offer] I accepted the offer of ${amount}. An order has been created — arrange pickup or delivery in Orders.`
           : action === 'decline'
             ? `[Offer] I declined the offer of ${amount}.`
             : `[Offer] I withdrew my offer of ${amount}.`
       );
       await load();
+      if (buyerPayNow && payUrl) {
+        try {
+          const WebBrowser = await import('expo-web-browser');
+          await WebBrowser.openBrowserAsync(payUrl);
+        } catch {
+          // Checkout failed to open; the order still exists to pay from Orders.
+        }
+      }
     } catch (error: unknown) {
       Alert.alert('Error', error instanceof Error ? error.message : 'Action failed');
     } finally {
