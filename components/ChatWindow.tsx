@@ -51,7 +51,7 @@ import {
   updateInquiryStatus,
   fetchOrderForInquiry,
   updateMarketplaceOrder,
-  requestOrderPayment,
+  resumeMarketplaceOrderCheckout,
   supabase,
   fetchGroupThread,
   fetchDmThread,
@@ -564,7 +564,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           return;
         }
         try {
-          await updateInquiryStatus(inquiry.id, 'negotiating');
+          // The server sets the inquiry status when an offer is accepted; re-fetch it
+          // as the source of truth instead of forcing 'negotiating' (which left the
+          // status pill stuck on amber even though a live order already existed).
+          const refreshedInquiry = await getInquiryByThread(chat.id);
+          if (refreshedInquiry) setInquiry(refreshedInquiry);
           const order = await fetchOrderForInquiry(inquiry.id);
           if (order) setActiveOrder(order);
           await refreshBudgetTransactions(currentUser.id);
@@ -596,6 +600,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
+  // Stable boolean: does this DM look like a marketplace inquiry? Depending on this
+  // (not the messages array, which is rebuilt every render for DMs) keeps the loader
+  // and the tab/state reset from firing on every unrelated parent re-render — which
+  // used to bounce the user off the Offers tab mid-flow and refetch everything.
+  const hasMarketplaceMarker = useMemo(
+    () => chat?.chatType === 'dm' && threadMayHaveMarketplaceInquiry(messages.map((m) => m.text)),
+    [chat?.chatType, messages]
+  );
+
+  // Reset offer/order UI only when the conversation itself changes.
   useEffect(() => {
     setActiveTab('chat');
     setInquiry(null);
@@ -605,35 +619,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setCounterValue('');
     setOfferError('');
     setActiveOrder(null);
+  }, [chat?.id]);
 
-    if (chat && chat.chatType === 'dm') {
-      const dmTexts = messages.map((message) => message.text);
-      if (!threadMayHaveMarketplaceInquiry(dmTexts)) {
-        return;
-      }
-
-      let cancelled = false;
-      const loadInquiryContext = async () => {
-        try {
-          const inquiryData = await getInquiryByThread(chat.id);
+  // Load marketplace inquiry context for a DM that looks like one. Fires on chat
+  // change or when the marker first appears — never on every render.
+  useEffect(() => {
+    if (!chat || chat.chatType !== 'dm' || !hasMarketplaceMarker) return;
+    let cancelled = false;
+    const loadInquiryContext = async () => {
+      try {
+        const inquiryData = await getInquiryByThread(chat.id);
+        if (cancelled) return;
+        if (inquiryData) {
+          setInquiry(inquiryData);
+          await loadOfferHistory(inquiryData);
           if (cancelled) return;
-          if (inquiryData) {
-            setInquiry(inquiryData);
-            await loadOfferHistory(inquiryData);
-            if (cancelled) return;
-            const order = await fetchOrderForInquiry(inquiryData.id);
-            if (!cancelled && order) setActiveOrder(order);
-          }
-        } catch (err) {
-          if (!cancelled) {
-            console.error('Error loading inquiry context:', err);
-          }
+          const order = await fetchOrderForInquiry(inquiryData.id);
+          if (!cancelled && order) setActiveOrder(order);
         }
-      };
-      void loadInquiryContext();
-      return () => { cancelled = true; };
-    }
-  }, [chat?.id, chat?.chatType, messages]);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error loading inquiry context:', err);
+        }
+      }
+    };
+    void loadInquiryContext();
+    return () => { cancelled = true; };
+  }, [chat?.id, chat?.chatType, hasMarketplaceMarker]);
 
 
   // build top‑level vs subgroup map once
@@ -1946,39 +1958,47 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <span className="text-xs font-medium text-lantern-primary-dark dark:text-lantern-primary-light">
                 Order: {activeOrder.status.replace(/_/g, ' ')} · ₦{Number(activeOrder.amount).toLocaleString()}
               </span>
-              {currentUser.id === inquiry.seller_id && ['paid', 'pending_payment'].includes(activeOrder.status) && (
-                <>
-                  <button
-                    type="button"
-                    disabled={orderActionLoading}
-                    className="text-xs px-2 py-1 rounded-md bg-lantern-primary text-white"
-                    onClick={async () => {
-                      setOrderActionLoading(true);
-                      try {
-                        const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
-                        setActiveOrder(updated);
-                      } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                      finally { setOrderActionLoading(false); }
-                    }}
-                  >
-                    Mark ready
-                  </button>
-                  <button
-                    type="button"
-                    disabled={orderActionLoading}
-                    className="text-xs px-2 py-1 rounded-md border border-lantern-primary text-lantern-primary"
-                    onClick={async () => {
-                      setOrderActionLoading(true);
-                      try {
-                        await requestOrderPayment(activeOrder.id);
-                        useToastStore.getState().showToast('Payment request sent', 'success');
-                      } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                      finally { setOrderActionLoading(false); }
-                    }}
-                  >
-                    Request payment
-                  </button>
-                </>
+              {currentUser.id === inquiry.seller_id && activeOrder.status === 'paid' && (
+                <button
+                  type="button"
+                  disabled={orderActionLoading}
+                  className="text-xs px-2 py-1 rounded-md bg-lantern-primary text-white disabled:opacity-50"
+                  onClick={async () => {
+                    setOrderActionLoading(true);
+                    try {
+                      const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
+                      setActiveOrder(updated);
+                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
+                    finally { setOrderActionLoading(false); }
+                  }}
+                >
+                  Mark ready
+                </button>
+              )}
+              {currentUser.id === inquiry.seller_id && ['pending_payment', 'awaiting_payment'].includes(activeOrder.status) && (
+                <span className="text-xs text-lantern-text-secondary">Awaiting buyer payment</span>
+              )}
+              {currentUser.id === inquiry.buyer_id && ['pending_payment', 'awaiting_payment'].includes(activeOrder.status) && (
+                <button
+                  type="button"
+                  disabled={orderActionLoading}
+                  className="text-xs px-2 py-1 rounded-md bg-emerald-600 text-white disabled:opacity-50"
+                  onClick={async () => {
+                    setOrderActionLoading(true);
+                    try {
+                      // Resume the Paystack checkout for an unpaid order (buyers pay in-app).
+                      const res = await resumeMarketplaceOrderCheckout(activeOrder.id);
+                      if (res?.authorizationUrl) {
+                        window.location.assign(res.authorizationUrl);
+                        return;
+                      }
+                      useToastStore.getState().showToast('Could not start checkout. Please try again.', 'error');
+                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Could not start checkout', 'error'); }
+                    finally { setOrderActionLoading(false); }
+                  }}
+                >
+                  Pay now · ₦{Number(activeOrder.amount).toLocaleString()}
+                </button>
               )}
               {currentUser.id === inquiry.buyer_id && ['paid', 'ready_for_pickup'].includes(activeOrder.status) && (
                 <button
@@ -2198,18 +2218,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-6 text-center">
-                  <p className="text-sm text-lantern-text-secondary mb-4 font-medium">
-                    There are no active offers in negotiation.
-                  </p>
-                  {currentUser.id === inquiry.buyer_id && (
-                    <button
-                      onClick={() => setShowMakeOfferModal(true)}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5"
-                    >
-                      <CurrencyDollarIcon className="w-4 h-4" />
-                      Make an Offer
-                    </button>
-                  )}
+                  {(() => {
+                    const dealDone = inquiry.status === 'purchased' || inquiry.status === 'closed';
+                    const hasLiveOrder = !!activeOrder && activeOrder.status !== 'cancelled';
+                    if (dealDone || hasLiveOrder) {
+                      // A deal is struck — don't re-offer to buy an item already ordered.
+                      return (
+                        <p className="text-sm text-lantern-text-secondary font-medium">
+                          {activeOrder
+                            ? `This deal is confirmed — order ${activeOrder.status.replace(/_/g, ' ')}.`
+                            : 'This listing has been purchased or the inquiry is closed.'}
+                        </p>
+                      );
+                    }
+                    return (
+                      <>
+                        <p className="text-sm text-lantern-text-secondary mb-4 font-medium">
+                          There are no active offers in negotiation.
+                        </p>
+                        {currentUser.id === inquiry.buyer_id && (
+                          <button
+                            onClick={() => setShowMakeOfferModal(true)}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5"
+                          >
+                            <CurrencyDollarIcon className="w-4 h-4" />
+                            Make an Offer
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </div>
