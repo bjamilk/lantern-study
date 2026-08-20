@@ -6,7 +6,21 @@ import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
 import { featureAccents } from '@lantern/shared/design';
+import { chatMessagePreview } from '@lantern/shared/utils';
 import { formatUnreadBadgeCount } from '../utils/chatUnread';
+
+// Compact recency label for a conversation row (WhatsApp-style: now / 5m / 3h / 2d / Aug 8).
+const formatRowTime = (input?: string | Date | null): string => {
+  if (!input) return '';
+  const d = typeof input === 'string' ? new Date(input) : input;
+  const secs = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (Number.isNaN(secs)) return '';
+  if (secs < 60) return 'now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
+  if (secs < 604800) return `${Math.floor(secs / 86400)}d`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 
 interface GroupListItemProps {
   chat: ChatItem;
@@ -55,6 +69,14 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
     (chat as DMThread).status === 'pending' &&
     typeof (chat as DMThread).requestedBy === 'string' &&
     (chat as DMThread).requestedBy !== currentUser.id;
+  // Last-message preview + recency for the row's second line. `chatMessagePreview`
+  // renders "Photo"/"Voice note" rather than raw ![image](url)/audio markdown.
+  const lastMessageRaw = (chat as Group | DMThread).lastMessage;
+  const lastMessageAt = isGroup
+    ? (chat as Group).lastMessageTime
+    : (chat as DMThread).lastMessageTimestamp;
+  const preview = lastMessageRaw ? chatMessagePreview(lastMessageRaw, '') : '';
+  const timeLabel = formatRowTime(lastMessageAt);
   
   const baseClasses = `flex items-center w-full p-3 md:p-3 py-3.5 md:py-3 border-l-4 transition-colors duration-200 min-h-[52px]`;
   const accentBorder = isSubGroup || nestingLevel > 0 ? featureAccents.groups : undefined;
@@ -146,10 +168,17 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
       {showText && (
         <>
             <div className="flex-1 min-w-0 ml-2.5">
-                <p className="font-semibold truncate text-lantern-text">{name}</p>
-                {isMessageRequest && (
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold truncate text-lantern-text flex-1 min-w-0">{name}</p>
+                  {timeLabel && !isMessageRequest && (
+                    <span className="text-[10px] font-medium text-lantern-text-tertiary shrink-0">{timeLabel}</span>
+                  )}
+                </div>
+                {isMessageRequest ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300 truncate">Message request</p>
-                )}
+                ) : preview ? (
+                  <p className="text-xs text-lantern-text-secondary truncate">{preview}</p>
+                ) : null}
             </div>
             {isArchived && <ArchiveBoxIcon className="w-4 h-4 text-lantern-text-tertiary ml-2 flex-shrink-0" title="Archived"/>}
             {unreadCount > 0 && !isArchived && (
