@@ -2109,6 +2109,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     // way to reach older messages — scrolling up was a silent dead end. Mirror the
     // group pager: page by count of loaded real messages and prepend older pages.
     const handleLoadMoreDirectMessages = useCallback(async (threadId: string) => {
+        const uid = currentUser?.id;
+        if (!uid) return 0;
         const currentMsgs = useGroupStore.getState().directMessages[threadId] || [];
         const realCount = currentMsgs.filter((m) => !String(m.id).startsWith('optimistic-')).length;
         if (realCount === 0) return 0;
@@ -2117,10 +2119,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         let otherUserId = useGroupStore
             .getState()
             .dmThreads.find((t) => t.id === threadId)
-            ?.participantIds?.find((id) => id !== currentUser.id);
+            ?.participantIds?.find((id) => id !== uid);
         if (!otherUserId) {
-            const prefix = `${currentUser.id}-`;
-            const suffix = `-${currentUser.id}`;
+            const prefix = `${uid}-`;
+            const suffix = `-${uid}`;
             if (threadId.startsWith(prefix)) otherUserId = threadId.slice(prefix.length);
             else if (threadId.endsWith(suffix)) otherUserId = threadId.slice(0, -suffix.length);
         }
@@ -2130,7 +2132,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         const page = Math.floor(realCount / limit) + 1;
 
         try {
-            const older = await fetchDirectMessages(currentUser.id, otherUserId, { page, limit });
+            const older = await fetchDirectMessages(uid, otherUserId, { page, limit });
             const raw = Array.isArray(older) ? older : [];
             if (raw.length === 0) return 0;
             const mapped: DirectMessage[] = raw.map((m: any) => mapDirectMessageFromApi(m, threadId));
@@ -2151,7 +2153,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             console.error('Error fetching older direct messages:', error);
             return 0;
         }
-    }, [currentUser.id, lowDataMode, updateDirectMessages]);
+    }, [currentUser?.id, lowDataMode, updateDirectMessages]);
 
     // undefined = mark-as-read still pending; null = no prior marker / fully read.
     const unreadAnchorAt: string | null | undefined =
