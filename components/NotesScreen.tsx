@@ -168,7 +168,12 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
-        n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q)
+        n =>
+          n.title.toLowerCase().includes(q) ||
+          n.body.toLowerCase().includes(q) ||
+          // Imported notes (PDF/slides/photos/YouTube) keep their content in
+          // attachment text, surfaced by the list endpoint as `searchText`.
+          Boolean(n.searchText && n.searchText.toLowerCase().includes(q))
       );
     }
     return [...list].sort((a, b) => {
@@ -182,6 +187,12 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
 
   const canDeleteNote = (note: StudyNote) =>
+    !note.accessRole || note.accessRole === 'owner';
+
+  // Folder placement is a single global column owned by the note's owner, so
+  // only the owner may move a note into a folder. Editors would corrupt the
+  // owner's organization (see server-side guard in supabaseService.updateNote).
+  const canMoveNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner';
 
   const exitSelectMode = () => {
@@ -206,9 +217,23 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
 
   const handleMoveToFolder = async (folderId: string | null) => {
     if (!onMoveNotesToFolder || selectedNoteIds.length === 0) return;
+    // Only owned notes can be moved; silently skip shared ones (mirrors delete).
+    const ownedIds = selectedNoteIds.filter((id) => {
+      const note = notes.find((n) => n.id === id);
+      return note ? canMoveNote(note) : false;
+    });
+    if (ownedIds.length === 0) {
+      void confirmDialog({
+        title: 'Cannot move',
+        message: "Only notes you own can be moved into folders. Shared notes stay in their owner's folders.",
+        confirmLabel: 'OK',
+        cancelLabel: 'Close',
+      });
+      return;
+    }
     setMovingNotes(true);
     try {
-      await onMoveNotesToFolder(selectedNoteIds, folderId);
+      await onMoveNotesToFolder(ownedIds, folderId);
       exitSelectMode();
     } finally {
       setMovingNotes(false);
@@ -877,7 +902,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                             className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-lantern-border bg-lantern-surface py-1 shadow-lg"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {onMoveNotesToFolder ? (
+                            {onMoveNotesToFolder && canMoveNote(note) ? (
                               <button
                                 type="button"
                                 role="menuitem"

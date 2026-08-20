@@ -16,6 +16,12 @@ interface NotesState {
   isSaving: boolean;
   error: string | null;
   selectedFolderId: string | null;
+  /**
+   * Increments whenever a save loses an optimistic-concurrency race and the
+   * authoritative note is reloaded over the user's superseded edits. The editor
+   * watches this to override its local title/body with the reloaded copy.
+   */
+  conflictReloadToken: number;
 
   setFolders: (folders: NoteFolder[]) => void;
   setSelectedFolderId: (id: string | null) => void;
@@ -56,6 +62,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   isSaving: false,
   error: null,
   selectedFolderId: null,
+  conflictReloadToken: 0,
 
   setFolders: (folders) => set({ folders }),
   setSelectedFolderId: (selectedFolderId) => set({ selectedFolderId }),
@@ -174,9 +181,28 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       if (latest.selectedNote?.id !== noteId && !latest.notes.some((n) => n.id === noteId)) {
         return null as unknown as StudyNote;
       }
+
+      // Thread the FRESHEST version into content edits (title/body) so the
+      // server's optimistic-concurrency check catches a cross-user overwrite.
+      // Reading it HERE — inside the serialized save chain, after any prior save
+      // merged its new version into the store — is what keeps a user's own rapid
+      // autosaves from 409-ing against themselves. Non-content saves (pin,
+      // archive, move) skip CAS: they touch single columns and must not conflict.
+      const isContentEdit = 'title' in updates || 'body' in updates;
+      let effectiveUpdates: Partial<StudyNote> = updates;
+      if (isContentEdit && updates.version == null) {
+        const freshNote =
+          latest.selectedNote?.id === noteId
+            ? latest.selectedNote
+            : latest.notes.find((n) => n.id === noteId);
+        if (freshNote?.version != null) {
+          effectiveUpdates = { ...updates, version: freshNote.version };
+        }
+      }
+
       set({ isSaving: true, error: null });
       try {
-        const saved = await notesApi.updateNote(noteId, updates);
+        const saved = await notesApi.updateNote(noteId, effectiveUpdates);
         if (saveGenerations.get(noteId) !== generation) {
           return saved;
         }
@@ -208,6 +234,56 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         if (saveGenerations.get(noteId) !== generation) {
           throw e;
         }
+
+        const isConflict =
+          e?.code === 'version_conflict' ||
+          /updated elsewhere|version conflict|version_conflict/i.test(e?.message || '');
+        if (isConflict) {
+          // Someone else changed this note while the user was editing. Do NOT
+          // keep the user's now-stale copy silently: pull the authoritative note
+          // into the store and bump conflictReloadToken so the editor overrides
+          // its local text with the latest, then throw a conflict-coded error so
+          // handleAutoSave can toast the user that their edits were superseded.
+          const currentFromError =
+            e?.current && typeof e.current === 'object' ? (e.current as StudyNote) : null;
+          const authoritative =
+            currentFromError ?? (await notesApi.fetchNote(noteId).catch(() => null));
+          if (authoritative && saveGenerations.get(noteId) === generation) {
+            set({
+              notes: get().notes.map((n) =>
+                n.id === noteId
+                  ? {
+                      ...n,
+                      ...authoritative,
+                      accessRole: authoritative.accessRole ?? n.accessRole,
+                      owner: authoritative.owner ?? n.owner,
+                    }
+                  : n,
+              ),
+              selectedNote:
+                get().selectedNote?.id === noteId
+                  ? {
+                      ...get().selectedNote!,
+                      ...authoritative,
+                      accessRole: authoritative.accessRole ?? get().selectedNote!.accessRole,
+                      owner: authoritative.owner ?? get().selectedNote!.owner,
+                      attachments: get().selectedNote!.attachments,
+                    }
+                  : get().selectedNote,
+              conflictReloadToken: get().conflictReloadToken + 1,
+              isSaving: false,
+              error: null,
+            });
+          } else {
+            set({ isSaving: false });
+          }
+          const conflictErr = new Error(
+            'This note changed elsewhere — reloading the latest version',
+          ) as Error & { code?: string };
+          conflictErr.code = 'version_conflict';
+          throw conflictErr;
+        }
+
         const isNotFound = /not found|404/i.test(e.message || '');
         set({
           error: isNotFound ? null : e.message,
@@ -374,5 +450,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       isSaving: false,
       error: null,
       selectedFolderId: null,
+      conflictReloadToken: 0,
     }),
 }));

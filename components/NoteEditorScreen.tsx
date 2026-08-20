@@ -140,6 +140,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const previewAttemptedRef = useRef<Set<string>>(new Set());
   const reextractAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
+  const conflictReloadToken = useNotesStore((s) => s.conflictReloadToken);
   const showToast = useToastStore((s) => s.showToast);
   const isDark = theme === 'dark';
   const isOwner = note.accessRole === 'owner' || (!note.accessRole && note.userId === currentUserId);
@@ -210,6 +211,22 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setTitle(note.title);
     setBody(note.body);
   }, [note.title, note.body, note.updatedAt]);
+
+  // An autosave lost an optimistic-concurrency race: the store has reloaded the
+  // authoritative note. Override the user's now-superseded local edits with it
+  // (unlike the guarded effect above, this one runs even after local typing),
+  // so the editor shows the version that actually saved.
+  useEffect(() => {
+    if (conflictReloadToken === 0) return;
+    const latest = useNotesStore.getState().selectedNote;
+    if (!latest || latest.id !== note.id) return;
+    // Drop any debounced autosave still holding the superseded text, or it would
+    // re-save (and win) against the version we just reloaded.
+    onCancelPendingSave?.();
+    userEditedRef.current = false;
+    setTitle(latest.title);
+    setBody(latest.body || '');
+  }, [conflictReloadToken, note.id, onCancelPendingSave]);
 
   useEffect(() => {
     saveEnabledRef.current = canEdit;

@@ -11395,7 +11395,7 @@ export class SupabaseService {
 
     // Folder/group filtered lists stay owned-only (shared notes keep owner's folder).
     if (options?.folderId || options?.groupId) {
-      return owned;
+      return this.attachNoteSearchText(owned);
     }
 
     const { data: collabRows, error: collabError } = await this.supabase
@@ -11443,12 +11443,59 @@ export class SupabaseService {
         });
       });
 
-    return [...owned, ...shared].sort((a, b) => {
+    const sorted = [...owned, ...shared].sort((a, b) => {
       const pinDelta = Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned));
       if (pinDelta !== 0) return pinDelta;
       return (
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
+    });
+    return this.attachNoteSearchText(sorted);
+  }
+
+  /**
+   * Imported notes (PDF/slides/photos/YouTube/audio) store their content in
+   * attachment `extracted_text`, not in `body` — so the client's title+body
+   * search never matches them. Attach a capped, concatenated copy of that text
+   * as `searchText` for notes whose body is empty (the unsearchable set), so the
+   * client filter can match on it. Only empty-body notes are read here to keep
+   * both the DB read and the list payload small: notes with a typed body are
+   * already searchable by that body and gain no coverage worth the bloat.
+   */
+  private async attachNoteSearchText<T extends { id: string; body?: string; searchText?: string }>(
+    notes: T[],
+  ): Promise<T[]> {
+    const NOTE_SEARCH_TEXT_MAX_CHARS = 2000;
+    const importedIds = notes
+      .filter((n) => !n.body || !n.body.trim())
+      .map((n) => n.id);
+    if (importedIds.length === 0) return notes;
+
+    const { data, error } = await this.supabase
+      .from("note_attachments")
+      .select("note_id, extracted_text")
+      .in("note_id", importedIds);
+    if (error) throw error;
+    if (!data || data.length === 0) return notes;
+
+    const textByNote = new Map<string, string>();
+    for (const row of data as Array<{
+      note_id: string;
+      extracted_text: string | null;
+    }>) {
+      const text =
+        typeof row.extracted_text === "string" ? row.extracted_text.trim() : "";
+      if (!text) continue;
+      const existing = textByNote.get(row.note_id);
+      if (existing && existing.length >= NOTE_SEARCH_TEXT_MAX_CHARS) continue;
+      const combined = existing ? `${existing} ${text}` : text;
+      textByNote.set(row.note_id, combined.slice(0, NOTE_SEARCH_TEXT_MAX_CHARS));
+    }
+    if (textByNote.size === 0) return notes;
+
+    return notes.map((note) => {
+      const searchText = textByNote.get(note.id);
+      return searchText ? { ...note, searchText } : note;
     });
   }
 
@@ -11532,8 +11579,8 @@ export class SupabaseService {
       allowRetryOnConflict?: boolean;
     } = {},
   ) {
-    const allowed = await this.canEditNote(userId, noteId);
-    if (!allowed) {
+    const access = await this.resolveNoteAccess(noteId, userId);
+    if (!access?.canEdit) {
       const err = new Error("Note not found or access denied") as Error & {
         code?: string;
         status?: number;
@@ -11541,6 +11588,17 @@ export class SupabaseService {
       err.code = "PGRST116";
       err.status = 403;
       throw err;
+    }
+
+    // Folder/group placement lives in a single global column that belongs to the
+    // note's owner. A non-owner editor writing folderId/groupId would pull the
+    // note out of the OWNER's folder into an id that means nothing to them, so it
+    // vanishes from the owner's folder view. Drop placement changes from
+    // non-owners — their title/body edits still save, and the client hides the
+    // "Move to folder" control for shared notes anyway.
+    if (!access.isOwner) {
+      delete (updates as Record<string, unknown>).folderId;
+      delete (updates as Record<string, unknown>).groupId;
     }
 
     const dbUpdates: Record<string, unknown> = {};

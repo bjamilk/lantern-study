@@ -356,6 +356,13 @@ export interface StudyNote {
   copiedFromNoteId?: string;
   /** Optimistic concurrency token from API (CAS). */
   version?: number;
+  /**
+   * Capped, concatenated attachment text (extracted PDF/slide/OCR/transcript
+   * text) supplied by the notes-list endpoint so imported notes — whose `body`
+   * is empty — are findable by their content in the client-side search filter.
+   * Not persisted; present only on list payloads.
+   */
+  searchText?: string;
   /** Caller's access on this note (list/detail). */
   accessRole?: NoteAccessRole;
   /** Present for shared (non-owned) notes. */

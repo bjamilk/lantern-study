@@ -121,6 +121,20 @@ export function useNoteHandlers(currentUserId?: string) {
           return;
         }
         void saveNote(noteId, updates).catch((err) => {
+          // A version conflict is not a failure the user must retry: saveNote has
+          // already reloaded the authoritative note into the store/editor. Tell
+          // them their unsaved keystrokes were superseded rather than lost silently.
+          const isConflict =
+            (err as { code?: string })?.code === 'version_conflict' ||
+            /changed elsewhere|updated elsewhere|version_conflict/i.test(
+              err instanceof Error ? err.message : ''
+            );
+          if (isConflict) {
+            useToastStore
+              .getState()
+              .showToast('This note changed elsewhere — reloading the latest version', 'info');
+            return;
+          }
           const message = err instanceof Error ? err.message : 'Failed to save note';
           useToastStore.getState().showToast(message, 'error');
         });

@@ -346,29 +346,18 @@ export async function updateNote(
   updates: Partial<Omit<StudyNote, 'folderId'>> & { folderId?: string | null }
 ): Promise<StudyNote> {
   const { version, ...rest } = updates;
-  try {
-    return await notesRequest<StudyNote>(`/${noteId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        ...rest,
-        ...(version != null ? { expectedVersion: version } : {}),
-      }),
-    });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '';
-    const looksConflict =
-      message.toLowerCase().includes('updated elsewhere') ||
-      message.toLowerCase().includes('version');
-    if (looksConflict) {
-      // Keep server: refetch and return authoritative note (callers may toast).
-      try {
-        return await fetchNote(noteId);
-      } catch {
-        throw error;
-      }
-    }
-    throw error;
-  }
+  // When `version` is present the server runs an optimistic-concurrency check
+  // and 409s on a stale write. Do NOT swallow that conflict by silently
+  // refetching — the caller (notesStore.saveNote) must surface it to the user
+  // and reload the authoritative note. The thrown Error carries
+  // `code: 'version_conflict'` and `current` (the authoritative note).
+  return notesRequest<StudyNote>(`/${noteId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...rest,
+      ...(version != null ? { expectedVersion: version } : {}),
+    }),
+  });
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
