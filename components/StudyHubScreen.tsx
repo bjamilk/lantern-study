@@ -20,6 +20,8 @@ interface StudyHubScreenProps {
   onOpenAITools: () => void;
   onSelectDeck: (deck: Deck) => void;
   onStartLearn?: (deck: Deck) => void;
+  /** Launches the real SRS review for a deck. When absent, rows fall back to the Learn quiz with honest labels. */
+  onStartReview?: (deckId: string) => void;
   activeTestSession?: TestSessionData | null;
   activeStudySession?: StudySessionData | null;
   onResumeSession?: () => void;
@@ -39,6 +41,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   onOpenAITools,
   onSelectDeck,
   onStartLearn,
+  onStartReview,
   activeTestSession,
   activeStudySession,
   onResumeSession,
@@ -50,7 +53,10 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
 }) => {
   const hasPausedSession = Boolean(activeTestSession || activeStudySession);
   const topDecks = decks.slice(0, 4);
-  const smartReviewLabel = FLASHCARD_MODE_LABELS.smart_review.label;
+  const quizLabel = FLASHCARD_MODE_LABELS.quiz.label;
+  // Only advertise "Smart review" when the rows can actually launch the SRS review.
+  // Without onStartReview, rows launch the non-SRS Learn quiz, so header/button must say so.
+  const deckSectionLabel = onStartReview ? FLASHCARD_MODE_LABELS.smart_review.label : quizLabel;
 
   const getDeckDueCount = (deckId: string) =>
     flashcards.filter((fc) => fc.deckId === deckId && isCardDue(fc.srsData)).length;
@@ -152,11 +158,12 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
 
         {topDecks.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold text-lantern-text-secondary uppercase tracking-wide mb-3">{smartReviewLabel}</h3>
+            <h3 className="text-sm font-semibold text-lantern-text-secondary uppercase tracking-wide mb-3">{deckSectionLabel}</h3>
             <div className="space-y-2">
               {topDecks.map((deck) => {
                 const dueCount = getDeckDueCount(deck.id);
                 const totalCount = getDeckTotalCount(deck.id);
+                const canStartSrsReview = Boolean(onStartReview) && dueCount > 0;
                 return (
                 <div
                   key={deck.id}
@@ -166,12 +173,24 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                     <p className="font-medium text-lantern-text truncate">{deck.name}</p>
                     <p className="text-xs text-lantern-text-secondary truncate">{deck.description || 'Flashcard deck'}</p>
                   </button>
-                  {onStartLearn && (
+                  {canStartSrsReview ? (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Button size="sm" variant="accent" onClick={() => onStartReview!(deck.id)}>
+                        <AcademicCapIcon className="w-4 h-4" />
+                        {getStudyCtaLabel(dueCount, totalCount)}
+                      </Button>
+                      {onStartLearn && (
+                        <Button size="sm" variant="secondary" onClick={() => onStartLearn(deck)}>
+                          {quizLabel}
+                        </Button>
+                      )}
+                    </div>
+                  ) : onStartLearn ? (
                     <Button size="sm" variant="secondary" onClick={() => onStartLearn(deck)}>
                       <AcademicCapIcon className="w-4 h-4" />
-                      {getStudyCtaLabel(dueCount, totalCount)}
+                      {quizLabel}
                     </Button>
-                  )}
+                  ) : null}
                 </div>
               );
               })}

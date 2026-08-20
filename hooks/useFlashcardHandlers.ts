@@ -20,7 +20,8 @@ import { useTestStore } from '../stores/testStore';
 import {
     createDeck, updateDeck, deleteDeck,
     createFlashcard, fetchFlashcards, fetchAllFlashcards, updateFlashcard, reviewFlashcard, deleteFlashcard,
-    resetDeckStatistics, exportDeck, importDeck, exportDeckCsv, importDeckCsv, importDeckApkg, fetchDecks
+    resetDeckStatistics, exportDeck, importDeck, exportDeckCsv, importDeckCsv, importDeckApkg, fetchDecks,
+    mapDecksFromApi
 } from '../services/supabase';
 import { aiGenerateFlashcards } from '../services/ai';
 import { buildFlashcardSourceFromTestResult } from '../utils/buildFlashcardSource';
@@ -143,15 +144,14 @@ export function useFlashcardHandlers() {
         if (!currentUser) return;
         try {
             if (data.id) {
+                // deckId/type are set at creation and rejected by the server on
+                // update — never send them (the modal locks the type selector).
                 await updateFlashcard(data.id, {
-                    deckId: data.deckId,
-                    type: data.type,
                     front: data.front,
                     back: data.back,
                     clozeText: data.clozeText,
                     imageUrl: data.imageUrl,
                     occlusionData: data.occlusionData,
-                    srsData: data.srsData,
                     tags: data.tags
                 });
                 setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
@@ -557,14 +557,21 @@ export function useFlashcardHandlers() {
             await resetDeckStatistics(deckId, currentUser.id);
             // remove statistics from local state
             // clear client state for cards in this deck
-            updateFlashcards(prev => prev.map(fc => 
+            updateFlashcards(prev => prev.map(fc =>
                 fc.deckId === deckId ? { ...fc, srsData: undefined } : fc
             ));
+            // refetch this deck's cards so in-memory SRS state (including
+            // versions) matches what the server persisted for the reset
+            try {
+                await loadDeckFlashcards(deckId);
+            } catch (e) {
+                console.warn('Failed to refresh flashcards after reset', e);
+            }
             // fetch fresh deck list from server (will include zeroed stats)
             if (currentUser?.id) {
                 try {
                     const fresh = await fetchDecks(currentUser.id, { includeShared: true });
-                    setDecks(fresh);
+                    setDecks(mapDecksFromApi(fresh));
                 } catch (e) {
                     console.warn('Failed to refresh decks after reset', e);
                 }
@@ -582,7 +589,7 @@ export function useFlashcardHandlers() {
             console.error('Error resetting deck statistics:', error);
             alert('Failed to reset deck statistics. Please try again.');
         }
-    }, [currentUser, updateFlashcards]);
+    }, [currentUser, updateFlashcards, loadDeckFlashcards, setDecks]);
 
     const handleExportDeck = useCallback(async (deckId: string, format: 'json' | 'csv' = 'json') => {
         if (!currentUser) return;
@@ -623,16 +630,7 @@ export function useFlashcardHandlers() {
         const newDeck = importResult.deck || importResult;
         const insertedCards = importResult.flashcards || [];
         const fetchedDecks = await fetchDecks(currentUser!.id, { includeShared: true });
-        setDecks(fetchedDecks
-            .filter((d: any) => d && d.id)
-            .map((d: any) => ({
-            id: d.id,
-            name: d.name,
-            description: d.description,
-            createdAt: d.created_at || d.createdAt,
-            userId: d.user_id || d.userId,
-            isShared: d.is_shared || d.isShared,
-        })));
+        setDecks(mapDecksFromApi(fetchedDecks));
         setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
         alert(`Deck "${newDeck?.name || 'Unknown'}" imported successfully with ${insertedCards.length} cards!`);
     }, [currentUser, setDecks, setFlashcards]);

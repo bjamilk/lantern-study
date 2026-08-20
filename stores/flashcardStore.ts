@@ -109,28 +109,43 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
   pendingFlashcardReviews: [],
   
   // State Management - Decks
-  setDecks: (decks) => set({ decks: sanitizeDecks(decks) }),
-  
-  updateDecks: (updater) => set((state) => ({
-    decks: sanitizeDecks(updater(state.decks)),
-  })),
-  
-  addDeck: (deck) => set((state) => ({
-    decks: [...state.decks, deck],
-  })),
-  
-  updateDeckInState: (deckId, updates) => set((state) => ({
-    decks: state.decks.map(d => 
-      d.id === deckId ? { ...d, ...updates } : d
-    ),
-  })),
-  
+  // Every mutating action persists via saveToStorage() so offline users keep
+  // their library across reloads (plain zustand has no selector subscriptions).
+  setDecks: (decks) => {
+    set({ decks: sanitizeDecks(decks) });
+    get().saveToStorage();
+  },
+
+  updateDecks: (updater) => {
+    set((state) => ({
+      decks: sanitizeDecks(updater(state.decks)),
+    }));
+    get().saveToStorage();
+  },
+
+  addDeck: (deck) => {
+    set((state) => ({
+      decks: [...state.decks, deck],
+    }));
+    get().saveToStorage();
+  },
+
+  updateDeckInState: (deckId, updates) => {
+    set((state) => ({
+      decks: state.decks.map(d =>
+        d.id === deckId ? { ...d, ...updates } : d
+      ),
+    }));
+    get().saveToStorage();
+  },
+
   removeDeck: (deckId) => {
     set((state) => ({
       decks: state.decks.filter(d => d.id !== deckId),
       flashcards: state.flashcards.filter(f => f.deckId !== deckId),
     }));
     get().calculateDueCardsCount();
+    get().saveToStorage();
   },
   
   // State Management - Flashcards
@@ -144,23 +159,26 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
 
     set({ flashcards: merged });
     get().calculateDueCardsCount();
+    get().saveToStorage();
   },
-  
+
   updateFlashcards: (updater) => {
     set((state) => {
       const updated = updater(state.flashcards);
       return { flashcards: Array.isArray(updated) ? updated : state.flashcards };
     });
     get().calculateDueCardsCount();
+    get().saveToStorage();
   },
-  
+
   addFlashcard: (flashcard) => {
     set((state) => ({
       flashcards: [...state.flashcards, flashcard],
     }));
     get().calculateDueCardsCount();
+    get().saveToStorage();
   },
-  
+
   updateFlashcardInState: (flashcardId, updates) => {
     set((state) => ({
       flashcards: state.flashcards.map(f =>
@@ -168,6 +186,7 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
       ),
     }));
     get().calculateDueCardsCount();
+    get().saveToStorage();
   },
 
   rememberPendingLocalReview: (flashcardId, card) => {
@@ -184,6 +203,7 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
       flashcards: state.flashcards.filter(f => f.id !== flashcardId),
     }));
     get().calculateDueCardsCount();
+    get().saveToStorage();
   },
   
   // SRS
@@ -224,6 +244,7 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
       offlineDeckIds: [],
       pendingFlashcardReviews: [],
     });
+    get().saveToStorage();
   },
 
   loadFromStorage: () => {
@@ -326,15 +347,3 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
     set({ pendingFlashcardReviews: reviews });
   },
 }));
-
-// subscribe to state changes to persist data to localStorage
-const webStore = useFlashcardStore;
-webStore.subscribe(state => state.decks, decks => {
-  try { localStorage.setItem(WEB_DECKS_KEY, JSON.stringify(decks)); } catch {}
-});
-webStore.subscribe(state => state.flashcards, flashcards => {
-  try { localStorage.setItem(WEB_FLASHCARDS_KEY, JSON.stringify(flashcards)); } catch {}
-});
-webStore.subscribe(state => state.pendingFlashcardReviews, pending => {
-  try { localStorage.setItem(WEB_PENDING_REVIEWS_KEY, JSON.stringify(pending)); } catch {}
-});

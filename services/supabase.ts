@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { markIntentionalSignOut } from './sentry';
-import { Group, UserQuestionStats } from '../types'
+import { Deck, Group, UserQuestionStats } from '../types'
 import {
   getSupabaseUrl,
   getSupabaseAnonKey,
@@ -1240,6 +1240,25 @@ export const createDeck = async (deckData: { name: string; description?: string;
   }
 };
 
+/** API caps deck page size at 50 — paginate until all decks are loaded. */
+export const DECK_API_PAGE_SIZE = 50;
+
+/** Normalize one API deck row (snake_case) to the client Deck shape. */
+export const mapDeckFromApi = (d: any): Deck => ({
+  id: d.id,
+  name: d.name,
+  description: d.description,
+  createdAt: d.created_at || d.createdAt,
+  userId: d.user_id || d.userId,
+  isShared: d.is_shared ?? d.isShared ?? false,
+});
+
+/** Map raw API deck rows to client Deck objects, dropping malformed rows. */
+export const mapDecksFromApi = (rows: any[]): Deck[] =>
+  (Array.isArray(rows) ? rows : [])
+    .filter((d: any) => d && d.id)
+    .map(mapDeckFromApi);
+
 export const fetchDecks = async (userId: string, options?: { includeShared?: boolean }) => {
   const includeShared = options?.includeShared ?? false;
   console.log('Fetching decks for user:', userId, 'includeShared:', includeShared);
@@ -1248,28 +1267,41 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
       return [];
     }
 
-    const params = new URLSearchParams();
-    params.set('userId', userId);
-    if (includeShared) params.set('includeShared', 'true');
+    // Page through the full deck list — a single request only returns the
+    // API's default page (20 decks), silently hiding the rest.
+    const collected: any[] = [];
+    let page = 1;
 
-    const response = await fetch(`${getApiRoot()}/api/v1/decks?${params.toString()}`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    });
+    while (true) {
+      const params = new URLSearchParams();
+      params.set('userId', userId);
+      if (includeShared) params.set('includeShared', 'true');
+      params.set('page', String(page));
+      params.set('limit', String(DECK_API_PAGE_SIZE));
 
-    if (response.status === 401 || response.status === 403) {
-      return [];
+      const response = await fetch(`${getApiRoot()}/api/v1/decks?${params.toString()}`, {
+        method: 'GET',
+        headers: await getAuthHeaders(),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        return [];
+      }
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to fetch decks');
+      }
+
+      const result = await response.json();
+      const rows = Array.isArray(result.data) ? result.data : [];
+      collected.push(...rows);
+      if (rows.length < DECK_API_PAGE_SIZE) break;
+      page += 1;
     }
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch decks');
-    }
-
-    const result = await response.json();
-    const data = Array.isArray(result.data) ? result.data : [];
-    console.log('Fetched decks count:', data.length);
-    return data.filter((d: any) => d && d.id);
+    console.log('Fetched decks count:', collected.length);
+    return collected.filter((d: any) => d && d.id);
   } catch (error) {
     console.error('Error fetching decks:', error);
     throw error;
@@ -1602,9 +1634,9 @@ export const fetchAllFlashcards = async (deckId?: string, userId?: string) => {
   return mapFlashcardsFromApi(collected);
 };
 
+// Note: a card's type and deck are set at creation and cannot be changed via
+// update — the server ignores (soon: rejects) them, so they are not accepted here.
 export const updateFlashcard = async (flashcardId: string, updates: {
-  deckId?: string;
-  type?: string;
   front?: string;
   back?: string;
   clozeText?: string;
@@ -1667,7 +1699,13 @@ export const reviewFlashcard = async (
         err.current = error.data ?? null;
         throw err;
       }
-      throw new Error(error.error || error.message || 'Failed to review flashcard');
+      // Carry the HTTP status so the offline sync queue can classify the
+      // failure (e.g. drop reviews for cards that no longer exist).
+      const err = new Error(
+        error.error || error.message || 'Failed to review flashcard'
+      ) as Error & { status?: number };
+      err.status = response.status;
+      throw err;
     }
 
     const result = await response.json();

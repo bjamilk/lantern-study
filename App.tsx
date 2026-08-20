@@ -1178,6 +1178,10 @@ export const App: React.FC = () => {
                         onOpenAITools={() => navigateTo(AppMode.AI_TOOLS)}
                         onSelectDeck={handleSelectDeck}
                         onStartLearn={handleStartLearn}
+                        onStartReview={(deckId) => {
+                            const deck = decks.find((d) => d.id === deckId);
+                            if (deck) handleStudyDeck(deck);
+                        }}
                         activeTestSession={activeTestSession}
                         activeStudySession={activeStudySession}
                         onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}

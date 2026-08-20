@@ -5,34 +5,17 @@ import {
   SparklesIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import {
-  getExtractionStatusMessage,
-  getNoteStudyContent,
-  hasEnoughNoteStudyContent,
-  isThinOrUnusableStudyContent,
-  MIN_NOTE_STUDY_CONTENT_CHARS,
-} from '@lantern/shared';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { Button } from './ui';
 import Modal from './ui/Modal';
 import * as notesApi from '../services/notes';
-import { aiGenerateFlashcards } from '../services/ai';
-import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { useUIStore } from '../stores/uiStore';
 import { useNotesStore } from '../stores/notesStore';
+import { useStudyGenerators, type ImportAndStudyResult } from '../hooks/useStudyGenerators';
 import type { NoteAttachment, StudyNote } from '../types';
 
-export interface ImportAndStudyResult {
-  noteId: string;
-  noteTitle: string;
-  /** True when AI Smart Notes summary was written to the note. */
-  summarized?: boolean;
-  flashcardCount?: number;
-  quizQuestionCount?: number;
-  /** Non-fatal AI generator failures to surface on the done step (REL-01). */
-  warnings?: string[];
-}
+export type { ImportAndStudyResult } from '../hooks/useStudyGenerators';
 
 interface ImportAndStudyModalProps {
   isOpen: boolean;
@@ -70,100 +53,16 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     onClose();
   };
 
+  const { runStudyGenerators: runGenerators } = useStudyGenerators({ generateCards, generateQuiz });
+
   const runStudyGenerators = useCallback(
     async (note: StudyNote & { attachments?: NoteAttachment[] }) => {
-      const studyInput = {
-        sourceType: note.sourceType,
-        body: note.body,
-        summary: note.summary,
-        attachments: note.attachments,
-      };
-      const studyText = getNoteStudyContent(studyInput);
-
-      let summarized = false;
-      let flashcardCount = 0;
-      let quizQuestionCount = 0;
-      const warnings: string[] = [];
-
-      const extractionMessage = getExtractionStatusMessage(
-        (note.attachments?.[0]?.metadata?.extractionStatus as
-          | 'ok'
-          | 'needs_ocr'
-          | 'empty'
-          | 'ocr_processing'
-          | 'ocr_failed'
-          | undefined) || null,
-        note.sourceType
-      );
-
-      if (hasEnoughNoteStudyContent(studyInput) && !isThinOrUnusableStudyContent(studyInput)) {
-        try {
-          const { summary, note: updated } = await notesApi.summarizeNote(note.id);
-          summarized = Boolean(summary?.trim()) && (summary?.trim().length || 0) >= MIN_NOTE_STUDY_CONTENT_CHARS;
-          const notesState = useNotesStore.getState();
-          notesState.setNotes(
-            notesState.notes.map((n) =>
-              n.id === updated.id ? { ...n, ...updated, summary, attachments: note.attachments ?? n.attachments } : n
-            )
-          );
-          if (notesState.selectedNote?.id === updated.id) {
-            notesState.setSelectedNote({
-              ...notesState.selectedNote,
-              ...updated,
-              summary,
-              attachments: note.attachments ?? notesState.selectedNote.attachments,
-            });
-          }
-          if (!summarized) warnings.push('Summary generation returned empty or thin content.');
-        } catch {
-          warnings.push('Summary generation failed. You can retry Smart Notes from the note.');
-        }
-      } else {
-        warnings.push(
-          extractionMessage ||
-            `Could not extract enough text to summarize (need ${MIN_NOTE_STUDY_CONTENT_CHARS}+ characters). For scanned PDFs, wait for OCR or open the note and add content.`
-        );
-      }
-
-      if (generateCards && hasEnoughNoteStudyContent(studyInput) && !isThinOrUnusableStudyContent(studyInput)) {
-        try {
-          const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
-            count: normalizeFlashcardCount(),
-          });
-          if (flashcards?.length) flashcardCount = flashcards.length;
-          else warnings.push('Flashcard generation returned no cards.');
-        } catch {
-          warnings.push('Flashcard generation failed. You can retry from the note.');
-        }
-      }
-
-      if (generateQuiz && hasEnoughNoteStudyContent(studyInput) && !isThinOrUnusableStudyContent(studyInput)) {
-        try {
-          const { questions } = await notesApi.generateDailyQuizFromContent(
-            studyText.slice(0, 8000),
-            'retention',
-            5
-          );
-          quizQuestionCount = questions?.length ?? 0;
-          if (!quizQuestionCount) warnings.push('Quiz generation returned no questions.');
-        } catch {
-          warnings.push('Quiz generation failed. You can retry from the note.');
-        }
-      }
-
-      const res: ImportAndStudyResult = {
-        noteId: note.id,
-        noteTitle: note.title,
-        summarized,
-        flashcardCount,
-        quizQuestionCount,
-        warnings: warnings.length ? warnings : undefined,
-      };
+      const res = await runGenerators(note);
       setResult(res);
       setStep('done');
       onComplete(res);
     },
-    [generateCards, generateQuiz, onComplete]
+    [runGenerators, onComplete]
   );
 
   const processContent = useCallback(
@@ -370,14 +269,21 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
               <p className="font-semibold text-lantern-text">
                 {result.warnings?.length ? `${result.noteTitle} imported` : `${result.noteTitle} ready!`}
               </p>
-              <div className="flex justify-center gap-4 text-sm text-lantern-text-muted">
-                {result.summarized ? <span>AI summary</span> : null}
-                {result.flashcardCount ? <span>{result.flashcardCount} flashcards</span> : null}
-                {result.quizQuestionCount ? <span>{result.quizQuestionCount} quiz Qs</span> : null}
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-lantern-text-muted">
+                {result.summarized ? <span>AI summary saved</span> : null}
+                {result.flashcardCount ? (
+                  <span>{result.flashcardCount} flashcards saved</span>
+                ) : null}
+                {result.quizQuestionCount ? <span>{result.quizQuestionCount}-question quiz ready</span> : null}
                 {!result.summarized && !result.flashcardCount && !result.quizQuestionCount && !result.warnings?.length ? (
                   <span>Note saved</span>
                 ) : null}
               </div>
+              {result.flashcardCount && result.deckName ? (
+                <p className="text-sm text-lantern-text-secondary">
+                  Cards saved to deck <span className="font-semibold text-lantern-text">“{result.deckName}”</span> — find it in your Library.
+                </p>
+              ) : null}
               {result.warnings?.length ? (
                 <div role="status" aria-live="polite" className="text-left text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 space-y-1">
                   {result.warnings.map((w) => (

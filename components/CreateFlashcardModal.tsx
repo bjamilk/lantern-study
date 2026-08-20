@@ -683,12 +683,19 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                       id="cardType"
                       value={type}
                       onChange={e => setType(e.target.value as FlashcardType)}
-                      className="w-full p-2 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text"
+                      disabled={isEditing}
+                      aria-describedby={isEditing ? 'cardTypeLockedHint' : undefined}
+                      className="w-full p-2 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <option value={FlashcardType.BASIC}>Basic</option>
                       <option value={FlashcardType.CLOZE}>Cloze</option>
                       <option value={FlashcardType.IMAGE_OCCLUSION}>Image Occlusion</option>
                     </select>
+                    {isEditing && (
+                      <p id="cardTypeLockedHint" className="mt-1 text-xs text-lantern-text-secondary">
+                        Type is set when a card is created — make a new card to change it.
+                      </p>
+                    )}
                   </div>
                 </div>
                 {type === FlashcardType.BASIC ? (

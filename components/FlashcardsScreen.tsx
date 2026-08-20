@@ -8,6 +8,7 @@ import {
   CloudArrowDownIcon,
   CloudArrowUpIcon,
   EllipsisVerticalIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import { isCardDue, getDeckListStatsLine, getStudyCtaLabel, getStudyAllDueLabel } from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -52,6 +53,15 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   embedded = false,
 }) => {
   const { isDeckOffline } = useFlashcardStore();
+  // Deck bootstrap error contract (being added to the store by a parallel change):
+  // `deckLoadError: string | null` and `retryDeckBootstrap(): void`. Read defensively so
+  // this renders correctly whether or not the store fields exist yet at runtime.
+  const deckLoadError = useFlashcardStore(
+    (s) => ((s as unknown as { deckLoadError?: string | null }).deckLoadError ?? null)
+  );
+  const retryDeckBootstrap = useFlashcardStore(
+    (s) => (s as unknown as { retryDeckBootstrap?: () => void }).retryDeckBootstrap
+  );
   const openWithMessage = useCompanionStore(s => s.openWithMessage);
   const { lowDataMode } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -138,6 +148,23 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
             {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
           </div>
         ) : validDecks.length > 0 ? (
+          <>
+          {deckLoadError && (
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" aria-hidden />
+                Couldn&apos;t refresh your decks — showing what&apos;s saved on this device.
+              </span>
+              {retryDeckBootstrap && (
+                <Button size="sm" variant="secondary" onClick={() => retryDeckBootstrap()}>
+                  Retry
+                </Button>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {validDecks.map((deck, index) => {
               const { dueCards, totalCards } = getDeckStats(deck.id);
@@ -204,6 +231,21 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                 </div>
               );
             })}
+          </div>
+          </>
+        ) : deckLoadError ? (
+          <div
+            role="alert"
+            className="max-w-md mx-auto mt-8 rounded-2xl border border-lantern-border bg-lantern-surface p-6 text-center space-y-3"
+          >
+            <ExclamationTriangleIcon className="w-8 h-8 mx-auto text-amber-500" aria-hidden />
+            <p className="font-semibold text-lantern-text">Couldn&apos;t load your decks</p>
+            <p className="text-sm text-lantern-text-secondary">{deckLoadError}</p>
+            {retryDeckBootstrap && (
+              <Button variant="primary" onClick={() => retryDeckBootstrap()}>
+                Retry
+              </Button>
+            )}
           </div>
         ) : (
           <EmptyState

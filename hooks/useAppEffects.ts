@@ -14,7 +14,7 @@ import {
     supabase, setCachedAuthToken,
     fetchGroups, fetchGroupMembers,
     fetchMessages, fetchDirectMessages,
-    fetchDecks, fetchAllFlashcards,
+    fetchDecks, fetchAllFlashcards, mapDecksFromApi,
     fetchTestResults, fetchUserQuestionStats,
     fetchDashboardSummary,
     fetchNotifications,
@@ -684,7 +684,7 @@ export function useAppEffects({
 
             // Phase 2: deferred heavy loads (paginated / background)
             const deferredResults = await Promise.allSettled([
-                fetchDecks(userId),
+                fetchDecks(userId, { includeShared: true }),
                 fetchAllFlashcards(undefined, userId),
                 dashboardInputsPromise.then(inputs => inputs.testResults),
                 dashboardInputsPromise.then(inputs => inputs.userQuestionStats),
@@ -796,14 +796,9 @@ export function useAppEffects({
                 const decksResult = results[4];
                 const flashcardsResult = results[5];
                 if (decksResult.status === 'fulfilled') {
-                    setDecks((decksResult.value || [])
-                        .filter((d: any) => d && d.id)
-                        .map((d: any) => ({
-                        id: d.id,
-                        name: d.name,
-                        description: d.description,
-                        createdAt: d.created_at
-                    })));
+                    // Full mapping (userId/isShared included) so shared-deck
+                    // affordances survive the bootstrap load.
+                    setDecks(mapDecksFromApi(decksResult.value || []));
                 }
                 void useNotesStore.getState().loadFolders();
                 void useNotesStore.getState().loadNotes();
