@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   BellAlertIcon,
   BellSlashIcon,
@@ -103,15 +103,25 @@ function fromSearchFilters(filters: JobSearchFilters): PortalFilters {
   };
 }
 
-function formatDeadline(value?: string | null) {
+function formatDeadline(
+  value?: string | null,
+): { label: string; closed: boolean } | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   const daysLeft = Math.ceil((date.getTime() - Date.now()) / 86_400_000);
-  if (daysLeft < 0) return null;
-  if (daysLeft === 0) return "Closes today";
-  if (daysLeft <= 7) return `Closes in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
-  return `Apply by ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  // A passed deadline must read as closed, not vanish and look open-ended.
+  if (daysLeft < 0) return { label: "Applications closed", closed: true };
+  if (daysLeft === 0) return { label: "Closes today", closed: false };
+  if (daysLeft <= 7)
+    return {
+      label: `Closes in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`,
+      closed: false,
+    };
+  return {
+    label: `Apply by ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+    closed: false,
+  };
 }
 
 function companyLabel(job: JobPosting) {
@@ -132,6 +142,9 @@ export default function JobsBoardScreen({
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Failures of save/alert actions must not unmount the loaded list the way a
+  // list-load error does, so they report through their own channel.
+  const [actionError, setActionError] = useState<string | null>(null);
   const [filters, setFilters] = useState<PortalFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] =
     useState<PortalFilters>(EMPTY_FILTERS);
@@ -144,13 +157,18 @@ export default function JobsBoardScreen({
   const [savingSearch, setSavingSearch] = useState(false);
   const [searchNameDraft, setSearchNameDraft] = useState<string | null>(null);
   const limit = 12;
+  // Monotonic request id: a slow, stale response must never overwrite the
+  // rows or error state of a newer view/page/filter selection.
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     try {
       if (view === "saved") {
         const res = await fetchSavedJobPostings();
+        if (seq !== loadSeq.current) return;
         setJobs(res.data || []);
         setTotal((res.data || []).length);
         return;
@@ -174,12 +192,14 @@ export default function JobsBoardScreen({
         companyOnly: appliedFilters.companyOnly || undefined,
         sort: appliedFilters.sort,
       });
+      if (seq !== loadSeq.current) return;
       setJobs(res.data || []);
       setTotal(res.pagination?.total ?? 0);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : "Failed to load jobs");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [appliedFilters, page, view]);
 
@@ -234,17 +254,20 @@ export default function JobsBoardScreen({
 
   const saveCurrentSearch = async (name: string) => {
     setSavingSearch(true);
-    setError(null);
+    setActionError(null);
     try {
+      // Save the results the user is looking at, not an unapplied draft.
       const res = await createJobSavedSearch({
         name,
-        filters: toSearchFilters(filters),
+        filters: toSearchFilters(appliedFilters),
         notify: true,
       });
       setSavedSearches((current) => [res.data, ...current]);
       setSearchNameDraft(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save this search");
+      setActionError(
+        e instanceof Error ? e.message : "Could not save this search",
+      );
     } finally {
       setSavingSearch(false);
     }
@@ -273,7 +296,9 @@ export default function JobsBoardScreen({
           item.id === saved.id ? { ...item, notify: saved.notify } : item,
         ),
       );
-      setError(e instanceof Error ? e.message : "Could not update alerts");
+      setActionError(
+        e instanceof Error ? e.message : "Could not update alerts",
+      );
     }
   };
 
@@ -285,7 +310,9 @@ export default function JobsBoardScreen({
       await deleteJobSavedSearch(saved.id);
     } catch (e) {
       setSavedSearches((current) => [saved, ...current]);
-      setError(e instanceof Error ? e.message : "Could not delete this search");
+      setActionError(
+        e instanceof Error ? e.message : "Could not delete this search",
+      );
     }
   };
 
@@ -296,7 +323,7 @@ export default function JobsBoardScreen({
     }
     const nextSaved = !job.isSaved;
     setSavingId(job.id);
-    setError(null);
+    setActionError(null);
     // Reflect the change immediately, then reconcile if the request fails.
     setJobs((current) =>
       current.map((item) =>
@@ -315,7 +342,9 @@ export default function JobsBoardScreen({
           item.id === job.id ? { ...item, isSaved: job.isSaved } : item,
         ),
       );
-      setError(e instanceof Error ? e.message : "Could not update saved jobs");
+      setActionError(
+        e instanceof Error ? e.message : "Could not update saved jobs",
+      );
     } finally {
       setSavingId(null);
     }
