@@ -462,6 +462,15 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           setLoading(false);
           return;
         }
+        if (parsedSalePrice > 0 && !formData.saleEndsAt.trim()) {
+          useToastStore
+            .getState()
+            .showToast(
+              "Add a promo end date, or clear the discounted price — a sale with no end date won't show to buyers."
+            );
+          setLoading(false);
+          return;
+        }
       }
 
       // First create the listing - use subcategory as the database category
@@ -495,33 +504,45 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         console.log('[CreateMarketplaceListingModal] Listing created');
       }
 
-      // Then upload images if any
-      if (formData.images.length > 0) {
-        setUploadingImages(true);
-        const { urls: uploadedUrls, failedNames } = await uploadImages(listing.id);
+      // The listing is now LIVE. Any failure while attaching photos must NOT be
+      // reported as a create failure — otherwise the seller resubmits and
+      // duplicates the live listing. Isolate the post-create steps.
+      try {
+        // Then upload images if any
+        if (formData.images.length > 0) {
+          setUploadingImages(true);
+          const { urls: uploadedUrls, failedNames } = await uploadImages(listing.id);
 
-        if (uploadedUrls.length > 0) {
-          await updateMarketplaceListing(listing.id, {
-            images: uploadedUrls
-          });
-        }
-        setUploadingImages(false);
+          if (uploadedUrls.length > 0) {
+            await updateMarketplaceListing(listing.id, {
+              images: uploadedUrls
+            });
+          }
+          setUploadingImages(false);
 
-        if (failedNames.length > 0 && uploadedUrls.length === 0) {
-          useToastStore.getState().showToast(
-            'Listing created, but all photos failed to upload. Edit the listing to add photos.',
-            'error'
-          );
-        } else if (failedNames.length > 0) {
-          useToastStore.getState().showToast(
-            `Listing created, but ${failedNames.length} photo(s) failed to upload.`,
-            'error'
-          );
+          if (failedNames.length > 0 && uploadedUrls.length === 0) {
+            useToastStore.getState().showToast(
+              'Listing created, but all photos failed to upload. Edit the listing to add photos.',
+              'error'
+            );
+          } else if (failedNames.length > 0) {
+            useToastStore.getState().showToast(
+              `Listing created, but ${failedNames.length} photo(s) failed to upload.`,
+              'error'
+            );
+          } else {
+            useToastStore.getState().showToast('Listing published — it is now live!', 'success');
+          }
         } else {
           useToastStore.getState().showToast('Listing published — it is now live!', 'success');
         }
-      } else {
-        useToastStore.getState().showToast('Listing published — it is now live!', 'success');
+      } catch (attachError) {
+        console.error('Error attaching photos to created listing:', attachError);
+        setUploadingImages(false);
+        useToastStore.getState().showToast(
+          "Listing published, but photos couldn't be attached — edit the listing to add them",
+          'error'
+        );
       }
 
       try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* best-effort */ }

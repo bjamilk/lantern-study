@@ -250,6 +250,30 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
       useToastStore.getState().showToast('Please enter the Nigerian city for this listing');
       return;
     }
+
+    const parsedPrice = formData.price.trim() ? parseFloat(formData.price) : undefined;
+    const parsedSalePrice = formData.salePrice.trim() ? parseFloat(formData.salePrice) : undefined;
+    if (parsedSalePrice != null) {
+      if (!Number.isFinite(parsedSalePrice) || parsedSalePrice < 0) {
+        useToastStore.getState().showToast('Please enter a valid sale price');
+        return;
+      }
+      if (parsedPrice == null || parsedSalePrice >= parsedPrice) {
+        useToastStore
+          .getState()
+          .showToast('Discounted price must be lower than the asking price, or leave it blank');
+        return;
+      }
+      if (parsedSalePrice > 0 && !formData.saleEndsAt.trim()) {
+        useToastStore
+          .getState()
+          .showToast(
+            "Add a promo end date, or clear the discounted price — a sale with no end date won't show to buyers."
+          );
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
