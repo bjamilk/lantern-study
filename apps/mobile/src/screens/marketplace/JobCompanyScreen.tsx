@@ -19,7 +19,9 @@ import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   formatJobCompensation,
   formatJobLocation,
+  getJobEmployerTrustPresentation,
   type JobCompany,
+  type JobCompanyMemberRole,
   type JobPosting,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
@@ -35,6 +37,7 @@ export function JobCompanyScreen() {
   const route = useRoute<RouteProp<MarketStackParamList, "JobCompany">>();
   const [company, setCompany] = useState<JobCompany | null>(null);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
+  const [myRole, setMyRole] = useState<JobCompanyMemberRole | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,9 +47,11 @@ export function JobCompanyScreen() {
         const data = res.data as {
           company: JobCompany;
           jobs: JobPosting[];
+          myRole?: JobCompanyMemberRole | null;
         };
         setCompany(data.company);
         setJobs(data.jobs || []);
+        setMyRole(data.myRole || null);
       })
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Company not found"),
@@ -84,6 +89,32 @@ export function JobCompanyScreen() {
                   </View>
                 )}
                 <View className="flex-1">
+                  {(() => {
+                    const trust = getJobEmployerTrustPresentation({
+                      companyId: company.id,
+                      company,
+                    });
+                    const toneClass =
+                      trust.tone === "positive"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : trust.tone === "caution"
+                          ? "bg-amber-100 text-amber-900"
+                          : "bg-slate-100 text-slate-700";
+                    return (
+                      <View className="flex-row flex-wrap items-center gap-2 mb-1">
+                        <Text
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${toneClass}`}
+                        >
+                          {trust.label}
+                        </Text>
+                        {myRole ? (
+                          <Text className="text-[11px] text-lantern-text-tertiary">
+                            Your role: {myRole}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  })()}
                   <Text className="text-lg font-bold text-lantern-text">
                     {company.displayName}
                   </Text>
@@ -93,10 +124,13 @@ export function JobCompanyScreen() {
                     </Text>
                   ) : null}
                   <Text className="text-xs text-lantern-text-tertiary mt-1">
-                    {JOB_COMPANY_VERIFICATION_LABELS[
-                      company.verificationStatus as keyof typeof JOB_COMPANY_VERIFICATION_LABELS
-                    ] || company.verificationStatus}
-                    {company.hqLocation ? ` · ${company.hqLocation}` : ""}
+                    {[company.industry, company.hqLocation]
+                      .filter(Boolean)
+                      .join(" · ") ||
+                      JOB_COMPANY_VERIFICATION_LABELS[
+                        company.verificationStatus as keyof typeof JOB_COMPANY_VERIFICATION_LABELS
+                      ] ||
+                      company.verificationStatus}
                   </Text>
                   {company.website ? (
                     <Pressable
@@ -109,10 +143,22 @@ export function JobCompanyScreen() {
                   ) : null}
                 </View>
               </View>
-              {company.about ? (
-                <Text className="text-sm text-lantern-text-secondary mt-3">
-                  {company.about}
+              {myRole &&
+              company.verificationStatus === "rejected" &&
+              company.verificationNote ? (
+                <Text className="text-sm text-red-700 mt-3">
+                  Verification note: {company.verificationNote}
                 </Text>
+              ) : null}
+              {company.about ? (
+                <View className="mt-3">
+                  <Text className="text-sm font-semibold text-lantern-text mb-1">
+                    About
+                  </Text>
+                  <Text className="text-sm text-lantern-text-secondary">
+                    {company.about}
+                  </Text>
+                </View>
               ) : null}
             </Card>
 
@@ -133,9 +179,16 @@ export function JobCompanyScreen() {
                   }
                 >
                   <Card>
-                    <Text className="font-medium text-lantern-text">
-                      {job.title}
-                    </Text>
+                    <View className="flex-row flex-wrap items-center gap-2">
+                      <Text className="font-medium text-lantern-text">
+                        {job.title}
+                      </Text>
+                      {job.hasApplied ? (
+                        <Text className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-800">
+                          Applied
+                        </Text>
+                      ) : null}
+                    </View>
                     <Text className="text-xs text-lantern-text-tertiary mt-1">
                       {formatJobLocation(job)} ·{" "}
                       {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]} ·{" "}

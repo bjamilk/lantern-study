@@ -13,6 +13,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   JOBS_COMPLIANCE_BANNER,
+  JOB_EMPLOYMENT_TYPES,
   JOB_EMPLOYMENT_TYPE_LABELS,
   describeJobSearchFilters,
   formatJobCompensation,
@@ -21,9 +22,12 @@ import {
   formatJobPostedDate,
   isEmptyJobSearchFilters,
   suggestJobSavedSearchName,
+  type JobCompensationKind,
+  type JobEmploymentType,
   type JobPosting,
   type JobSavedSearch,
   type JobSearchFilters,
+  type JobSearchSort,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import {
@@ -39,17 +43,106 @@ import {
 import type { MarketStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
-const FILTERS = [
-  { id: "all", label: "All jobs" },
-  { id: "saved", label: "Saved" },
-  { id: "full_time", label: "Full-time" },
-  { id: "part_time", label: "Part-time" },
-  { id: "internship", label: "Internships" },
+/** Employment types promoted to one-tap chips; the panel still exposes all 8. */
+const QUICK_TYPE_CHIPS: JobEmploymentType[] = [
+  "full_time",
+  "part_time",
+  "internship",
+];
+
+const LOCATION_OPTIONS = [
+  { id: "", label: "Any location" },
   { id: "remote", label: "Remote" },
-  { id: "company", label: "Companies" },
+  { id: "onsite", label: "On-site / hybrid" },
 ] as const;
 
-type FilterId = (typeof FILTERS)[number]["id"];
+const COMPENSATION_OPTIONS = [
+  { id: "", label: "Any pay" },
+  { id: "paid", label: "Paid" },
+  { id: "discuss", label: "Pay discussed" },
+  { id: "unpaid", label: "Unpaid" },
+] as const;
+
+const SORT_OPTIONS = [
+  { id: "trending", label: "Trending" },
+  { id: "newest", label: "Newest" },
+  { id: "closing", label: "Closing soon" },
+] as const;
+
+type LocationType = "" | "remote" | "onsite";
+
+/** Solid pill used for the quick-filter row. */
+function FilterChip({
+  label,
+  active,
+  onPress,
+  badge,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  badge?: number;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      className={`flex-row items-center gap-1 rounded-full border px-4 py-2 ${
+        active
+          ? "border-lantern-primary bg-lantern-primary"
+          : "border-lantern-border bg-lantern-surface"
+      }`}
+    >
+      <Text
+        className={`text-sm font-medium ${
+          active ? "text-white" : "text-lantern-text-secondary"
+        }`}
+      >
+        {label}
+      </Text>
+      {badge && badge > 0 ? (
+        <View
+          className={`ml-0.5 rounded-full px-1.5 ${active ? "bg-white/25" : "bg-lantern-primary"}`}
+        >
+          <Text className="text-[10px] font-bold text-white">{badge}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+/** Outline pill used inside the expanded filter panel. */
+function SelectPill({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      className={`rounded-full border px-3 py-1.5 ${
+        active
+          ? "border-lantern-primary bg-lantern-primary/10"
+          : "border-lantern-border bg-lantern-background"
+      }`}
+    >
+      <Text
+        className={`text-xs font-medium ${
+          active ? "text-lantern-primary" : "text-lantern-text-secondary"
+        }`}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 function formatJobDeadline(value?: string | null) {
   if (!value) return null;
@@ -70,7 +163,18 @@ export function JobsHomeScreen() {
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<FilterId>("all");
+  const [view, setView] = useState<"all" | "saved">("all");
+  // Advanced filters, mirroring the web board's full control set.
+  const [employmentType, setEmploymentType] = useState<JobEmploymentType | "">("");
+  const [locationType, setLocationType] = useState<LocationType>("");
+  const [compensationKind, setCompensationKind] = useState<JobCompensationKind | "">("");
+  // `minPay` is the applied value; `minPayDraft` holds keystrokes so a numeric
+  // entry does not fire one list request per digit.
+  const [minPay, setMinPay] = useState("");
+  const [minPayDraft, setMinPayDraft] = useState("");
+  const [sort, setSort] = useState<JobSearchSort>("trending");
+  const [companyOnly, setCompanyOnly] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,19 +190,69 @@ export function JobsHomeScreen() {
   const activeFilters = useMemo<JobSearchFilters>(() => {
     const saved = savedSearches.find((item) => item.id === activeSavedId);
     if (saved) return saved.filters;
-    const filters: JobSearchFilters = { sort: "trending" };
+    // Default sort stays 'trending' to match the web board exactly; drift here
+    // has caused saved-search bugs before.
+    const filters: JobSearchFilters = { sort };
     if (query) filters.search = query;
-    if (
-      filter === "full_time" ||
-      filter === "part_time" ||
-      filter === "internship"
-    ) {
-      filters.employmentType = filter;
-    }
-    if (filter === "remote") filters.remote = true;
-    if (filter === "company") filters.companyOnly = true;
+    if (employmentType) filters.employmentType = employmentType;
+    if (locationType === "remote") filters.remote = true;
+    else if (locationType === "onsite") filters.remote = false;
+    if (compensationKind) filters.compensationKind = compensationKind;
+    const minPayNum = Number(minPay);
+    if (Number.isFinite(minPayNum) && minPayNum > 0) filters.minPay = minPayNum;
+    if (companyOnly) filters.companyOnly = true;
     return filters;
-  }, [activeSavedId, filter, query, savedSearches]);
+  }, [
+    activeSavedId,
+    savedSearches,
+    query,
+    employmentType,
+    locationType,
+    compensationKind,
+    minPay,
+    sort,
+    companyOnly,
+  ]);
+
+  /** Populate the controls from a filter set (applying a saved search). */
+  const hydrateFilters = useCallback((f: JobSearchFilters) => {
+    setEmploymentType(f.employmentType || "");
+    setLocationType(
+      f.remote === true ? "remote" : f.remote === false ? "onsite" : "",
+    );
+    setCompensationKind(f.compensationKind || "");
+    setMinPay(f.minPay ? String(f.minPay) : "");
+    setMinPayDraft(f.minPay ? String(f.minPay) : "");
+    setSort(
+      f.sort === "closing" || f.sort === "newest" ? f.sort : "trending",
+    );
+    setCompanyOnly(!!f.companyOnly);
+    setQuery(f.search || "");
+    setSearchInput(f.search || "");
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setActiveSavedId(null);
+    setSearchInput("");
+    setQuery("");
+    setEmploymentType("");
+    setLocationType("");
+    setCompensationKind("");
+    setMinPay("");
+    setMinPayDraft("");
+    setSort("trending");
+    setCompanyOnly(false);
+    setView("all");
+  }, []);
+
+  // Count of advanced filters in effect, for the Filters button badge.
+  const advancedFilterCount =
+    (employmentType ? 1 : 0) +
+    (locationType ? 1 : 0) +
+    (compensationKind ? 1 : 0) +
+    (Number(minPay) > 0 ? 1 : 0) +
+    (sort !== "trending" ? 1 : 0) +
+    (companyOnly ? 1 : 0);
 
   const load = useCallback(
     async (requestedPage = 1) => {
@@ -106,7 +260,7 @@ export function JobsHomeScreen() {
       else setLoadingMore(true);
       setError(null);
       try {
-        if (filter === "saved" && !activeSavedId) {
+        if (view === "saved" && !activeSavedId) {
           const response = await fetchSavedJobPostings();
           setJobs(response.data || []);
           setTotal((response.data || []).length);
@@ -132,7 +286,7 @@ export function JobsHomeScreen() {
         else setLoadingMore(false);
       }
     },
-    [activeFilters, activeSavedId, filter],
+    [activeFilters, activeSavedId, view],
   );
 
   useEffect(() => {
@@ -228,7 +382,7 @@ export function JobsHomeScreen() {
       );
       try {
         await setJobPostingSaved(job.id, nextSaved);
-        if (!nextSaved && filter === "saved") {
+        if (!nextSaved && view === "saved") {
           setJobs((current) => current.filter((item) => item.id !== job.id));
           setTotal((current) => Math.max(0, current - 1));
         }
@@ -245,7 +399,7 @@ export function JobsHomeScreen() {
         setSavingId(null);
       }
     },
-    [filter],
+    [view],
   );
 
   return (
@@ -329,32 +483,210 @@ export function JobsHomeScreen() {
             gap: 8,
           }}
         >
-          {FILTERS.map((option) => {
-            const active = !activeSavedId && filter === option.id;
-            return (
-              <Pressable
-                key={option.id}
+          <FilterChip
+            label="All jobs"
+            active={view === "all"}
+            onPress={() => {
+              setActiveSavedId(null);
+              setView("all");
+            }}
+          />
+          <FilterChip
+            label="Saved"
+            active={view === "saved"}
+            onPress={() => {
+              setActiveSavedId(null);
+              setView("saved");
+            }}
+          />
+          {QUICK_TYPE_CHIPS.map((type) => (
+            <FilterChip
+              key={type}
+              label={JOB_EMPLOYMENT_TYPE_LABELS[type]}
+              active={view === "all" && employmentType === type}
+              onPress={() => {
+                setActiveSavedId(null);
+                setView("all");
+                setEmploymentType((current) =>
+                  current === type ? "" : type,
+                );
+              }}
+            />
+          ))}
+          <FilterChip
+            label="Remote"
+            active={view === "all" && locationType === "remote"}
+            onPress={() => {
+              setActiveSavedId(null);
+              setView("all");
+              setLocationType((current) =>
+                current === "remote" ? "" : "remote",
+              );
+            }}
+          />
+          <FilterChip
+            label="Companies"
+            active={view === "all" && companyOnly}
+            onPress={() => {
+              setActiveSavedId(null);
+              setView("all");
+              setCompanyOnly((current) => !current);
+            }}
+          />
+          <FilterChip
+            label="Filters"
+            active={showFilters}
+            badge={advancedFilterCount}
+            onPress={() => setShowFilters((current) => !current)}
+          />
+        </ScrollView>
+
+        {showFilters ? (
+          <View className="mx-4 mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4">
+            <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary">
+              Job type
+            </Text>
+            <View className="mt-2 flex-row flex-wrap gap-2">
+              <SelectPill
+                label="All types"
+                active={!employmentType}
                 onPress={() => {
                   setActiveSavedId(null);
-                  setFilter(option.id);
+                  setEmploymentType("");
                 }}
-                className={`rounded-full border px-4 py-2 ${
-                  active
-                    ? "border-lantern-primary bg-lantern-primary"
-                    : "border-lantern-border bg-lantern-surface"
-                }`}
+              />
+              {JOB_EMPLOYMENT_TYPES.map((type) => (
+                <SelectPill
+                  key={type}
+                  label={JOB_EMPLOYMENT_TYPE_LABELS[type]}
+                  active={employmentType === type}
+                  onPress={() => {
+                    setActiveSavedId(null);
+                    setEmploymentType(type);
+                  }}
+                />
+              ))}
+            </View>
+
+            <Text className="mt-4 text-xs font-semibold uppercase text-lantern-text-tertiary">
+              Location
+            </Text>
+            <View className="mt-2 flex-row flex-wrap gap-2">
+              {LOCATION_OPTIONS.map((option) => (
+                <SelectPill
+                  key={option.id || "any-location"}
+                  label={option.label}
+                  active={locationType === option.id}
+                  onPress={() => {
+                    setActiveSavedId(null);
+                    setLocationType(option.id);
+                  }}
+                />
+              ))}
+            </View>
+
+            <Text className="mt-4 text-xs font-semibold uppercase text-lantern-text-tertiary">
+              Compensation
+            </Text>
+            <View className="mt-2 flex-row flex-wrap gap-2">
+              {COMPENSATION_OPTIONS.map((option) => (
+                <SelectPill
+                  key={option.id || "any-pay"}
+                  label={option.label}
+                  active={compensationKind === option.id}
+                  onPress={() => {
+                    setActiveSavedId(null);
+                    setCompensationKind(option.id);
+                  }}
+                />
+              ))}
+            </View>
+
+            <Text className="mt-4 text-xs font-semibold uppercase text-lantern-text-tertiary">
+              Minimum pay (₦)
+            </Text>
+            <TextInput
+              className="mt-2 h-11 rounded-xl border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text"
+              placeholder="e.g. 50000"
+              placeholderTextColor="#94a3b8"
+              keyboardType="numeric"
+              value={minPayDraft}
+              onChangeText={(text) =>
+                setMinPayDraft(text.replace(/[^0-9]/g, ""))
+              }
+              onEndEditing={() => {
+                setActiveSavedId(null);
+                setMinPay(minPayDraft);
+              }}
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                setActiveSavedId(null);
+                setMinPay(minPayDraft);
+              }}
+            />
+
+            <Text className="mt-4 text-xs font-semibold uppercase text-lantern-text-tertiary">
+              Sort by
+            </Text>
+            <View className="mt-2 flex-row flex-wrap gap-2">
+              {SORT_OPTIONS.map((option) => (
+                <SelectPill
+                  key={option.id}
+                  label={option.label}
+                  active={sort === option.id}
+                  onPress={() => {
+                    setActiveSavedId(null);
+                    setSort(option.id);
+                  }}
+                />
+              ))}
+            </View>
+
+            <Pressable
+              onPress={() => {
+                setActiveSavedId(null);
+                setCompanyOnly((current) => !current);
+              }}
+              className="mt-4 flex-row items-center gap-2"
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: companyOnly }}
+            >
+              <Ionicons
+                name={companyOnly ? "checkbox" : "square-outline"}
+                size={20}
+                color={companyOnly ? "#0f766e" : "#94a3b8"}
+              />
+              <Text className="text-sm text-lantern-text-secondary">
+                Company roles only
+              </Text>
+            </Pressable>
+
+            <View className="mt-4 flex-row gap-2">
+              <Pressable
+                onPress={() => {
+                  setActiveSavedId(null);
+                  setMinPay(minPayDraft);
+                  setShowFilters(false);
+                }}
+                className="h-11 flex-1 items-center justify-center rounded-xl bg-lantern-primary"
               >
-                <Text
-                  className={`text-sm font-medium ${
-                    active ? "text-white" : "text-lantern-text-secondary"
-                  }`}
-                >
-                  {option.label}
+                <Text className="text-sm font-semibold text-white">
+                  Apply filters
                 </Text>
               </Pressable>
-            );
-          })}
-        </ScrollView>
+              {advancedFilterCount > 0 || employmentType || query ? (
+                <Pressable
+                  onPress={clearFilters}
+                  className="h-11 items-center justify-center rounded-xl border border-lantern-border px-4"
+                >
+                  <Text className="text-sm font-semibold text-lantern-primary">
+                    Clear
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
 
         {savedSearches.length ? (
           <View className="mx-4 mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-3">
@@ -368,7 +700,14 @@ export function JobsHomeScreen() {
               >
                 <Pressable
                   className="flex-1 flex-row items-center gap-2"
-                  onPress={() => setActiveSavedId(saved.id)}
+                  onPress={() => {
+                    // Reflect the saved search in the controls, then mark it
+                    // active for the highlight; the two agree, so a later edit
+                    // to any control seamlessly takes over.
+                    hydrateFilters(saved.filters);
+                    setView("all");
+                    setActiveSavedId(saved.id);
+                  }}
                 >
                   {savedSearchMatches[saved.id] ? (
                     <View
@@ -458,7 +797,7 @@ export function JobsHomeScreen() {
           <Text className="mb-3 text-base font-semibold text-lantern-text">
             {loading
               ? "Finding opportunities…"
-              : filter === "saved"
+              : view === "saved"
                 ? `${total} saved ${total === 1 ? "job" : "jobs"}`
                 : `${total} ${total === 1 ? "job" : "jobs"} found`}
           </Text>
@@ -618,23 +957,26 @@ export function JobsHomeScreen() {
           {!loading && !error && jobs.length === 0 ? (
             <View className="rounded-2xl border border-dashed border-lantern-border bg-lantern-surface p-8">
               <Text className="text-center text-base font-semibold text-lantern-text">
-                {filter === "saved" ? "No saved jobs yet" : "No matching jobs"}
+                {view === "saved" ? "No saved jobs yet" : "No matching jobs"}
               </Text>
               <Text className="mt-2 text-center text-sm text-lantern-text-secondary">
-                {filter === "saved"
+                {view === "saved"
                   ? "Tap the bookmark on any job to keep it here for later."
                   : "Try another search or choose a different filter."}
               </Text>
               <Pressable
                 onPress={() => {
-                  setSearchInput("");
-                  setQuery("");
-                  setFilter("all");
+                  if (view === "saved") {
+                    setActiveSavedId(null);
+                    setView("all");
+                  } else {
+                    clearFilters();
+                  }
                 }}
                 className="mt-4 items-center"
               >
                 <Text className="text-sm font-semibold text-lantern-primary">
-                  {filter === "saved" ? "Browse jobs" : "Clear filters"}
+                  {view === "saved" ? "Browse jobs" : "Clear filters"}
                 </Text>
               </Pressable>
             </View>
