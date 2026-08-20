@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local"],
+  "globalPassThroughEnv": ["PORT", "LANTERN_API_PROXY_TARGET"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

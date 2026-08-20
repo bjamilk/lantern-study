@@ -9,7 +9,9 @@ export default defineConfig(({ mode }) => {
     return {
       root: rootDir,
       server: {
-        port: 5173,
+        // PORT lets a launcher assign a free port when 5173 is taken;
+        // nothing binds to 5173 specifically (the API proxy is same-origin).
+        port: Number(process.env.PORT) || 5173,
         host: '0.0.0.0',
         // Same-origin proxy so phones on LAN (not localhost) can reach the API.
         // Prefer VITE_API_URL=/__lantern_api (relative) — never hardcode localhost:5173.
