@@ -36,7 +36,20 @@ new release updates the site link with no web deploy needed.
    nothing user-visible, put `[skip registry]` in a commit message.
 4. **Smoke-test the APK on the emulator** before publishing: install with
    `adb install -r`, cold boot, sign in, download an offline test.
-5. **Publish** (stable asset name is what makes the latest-URL work):
+5. **Publish** with the script — it derives the version from `app.config.ts`,
+   stages the asset as `lantern-study.apk` (the exact name the latest-URL
+   fetches), marks the release **Latest**, appends the SHA-256 to the notes
+   (from `apps/mobile/RELEASE-<version>.md` if present), tags the source repo,
+   and confirms the download link flips to the new version. It refuses to
+   double-publish an existing tag.
+
+   ```bash
+   scripts/publish-android-release.sh apps/mobile/build-<timestamp>.apk
+   # dry-run first if you like: … build-<timestamp>.apk --dry-run
+   ```
+
+   Doing it by hand is the same three moves — the stable asset name is what
+   makes the latest-URL work, so never rename it:
 
    ```bash
    VERSION=1.0.x
@@ -45,7 +58,7 @@ new release updates the site link with no web deploy needed.
    shasum -a 256 /tmp/lantern-study.apk   # put this in the notes
    gh release create "v$VERSION" /tmp/lantern-study.apk \
      --repo bjamilk/lantern-study-releases \
-     --title "Lantern Study $VERSION (Android)" \
+     --title "Lantern Study $VERSION (Android)" --latest \
      --notes "<changelog + sha256>"
    git tag "v$VERSION" && git push origin "v$VERSION"   # tag the source repo too
    ```
