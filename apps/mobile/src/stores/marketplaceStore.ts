@@ -247,15 +247,41 @@ export interface MarketplaceOffer {
   seller_id?: string;
   amount: number;
   message?: string;
-  status: 'pending' | 'accepted' | 'declined' | 'countered' | 'withdrawn';
+  status: 'pending' | 'accepted' | 'declined' | 'countered' | 'expired' | 'withdrawn';
   proposed_by?: 'buyer' | 'seller';
   parent_offer_id?: string;
+  /** When a pending offer lapses; drives client-side expiry gating. */
+  expires_at?: string;
   created_at: string;
   updated_at?: string;
   buyer?: {
     id: string;
     name: string;
     avatarUrl?: string;
+  };
+  /**
+   * Order created when this offer was accepted. The server only attaches it for
+   * a party to that order, and older API builds omit it entirely — so callers
+   * must treat it as optional, not as "no order exists".
+   */
+  order?: MarketplaceOfferOrder | null;
+}
+
+export interface MarketplaceOfferOrder {
+  id: string;
+  status: string;
+  paymentId: string | null;
+}
+
+/** Reads the offer's linked order off a raw API row, tolerating older builds that omit it. */
+function mapOfferOrder(raw: unknown): MarketplaceOfferOrder | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const order = raw as { id?: unknown; status?: unknown; paymentId?: unknown };
+  if (typeof order.id !== 'string' || typeof order.status !== 'string') return null;
+  return {
+    id: order.id,
+    status: order.status,
+    paymentId: typeof order.paymentId === 'string' ? order.paymentId : null,
   };
 }
 
@@ -1273,8 +1299,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         status: o.status as MarketplaceOffer['status'],
         proposed_by: o.proposed_by === 'seller' || o.proposed_by === 'buyer' ? o.proposed_by : undefined,
         parent_offer_id: o.parent_offer_id ?? undefined,
+        expires_at: o.expires_at,
         created_at: o.created_at,
         updated_at: o.updated_at,
+        order: mapOfferOrder((o as { order?: unknown }).order),
       }));
       if (role === 'buyer') {
         set({ buyerOffers: mapped, isLoading: false });
@@ -1405,7 +1433,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         parent_offer_id: o.parent_offer_id,
         counter_amount: o.counter_amount,
         message: o.message,
+        expires_at: o.expires_at,
         created_at: o.created_at,
+        order: mapOfferOrder(o.order),
       }));
       set({ offers, isLoading: false });
     } catch (error: any) {

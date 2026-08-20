@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
-import { fetchMyInquiries, updateInquiryStatus, fetchOffers, respondToOffer } from '../services/supabase';
+import {
+  fetchMyInquiries,
+  updateInquiryStatus,
+  fetchOffers,
+  respondToOffer,
+  resumeMarketplaceOrderCheckout,
+} from '../services/supabase';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { MarketplaceInquiry, MarketplaceOffer } from '../types';
 import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared/utils';
@@ -17,6 +23,27 @@ import {
   CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
+
+/**
+ * Accepting an offer atomically creates an order (marketplace_orders.offer_id),
+ * so every offer may carry a reference to it — non-null only when one exists and
+ * the requester is a party to it. The field is nullable in the API contract and
+ * absent from older responses, so it is read defensively rather than typed onto
+ * MarketplaceOffer here.
+ */
+type OfferOrderRef = { id: string; status: string; paymentId?: string | null };
+
+const getOfferOrder = (offer: MarketplaceOffer): OfferOrderRef | null => {
+  const order = (offer as unknown as { order?: OfferOrderRef | null }).order;
+  return order && typeof order.id === 'string' && order.id ? order : null;
+};
+
+/** Paystack-payable: a session exists (payment id) and the money hasn't moved
+ *  yet. Mirrors isPayable in MarketplaceOrdersScreen (~line 25); the offer
+ *  contract spells the payment id `paymentId`, not `payment_id`. */
+const isOrderPayable = (order: OfferOrderRef) =>
+  order.status === 'awaiting_payment' ||
+  (order.status === 'pending_payment' && !!order.paymentId);
 
 interface MarketplaceInquiriesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -36,6 +63,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [counterAmounts, setCounterAmounts] = useState<Record<string, string>>({});
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
+  const [payingOfferId, setPayingOfferId] = useState<string | null>(null);
   const { refreshBudgetTransactions } = useBudgetHandlers();
 
   useEffect(() => {
@@ -95,6 +123,28 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
     } finally {
       setRespondingTo(null);
     }
+  };
+
+  // Same resume-checkout flow as MarketplaceOrdersScreen/MarketplaceOrderDetailScreen:
+  // a full-page navigation, so no popup blocker can eat it.
+  const handlePayForOffer = async (offerId: string, orderId: string) => {
+    setPayingOfferId(offerId);
+    try {
+      const session = await resumeMarketplaceOrderCheckout(orderId);
+      if (session?.authorizationUrl) {
+        window.location.assign(session.authorizationUrl);
+        return;
+      }
+      onNavigate('MarketplaceOrderDetail', { orderId });
+    } catch (error: any) {
+      useToastStore.getState().showToast(error?.message || 'Could not open checkout', 'error');
+    } finally {
+      setPayingOfferId(null);
+    }
+  };
+
+  const handleViewOrder = (orderId: string) => {
+    onNavigate('MarketplaceOrderDetail', { orderId });
   };
 
   const loadInquiries = async () => {
@@ -370,6 +420,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                 const isBuyer = offer.buyer_id === userId;
                 const otherParty = isBuyer ? offer.seller : offer.buyer;
                 const isExpired = offer.status === 'pending' && new Date(offer.expires_at) < new Date();
+                const offerOrder = getOfferOrder(offer);
 
                 return (
                   <div
@@ -508,6 +559,31 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                 <p className="text-xs text-lantern-text-secondary font-medium sm:text-right">
                                   {isBuyer ? 'Waiting for seller…' : 'Waiting for buyer…'}
                                 </p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Accepting an offer creates the order — give both parties a
+                              route to it. Nothing renders when the order is absent
+                              (contract field null, or an API that predates it). */}
+                          {offer.status === 'accepted' && offerOrder && (
+                            <div className="flex flex-row sm:flex-col gap-2 mt-3 sm:mt-0 sm:ml-4">
+                              {isBuyer && isOrderPayable(offerOrder) ? (
+                                <button
+                                  onClick={() => void handlePayForOffer(offer.id, offerOrder.id)}
+                                  disabled={payingOfferId !== null}
+                                  className="px-3 sm:px-4 py-1.5 sm:py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors disabled:opacity-50"
+                                >
+                                  <CurrencyDollarIcon className="w-4 h-4 mr-1" />
+                                  {payingOfferId === offer.id ? 'Opening…' : 'Pay now'}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleViewOrder(offerOrder.id)}
+                                  className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary rounded-lg text-xs sm:text-sm font-medium transition-colors"
+                                >
+                                  View order
+                                </button>
                               )}
                             </div>
                           )}

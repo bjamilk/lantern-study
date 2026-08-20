@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared';
 import { useMarketplaceStore, useAuthStore, type MarketplaceOffer } from '../../stores';
+import { resumeMarketplaceOrderCheckout } from '../../services/api';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -23,6 +25,13 @@ type NavigationProp = {
 
 type Tab = 'seller' | 'buyer';
 
+type OfferOrder = NonNullable<MarketplaceOffer['order']>;
+
+/** Mirrors isPayable in OrdersScreen: a checkout session exists and the money hasn't moved yet. */
+const isPayable = (order: OfferOrder): boolean =>
+  order.status === 'awaiting_payment' ||
+  (order.status === 'pending_payment' && Boolean(order.paymentId));
+
 export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
@@ -32,14 +41,21 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   const [counterOfferId, setCounterOfferId] = useState<string | null>(null);
   const [counterAmount, setCounterAmount] = useState('');
   const [busyOfferId, setBusyOfferId] = useState<string | null>(null);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     await Promise.all([fetchOffers('seller'), fetchOffers('buyer')]);
   }, [fetchOffers]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Reload on every focus, not just first mount: a buyer who accepts an offer,
+  // opens (then dismisses) the Paystack browser, and returns here needs the
+  // freshly-created order to appear so "Pay now" renders. A one-shot effect
+  // would leave the card stale until the app restarts.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
 
   const offers = tab === 'seller' ? sellerOffers : buyerOffers;
 
@@ -81,8 +97,33 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
       Alert.alert('Done', `Offer ${action}ed.`);
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Action failed');
+      // An expired-offer 409 (or any conflict) means our card is stale — pull
+      // fresh so the now-dead offer stops showing action buttons.
+      void load();
     } finally {
       setBusyOfferId(null);
+    }
+  };
+
+  // Buyers who dismissed the Paystack browser right after accepting an offer come
+  // back to this screen; the accepted offer's order is their only way to pay.
+  const handlePayNow = async (orderId: string) => {
+    if (payingOrderId) return;
+    setPayingOrderId(orderId);
+    try {
+      const session = await resumeMarketplaceOrderCheckout(orderId);
+      if (session?.authorizationUrl) {
+        const WebBrowser = await import('expo-web-browser');
+        await WebBrowser.openBrowserAsync(session.authorizationUrl);
+        navigation.navigate('OrderDetail', { orderId, paymentReturn: true });
+        return;
+      }
+      // No hosted-checkout URL: fall back to the order detail to finish payment.
+      navigation.navigate('OrderDetail', { orderId });
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not open checkout');
+    } finally {
+      setPayingOrderId(null);
     }
   };
 
@@ -108,7 +149,11 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   const renderOffer = ({ item }: { item: MarketplaceOffer }) => {
-    const pending = item.status === 'pending';
+    // An expired offer is dead: the server 409s any accept/counter, so hide the
+    // action buttons the way the web client does rather than let a tap fail.
+    const isExpired =
+      !!item.expires_at && new Date(item.expires_at).getTime() < Date.now();
+    const pending = item.status === 'pending' && !isExpired;
     const busy = busyOfferId === item.id;
     const userId = user?.id || '';
     const canRespond = !!userId && canRespondToOffer(item as any, userId);
@@ -116,6 +161,9 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
     const proposedBy = getOfferProposedBy(item as any);
     const acceptLabel = proposedBy === 'seller' ? 'Accept Counter' : 'Accept';
     const declineLabel = proposedBy === 'seller' ? 'Decline Counter' : 'Decline';
+    // Only present once the offer was accepted, and only for a party to the order.
+    const order = item.order || null;
+    const isBuyer = !!userId && item.buyer_id === userId;
 
     return (
       <Pressable
@@ -128,7 +176,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
           {formatPrice(item.amount)}
         </Text>
         <Text className="text-xs text-lantern-text-secondary mt-1 capitalize">
-          Status: {item.status}
+          Status: {isExpired && item.status === 'pending' ? 'expired' : item.status}
           {proposedBy ? ` · from ${proposedBy}` : ''}
         </Text>
         {item.message ? (
@@ -177,6 +225,28 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
               <Text className="text-xs text-lantern-text-secondary">
                 Waiting for the other party…
               </Text>
+            )}
+          </View>
+        ) : null}
+        {order ? (
+          <View className="flex-row flex-wrap gap-2 mt-3">
+            {isBuyer && isPayable(order) ? (
+              <Button
+                className="px-3 py-1"
+                loading={payingOrderId === order.id}
+                disabled={!!payingOrderId}
+                onPress={() => void handlePayNow(order.id)}
+              >
+                Pay now
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                className="px-3 py-1"
+                onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })}
+              >
+                View order
+              </Button>
             )}
           </View>
         ) : null}

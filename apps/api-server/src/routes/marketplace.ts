@@ -1558,6 +1558,139 @@ router.get(
 // OFFERS ENDPOINTS
 // ============================================================
 
+const OFFER_EXPIRY_MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/**
+ * Stable date label for expiry messages, in WAT (UTC+1, Nigeria has no DST).
+ * Shifting by the fixed offset before reading UTC parts keeps it ICU-free
+ * while naming the same calendar day the buyer saw in the client.
+ */
+function formatOfferExpiry(when: Date): string {
+  const wat = new Date(when.getTime() + 60 * 60 * 1000);
+  return `${wat.getUTCDate()} ${OFFER_EXPIRY_MONTHS[wat.getUTCMonth()]} ${wat.getUTCFullYear()}`;
+}
+
+/**
+ * A still-'pending' offer whose expires_at has passed, or null. Anything that is
+ * not pending is already terminal and is handled by the existing status check.
+ */
+export function expiredPendingOfferDate(
+  offer: { status?: unknown; expires_at?: unknown } | null | undefined,
+  now: number = Date.now()
+): Date | null {
+  if (!offer || offer.status !== 'pending') return null;
+  const raw = offer.expires_at;
+  if (typeof raw !== 'string' && !(raw instanceof Date)) return null;
+  const when = raw instanceof Date ? raw : new Date(raw);
+  const ms = when.getTime();
+  if (!Number.isFinite(ms) || ms > now) return null;
+  return when;
+}
+
+/**
+ * marketplace_offers.expires_at has always been written (48h default, and set
+ * explicitly on create/counter) and both clients promise the offer expires — but
+ * nothing enforced it server-side, so a dead offer stayed 'pending' forever and
+ * could still be accepted at its stale price via a direct API call or a client
+ * with stale state.
+ *
+ * Only accept/counter are refused: they would move money/state at a price the
+ * seller is no longer bound to. decline/withdraw are deliberately allowed
+ * through — they are terminal and harmless, a user tidying up a dead offer
+ * should not get an error that looks like a bug, and 'declined'/'withdrawn'
+ * records what actually happened better than 'expired' would.
+ */
+export function offerExpiryConflict(
+  offer: { status?: unknown; expires_at?: unknown } | null | undefined,
+  action: string,
+  now: number = Date.now()
+): { status: number; error: string } | null {
+  const expiredAt = expiredPendingOfferDate(offer, now);
+  if (!expiredAt) return null;
+  if (action !== 'accept' && action !== 'counter') return null;
+  const verb = action === 'accept' ? 'accepted' : 'countered';
+  return {
+    status: 409,
+    error: `This offer expired on ${formatOfferExpiry(expiredAt)} and can no longer be ${verb}.`,
+  };
+}
+
+/**
+ * Lazy expire: flip a dead 'pending' row to 'expired' so lists stop showing it
+ * as live (there is no background sweep). 'expired' is permitted by the status
+ * CHECK constraint in 20260307000000_marketplace_offers_saved_searches.sql, and
+ * the web inquiries screen already renders an 'expired' badge. Best-effort only
+ * — the caller's response must not depend on this write.
+ */
+async function markOfferExpired(offerId: string): Promise<void> {
+  try {
+    const { error } = await supabaseService.getClient()
+      .from('marketplace_offers')
+      .update({ status: 'expired' })
+      .eq('id', offerId)
+      .eq('status', 'pending');
+    if (error) throw error;
+  } catch (e) {
+    logger.warn('Failed to lazily expire marketplace offer', e);
+  }
+}
+
+export type OfferOrderSummary = { id: string; status: string; paymentId: string | null };
+
+/**
+ * Every offer handed to a client carries `order`: the marketplace_orders row
+ * created when the offer was accepted, or null. Without it an accepted offer is
+ * a dead end — the buyer has an order to pay for and no way to reach it.
+ *
+ * Non-null only when the requester is a party to that order (never leak someone
+ * else's order). Read-only: nothing here touches payment or order state. One
+ * batched lookup for the whole page — at most one order exists per offer
+ * (unique index idx_marketplace_orders_unique_offer_id).
+ */
+export async function attachOrdersToOffers<T extends Record<string, any>>(
+  offers: T[] | null | undefined,
+  requesterId: string
+): Promise<(T & { order: OfferOrderSummary | null })[]> {
+  const list = Array.isArray(offers) ? offers : [];
+  if (list.length === 0) return [];
+
+  const offerIds = Array.from(
+    new Set(list.map((offer) => offer?.id).filter((id): id is string => typeof id === 'string' && !!id))
+  );
+
+  const byOfferId = new Map<string, OfferOrderSummary>();
+  if (offerIds.length > 0) {
+    try {
+      const { data, error } = await supabaseService.getClient()
+        .from('marketplace_orders')
+        .select('id, status, payment_id, offer_id, buyer_id, seller_id')
+        .in('offer_id', offerIds);
+      if (error) throw error;
+      for (const row of (data || []) as Record<string, any>[]) {
+        if (!row?.offer_id) continue;
+        if (row.buyer_id !== requesterId && row.seller_id !== requesterId) continue;
+        byOfferId.set(String(row.offer_id), {
+          id: String(row.id),
+          status: String(row.status),
+          paymentId: row.payment_id ? String(row.payment_id) : null,
+        });
+      }
+    } catch (e) {
+      // The order is an affordance hint, not the payload — a failed lookup must
+      // not take the offers list down with it.
+      logger.warn('Failed to resolve orders for offers', e);
+    }
+  }
+
+  return list.map((offer) => ({
+    ...offer,
+    order: (offer?.id ? byOfferId.get(String(offer.id)) : undefined) ?? null,
+  }));
+}
+
 // POST /api/v1/marketplace/offers - Create an offer
 router.post(
   '/offers',
@@ -1618,6 +1751,29 @@ router.post(
             .maybeSingle();
           if (existingError) throw existingError;
           if (existing) {
+            // A dead (expired) pending offer holds the one-pending-per-buyer
+            // slot: the web client hides its action buttons so accept/counter
+            // never fires the lazy expire, and the buyer would be permanently
+            // blocked from re-offering. Expire it and let them insert fresh.
+            if (expiredPendingOfferDate(existing) !== null) {
+              await markOfferExpired(String(existing.id));
+              const retry = await supabaseService.getClient()
+                .from('marketplace_offers')
+                .insert({
+                  listing_id: listingId,
+                  buyer_id: userId,
+                  seller_id: listing.user_id,
+                  amount,
+                  message: message || null,
+                  status: 'pending',
+                  proposed_by: 'buyer',
+                  expires_at: expiresAt,
+                })
+                .select('*')
+                .single();
+              if (retry.error) throw retry.error;
+              return { data: retry.data as Record<string, unknown>, existing: false, status: 201 };
+            }
             return { data: existing as Record<string, unknown>, existing: true, status: 200 };
           }
         }
@@ -1664,7 +1820,7 @@ router.get(
 
     if (error) throw error;
 
-    res.json({ success: true, data: data || [] });
+    res.json({ success: true, data: await attachOrdersToOffers(data, userId) });
   })
 );
 
@@ -1727,6 +1883,17 @@ router.put(
     }
     if (offer.status !== 'pending') {
       return res.status(400).json({ success: false, error: `Cannot ${action} an offer with status "${offer.status}"` });
+    }
+
+    // Still 'pending' in the DB, but the 48h clock ran out.
+    const expiryConflict = offerExpiryConflict(offer, action);
+    if (expiryConflict) {
+      // Lazy expire only on the refused actions: decline/withdraw fall through
+      // and write their own terminal status below, which is the cleaner record
+      // of what actually happened (and flipping to 'expired' first would make
+      // their conditional `status = 'pending'` update fail with a 409).
+      await markOfferExpired(id);
+      return res.status(expiryConflict.status).json({ success: false, error: expiryConflict.error });
     }
 
     let updatedOffer;
@@ -1856,10 +2023,11 @@ router.put(
         await invalidateSellerAnalyticsCache(offer.seller_id);
         // Buyer/seller notifications are sent inside createOrderFromOfferAccept.
         const checkout = (result as { checkout?: Record<string, unknown> | null }).checkout;
+        const [acceptedWithOrder] = await attachOrdersToOffers([updatedOffer], userId);
         return res.json({
           success: true,
           data: {
-            ...updatedOffer,
+            ...acceptedWithOrder,
             orderId: (result as { orderId?: string }).orderId,
             checkout,
             authorizationUrl:
@@ -1910,7 +2078,8 @@ router.put(
       }
     }
 
-    res.json({ success: true, data: updatedOffer });
+    const [respondedWithOrder] = await attachOrdersToOffers([updatedOffer], userId);
+    res.json({ success: true, data: respondedWithOrder });
   })
 );
 
@@ -1936,7 +2105,7 @@ router.get(
 
     if (error) throw error;
 
-    res.json({ success: true, data: data || [] });
+    res.json({ success: true, data: await attachOrdersToOffers(data, userId) });
   })
 );
 
@@ -2982,7 +3151,7 @@ router.get(
       .eq('listing_id', req.params.id)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    res.json({ success: true, data: data || [] });
+    res.json({ success: true, data: await attachOrdersToOffers(data, req.user.id) });
   })
 );
 

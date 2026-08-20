@@ -1115,6 +1115,16 @@ export interface MarketplaceOffer {
   listing?: MarketplaceListing;
   buyer?: { id: string; name: string; avatar_url?: string };
   seller?: { id: string; name: string; avatar_url?: string };
+  /**
+   * The order created when this offer was accepted, party-scoped by the API
+   * (present only for a buyer/seller of that order), or null. Optional because
+   * older/cached responses predate the field. Note the camelCase `paymentId`:
+   * it matches the API's OfferOrderSummary and is deliberately NOT the
+   * snake_case `payment_id` used on a full MarketplaceOrder — reading the
+   * wrong casing here silently hides the buyer's Pay-now affordance, so this
+   * shared shape exists to make that misread a compile error.
+   */
+  order?: { id: string; status: string; paymentId: string | null } | null;
 }
 
 export interface SavedSearch {

@@ -97,7 +97,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [recentSearches, setRecentSearches] = useState<string[]>(() => readRecentSearches());
   // The search input is uncontrolled (defaultValue); bump this to re-mount it
-  // when a recent-search chip fills it programmatically.
+  // whenever the applied term is set programmatically (recent-search chip,
+  // saved search) — see applySearchTerm.
   const [searchInputKey, setSearchInputKey] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -318,7 +319,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     const restored = restoreMarketplaceSavedSearchFilters(
       search.filters as MarketplaceSavedSearchFilters
     );
-    setSearchTerm(restored.searchTerm);
+    applySearchTerm(restored.searchTerm);
     setSelectedCategory(restored.selectedCategory);
     setMinPrice(restored.minPrice);
     setMaxPrice(restored.maxPrice);
@@ -458,6 +459,16 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     searchTimeoutRef.current = setTimeout(() => {
       setSearchTerm(value);
     }, 300);
+  };
+
+  // Set the applied term from somewhere other than the input itself. Cancels any
+  // in-flight debounce first: it would otherwise fire after the re-mount and
+  // re-apply whatever the user had typed, undoing the restored term.
+  const applySearchTerm = (value: string) => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = null;
+    setSearchTerm(value);
+    setSearchInputKey(k => k + 1);
   };
 
   const clearFilters = () => {
@@ -702,6 +713,25 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         </div>
       )}
 
+      {/* Result count, mirroring the Jobs board header. The number is only shown
+          once a load has actually completed (primaryListingsLoaded) — not merely
+          when `loading` is false, because the 5s watchdog can clear `loading`
+          while the fetch is still in flight, which would flash a false "0
+          listings found". loadError/rateLimitMessage are cleared on success, so
+          the count never sits above a failed/throttled load either. */}
+      {loading || (!loadError && !rateLimitMessage) ? (
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold text-lantern-text">
+            {loading || !primaryListingsLoaded
+              ? 'Finding listings…'
+              : `${totalListingsCount.toLocaleString()} ${totalListingsCount === 1 ? 'listing' : 'listings'} found`}
+          </h2>
+          <p className="mt-0.5 text-xs text-lantern-text-tertiary">
+            Check the seller and the item details before you pay or meet up.
+          </p>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full py-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -925,10 +955,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               <button
                 key={q}
                 type="button"
-                onClick={() => {
-                  setSearchTerm(q);
-                  setSearchInputKey(k => k + 1);
-                }}
+                onClick={() => applySearchTerm(q)}
                 className="shrink-0 px-2.5 py-1 rounded-full bg-lantern-background-secondary text-[11px] text-lantern-text-secondary hover:text-lantern-primary transition-colors"
               >
                 {q}

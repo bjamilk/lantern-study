@@ -1552,6 +1552,10 @@ export const App: React.FC = () => {
                         setSelectedMarketplaceListingId(params.listingId);
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     }
+                    else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
+                        setSelectedMarketplaceOrderId(params.orderId);
+                        setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                    }
                 }} onBack={() => setAppMode(AppMode.MARKETPLACE)} userId={currentUser.id} />;
             case AppMode.SELLER_PROFILE:
                 if (!selectedSellerId) return null;

@@ -2216,6 +2216,9 @@ export function createApiEndpoints(client: ApiClient) {
           parent_offer_id?: string | null;
           created_at: string;
           updated_at?: string;
+          // Drives client-side expiry gating so an expired offer's Accept/
+          // Decline/Counter buttons are hidden instead of hitting the 409.
+          expires_at?: string;
         }>
       >(`/marketplace/offers?role=${role}`, {}, 5000),
 
