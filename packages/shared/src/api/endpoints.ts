@@ -1789,6 +1789,18 @@ export function createApiEndpoints(client: ApiClient) {
         profiles?: { id: string; name: string; avatar_url?: string };
       }>(`/marketplace/listings/${listingId}`),
 
+    /**
+     * Lightweight review-eligibility check. The /full endpoint derives
+     * `canReview` from the session (verified purchase); mobile uses it to gate
+     * the "Write review" button so only real buyers see it.
+     */
+    fetchMarketplaceListingReviewEligibility: (listingId: string) =>
+      apiRequest<{ canReview?: boolean }>(
+        `/marketplace/listings/${listingId}/full`,
+        {},
+        8000,
+      ),
+
     /** Batch fetch of active listings by id (single request for the recently-viewed rail). */
     fetchMarketplaceListingsByIds: (ids: string[]) =>
       apiRequest<
@@ -1868,6 +1880,12 @@ export function createApiEndpoints(client: ApiClient) {
         title: string;
         description?: string;
         price?: number;
+        // Nullable so sellers can clear a discount: the server treats an
+        // explicit null as "remove", while undefined leaves the field as-is.
+        sale_price?: number | null;
+        sale_ends_at?: string | null;
+        promo_label?: string | null;
+        quantity?: number | null;
         location?: string;
         campus_id: string;
         images?: string[];
@@ -2633,6 +2651,11 @@ export function createApiEndpoints(client: ApiClient) {
       description?: string;
       price: number;
       listingIds: string[];
+      // The API requires a campus; without it every create 400s. The server
+      // accepts campus_id or campusId. `location` carries the free-text city
+      // for an "Other — city" campus.
+      campusId: string;
+      country_code?: string;
       location?: string;
     }) =>
       apiRequest<import("../types").MarketplaceListing>(

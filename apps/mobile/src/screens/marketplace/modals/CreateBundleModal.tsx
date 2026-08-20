@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { createMarketplaceBundle } from '../../../services/api';
+import { createMarketplaceBundle, fetchMarketplaceCampuses } from '../../../services/api';
 import type { MarketplaceListing } from '@lantern/shared/types';
+import { isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared/marketplace';
 import { Button } from '../../../components/ui';
+import { CampusPicker } from '../CampusPicker';
 import { formatPrice } from '../marketplaceHelpers';
 
 interface Props {
@@ -21,8 +23,20 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
+  const [campusId, setCampusId] = useState('');
+  const [location, setLocation] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const selectedCampus = campuses.find(campus => campus.id === campusId);
+  const usesOtherCity = isOtherCityCampus(selectedCampus);
+
+  useEffect(() => {
+    void fetchMarketplaceCampuses('NG')
+      .then(rows => setCampuses(rows))
+      .catch(() => setCampuses([]));
+  }, []);
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -49,6 +63,14 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
       setError('Enter a title, pick at least 2 listings, and set a bundle price.');
       return;
     }
+    if (!campusId) {
+      setError('Select a campus or Other city for the bundle.');
+      return;
+    }
+    if (usesOtherCity && !location.trim()) {
+      setError('Enter the Nigerian city for the bundle.');
+      return;
+    }
     setSaving(true);
     try {
       await createMarketplaceBundle({
@@ -56,6 +78,9 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
         description: description.trim() || undefined,
         price: bundlePrice,
         listingIds: Array.from(selected),
+        campusId,
+        country_code: 'NG',
+        location: location.trim() || undefined,
       });
       onCreated();
       onClose();
@@ -90,6 +115,32 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
               className="border border-lantern-border rounded-xl px-3 py-2 mb-2 min-h-[60px] text-lantern-text"
               placeholderTextColor="#94a3b8"
             />
+            <Text className="text-xs font-semibold text-lantern-text mb-1">Campus or city *</Text>
+            <CampusPicker
+              campuses={campuses}
+              value={campusId}
+              onChange={nextCampusId => {
+                const nextCampus = campuses.find(campus => campus.id === nextCampusId);
+                // Switching in/out of "Other — city" clears the stale free-text city.
+                if (isOtherCityCampus(selectedCampus) !== isOtherCityCampus(nextCampus)) {
+                  setLocation('');
+                }
+                setCampusId(nextCampusId);
+              }}
+              emptyLabel="Select campus or Other city"
+            />
+            <TextInput
+              value={location}
+              onChangeText={setLocation}
+              placeholder={
+                usesOtherCity
+                  ? 'City in Nigeria (required)'
+                  : 'Pickup or delivery details (optional)'
+              }
+              className="border border-lantern-border rounded-xl px-3 py-2 mt-2 mb-3 text-lantern-text"
+              placeholderTextColor="#94a3b8"
+            />
+
             <Text className="text-xs text-lantern-text-secondary mb-2">Select listings (min 2)</Text>
             {activeListings.map(l => (
               <Pressable

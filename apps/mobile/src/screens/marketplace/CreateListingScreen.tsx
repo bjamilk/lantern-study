@@ -331,6 +331,14 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         );
         return;
       }
+      // A discounted price with no end date never shows to buyers (fix #7).
+      if (parsedSalePrice != null && parsedSalePrice > 0 && saleEndsPreset === 'none') {
+        Alert.alert(
+          'Add a promo end date',
+          "Pick 24 hours or 7 days, or clear the discounted price — a discount with no end date won't show to buyers."
+        );
+        return;
+      }
       const parsedQuantity = quantity.trim() ? parseInt(quantity, 10) : undefined;
       setUploading(true);
       const { listing, queued } = await createListing(

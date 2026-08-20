@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchMarketplaceOrders } from '../../services/api';
+import * as WebBrowser from 'expo-web-browser';
+import { fetchMarketplaceOrders, resumeMarketplaceOrderCheckout } from '../../services/api';
 import type { MarketplaceOrder } from '@lantern/shared/types';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
@@ -12,10 +13,16 @@ type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
+/** Paystack-payable: a checkout session exists and the money hasn't moved yet. */
+const isPayable = (order: MarketplaceOrder): boolean =>
+  order.status === 'awaiting_payment' ||
+  (order.status === 'pending_payment' && Boolean(order.payment_id));
+
 export function OrdersScreen({ navigation }: { navigation: NavigationProp }) {
   const [role, setRole] = useState<'buyer' | 'seller'>('buyer');
   const [orders, setOrders] = useState<MarketplaceOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [payingId, setPayingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,6 +60,24 @@ export function OrdersScreen({ navigation }: { navigation: NavigationProp }) {
         ? 1
         : Math.min(lastQty, Math.max(1, Number(listing.quantity)));
     navigation.navigate('ListingDetail', { listingId, quantity: prefQty });
+  };
+
+  const handlePayNow = async (order: MarketplaceOrder) => {
+    setPayingId(order.id);
+    try {
+      const session = await resumeMarketplaceOrderCheckout(order.id);
+      if (session?.authorizationUrl) {
+        await WebBrowser.openBrowserAsync(session.authorizationUrl);
+        await load();
+        return;
+      }
+      // No hosted-checkout URL: fall back to the order detail to finish payment.
+      navigation.navigate('OrderDetail', { orderId: order.id });
+    } catch (err: unknown) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Could not open checkout');
+    } finally {
+      setPayingId(null);
+    }
   };
 
   return (
@@ -108,6 +133,17 @@ export function OrdersScreen({ navigation }: { navigation: NavigationProp }) {
                   {formatPrice(Number(item.amount))}
                 </Text>
               </Pressable>
+              {role === 'buyer' && isPayable(item) ? (
+                <View className="mt-3 pt-3 border-t border-lantern-border">
+                  <Button
+                    size="sm"
+                    loading={payingId === item.id}
+                    onPress={() => void handlePayNow(item)}
+                  >
+                    Pay now
+                  </Button>
+                </View>
+              ) : null}
               {role === 'buyer' && item.status === 'completed' ? (
                 <View className="mt-3 pt-3 border-t border-lantern-border">
                   <Button

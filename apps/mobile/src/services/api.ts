@@ -135,6 +135,7 @@ export const {
   syncGamificationProgress,
   fetchMarketplaceListings,
   fetchMarketplaceListing,
+  fetchMarketplaceListingReviewEligibility,
   createMarketplaceListing,
   updateMarketplaceListing,
   deleteMarketplaceListing,

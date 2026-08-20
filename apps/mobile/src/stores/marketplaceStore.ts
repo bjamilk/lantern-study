@@ -189,6 +189,20 @@ export interface MarketplaceListing {
   updated_at: string;
 }
 
+/**
+ * Listing update payload. sale_price / sale_ends_at / promo_label accept an
+ * explicit null so a seller can clear a discount: undefined leaves the field
+ * untouched on the server, null tells it to remove the value.
+ */
+export type MarketplaceListingUpdate = Omit<
+  Partial<MarketplaceListing>,
+  'sale_price' | 'sale_ends_at' | 'promo_label'
+> & {
+  sale_price?: number | null;
+  sale_ends_at?: string | null;
+  promo_label?: string | null;
+};
+
 type MarketplaceListingCreateInput = Omit<
   MarketplaceListing,
   'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count' | 'campus_id'
@@ -561,7 +575,7 @@ interface MarketplaceState {
   fetchShops: (params?: { campus?: string; q?: string }) => Promise<void>;
   fetchSellerStats: () => Promise<void>;
   createListing: (listing: MarketplaceListingCreateInput, userId: string) => Promise<{ listing: MarketplaceListing; queued: boolean }>;
-  updateListing: (listingId: string, updates: Partial<MarketplaceListing>, userId: string) => Promise<void>;
+  updateListing: (listingId: string, updates: MarketplaceListingUpdate, userId: string) => Promise<void>;
   deleteListing: (listingId: string, userId: string) => Promise<void>;
   toggleFavorite: (listingId: string, userId: string) => Promise<void>;
   setSearchQuery: (query: string) => void;
@@ -976,22 +990,32 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
   
-  updateListing: async (listingId: string, updates: Partial<MarketplaceListing>, userId: string) => {
+  updateListing: async (listingId: string, updates: MarketplaceListingUpdate, userId: string) => {
     const previousMy = get().myListings.find((l) => l.id === listingId);
     const previousBrowse = get().listings.find((l) => l.id === listingId);
     const previousCurrent =
       get().currentListing?.id === listingId ? get().currentListing : null;
 
+    // The server payload keeps explicit nulls (they clear a discount), but the
+    // in-memory MarketplaceListing type expects number|string|undefined, so
+    // coerce null -> undefined for the optimistic local copy only.
+    const optimistic: Partial<MarketplaceListing> = {
+      ...updates,
+      sale_price: updates.sale_price ?? undefined,
+      sale_ends_at: updates.sale_ends_at ?? undefined,
+      promo_label: updates.promo_label ?? undefined,
+    };
+
     // Optimistic update
     set(state => ({
-      myListings: state.myListings.map(l => 
-        l.id === listingId ? { ...l, ...updates, updated_at: new Date().toISOString() } : l
+      myListings: state.myListings.map(l =>
+        l.id === listingId ? { ...l, ...optimistic, updated_at: new Date().toISOString() } : l
       ),
       listings: state.listings.map(l =>
-        l.id === listingId ? { ...l, ...updates, updated_at: new Date().toISOString() } : l
+        l.id === listingId ? { ...l, ...optimistic, updated_at: new Date().toISOString() } : l
       ),
-      currentListing: state.currentListing?.id === listingId 
-        ? { ...state.currentListing, ...updates, updated_at: new Date().toISOString() }
+      currentListing: state.currentListing?.id === listingId
+        ? { ...state.currentListing, ...optimistic, updated_at: new Date().toISOString() }
         : state.currentListing,
     }));
     await get().saveToStorage();

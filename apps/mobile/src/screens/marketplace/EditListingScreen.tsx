@@ -37,6 +37,15 @@ type NavigationProp = {
 
 const ALL_CATEGORIES = [...ACADEMIC_CATEGORIES, ...STUDENT_LIFE_CATEGORIES];
 const MAX_IMAGES = 5;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Short, Intl-free label for an ISO sale end date, e.g. "Aug 25". */
+function formatSaleEndShort(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
 
 export function EditListingScreen({
   navigation,
@@ -55,7 +64,10 @@ export function EditListingScreen({
   const [category, setCategory] = useState<MarketplaceCategory>('textbook_exchange');
   const [price, setPrice] = useState('');
   const [salePrice, setSalePrice] = useState('');
-  const [saleEndsPreset, setSaleEndsPreset] = useState<'none' | '24h' | '7d'>('none');
+  const [saleEndsPreset, setSaleEndsPreset] = useState<'keep' | 'none' | '24h' | '7d'>('none');
+  // The listing's existing sale end date, tracked so editing does NOT silently
+  // rewrite it to now+7d. "Keep current" resends this ISO string unchanged.
+  const [originalSaleEndsAt, setOriginalSaleEndsAt] = useState<string | null>(null);
   const [promoLabel, setPromoLabel] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -83,7 +95,9 @@ export function EditListingScreen({
     setPrice(currentListing.price != null ? String(currentListing.price) : '');
     setSalePrice(currentListing.sale_price != null ? String(currentListing.sale_price) : '');
     setPromoLabel(currentListing.promo_label || '');
-    setSaleEndsPreset(currentListing.sale_ends_at ? '7d' : 'none');
+    setOriginalSaleEndsAt(currentListing.sale_ends_at ?? null);
+    // Default to "keep current" so an untouched edit preserves the sale window.
+    setSaleEndsPreset(currentListing.sale_ends_at ? 'keep' : 'none');
     setDescription(currentListing.description || '');
     setLocation(currentListing.location || '');
     setImages(currentListing.images || []);
@@ -177,12 +191,46 @@ export function EditListingScreen({
     }
     const parsedPrice = price.trim() ? parseFloat(price.replace(/,/g, '')) : undefined;
     const parsedSalePrice = salePrice.trim() ? parseFloat(salePrice.replace(/,/g, '')) : undefined;
-    const saleEndsAt =
-      saleEndsPreset === 'none' || !parsedSalePrice
-        ? undefined
-        : new Date(
-            Date.now() + (saleEndsPreset === '24h' ? 24 : 168) * 60 * 60 * 1000
-          ).toISOString();
+
+    // Discount validation (mirrors web's EditMarketplaceListingModal).
+    const hasSale = parsedSalePrice != null && parsedSalePrice > 0;
+    if (hasSale) {
+      if (!Number.isFinite(parsedSalePrice) || (parsedSalePrice as number) < 0) {
+        Alert.alert('Invalid discount', 'Enter a valid discounted price, or choose No sale.');
+        return;
+      }
+      if (parsedPrice == null || (parsedSalePrice as number) >= parsedPrice) {
+        Alert.alert(
+          'Discount too high',
+          'The discounted price must be lower than the asking price, or choose No sale.'
+        );
+        return;
+      }
+      // A discounted price with no end date never shows to buyers (fix #7).
+      if (saleEndsPreset === 'none') {
+        Alert.alert(
+          'Add a promo end date',
+          "Pick 24 hours or 7 days, or choose No sale — a discount with no end date won't show to buyers."
+        );
+        return;
+      }
+    }
+
+    // Explicit null clears the discount server-side; undefined would leave it.
+    let salePricePayload: number | null;
+    let saleEndsPayload: string | null;
+    if (!hasSale || saleEndsPreset === 'none') {
+      salePricePayload = null;
+      saleEndsPayload = null;
+    } else if (saleEndsPreset === 'keep') {
+      salePricePayload = parsedSalePrice as number;
+      saleEndsPayload = originalSaleEndsAt; // resend the existing window unchanged
+    } else {
+      salePricePayload = parsedSalePrice as number;
+      saleEndsPayload = new Date(
+        Date.now() + (saleEndsPreset === '24h' ? 24 : 168) * 60 * 60 * 1000
+      ).toISOString();
+    }
     const parsedQuantity = quantity.trim() ? parseInt(quantity, 10) : undefined;
     try {
       await updateListing(
@@ -192,9 +240,9 @@ export function EditListingScreen({
           category,
           description: description.trim() || undefined,
           price: parsedPrice,
-          sale_price: parsedSalePrice,
-          sale_ends_at: saleEndsAt,
-          promo_label: promoLabel.trim() || undefined,
+          sale_price: salePricePayload,
+          sale_ends_at: saleEndsPayload,
+          promo_label: promoLabel.trim() || null,
           location: location.trim() || undefined,
           campus_id: campusId,
           quantity: parsedQuantity,
@@ -330,17 +378,30 @@ export function EditListingScreen({
             keyboardType="numeric"
             className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-2"
           />
-          <View className="flex-row gap-2 mb-2">
-            {(['none', '24h', '7d'] as const).map(preset => (
+          <View className="flex-row flex-wrap gap-2 mb-2">
+            {(originalSaleEndsAt
+              ? (['keep', 'none', '24h', '7d'] as const)
+              : (['none', '24h', '7d'] as const)
+            ).map(preset => (
               <Pressable
                 key={preset}
-                onPress={() => setSaleEndsPreset(preset)}
+                onPress={() => {
+                  setSaleEndsPreset(preset);
+                  // "No sale" clears the discount outright (explicit null on save).
+                  if (preset === 'none') setSalePrice('');
+                }}
                 className={`px-3 py-1.5 rounded-lg border ${
                   saleEndsPreset === preset ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
                 }`}
               >
                 <Text className={`text-xs font-medium ${saleEndsPreset === preset ? 'text-white' : 'text-lantern-text-secondary'}`}>
-                  {preset === 'none' ? 'No sale' : preset === '24h' ? '24 hours' : '7 days'}
+                  {preset === 'keep'
+                    ? `Keep current (ends ${formatSaleEndShort(originalSaleEndsAt)})`
+                    : preset === 'none'
+                      ? 'No sale'
+                      : preset === '24h'
+                        ? '24 hours'
+                        : '7 days'}
                 </Text>
               </Pressable>
             ))}

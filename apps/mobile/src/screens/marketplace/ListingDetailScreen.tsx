@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   useMarketplaceStore,
@@ -30,6 +30,7 @@ import {
   fetchListingOffersHistory,
   downloadQuestionBank,
   fetchQuestionBankPreview,
+  fetchMarketplaceListingReviewEligibility,
 } from '../../services/api';
 import type { MarketplacePickupNudge } from '@lantern/shared/types';
 
@@ -71,6 +72,7 @@ function StarRow({ rating }: { rating: number }) {
 export function ListingDetailScreen({ navigation, route }: Props) {
   const listingId = route.params?.listingId ?? '';
   const initialQuantity = route.params?.quantity;
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const {
     currentListing,
@@ -100,6 +102,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const [contactMessage, setContactMessage] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+  const [canReview, setCanReview] = useState(false);
   const [reportReason, setReportReason] = useState<(typeof REPORT_REASONS)[number]>('spam');
   const [reportDetails, setReportDetails] = useState('');
   const [sending, setSending] = useState(false);
@@ -146,6 +149,18 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         }
       } else {
         setPickupNudge(null);
+      }
+      // Real review eligibility (verified purchase) gates the "Write review"
+      // button; the server rejects non-buyers, so don't show it to them.
+      if (user?.id && sellerId !== user?.id) {
+        try {
+          const eligibility = await fetchMarketplaceListingReviewEligibility(listingId);
+          setCanReview(!!eligibility.canReview);
+        } catch {
+          setCanReview(false);
+        }
+      } else {
+        setCanReview(false);
       }
       if (sellerId === user?.id) {
         try {
@@ -366,8 +381,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       setReviewComment('');
       setReviewRating(5);
       Alert.alert('Thanks', 'Your review was submitted.');
-    } catch {
-      Alert.alert('Error', 'Failed to submit review.');
+    } catch (e: unknown) {
+      // Surface the server's reason (e.g. "Reviews are limited to buyers who
+      // completed a purchase") instead of a generic failure.
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to submit review.');
     } finally {
       setSending(false);
     }
@@ -622,10 +639,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           <Card className="mt-4">
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-sm font-semibold text-lantern-text">Reviews</Text>
-              {!own && user?.id && listing.status === 'active' ? (
+              {!own && canReview ? (
                 <Pressable onPress={() => setShowReview(true)}>
                   <Text className="text-sm font-semibold text-lantern-primary">Write review</Text>
                 </Pressable>
+              ) : !own && user?.id ? (
+                <Text className="text-xs text-lantern-text-tertiary max-w-[160px] text-right">
+                  Reviews open after a completed purchase
+                </Text>
               ) : null}
             </View>
             {reviews.length === 0 ? (
@@ -692,7 +713,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       {/* Digital question banks: own bar — no cart, no offers, instant delivery. */}
       {!own && listing.status === 'active' && listing.listing_kind === 'question_bank' ? (
-        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
+        <View
+          style={{ paddingBottom: insets.bottom + 24 }}
+          className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
+        >
           {bankOwned ? (
             <>
               <Text className="text-xs text-emerald-700 mb-2">
@@ -724,7 +748,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       ) : null}
 
       {!own && listing.status === 'active' && listing.listing_kind !== 'question_bank' ? (
-        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
+        <View
+          style={{ paddingBottom: insets.bottom + 24 }}
+          className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
+        >
           {listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 ? (
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-xs text-lantern-text-secondary">
@@ -809,7 +836,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       ) : null}
 
       {own && listing.status === 'active' ? (
-        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
+        <View
+          style={{ paddingBottom: insets.bottom + 24 }}
+          className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
+        >
           <View className="flex-row gap-2 mb-2">
             <Button
               variant="secondary"

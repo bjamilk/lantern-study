@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Share, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -57,6 +57,10 @@ export function OrderDetailScreen({
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [proofUploading, setProofUploading] = useState(false);
+  const [showReview, setShowReview] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,6 +147,25 @@ export function OrderDetailScreen({
       Alert.alert('Error', err instanceof Error ? err.message : 'Could not start checkout');
     } finally {
       setActing(false);
+    }
+  };
+
+  const submitReview = async () => {
+    if (!order) return;
+    setSubmittingReview(true);
+    try {
+      await addMarketplaceReview(order.listing_id, {
+        rating: reviewRating,
+        comment: reviewComment.trim() || undefined,
+      });
+      setShowReview(false);
+      setReviewComment('');
+      setReviewRating(5);
+      Alert.alert('Thanks', 'Review submitted');
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to submit review');
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
@@ -377,20 +400,47 @@ export function OrderDetailScreen({
           </Button>
         )}
         {order.status === 'completed' && isBuyer && (
-          <Button
-            onPress={async () => {
-              try {
-                await addMarketplaceReview(order.listing_id, { rating: 5 });
-                Alert.alert('Thanks', 'Review submitted');
-              } catch (e: unknown) {
-                Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
-              }
-            }}
-          >
-            Leave 5-star review
+          <Button onPress={() => setShowReview(true)}>
+            Leave a review
           </Button>
         )}
       </ScrollView>
+
+      <Modal visible={showReview} transparent animationType="slide" onRequestClose={() => setShowReview(false)}>
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="bg-lantern-surface rounded-t-3xl p-5">
+            <Text className="text-lg font-bold text-lantern-text mb-3">Rate your purchase</Text>
+            <View className="flex-row gap-2 mb-4">
+              {[1, 2, 3, 4, 5].map(i => (
+                <Pressable key={i} onPress={() => setReviewRating(i)}>
+                  <Ionicons
+                    name={i <= reviewRating ? 'star' : 'star-outline'}
+                    size={28}
+                    color="#f59e0b"
+                  />
+                </Pressable>
+              ))}
+            </View>
+            <TextInput
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              placeholder="Share your experience (optional)"
+              placeholderTextColor="#94a3b8"
+              multiline
+              className="min-h-[80px] p-3 rounded-xl border border-lantern-border text-lantern-text mb-4"
+              textAlignVertical="top"
+            />
+            <View className="flex-row gap-3">
+              <Button variant="secondary" className="flex-1" onPress={() => setShowReview(false)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" loading={submittingReview} onPress={() => void submitReview()}>
+                Submit
+              </Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
