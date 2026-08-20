@@ -16,5 +16,6 @@ export * from "./offers";
 export * from "./reminders";
 export * from "./savedSearches";
 export * from "./intents";
+export * from "./templateQuality";
 export * from "./types";
 export * from "./ux";

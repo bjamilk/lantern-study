@@ -11,7 +11,10 @@ export const JOB_POSTING_STATUS_LABELS: Record<JobPostingStatus, string> = {
 };
 
 export const JOB_APPLICATION_STATUS_LABELS: Record<JobApplicationStatus, string> = {
-  interested: 'Interested',
+  // "interested" is the stored status for a full Easy Apply to an individual
+  // poster (companies get "new"), so candidates must read it as a sent
+  // application, not a casual bookmark.
+  interested: 'Application sent',
   chatting: 'Conversation started',
   new: 'Application sent',
   reviewing: 'Under review',
@@ -23,7 +26,7 @@ export const JOB_APPLICATION_STATUS_LABELS: Record<JobApplicationStatus, string>
 };
 
 export const JOB_APPLICATION_STATUS_DESCRIPTIONS: Record<JobApplicationStatus, string> = {
-  interested: 'You expressed interest in this role.',
+  interested: 'Your application was sent to the poster.',
   chatting: 'You and the poster have started a conversation.',
   new: 'Your application was delivered to the employer.',
   reviewing: 'The employer is reviewing your application.',
