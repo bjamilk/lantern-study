@@ -1,5 +1,6 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 import {
   JOB_APPLICATION_STATUS_LABELS,
   formatJobPostedDate,
@@ -40,13 +41,18 @@ export function JobApplicantDetailModal({
   onOpenDm,
   onNotesCountChange,
 }: Props) {
+  // Shared modal a11y: initial focus into the dialog, Tab/Shift+Tab trap, and
+  // Escape-to-close (replacing the previous hand-rolled Escape listener).
+  const dialogRef = useModalFocusTrap(true, onClose);
+  // The parent mounts/unmounts this modal rather than toggling an isOpen prop,
+  // so the hook's open→closed restore branch never runs. Capture the opener on
+  // mount and restore focus to it on unmount so keyboard users aren't dropped
+  // to the top of the page when the dialog closes.
+  const openerRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+    openerRef.current = document.activeElement as HTMLElement | null;
+    return () => openerRef.current?.focus?.();
+  }, []);
 
   const name =
     application.applicant?.name ||
@@ -64,12 +70,14 @@ export function JobApplicantDetailModal({
   return (
     <div
       className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Candidate details for ${name}`}
+      role="presentation"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Candidate details for ${name}`}
         className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-lantern-xl border border-lantern-border bg-lantern-surface sm:rounded-lantern-xl"
         onClick={(event) => event.stopPropagation()}
       >

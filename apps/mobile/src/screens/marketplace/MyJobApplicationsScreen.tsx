@@ -366,6 +366,11 @@ export function MyJobApplicationsScreen() {
                         .filter(Boolean)
                         .join("  →  ")}
                     </Text>
+                    <Text className="mt-1 text-xs text-lantern-text-tertiary">
+                      {application.source === "external_click"
+                        ? "External application"
+                        : "Lantern Easy Apply"}
+                    </Text>
                   </Pressable>
                   <View className="mt-3 flex-row flex-wrap gap-2">
                     {application.resumePath || application.resumeUrl ? (
