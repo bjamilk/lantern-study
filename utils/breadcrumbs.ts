@@ -87,6 +87,11 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
         { label: 'Orders', onClick: () => navigateTo(AppMode.MARKETPLACE_ORDERS) },
         { label: 'Order Details' },
       ];
+    case AppMode.MARKETPLACE_FAVORITES:
+      return [
+        { label: 'Marketplace', onClick: () => navigateTo(AppMode.MARKETPLACE) },
+        { label: 'Saved' },
+      ];
     case AppMode.SELLER_CUSTOMERS:
       return [
         { label: 'Marketplace', onClick: () => navigateTo(AppMode.MARKETPLACE) },

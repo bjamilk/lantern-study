@@ -98,6 +98,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
     const moreModes = [
         AppMode.MARKETPLACE, AppMode.MARKETPLACE_LISTING_DETAIL, AppMode.MY_LISTINGS,
         AppMode.MARKETPLACE_INQUIRIES, AppMode.CREATE_MARKETPLACE_LISTING,
+        AppMode.MARKETPLACE_FAVORITES,
         AppMode.BUDGET_TRACKER, AppMode.OFFLINE_MODE,
     ];
     const isMoreActive = moreModes.includes(currentMode);
