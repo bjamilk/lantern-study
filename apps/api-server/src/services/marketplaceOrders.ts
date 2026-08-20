@@ -10,7 +10,11 @@ export async function invalidateSellerAnalyticsCache(sellerId: string): Promise<
   await cacheService.delete(`marketplace:analytics:seller:${sellerId}`);
 }
 
-const OPEN_ORDER_STATUSES = [
+// Orders in these statuses are still live (money may have moved, pickup pending,
+// or a dispute is open). Terminal statuses are 'completed' and 'cancelled'.
+// Exported so the listing-delete guard reuses the same source of truth instead
+// of drifting its own copy.
+export const OPEN_ORDER_STATUSES = [
   'awaiting_payment',
   'pending_payment',
   'paid',

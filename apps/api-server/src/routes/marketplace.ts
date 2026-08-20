@@ -70,6 +70,39 @@ async function resolveRequiredMarketplaceCampus(
   };
 }
 
+/**
+ * Marketplace services throw user-facing validation/state errors mostly as plain
+ * `new Error(...)` (not PublicError), so the global errorHandler collapses them
+ * into a generic 500 "Something went wrong" toast and real conditions ("Not
+ * enough stock", "Coupon has expired", "Seller has not set up a payout bank
+ * account") never reach the buyer. Recognise the client-facing ones and surface
+ * the real message as a 4xx; anything else (PostgrestError/DB errors, unexpected
+ * TypeErrors, 5xx ApiErrors) is left to escape so we never leak internals.
+ *
+ * Returns true when it sent a response (caller should `return`); false when the
+ * error is internal and should be rethrown to the global handler.
+ */
+export function respondMarketplaceClientError(res: any, err: unknown): boolean {
+  const isPublic = err instanceof PublicError;
+  const status = (err as any)?.statusCode;
+  const isInternalStatus = typeof status === 'number' && status >= 500;
+  // A vanilla `new Error(...)` keeps name 'Error' and has no `.code`. DB errors
+  // (PostgrestError) carry a distinct name and a `.code`; bug-induced errors are
+  // TypeError/RangeError/etc. Neither is surfaced.
+  const isPlainValidation =
+    err instanceof Error &&
+    err.name === 'Error' &&
+    !(err as any).code &&
+    !isInternalStatus;
+
+  if (!isPublic && !isPlainValidation) return false;
+
+  const httpStatus =
+    typeof status === 'number' && status >= 400 && status < 500 ? status : 400;
+  res.status(httpStatus).json({ success: false, error: (err as Error).message });
+  return true;
+}
+
 // GET /api/v1/marketplace/campuses - List campuses for location pickers
 router.get(
   '/campuses',
@@ -528,7 +561,18 @@ router.delete(
       });
     }
 
-    await supabaseService.deleteMarketplaceListing(id);
+    // marketplace_orders cascade-deletes on listing delete, so a raw delete would
+    // destroy paid/completed orders and their receipts. Delete only when safe,
+    // archive when terminal orders exist, and refuse while orders are still open.
+    let outcome: 'deleted' | 'archived';
+    try {
+      ({ outcome } = await supabaseService.deleteMarketplaceListingSafely(id));
+    } catch (err: any) {
+      if (err?.statusCode === 409) {
+        return res.status(409).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
 
     // Invalidate caches
     await invalidateListingCaches(cacheService, id);
@@ -536,7 +580,10 @@ router.delete(
 
     res.json({
       success: true,
-      message: 'Listing deleted successfully',
+      message:
+        outcome === 'archived'
+          ? 'Listing archived (it has past orders, so its records are kept)'
+          : 'Listing deleted successfully',
     });
   })
 );
@@ -619,45 +666,52 @@ router.post(
       '../services/marketplacePayments'
     );
 
-    const result = await withIdempotency(
-      supabaseService.getClient(),
-      buyerId,
-      'marketplace_buy_now',
-      idempotencyKey,
-      async () => {
-        if (marketplacePaystackEnabled()) {
-          const email =
-            (typeof req.user?.email === 'string' && req.user.email) ||
-            (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user
-              ?.email ||
-            '';
-          if (!email) {
-            throw new Error('A verified email is required for Paystack checkout');
+    try {
+      const result = await withIdempotency(
+        supabaseService.getClient(),
+        buyerId,
+        'marketplace_buy_now',
+        idempotencyKey,
+        async () => {
+          if (marketplacePaystackEnabled()) {
+            const email =
+              (typeof req.user?.email === 'string' && req.user.email) ||
+              (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user
+                ?.email ||
+              '';
+            if (!email) {
+              throw new Error('A verified email is required for Paystack checkout');
+            }
+            return getMarketplacePaymentsService(supabaseService).createBuyNowCheckoutSession({
+              listingId: id,
+              buyerId,
+              buyerEmail: email,
+              couponCode: req.body?.couponCode,
+              quantity,
+            });
           }
-          return getMarketplacePaymentsService(supabaseService).createBuyNowCheckoutSession({
-            listingId: id,
+          return supabaseService.buyMarketplaceListingNow(
+            id,
             buyerId,
-            buyerEmail: email,
-            couponCode: req.body?.couponCode,
-            quantity,
-          });
+            req.body?.couponCode,
+            quantity
+          );
         }
-        return supabaseService.buyMarketplaceListingNow(
-          id,
-          buyerId,
-          req.body?.couponCode,
-          quantity
-        );
-      }
-    );
+      );
 
-    await invalidateListingCaches(cacheService, id);
-    await cacheService.deletePattern('marketplace:listings:*');
-    const sellerId =
-      (result as any)?.order?.seller_id || (result as any)?.seller_id || '';
-    await invalidateSellerAnalyticsCache(String(sellerId));
+      await invalidateListingCaches(cacheService, id);
+      await cacheService.deletePattern('marketplace:listings:*');
+      const sellerId =
+        (result as any)?.order?.seller_id || (result as any)?.seller_id || '';
+      await invalidateSellerAnalyticsCache(String(sellerId));
 
-    res.json({ success: true, data: result });
+      res.json({ success: true, data: result });
+    } catch (err) {
+      // Surface real conditions (out of stock, no payout profile, invalid coupon)
+      // instead of the global handler's generic 500.
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -889,12 +943,17 @@ router.post(
     if (!listingId) {
       return res.status(400).json({ success: false, error: 'listingId is required' });
     }
-    const item = await getMarketplaceCartService(supabaseService).addToCart(
-      buyerId,
-      listingId,
-      req.body?.quantity
-    );
-    res.json({ success: true, data: item });
+    try {
+      const item = await getMarketplaceCartService(supabaseService).addToCart(
+        buyerId,
+        listingId,
+        req.body?.quantity
+      );
+      res.json({ success: true, data: item });
+    } catch (err) {
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -908,12 +967,17 @@ router.patch(
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
     const listingId = req.params.listingId;
-    const item = await getMarketplaceCartService(supabaseService).updateCartItem(
-      buyerId,
-      listingId,
-      req.body?.quantity
-    );
-    res.json({ success: true, data: item });
+    try {
+      const item = await getMarketplaceCartService(supabaseService).updateCartItem(
+        buyerId,
+        listingId,
+        req.body?.quantity
+      );
+      res.json({ success: true, data: item });
+    } catch (err) {
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -963,6 +1027,7 @@ router.post(
       '../services/marketplacePayments'
     );
 
+    try {
     const result = await withIdempotency(
       supabaseService.getClient(),
       buyerId,
@@ -1039,6 +1104,10 @@ router.post(
     await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({ success: true, data: result });
+    } catch (err) {
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -1060,18 +1129,23 @@ router.post(
       normalizeIdempotencyKey(req.headers['idempotency-key']) ||
       `${userId}:boost:${id}:${Math.floor(Date.now() / 300_000)}`;
 
-    const listing = await withIdempotency(
-      supabaseService.getClient(),
-      userId,
-      'marketplace_boost',
-      idempotencyKey,
-      async () => supabaseService.boostMarketplaceListing(id, userId, durationHours)
-    );
+    try {
+      const listing = await withIdempotency(
+        supabaseService.getClient(),
+        userId,
+        'marketplace_boost',
+        idempotencyKey,
+        async () => supabaseService.boostMarketplaceListing(id, userId, durationHours)
+      );
 
-    await invalidateListingCaches(cacheService, id);
-    await cacheService.deletePattern('marketplace:listings:*');
+      await invalidateListingCaches(cacheService, id);
+      await cacheService.deletePattern('marketplace:listings:*');
 
-    res.json({ success: true, data: listing });
+      res.json({ success: true, data: listing });
+    } catch (err) {
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -1978,54 +2052,23 @@ router.patch(
 );
 
 // GET /api/v1/marketplace/saved-searches/:id/matches - Check for new matches
+// ?peek=1 (or ?peek=true) returns the count WITHOUT advancing last_checked_at,
+// so the Explore badge poll doesn't consume the alerts job's notification cursor.
+// Without peek, this remains the "mark as seen" action.
 router.get(
   '/saved-searches/:id/matches',
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const userId = req.user.id;
     const { id } = req.params;
+    const peek = req.query.peek === '1' || req.query.peek === 'true';
 
-    // Get the saved search
-    const { data: search, error: searchErr } = await supabaseService.getClient()
-      .from('saved_searches')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single();
-
-    if (searchErr || !search) {
+    const result = await supabaseService.getSavedSearchMatches(userId, id, { peek });
+    if (!result) {
       return res.status(404).json({ success: false, error: 'Saved search not found' });
     }
 
-    // Build query for new listings since last_checked_at
-    let query = supabaseService.getClient()
-      .from('marketplace_listings')
-      .select('id, title, price, images, category, location, created_at')
-      .eq('status', 'active')
-      .gt('created_at', search.last_checked_at);
-
-    const f = search.filters;
-    if (f.category) query = query.eq('category', f.category);
-    if (f.search) query = query.or(`title.ilike.%${f.search}%,description.ilike.%${f.search}%`);
-    if (f.minPrice) query = query.gte('price', f.minPrice);
-    if (f.maxPrice) query = query.lte('price', f.maxPrice);
-    if (f.location) query = query.ilike('location', `%${f.location}%`);
-
-    query = query.order('created_at', { ascending: false }).limit(20);
-
-    const { data: listings, error: listErr } = await query;
-    if (listErr) throw listErr;
-
-    // Update last_checked_at
-    await supabaseService.getClient()
-      .from('saved_searches')
-      .update({ last_checked_at: new Date().toISOString() })
-      .eq('id', id);
-
-    res.json({
-      success: true,
-      data: { count: listings?.length || 0, listings: listings || [] },
-    });
+    res.json({ success: true, data: result });
   })
 );
 
@@ -2711,19 +2754,24 @@ router.post(
       return res.status(400).json({ success: false, error: 'code, discountType, and discountValue are required' });
     }
     const { getMarketplaceCouponsService } = await import('../services/marketplaceCoupons');
-    const result = await req.runIdempotent!(async () => {
-      const coupon = await getMarketplaceCouponsService(supabaseService).createCoupon(req.user!.id!, {
-        code,
-        discountType,
-        discountValue: Number(discountValue),
-        listingId,
-        maxUses: maxUses != null ? Number(maxUses) : undefined,
-        startsAt,
-        endsAt,
+    try {
+      const result = await req.runIdempotent!(async () => {
+        const coupon = await getMarketplaceCouponsService(supabaseService).createCoupon(req.user!.id!, {
+          code,
+          discountType,
+          discountValue: Number(discountValue),
+          listingId,
+          maxUses: maxUses != null ? Number(maxUses) : undefined,
+          startsAt,
+          endsAt,
+        });
+        return { coupon: coupon as unknown as Record<string, unknown> };
       });
-      return { coupon: coupon as unknown as Record<string, unknown> };
-    });
-    res.status(201).json({ success: true, data: result.coupon });
+      res.status(201).json({ success: true, data: result.coupon });
+    } catch (err) {
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -2740,20 +2788,26 @@ router.post(
       return res.status(404).json({ success: false, error: 'Listing not found' });
     }
     const { getMarketplaceCouponsService } = await import('../services/marketplaceCoupons');
-    const result = await getMarketplaceCouponsService(supabaseService).validateForListing(
-      code,
-      listing,
-      req.user.id
-    );
-    res.json({
-      success: true,
-      data: {
-        code: result.coupon.code,
-        discountAmount: result.discountAmount,
-        finalAmount: result.finalAmount,
-        baseAmount: result.baseAmount,
-      },
-    });
+    try {
+      const result = await getMarketplaceCouponsService(supabaseService).validateForListing(
+        code,
+        listing,
+        req.user.id
+      );
+      res.json({
+        success: true,
+        data: {
+          code: result.coupon.code,
+          discountAmount: result.discountAmount,
+          finalAmount: result.finalAmount,
+          baseAmount: result.baseAmount,
+        },
+      });
+    } catch (err) {
+      // "Invalid coupon code", "Coupon has expired", etc. are user conditions.
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -2808,11 +2862,16 @@ router.post(
   asyncHandler(async (req: any, res: any) => {
     const { message, segment, buyerIds } = req.body || {};
     const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
-    const result = await getMarketplaceSellerToolsService(supabaseService).sendCampaign(
-      req.user.id,
-      { message, segment, buyerIds }
-    );
-    res.json({ success: true, data: result });
+    try {
+      const result = await getMarketplaceSellerToolsService(supabaseService).sendCampaign(
+        req.user.id,
+        { message, segment, buyerIds }
+      );
+      res.json({ success: true, data: result });
+    } catch (err) {
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 
@@ -2842,23 +2901,28 @@ router.post(
       return res.status(400).json({ success: false, error: error.message });
     }
     const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
-    const bundle = await getMarketplaceSellerToolsService(supabaseService).createBundle(
-      req.user.id,
-      {
-        title,
-        description,
-        price: Number(price),
-        listingIds,
-        images,
-        location,
-        category,
-        campusId: campusMetadata.campusId,
-        countryCode: campusMetadata.countryCode,
-        currency: MARKETPLACE_DEFAULT_CURRENCY,
-      }
-    );
-    await cacheService.deletePattern('marketplace:listings:*');
-    res.status(201).json({ success: true, data: bundle });
+    try {
+      const bundle = await getMarketplaceSellerToolsService(supabaseService).createBundle(
+        req.user.id,
+        {
+          title,
+          description,
+          price: Number(price),
+          listingIds,
+          images,
+          location,
+          category,
+          campusId: campusMetadata.campusId,
+          countryCode: campusMetadata.countryCode,
+          currency: MARKETPLACE_DEFAULT_CURRENCY,
+        }
+      );
+      await cacheService.deletePattern('marketplace:listings:*');
+      res.status(201).json({ success: true, data: bundle });
+    } catch (err) {
+      if (respondMarketplaceClientError(res, err)) return;
+      throw err;
+    }
   })
 );
 

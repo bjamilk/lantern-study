@@ -35,6 +35,9 @@ import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
 } from "@lantern/shared/marketplace";
+// Value import (const array) — marketplaceOrders only type-imports supabase, so
+// this introduces no runtime import cycle.
+import { OPEN_ORDER_STATUSES } from "./marketplaceOrders";
 import {
   isPrivateStorageBucket,
   parseStorageObjectUrl,
@@ -191,6 +194,90 @@ function buildProfileUpsertRow(
   return Object.fromEntries(
     Object.entries(row).filter(([, value]) => value !== undefined),
   );
+}
+
+// ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
+// Known listing kinds, mirroring the DB CHECK constraint on
+// marketplace_listings.listing_kind (migration 20260818120000).
+const KNOWN_LISTING_KINDS = ["single", "bundle", "question_bank"];
+const MAX_LISTING_IMAGES = 24;
+
+function marketplaceWriteError(message: string): Error & { statusCode: number } {
+  const err = new Error(message) as Error & { statusCode: number };
+  err.statusCode = 400;
+  return err;
+}
+
+/**
+ * category_specific_fields is a free-form JSON blob written verbatim from the
+ * client. Boost/promotion state (boosted_until, boost_level, …) lives inside it
+ * but is server-owned — set only by boostMarketplaceListing after a paid boost
+ * credit is consumed, and read as `is_boosted` by the search RPC. Strip any
+ * boost-prefixed key a client supplies so nobody can self-mint a free,
+ * indefinite boost.
+ */
+function stripServerOwnedListingFields(
+  raw: unknown,
+): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (/^boost/i.test(key)) continue; // boosted_until, boost_level, boost_*
+    out[key] = value;
+  }
+  return out;
+}
+
+/** Server-owned boost/promotion keys carried on an existing listing. */
+function pickServerOwnedListingFields(
+  raw: unknown,
+): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (/^boost/i.test(key)) out[key] = value;
+  }
+  return out;
+}
+
+function sanitizeListingImages(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw marketplaceWriteError("images must be an array of image URLs");
+  }
+  if (raw.length > MAX_LISTING_IMAGES) {
+    throw marketplaceWriteError(
+      `A listing can have at most ${MAX_LISTING_IMAGES} images`,
+    );
+  }
+  for (const img of raw) {
+    if (typeof img !== "string") {
+      throw marketplaceWriteError("Each image must be a string URL");
+    }
+  }
+  return raw as string[];
+}
+
+function assertValidListingKind(kind: unknown): void {
+  if (kind === undefined || kind === null) return;
+  if (typeof kind !== "string" || !KNOWN_LISTING_KINDS.includes(kind)) {
+    throw marketplaceWriteError("Invalid listing kind");
+  }
+}
+
+function assertValidBundleItems(items: unknown): void {
+  if (items === undefined || items === null) return;
+  if (!Array.isArray(items)) {
+    throw marketplaceWriteError("bundle_items must be an array");
+  }
+}
+
+function assertValidListingQuantity(quantity: unknown): void {
+  if (quantity === undefined || quantity === null) return; // null = single/unlimited
+  const n = Number(quantity);
+  if (!Number.isInteger(n) || n < 0) {
+    throw marketplaceWriteError("Quantity must be a whole number of 0 or more");
+  }
 }
 
 export class SupabaseService {
@@ -9211,6 +9298,15 @@ export class SupabaseService {
       sale_price: listingData.sale_price,
       salePrice: listingData.salePrice,
     });
+    // Mass-assignment guard: validate/strip client-supplied fields that are
+    // otherwise written verbatim into privileged columns.
+    const listingKind =
+      listingData.listing_kind || listingData.listingKind || "single";
+    assertValidListingKind(listingKind);
+    assertValidListingQuantity(listingData.quantity);
+    assertValidBundleItems(
+      listingData.bundle_items ?? listingData.bundleItems,
+    );
     // Transform camelCase to snake_case for database columns
     const dbData = {
       user_id: userId,
@@ -9228,13 +9324,13 @@ export class SupabaseService {
       campus_id: campusId,
       country_code: MARKETPLACE_DEFAULT_COUNTRY,
       currency: MARKETPLACE_DEFAULT_CURRENCY,
-      images: listingData.images || [],
-      category_specific_fields:
+      images: sanitizeListingImages(listingData.images),
+      category_specific_fields: stripServerOwnedListingFields(
         listingData.categorySpecificFields ||
-        listingData.category_specific_fields ||
-        {},
-      listing_kind:
-        listingData.listing_kind || listingData.listingKind || "single",
+          listingData.category_specific_fields ||
+          {},
+      ),
+      listing_kind: listingKind,
       bundle_items: listingData.bundle_items || listingData.bundleItems || [],
       quantity: listingData.quantity ?? null,
       status: listingData.status || "active",
@@ -9288,20 +9384,41 @@ export class SupabaseService {
     if (updates?.currency !== undefined) {
       dbUpdates.currency = MARKETPLACE_DEFAULT_CURRENCY;
     }
-    if (updates?.images !== undefined) dbUpdates.images = updates.images;
-    assign(
-      "category_specific_fields",
-      "categorySpecificFields",
-      "category_specific_fields",
-    );
-    assign("listing_kind", "listing_kind", "listingKind");
+    if (updates?.images !== undefined) {
+      dbUpdates.images = sanitizeListingImages(updates.images);
+    }
+    // Mass-assignment guard on category_specific_fields: strip client-supplied
+    // boost/promotion keys, but preserve any existing server-owned boost state
+    // so a routine edit doesn't silently wipe a paid boost.
+    if (
+      updates?.categorySpecificFields !== undefined ||
+      updates?.category_specific_fields !== undefined
+    ) {
+      const clientFields = stripServerOwnedListingFields(
+        updates.categorySpecificFields ?? updates.category_specific_fields,
+      );
+      const current = await this.getMarketplaceListingById(listingId);
+      const preserved = pickServerOwnedListingFields(
+        current?.category_specific_fields ??
+          current?.categorySpecificFields,
+      );
+      dbUpdates.category_specific_fields = { ...clientFields, ...preserved };
+    }
+    // listing_kind is immutable after create: allowing a client to change it
+    // (e.g. flip a 'single' to 'question_bank') would orphan/misroute the
+    // listing. Deliberately not assigned here.
     if (
       updates?.bundle_items !== undefined ||
       updates?.bundleItems !== undefined
     ) {
-      dbUpdates.bundle_items = updates.bundle_items ?? updates.bundleItems;
+      const bundleItems = updates.bundle_items ?? updates.bundleItems;
+      assertValidBundleItems(bundleItems);
+      dbUpdates.bundle_items = bundleItems;
     }
-    if (updates?.quantity !== undefined) dbUpdates.quantity = updates.quantity;
+    if (updates?.quantity !== undefined) {
+      assertValidListingQuantity(updates.quantity);
+      dbUpdates.quantity = updates.quantity;
+    }
     assign("status", "status");
 
     const touchesPricing =
@@ -9364,6 +9481,115 @@ export class SupabaseService {
 
     if (error) throw error;
     return true;
+  }
+
+  /**
+   * Delete a listing without destroying order history. marketplace_orders.listing_id
+   * is ON DELETE CASCADE, so a raw delete of a listing hard-deletes every order on
+   * it — including paid/completed ones with their receipts and payment evidence.
+   * Guard at the application layer:
+   *   - any OPEN order (money moving, pickup pending, or a dispute) → block (409)
+   *   - only terminal orders (completed/cancelled) → archive the listing, keeping
+   *     the rows and their receipts intact
+   *   - no orders at all → hard-delete
+   * Defense-in-depth at the DB layer (FK → ON DELETE RESTRICT) ships as an
+   * unapplied migration.
+   */
+  async deleteMarketplaceListingSafely(
+    listingId: string,
+  ): Promise<{ outcome: "deleted" | "archived"; openOrders: number; totalOrders: number }> {
+    const { data: orderRows, error } = await this.supabase
+      .from("marketplace_orders")
+      .select("status")
+      .eq("listing_id", listingId);
+    if (error) throw error;
+
+    const rows = (orderRows || []) as Array<{ status: string }>;
+    const openOrders = rows.filter((r) =>
+      OPEN_ORDER_STATUSES.includes(r.status),
+    ).length;
+
+    if (openOrders > 0) {
+      const err = new Error(
+        `This listing has ${openOrders} active order${openOrders === 1 ? "" : "s"} in progress. Cancel or complete them before removing the listing.`,
+      ) as Error & { statusCode: number };
+      err.statusCode = 409;
+      throw err;
+    }
+
+    if (rows.length > 0) {
+      // Terminal orders exist — preserve their receipts/payment evidence by
+      // archiving the listing instead of cascade-deleting.
+      const { error: archiveError } = await this.supabase
+        .from("marketplace_listings")
+        .update({ status: "archived", updated_at: new Date().toISOString() })
+        .eq("id", listingId);
+      if (archiveError) throw archiveError;
+      return { outcome: "archived", openOrders: 0, totalOrders: rows.length };
+    }
+
+    await this.deleteMarketplaceListing(listingId);
+    return { outcome: "deleted", openOrders: 0, totalOrders: 0 };
+  }
+
+  /**
+   * Count/return new listings matching a saved search since it was last checked.
+   *
+   * `peek` distinguishes a badge poll (Explore opening) from a "mark as seen"
+   * action. The background alerts job (marketplaceAlerts) uses last_checked_at
+   * as its notification cursor, so a consuming poll would advance the watermark
+   * past every new listing and the job would never notify. A peek returns the
+   * same count without touching last_checked_at.
+   *
+   * Returns null when the saved search doesn't exist or isn't owned by the user.
+   */
+  async getSavedSearchMatches(
+    userId: string,
+    searchId: string,
+    options: { peek?: boolean } = {},
+  ): Promise<{ count: number; listings: any[] } | null> {
+    const { data: search, error: searchErr } = await this.supabase
+      .from("saved_searches")
+      .select("*")
+      .eq("id", searchId)
+      .eq("user_id", userId)
+      .single();
+
+    if (searchErr || !search) return null;
+
+    // Fall back to created_at when the search has never been checked — mirrors
+    // the alerts job, and avoids a null comparison that would return nothing.
+    const since = search.last_checked_at || search.created_at;
+
+    let query = this.supabase
+      .from("marketplace_listings")
+      .select("id, title, price, images, category, location, created_at")
+      .eq("status", "active")
+      .gt("created_at", since);
+
+    const f = (search.filters || {}) as Record<string, any>;
+    if (f.category) query = query.eq("category", f.category);
+    if (f.search)
+      query = query.or(
+        `title.ilike.%${f.search}%,description.ilike.%${f.search}%`,
+      );
+    if (f.minPrice) query = query.gte("price", f.minPrice);
+    if (f.maxPrice) query = query.lte("price", f.maxPrice);
+    if (f.location) query = query.ilike("location", `%${f.location}%`);
+
+    query = query.order("created_at", { ascending: false }).limit(20);
+
+    const { data: listings, error: listErr } = await query;
+    if (listErr) throw listErr;
+
+    if (!options.peek) {
+      await this.supabase
+        .from("saved_searches")
+        .update({ last_checked_at: new Date().toISOString() })
+        .eq("id", searchId);
+    }
+
+    return { count: listings?.length || 0, listings: listings || [] };
   }
 
   /**
@@ -10719,6 +10945,19 @@ export class SupabaseService {
     ) {
       const err = new Error("Inquiry not found");
       (err as Error & { statusCode?: number }).statusCode = 404;
+      throw err;
+    }
+
+    // Only the seller may attest a purchase. canUserReviewListing treats an
+    // inquiry the seller marked 'purchased' as verified-purchase evidence, so a
+    // buyer flipping their own inquiry to 'purchased' could self-mint a fake
+    // "verified purchase" review without ever buying. Buyers may still move an
+    // inquiry through open/negotiating/closed.
+    if (status === "purchased" && inquiry.seller_id !== userId) {
+      const err = new Error(
+        "Only the seller can mark an inquiry as purchased",
+      );
+      (err as Error & { statusCode?: number }).statusCode = 403;
       throw err;
     }
 
