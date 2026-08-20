@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FlashcardType } from '@lantern/shared';
 import { shuffleArray } from '@lantern/shared/utils';
 import { useFlashcardStore, type Flashcard } from '../../stores';
 import { Button, Card } from '../../components/ui';
+import { FlashcardImage } from '../../components/FlashcardImage';
+import { ImageOcclusionView } from '../../components/ImageOcclusionView';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
 import { trackStudyModeCompleted, trackStudyModeSelected } from '../../services/productAnalytics';
@@ -163,6 +166,10 @@ export function CramSessionScreen({ navigation, route }: Props) {
   }
 
   const { front, back } = getCardDisplayText(currentCard!);
+  // Image-occlusion cards have no text sides, so the text-only rendering below
+  // showed "(No question text)" — draw the occluded image instead, exactly as
+  // SwipeableFlashcard does in the graded review.
+  const isImageOcclusion = currentCard!.type === FlashcardType.IMAGE_OCCLUSION;
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
@@ -188,9 +195,23 @@ export function CramSessionScreen({ navigation, route }: Props) {
             <Text className="text-xs uppercase tracking-wide text-lantern-text-tertiary mb-3">
               {showBack ? 'Answer' : 'Question'}
             </Text>
-            <Text className="text-xl font-medium text-lantern-text text-center px-2">
-              {showBack ? back || front : front}
-            </Text>
+            {isImageOcclusion ? (
+              <View className="w-full px-1">
+                {currentCard!.front?.trim() ? (
+                  <Text className="text-base font-medium text-lantern-text text-center px-2 mb-3">
+                    {currentCard!.front.trim()}
+                  </Text>
+                ) : null}
+                <ImageOcclusionView card={currentCard!} showAnswer={showBack} />
+              </View>
+            ) : (
+              <>
+                <FlashcardImage url={currentCard!.imageUrl} />
+                <Text className="text-xl font-medium text-lantern-text text-center px-2">
+                  {showBack ? back || front : front}
+                </Text>
+              </>
+            )}
             {!showBack ? (
               <Text className="text-xs text-amber-600 mt-6">Tap to reveal</Text>
             ) : null}

@@ -29,7 +29,7 @@ interface StudyGoalsState {
   ) => Promise<void>;
 }
 
-function withSourceTitle(
+export function withSourceTitle(
   session: DailyQuizSession,
   sourceNoteTitle?: string
 ): DailyQuizSession {

@@ -219,14 +219,22 @@ export default function CreateFlashcardModal({
     }
   };
 
+  // The server rejects changing an existing card's type — each type stores
+  // different sides, so a switched type would silently discard content. Lock
+  // the tabs while editing instead of letting the save fail.
+  const typeLocked = !!editingFlashcard;
+
   const TypeTab = ({ value, label }: { value: FlashcardType; label: string }) => (
     <Pressable
-      onPress={() => setType(value)}
+      onPress={() => {
+        if (!typeLocked) setType(value);
+      }}
+      disabled={typeLocked && type !== value}
       accessibilityRole="button"
-      accessibilityState={{ selected: type === value }}
+      accessibilityState={{ selected: type === value, disabled: typeLocked && type !== value }}
       className={`flex-1 py-2 rounded-xl items-center ${
         type === value ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
-      }`}
+      } ${typeLocked && type !== value ? 'opacity-40' : ''}`}
     >
       <Text
         className={`text-sm font-semibold ${
@@ -247,11 +255,16 @@ export default function CreateFlashcardModal({
               {editingFlashcard ? 'Edit Flashcard' : 'New Flashcard'}
             </Text>
 
-            <View className="flex-row gap-2 mb-4">
+            <View className={`flex-row gap-2 ${typeLocked ? 'mb-1' : 'mb-4'}`}>
               <TypeTab value={FlashcardType.BASIC} label="Basic" />
               <TypeTab value={FlashcardType.CLOZE} label="Cloze" />
               <TypeTab value={FlashcardType.IMAGE_OCCLUSION} label="Image" />
             </View>
+            {typeLocked ? (
+              <Text className="text-[11px] text-lantern-text-secondary mb-3">
+                Card type can't be changed after creation. To use another type, make a new card.
+              </Text>
+            ) : null}
 
             <ScrollView
               className="max-h-80"

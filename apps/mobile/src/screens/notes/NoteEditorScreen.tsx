@@ -32,7 +32,9 @@ import {
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useCompanionStore } from '../../stores/companionStore';
+import { confirmSheet } from '../../stores/confirmStore';
 import { useNotesStore } from '../../stores/notesStore';
+import { useStudyGoalsStore, withSourceTitle } from '../../stores/studyGoalsStore';
 import { useTheme } from '../../theme';
 
 
@@ -738,9 +740,26 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
       await saveNote(noteId, { title, body });
 
-      await generateNoteQuiz(noteId, 'retention', 5);
+      // Mirror web's handleStartNoteQuiz (hooks/useNoteHandlers.ts): keep the
+      // returned session, stamp it with this note's title, and hand it to the
+      // daily-quiz store. Generating server-side and dropping the result left
+      // the phone with a quiz it never showed anywhere.
+      const { studyGoal, setDailyQuiz } = useStudyGoalsStore.getState();
+      const session = await generateNoteQuiz(noteId, studyGoal, 5);
+      const noteTitle = title || selectedNote?.title || 'Untitled Note';
+      setDailyQuiz(withSourceTitle(session, noteTitle));
 
-      Alert.alert('Quiz ready', 'A quiz was generated from this note.');
+      Alert.alert(
+        'Quiz ready',
+        `A ${session.questions.length}-question quiz was generated from this note. It's waiting in Today's Quiz on your dashboard.`,
+        [
+          { text: 'Later', style: 'cancel' },
+          {
+            text: 'Take quiz',
+            onPress: () => navigation.navigate('HomeTab', { screen: 'Dashboard' }),
+          },
+        ]
+      );
 
     } catch (e: unknown) {
 
@@ -757,6 +776,31 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
   const handleDelete = async () => {
+
+    // Mirror web App.tsx's onDelete: never delete without confirmation, and
+    // never orphan an active lecture recording that points at this note.
+    const lecture = useLectureRecordingStore.getState();
+    if (lecture.noteId === noteId && lecture.status !== 'idle') {
+      const ok = await confirmSheet({
+        title: 'Recording in progress',
+        message:
+          'This note has an active lecture recording. Delete the note and discard the recording?',
+        confirmLabel: 'Discard & delete',
+        danger: true,
+      });
+      if (!ok) return;
+      await lecture.discard();
+    } else {
+      const ok = await confirmSheet({
+        title: 'Delete note',
+        message: 'Delete this note? This cannot be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+
+    cancelPendingSave();
 
     await removeNote(noteId);
 

@@ -22,6 +22,7 @@ import {
   formatFileSize,
   formatMaxNoteUploadLabel,
 } from '@lantern/shared/utils/noteUpload';
+import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import { useNotesStore } from '../../stores/notesStore';
@@ -191,7 +192,7 @@ function NoteCard({
           <Text className="text-xs text-lantern-text-tertiary mb-2">Mine</Text>
         )}
         <Text className="text-sm text-lantern-text-secondary" numberOfLines={3}>
-          {note.summary || note.body || 'Empty note'}
+          {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
         </Text>
         {note.updatedAt ? (
           <Text className="text-xs text-lantern-text-tertiary mt-3">

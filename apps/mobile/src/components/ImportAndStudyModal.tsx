@@ -9,15 +9,21 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashcardType } from '@lantern/shared';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
+import { useAuthStore } from '../stores/authStore';
+import { useFlashcardStore } from '../stores/flashcardStore';
+import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { Button } from './ui';
 
 export interface ImportAndStudyResult {
   noteId: string;
   noteTitle: string;
   flashcardCount?: number;
+  /** Name of the deck the generated cards were saved into. */
+  deckName?: string;
   quizQuestionCount?: number;
 }
 
@@ -60,13 +66,37 @@ export default function ImportAndStudyModal({
       const body = note.body || '';
       let flashcardCount = 0;
       let quizQuestionCount = 0;
+      let deckName: string | undefined;
 
       if (generateCards && body.length >= 50) {
         try {
           const { flashcards } = await aiGenerateFlashcards(body.slice(0, 8000), {
             count: normalizeFlashcardCount(),
           });
-          flashcardCount = flashcards?.length ?? 0;
+          // Persist into a deck the same way the note editor's flashcard path
+          // does — generating without saving spends AI credits and reports a
+          // count of cards that exist nowhere. The count below refers only to
+          // cards that were actually saved.
+          const userId = useAuthStore.getState().user?.id;
+          if (flashcards?.length && userId) {
+            const { createDeck, createFlashcard } = useFlashcardStore.getState();
+            const deck = await createDeck(
+              `From: ${note.title}`.slice(0, 80),
+              `Generated from note: ${note.title}`,
+              userId
+            );
+            deckName = deck.name;
+            for (const card of flashcards) {
+              await createFlashcard({
+                deckId: deck.id,
+                type: FlashcardType.BASIC,
+                front: card.front,
+                back: card.back,
+                userId,
+              });
+              flashcardCount += 1;
+            }
+          }
         } catch {
           // non-fatal
         }
@@ -74,8 +104,14 @@ export default function ImportAndStudyModal({
 
       if (generateQuiz && body.length >= 50) {
         try {
-          const { questions } = await notesApi.generateDailyQuizFromContent(body.slice(0, 8000), 'retention', 5);
-          quizQuestionCount = questions?.length ?? 0;
+          // Same daily-quiz store path as the note editor's Quiz button: the
+          // session is kept (and shown on the dashboard) instead of being
+          // generated server-side and dropped. Uses the store's real studyGoal.
+          await useStudyGoalsStore
+            .getState()
+            .startDailyQuizFromContent(body.slice(0, 8000), note.id, note.title);
+          quizQuestionCount =
+            useStudyGoalsStore.getState().dailyQuiz?.questions.length ?? 0;
         } catch {
           // non-fatal
         }
@@ -85,6 +121,7 @@ export default function ImportAndStudyModal({
         noteId: note.id,
         noteTitle: note.title,
         flashcardCount,
+        deckName,
         quizQuestionCount,
       };
       setResult(res);
@@ -174,12 +211,17 @@ export default function ImportAndStudyModal({
               <View className="items-center py-4 gap-3">
                 <Ionicons name="checkmark-circle" size={48} color="#22c55e" />
                 <Text className="font-semibold text-lantern-text">{result.noteTitle} ready!</Text>
-                <View className="flex-row gap-3">
+                <View className="flex-row flex-wrap justify-center gap-3">
                   {result.flashcardCount ? (
-                    <Text className="text-sm text-lantern-text-secondary">{result.flashcardCount} flashcards</Text>
+                    <Text className="text-sm text-lantern-text-secondary">
+                      {result.flashcardCount} flashcards saved
+                      {result.deckName ? ` to "${result.deckName}"` : ''}
+                    </Text>
                   ) : null}
                   {result.quizQuestionCount ? (
-                    <Text className="text-sm text-lantern-text-secondary">{result.quizQuestionCount} quiz Qs</Text>
+                    <Text className="text-sm text-lantern-text-secondary">
+                      {result.quizQuestionCount} quiz Qs on your dashboard
+                    </Text>
                   ) : null}
                 </View>
                 <Button
