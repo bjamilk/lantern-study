@@ -463,7 +463,12 @@ export async function regeneratePresentationPreview(
       throw new Error(formatPreviewRequestError(response.status, data));
     }
 
-    const payload = data.data ?? data;
+    const payload = (data.data ?? data) as {
+      status?: PresentationPreviewStatus;
+      previewError?: string;
+      previewAvailable?: boolean;
+      attachment?: NoteAttachment | null;
+    };
     if (payload.status === 'none') {
       throw new Error(
         payload.previewError ||
@@ -504,7 +509,7 @@ export async function summarizeNote(
 ): Promise<{ summary: string; note: StudyNote }> {
   const result = await notesAiRequest<{ summary: string; note?: StudyNote; provider?: string }>(
     `/${noteId}/summarize`,
-    options ?? {}
+    (options ?? {}) as Record<string, unknown>
   );
   if (result.note) {
     return { summary: result.summary, note: result.note };
@@ -1351,6 +1356,7 @@ async function encodeImagesForApiUpload(
   const images: Array<{ fileName: string; base64Data: string; contentType: string }> = [];
   for (let i = 0; i < prepared.length; i++) {
     const file = prepared[i];
+    if (!file) continue;
     const fileName = file.name || `photo-${i + 1}.jpg`;
     onProgress?.({
       stage: 'encoding',
@@ -1381,7 +1387,7 @@ export async function uploadNoteImagesViaApi(
     throw new Error('Select at least one image.');
   }
 
-  const label = title?.trim() || (files.length === 1 ? files[0].name : `${files.length} photos`);
+  const label = title?.trim() || (files.length === 1 ? files[0]!.name : `${files.length} photos`);
   onProgress?.({
     stage: 'encoding',
     percent: null,
@@ -1406,7 +1412,7 @@ export async function addImagesToPhotoNote(
     throw new Error('Select at least one image.');
   }
 
-  const label = files.length === 1 ? files[0].name : `${files.length} photos`;
+  const label = files.length === 1 ? files[0]!.name : `${files.length} photos`;
   onProgress?.({
     stage: 'encoding',
     percent: null,

@@ -319,7 +319,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     results.forEach((result, index) => {
       const noteId = uniqueIds[index];
       if (result.status === 'fulfilled') {
-        savedById.set(noteId, result.value);
+        savedById.set(noteId!, result.value);
       } else {
         failures.push(
           result.reason instanceof Error ? result.reason.message : 'Failed to move note',
@@ -391,7 +391,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const failures: string[] = [];
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        deletedIds.add(uniqueIds[index]);
+        deletedIds.add(uniqueIds[index]!);
       } else {
         failures.push(
           result.reason instanceof Error ? result.reason.message : 'Failed to delete note',
