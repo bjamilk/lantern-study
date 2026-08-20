@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -28,6 +29,7 @@ import {
   fetchMyJobApplications,
   fetchMyJobInterviews,
   fetchMyJobOffers,
+  saveJobApplicantProfile,
   updateJobApplicationStatus,
 } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
@@ -64,6 +66,13 @@ export function MyJobApplicationsScreen() {
   const [view, setView] = useState<"active" | "closed">("active");
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
   const [profile, setProfile] = useState<JobApplicantProfile | null>(null);
+  const [profileDraft, setProfileDraft] = useState({
+    headline: "",
+    phone: "",
+    locationText: "",
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
   const [openingResumeId, setOpeningResumeId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -89,9 +98,30 @@ export function MyJobApplicationsScreen() {
 
   useEffect(() => {
     void fetchJobApplicantProfile()
-      .then((response) => setProfile(response.data))
+      .then((response) => {
+        setProfile(response.data);
+        setProfileDraft({
+          headline: response.data?.headline || "",
+          phone: response.data?.phone || "",
+          locationText: response.data?.locationText || "",
+        });
+      })
       .catch(() => setProfile(null));
   }, []);
+
+  const saveProfile = useCallback(async () => {
+    setSavingProfile(true);
+    setProfileSaved(false);
+    try {
+      const response = await saveJobApplicantProfile(profileDraft);
+      setProfile(response.data);
+      setProfileSaved(true);
+    } catch {
+      // A failed save keeps the draft so nothing typed is lost.
+    } finally {
+      setSavingProfile(false);
+    }
+  }, [profileDraft]);
 
   useEffect(() => {
     // One request for every interview beats one per application card.
@@ -267,11 +297,74 @@ export function MyJobApplicationsScreen() {
               Your applicant profile
             </Text>
             <Text className="mt-1 text-sm text-lantern-text-secondary">
-              Upload once and it is attached to every application you send.
+              Employers see these with every application, so you only enter them once.
             </Text>
             <View className="mt-3">
               <ResumeUploadField profile={profile} onUploaded={setProfile} />
             </View>
+            <View className="mt-3">
+              <Text className="text-xs font-medium text-lantern-text-secondary">
+                Headline
+              </Text>
+              <TextInput
+                value={profileDraft.headline}
+                onChangeText={(headline) => {
+                  setProfileDraft((d) => ({ ...d, headline }));
+                  setProfileSaved(false);
+                }}
+                placeholder="Final-year computer science student · React and Node"
+                placeholderTextColor="#94a3b8"
+                className="mt-1 rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text"
+              />
+            </View>
+            <View className="mt-3 flex-row gap-2">
+              <View className="flex-1">
+                <Text className="text-xs font-medium text-lantern-text-secondary">
+                  Phone
+                </Text>
+                <TextInput
+                  value={profileDraft.phone}
+                  onChangeText={(phone) => {
+                    setProfileDraft((d) => ({ ...d, phone }));
+                    setProfileSaved(false);
+                  }}
+                  placeholder="080…"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="phone-pad"
+                  className="mt-1 rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text"
+                />
+              </View>
+              <View className="flex-1">
+                <Text className="text-xs font-medium text-lantern-text-secondary">
+                  Location
+                </Text>
+                <TextInput
+                  value={profileDraft.locationText}
+                  onChangeText={(locationText) => {
+                    setProfileDraft((d) => ({ ...d, locationText }));
+                    setProfileSaved(false);
+                  }}
+                  placeholder="Lagos, Nigeria"
+                  placeholderTextColor="#94a3b8"
+                  className="mt-1 rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text"
+                />
+              </View>
+            </View>
+            <Pressable
+              disabled={savingProfile}
+              onPress={() => void saveProfile()}
+              className={`mt-3 items-center rounded-lg py-2.5 ${
+                savingProfile ? "bg-lantern-primary/60" : "bg-lantern-primary"
+              }`}
+            >
+              <Text className="text-sm font-semibold text-white">
+                {savingProfile
+                  ? "Saving…"
+                  : profileSaved
+                    ? "Saved ✓"
+                    : "Save details"}
+              </Text>
+            </Pressable>
           </Card>
 
           <View className="mt-4 flex-row rounded-xl border border-lantern-border bg-lantern-surface p-1">
