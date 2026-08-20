@@ -56,27 +56,32 @@ export default function JobCompanyScreen({
   );
   usePageSeo(pageSeo);
 
-  if (error) {
+  // Loading and error keep the loaded screen's shell — same wrapper width and
+  // the workspace nav — so the page doesn't reflow once the company arrives.
+  if (error || !company) {
     return (
-      <div className="flex-1 min-h-0 overflow-y-auto bg-lantern-background">
-        <div className="max-w-3xl mx-auto px-4 py-8 space-y-3">
-          <p className="text-sm text-red-600">{error}</p>
-          <button
-            type="button"
-            onClick={() => onNavigate("MarketplaceJobs")}
-            className="text-sm font-semibold text-lantern-primary"
-          >
-            Back to jobs
-          </button>
+      <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
+        <div className="max-w-3xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
+          {!guestMode ? (
+            <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
+          ) : null}
+          {error ? (
+            <div className="space-y-3">
+              <p className="text-sm text-red-600">{error}</p>
+              <button
+                type="button"
+                onClick={() => onNavigate("MarketplaceJobs")}
+                className="text-sm font-semibold text-lantern-primary"
+              >
+                Back to jobs
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-lantern-text-tertiary">
+              Loading company…
+            </p>
+          )}
         </div>
-      </div>
-    );
-  }
-
-  if (!company) {
-    return (
-      <div className="flex-1 min-h-0 flex items-center justify-center bg-lantern-background text-sm text-lantern-text-tertiary">
-        Loading company…
       </div>
     );
   }

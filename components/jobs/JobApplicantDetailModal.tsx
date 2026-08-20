@@ -16,6 +16,9 @@ interface Props {
   posting?: JobPosting | null;
   currentUserId?: string | null;
   statuses: JobApplicationStatus[];
+  /** Stage-change/resume failures happen while this modal covers the page's
+   * own banner, so the owner passes them in to be shown here. */
+  error?: string | null;
   onClose: () => void;
   onChangeStatus: (status: JobApplicationStatus) => void;
   onOpenResume: () => void;
@@ -29,6 +32,7 @@ export function JobApplicantDetailModal({
   posting,
   currentUserId,
   statuses,
+  error,
   onClose,
   onChangeStatus,
   onOpenResume,
@@ -93,6 +97,14 @@ export function JobApplicantDetailModal({
         </header>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {error}
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {hasResume ? (
               <button

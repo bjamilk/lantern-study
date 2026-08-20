@@ -51,6 +51,12 @@ export default function MyJobApplicationsScreen({
   const [interviews, setInterviews] = useState<JobInterview[]>([]);
   const [offers, setOffers] = useState<JobOffer[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // A failed list load must render as a failure with a retry — not as the
+  // "No applications yet" empty state.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Interviews and offers ride a separate fetch; if it fails the candidate
+  // could silently miss a live offer, so the failure has to be visible.
+  const [sideDataFailed, setSideDataFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"active" | "closed" | "all">("active");
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
@@ -65,14 +71,14 @@ export default function MyJobApplicationsScreen({
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const response = await fetchMyJobApplications();
       setApps(response.data || []);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
+    } catch (fetchError) {
+      setLoadError(
+        fetchError instanceof Error
+          ? fetchError.message
           : "Failed to load applications",
       );
     } finally {
@@ -84,15 +90,20 @@ export default function MyJobApplicationsScreen({
     void load();
   }, [load]);
 
-  useEffect(() => {
+  const loadSideData = useCallback(() => {
     // One request for every interview beats one per application card.
-    void fetchMyJobInterviews()
-      .then((response) => setInterviews(response.data || []))
-      .catch(() => setInterviews([]));
-    void fetchMyJobOffers()
-      .then((response) => setOffers(response.data || []))
-      .catch(() => setOffers([]));
+    setSideDataFailed(false);
+    void Promise.all([
+      fetchMyJobInterviews().then((response) =>
+        setInterviews(response.data || []),
+      ),
+      fetchMyJobOffers().then((response) => setOffers(response.data || [])),
+    ]).catch(() => setSideDataFailed(true));
   }, []);
+
+  useEffect(() => {
+    loadSideData();
+  }, [loadSideData]);
 
   useEffect(() => {
     void fetchJobApplicantProfile()
@@ -228,6 +239,14 @@ export default function MyJobApplicationsScreen({
   };
 
   const withdraw = async (applicationId: string) => {
+    // Withdrawing is permanent and blocks re-applying — never one stray click.
+    if (
+      !confirm(
+        "Withdraw this application? This cannot be undone and you will not be able to re-apply to this job.",
+      )
+    ) {
+      return;
+    }
     setWithdrawingId(applicationId);
     setError(null);
     try {
@@ -407,6 +426,23 @@ export default function MyJobApplicationsScreen({
           </p>
         ) : null}
 
+        {sideDataFailed ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+          >
+            Interview and offer updates could not be loaded — your list below
+            may be missing a live offer.{" "}
+            <button
+              type="button"
+              onClick={loadSideData}
+              className="font-semibold underline"
+            >
+              Retry
+            </button>
+          </p>
+        ) : null}
+
         {loading ? (
           <div className="space-y-3" aria-label="Loading applications">
             {[0, 1].map((item) => (
@@ -415,6 +451,20 @@ export default function MyJobApplicationsScreen({
                 className="h-40 animate-pulse rounded-lantern-xl border border-lantern-border bg-lantern-surface"
               />
             ))}
+          </div>
+        ) : loadError ? (
+          <div
+            role="alert"
+            className="rounded-lantern-xl border border-red-200 bg-red-50 px-6 py-10 text-center"
+          >
+            <p className="text-sm font-medium text-red-700">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="mt-4 rounded-lg bg-lantern-primary px-4 py-2 text-sm font-semibold text-white"
+            >
+              Try again
+            </button>
           </div>
         ) : filteredApps.length ? (
           <ul className="space-y-3">

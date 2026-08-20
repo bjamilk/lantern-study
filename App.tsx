@@ -982,6 +982,26 @@ export const App: React.FC = () => {
         />
     );
 
+    // One handler for every jobs-workspace screen. The per-case copies it
+    // replaces had drifted, leaving nav buttons dead on some screens.
+    const handleJobsNavigate = (screen: string, params?: Record<string, unknown>) => {
+        if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
+        else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
+        else if (screen === 'CreateMarketplaceJob') navigateTo(AppMode.CREATE_MARKETPLACE_JOB);
+        else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
+        else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
+        else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
+        else if (screen === 'JobCompany' && params?.companyId) {
+            navigateTo(AppMode.JOB_COMPANY, { companyId: String(params.companyId) });
+        } else if (screen === 'JobEmployerPipeline' && params?.jobId) {
+            navigateTo(AppMode.JOB_EMPLOYER_PIPELINE, { jobId: String(params.jobId) });
+        } else if (screen === 'EditMarketplaceJob' && params?.jobId) {
+            navigateTo(AppMode.CREATE_MARKETPLACE_JOB, { jobId: String(params.jobId) });
+        } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
+            navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
+        }
+    };
+
     const mainContent = () => {
         switch (appMode) {
             case AppMode.CREATE_GROUP:
@@ -1549,39 +1569,14 @@ export const App: React.FC = () => {
                 }} />;
             case AppMode.MARKETPLACE_JOBS:
                 return (
-                    <JobsBoardScreen
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'CreateMarketplaceJob') navigateTo(AppMode.CREATE_MARKETPLACE_JOB);
-                            else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
-                            else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
-                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
-                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
-                            }
-                        }}
-                    />
+                    <JobsBoardScreen onNavigate={handleJobsNavigate} />
                 );
             case AppMode.MARKETPLACE_JOB_DETAIL:
                 if (!selectedJobId) return null;
                 return (
                     <JobDetailScreen
                         jobId={selectedJobId}
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'CreateMarketplaceJob') navigateTo(AppMode.CREATE_MARKETPLACE_JOB);
-                            else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
-                            else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
-                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'JobCompany' && params?.companyId) {
-                                navigateTo(AppMode.JOB_COMPANY, { companyId: String(params.companyId) });
-                            }
-                            else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
-                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
-                            }
-                        }}
+                        onNavigate={handleJobsNavigate}
                         onOpenDm={(threadId) => {
                             handleSelectChat({ id: threadId, chatType: 'dm' } as any);
                             navigateTo(AppMode.CHAT, { threadId });
@@ -1593,66 +1588,24 @@ export const App: React.FC = () => {
                 return (
                     <JobCompanyScreen
                         companyId={selectedCompanyId}
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'JobCompany' && params?.companyId) {
-                                navigateTo(AppMode.JOB_COMPANY, { companyId: String(params.companyId) });
-                            }
-                            else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
-                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
-                            }
-                        }}
+                        onNavigate={handleJobsNavigate}
                     />
                 );
             case AppMode.CREATE_MARKETPLACE_JOB:
                 return (
                     <CreateJobScreen
                         jobId={selectedJobId}
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
-                            else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
-                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
-                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
-                            }
-                        }}
+                        onNavigate={handleJobsNavigate}
                     />
                 );
             case AppMode.MY_JOB_POSTINGS:
                 return (
-                    <MyJobPostingsScreen
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'CreateMarketplaceJob') navigateTo(AppMode.CREATE_MARKETPLACE_JOB);
-                            else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
-                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'EditMarketplaceJob' && params?.jobId) {
-                                navigateTo(AppMode.CREATE_MARKETPLACE_JOB, { jobId: String(params.jobId) });
-                            } else if (screen === 'JobEmployerPipeline' && params?.jobId) {
-                                navigateTo(AppMode.JOB_EMPLOYER_PIPELINE, { jobId: String(params.jobId) });
-                            } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
-                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
-                            }
-                        }}
-                    />
+                    <MyJobPostingsScreen onNavigate={handleJobsNavigate} />
                 );
             case AppMode.MY_JOB_APPLICATIONS:
                 return (
                     <MyJobApplicationsScreen
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
-                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
-                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
-                            }
-                        }}
+                        onNavigate={handleJobsNavigate}
                         onOpenDm={(threadId) => {
                             handleSelectChat({ id: threadId, chatType: 'dm' } as any);
                             navigateTo(AppMode.CHAT, { threadId });
@@ -1661,35 +1614,14 @@ export const App: React.FC = () => {
                 );
             case AppMode.JOB_EMPLOYER:
                 return (
-                    <JobEmployerScreen
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'CreateMarketplaceJob') navigateTo(AppMode.CREATE_MARKETPLACE_JOB);
-                            else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
-                            else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
-                            else if (screen === 'JobCompany' && params?.companyId) {
-                                navigateTo(AppMode.JOB_COMPANY, { companyId: String(params.companyId) });
-                            }
-                            else if (screen === 'JobEmployerPipeline' && params?.jobId) {
-                                navigateTo(AppMode.JOB_EMPLOYER_PIPELINE, { jobId: String(params.jobId) });
-                            }
-                        }}
-                    />
+                    <JobEmployerScreen onNavigate={handleJobsNavigate} />
                 );
             case AppMode.JOB_EMPLOYER_PIPELINE:
                 if (!selectedJobId) return null;
                 return (
                     <JobEmployerPipelineScreen
                         jobId={selectedJobId}
-                        onNavigate={(screen, params) => {
-                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
-                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
-                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
-                            }
-                        }}
+                        onNavigate={handleJobsNavigate}
                         onOpenDm={(threadId) => {
                             handleSelectChat({ id: threadId, chatType: 'dm' } as any);
                             navigateTo(AppMode.CHAT, { threadId });

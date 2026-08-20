@@ -53,13 +53,33 @@ export default function JobDetailScreen({
   const [savingSaved, setSavingSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Set when a popup blocker eats window.open, so the external site stays
+  // reachable through a plain (never-blocked) link.
+  const [externalFallbackUrl, setExternalFallbackUrl] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
+    // The screen is reused across postings; nothing from the previous job may
+    // survive a jobId change, and a slow stale fetch must not win.
+    setJob(null);
+    setError(null);
+    setSuccess(null);
+    setMessage("");
+    setAnswers({});
+    setExternalFallbackUrl(null);
+    let active = true;
     void fetchJobPosting(jobId)
-      .then((res) => setJob(res.data))
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "Failed to load job"),
-      );
+      .then((res) => {
+        if (active) setJob(res.data);
+      })
+      .catch((e) => {
+        if (active)
+          setError(e instanceof Error ? e.message : "Failed to load job");
+      });
+    return () => {
+      active = false;
+    };
   }, [jobId]);
 
   const pageSeo = useMemo(
@@ -96,9 +116,12 @@ export default function JobDetailScreen({
         resumeFilename: applicantProfile?.resumeFilename || null,
       });
       setJob({ ...job, hasApplied: true });
+      const willOpenChat = !!(res.threadId && onOpenDm);
       setSuccess(
         res.existing
-          ? "You already applied — opening chat."
+          ? willOpenChat
+            ? "You already applied — opening your chat with the poster."
+            : "You already applied to this job."
           : "Application sent.",
       );
       if (res.threadId && onOpenDm) onOpenDm(res.threadId);
@@ -132,7 +155,10 @@ export default function JobDetailScreen({
     try {
       const res = await trackJobExternalApply(job.id);
       setJob({ ...job, hasApplied: true });
-      window.open(res.data.url, "_blank", "noopener,noreferrer");
+      // After the await we are outside the user-gesture stack, so popup
+      // blockers may return null with no error — fall back to a plain link.
+      const opened = window.open(res.data.url, "_blank", "noopener,noreferrer");
+      setExternalFallbackUrl(opened ? null : res.data.url);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Could not open external apply",
@@ -179,12 +205,17 @@ export default function JobDetailScreen({
     );
   }
 
-  // Paused, closed and draft posts stay readable but take no new applications.
+  // Paused, closed and draft posts stay readable but take no new
+  // applications; the same goes for a posting whose deadline has passed.
   const isOpen = isJobPostingPubliclyVisible(job.status);
+  const deadlinePassed = job.deadline
+    ? new Date(job.deadline).getTime() < Date.now()
+    : false;
+  const accepting = isOpen && !deadlinePassed;
   const showInApp =
-    isOpen && (job.applyMode === "in_app" || job.applyMode === "both");
+    accepting && (job.applyMode === "in_app" || job.applyMode === "both");
   const showExternal =
-    isOpen &&
+    accepting &&
     (job.applyMode === "external" || job.applyMode === "both") &&
     !!job.externalUrl;
   const employer =
@@ -373,8 +404,16 @@ export default function JobDetailScreen({
                   <dt className="text-xs font-medium uppercase tracking-wide text-lantern-text-tertiary">
                     {deadline ? "Application deadline" : "Duration"}
                   </dt>
-                  <dd className="mt-1 text-sm font-semibold text-lantern-text">
-                    {deadline || duration || "Ongoing"}
+                  <dd
+                    className={`mt-1 text-sm font-semibold ${
+                      deadlinePassed ? "text-red-700" : "text-lantern-text"
+                    }`}
+                  >
+                    {deadline
+                      ? deadlinePassed
+                        ? `Closed ${deadline}`
+                        : deadline
+                      : duration || "Ongoing"}
                   </dd>
                 </div>
               </dl>
@@ -438,7 +477,9 @@ export default function JobDetailScreen({
             )}
           </main>
 
-          <aside className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm lg:sticky lg:top-4">
+          {/* order-first: on one-column layouts the apply panel belongs right
+              under the header, not below the safety tips and report form. */}
+          <aside className="order-first rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm lg:order-none lg:sticky lg:top-4">
             {job.hasApplied ? (
               <>
                 <p
@@ -457,6 +498,41 @@ export default function JobDetailScreen({
                   className="mt-4 w-full rounded-lg bg-lantern-primary px-4 py-3 text-sm font-semibold text-white hover:bg-lantern-primary/90"
                 >
                   View my applications
+                </button>
+                {(job.applyMode === "external" || job.applyMode === "both") &&
+                job.externalUrl ? (
+                  /* A plain link is never popup-blocked, and it repairs access
+                     for anyone whose earlier window.open was eaten. */
+                  <a
+                    href={job.externalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 block w-full rounded-lg border border-lantern-primary px-4 py-3 text-center text-sm font-semibold text-lantern-primary hover:bg-lantern-primary/5"
+                  >
+                    Continue on the employer&apos;s site
+                  </a>
+                ) : null}
+              </>
+            ) : !accepting ? (
+              <>
+                <p
+                  role="status"
+                  className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-800"
+                >
+                  {deadlinePassed
+                    ? `Applications closed${deadline ? ` on ${deadline}` : ""}`
+                    : "Not accepting applications"}
+                </p>
+                <p className="mt-2 text-sm text-lantern-text-secondary">
+                  This job is no longer taking new applications. Browse the
+                  board for open roles.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("MarketplaceJobs")}
+                  className="mt-4 w-full rounded-lg bg-lantern-primary px-4 py-3 text-sm font-semibold text-white hover:bg-lantern-primary/90"
+                >
+                  Browse open jobs
                 </button>
               </>
             ) : (
@@ -575,8 +651,25 @@ export default function JobDetailScreen({
               </p>
             ) : null}
             {success ? (
-              <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
+              <p
+                role="status"
+                className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700"
+              >
                 {success}
+              </p>
+            ) : null}
+            {externalFallbackUrl ? (
+              <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                Your browser blocked the pop-up.{" "}
+                <a
+                  href={externalFallbackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline"
+                >
+                  Continue on the employer&apos;s site
+                </a>
+                .
               </p>
             ) : null}
             <p className="mt-4 text-xs leading-5 text-lantern-text-tertiary">

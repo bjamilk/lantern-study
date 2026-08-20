@@ -218,6 +218,14 @@ export default function JobsBoardScreen({
     setAppliedFilters(filters);
   };
 
+  // Sort and the company-only toggle read as live controls, so they take
+  // effect immediately instead of waiting for the Search button.
+  const applyFilterPatch = (patch: Partial<PortalFilters>) => {
+    setFilters((current) => ({ ...current, ...patch }));
+    setAppliedFilters((current) => ({ ...current, ...patch }));
+    setPage(1);
+  };
+
   const clearFilters = () => {
     setFilters(EMPTY_FILTERS);
     setAppliedFilters(EMPTY_FILTERS);
@@ -510,10 +518,7 @@ export default function JobsBoardScreen({
                     type="checkbox"
                     checked={filters.companyOnly}
                     onChange={(event) =>
-                      setFilters((current) => ({
-                        ...current,
-                        companyOnly: event.target.checked,
-                      }))
+                      applyFilterPatch({ companyOnly: event.target.checked })
                     }
                     className="h-4 w-4 rounded border-lantern-border text-lantern-primary focus:ring-lantern-primary"
                   />
@@ -524,10 +529,9 @@ export default function JobsBoardScreen({
                   <select
                     value={filters.sort}
                     onChange={(event) =>
-                      setFilters((current) => ({
-                        ...current,
+                      applyFilterPatch({
                         sort: event.target.value as PortalFilters["sort"],
-                      }))
+                      })
                     }
                     className="rounded-md border border-lantern-border bg-lantern-background px-2 py-1 text-sm text-lantern-text"
                   >
@@ -551,7 +555,9 @@ export default function JobsBoardScreen({
                     onClick={() =>
                       setSearchNameDraft(
                         searchNameDraft === null
-                          ? suggestJobSavedSearchName(toSearchFilters(filters))
+                          ? suggestJobSavedSearchName(
+                              toSearchFilters(appliedFilters),
+                            )
                           : null,
                       )
                     }
@@ -596,7 +602,7 @@ export default function JobsBoardScreen({
                   </button>
                   <p className="w-full text-xs text-lantern-text-tertiary">
                     We&apos;ll notify you when a new job matches{" "}
-                    {describeJobSearchFilters(toSearchFilters(filters))}.
+                    {describeJobSearchFilters(toSearchFilters(appliedFilters))}.
                   </p>
                 </div>
               ) : null}
@@ -698,6 +704,22 @@ export default function JobsBoardScreen({
             </button>
           )}
         </div>
+
+        {actionError ? (
+          <div
+            role="alert"
+            className="flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+          >
+            <span>{actionError}</span>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className="shrink-0 font-semibold underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
         {error ? (
           <div
@@ -886,8 +908,14 @@ export default function JobsBoardScreen({
                         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-lantern-text-tertiary">
                           <span>{formatJobPostedDate(job.createdAt)}</span>
                           {deadline ? (
-                            <span className="font-medium text-amber-700">
-                              {deadline}
+                            <span
+                              className={
+                                deadline.closed
+                                  ? "font-medium text-red-700"
+                                  : "font-medium text-amber-700"
+                              }
+                            >
+                              {deadline.label}
                             </span>
                           ) : null}
                         </div>

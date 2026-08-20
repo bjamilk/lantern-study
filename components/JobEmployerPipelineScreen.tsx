@@ -63,6 +63,7 @@ export default function JobEmployerPipelineScreen({
   const currentUser = useAuthStore((state) => state.currentUser);
   const [apps, setApps] = useState<JobApplication[]>([]);
   const [posting, setPosting] = useState<JobPosting | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openingResumeId, setOpeningResumeId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -99,7 +100,8 @@ export default function JobEmployerPipelineScreen({
       );
 
   useEffect(() => {
-    void load();
+    setLoading(true);
+    void load().finally(() => setLoading(false));
     // Screening prompts live on the posting, so answers can be labelled.
     fetchJobPosting(jobId)
       .then((res) => setPosting(res.data || null))
@@ -304,7 +306,21 @@ export default function JobEmployerPipelineScreen({
           ) : null}
         </div>
 
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          >
+            {error}{" "}
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="font-semibold underline"
+            >
+              Try again
+            </button>
+          </p>
+        ) : null}
 
         {filtering && visible.length === 0 ? (
           <p className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-6 text-center text-sm text-lantern-text-secondary">
@@ -312,6 +328,25 @@ export default function JobEmployerPipelineScreen({
           </p>
         ) : null}
 
+        {loading ? (
+          <div className="space-y-3" aria-label="Loading applicants">
+            <div className="h-48 animate-pulse rounded-lantern-xl border border-lantern-border bg-lantern-surface" />
+          </div>
+        ) : null}
+
+        {!loading && !error && apps.length === 0 ? (
+          <div className="rounded-lantern-xl border border-dashed border-lantern-border bg-lantern-surface/70 px-6 py-12 text-center">
+            <p className="text-lg font-semibold text-lantern-text">
+              No applicants yet
+            </p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-lantern-text-secondary">
+              Candidates will appear here as they apply. Sharing the post
+              helps it reach more students.
+            </p>
+          </div>
+        ) : null}
+
+        {loading || apps.length === 0 ? null : (
         <div className="overflow-x-auto pb-2">
           <div className="flex gap-3 min-w-max">
             {COLUMNS.map((col) => (
@@ -391,6 +426,7 @@ export default function JobEmployerPipelineScreen({
             ))}
           </div>
         </div>
+        )}
       </div>
 
       {openApplication ? (
@@ -399,6 +435,7 @@ export default function JobEmployerPipelineScreen({
           posting={posting}
           currentUserId={currentUser?.id}
           statuses={EMPLOYER_STATUSES}
+          error={error}
           openingResume={openingResumeId === openApplication.id}
           onClose={() => setOpenApplicationId(null)}
           onChangeStatus={(status) =>
