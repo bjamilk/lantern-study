@@ -166,22 +166,28 @@ export class RecurringBudgetService {
       if (runs.length === 0) continue;
 
       for (const date of runs) {
+        // Plain insert (not upsert): the idempotency index is PARTIAL
+        // (WHERE recurring_rule_id IS NOT NULL), which Postgres will not accept as
+        // an ON CONFLICT arbiter unless the predicate is repeated — and the
+        // Supabase client can't emit that. So insert, and treat a unique-violation
+        // (23505 on uq_budget_tx_recurring) as "already materialised" — the same
+        // idempotency, valid for the existing index.
         const { error } = await this.client
           .from('budget_transactions')
-          .upsert(
-            {
-              user_id: userId,
-              type: rule.type,
-              amount: rule.amount,
-              category: rule.category,
-              description: rule.description || 'Recurring',
-              date,
-              recurring_rule_id: rule.id,
-              recurring_date: date,
-            },
-            { onConflict: 'recurring_rule_id,recurring_date', ignoreDuplicates: true }
-          );
-        if (error) throw error;
+          .insert({
+            user_id: userId,
+            type: rule.type,
+            amount: rule.amount,
+            category: rule.category,
+            description: rule.description || 'Recurring',
+            date,
+            recurring_rule_id: rule.id,
+            recurring_date: date,
+          });
+        if (error) {
+          if ((error as { code?: string }).code === '23505') continue;
+          throw error;
+        }
         posted += 1;
       }
 
