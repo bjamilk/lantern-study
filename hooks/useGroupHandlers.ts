@@ -11,6 +11,7 @@ import {
     mapMessagesFromApi,
     mapMessageFromApi,
     mergeChatMessagesById,
+    isTempMessageId,
     createOptimisticClientMessageId,
     computeDmReceiptStatus,
     resolveThreadRootId,
@@ -2112,7 +2113,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         const uid = currentUser?.id;
         if (!uid) return 0;
         const currentMsgs = useGroupStore.getState().directMessages[threadId] || [];
-        const realCount = currentMsgs.filter((m) => !String(m.id).startsWith('optimistic-')).length;
+        // Optimistic DM rows carry a client id (temp-/msg-/local-…), not "optimistic-",
+        // so count only server messages to derive the next page — isTempMessageId covers
+        // every optimistic prefix (else the offset inflates and skips older history).
+        const realCount = currentMsgs.filter((m) => !isTempMessageId(String(m.id))).length;
         if (realCount === 0) return 0;
 
         // Resolve the peer the same way the initial load does.

@@ -46,6 +46,7 @@ export function DmOffersPanel({
   isSeller,
   onPostToChat,
   onDealChanged,
+  hasLiveOrder = false,
 }: {
   listingId: string;
   /** Buyer on this inquiry — offers from other bidders must not appear here. */
@@ -55,6 +56,8 @@ export function DmOffersPanel({
   onPostToChat: (text: string) => void | Promise<void>;
   /** Notify the parent to refresh the order after an accept/pay so the order bar appears. */
   onDealChanged?: () => void | Promise<void>;
+  /** A non-cancelled order already exists — don't invite a fresh offer on an ordered item. */
+  hasLiveOrder?: boolean;
 }) {
   const { colors } = useTheme();
   // Past a tablet breakpoint, cap the offers list to a centered column instead
@@ -149,6 +152,8 @@ export function DmOffersPanel({
         try {
           const WebBrowser = await import('expo-web-browser');
           await WebBrowser.openBrowserAsync(payUrl);
+          // Refresh the order on return so the deal bar reflects the payment.
+          await onDealChanged?.();
         } catch {
           // Checkout failed to open; the order still exists to pay from Orders.
         }
@@ -391,7 +396,7 @@ export function DmOffersPanel({
 
         {activeOffers.map(renderFullOffer)}
 
-        {!isSeller && !hasPending ? (
+        {!isSeller && !hasPending && !hasLiveOrder ? (
           <View className="mt-2 p-4 rounded-2xl bg-lantern-surface border border-lantern-border">
             <Text className="text-sm font-semibold text-lantern-text mb-2">Make an offer</Text>
             <TextInput

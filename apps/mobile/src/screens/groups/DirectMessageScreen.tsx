@@ -1026,8 +1026,15 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 try {
                   const res = await resumeMarketplaceOrderCheckout(order.id);
                   const url = res?.authorizationUrl;
-                  if (url) { const WB = await import('expo-web-browser'); await WB.openBrowserAsync(url); }
-                  else Alert.alert('Checkout', 'Could not start checkout. Please try again.');
+                  if (url) {
+                    const WB = await import('expo-web-browser');
+                    await WB.openBrowserAsync(url);
+                    // Re-fetch on return so the bar advances past "Pay now" once paid,
+                    // instead of stranding a stale Pay-now that errors on a second tap.
+                    await reloadOrder();
+                  } else {
+                    Alert.alert('Checkout', 'Could not start checkout. Please try again.');
+                  }
                 } catch (e: any) { Alert.alert('Error', e?.message || 'Could not start checkout'); }
                 finally { setOrderBusy(false); }
               }}
@@ -1064,6 +1071,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             await sendDirectMessageTo(user.id, recipientId, text, threadId);
           }}
           onDealChanged={reloadOrder}
+          hasLiveOrder={!!order && order.status !== 'cancelled' && order.status !== 'completed'}
         />
       ) : (
         <>

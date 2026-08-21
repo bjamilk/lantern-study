@@ -1128,7 +1128,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
       }
       Alert.alert(
         'Report message?',
-        'This flags the message for the group to review. If enough members flag it, it will be hidden.',
+        'This flags the message for the group and its admins to review.',
         [
           { text: 'Cancel', style: 'cancel' },
           {
