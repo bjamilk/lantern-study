@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   Text,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useAuthStore } from '../../stores';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useGroupStore, type Message, type GroupMember } from '../../stores/groupStore';
@@ -48,6 +50,8 @@ import {
   QUESTION_VISIBILITY_MODE_OPTIONS,
   canEditChatMessage,
   canRemoveChatMessage,
+  isChatAudioMessage,
+  isChatImageMessage,
   messagePassesQuestionVisibility,
   parseAiQuery,
   shouldRenderRemovedMessage,
@@ -273,6 +277,167 @@ const MessageRow = React.memo(function MessageRow({
   );
 });
 
+type MessageSheetTone = 'default' | 'destructive' | 'warning';
+
+interface MessageActionSheetProps {
+  message: Message | null;
+  currentUserId?: string;
+  onClose: () => void;
+  onReply: (message: Message) => void;
+  onCopy: (message: Message) => void;
+  onEdit: (message: Message) => void;
+  onRemove: (message: Message) => void;
+  onReport: (message: Message) => void;
+}
+
+/**
+ * One action sheet for a tapped-and-held message. Long-press now ALWAYS lands
+ * here (it used to silently reply for messages you couldn't edit/remove), so
+ * every bubble offers Reply / Copy, plus Edit / Remove on your own in-window
+ * messages and Report on others'. Replaces the two stacked Alerts that used to
+ * manage your own message — Android caps an Alert at three buttons, which is
+ * why those had to nest; a real sheet lists them all at once.
+ */
+function MessageActionSheet({
+  message,
+  currentUserId,
+  onClose,
+  onReply,
+  onCopy,
+  onEdit,
+  onRemove,
+  onReport,
+}: MessageActionSheetProps) {
+  const { colors } = useTheme();
+
+  const rows = useMemo(() => {
+    if (!message) return [];
+    const isOwn = !!currentUserId && message.senderId === currentUserId;
+    const canEdit = canEditChatMessage(message, currentUserId);
+    const canRemove = canRemoveChatMessage(message, currentUserId);
+    const copyText = (message.questionStem || message.text || '').trim();
+    // Media messages are stored as markdown holding a signed URL — copying that
+    // leaks the URL and isn't the text the user sees, so hide Copy for them.
+    const copyable =
+      !!copyText &&
+      !isChatAudioMessage(message.text) &&
+      !isChatImageMessage(message.text);
+
+    const items: Array<{
+      id: string;
+      label: string;
+      icon: React.ComponentProps<typeof Ionicons>['name'];
+      tone: MessageSheetTone;
+      onPress: () => void;
+    }> = [
+      {
+        id: 'reply',
+        label: 'Reply',
+        icon: 'arrow-undo-outline',
+        tone: 'default',
+        onPress: () => onReply(message),
+      },
+    ];
+    if (copyable) {
+      items.push({
+        id: 'copy',
+        label: 'Copy text',
+        icon: 'copy-outline',
+        tone: 'default',
+        onPress: () => onCopy(message),
+      });
+    }
+    if (canEdit) {
+      items.push({
+        id: 'edit',
+        label: 'Edit',
+        icon: 'create-outline',
+        tone: 'default',
+        onPress: () => onEdit(message),
+      });
+    }
+    if (canRemove) {
+      items.push({
+        id: 'remove',
+        label: 'Remove',
+        icon: 'trash-outline',
+        tone: 'destructive',
+        onPress: () => onRemove(message),
+      });
+    }
+    if (!isOwn) {
+      items.push({
+        id: 'report',
+        label: 'Report message',
+        icon: 'flag-outline',
+        tone: 'warning',
+        onPress: () => onReport(message),
+      });
+    }
+    return items;
+  }, [message, currentUserId, onReply, onCopy, onEdit, onRemove, onReport]);
+
+  const toneColor = (tone: MessageSheetTone) =>
+    tone === 'destructive' ? colors.error : tone === 'warning' ? colors.warning : colors.text;
+
+  return (
+    <Modal visible={!!message} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        className="flex-1 justify-end"
+        style={{ backgroundColor: colors.modalOverlay }}
+        onPress={onClose}
+      >
+        <Pressable
+          className="rounded-t-2xl px-4 pt-3"
+          style={{
+            backgroundColor: colors.modalBackground,
+            paddingBottom: Platform.OS === 'ios' ? 28 : 20,
+          }}
+          onPress={e => e.stopPropagation()}
+        >
+          <View
+            className="w-10 h-1 rounded-full self-center mb-3"
+            style={{ backgroundColor: colors.border }}
+          />
+          <Text
+            className="text-sm font-semibold text-lantern-text-secondary mb-2 px-1"
+            style={{ color: colors.textSecondary }}
+          >
+            Message
+          </Text>
+
+          {rows.map(row => (
+            <Pressable
+              key={row.id}
+              onPress={row.onPress}
+              className="flex-row items-center gap-3 py-3.5 px-1 border-b border-lantern-border"
+              style={{ borderBottomColor: colors.border }}
+              accessibilityRole="button"
+              accessibilityLabel={row.label}
+            >
+              <View
+                className="w-9 h-9 rounded-xl items-center justify-center"
+                style={{ backgroundColor: colors.backgroundSecondary }}
+              >
+                <Ionicons name={row.icon} size={20} color={toneColor(row.tone)} />
+              </View>
+              <Text className="text-base flex-1" style={{ color: toneColor(row.tone) }}>
+                {row.label}
+              </Text>
+            </Pressable>
+          ))}
+
+          <Pressable onPress={onClose} className="mt-3 py-3 items-center" accessibilityRole="button">
+            <Text className="text-base font-medium" style={{ color: colors.primary }}>
+              Cancel
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 const NEAR_BOTTOM_PX = 120;
 
 export function GroupChatScreen({ navigation, route }: Props) {
@@ -329,6 +494,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [messageActionTarget, setMessageActionTarget] = useState<Message | null>(null);
   const [showTestConfig, setShowTestConfig] = useState(false);
   const [testMode, setTestMode] = useState<TestMode>('test');
   const [showGroupInfo, setShowGroupInfo] = useState(false);
@@ -910,34 +1076,13 @@ export function GroupChatScreen({ navigation, route }: Props) {
     );
   }, [editingMessage?.id, groupId, reloadThread, removeGroupMessage, threadRootId]);
 
+  // Long-press ALWAYS opens the sheet now (it used to silently reply for
+  // messages you couldn't edit/remove, with no menu and no way to copy text).
   const showMessageActions = useCallback((message: Message) => {
-    const canEdit = canEditChatMessage(message, user?.id);
-    const canRemove = canRemoveChatMessage(message, user?.id);
-    if (!canEdit && !canRemove) {
-      beginReply(message);
-      return;
-    }
+    setMessageActionTarget(message);
+  }, []);
 
-    const showManageActions = () => {
-      Alert.alert('Manage message', undefined, [
-        { text: 'Cancel', style: 'cancel' },
-        ...(canEdit ? [{ text: 'Edit', onPress: () => beginEdit(message) }] : []),
-        ...(canRemove
-          ? [{
-              text: 'Remove',
-              style: 'destructive' as const,
-              onPress: () => confirmRemoveMessage(message),
-            }]
-          : []),
-      ]);
-    };
-
-    Alert.alert('Message options', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Reply', onPress: () => beginReply(message) },
-      { text: canEdit ? 'Edit or remove' : 'Remove', onPress: showManageActions },
-    ]);
-  }, [beginEdit, beginReply, confirmRemoveMessage, user?.id]);
+  const closeMessageActions = useCallback(() => setMessageActionTarget(null), []);
 
   // Row handlers, all stable — MessageRow's memo is only worth anything if these
   // keep their identity across composer keystrokes and incoming messages.
@@ -955,6 +1100,85 @@ export function GroupChatScreen({ navigation, route }: Props) {
       void flagMessageAsSimilar(message.id, groupId, user.id);
     },
     [flagMessageAsSimilar, groupId, user?.id]
+  );
+
+  const handleCopyMessageText = useCallback(async (message: Message) => {
+    const textToCopy = (message.questionStem || message.text || '').trim();
+    if (!textToCopy) return;
+    try {
+      await Clipboard.setStringAsync(textToCopy);
+      void AccessibilityInfo.announceForAccessibility('Message copied');
+    } catch {
+      Alert.alert('Copy failed', 'Could not copy the message text.');
+    }
+  }, []);
+
+  // The only durable "this message is a problem" signal the app has is the
+  // community flag (enough flags auto-hide the message), so Report routes there.
+  const reportMessage = useCallback(
+    (message: Message) => {
+      if (!user?.id) return;
+      const alreadyReported = message.flaggedAsSimilarUserIds?.includes(user.id) ?? false;
+      if (alreadyReported) {
+        Alert.alert(
+          'Already reported',
+          'You have already flagged this message for the group to review.'
+        );
+        return;
+      }
+      Alert.alert(
+        'Report message?',
+        'This flags the message for the group and its admins to review.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Report',
+            style: 'destructive',
+            onPress: () => handleFlagMessage(message),
+          },
+        ]
+      );
+    },
+    [handleFlagMessage, user?.id]
+  );
+
+  // Sheet actions all dismiss the sheet first. Remove/Report then open a
+  // confirm Alert, deferred so the sheet Modal is gone before it shows — iOS
+  // will not present an Alert stacked underneath a visible Modal.
+  const handleSheetReply = useCallback(
+    (message: Message) => {
+      setMessageActionTarget(null);
+      beginReply(message);
+    },
+    [beginReply]
+  );
+  const handleSheetCopy = useCallback(
+    (message: Message) => {
+      setMessageActionTarget(null);
+      void handleCopyMessageText(message);
+    },
+    [handleCopyMessageText]
+  );
+  const handleSheetEdit = useCallback(
+    (message: Message) => {
+      setMessageActionTarget(null);
+      beginEdit(message);
+    },
+    [beginEdit]
+  );
+  const handleSheetRemove = useCallback(
+    (message: Message) => {
+      setMessageActionTarget(null);
+      setTimeout(() => confirmRemoveMessage(message), Platform.OS === 'ios' ? 320 : 0);
+    },
+    [confirmRemoveMessage]
+  );
+  const handleSheetReport = useCallback(
+    (message: Message) => {
+      setMessageActionTarget(null);
+      setTimeout(() => reportMessage(message), Platform.OS === 'ios' ? 320 : 0);
+    },
+    [reportMessage]
   );
 
   const handleMentionUser = useCallback((username: string) => {
@@ -1184,13 +1408,22 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, [applyMute]);
 
   const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
+  const isArchived = !!group?.isArchived;
+  const currentFilterLabel =
+    QUESTION_VISIBILITY_MODE_OPTIONS.find((o) => o.value === questionVisibilityMode)?.label ??
+    'All questions';
 
   const headerMenuActions = useMemo((): GroupChatHeaderAction[] => {
     const actions: GroupChatHeaderAction[] = [
+      // Practice — Study / Test are the primary entry points, so they lead.
+      // Gated while archived: an archived group is read-only.
       {
         id: 'study',
         label: 'Study mode',
         icon: 'library-outline',
+        section: 'Practice',
+        // Read-only practice over existing questions stays available when
+        // archived — only write paths (add question, AI generate) are gated.
         onPress: () => {
           setTestMode('study');
           setShowTestConfig(true);
@@ -1200,33 +1433,48 @@ export function GroupChatScreen({ navigation, route }: Props) {
         id: 'test',
         label: 'Test mode',
         icon: 'clipboard-outline',
+        section: 'Practice',
         onPress: () => {
           setTestMode('test');
           setShowTestConfig(true);
         },
       },
-      ...QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => ({
-        id: `qvis-${opt.value}`,
-        label:
-          questionVisibilityMode === opt.value
-            ? `Questions: ${opt.label} ✓`
-            : `Questions: ${opt.label}`,
-        icon: 'filter-outline' as const,
-        onPress: () => setQuestionVisibilityMode(opt.value),
-      })),
+      // View — display preferences & insights. The 4-way question filter is
+      // collapsed into one row that opens a sub-list carrying each option's
+      // helper text (mobile used to drop the helpers entirely).
+      {
+        id: 'question-filter',
+        label: `Question filter: ${currentFilterLabel}`,
+        icon: 'filter-outline',
+        section: 'View',
+        submenu: {
+          title: 'Question filter',
+          options: QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => ({
+            id: `qvis-${opt.value}`,
+            label: opt.label,
+            helper: opt.helper,
+            icon: 'filter-outline' as const,
+            selected: questionVisibilityMode === opt.value,
+            onPress: () => setQuestionVisibilityMode(opt.value),
+          })),
+        },
+      },
       {
         id: 'summarize',
         label: summarizing ? 'Summarizing…' : 'Summarize chat',
         icon: 'sparkles-outline',
+        section: 'View',
         onPress: () => void handleSummarize(),
         disabled: summarizing,
         iconColor: '#a855f7',
       },
+      // Notifications.
       chatMuted
         ? {
             id: 'unmute',
             label: muteUntilLabel ? `Unmute (until ${muteUntilLabel})` : 'Unmute notifications',
             icon: 'notifications-outline' as const,
+            section: 'Notifications',
             onPress: () => void clearMute(),
             disabled: muteBusy,
           }
@@ -1234,13 +1482,16 @@ export function GroupChatScreen({ navigation, route }: Props) {
             id: 'mute',
             label: 'Mute notifications…',
             icon: 'notifications-off-outline' as const,
+            section: 'Notifications',
             onPress: openMutePicker,
             disabled: muteBusy,
           },
+      // Manage.
       {
         id: 'info',
         label: 'About group',
         icon: 'people-outline',
+        section: 'Manage',
         onPress: () => setShowGroupInfo(true),
       },
     ];
@@ -1251,6 +1502,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
         label: 'AI generate questions',
         icon: 'bulb-outline',
         iconColor: colors.warning,
+        section: 'Manage',
+        // Also an add-question path — no posting into an archived group.
+        disabled: isArchived,
         onPress: () => setShowAIGenerate(true),
       });
     }
@@ -1258,9 +1512,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
     return actions;
   }, [
     isAdmin,
+    isArchived,
     summarizing,
     colors.warning,
     questionVisibilityMode,
+    currentFilterLabel,
     setQuestionVisibilityMode,
     chatMuted,
     muteUntilLabel,
@@ -1278,6 +1534,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
         lowDataMode={lowDataMode}
         onBack={handleBack}
         onAddQuestion={() => setShowQuestionModal(true)}
+        // Archived groups are read-only: hide the add-question "+".
+        addQuestionDisabled={isArchived}
+        onTitlePress={() => setShowGroupInfo(true)}
         menuActions={headerMenuActions}
       />
 
@@ -1491,6 +1750,17 @@ export function GroupChatScreen({ navigation, route }: Props) {
         />
         )}
       </KeyboardAvoidingView>
+
+      <MessageActionSheet
+        message={messageActionTarget}
+        currentUserId={user?.id}
+        onClose={closeMessageActions}
+        onReply={handleSheetReply}
+        onCopy={handleSheetCopy}
+        onEdit={handleSheetEdit}
+        onRemove={handleSheetRemove}
+        onReport={handleSheetReport}
+      />
 
       <TestConfigModal
         visible={showTestConfig}

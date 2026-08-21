@@ -239,6 +239,7 @@ export function GroupsScreen({ navigation }: Props) {
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<PendingGroupInvite[]>([]);
   const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
+  const [contactsLoading, setContactsLoading] = useState(false);
 
   const subGroupsMap = useMemo(() => {
     const map: Record<string, Group[]> = {};
@@ -402,28 +403,56 @@ export function GroupsScreen({ navigation }: Props) {
     user?.id,
   ]);
 
+  // Count what the list actually renders: top-level, non-archived groups (not the
+  // raw `groups` array, which also holds archived groups and nested sub-groups)
+  // plus the open direct-message threads.
+  const headerSubtitle = useMemo(() => {
+    const groupCount = getTopLevelGroups().length;
+    const chatCount = dmThreads.filter((t) => !t.isArchived).length;
+    const parts = [`${groupCount} group${groupCount !== 1 ? 's' : ''}`];
+    if (chatCount > 0) parts.push(`${chatCount} chat${chatCount !== 1 ? 's' : ''}`);
+    return parts.join(' · ');
+  }, [groups, dmThreads, getTopLevelGroups]);
+
   // Contacts are derived from group members, but the groups list response does
   // not include them — they only arrive when a group chat is opened. Without
   // this, "New Message" claims you have no contacts until you visit a group.
+  // Hydrate every non-archived group up front (not just the first ten, and not
+  // stopping at the first contact) and expose a loading flag so the modal shows
+  // a spinner instead of a false "no contacts" empty state while members arrive.
   useEffect(() => {
-    if (!dmModalOpen || contacts.length > 0) return;
-    const needsMembers = groups.filter((g) => !g.isArchived && !g.members?.length).slice(0, 10);
-    if (needsMembers.length === 0) return;
+    if (!dmModalOpen) {
+      setContactsLoading(false);
+      return;
+    }
+    const needsMembers = groups.filter((g) => !g.isArchived && !g.members?.length);
+    if (needsMembers.length === 0) {
+      setContactsLoading(false);
+      return;
+    }
     let cancelled = false;
+    setContactsLoading(true);
     void (async () => {
-      for (const group of needsMembers) {
-        if (cancelled) return;
-        try {
-          await fetchGroupMembers(group.id);
-        } catch {
-          // A group that fails to hydrate simply contributes no contacts.
+      try {
+        for (const group of needsMembers) {
+          if (cancelled) return;
+          try {
+            await fetchGroupMembers(group.id);
+          } catch {
+            // A group that fails to hydrate simply contributes no contacts.
+          }
         }
+      } finally {
+        if (!cancelled) setContactsLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [dmModalOpen, contacts.length, groups, fetchGroupMembers]);
+    // Snapshot the groups list on open; re-running as each roster lands would
+    // restart the loop and double-fetch. New groups mid-session are rare here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dmModalOpen, fetchGroupMembers]);
 
   const toggleGroupExpand = useCallback((groupId: string) => {
     setExpandedParentGroups(prev => ({
@@ -498,7 +527,7 @@ export function GroupsScreen({ navigation }: Props) {
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader
         title="Chats"
-        subtitle={`${groups.length} group${groups.length !== 1 ? 's' : ''}`}
+        subtitle={headerSubtitle}
         right={
           <View className="flex-row items-center gap-1">
             <Button variant="ghost" size="sm" onPress={() => setDmModalOpen(true)}>
@@ -645,7 +674,9 @@ export function GroupsScreen({ navigation }: Props) {
         visible={dmModalOpen}
         onClose={() => setDmModalOpen(false)}
         contacts={contacts}
+        contactsLoading={contactsLoading}
         currentUserId={user?.id || ''}
+        lowDataMode={lowDataMode}
         onStartChat={(userId, userName, userAvatarUrl) => {
           setDmModalOpen(false);
           handleInitiateDm(userId, userName, userAvatarUrl);

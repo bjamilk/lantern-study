@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { chatMessagePreview, parseChatAudioUrl } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
@@ -53,6 +53,10 @@ function DmBubbleComponent({
   messageId,
 }: DmBubbleProps) {
   const { colors } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  // On tablets / landscape, cap the row in absolute points so bubbles don't
+  // stretch full-bleed. Phones keep the percentage max (max-w-[92%]/[82%]) below.
+  const wideMaxWidth = windowWidth >= 768 ? { maxWidth: 520 } : undefined;
   const timeLabel = useMemo(
     () =>
       new Date(message.timestamp).toLocaleTimeString([], {
@@ -66,7 +70,10 @@ function DmBubbleComponent({
 
   if (isRemoved) {
     return (
-      <View className={`max-w-[82%] mb-3 ${isOwn ? 'self-end' : 'self-start'}`}>
+      <View
+        className={`max-w-[82%] mb-3 ${isOwn ? 'self-end' : 'self-start'}`}
+        style={wideMaxWidth}
+      >
         <View
           className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
           style={{ borderColor: colors.border, borderWidth: 1, borderStyle: 'dashed' }}
@@ -114,6 +121,7 @@ function DmBubbleComponent({
       accessibilityLabel={rowLabel}
       accessibilityHint={onReply ? 'Double tap and hold for message options' : undefined}
       className={`mb-3 flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'}`}
+      style={wideMaxWidth}
     >
       {!isOwn ? (
         // The row label already names the sender.

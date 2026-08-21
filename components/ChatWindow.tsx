@@ -22,8 +22,6 @@ import {
   EllipsisVerticalIcon,
   UserGroupIcon,
   PencilSquareIcon,
-  QuestionMarkCircleIcon,
-  AcademicCapIcon,
   PlusCircleIcon,
   ArchiveBoxIcon,
   ChatBubbleLeftRightIcon,
@@ -47,13 +45,12 @@ import {
 } from '@lantern/shared';
 import {
   getInquiryByThread,
-  threadMayHaveMarketplaceInquiry,
   fetchOffers,
   respondToOffer,
   updateInquiryStatus,
   fetchOrderForInquiry,
   updateMarketplaceOrder,
-  requestOrderPayment,
+  resumeMarketplaceOrderCheckout,
   supabase,
   fetchGroupThread,
   fetchDmThread,
@@ -116,6 +113,7 @@ interface ChatWindowProps {
     patch: { status: 'open' | 'pending' | 'declined'; requestedBy?: string | null }
   ) => void;
   onLoadMoreMessages?: (groupId: string) => Promise<number>;
+  onLoadMoreDirectMessages?: (threadId: string) => Promise<number>;
   /**
    * Prior last_read_at for the open group or DM chat.
    * - undefined: mark-as-read still pending (wait before anchoring)
@@ -146,6 +144,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onUnarchiveDmThread,
   onDmThreadStatusChange,
   onLoadMoreMessages,
+  onLoadMoreDirectMessages,
   onPeerChatRead,
 }) => {
   const messages = Array.isArray(messagesProp) ? messagesProp : [];
@@ -177,7 +176,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadReplyTo, setThreadReplyTo] = useState<MessageReplyPreview | null>(null);
   const [threadEditingMessage, setThreadEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  // Separate mention seed for the thread composer so tapping an author's name
+  // seeds only the visible composer (main vs thread), not both at once.
+  const [threadSeedMentionUsername, setThreadSeedMentionUsername] = useState<string | null>(null);
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Thread panel scroll: its own node map (so a reply-quote click scrolls within
+  // the thread, not to the hidden main-list copy) plus a container + bottom sentinel.
+  const threadMessageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const threadScrollRef = useRef<HTMLDivElement>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const threadCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -438,24 +445,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       setNewMessagesBelow(0);
     }
 
-    // Load more when scrolled to the top
-    if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat && chat.chatType === 'group') {
+    // Load more when scrolled to the top (groups and DMs both page older history)
+    if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat) {
+      const loadOlder =
+        chat.chatType === 'group'
+          ? onLoadMoreMessages
+          : chat.chatType === 'dm'
+            ? onLoadMoreDirectMessages
+            : undefined;
+      if (!loadOlder) {
+        // No pager for this chat type — stop implying more history exists.
+        setHasMore(false);
+        return;
+      }
       setIsLoadingMore(true);
       const prevScrollHeight = container.scrollHeight;
-      
+
       try {
-        if (onLoadMoreMessages) {
-          const count = await onLoadMoreMessages(chat.id);
-          if (count === 0) {
-            setHasMore(false);
-          } else {
-            // Restore scroll position to prevent jumping
-            requestAnimationFrame(() => {
-              if (container) {
-                container.scrollTop = container.scrollHeight - prevScrollHeight;
-              }
-            });
-          }
+        const count = await loadOlder(chat.id);
+        if (count === 0) {
+          setHasMore(false);
+        } else {
+          // Restore scroll position to prevent jumping
+          requestAnimationFrame(() => {
+            if (container) {
+              container.scrollTop = container.scrollHeight - prevScrollHeight;
+            }
+          });
         }
       } catch (err) {
         console.error('Error loading older messages:', err);
@@ -547,7 +563,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           return;
         }
         try {
-          await updateInquiryStatus(inquiry.id, 'negotiating');
+          // The server sets the inquiry status when an offer is accepted; re-fetch it
+          // as the source of truth instead of forcing 'negotiating' (which left the
+          // status pill stuck on amber even though a live order already existed).
+          const refreshedInquiry = await getInquiryByThread(chat.id);
+          if (refreshedInquiry) setInquiry(refreshedInquiry);
           const order = await fetchOrderForInquiry(inquiry.id);
           if (order) setActiveOrder(order);
           await refreshBudgetTransactions(currentUser.id);
@@ -579,6 +599,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
+  // Reset offer/order UI only when the conversation itself changes.
   useEffect(() => {
     setActiveTab('chat');
     setInquiry(null);
@@ -588,35 +609,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setCounterValue('');
     setOfferError('');
     setActiveOrder(null);
+  }, [chat?.id]);
 
-    if (chat && chat.chatType === 'dm') {
-      const dmTexts = messages.map((message) => message.text);
-      if (!threadMayHaveMarketplaceInquiry(dmTexts)) {
-        return;
-      }
-
-      let cancelled = false;
-      const loadInquiryContext = async () => {
-        try {
-          const inquiryData = await getInquiryByThread(chat.id);
+  // Resolve marketplace inquiry context durably: ask the server whether THIS thread
+  // is an inquiry (source of truth) rather than substring-matching a fragile "[Offer]"
+  // marker in message text, which false-negatives on seed drift and false-positives on
+  // a literally typed "[Offer]". Depends only on the chat id, so it never re-fires on an
+  // unrelated parent re-render (which used to bounce the user off the Offers tab).
+  useEffect(() => {
+    if (!chat || chat.chatType !== 'dm') return;
+    let cancelled = false;
+    const loadInquiryContext = async () => {
+      try {
+        const inquiryData = await getInquiryByThread(chat.id);
+        if (cancelled) return;
+        if (inquiryData) {
+          setInquiry(inquiryData);
+          await loadOfferHistory(inquiryData);
           if (cancelled) return;
-          if (inquiryData) {
-            setInquiry(inquiryData);
-            await loadOfferHistory(inquiryData);
-            if (cancelled) return;
-            const order = await fetchOrderForInquiry(inquiryData.id);
-            if (!cancelled && order) setActiveOrder(order);
-          }
-        } catch (err) {
-          if (!cancelled) {
-            console.error('Error loading inquiry context:', err);
-          }
+          const order = await fetchOrderForInquiry(inquiryData.id);
+          if (!cancelled && order) setActiveOrder(order);
         }
-      };
-      void loadInquiryContext();
-      return () => { cancelled = true; };
-    }
-  }, [chat?.id, chat?.chatType, messages]);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error loading inquiry context:', err);
+        }
+      }
+    };
+    void loadInquiryContext();
+    return () => { cancelled = true; };
+  }, [chat?.id, chat?.chatType]);
 
 
   // build top‑level vs subgroup map once
@@ -698,6 +720,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     threadMessages.find((message) => message.id === threadRootId) || threadMessages[0];
   const isThreadRootRemoved =
     !!threadRootMessage?.isRemoved || !!threadRootMessage?.removedAt;
+
+  // Keep the thread panel pinned to the newest reply: scroll to the bottom
+  // sentinel when the thread opens and whenever it grows, but only if the reader
+  // is already near the bottom so an incoming peer reply never yanks them away.
+  useEffect(() => {
+    if (!threadRootId || threadLoading) return;
+    const container = threadScrollRef.current;
+    const end = threadEndRef.current;
+    if (!end) return;
+    const nearBottom =
+      !container || container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+    if (nearBottom) end.scrollIntoView({ block: 'end' });
+  }, [threadRootId, threadLoading, visibleThreadMessages.length]);
 
   // Compute first unread once the prior marker and messages are available (group + DM).
   useEffect(() => {
@@ -1198,6 +1233,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   };
 
   const questionCount = visibleMessages.filter(m => m.questionType).length;
+  // Fold the question count into the header subtitle so we can drop the separate
+  // stats strip row (member count already backs `description` when unset).
+  const headerSubtitle = isGroup && !isArchived && questionCount > 0
+    ? `${description} · ${questionCount} question${questionCount !== 1 ? 's' : ''}`
+    : description;
 
   const chatPanelContent = (
     <>
@@ -1463,41 +1503,54 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+        <div ref={threadScrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
           {threadLoading ? (
             <div className="flex justify-center py-10">
               <div className="w-8 h-8 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
             </div>
           ) : (
             visibleThreadMessages.map((msg) => (
-              <MessageItem
+              <div
                 key={msg.id}
-                message={msg}
-                isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                currentUserVote={userVotes[msg.id]}
-                onVoteQuestion={onVoteQuestion}
-                onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
-                currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                group={group}
-                currentUser={currentUser}
-                isGroupChat={chat.chatType === 'group'}
-                onEditMessage={(m) => beginEditingMessage(m, true)}
-                onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
-                onReply={(m) => {
-                  setThreadEditingMessage(null);
-                  setThreadReplyTo({
-                    id: m.id,
-                    senderId: m.sender?.id,
-                    senderName: m.sender?.name || m.sender?.username,
-                    type: m.type,
-                    text: m.text,
-                    questionStem: m.questionStem,
-                  });
+                ref={(el) => {
+                  threadMessageNodeRefs.current[msg.id] = el;
                 }}
-                onMentionUser={(username) => setSeedMentionUsername(username)}
-              />
+              >
+                <MessageItem
+                  message={msg}
+                  isCurrentUserMessage={msg.sender?.id === currentUser.id}
+                  currentUserVote={userVotes[msg.id]}
+                  onVoteQuestion={onVoteQuestion}
+                  onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                  currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
+                  group={group}
+                  currentUser={currentUser}
+                  isGroupChat={chat.chatType === 'group'}
+                  onEditMessage={(m) => beginEditingMessage(m, true)}
+                  onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
+                  onReply={(m) => {
+                    setThreadEditingMessage(null);
+                    setThreadReplyTo({
+                      id: m.id,
+                      senderId: m.sender?.id,
+                      senderName: m.sender?.name || m.sender?.username,
+                      type: m.type,
+                      text: m.text,
+                      questionStem: m.questionStem,
+                    });
+                  }}
+                  onMentionUser={(username) => setThreadSeedMentionUsername(username)}
+                  onScrollToMessage={(messageId) => {
+                    threadMessageNodeRefs.current[messageId]?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'center',
+                    });
+                  }}
+                />
+              </div>
             ))
           )}
+          <div ref={threadEndRef} />
         </div>
         {!isArchived && !isThreadRootRemoved && (
           <div className="flex-shrink-0 border-t border-lantern-border">
@@ -1505,8 +1558,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               onSendMessage={handleThreadSend}
               onAIQuery={chat.chatType === 'group' ? onAIQuery : undefined}
               mentionCandidates={mentionCandidates}
-              seedMentionUsername={seedMentionUsername}
-              onSeedMentionConsumed={() => setSeedMentionUsername(null)}
+              seedMentionUsername={threadSeedMentionUsername}
+              onSeedMentionConsumed={() => setThreadSeedMentionUsername(null)}
               replyTo={threadReplyTo}
               onClearReply={() => {
                 const root = threadMessages.find((m) => m.id === threadRootId) || threadMessages[0];
@@ -1564,37 +1617,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-semibold truncate text-lantern-text" title={name}>{name}</h2>
-              <p className="text-xs text-lantern-text-secondary truncate" title={description}>
-                {isArchived ? <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span> : description}
+              <p className="text-xs text-lantern-text-secondary truncate" title={headerSubtitle}>
+                {isArchived ? <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span> : headerSubtitle}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Quick-action toolbar for groups (visible on md+) */}
+            {/* Quick-action toolbar for groups. Only the primary action (Question)
+                stays exposed on small screens; Test/Study fan out at lg+, and
+                everything else (visibility, Summarize) lives in the overflow menu
+                so each action sits in exactly one place per breakpoint. */}
             {isGroup && group && !isArchived && (
               <div className="flex items-center gap-1 mr-2">
-                <label className="hidden md:flex items-center" title="Question visibility">
-                  <span className="sr-only">Question visibility</span>
-                  <select
-                    value={questionVisibilityMode}
-                    onChange={(e) =>
-                      setQuestionVisibilityMode(e.target.value as QuestionVisibilityMode)
-                    }
-                    className="max-w-[9.5rem] text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary border border-lantern-border rounded-lantern px-2 py-1.5 hover:text-lantern-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-                    aria-label="Question visibility filter"
-                  >
-                    {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value} title={opt.helper}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <button
                   onClick={onOpenQuestionModal}
                   data-tip-id="chat.question"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
+                  className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Submit question"
                   title="Submit Question"
                 >
@@ -1604,7 +1643,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button
                   onClick={onOpenTestConfigModal}
                   data-tip-id="chat.test"
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Take a test"
                   title="Take a Test"
                 >
@@ -1614,25 +1653,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button
                   onClick={onOpenStudyConfigModal}
                   data-tip-id="chat.study"
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Study mode"
                   title="Study Mode"
                 >
                   <BookOpenIcon className="w-4 h-4" />
                   <span className="hidden lg:inline">Study</span>
                 </button>
-                <button
-                  onClick={handleSummarizeGroup}
-                  disabled={isSummarizingChat}
-                  data-tip-id="chat.summarize"
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-lantern transition-colors duration-200"
-                  aria-label="Summarize group chat with AI"
-                  title="AI Summary"
-                >
-                  <SparklesIcon className="w-4 h-4" />
-                  <span className="hidden lg:inline">{isSummarizingChat ? 'Summarizing…' : 'Summarize'}</span>
-                </button>
-
               </div>
             )}
 
@@ -1713,14 +1740,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         Create Sub-group
                       </MenuItem>
                       <MenuSeparator />
-                      <div className="md:hidden">
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenQuestionModal)} icon={<PencilSquareIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
-                          Submit New Question
-                        </MenuItem>
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<QuestionMarkCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                      <div className="lg:hidden">
+                        <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<ClipboardDocumentCheckIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                           Take a Test
                         </MenuItem>
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<AcademicCapIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                        <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<BookOpenIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                           Study Mode
                         </MenuItem>
                       </div>
@@ -1737,6 +1761,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         onSelect={() => handleDropdownAction(handleSummarizeGroup)}
                         icon={<SparklesIcon className="w-4 h-4" />}
                         className="text-lantern-primary"
+                        disabled={isSummarizingChat}
                       >
                         {isSummarizingChat ? 'Summarizing…' : 'Summarize Group Chat'}
                       </MenuItem>
@@ -1845,24 +1870,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </Menu>
           </div>
         </div>
-        {isGroup && !isArchived && (
-          <div className="flex items-center gap-4 px-4 md:px-6 py-2 bg-lantern-background-secondary/80 dark:bg-lantern-surface-secondary/50 border-b border-lantern-border/60 dark:border-lantern-border/60 text-xs text-lantern-text-secondary">
-            <span className="flex items-center gap-1">
-              <UserGroupIcon className="w-3.5 h-3.5" />
-              {memberCountText || 'Group'}
-            </span>
-            <span className="flex items-center gap-1">
-              <ChatBubbleLeftRightIcon className="w-3.5 h-3.5" />
-              {visibleMessages.length} message{visibleMessages.length !== 1 ? 's' : ''}
-            </span>
-            {questionCount > 0 && (
-              <span className="flex items-center gap-1">
-                <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
-                {questionCount} question{questionCount !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-        )}
         {chatMuted && (
           <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300">
             <span className="inline-flex items-center gap-1.5 min-w-0">
@@ -1939,44 +1946,101 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </TabList>
           </div>
 
+          {/* Sticky deal bar — surfaces the ONE primary action in the chat view so a
+              buyer/seller never has to hunt in the Offers tab. Hidden once an order
+              exists (the order bar below drives those states). */}
+          {!activeOrder && (() => {
+            const pending = activeOffer && activeOffer.status === 'pending' ? activeOffer : null;
+            const canRespond = pending ? canRespondToOffer(pending, currentUser.id) : false;
+            const canWithdraw = pending ? canWithdrawOffer(pending, currentUser.id) : false;
+            const isBuyer = currentUser.id === inquiry.buyer_id;
+            if (inquiry.status === 'purchased' || inquiry.status === 'closed') return null;
+            return (
+              <div className="flex-shrink-0 px-4 py-2.5 bg-lantern-surface border-b border-lantern-border flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                {pending ? (
+                  <>
+                    <span className="text-xs font-semibold text-lantern-text">
+                      {getOfferProposedBy(pending) === 'seller' ? 'Counter-offer' : 'Offer'}: ₦{pending.amount.toLocaleString()}
+                    </span>
+                    {canRespond ? (
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('accept')} className="text-xs font-semibold px-3 py-1.5 rounded-lantern bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">Accept</button>
+                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('decline')} className="text-xs font-semibold px-3 py-1.5 rounded-lantern border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background-secondary disabled:opacity-50">Decline</button>
+                        <button type="button" onClick={() => setActiveTab('offers')} className="text-xs font-medium px-2 py-1.5 text-lantern-primary hover:underline">Counter</button>
+                      </div>
+                    ) : canWithdraw ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-lantern-text-secondary">Waiting for a response</span>
+                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('withdraw')} className="text-xs font-medium px-2 py-1.5 text-lantern-text-secondary hover:text-red-600 hover:underline disabled:opacity-50">Withdraw</button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-lantern-text-secondary">Awaiting a response</span>
+                    )}
+                  </>
+                ) : isBuyer ? (
+                  <>
+                    <span className="text-xs text-lantern-text-secondary">No active offer.</span>
+                    <button type="button" onClick={() => setShowMakeOfferModal(true)} className="text-xs font-semibold px-3 py-1.5 rounded-lantern bg-emerald-600 text-white hover:bg-emerald-700 inline-flex items-center gap-1.5">
+                      <CurrencyDollarIcon className="w-3.5 h-3.5" /> Make an offer
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-xs text-lantern-text-secondary">Waiting for the buyer to make an offer.</span>
+                )}
+                <button type="button" onClick={() => setActiveTab(activeTab === 'offers' ? 'chat' : 'offers')} className="ml-auto text-[11px] font-medium text-lantern-primary hover:underline">
+                  {activeTab === 'offers' ? 'View chat' : 'View details'}
+                </button>
+                <span className="basis-full text-[10px] text-lantern-text-tertiary">Paystack-protected · 5% service charge on purchase</span>
+              </div>
+            );
+          })()}
+
           {activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
             <div className="flex-shrink-0 px-4 py-2 bg-lantern-primary-background dark:bg-lantern-primary-background border-b border-lantern-primary/20 dark:border-lantern-primary/30 flex flex-wrap gap-2 items-center">
               <span className="text-xs font-medium text-lantern-primary-dark dark:text-lantern-primary-light">
                 Order: {activeOrder.status.replace(/_/g, ' ')} · ₦{Number(activeOrder.amount).toLocaleString()}
               </span>
-              {currentUser.id === inquiry.seller_id && ['paid', 'pending_payment'].includes(activeOrder.status) && (
-                <>
-                  <button
-                    type="button"
-                    disabled={orderActionLoading}
-                    className="text-xs px-2 py-1 rounded-md bg-lantern-primary text-white"
-                    onClick={async () => {
-                      setOrderActionLoading(true);
-                      try {
-                        const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
-                        setActiveOrder(updated);
-                      } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                      finally { setOrderActionLoading(false); }
-                    }}
-                  >
-                    Mark ready
-                  </button>
-                  <button
-                    type="button"
-                    disabled={orderActionLoading}
-                    className="text-xs px-2 py-1 rounded-md border border-lantern-primary text-lantern-primary"
-                    onClick={async () => {
-                      setOrderActionLoading(true);
-                      try {
-                        await requestOrderPayment(activeOrder.id);
-                        useToastStore.getState().showToast('Payment request sent', 'success');
-                      } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                      finally { setOrderActionLoading(false); }
-                    }}
-                  >
-                    Request payment
-                  </button>
-                </>
+              {currentUser.id === inquiry.seller_id && activeOrder.status === 'paid' && (
+                <button
+                  type="button"
+                  disabled={orderActionLoading}
+                  className="text-xs px-2 py-1 rounded-md bg-lantern-primary text-white disabled:opacity-50"
+                  onClick={async () => {
+                    setOrderActionLoading(true);
+                    try {
+                      const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
+                      setActiveOrder(updated);
+                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
+                    finally { setOrderActionLoading(false); }
+                  }}
+                >
+                  Mark ready
+                </button>
+              )}
+              {currentUser.id === inquiry.seller_id && ['pending_payment', 'awaiting_payment'].includes(activeOrder.status) && (
+                <span className="text-xs text-lantern-text-secondary">Awaiting buyer payment</span>
+              )}
+              {currentUser.id === inquiry.buyer_id && ['pending_payment', 'awaiting_payment'].includes(activeOrder.status) && (
+                <button
+                  type="button"
+                  disabled={orderActionLoading}
+                  className="text-xs px-2 py-1 rounded-md bg-emerald-600 text-white disabled:opacity-50"
+                  onClick={async () => {
+                    setOrderActionLoading(true);
+                    try {
+                      // Resume the Paystack checkout for an unpaid order (buyers pay in-app).
+                      const res = await resumeMarketplaceOrderCheckout(activeOrder.id);
+                      if (res?.authorizationUrl) {
+                        window.location.assign(res.authorizationUrl);
+                        return;
+                      }
+                      useToastStore.getState().showToast('Could not start checkout. Please try again.', 'error');
+                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Could not start checkout', 'error'); }
+                    finally { setOrderActionLoading(false); }
+                  }}
+                >
+                  Pay now · ₦{Number(activeOrder.amount).toLocaleString()}
+                </button>
               )}
               {currentUser.id === inquiry.buyer_id && ['paid', 'ready_for_pickup'].includes(activeOrder.status) && (
                 <button
@@ -2196,18 +2260,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-6 text-center">
-                  <p className="text-sm text-lantern-text-secondary mb-4 font-medium">
-                    There are no active offers in negotiation.
-                  </p>
-                  {currentUser.id === inquiry.buyer_id && (
-                    <button
-                      onClick={() => setShowMakeOfferModal(true)}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5"
-                    >
-                      <CurrencyDollarIcon className="w-4 h-4" />
-                      Make an Offer
-                    </button>
-                  )}
+                  {(() => {
+                    const dealDone = inquiry.status === 'purchased' || inquiry.status === 'closed';
+                    const hasLiveOrder = !!activeOrder && activeOrder.status !== 'cancelled';
+                    if (dealDone || hasLiveOrder) {
+                      // A deal is struck — don't re-offer to buy an item already ordered.
+                      return (
+                        <p className="text-sm text-lantern-text-secondary font-medium">
+                          {activeOrder
+                            ? `This deal is confirmed — order ${activeOrder.status.replace(/_/g, ' ')}.`
+                            : 'This listing has been purchased or the inquiry is closed.'}
+                        </p>
+                      );
+                    }
+                    return (
+                      <>
+                        <p className="text-sm text-lantern-text-secondary mb-4 font-medium">
+                          There are no active offers in negotiation.
+                        </p>
+                        {currentUser.id === inquiry.buyer_id && (
+                          <button
+                            onClick={() => setShowMakeOfferModal(true)}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5"
+                          >
+                            <CurrencyDollarIcon className="w-4 h-4" />
+                            Make an Offer
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </div>

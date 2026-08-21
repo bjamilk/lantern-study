@@ -20,8 +20,27 @@ export interface GroupChatHeaderAction {
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
   iconColor?: string;
-  onPress: () => void;
+  /** Direct-action rows fire this on tap. Omitted on rows that only open a submenu. */
+  onPress?: () => void;
   disabled?: boolean;
+  /**
+   * Groups rows under a labeled section in the overflow sheet. Consecutive
+   * actions that share a `section` render under a single section header.
+   */
+  section?: string;
+  /** Secondary line under the label — used for the per-option helper text in a submenu. */
+  helper?: string;
+  /** Radio-style check mark for the current selection inside a submenu. */
+  selected?: boolean;
+  /**
+   * When set, tapping this row opens a nested option list (e.g. the question
+   * filter) instead of firing an action. This is the only row type that keeps a
+   * trailing chevron — it genuinely navigates within the sheet.
+   */
+  submenu?: {
+    title?: string;
+    options: GroupChatHeaderAction[];
+  };
 }
 
 interface GroupChatHeaderProps {
@@ -31,6 +50,10 @@ interface GroupChatHeaderProps {
   lowDataMode?: boolean;
   onBack: () => void;
   onAddQuestion: () => void;
+  /** Hide the add-question "+" — e.g. an archived group is read-only. */
+  addQuestionDisabled?: boolean;
+  /** Tapping the avatar/title opens Group Info. */
+  onTitlePress?: () => void;
   menuActions: GroupChatHeaderAction[];
 }
 
@@ -41,10 +64,13 @@ export function GroupChatHeader({
   lowDataMode,
   onBack,
   onAddQuestion,
+  addQuestionDisabled,
+  onTitlePress,
   menuActions,
 }: GroupChatHeaderProps) {
   const { colors } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [submenu, setSubmenu] = useState<GroupChatHeaderAction | null>(null);
   const sheetMaxHeight = useMemo(
     () => Math.round(Dimensions.get('window').height * 0.75),
     [],
@@ -55,14 +81,116 @@ export function GroupChatHeader({
   );
 
   const openMenu = () => setMenuVisible(true);
-  const closeMenu = () => setMenuVisible(false);
+  const closeMenu = () => {
+    setMenuVisible(false);
+    setSubmenu(null);
+  };
 
   const handleAction = (action: GroupChatHeaderAction) => {
-    closeMenu();
-    if (!action.disabled) {
-      action.onPress();
+    if (action.disabled) return;
+    if (action.submenu) {
+      // Open the nested list in place; keep the sheet open.
+      setSubmenu(action);
+      return;
     }
+    closeMenu();
+    action.onPress?.();
   };
+
+  const handleSubmenuOption = (option: GroupChatHeaderAction) => {
+    if (option.disabled) return;
+    closeMenu();
+    option.onPress?.();
+  };
+
+  // Group the flat action list into sections so the sheet reads as
+  // Practice / View / Notifications / Manage instead of one long list.
+  const rows = useMemo(() => {
+    const out: Array<
+      | { kind: 'section'; id: string; title: string }
+      | { kind: 'action'; action: GroupChatHeaderAction }
+    > = [];
+    let currentSection: string | undefined;
+    for (const action of menuActions) {
+      if (action.section && action.section !== currentSection) {
+        currentSection = action.section;
+        out.push({ kind: 'section', id: `section-${action.section}`, title: action.section });
+      }
+      out.push({ kind: 'action', action });
+    }
+    return out;
+  }, [menuActions]);
+
+  const renderActionRow = (action: GroupChatHeaderAction) => (
+    <TouchableOpacity
+      key={action.id}
+      onPress={() => handleAction(action)}
+      disabled={action.disabled}
+      className={`flex-row items-center gap-3 py-3.5 px-1 border-b border-lantern-border ${
+        action.disabled ? 'opacity-40' : ''
+      }`}
+      style={{ borderBottomColor: colors.border }}
+      accessibilityRole="button"
+      accessibilityLabel={action.label}
+      accessibilityState={{ disabled: !!action.disabled }}
+    >
+      <View
+        className="w-9 h-9 rounded-xl items-center justify-center"
+        style={{ backgroundColor: colors.backgroundSecondary }}
+      >
+        <Ionicons
+          name={action.icon}
+          size={20}
+          color={action.iconColor || featureAccents.groups}
+        />
+      </View>
+      <Text className="text-base text-lantern-text flex-1" style={{ color: colors.text }}>
+        {action.label}
+      </Text>
+      {/* Only submenu rows keep a chevron — they navigate within the sheet.
+          Direct-action rows dropped it (it implied navigation that never happened). */}
+      {action.submenu ? (
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+      ) : null}
+    </TouchableOpacity>
+  );
+
+  const renderOptionRow = (option: GroupChatHeaderAction) => (
+    <TouchableOpacity
+      key={option.id}
+      onPress={() => handleSubmenuOption(option)}
+      disabled={option.disabled}
+      className={`flex-row items-center gap-3 py-3 px-1 border-b border-lantern-border ${
+        option.disabled ? 'opacity-40' : ''
+      }`}
+      style={{ borderBottomColor: colors.border }}
+      accessibilityRole="button"
+      accessibilityLabel={option.label}
+      accessibilityState={{ selected: !!option.selected }}
+    >
+      <View className="w-6 items-center justify-center">
+        {option.selected ? (
+          <Ionicons name="checkmark" size={20} color={colors.primary} />
+        ) : null}
+      </View>
+      <View className="flex-1">
+        <Text
+          className="text-base text-lantern-text"
+          style={{ color: option.selected ? colors.primary : colors.text }}
+        >
+          {option.label}
+        </Text>
+        {option.helper ? (
+          <Text
+            className="text-xs text-lantern-text-secondary mt-0.5"
+            style={{ color: colors.textSecondary }}
+          >
+            {option.helper}
+          </Text>
+        ) : null}
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <>
@@ -80,40 +208,52 @@ export function GroupChatHeader({
           <Ionicons name="arrow-back" size={22} color={colors.textSecondary} />
         </Pressable>
 
-        <ResolvedAvatar
-          name={displayName}
-          uri={resolveAvatarSrc(avatarUrl, lowDataMode)}
-          size={36}
-          // The title right next to it already announces the group name.
-          decorative
-        />
-
-        <View className="flex-1 min-w-0">
-          <Text
-            className="text-base font-semibold text-lantern-text"
-            numberOfLines={1}
-            style={{ color: colors.text }}
-          >
-            {displayName}
-          </Text>
-          {lowDataMode ? (
-            <Text className="text-[10px] text-amber-600">Low-data mode</Text>
-          ) : memberCount ? (
-            <Text className="text-xs text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
-              {memberCount} members
-            </Text>
-          ) : null}
-        </View>
-
+        {/* Tapping the avatar/title opens Group Info — previously an inert View,
+            so Group Info was only reachable through the overflow menu. */}
         <Pressable
-          onPress={onAddQuestion}
-          className="p-2 rounded-lg min-w-[48px] min-h-[48px] items-center justify-center"
-          style={{ backgroundColor: `${featureAccents.groups}20` }}
-          accessibilityRole="button"
-          accessibilityLabel="Add question"
+          onPress={onTitlePress}
+          disabled={!onTitlePress}
+          className="flex-1 flex-row items-center gap-2 min-w-0"
+          accessibilityRole={onTitlePress ? 'button' : undefined}
+          accessibilityLabel={onTitlePress ? `${displayName}, open group info` : undefined}
         >
-          <Ionicons name="add-circle-outline" size={22} color={featureAccents.groups} />
+          <ResolvedAvatar
+            name={displayName}
+            uri={resolveAvatarSrc(avatarUrl, lowDataMode)}
+            size={36}
+            // The title right next to it already announces the group name.
+            decorative
+          />
+
+          <View className="flex-1 min-w-0">
+            <Text
+              className="text-base font-semibold text-lantern-text"
+              numberOfLines={1}
+              style={{ color: colors.text }}
+            >
+              {displayName}
+            </Text>
+            {lowDataMode ? (
+              <Text className="text-[10px] text-amber-600">Low-data mode</Text>
+            ) : memberCount ? (
+              <Text className="text-xs text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
+                {memberCount} members
+              </Text>
+            ) : null}
+          </View>
         </Pressable>
+
+        {!addQuestionDisabled ? (
+          <Pressable
+            onPress={onAddQuestion}
+            className="p-2 rounded-lg min-w-[48px] min-h-[48px] items-center justify-center"
+            style={{ backgroundColor: `${featureAccents.groups}20` }}
+            accessibilityRole="button"
+            accessibilityLabel="Add question"
+          >
+            <Ionicons name="add-circle-outline" size={22} color={featureAccents.groups} />
+          </Pressable>
+        ) : null}
 
         <Pressable
           onPress={openMenu}
@@ -129,7 +269,7 @@ export function GroupChatHeader({
         visible={menuVisible}
         transparent
         animationType="fade"
-        onRequestClose={closeMenu}
+        onRequestClose={submenu ? () => setSubmenu(null) : closeMenu}
       >
         <Pressable className="flex-1 justify-end" style={{ backgroundColor: colors.modalOverlay }} onPress={closeMenu}>
           <Pressable
@@ -142,49 +282,67 @@ export function GroupChatHeader({
             onPress={e => e.stopPropagation()}
           >
             <View className="w-10 h-1 rounded-full self-center mb-3" style={{ backgroundColor: colors.border }} />
-            <Text className="text-sm font-semibold text-lantern-text-secondary mb-2 px-1" style={{ color: colors.textSecondary }}>
-              Group actions
-            </Text>
 
-            <ScrollView
-              style={{ maxHeight: listMaxHeight }}
-              showsVerticalScrollIndicator
-              keyboardShouldPersistTaps="handled"
-              bounces
-            >
-              {menuActions.map(action => (
-                <TouchableOpacity
-                  key={action.id}
-                  onPress={() => handleAction(action)}
-                  disabled={action.disabled}
-                  className={`flex-row items-center gap-3 py-3.5 px-1 border-b border-lantern-border ${
-                    action.disabled ? 'opacity-40' : ''
-                  }`}
-                  style={{ borderBottomColor: colors.border }}
-                  accessibilityRole="button"
-                  accessibilityLabel={action.label}
-                >
-                  <View
-                    className="w-9 h-9 rounded-xl items-center justify-center"
-                    style={{ backgroundColor: colors.backgroundSecondary }}
+            {submenu ? (
+              <>
+                <View className="flex-row items-center gap-2 mb-2">
+                  <TouchableOpacity
+                    onPress={() => setSubmenu(null)}
+                    className="p-1 -ml-1"
+                    accessibilityRole="button"
+                    accessibilityLabel="Back to group actions"
                   >
-                    <Ionicons
-                      name={action.icon}
-                      size={20}
-                      color={action.iconColor || featureAccents.groups}
-                    />
-                  </View>
-                  <Text className="text-base text-lantern-text flex-1" style={{ color: colors.text }}>
-                    {action.label}
+                    <Ionicons name="chevron-back" size={22} color={colors.primary} />
+                  </TouchableOpacity>
+                  <Text
+                    className="text-sm font-semibold text-lantern-text-secondary"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    {submenu.submenu?.title || submenu.label}
                   </Text>
-                  <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                </View>
+
+                <ScrollView
+                  style={{ maxHeight: listMaxHeight }}
+                  showsVerticalScrollIndicator
+                  keyboardShouldPersistTaps="handled"
+                  bounces
+                >
+                  {(submenu.submenu?.options || []).map(renderOptionRow)}
+                </ScrollView>
+              </>
+            ) : (
+              <>
+                <Text className="text-sm font-semibold text-lantern-text-secondary mb-2 px-1" style={{ color: colors.textSecondary }}>
+                  Group actions
+                </Text>
+
+                <ScrollView
+                  style={{ maxHeight: listMaxHeight }}
+                  showsVerticalScrollIndicator
+                  keyboardShouldPersistTaps="handled"
+                  bounces
+                >
+                  {rows.map(row =>
+                    row.kind === 'section' ? (
+                      <Text
+                        key={row.id}
+                        className="text-[11px] font-semibold uppercase tracking-wide px-1 pt-3 pb-1"
+                        style={{ color: colors.textTertiary }}
+                      >
+                        {row.title}
+                      </Text>
+                    ) : (
+                      renderActionRow(row.action)
+                    )
+                  )}
+                </ScrollView>
+              </>
+            )}
 
             <TouchableOpacity onPress={closeMenu} className="mt-3 py-3 items-center">
               <Text className="text-base font-medium" style={{ color: colors.primary }}>
-                Cancel
+                {submenu ? 'Done' : 'Cancel'}
               </Text>
             </TouchableOpacity>
           </Pressable>

@@ -13,8 +13,11 @@ import {
   TextInput,
   FlatList,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { ThemeScope, useTheme } from '../theme';
 import * as api from '../services/api';
 import { ResolvedAvatar } from './ResolvedAvatar';
@@ -40,7 +43,10 @@ interface NewDirectMessageModalProps {
   visible: boolean;
   onClose: () => void;
   contacts: Contact[];
+  /** True while group rosters are still being hydrated into `contacts`. */
+  contactsLoading?: boolean;
   currentUserId: string;
+  lowDataMode?: boolean;
   onStartChat: (userId: string, userName: string, userAvatarUrl?: string | null) => void;
 }
 
@@ -48,7 +54,9 @@ export default function NewDirectMessageModal({
   visible,
   onClose,
   contacts,
+  contactsLoading = false,
   currentUserId,
+  lowDataMode = false,
   onStartChat,
 }: NewDirectMessageModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -168,15 +176,17 @@ export default function NewDirectMessageModal({
       activeOpacity={0.7}
     >
       <View style={styles.avatarContainer}>
-        <ResolvedAvatar name={item.name} uri={item.avatarUrl} size={44} />
-        {!useApiSearch && (
+        <ResolvedAvatar name={item.name} uri={resolveAvatarSrc(item.avatarUrl, lowDataMode)} size={44} />
+        {/* Presence isn't wired for contacts (no `status`), so only draw the dot
+            when a real status is present — otherwise it was an always-gray dot. */}
+        {!useApiSearch && item.status ? (
           <View
             style={[
               styles.statusDot,
               { backgroundColor: getStatusColor(item.status), borderColor: colors.card },
             ]}
           />
-        )}
+        ) : null}
       </View>
 
       <View style={styles.contactInfo}>
@@ -212,6 +222,14 @@ export default function NewDirectMessageModal({
         </View>
       );
     }
+    if (contactsLoading && !trimmedSearch) {
+      return (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Loading contacts…</Text>
+        </View>
+      );
+    }
     if (!trimmedSearch && listData.length === 0) {
       return (
         <View style={styles.emptyContainer}>
@@ -244,6 +262,10 @@ export default function NewDirectMessageModal({
       onRequestClose={onClose}
     >
       <ThemeScope style={styles.overlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}
+        >
         <View style={[styles.container, { backgroundColor: colors.card }]}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.title, { color: colors.text }]}>New Message</Text>
@@ -299,6 +321,7 @@ export default function NewDirectMessageModal({
             ListEmptyComponent={emptyMessage}
           />
         </View>
+        </KeyboardAvoidingView>
       </ThemeScope>
     </Modal>
   );
@@ -310,11 +333,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  keyboardView: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   container: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '85%',
     minHeight: '60%',
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',

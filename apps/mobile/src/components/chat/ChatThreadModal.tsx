@@ -7,8 +7,10 @@ import {
   Modal,
   Platform,
   Pressable,
+  StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -93,6 +95,10 @@ export function ChatThreadModal({
   threadId,
 }: ChatThreadModalProps) {
   const { colors } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  // On tablets / landscape, present the thread as a centered sheet with a
+  // dimmed backdrop instead of an edge-to-edge full-screen slide.
+  const isWide = windowWidth >= 768;
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [threadReplyTo, setThreadReplyTo] = useState<ReplyPreview | null>(null);
@@ -285,11 +291,10 @@ export function ChatThreadModal({
     ]);
   };
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      {/* A native Modal is its own window, so the app-root SafeAreaProvider
-          never measures it — without this the insets read 0 and the thread
-          header renders under the status bar and notch. */}
+  // A native Modal is its own window, so the app-root SafeAreaProvider never
+  // measures it — without this the insets read 0 and the thread header renders
+  // under the status bar and notch.
+  const inner = (
       <SafeAreaProvider>
         <SafeAreaView
           accessibilityViewIsModal
@@ -467,6 +472,44 @@ export function ChatThreadModal({
         </KeyboardAvoidingView>
         </SafeAreaView>
       </SafeAreaProvider>
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={isWide}
+      animationType={isWide ? 'fade' : 'slide'}
+      onRequestClose={onClose}
+    >
+      {isWide ? (
+        <View style={styles.wideBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close thread"
+          />
+          <View style={[styles.wideSheet, { width: Math.min(windowWidth - 48, 560) }]}>
+            {inner}
+          </View>
+        </View>
+      ) : (
+        inner
+      )}
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  wideBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  wideSheet: {
+    height: '90%',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+});

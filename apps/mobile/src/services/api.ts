@@ -186,6 +186,7 @@ export const {
   uploadQuestionImage,
   fetchMarketplaceOrders,
   fetchMarketplaceOrder,
+  fetchOrderForInquiry,
   updateMarketplaceOrder,
   requestOrderPayment,
   fetchSellerAnalytics,

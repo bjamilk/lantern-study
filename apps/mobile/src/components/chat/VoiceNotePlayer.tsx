@@ -131,6 +131,15 @@ export function VoiceNotePlayer({ url, isOwn }: { url: string; isOwn: boolean })
     setPositionMs(clamped);
   };
 
+  // Screen-reader increment/decrement: nudge the playhead by a few seconds,
+  // reusing the same seek path as tap-to-seek.
+  const nudgeSeconds = async (deltaSec: number) => {
+    const total = durationMs;
+    if (!(total > 0)) return;
+    const nextMs = Math.max(0, Math.min(total, positionMs + deltaSec * 1000));
+    await seekToRatio(nextMs / total);
+  };
+
   const toggle = async () => {
     try {
       const sound = await ensureSound();
@@ -220,6 +229,14 @@ export function VoiceNotePlayer({ url, isOwn }: { url: string; isOwn: boolean })
             min: 0,
             max: Math.round(durationSec),
             now: Math.round(positionSec),
+          }}
+          accessibilityActions={[
+            { name: 'increment', label: 'Forward 5 seconds' },
+            { name: 'decrement', label: 'Back 5 seconds' },
+          ]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'increment') void nudgeSeconds(5);
+            else if (event.nativeEvent.actionName === 'decrement') void nudgeSeconds(-5);
           }}
         >
           <View

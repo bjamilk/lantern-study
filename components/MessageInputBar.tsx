@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon } from '@heroicons/react/24/solid';
-import { featureAccents } from '@lantern/shared/design';
+import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon, PhotoIcon, PencilSquareIcon } from '@heroicons/react/24/solid';
 import {
   buildChatAudioMarkdown,
   chatMessagePreview,
@@ -8,7 +7,7 @@ import {
   parseAiQuery,
 } from '@lantern/shared/utils';
 import type { MessageReplyPreview } from '../types';
-import { uploadChatAudio } from '../services/supabase';
+import { uploadChatAudio, uploadChatImage } from '../services/supabase';
 
 export type MentionCandidate = {
   id: string;
@@ -60,6 +59,9 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [trayOpen, setTrayOpen] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -203,6 +205,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     const question = editingMessage ? null : parseAiQuery(trimmed);
     if (question && onAIQuery) {
       setInputText('');
+      setRecordError(null);
       setIsAIThinking(true);
       try {
         const answer = await onAIQuery(question);
@@ -216,7 +219,18 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
           } finally {
             setIsSending(false);
           }
+        } else {
+          // Empty answer: restore the prompt so the message is never silently lost.
+          setInputText(trimmed);
+          setRecordError('The AI tutor could not answer that. Your message was restored — try again.');
         }
+      } catch (error) {
+        setInputText(trimmed);
+        setRecordError(
+          error instanceof Error
+            ? error.message
+            : 'The AI tutor is unavailable right now. Your message was restored.'
+        );
       } finally {
         setIsAIThinking(false);
       }
@@ -308,6 +322,43 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     }
   };
 
+  const handlePickImage = async (file: File) => {
+    if (isUploadingImage || isUploadingAudio || isSending || isAIThinking || isRecording) return;
+    if (!file.type.startsWith('image/')) {
+      setRecordError('Please choose an image file.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setRecordError('Image is too large (max 8MB).');
+      return;
+    }
+    setIsUploadingImage(true);
+    setRecordError(null);
+    try {
+      const base64Data = await blobToBase64(file);
+      const contentType = (file.type || 'image/jpeg').split(';')[0].trim().toLowerCase() || 'image/jpeg';
+      const ext = contentType.includes('png')
+        ? 'png'
+        : contentType.includes('webp')
+          ? 'webp'
+          : contentType.includes('gif')
+            ? 'gif'
+            : 'jpg';
+      const { url } = await uploadChatImage({
+        fileName: `image-${Date.now()}.${ext}`,
+        base64Data,
+        contentType,
+        groupId,
+      });
+      // Media messages are plain text of `![image](url)` (matches mobile + the parser).
+      await handleSend(`![image](${url})`);
+    } catch (err: any) {
+      setRecordError(err?.message || 'Could not upload image');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const startRecording = async () => {
     setRecordError(null);
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -381,8 +432,10 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     }
   };
 
-  const busy = isAIThinking || isSending || isUploadingAudio;
+  const busy = isAIThinking || isSending || isUploadingAudio || isUploadingImage;
   const showMic = !editingMessage && !inputText.trim() && !busy;
+  // The "+" tray collapses insert actions (question + photo). Hidden while editing.
+  const showTray = !editingMessage;
 
   return (
     <div className="px-4 md:px-6 py-3 bg-lantern-surface border-t border-lantern-border">
@@ -428,10 +481,18 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       )}
 
       {mentionMatches.length > 0 && (
-        <div className="mb-2 rounded-xl border border-lantern-border bg-lantern-surface shadow-sm overflow-hidden">
+        <div
+          id="mention-listbox"
+          role="listbox"
+          aria-label="Mention suggestions"
+          className="mb-2 rounded-xl border border-lantern-border bg-lantern-surface shadow-sm overflow-hidden"
+        >
           {mentionMatches.map((m, i) => (
             <button
               key={m.id}
+              id={`mention-option-${m.id}`}
+              role="option"
+              aria-selected={i === mentionIndex}
               type="button"
               onClick={() => insertMention(m)}
               className={`w-full text-left px-3 py-2 text-sm ${
@@ -454,16 +515,66 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       )}
 
       <div className="flex items-end gap-2">
-        {onOpenQuestionModal && !editingMessage && (
-          <button
-            type="button"
-            onClick={onOpenQuestionModal}
-            className="flex-shrink-0 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-primary hover:bg-lantern-primary-background rounded-lantern-xl transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-            aria-label="Submit a question"
-            title="Submit Question"
-          >
-            <PlusCircleIcon className="w-6 h-6" />
-          </button>
+        {showTray && (
+          <div className="relative flex-shrink-0">
+            {trayOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setTrayOpen(false)} aria-hidden />
+                <div
+                  role="menu"
+                  className="absolute bottom-full left-0 mb-2 min-w-[11rem] rounded-xl border border-lantern-border bg-lantern-surface shadow-lg overflow-hidden z-30"
+                >
+                  {onOpenQuestionModal && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setTrayOpen(false); onOpenQuestionModal(); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                    >
+                      <PencilSquareIcon className="w-4 h-4 text-lantern-primary" />
+                      Submit a question
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setTrayOpen(false); imageInputRef.current?.click(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                  >
+                    <PhotoIcon className="w-4 h-4 text-lantern-primary" />
+                    Attach photo
+                  </button>
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setTrayOpen((v) => !v)}
+              disabled={busy || isRecording}
+              className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-primary hover:bg-lantern-primary-background rounded-lantern-xl transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Add to message"
+              aria-haspopup="menu"
+              aria-expanded={trayOpen}
+              title="Add"
+            >
+              {isUploadingImage ? (
+                <span className="w-5 h-5 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
+              ) : (
+                <PlusCircleIcon className="w-6 h-6" />
+              )}
+            </button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void handlePickImage(file);
+              }}
+            />
+          </div>
         )}
         <div className="flex-1">
           <textarea
@@ -486,15 +597,24 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                 ? 'Recording… tap mic to stop'
                 : isUploadingAudio
                   ? 'Uploading voice note…'
-                  : isAIThinking
-                    ? 'AI is thinking...'
-                    : isSending
-                      ? 'Sending...'
-                      : 'Type a message… (@ to mention)'
+                  : isUploadingImage
+                    ? 'Uploading image…'
+                    : isAIThinking
+                      ? 'AI is thinking...'
+                      : isSending
+                        ? 'Sending...'
+                        : 'Type a message… (@ to mention)'
             }
             rows={1}
             disabled={busy || isRecording}
             aria-label="Message text"
+            role="combobox"
+            aria-expanded={mentionMatches.length > 0}
+            aria-controls="mention-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              mentionMatches.length > 0 ? `mention-option-${mentionMatches[mentionIndex]?.id}` : undefined
+            }
             className="w-full resize-none px-4 py-2.5 border border-lantern-border rounded-2xl bg-lantern-background text-lantern-text text-sm placeholder:text-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary focus-visible:border-transparent transition-colors duration-200"
             style={{ maxHeight: '120px' }}
           />
@@ -525,14 +645,6 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             <PaperAirplaneIcon className="w-5 h-5" />
           </button>
         )}
-      </div>
-      <div className="flex items-center justify-between mt-1.5 ml-1">
-        <p className="text-[11px] text-lantern-text-tertiary hidden sm:block">
-          Press <kbd className="px-1 py-0.5 rounded bg-lantern-background-secondary text-lantern-text-secondary text-[10px] font-mono">Enter</kbd> to send
-        </p>
-        <p className="text-[10px] hidden sm:block" style={{ color: featureAccents.groups }}>
-          Tip: @username to mention · mic for voice note
-        </p>
       </div>
     </div>
   );

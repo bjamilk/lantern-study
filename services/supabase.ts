@@ -5008,6 +5008,26 @@ export const uploadChatAudio = async (payload: {
   return result.data;
 };
 
+// Web image upload — parity with mobile, which could already post chat images.
+// The API image endpoint keys on groupId only (no threadId param).
+export const uploadChatImage = async (payload: {
+  fileName: string;
+  base64Data: string;
+  contentType: string;
+  groupId?: string;
+}): Promise<{ url: string; path: string }> => {
+  const response = await fetch(`${getApiRoot()}/api/v1/messages/upload-image`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || result.message || 'Failed to upload image');
+  }
+  return result.data;
+};
+
 // Delete a DM thread (pair ids are two UUIDs joined by "-", so encode the path segment)
 export const deleteDmThread = async (threadId: string, _userId: string): Promise<boolean> => {
   try {

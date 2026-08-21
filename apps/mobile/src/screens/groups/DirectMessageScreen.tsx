@@ -11,7 +11,9 @@ import {
   Platform,
   Pressable,
   Text,
+  useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,6 +47,9 @@ import {
   declineDmMessageRequest,
   blockUser,
   fetchInquiryByThread,
+  fetchOrderForInquiry,
+  updateMarketplaceOrder,
+  resumeMarketplaceOrderCheckout,
   getDmBlockStatus,
   getDmMuteStatus,
   muteDmThread,
@@ -197,6 +202,14 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     useGroupStore();
   const { colors } = useTheme();
 
+  // Past a tablet breakpoint, cap the conversation to a centered column so
+  // landscape/tablet reads as a column instead of full-bleed edge-to-edge.
+  const { width: windowWidth } = useWindowDimensions();
+  const isWideScreen = windowWidth >= 768;
+  const columnStyle: ViewStyle | undefined = isWideScreen
+    ? { width: '100%', maxWidth: 680, alignSelf: 'center' }
+    : undefined;
+
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -212,6 +225,10 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [activeTab, setActiveTab] = useState<'chat' | 'offers'>('chat');
   const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
+  // Order lifecycle in the DM (pay / mark-ready / confirm-received) — mirrors web's
+  // order bar so a mobile deal no longer falls out of the chat at acceptance.
+  const [order, setOrder] = useState<Awaited<ReturnType<typeof fetchOrderForInquiry>> | null>(null);
+  const [orderBusy, setOrderBusy] = useState(false);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
@@ -455,13 +472,30 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const openChatMenu = useCallback(() => {
     Alert.alert('Conversation', undefined, [
       {
+        text: chatMuted ? 'Unmute notifications' : 'Mute notifications',
+        onPress: openMutePicker,
+      },
+      {
         text: thread?.isArchived ? 'Unarchive conversation' : 'Archive conversation',
         onPress: () => void handleToggleArchive(),
+      },
+      {
+        text: iBlockedThem ? 'Unblock user' : 'Block user',
+        style: iBlockedThem ? 'default' : 'destructive',
+        onPress: handleToggleDmBlock,
       },
       { text: 'Delete conversation', style: 'destructive', onPress: handleDeleteChat },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }, [thread?.isArchived, handleToggleArchive, handleDeleteChat]);
+  }, [
+    thread?.isArchived,
+    chatMuted,
+    iBlockedThem,
+    openMutePicker,
+    handleToggleArchive,
+    handleToggleDmBlock,
+    handleDeleteChat,
+  ]);
 
   const reloadThread = useCallback(async () => {
     if (!threadRootId) return;
@@ -552,9 +586,19 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    setOrder(null);
     fetchInquiryByThread(threadId)
-      .then(data => {
-        if (!cancelled) setInquiry(data);
+      .then(async data => {
+        if (cancelled) return;
+        setInquiry(data);
+        if (data?.id) {
+          try {
+            const o = await fetchOrderForInquiry(data.id);
+            if (!cancelled) setOrder(o ?? null);
+          } catch {
+            /* no order yet */
+          }
+        }
       })
       .catch(() => {
         /* plain DM or endpoint unavailable — no banner */
@@ -563,6 +607,16 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       cancelled = true;
     };
   }, [threadId]);
+
+  const reloadOrder = useCallback(async () => {
+    if (!inquiry?.id) return;
+    try {
+      const o = await fetchOrderForInquiry(inquiry.id);
+      setOrder(o ?? null);
+    } catch {
+      /* ignore */
+    }
+  }, [inquiry?.id]);
 
   useEffect(() => {
     if (unreadAnchorAt === undefined || messages.length === 0) return;
@@ -804,7 +858,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           onPress={handleBack}
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
         >
-          <Ionicons name="arrow-back" size={22} color="#475569" />
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
         </Pressable>
         <ResolvedAvatar
           name={displayName}
@@ -815,30 +869,6 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           {displayName}
         </Text>
         <Pressable
-          onPress={openMutePicker}
-          disabled={muteBusy}
-          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
-          accessibilityLabel={chatMuted ? 'Unmute notifications' : 'Mute notifications'}
-        >
-          <Ionicons
-            name={chatMuted ? 'notifications-outline' : 'notifications-off-outline'}
-            size={22}
-            color={chatMuted ? '#d97706' : '#64748b'}
-          />
-        </Pressable>
-        <Pressable
-          onPress={handleToggleDmBlock}
-          disabled={dmBlockBusy}
-          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
-          accessibilityLabel={iBlockedThem ? 'Unblock user' : 'Block user'}
-        >
-          <Ionicons
-            name={iBlockedThem ? 'checkmark-circle-outline' : 'ban-outline'}
-            size={22}
-            color={iBlockedThem ? '#16a34a' : '#dc2626'}
-          />
-        </Pressable>
-        <Pressable
           onPress={openChatMenu}
           disabled={chatActionBusy}
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
@@ -848,95 +878,185 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         </Pressable>
       </View>
 
-      {thread?.isArchived ? (
-        <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
-          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300" numberOfLines={2}>
-            This conversation is archived
-          </Text>
-          <Pressable
-            onPress={() => void handleToggleArchive()}
-            disabled={chatActionBusy}
-            className="px-2 py-1"
+      {thread?.isArchived || chatMuted ? (
+        <View className="flex-row items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+          <Ionicons name="information-circle-outline" size={13} color="#d97706" />
+          <Text
+            className="flex-1 text-[11px] text-amber-800 dark:text-amber-300"
+            numberOfLines={1}
           >
-            <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-              Unarchive
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {chatMuted ? (
-        <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
-          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300" numberOfLines={2}>
-            Notifications muted{muteUntilLabel ? ` until ${muteUntilLabel}` : ''}
+            {[
+              thread?.isArchived ? 'Archived' : null,
+              chatMuted ? `Muted${muteUntilLabel ? ` until ${muteUntilLabel}` : ''}` : null,
+            ]
+              .filter(Boolean)
+              .join('  ·  ')}
           </Text>
-          <Pressable onPress={() => void clearMute()} disabled={muteBusy} className="px-2 py-1">
-            <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">Unmute</Text>
-          </Pressable>
+          {thread?.isArchived ? (
+            <Pressable
+              onPress={() => void handleToggleArchive()}
+              disabled={chatActionBusy}
+              className="px-1.5 py-0.5"
+              accessibilityLabel="Unarchive conversation"
+            >
+              <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                Unarchive
+              </Text>
+            </Pressable>
+          ) : null}
+          {chatMuted ? (
+            <Pressable
+              onPress={() => void clearMute()}
+              disabled={muteBusy}
+              className="px-1.5 py-0.5"
+              accessibilityLabel="Unmute notifications"
+            >
+              <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                Unmute
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
+      {/* Marketplace DM: listing summary folded into the Chat/Offers row so it
+          costs one fixed bar instead of two. */}
       {inquiry?.listing ? (
-        <Pressable
-          onPress={openListing}
-          className="flex-row items-center gap-3 px-3 py-2 border-b border-lantern-border bg-lantern-surface active:bg-lantern-background-secondary"
-          accessibilityLabel={`View listing ${inquiry.listing.title}`}
+        <View
+          className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface"
+          style={columnStyle}
         >
-          {inquiry.listing.images?.[0] ? (
-            <Image
-              source={{ uri: normalizeStorageUrl(inquiry.listing.images[0]) }}
-              className="w-10 h-10 rounded-lg bg-lantern-background-secondary"
-              resizeMode="cover"
-            />
-          ) : (
-            <View className="w-10 h-10 rounded-lg bg-lantern-background-secondary items-center justify-center">
-              <Ionicons name="pricetag-outline" size={18} color="#6366f1" />
-            </View>
-          )}
-          <View className="flex-1 min-w-0">
-            <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
-              {inquiry.listing.title}
-            </Text>
-            <View className="flex-row items-center gap-2 mt-0.5">
-              <Text className="text-xs font-bold text-lantern-primary">
-                {inquiry.listing.price ? `₦${Number(inquiry.listing.price).toLocaleString()}` : 'Free'}
+          <Pressable
+            onPress={openListing}
+            className="flex-row items-center gap-2 flex-1 min-w-0 active:opacity-70"
+            accessibilityLabel={`View listing ${inquiry.listing.title}`}
+          >
+            {inquiry.listing.images?.[0] ? (
+              <Image
+                source={{ uri: normalizeStorageUrl(inquiry.listing.images[0]) }}
+                className="w-9 h-9 rounded-lg bg-lantern-background-secondary"
+                resizeMode="cover"
+              />
+            ) : (
+              <View className="w-9 h-9 rounded-lg bg-lantern-background-secondary items-center justify-center">
+                <Ionicons name="pricetag-outline" size={16} color="#6366f1" />
+              </View>
+            )}
+            <View className="flex-1 min-w-0">
+              <Text className="text-xs font-semibold text-lantern-text" numberOfLines={1}>
+                {inquiry.listing.title}
               </Text>
-              <View className="px-2 py-0.5 rounded-full bg-lantern-background-secondary">
-                <Text className="text-[10px] font-semibold text-lantern-text-secondary capitalize">
-                  {inquiry.status}
+              <View className="flex-row items-center gap-1.5">
+                <Text
+                  className="text-[11px] font-bold text-lantern-primary"
+                  numberOfLines={1}
+                >
+                  {inquiry.listing.price
+                    ? `₦${Number(inquiry.listing.price).toLocaleString()}`
+                    : 'Free'}
+                </Text>
+                <Text
+                  className="text-[10px] text-lantern-text-secondary capitalize"
+                  numberOfLines={1}
+                >
+                  · {inquiry.status}
                 </Text>
               </View>
             </View>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-        </Pressable>
-      ) : null}
+          </Pressable>
 
-      {/* Chat / Offers segmented control, mirroring web's marketplace tabs. */}
-      {inquiry?.listing ? (
-        <View className="flex-row gap-1 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
-          {(['chat', 'offers'] as const).map((tab) => {
-            const active = activeTab === tab;
-            return (
-              <Pressable
-                key={tab}
-                onPress={() => setActiveTab(tab)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: active }}
-                className={`flex-1 items-center py-2 rounded-lg ${
-                  active ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
-                }`}
-              >
-                <Text
-                  className={`text-xs font-semibold ${
-                    active ? 'text-white' : 'text-lantern-text-secondary'
+          {/* Chat / Offers segmented control, mirroring web's marketplace tabs. */}
+          <View className="flex-row gap-1">
+            {(['chat', 'offers'] as const).map((tab) => {
+              const active = activeTab === tab;
+              return (
+                <Pressable
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  className={`px-3 py-1.5 rounded-lg ${
+                    active ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
                   }`}
                 >
-                  {tab === 'chat' ? 'Chat' : 'Offers'}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  <Text
+                    className={`text-xs font-semibold ${
+                      active ? 'text-white' : 'text-lantern-text-secondary'
+                    }`}
+                  >
+                    {tab === 'chat' ? 'Chat' : 'Offers'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {/* Order lifecycle bar — the deal no longer falls out of the chat at
+          acceptance. Shows the order status plus the one role-scoped action
+          (buyer Pay now / Confirm received; seller Mark ready). Mirrors web. */}
+      {order && order.status !== 'completed' && order.status !== 'cancelled' ? (
+        <View className="px-4 py-2.5 bg-lantern-primary-background border-b border-lantern-border flex-row flex-wrap items-center gap-2">
+          <Text className="text-xs font-semibold text-lantern-text">
+            Order: {order.status.replace(/_/g, ' ')} · ₦{Number(order.amount).toLocaleString()}
+          </Text>
+          {inquiry?.seller_id === user?.id && order.status === 'paid' ? (
+            <Pressable
+              disabled={orderBusy}
+              onPress={async () => {
+                setOrderBusy(true);
+                try { await updateMarketplaceOrder(order.id, { action: 'mark_ready' }); await reloadOrder(); }
+                catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+                finally { setOrderBusy(false); }
+              }}
+              className="px-3 py-1.5 rounded-lantern bg-lantern-primary"
+            >
+              <Text className="text-xs font-semibold text-white">Mark ready</Text>
+            </Pressable>
+          ) : null}
+          {inquiry?.seller_id === user?.id && ['pending_payment', 'awaiting_payment'].includes(order.status) ? (
+            <Text className="text-xs text-lantern-text-secondary">Awaiting buyer payment</Text>
+          ) : null}
+          {inquiry?.buyer_id === user?.id && ['pending_payment', 'awaiting_payment'].includes(order.status) ? (
+            <Pressable
+              disabled={orderBusy}
+              onPress={async () => {
+                setOrderBusy(true);
+                try {
+                  const res = await resumeMarketplaceOrderCheckout(order.id);
+                  const url = res?.authorizationUrl;
+                  if (url) {
+                    const WB = await import('expo-web-browser');
+                    await WB.openBrowserAsync(url);
+                    // Re-fetch on return so the bar advances past "Pay now" once paid,
+                    // instead of stranding a stale Pay-now that errors on a second tap.
+                    await reloadOrder();
+                  } else {
+                    Alert.alert('Checkout', 'Could not start checkout. Please try again.');
+                  }
+                } catch (e: any) { Alert.alert('Error', e?.message || 'Could not start checkout'); }
+                finally { setOrderBusy(false); }
+              }}
+              className="px-3 py-1.5 rounded-lantern bg-emerald-600"
+            >
+              <Text className="text-xs font-semibold text-white">Pay now · ₦{Number(order.amount).toLocaleString()}</Text>
+            </Pressable>
+          ) : null}
+          {inquiry?.buyer_id === user?.id && ['paid', 'ready_for_pickup'].includes(order.status) ? (
+            <Pressable
+              disabled={orderBusy}
+              onPress={async () => {
+                setOrderBusy(true);
+                try { await updateMarketplaceOrder(order.id, { action: 'confirm_received' }); await reloadOrder(); }
+                catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+                finally { setOrderBusy(false); }
+              }}
+              className="px-3 py-1.5 rounded-lantern bg-emerald-600"
+            >
+              <Text className="text-xs font-semibold text-white">Confirm received</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -950,6 +1070,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             if (!user?.id || !recipientId) return;
             await sendDirectMessageTo(user.id, recipientId, text, threadId);
           }}
+          onDealChanged={reloadOrder}
+          hasLiveOrder={!!order && order.status !== 'cancelled' && order.status !== 'completed'}
         />
       ) : (
         <>
@@ -959,6 +1081,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
+        <View className="flex-1" style={columnStyle}>
         {loading && messages.length === 0 ? (
           <LoadingState label="Loading conversation" />
         ) : loadError && messages.length === 0 ? (
@@ -1172,6 +1295,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             onAttachImage={attachImage}
           />
         )}
+        </View>
       </KeyboardAvoidingView>
       </>
       )}

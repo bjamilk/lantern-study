@@ -11,6 +11,7 @@ import {
     mapMessagesFromApi,
     mapMessageFromApi,
     mergeChatMessagesById,
+    isTempMessageId,
     createOptimisticClientMessageId,
     computeDmReceiptStatus,
     resolveThreadRootId,
@@ -2105,6 +2106,59 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [messages, lowDataMode, updateMessages]);
 
+    // DM history paging. DMs previously only ever loaded page 1 (newest 50) with no
+    // way to reach older messages — scrolling up was a silent dead end. Mirror the
+    // group pager: page by count of loaded real messages and prepend older pages.
+    const handleLoadMoreDirectMessages = useCallback(async (threadId: string) => {
+        const uid = currentUser?.id;
+        if (!uid) return 0;
+        const currentMsgs = useGroupStore.getState().directMessages[threadId] || [];
+        // Optimistic DM rows carry a client id (temp-/msg-/local-…), not "optimistic-",
+        // so count only server messages to derive the next page — isTempMessageId covers
+        // every optimistic prefix (else the offset inflates and skips older history).
+        const realCount = currentMsgs.filter((m) => !isTempMessageId(String(m.id))).length;
+        if (realCount === 0) return 0;
+
+        // Resolve the peer the same way the initial load does.
+        let otherUserId = useGroupStore
+            .getState()
+            .dmThreads.find((t) => t.id === threadId)
+            ?.participantIds?.find((id) => id !== uid);
+        if (!otherUserId) {
+            const prefix = `${uid}-`;
+            const suffix = `-${uid}`;
+            if (threadId.startsWith(prefix)) otherUserId = threadId.slice(prefix.length);
+            else if (threadId.endsWith(suffix)) otherUserId = threadId.slice(0, -suffix.length);
+        }
+        if (!otherUserId) return 0;
+
+        const limit = lowDataMode ? 20 : 50;
+        const page = Math.floor(realCount / limit) + 1;
+
+        try {
+            const older = await fetchDirectMessages(uid, otherUserId, { page, limit });
+            const raw = Array.isArray(older) ? older : [];
+            if (raw.length === 0) return 0;
+            const mapped: DirectMessage[] = raw.map((m: any) => mapDirectMessageFromApi(m, threadId));
+            let added = 0;
+            updateDirectMessages((prev) => {
+                const existing = prev[threadId] || [];
+                const existingIds = new Set(existing.map((m) => m.id));
+                const fresh = mapped.filter((m) => !existingIds.has(m.id));
+                added = fresh.length;
+                if (fresh.length === 0) return prev;
+                return {
+                    ...prev,
+                    [threadId]: mergeChatMessagesById(existing, fresh as any) as DirectMessage[],
+                };
+            });
+            return added;
+        } catch (error) {
+            console.error('Error fetching older direct messages:', error);
+            return 0;
+        }
+    }, [currentUser?.id, lowDataMode, updateDirectMessages]);
+
     // undefined = mark-as-read still pending; null = no prior marker / fully read.
     const unreadAnchorAt: string | null | undefined =
         selectedChat && chatUnreadAnchor?.chatId === selectedChat.id
@@ -2116,6 +2170,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     return {
         addNotification,
         handleLoadMoreMessages,
+        handleLoadMoreDirectMessages,
         handleChatBack,
         unreadAnchorAt,
         handleSelectChat,
