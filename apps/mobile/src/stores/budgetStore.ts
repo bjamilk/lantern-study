@@ -69,23 +69,31 @@ export interface SavingsGoal {
   targetAmount: number;
   currentAmount: number;
   emoji?: string;
+  /** Web-parity fields — the API returns these; store + render them too. */
+  icon?: string;
+  deadline?: string;
+  completedAt?: string;
   createdAt: string;
 }
 
+// Matches the web ExpenseSplit shape (services/../types) so splits sync
+// interchangeably between platforms via budgetExtras.
 export interface ExpenseSplitParticipant {
-  name: string;
+  userId: string;
+  userName: string;
   amount: number;
   paid: boolean;
 }
 
 export interface ExpenseSplit {
   id: string;
-  userId: string;
+  creatorId: string;
   title: string;
   totalAmount: number;
+  category: string;
   participants: ExpenseSplitParticipant[];
+  status: 'active' | 'settled';
   createdAt: string;
-  settled: boolean;
 }
 
 export interface CategoryBreakdown {
@@ -362,7 +370,7 @@ interface BudgetState {
 
   // Expense split actions
   loadExpenseSplits: (userId: string) => Promise<void>;
-  addExpenseSplit: (split: Omit<ExpenseSplit, 'id' | 'createdAt' | 'settled'>) => Promise<void>;
+  addExpenseSplit: (split: Omit<ExpenseSplit, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   toggleSplitParticipantPaid: (splitId: string, participantIndex: number) => Promise<void>;
   removeExpenseSplit: (splitId: string) => Promise<void>;
   settleExpenseSplit: (splitId: string) => Promise<void>;
@@ -917,12 +925,12 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
         ...split,
         id: `split-${Date.now()}`,
         createdAt: new Date().toISOString(),
-        settled: false,
+        status: 'active',
       };
       const updated = [newSplit, ...get().expenseSplits];
       set({ expenseSplits: updated });
-      await AsyncStorage.setItem(`expenseSplits_${split.userId}`, JSON.stringify(updated));
-      scheduleBudgetExtrasSync(split.userId, get);
+      await AsyncStorage.setItem(`expenseSplits_${split.creatorId}`, JSON.stringify(updated));
+      scheduleBudgetExtrasSync(split.creatorId, get);
     } catch (e: any) {
       set({ error: e.message });
       throw e;
@@ -936,13 +944,15 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
         const participants = s.participants.map((p, i) =>
           i === participantIndex ? { ...p, paid: !p.paid } : p
         );
-        return { ...s, participants };
+        // Mirror web: a split auto-settles once every participant has paid.
+        const status: 'active' | 'settled' = participants.every(p => p.paid) ? 'settled' : 'active';
+        return { ...s, participants, status };
       });
       set({ expenseSplits: updated });
       const split = updated.find(s => s.id === splitId);
       if (split) {
-        await AsyncStorage.setItem(`expenseSplits_${split.userId}`, JSON.stringify(updated));
-        scheduleBudgetExtrasSync(split.userId, get);
+        await AsyncStorage.setItem(`expenseSplits_${split.creatorId}`, JSON.stringify(updated));
+        scheduleBudgetExtrasSync(split.creatorId, get);
       }
     } catch (e: any) {
       set({ error: e.message });
@@ -956,8 +966,8 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       const updated = get().expenseSplits.filter(s => s.id !== splitId);
       set({ expenseSplits: updated });
       if (split) {
-        await AsyncStorage.setItem(`expenseSplits_${split.userId}`, JSON.stringify(updated));
-        scheduleBudgetExtrasSync(split.userId, get);
+        await AsyncStorage.setItem(`expenseSplits_${split.creatorId}`, JSON.stringify(updated));
+        scheduleBudgetExtrasSync(split.creatorId, get);
       }
     } catch (e: any) {
       set({ error: e.message });
@@ -968,13 +978,13 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
   settleExpenseSplit: async (splitId: string) => {
     try {
       const updated = get().expenseSplits.map(s =>
-        s.id === splitId ? { ...s, settled: true, participants: s.participants.map(p => ({ ...p, paid: true })) } : s
+        s.id === splitId ? { ...s, status: 'settled' as const, participants: s.participants.map(p => ({ ...p, paid: true })) } : s
       );
       set({ expenseSplits: updated });
       const split = updated.find(s => s.id === splitId);
       if (split) {
-        await AsyncStorage.setItem(`expenseSplits_${split.userId}`, JSON.stringify(updated));
-        scheduleBudgetExtrasSync(split.userId, get);
+        await AsyncStorage.setItem(`expenseSplits_${split.creatorId}`, JSON.stringify(updated));
+        scheduleBudgetExtrasSync(split.creatorId, get);
       }
     } catch (e: any) {
       set({ error: e.message });

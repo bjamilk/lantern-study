@@ -62,6 +62,7 @@ export default function BudgetScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
   const [txFilter, setTxFilter] = useState<TxFilter>('all');
+  const [budgetBannerDismissed, setBudgetBannerDismissed] = useState(false);
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(24);
 
@@ -369,6 +370,24 @@ export default function BudgetScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
+
+        {/* Over-budget / 80% warning banner (dismissible), mirroring web */}
+        {isCurrentMonth && activeBudget && monthProgress >= 80 && !budgetBannerDismissed && (
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+            backgroundColor: monthProgress >= 100 ? '#dc2626' : '#f59e0b',
+            borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
+          }}>
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500', flex: 1, paddingRight: 8 }}>
+              {monthProgress >= 100
+                ? "You've gone over your monthly budget."
+                : "You've used 80% or more of your monthly budget."}
+            </Text>
+            <TouchableOpacity onPress={() => setBudgetBannerDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={18} color="rgba(255,255,255,0.85)" />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Budget Progress Card */}
         <View style={[styles.budgetCard, { backgroundColor: colors.card }]}>
