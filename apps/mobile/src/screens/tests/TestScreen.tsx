@@ -90,6 +90,7 @@ export default function TestScreen() {
       tags: config.selectedTags.length ? config.selectedTags : undefined,
       spacedRepetition: config.useSpacedRepetition,
       focusOnNew: config.focusOnNew,
+      lockAnswered: config.lockAnswered,
     }).then(() => {
       trackTestStarted({
         mode: mode === 'test' ? 'test' : 'study',
