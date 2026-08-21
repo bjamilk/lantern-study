@@ -8,6 +8,7 @@ import { BookmarkIcon as BookmarkSolidIcon, CheckCircleIcon, XCircleIcon } from 
 import VoiceInputButton from './VoiceInputButton';
 import TestUtilityToolbar, { ToolType } from './TestUtilityToolbar';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
+import { nearestPreviousUnlockedIndex } from '../utils/helpers';
 
 interface TestTakingScreenProps {
   mode: 'test' | 'study';
@@ -82,6 +83,11 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   );
   const isLockedIndex = (index: number): boolean =>
     lockMode && lockedIdSet.has(session.questions[index]?.id);
+  // In lock mode, "Previous" skips locked questions to reach the nearest earlier
+  // OPEN (skipped/unanswered) one, so skipped questions stay reachable.
+  const previousTargetIndex = lockMode
+    ? nearestPreviousUnlockedIndex(session.questions.map((q) => q.id), lockedIdSet, session.currentQuestionIndex)
+    : session.currentQuestionIndex - 1;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -90,9 +96,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
       if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return;
       if (isReviewMode) return;
 
-      if (event.key === 'ArrowLeft' && session.currentQuestionIndex > 0) {
+      if (event.key === 'ArrowLeft' && previousTargetIndex >= 0) {
         event.preventDefault();
-        onChangeQuestion(session.currentQuestionIndex - 1);
+        onChangeQuestion(previousTargetIndex);
         return;
       }
       if (event.key === 'ArrowRight' && session.currentQuestionIndex < session.questions.length - 1) {
@@ -111,7 +117,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isReviewMode, session.currentQuestionIndex, session.questions.length, onChangeQuestion]);
+  }, [isReviewMode, session.currentQuestionIndex, session.questions.length, previousTargetIndex, onChangeQuestion]);
   const userAnswer = session.userAnswers[currentQuestion.id];
   const totalQuestions = session.questions.length;
   
@@ -1098,9 +1104,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
         <div className="mt-auto pt-2 sm:pt-4 flex justify-between items-center gap-2 flex-shrink-0">
             <button
-            onClick={() => onChangeQuestion(session.currentQuestionIndex - 1)}
-            disabled={session.currentQuestionIndex === 0 || isLockedIndex(session.currentQuestionIndex - 1)}
-            title={isLockedIndex(session.currentQuestionIndex - 1) ? 'Previous question is locked' : undefined}
+            onClick={() => onChangeQuestion(previousTargetIndex)}
+            disabled={previousTargetIndex < 0}
+            title={lockMode && previousTargetIndex < session.currentQuestionIndex - 1 && previousTargetIndex >= 0 ? 'Back to your last open question' : undefined}
             className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-lantern-background-secondary text-lantern-text rounded-md hover:bg-lantern-border dark:hover:bg-lantern-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
             <ChevronLeftIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-1" />

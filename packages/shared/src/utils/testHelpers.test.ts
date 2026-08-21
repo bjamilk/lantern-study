@@ -16,6 +16,9 @@ import {
   resolveQuestionStatusAfterVote,
   createShuffledQuestionSet,
   shuffleQuestionOptionsOnly,
+  isUserAnswerAnswered,
+  lockedIdsAfterLeaving,
+  nearestPreviousUnlockedIndex,
 } from './testHelpers';
 
 function baseQuestion(overrides: Partial<Message> = {}): Message {
@@ -208,5 +211,46 @@ describe('createShuffledQuestionSet / shuffleQuestionOptionsOnly (Shuffle option
     expect(out.map((q) => q.questionNumber)).toEqual([1, 2, 3]);
     // Options are permuted in place; the set of ids is unchanged.
     expect([...out[0]!.options!.map((o) => o.id)].sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('exam lock helpers', () => {
+  it('isUserAnswerAnswered detects real selections only', () => {
+    expect(isUserAnswerAnswered(undefined)).toBe(false);
+    expect(isUserAnswerAnswered({ questionId: 'q', selectedOptionIds: [] })).toBe(false);
+    expect(isUserAnswerAnswered({ questionId: 'q', fillText: '  ' })).toBe(false);
+    expect(isUserAnswerAnswered({ questionId: 'q', selectedOptionIds: ['a'] })).toBe(true);
+    expect(isUserAnswerAnswered({ questionId: 'q', fillText: 'x' })).toBe(true);
+  });
+
+  it('lockedIdsAfterLeaving locks answered questions but never skipped ones', () => {
+    // answered → locks
+    expect(
+      lockedIdsAfterLeaving({ lockEnabled: true, lockedIds: [], leavingQuestionId: 'q1', leavingAnswer: { questionId: 'q1', selectedOptionIds: ['a'] } })
+    ).toEqual(['q1']);
+    // skipped (no answer) → stays open
+    expect(
+      lockedIdsAfterLeaving({ lockEnabled: true, lockedIds: [], leavingQuestionId: 'q1', leavingAnswer: undefined })
+    ).toEqual([]);
+    // lock disabled → no-op
+    expect(
+      lockedIdsAfterLeaving({ lockEnabled: false, lockedIds: [], leavingQuestionId: 'q1', leavingAnswer: { questionId: 'q1', selectedOptionIds: ['a'] } })
+    ).toEqual([]);
+    // idempotent
+    expect(
+      lockedIdsAfterLeaving({ lockEnabled: true, lockedIds: ['q1'], leavingQuestionId: 'q1', leavingAnswer: { questionId: 'q1', selectedOptionIds: ['a'] } })
+    ).toEqual(['q1']);
+  });
+
+  it('nearestPreviousUnlockedIndex skips locked questions to reach earlier skipped ones', () => {
+    const ids = ['q1', 'q2', 'q3', 'q4'];
+    // q2,q3 locked (answered). From q4 (index 3), previous open is q1 (index 0) — the skipped one.
+    expect(nearestPreviousUnlockedIndex(ids, ['q2', 'q3'], 3)).toBe(0);
+    // From q3 (index 2) with q2 (index 1) locked → skip it → q1 (index 0).
+    expect(nearestPreviousUnlockedIndex(ids, new Set(['q2']), 2)).toBe(0);
+    // Nothing open before → -1.
+    expect(nearestPreviousUnlockedIndex(ids, ['q1'], 1)).toBe(-1);
+    // No lock set → plain index-1.
+    expect(nearestPreviousUnlockedIndex(ids, undefined, 2)).toBe(1);
   });
 });

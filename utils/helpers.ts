@@ -11,6 +11,7 @@ export {
     computeDuelQuestionPoints,
     isUserAnswerAnswered,
     lockedIdsAfterLeaving,
+    nearestPreviousUnlockedIndex,
 } from '@lantern/shared/utils';
 
 // --- MOCK DATA ---
