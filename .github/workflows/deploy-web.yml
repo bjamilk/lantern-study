@@ -1,11 +1,13 @@
 name: Deploy web (Cloudflare Pages)
 
-# Manual on purpose. Deploying to lanternstudy.com affects real users, so it is an
-# explicit action with an audit trail rather than a side effect of pushing.
-# To make it automatic later, add:
-#   push:
-#     branches: [main]
+# Auto-deploys the web app to lanternstudy.com on every push to main (e.g. a merged
+# PR), and can still be run on demand via workflow_dispatch for a specific ref.
+# The build/verify/publish steps below are the safety net that makes auto-deploy
+# safe: they refuse to publish a bundle that does not build or that points at a
+# non-production Supabase. To go back to manual-only, delete the `push:` trigger.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
