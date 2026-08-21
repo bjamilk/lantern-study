@@ -7,7 +7,7 @@ import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { useTestStore } from '../stores/testStore';
 import { useBudgetStore } from '../stores/budgetStore';
-import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createShuffledQuestionSet, shuffleQuestionOptionsOnly, shuffleArray } from '../utils/helpers';
+import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createShuffledQuestionSet, shuffleQuestionOptionsOnly, shuffleArray, lockedIdsAfterLeaving } from '../utils/helpers';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createTestSession, createTestResult, upsertUserQuestionStat,
@@ -192,6 +192,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             sessionKind,
             status: 'in_progress',
             title: sessionConfig.groupName || (sessionKind === 'study' ? 'Study session' : 'Test'),
+            lockedQuestionIds: [],
         };
 
         if (mode === 'test') {
@@ -298,10 +299,29 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         const store = useTestStore.getState();
         if (appMode === AppMode.TEST_ACTIVE && store.activeTestSession) {
             const session = store.activeTestSession;
-            if (newIndex >= 0 && newIndex < session.questions.length) {
-                setActiveTestSession({ ...session, currentQuestionIndex: newIndex });
+            if (newIndex < 0 || newIndex >= session.questions.length) return;
+
+            // Exam lock: refuse navigation to a locked question, and lock the question we
+            // leave once it has been answered. This is the single choke point for every
+            // navigation path (Previous, arrows, palette), so it cannot be bypassed.
+            if (session.config.lockAnsweredQuestions) {
+                const targetId = session.questions[newIndex]?.id;
+                if (targetId && (session.lockedQuestionIds ?? []).includes(targetId)) return;
+
+                const leavingId = session.questions[session.currentQuestionIndex]?.id;
+                const nextLocked = lockedIdsAfterLeaving({
+                    lockEnabled: true,
+                    lockedIds: session.lockedQuestionIds,
+                    leavingQuestionId: leavingId,
+                    leavingAnswer: leavingId ? session.userAnswers[leavingId] : undefined,
+                });
+                setActiveTestSession({ ...session, currentQuestionIndex: newIndex, lockedQuestionIds: nextLocked });
                 scheduleSessionDraftAutosave();
+                return;
             }
+
+            setActiveTestSession({ ...session, currentQuestionIndex: newIndex });
+            scheduleSessionDraftAutosave();
         } else if (appMode === AppMode.STUDY_ACTIVE && store.activeStudySession) {
             const session = store.activeStudySession;
             if (newIndex >= 0 && newIndex < session.questions.length) {

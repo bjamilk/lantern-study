@@ -1797,6 +1797,7 @@ export const App: React.FC = () => {
                     else { handleTestSubmit(config, mode, useSpacedRepetition, selectedSubgroupIDs); }
                 }}
                 onSoloPractice={(config) => handleStartSoloPractice(config)}
+                defaultLockAnswered={getUserSettings().study.lockAnsweredQuestions}
                 onDownloadForOffline={handleDownloadForOffline} />}
             <NewDirectMessageModal isOpen={modals.newDm} onClose={() => closeModal('newDm')}
                 currentUser={currentUser}

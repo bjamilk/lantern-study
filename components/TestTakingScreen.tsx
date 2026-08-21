@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TestSessionData, StudySessionData, TestQuestion, QuestionType, UserAnswerRecord, MatchingItem, DiagramLabel } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon as CheckCircleSolid, XCircleIcon as XCircleSolid, ClockIcon, ArrowLeftIcon, ExclamationTriangleIcon, XMarkIcon, PauseIcon } from '@heroicons/react/24/outline';
+import { ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon as CheckCircleSolid, XCircleIcon as XCircleSolid, ClockIcon, ArrowLeftIcon, ExclamationTriangleIcon, XMarkIcon, PauseIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import VoiceInputButton from './VoiceInputButton';
 import TestUtilityToolbar, { ToolType } from './TestUtilityToolbar';
@@ -74,6 +74,14 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 }) => {
   const [isReviewMode, setIsReviewMode] = useState(false);
   const currentQuestion = session.questions[session.currentQuestionIndex];
+  // Exam lock: once answered + advanced, a question can't be returned to.
+  const lockMode = mode === 'test' && session.config.lockAnsweredQuestions === true;
+  const lockedIdSet = React.useMemo(
+    () => new Set(session.lockedQuestionIds ?? []),
+    [session.lockedQuestionIds]
+  );
+  const isLockedIndex = (index: number): boolean =>
+    lockMode && lockedIdSet.has(session.questions[index]?.id);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -619,6 +627,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     const bookmarkedCount = Object.values(session.userAnswers).filter((ans: UserAnswerRecord) => ans.isBookmarked).length;
 
     const handleQuestionSelect = (index: number) => {
+        if (isLockedIndex(index)) return; // locked questions can't be reopened from the review list
         onChangeQuestion(index);
         setIsReviewMode(false);
     };
@@ -659,21 +668,30 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                         const answerRecord = session.userAnswers[q.id];
                         const isAnswered = answerRecord && ((answerRecord.selectedOptionIds && answerRecord.selectedOptionIds.length > 0) || (answerRecord.fillText && answerRecord.fillText.trim() !== "") || (answerRecord.matchingAnswers && answerRecord.matchingAnswers.length > 0) || (answerRecord.diagramAnswers && answerRecord.diagramAnswers.length > 0));
                         const isBookmarked = !!answerRecord?.isBookmarked;
+                        const isLocked = lockMode && lockedIdSet.has(q.id);
 
                         let buttonClasses = "h-10 w-10 text-sm font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-lantern-surface";
-                        if (isAnswered) {
+                        if (isLocked) {
+                            buttonClasses += " bg-lantern-border/60 text-lantern-text-tertiary cursor-not-allowed opacity-70";
+                        } else if (isAnswered) {
                             buttonClasses += " bg-green-500 text-white hover:bg-green-600";
                         } else {
                             buttonClasses += " bg-lantern-border dark:bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border dark:hover:bg-lantern-border";
                         }
-                        if (isBookmarked) {
+                        if (isBookmarked && !isLocked) {
                             buttonClasses += " ring-2 ring-lantern-primary dark:ring-lantern-primary";
                         }
 
                         return (
-                            <button key={q.id} onClick={() => handleQuestionSelect(index)} className={buttonClasses} aria-label={`Go to question ${q.questionNumber}`}>
-                                {isBookmarked && <BookmarkSolidIcon className="w-3 h-3 absolute top-1 right-1 text-lantern-primary"/>}
-                                {q.questionNumber}
+                            <button key={q.id} onClick={() => handleQuestionSelect(index)} disabled={isLocked} aria-disabled={isLocked} className={buttonClasses} aria-label={isLocked ? `Question ${q.questionNumber} (locked)` : `Go to question ${q.questionNumber}`}>
+                                {isLocked ? (
+                                    <LockClosedIcon className="w-4 h-4" aria-hidden="true" />
+                                ) : (
+                                  <>
+                                    {isBookmarked && <BookmarkSolidIcon className="w-3 h-3 absolute top-1 right-1 text-lantern-primary"/>}
+                                    {q.questionNumber}
+                                  </>
+                                )}
                             </button>
                         );
                     })}
@@ -791,6 +809,15 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 <span className="text-[11px] sm:text-xs text-lantern-text-secondary whitespace-nowrap tabular-nums">
                   Q {session.currentQuestionIndex + 1}/{totalQuestions}
                 </span>
+                {lockMode && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    title="Locked mode: once you answer a question and move on, you can't return to it."
+                  >
+                    <LockClosedIcon className="w-3 h-3" aria-hidden="true" />
+                    Locked
+                  </span>
+                )}
               </div>
               <p className={`hidden sm:block text-[11px] leading-tight truncate ${modeTheme.infoBannerSubtext}`}>
                 {mode === 'study'
@@ -1072,7 +1099,8 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         <div className="mt-auto pt-2 sm:pt-4 flex justify-between items-center gap-2 flex-shrink-0">
             <button
             onClick={() => onChangeQuestion(session.currentQuestionIndex - 1)}
-            disabled={session.currentQuestionIndex === 0}
+            disabled={session.currentQuestionIndex === 0 || isLockedIndex(session.currentQuestionIndex - 1)}
+            title={isLockedIndex(session.currentQuestionIndex - 1) ? 'Previous question is locked' : undefined}
             className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-lantern-background-secondary text-lantern-text rounded-md hover:bg-lantern-border dark:hover:bg-lantern-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
             <ChevronLeftIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-1" />
@@ -1143,22 +1171,26 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 (answerRecord.diagramAnswers && answerRecord.diagramAnswers.length > 0)
             );
             const isBookmarked = !!answerRecord?.isBookmarked;
+            const isLocked = lockMode && !isCurrent && lockedIdSet.has(q.id);
 
             let buttonClasses = "min-w-[44px] sm:min-w-[36px] md:min-w-[40px] min-h-[44px] h-11 sm:h-9 md:h-10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-xs sm:text-xs font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-lantern-surface touch-manipulation";
             let title = `Go to Question ${q.questionNumber}`;
             if (isBookmarked) title += " (Bookmarked for review)";
-            if (isAnswered) title += " (Answered)";
+            if (isLocked) title = `Question ${q.questionNumber} (Locked — answered)`;
+            else if (isAnswered) title += " (Answered)";
             else title += " (Unanswered)";
 
 
             if (isCurrent) {
               buttonClasses += " bg-lantern-primary dark:bg-lantern-primary-light text-white ring-2 ring-lantern-primary dark:ring-lantern-primary-light shadow-lg sm:scale-105";
+            } else if (isLocked) {
+              buttonClasses += " bg-lantern-border/60 text-lantern-text-tertiary cursor-not-allowed opacity-70";
             } else if (isAnswered) {
               buttonClasses += " bg-green-200 dark:bg-green-700/80 text-green-800 dark:text-green-100 hover:bg-green-300 dark:hover:bg-green-600";
             } else {
               buttonClasses += " bg-lantern-border text-lantern-text hover:bg-lantern-border dark:hover:bg-lantern-border";
             }
-            if (isBookmarked && !isCurrent) { 
+            if (isBookmarked && !isCurrent) {
                  buttonClasses += " border-2 border-yellow-500 dark:border-yellow-400";
             }
 
@@ -1167,15 +1199,23 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               <button
                 key={q.id}
                 data-qindex={index}
-                onClick={() => onChangeQuestion(index)}
+                onClick={() => { if (!isLocked) onChangeQuestion(index); }}
+                disabled={isLocked}
+                aria-disabled={isLocked}
                 className={buttonClasses}
                 aria-label={title}
                 title={title}
               >
-                {isBookmarked && (
-                    <BookmarkSolidIcon className={`w-3 h-3 absolute top-0.5 right-0.5 ${isCurrent ? 'text-yellow-300' : 'text-yellow-600 dark:text-yellow-400'}`} />
+                {isLocked ? (
+                    <LockClosedIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                ) : (
+                  <>
+                    {isBookmarked && (
+                        <BookmarkSolidIcon className={`w-3 h-3 absolute top-0.5 right-0.5 ${isCurrent ? 'text-yellow-300' : 'text-yellow-600 dark:text-yellow-400'}`} />
+                    )}
+                    {q.questionNumber}
+                  </>
                 )}
-                {q.questionNumber}
               </button>
             );
           })}

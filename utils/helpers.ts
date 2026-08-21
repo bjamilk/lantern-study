@@ -9,6 +9,8 @@ export {
     createShuffledQuestionSet,
     shuffleQuestionOptionsOnly,
     computeDuelQuestionPoints,
+    isUserAnswerAnswered,
+    lockedIdsAfterLeaving,
 } from '@lantern/shared/utils';
 
 // --- MOCK DATA ---

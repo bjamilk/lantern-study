@@ -292,6 +292,10 @@ export interface ActiveTest {
   // For study mode - track which questions have been answered and revealed
   revealedAnswers: Set<string>;
   flaggedQuestions: Set<string>;
+  /** Exam lock: once answered + advanced, a question can't be revisited (test mode). */
+  lockAnswered?: boolean;
+  /** Ids of questions locked from navigation when lockAnswered is on. */
+  lockedQuestionIds?: Set<string>;
   /** Server draft id for durable pause/resume */
   draftId?: string;
   /** Study group attribution for dashboard Group Performance */
@@ -309,6 +313,19 @@ export interface StartTestConfig {
   focusOnNew?: boolean;
   groupId?: string;
   groupName?: string;
+  /** Exam lock for this session; falls back to the study setting when omitted. */
+  lockAnswered?: boolean;
+}
+
+/** True when a stored mobile answer counts as answered (non-empty). */
+export function isMobileAnswerAnswered(
+  answer: string | string[] | Record<string, string> | undefined
+): boolean {
+  if (answer == null) return false;
+  if (typeof answer === 'string') return answer.trim() !== '';
+  if (Array.isArray(answer)) return answer.length > 0;
+  if (typeof answer === 'object') return Object.keys(answer).length > 0;
+  return false;
 }
 
 export interface UserQuestionStatEntry {
@@ -966,6 +983,8 @@ export const useTestStore = create<TestState>((set, get) => ({
       mode,
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
+      lockAnswered: mode === 'test' ? (config?.lockAnswered ?? studySettings.lockAnsweredQuestions) : false,
+      lockedQuestionIds: new Set(),
       groupId: config?.groupId,
       groupName: config?.groupName,
     };
@@ -1016,6 +1035,8 @@ export const useTestStore = create<TestState>((set, get) => ({
       mode,
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
+      lockAnswered: mode === 'test' ? useSettingsStore.getState().settings.study.lockAnsweredQuestions : false,
+      lockedQuestionIds: new Set(),
       groupId: options?.groupId,
       groupName: options?.groupName,
     };
@@ -1337,6 +1358,28 @@ export const useTestStore = create<TestState>((set, get) => ({
     if (!activeTest) return;
     if (index < 0 || index >= activeTest.questions.length) return;
 
+    // Exam lock: refuse navigation to a locked question, and lock the question we
+    // leave once it's answered. Centralized here so next/previous/palette all obey it.
+    if (activeTest.lockAnswered) {
+      const targetId = activeTest.questions[index]?.id;
+      if (targetId && activeTest.lockedQuestionIds?.has(targetId)) return;
+
+      const leavingId = activeTest.questions[activeTest.currentQuestionIndex]?.id;
+      let lockedQuestionIds = activeTest.lockedQuestionIds ?? new Set<string>();
+      if (
+        leavingId &&
+        !lockedQuestionIds.has(leavingId) &&
+        isMobileAnswerAnswered(activeTest.answers[leavingId])
+      ) {
+        lockedQuestionIds = new Set(lockedQuestionIds);
+        lockedQuestionIds.add(leavingId);
+      }
+      set({
+        activeTest: { ...activeTest, currentQuestionIndex: index, lockedQuestionIds },
+      });
+      return;
+    }
+
     set({
       activeTest: {
         ...activeTest,
@@ -1348,28 +1391,16 @@ export const useTestStore = create<TestState>((set, get) => ({
   nextQuestion: () => {
     const activeTest = get().activeTest;
     if (!activeTest) return;
-    
     if (activeTest.currentQuestionIndex < activeTest.questions.length - 1) {
-      set({
-        activeTest: {
-          ...activeTest,
-          currentQuestionIndex: activeTest.currentQuestionIndex + 1,
-        },
-      });
+      get().goToQuestion(activeTest.currentQuestionIndex + 1);
     }
   },
 
   previousQuestion: () => {
     const activeTest = get().activeTest;
     if (!activeTest) return;
-    
     if (activeTest.currentQuestionIndex > 0) {
-      set({
-        activeTest: {
-          ...activeTest,
-          currentQuestionIndex: activeTest.currentQuestionIndex - 1,
-        },
-      });
+      get().goToQuestion(activeTest.currentQuestionIndex - 1);
     }
   },
 

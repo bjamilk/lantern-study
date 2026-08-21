@@ -30,6 +30,8 @@ export interface StudySettings {
   shuffleOptions: boolean;
   autoPlayAudio: boolean;
   showCardProgress: boolean;
+  /** Exam lock default for new test sessions: once answered, a question can't be revisited. */
+  lockAnsweredQuestions: boolean;
 }
 
 export interface AppearanceSettings {
@@ -145,6 +147,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     shuffleOptions: true,
     autoPlayAudio: false,
     showCardProgress: true,
+    lockAnsweredQuestions: false,
   },
   appearance: {
     theme: 'light',
