@@ -22,8 +22,8 @@ import {
   useBudgetStore,
   formatCurrency,
   getProgressBarColor,
-  CATEGORY_COLORS,
   getCategoryLabel,
+  getCategoryColor,
   type Transaction,
 } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
@@ -125,10 +125,10 @@ export default function BudgetScreen() {
       totals[t.category] = (totals[t.category] || 0) + t.amount;
     }
     return Object.entries(totals)
-      .map(([categoryId, amount], i) => ({
+      .map(([categoryId, amount]) => ({
         name: getCategoryLabel(categoryId, 'EXPENSE'),
         amount,
-        color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+        color: getCategoryColor(categoryId, 'EXPENSE'),
       }))
       .sort((a, b) => b.amount - a.amount);
   }, [monthlyTransactions]);
@@ -272,7 +272,7 @@ export default function BudgetScreen() {
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2">
         <FeatureHero
-          title="Campus Pocket"
+          title="Budget"
           subtitle={formatMonthYear(selectedMonth)}
           accentColor={featureAccents.budget}
           right={

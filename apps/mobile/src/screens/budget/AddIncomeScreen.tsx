@@ -50,24 +50,19 @@ export default function AddIncomeScreen() {
       return;
     }
 
-    if (!description.trim()) {
-      Alert.alert('Missing Description', 'Please enter a description for this income.');
-      return;
-    }
-
+    // Description is optional — fall back to the category label.
+    const selected = INCOME_CATEGORIES.find(c => c.id === category);
     try {
       await addTransaction({
         userId,
         type: 'INCOME',
         amount: amountNum,
         category,
-        description: description.trim(),
+        description: description.trim() || selected?.label || 'Income',
         date: toDateOnlyLocal(date),
       });
-
-      Alert.alert('Success', 'Income added successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      // Save silently and return — no blocking "Success" OK-tap between entries.
+      navigation.goBack();
     } catch (error) {
       Alert.alert('Error', 'Failed to add income. Please try again.');
     }
@@ -156,7 +151,7 @@ export default function AddIncomeScreen() {
 
           {/* Description */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description (optional)</Text>
             <TextInput
               style={[styles.textInput, { backgroundColor: colors.card, color: colors.text }]}
               placeholder="What is this income from?"

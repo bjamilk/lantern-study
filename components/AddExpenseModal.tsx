@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { useToastStore } from '../stores/toastStore';
 import { TransactionType, Transaction, STUDENT_EXPENSE_CATEGORIES } from '../types';
@@ -16,23 +16,38 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onSu
   const [category, setCategory] = useState(STUDENT_EXPENSE_CATEGORIES[0].id);
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(todayDateOnlyLocal());
+  const amountRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // closeAfter=false keeps the sheet open for rapid multi-entry (a day's
+  // spending in one sitting): the amount/description clear, category+date stay.
+  const save = (closeAfter: boolean) => {
     if (amount === '' || amount <= 0) {
       useToastStore.getState().showToast('Please enter a valid positive amount.', 'error');
       return;
     }
+    const selected = STUDENT_EXPENSE_CATEGORIES.find(c => c.id === category);
     onSubmit({
       type: TransactionType.EXPENSE,
       amount: Number(amount),
       category,
-      description,
+      // Description is optional — fall back to the category label so the row
+      // still reads sensibly in the list.
+      description: description.trim() || selected?.label || 'Expense',
       date,
     });
     setAmount('');
     setDescription('');
-    setDate(todayDateOnlyLocal());
+    if (closeAfter) {
+      onClose();
+    } else {
+      useToastStore.getState().showToast('Expense added ✓', 'success');
+      amountRef.current?.focus();
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save(true);
   };
 
   const selectedCat = STUDENT_EXPENSE_CATEGORIES.find(c => c.id === category);
@@ -62,6 +77,7 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onSu
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-muted font-semibold">₦</span>
             <input
+              ref={amountRef}
               type="number"
               id="expense-amount"
               value={amount}
@@ -99,13 +115,12 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onSu
           )}
         </div>
         <div>
-          <label htmlFor="expense-description" className="block text-sm font-medium text-lantern-text mb-1">Description</label>
+          <label htmlFor="expense-description" className="block text-sm font-medium text-lantern-text mb-1">Description <span className="text-lantern-text-muted font-normal">(optional)</span></label>
           <input
             type="text"
             id="expense-description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            required
             className="w-full min-h-[44px] p-2.5 border border-lantern-border rounded-xl bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-error focus:border-transparent"
             placeholder="What did you spend on?"
           />
@@ -121,20 +136,29 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onSu
             className="w-full min-h-[44px] p-2.5 border border-lantern-border rounded-xl bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-error focus:border-transparent"
           />
         </div>
-        <div className="flex gap-3 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-medium text-lantern-text bg-lantern-background-secondary rounded-xl hover:opacity-90"
-          >
-            Cancel
-          </button>
+        <div className="space-y-2 pt-1">
           <button
             type="submit"
-            className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-lantern-error hover:opacity-90 rounded-xl shadow-sm"
+            className="w-full min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-lantern-error hover:opacity-90 rounded-xl shadow-sm"
           >
-            Add Expense
+            Add expense
           </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-medium text-lantern-text bg-lantern-background-secondary rounded-xl hover:opacity-90"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => save(false)}
+              className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-medium text-lantern-error bg-lantern-error/10 rounded-xl hover:bg-lantern-error/20"
+            >
+              Add another
+            </button>
+          </div>
         </div>
       </form>
     </Modal>

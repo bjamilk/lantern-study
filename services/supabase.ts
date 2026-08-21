@@ -5628,22 +5628,31 @@ export const fetchUserBudget = async (userId: string, monthYear?: string): Promi
 
 export const saveUserBudget = async (userId: string, budget: BudgetData): Promise<boolean> => {
   try {
-    const { error } = await supabase
-      .from('user_budgets')
-      .upsert({
-        user_id: userId,
-        monthly_limit: budget.monthlyLimit,
-        month_year: budget.monthYear,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,month_year'
-      });
-
-    if (error) {
-      console.error('Error saving user budget:', error);
+    if (!userId) return false;
+    const headers = await getAuthHeaders();
+    if (!headers.Authorization) {
+      // A direct PostgREST upsert here used to race the boot auth handshake and
+      // fail silently under RLS. Go through the service-role API instead, which
+      // authenticates by bearer token and is the same path every other budget
+      // write uses.
+      console.warn('No valid session available for saving user budget.');
       return false;
     }
-
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/users/${userId}/budget`,
+      withApiCredentials({
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monthlyLimit: budget.monthlyLimit,
+          monthYear: budget.monthYear,
+        }),
+      })
+    );
+    if (!response.ok) {
+      console.error('Error saving user budget: HTTP', response.status);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error('Error saving user budget:', error);

@@ -1,12 +1,13 @@
 import React from 'react';
 
-type StatChipVariant = 'primary' | 'accent' | 'success' | 'neutral';
+type StatChipVariant = 'primary' | 'accent' | 'success' | 'neutral' | 'danger';
 
 const variantClasses: Record<StatChipVariant, string> = {
   primary: 'bg-lantern-primary-background text-lantern-primary',
   accent: 'bg-lantern-accent-background text-lantern-accent',
   success: 'bg-emerald-50 dark:bg-emerald-950/30 text-lantern-success',
   neutral: 'bg-lantern-background-secondary text-lantern-text-secondary',
+  danger: 'bg-red-50 dark:bg-red-950/30 text-lantern-error',
 };
 
 interface StatChipProps {

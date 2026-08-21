@@ -10,6 +10,7 @@ import {
   normalizeBudgetPlan,
   readPlanForMonth,
   summarizeBudgetPlan,
+  toMonthYear,
 } from '@lantern/shared/utils';
 import { fetchUserBudget } from '../services/supabase';
 import { User, Transaction, Budget, TransactionType, SavingsGoal, STUDENT_EXPENSE_CATEGORIES, STUDENT_INCOME_CATEGORIES, FinancialTip } from '../types';
@@ -17,7 +18,7 @@ import {
   CreditCardIcon, ArrowUpIcon, ArrowDownIcon, PlusCircleIcon,
   Cog6ToothIcon, TrashIcon, WalletIcon, BanknotesIcon,
   ChartBarIcon, LightBulbIcon, FunnelIcon, ArrowTrendingUpIcon,
-  SparklesIcon, TrophyIcon, UserGroupIcon, ArrowPathIcon,
+  TrophyIcon, UserGroupIcon, ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
@@ -27,7 +28,7 @@ import { BudgetQuickLinks } from './budget/BudgetQuickLinks';
 import { featureAccents } from '@lantern/shared/design';
 import { confirmDialog } from '../stores/confirmStore';
 
-type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights';
+type BudgetTab = 'overview' | 'transactions' | 'goals';
 
 interface BudgetTrackerScreenProps {
   currentUser: User;
@@ -35,22 +36,86 @@ interface BudgetTrackerScreenProps {
   budget: Budget | null;
   onOpenAddExpense: () => void;
   onOpenAddIncome: () => void;
-  onOpenAddInvestment?: () => void;
   onOpenSetBudget: () => void;
   onDeleteTransaction: (transactionId: string) => void;
   onToggleSidebar: () => void;
   onOpenSetMonthlyPlan?: () => void;
   onOpenSavingsGoal?: () => void;
-  onOpenWallet?: () => void;
+  onOpenRecurring?: () => void;
   onOpenExpenseSplit?: () => void;
   onOpenFinancialToolkit?: () => void;
 }
 
 // Helper: look up category label+icon
 const getCategoryInfo = (categoryId: string, type: TransactionType) => {
+  // Savings-goal contributions are recorded as INVESTMENT transactions
+  // (category 'savings'); give them a friendly label instead of a bare id.
+  if (type === TransactionType.INVESTMENT) {
+    return { id: categoryId, label: 'Savings', icon: '🐷', color: '#8b5cf6' };
+  }
   const cats = type === TransactionType.INCOME ? STUDENT_INCOME_CATEGORIES : STUDENT_EXPENSE_CATEGORIES;
   const found = cats.find(c => c.id === categoryId);
-  return found || { id: categoryId, label: categoryId, icon: '📦' };
+  return found || { id: categoryId, label: categoryId, icon: '📦', color: '#94a3b8' };
+};
+
+// Row presentation by type. Investments (savings contributions) are money moved
+// aside, not spent — shown neutrally (violet, no minus) so they don't read as an
+// expense, matching the fact that they don't count toward Spent/Balance.
+const getTxPresentation = (type: TransactionType) => {
+  if (type === TransactionType.INCOME) {
+    return { sign: '+', amountClass: 'text-emerald-500', iconBg: 'bg-emerald-100 dark:bg-emerald-900/30' };
+  }
+  if (type === TransactionType.INVESTMENT) {
+    return { sign: '', amountClass: 'text-violet-500', iconBg: 'bg-violet-100 dark:bg-violet-900/30' };
+  }
+  return { sign: '-', amountClass: 'text-red-500', iconBg: 'bg-red-100 dark:bg-red-900/30' };
+};
+
+// Budget ring — the at-a-glance "am I on track" hero, like Monefy/PocketGuard.
+// Shows ₦ left (or ₦ over) in the centre with the % of the cap used, and colours
+// the arc green→amber→orange→red as spend approaches and passes the limit.
+const BudgetRing: React.FC<{ pct: number; remaining: number }> = ({ pct, remaining }) => {
+  const size = 132;
+  const stroke = 12;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const clamped = Math.min(Math.max(pct, 0), 100);
+  const dash = (clamped / 100) * circ;
+  const over = remaining < 0;
+  const ringColor = over ? '#ef4444' : pct > 80 ? '#f97316' : pct > 50 ? '#f59e0b' : '#10b981';
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${Math.round(pct)} percent of budget used`}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-lantern-background-secondary" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          stroke={ringColor}
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${circ}`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ transition: 'stroke-dasharray 0.5s ease' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-2">
+        {over ? (
+          <>
+            <span className="text-[11px] font-medium text-red-500">over by</span>
+            <span className="text-lg font-bold text-red-500 leading-tight">₦{Math.abs(remaining).toLocaleString('en-NG')}</span>
+          </>
+        ) : (
+          <>
+            <span className="text-lg font-bold text-lantern-text leading-tight">₦{remaining.toLocaleString('en-NG')}</span>
+            <span className="text-[11px] text-lantern-text-tertiary">left</span>
+          </>
+        )}
+        <span className="text-[11px] text-lantern-text-tertiary mt-0.5">{Math.round(pct)}% used</span>
+      </div>
+    </div>
+  );
 };
 
 // Financial tips data
@@ -65,15 +130,15 @@ const FINANCIAL_TIPS: FinancialTip[] = [
 
 const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   currentUser, transactions, budget,
-  onOpenAddExpense, onOpenAddIncome, onOpenAddInvestment, onOpenSetBudget, onDeleteTransaction,
-  onToggleSidebar, onOpenSetMonthlyPlan, onOpenSavingsGoal, onOpenWallet, onOpenExpenseSplit, onOpenFinancialToolkit,
+  onOpenAddExpense, onOpenAddIncome, onOpenSetBudget, onDeleteTransaction,
+  onToggleSidebar, onOpenSetMonthlyPlan, onOpenSavingsGoal, onOpenRecurring, onOpenExpenseSplit, onOpenFinancialToolkit,
 }) => {
   const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
   const [txFilter, setTxFilter] = useState<'all' | 'income' | 'expense'>('all');
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<ChartType | null>(null);
-  const { savingsGoals, walletBalance, expenseSplits } = useBudgetStore();
-  const { refreshBudgetTransactions, refreshBudgetWallet, claimUnderBudgetAward } = useBudgetHandlers();
+  const { savingsGoals, expenseSplits } = useBudgetStore();
+  const { refreshBudgetTransactions, refreshBudgetWallet, materializeRecurring, claimUnderBudgetAward } = useBudgetHandlers();
   const [budgetBanner, setBudgetBanner] = useState<string | null>(null);
   const [awardToast, setAwardToast] = useState<string | null>(null);
 
@@ -96,6 +161,8 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
       void refreshBudgetWallet();
     };
     refresh();
+    // Post any due recurring rules once on open (idempotent server-side).
+    void materializeRecurring();
     void claimUnderBudgetAward().then((result) => {
       if (result && result.awarded > 0) {
         setAwardToast(`+${result.awarded} coins for staying under last month's budget!`);
@@ -110,9 +177,11 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', refresh);
     };
-  }, [currentUser?.id, refreshBudgetTransactions, refreshBudgetWallet, claimUnderBudgetAward]);
+  }, [currentUser?.id, refreshBudgetTransactions, refreshBudgetWallet, materializeRecurring, claimUnderBudgetAward]);
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  // LOCAL month — transactions are keyed by local date (parseDateOnlyLocal), so a
+  // UTC month here would show the wrong month for the first hours of each month in WAT.
+  const currentMonth = toMonthYear(new Date());
   // Which month is on screen. Everything below reads this rather than the clock.
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const isCurrentMonth = selectedMonth === currentMonth;
@@ -197,9 +266,13 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   );
   const planSummary = React.useMemo(() => summarizeBudgetPlan(plan), [plan]);
   const pace = React.useMemo(() => computePeriodPace(selectedMonth, new Date()), [selectedMonth]);
+  // Pace measures spend against the SAME denominator as the headline progress bar
+  // (the monthly limit), so the bar's "% used" and this line's "% spent" can never
+  // disagree. (It previously divided by the sum of category budgets, which could
+  // differ from the cap and show two contradicting percentages one line apart.)
   const spendPace = React.useMemo(
-    () => computeSpendPace(monthlyExpenses, planSummary.totalPlannedExpenses, pace),
-    [monthlyExpenses, planSummary.totalPlannedExpenses, pace]
+    () => computeSpendPace(monthlyExpenses, budgetLimit, pace),
+    [monthlyExpenses, budgetLimit, pace]
   );
 
   useEffect(() => {
@@ -215,13 +288,6 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
       setBudgetBanner(null);
     }
   }, [budgetProgress, budgetLimit]);
-
-  const getProgressColor = () => {
-    if (budgetProgress > 100) return 'from-red-500 to-red-600';
-    if (budgetProgress > 80) return 'from-orange-400 to-red-500';
-    if (budgetProgress > 50) return 'from-yellow-400 to-orange-400';
-    return 'from-emerald-400 to-green-500';
-  };
 
   const expenseByCategory = useMemo(() => {
     const categoryMap: Record<string, number> = {};
@@ -242,7 +308,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
   // Chart
   useEffect(() => {
-    if (activeTab !== 'overview' && activeTab !== 'insights') return;
+    if (activeTab !== 'overview') return;
     if (!chartRef.current) return;
     if (chartInstanceRef.current) {
       chartInstanceRef.current.destroy();
@@ -250,7 +316,6 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
     }
     const ctx = chartRef.current.getContext('2d');
     if (!ctx || expenseByCategory.length === 0) return;
-    const colors = ['#14b8a6', '#059669', '#4f46e5', '#d97706', '#8b5cf6', '#0ea5e9', '#dc2626', '#6366f1', '#f43f5e', '#64748b'];
 
     let active = true;
     let localChartInstance: ChartType | null = null;
@@ -264,7 +329,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
           type: 'doughnut',
           data: {
             labels: expenseByCategory.map(c => `${c.icon} ${c.label}`),
-            datasets: [{ data: expenseByCategory.map(c => c.amount), backgroundColor: colors.slice(0, expenseByCategory.length), borderWidth: 0, hoverOffset: 8 }],
+            // Stable per-category colours from the shared def, so a slice matches
+            // its Top-Categories bar and the mobile chart.
+            datasets: [{ data: expenseByCategory.map(c => c.amount), backgroundColor: expenseByCategory.map(c => c.color), borderWidth: 0, hoverOffset: 8 }],
           },
           options: {
             responsive: true, maintainAspectRatio: false, cutout: '65%',
@@ -294,7 +361,6 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
     { key: 'overview', label: 'Overview', icon: <ChartBarIcon className="w-4 h-4" /> },
     { key: 'transactions', label: 'Transactions', icon: <BanknotesIcon className="w-4 h-4" /> },
     { key: 'goals', label: 'Goals', icon: <TrophyIcon className="w-4 h-4" /> },
-    { key: 'insights', label: 'Insights', icon: <LightBulbIcon className="w-4 h-4" /> },
   ];
 
   return (
@@ -314,20 +380,20 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
       {/* ─── HEADER ─── */}
       <div className="shrink-0 px-4 md:px-6 pt-3 pb-2 bg-lantern-background">
         <FeatureHero
-          title="Campus Pocket"
+          title="Budget"
           subtitle={monthName}
           accentColor={featureAccents.budget}
           icon={<WalletIcon className="w-6 h-6" style={{ color: featureAccents.budget }} />}
           actions={
             <>
-              {onOpenWallet && (
+              {onOpenRecurring && (
                 <button
                   type="button"
-                  onClick={onOpenWallet}
+                  onClick={onOpenRecurring}
                   className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern text-xs font-medium flex items-center gap-1 hover:border-teal-500/30 transition-colors"
                 >
-                  <SparklesIcon className="w-4 h-4" />
-                  {walletBalance} coins
+                  <ArrowPathIcon className="w-4 h-4" />
+                  Recurring
                 </button>
               )}
               <button
@@ -336,7 +402,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 className="h-9 px-3 bg-lantern-primary text-white hover:bg-lantern-primary-dark rounded-lantern text-xs font-medium flex items-center gap-1 transition-colors"
               >
                 <Cog6ToothIcon className="w-4 h-4" />
-                Budget
+                Set budget
               </button>
             </>
           }
@@ -346,7 +412,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             <StatChip label={`Spent ₦${monthlyExpenses.toLocaleString('en-NG')}`} variant="accent" />
             <StatChip
               label={`Balance ₦${(monthlyIncome - monthlyExpenses).toLocaleString('en-NG')}`}
-              variant={monthlyIncome - monthlyExpenses >= 0 ? 'primary' : 'neutral'}
+              variant={monthlyIncome - monthlyExpenses >= 0 ? 'primary' : 'danger'}
             />
           </div>
         </FeatureHero>
@@ -414,38 +480,40 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                     <button onClick={onOpenSetMonthlyPlan} className="text-xs text-lantern-primary hover:underline">Category Budgets</button>
                   )}
                 </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-lantern-text">₦{monthlyExpenses.toLocaleString('en-NG')}</span>
-                  <span className="text-lantern-text-tertiary">/ ₦{budgetLimit.toLocaleString('en-NG')}</span>
-                </div>
-                <div className="w-full bg-lantern-background-secondary rounded-full h-3 mt-3 overflow-hidden">
-                  <div className={`h-3 rounded-full bg-gradient-to-r ${getProgressColor()} transition-all duration-500`} style={{ width: `${Math.min(budgetProgress, 100)}%` }} />
-                </div>
-                <p className="text-sm mt-2 text-lantern-text-secondary">
-                  {budgetProgress <= 100
-                    ? `₦${(budgetLimit - monthlyExpenses).toLocaleString('en-NG')} remaining`
-                    : `⚠️ ₦${(monthlyExpenses - budgetLimit).toLocaleString('en-NG')} over budget!`}
-                </p>
+                <div className="flex items-center gap-5">
+                  <BudgetRing pct={budgetProgress} remaining={budgetLimit - monthlyExpenses} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-1.5 flex-wrap">
+                      <span className="text-2xl font-bold text-lantern-text">₦{monthlyExpenses.toLocaleString('en-NG')}</span>
+                      <span className="text-sm text-lantern-text-tertiary">of ₦{budgetLimit.toLocaleString('en-NG')} spent</span>
+                    </div>
+                    {budgetProgress > 100 && (
+                      <p className="text-sm mt-1 text-red-500 font-medium">
+                        ⚠️ ₦{(monthlyExpenses - budgetLimit).toLocaleString('en-NG')} over budget
+                      </p>
+                    )}
 
-                {/* Pace — a percentage spent is only meaningful beside the date. */}
-                {spendPace.verdict !== 'no-budget' && (
-                  <p
-                    className={`text-xs mt-1 ${
-                      spendPace.verdict === 'over'
-                        ? 'text-red-500'
-                        : spendPace.verdict === 'ahead'
-                          ? 'text-amber-500'
-                          : 'text-emerald-500'
-                    }`}
-                  >
-                    Day {pace.daysElapsed} of {pace.daysInPeriod} ({Math.round(pace.elapsedRatio * 100)}%)
-                    {' · '}
-                    {Math.round(spendPace.spentRatio * 100)}% spent
-                    {spendPace.verdict === 'ahead'
-                      ? ` — ₦${Math.round(spendPace.spendVsExpected).toLocaleString('en-NG')} ahead of pace`
-                      : ''}
-                  </p>
-                )}
+                    {/* Pace — a percentage spent is only meaningful beside the date. */}
+                    {spendPace.verdict !== 'no-budget' && (
+                      <p
+                        className={`text-xs mt-2 ${
+                          spendPace.verdict === 'over'
+                            ? 'text-red-500'
+                            : spendPace.verdict === 'ahead'
+                              ? 'text-amber-500'
+                              : 'text-emerald-500'
+                        }`}
+                      >
+                        Day {pace.daysElapsed} of {pace.daysInPeriod} ({Math.round(pace.elapsedRatio * 100)}%)
+                        {' · '}
+                        {Math.round(spendPace.spentRatio * 100)}% spent
+                        {spendPace.verdict === 'ahead'
+                          ? ` — ₦${Math.round(spendPace.spendVsExpected).toLocaleString('en-NG')} ahead of pace`
+                          : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
                 {/* Zero-based check: unassigned income is money without a job. */}
                 {planSummary.totalPlannedIncome > 0 && (
@@ -507,7 +575,13 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                     : `No budget was set for ${monthName}`}
                 </p>
                 {isCurrentMonth && (
-                  <button onClick={onOpenSetBudget} className="mt-2 text-lantern-primary font-semibold hover:underline text-sm">Set your monthly budget</button>
+                  <button
+                    onClick={onOpenSetBudget}
+                    className="mt-3 inline-flex items-center gap-1.5 bg-lantern-primary text-white hover:bg-lantern-primary-dark px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-colors"
+                  >
+                    <Cog6ToothIcon className="w-4 h-4" />
+                    Set your monthly budget
+                  </button>
                 )}
               </div>
             )}
@@ -515,10 +589,8 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             <BudgetQuickLinks
               onAddExpense={onOpenAddExpense}
               onAddIncome={onOpenAddIncome}
-              onAddInvestment={onOpenAddInvestment}
               onSavingsGoal={onOpenSavingsGoal || (() => setActiveTab('goals'))}
               onExpenseSplit={onOpenExpenseSplit}
-              onWallet={onOpenWallet}
             />
 
             {/* Spending by Category */}
@@ -548,7 +620,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                               <span className="text-lantern-text-secondary ml-2">₦{cat.amount.toLocaleString('en-NG')}</span>
                             </div>
                             <div className="w-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full h-1.5 mt-1">
-                              <div className="h-1.5 rounded-full bg-lantern-primary-light" style={{ width: `${pct}%` }} />
+                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: cat.color }} />
                             </div>
                           </div>
                         </div>
@@ -591,6 +663,61 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 </div>
               </div>
             )}
+            {/* ── Insights (folded into Overview so the feature reads as one screen) ── */}
+            <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
+              <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
+                <ArrowTrendingUpIcon className="w-5 h-5 text-lantern-primary" /> Spending Summary
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-lantern-text">{monthlyTransactions.length}</p>
+                  <p className="text-xs text-lantern-text-tertiary">Transactions</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-red-500">₦{monthlyExpenses > 0 ? Math.round(monthlyExpenses / Math.max(monthlyTransactions.filter(t => t.type === TransactionType.EXPENSE).length, 1)).toLocaleString('en-NG') : '0'}</p>
+                  <p className="text-xs text-lantern-text-tertiary">Avg Expense</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-lantern-primary">{expenseByCategory.length}</p>
+                  <p className="text-xs text-lantern-text-tertiary">Categories</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-amber-500">{savingsGoals.filter(g => !g.completedAt).length}</p>
+                  <p className="text-xs text-lantern-text-tertiary">Active Goals</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Financial Toolkit CTA */}
+            {onOpenFinancialToolkit && (
+              <button onClick={onOpenFinancialToolkit} className="w-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-2xl p-4 flex items-center gap-3 shadow-sm transition-all">
+                <span className="text-2xl">🧮</span>
+                <div className="text-left">
+                  <p className="font-bold text-sm">Financial Toolkit</p>
+                  <p className="text-xs text-white/80">Budget simulator, savings calculator & more tips</p>
+                </div>
+              </button>
+            )}
+
+            {/* Financial Tips */}
+            <div>
+              <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
+                <LightBulbIcon className="w-5 h-5 text-amber-500" /> Money Tips for Students
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {FINANCIAL_TIPS.map(tip => (
+                  <div key={tip.id} className="bg-lantern-surface rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">{tip.icon}</span>
+                      <div>
+                        <h4 className="font-medium text-sm text-lantern-text">{tip.title}</h4>
+                        <p className="text-xs text-lantern-text-secondary mt-0.5 leading-relaxed">{tip.content}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
         </TabPanel>
 
         <TabPanel value="transactions" className="space-y-4">
@@ -624,14 +751,11 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 <ul className="divide-y divide-lantern-border">
                   {filteredTransactions.map(t => {
                     const cat = getCategoryInfo(t.category, t.type);
+                    const pres = getTxPresentation(t.type);
                     return (
                       <li key={t.id} className="px-4 py-3 flex justify-between items-center hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/30 transition-colors">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
-                            t.type === TransactionType.INCOME
-                              ? 'bg-emerald-100 dark:bg-emerald-900/30'
-                              : 'bg-red-100 dark:bg-red-900/30'
-                          }`}>
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${pres.iconBg}`}>
                             {cat.icon}
                           </div>
                           <div className="min-w-0">
@@ -640,8 +764,8 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className={`font-semibold text-sm ${t.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {t.type === TransactionType.INCOME ? '+' : '-'}₦{t.amount.toLocaleString('en-NG')}
+                          <span className={`font-semibold text-sm ${pres.amountClass}`}>
+                            {pres.sign}₦{t.amount.toLocaleString('en-NG')}
                           </span>
                           <button
                             type="button"
@@ -659,7 +783,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
               ) : (
                 <div className="text-center py-12">
                   <div className="text-4xl mb-2">📭</div>
-                  <p className="text-lantern-text-tertiary text-sm">No {txFilter !== 'all' ? txFilter : ''} transactions this month</p>
+                  <p className="text-lantern-text-tertiary text-sm">
+                    No {txFilter !== 'all' ? txFilter : ''} transactions in {monthName}
+                  </p>
                 </div>
               )}
             </div>
@@ -749,77 +875,6 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             )}
         </TabPanel>
 
-        <TabPanel value="insights" className="space-y-6">
-            {/* Spending Trend */}
-            <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
-              <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
-                <ArrowTrendingUpIcon className="w-5 h-5 text-lantern-primary" /> Spending Summary
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-lantern-text">{monthlyTransactions.length}</p>
-                  <p className="text-xs text-lantern-text-tertiary">Transactions</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-red-500">₦{monthlyExpenses > 0 ? Math.round(monthlyExpenses / Math.max(monthlyTransactions.filter(t => t.type === TransactionType.EXPENSE).length, 1)).toLocaleString('en-NG') : '0'}</p>
-                  <p className="text-xs text-lantern-text-tertiary">Avg Expense</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-lantern-primary">{expenseByCategory.length}</p>
-                  <p className="text-xs text-lantern-text-tertiary">Categories</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-amber-500">{savingsGoals.filter(g => !g.completedAt).length}</p>
-                  <p className="text-xs text-lantern-text-tertiary">Active Goals</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Top category this month */}
-            {expenseByCategory.length > 0 && (
-              <div className="bg-gradient-to-r from-lantern-primary to-purple-600 rounded-2xl p-5 text-white">
-                <p className="text-white/70 text-xs mb-1">Biggest expense category</p>
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{expenseByCategory[0].icon}</span>
-                  <div>
-                    <p className="font-bold text-lg">{expenseByCategory[0].label}</p>
-                    <p className="text-white/80">₦{expenseByCategory[0].amount.toLocaleString('en-NG')} ({monthlyExpenses > 0 ? ((expenseByCategory[0].amount / monthlyExpenses) * 100).toFixed(0) : 0}% of spending)</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Financial Toolkit CTA */}
-            {onOpenFinancialToolkit && (
-              <button onClick={onOpenFinancialToolkit} className="w-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-2xl p-4 flex items-center gap-3 shadow-sm transition-all">
-                <span className="text-2xl">🧮</span>
-                <div className="text-left">
-                  <p className="font-bold text-sm">Financial Toolkit</p>
-                  <p className="text-xs text-white/80">Budget simulator, savings calculator & more tips</p>
-                </div>
-              </button>
-            )}
-
-            {/* Financial Tips */}
-            <div>
-              <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
-                <LightBulbIcon className="w-5 h-5 text-amber-500" /> Money Tips for Students
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {FINANCIAL_TIPS.map(tip => (
-                  <div key={tip.id} className="bg-lantern-surface rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl">{tip.icon}</span>
-                      <div>
-                        <h4 className="font-medium text-sm text-lantern-text">{tip.title}</h4>
-                        <p className="text-xs text-lantern-text-secondary mt-0.5 leading-relaxed">{tip.content}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-        </TabPanel>
       </div>
       </Tabs>
     </div>

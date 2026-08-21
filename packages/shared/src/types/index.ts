@@ -695,32 +695,34 @@ export enum TransactionType {
   INVESTMENT = 'INVESTMENT',
 }
 
+// `color` is the stable per-category swatch used by every chart/bar on both web
+// and mobile, so a category is the same colour everywhere (no index-based drift).
 export const STUDENT_EXPENSE_CATEGORIES = [
-  { id: 'food_feeding', label: 'Food & Feeding', icon: '🍔' },
-  { id: 'accommodation', label: 'Accommodation / Hostel', icon: '🏠' },
-  { id: 'transport', label: 'Transport', icon: '🚌' },
-  { id: 'data_airtime', label: 'Data & Airtime', icon: '📱' },
-  { id: 'books_materials', label: 'Books & Materials', icon: '📚' },
-  { id: 'printing_stationery', label: 'Printing & Stationery', icon: '🖨️' },
-  { id: 'clothing_fashion', label: 'Clothing & Fashion', icon: '👕' },
-  { id: 'tuition_fees', label: 'Tuition & School Fees', icon: '🎓' },
-  { id: 'bills_utilities', label: 'Bills & Utilities', icon: '💡' },
-  { id: 'laundry', label: 'Laundry & Cleaning', icon: '🧹' },
-  { id: 'social_entertainment', label: 'Social & Entertainment', icon: '🎉' },
-  { id: 'health_pharmacy', label: 'Health & Pharmacy', icon: '💊' },
-  { id: 'marketplace_purchase', label: 'Marketplace Purchase', icon: '🛒' },
-  { id: 'other', label: 'Other', icon: '📦' },
+  { id: 'food_feeding', label: 'Food & Feeding', icon: '🍔', color: '#f59e0b' },
+  { id: 'accommodation', label: 'Accommodation / Hostel', icon: '🏠', color: '#8b5cf6' },
+  { id: 'transport', label: 'Transport', icon: '🚌', color: '#0ea5e9' },
+  { id: 'data_airtime', label: 'Data & Airtime', icon: '📱', color: '#06b6d4' },
+  { id: 'books_materials', label: 'Books & Materials', icon: '📚', color: '#6366f1' },
+  { id: 'printing_stationery', label: 'Printing & Stationery', icon: '🖨️', color: '#64748b' },
+  { id: 'clothing_fashion', label: 'Clothing & Fashion', icon: '👕', color: '#ec4899' },
+  { id: 'tuition_fees', label: 'Tuition & School Fees', icon: '🎓', color: '#4f46e5' },
+  { id: 'bills_utilities', label: 'Bills & Utilities', icon: '💡', color: '#eab308' },
+  { id: 'laundry', label: 'Laundry & Cleaning', icon: '🧹', color: '#14b8a6' },
+  { id: 'social_entertainment', label: 'Social & Entertainment', icon: '🎉', color: '#f43f5e' },
+  { id: 'health_pharmacy', label: 'Health & Pharmacy', icon: '💊', color: '#ef4444' },
+  { id: 'marketplace_purchase', label: 'Marketplace Purchase', icon: '🛒', color: '#10b981' },
+  { id: 'other', label: 'Other', icon: '📦', color: '#94a3b8' },
 ] as const;
 
 export const STUDENT_INCOME_CATEGORIES = [
-  { id: 'allowance', label: 'Allowance (Parents/Guardian)', icon: '👨‍👩‍👧' },
-  { id: 'part_time', label: 'Part-time Job / Side Hustle', icon: '💼' },
-  { id: 'freelance', label: 'Freelance / Gig Work', icon: '💰' },
-  { id: 'scholarship', label: 'Scholarship / Bursary', icon: '📝' },
-  { id: 'marketplace_sale', label: 'Marketplace Sale', icon: '🏪' },
-  { id: 'gift', label: 'Gift', icon: '🎁' },
-  { id: 'study_rewards', label: 'Study Rewards', icon: '🏆' },
-  { id: 'other', label: 'Other', icon: '📦' },
+  { id: 'allowance', label: 'Allowance (Parents/Guardian)', icon: '👨‍👩‍👧', color: '#10b981' },
+  { id: 'part_time', label: 'Part-time Job / Side Hustle', icon: '💼', color: '#0ea5e9' },
+  { id: 'freelance', label: 'Freelance / Gig Work', icon: '💰', color: '#f59e0b' },
+  { id: 'scholarship', label: 'Scholarship / Bursary', icon: '📝', color: '#8b5cf6' },
+  { id: 'marketplace_sale', label: 'Marketplace Sale', icon: '🏪', color: '#14b8a6' },
+  { id: 'gift', label: 'Gift', icon: '🎁', color: '#ec4899' },
+  { id: 'study_rewards', label: 'Study Rewards', icon: '🏆', color: '#eab308' },
+  { id: 'other', label: 'Other', icon: '📦', color: '#94a3b8' },
 ] as const;
 
 export interface Transaction {
@@ -816,7 +818,7 @@ export interface MarketplaceListing {
     geopolitical_zone?: string | null;
   };
   images?: string[];
-  status: 'active' | 'sold' | 'inactive' | 'reserved' | 'suspended_by_admin' | 'removed_by_admin';
+  status: 'active' | 'sold' | 'inactive' | 'reserved' | 'archived' | 'suspended_by_admin' | 'removed_by_admin';
   categorySpecificFields?: Record<string, unknown>;
   category_specific_fields?: Record<string, unknown>;
   views_count?: number;

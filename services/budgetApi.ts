@@ -95,3 +95,48 @@ export async function saveBudgetTransactionApi(transaction: {
 export async function deleteBudgetTransactionApi(transactionId: string): Promise<void> {
   await budgetRequest(`/transactions/${transactionId}`, { method: 'DELETE' });
 }
+
+// ── Recurring transactions ──────────────────────────────────────────────────
+
+export interface RecurringRule {
+  id: string;
+  userId: string;
+  type: 'income' | 'expense';
+  amount: number;
+  category: string | null;
+  description: string | null;
+  frequency: 'weekly' | 'monthly';
+  dayOfMonth: number | null;
+  nextDate: string;
+  active: boolean;
+}
+
+export async function fetchRecurringRules(): Promise<RecurringRule[]> {
+  const data = await budgetRequest<{ rules: RecurringRule[] }>('/recurring');
+  return data.rules;
+}
+
+export async function createRecurringRule(input: {
+  type: 'income' | 'expense';
+  amount: number;
+  category?: string | null;
+  description?: string | null;
+  frequency: 'weekly' | 'monthly';
+  dayOfMonth?: number | null;
+  nextDate: string;
+}): Promise<RecurringRule> {
+  const data = await budgetRequest<{ rule: RecurringRule }>('/recurring', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return data.rule;
+}
+
+export async function deleteRecurringRule(id: string): Promise<void> {
+  await budgetRequest(`/recurring/${id}`, { method: 'DELETE' });
+}
+
+/** Materialise any due recurring rules. Idempotent — safe to call on every load. */
+export async function runRecurring(): Promise<{ posted: number }> {
+  return budgetRequest('/recurring/run', { method: 'POST', body: '{}' });
+}

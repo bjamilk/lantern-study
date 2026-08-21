@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Budget, STUDENT_EXPENSE_CATEGORIES } from '../types';
 import { PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
@@ -11,11 +11,24 @@ interface SetMonthlyPlanModalProps {
 }
 
 const SetMonthlyPlanModal: React.FC<SetMonthlyPlanModalProps> = ({ isOpen, onClose, currentBudget, onSave }) => {
-  const existingBudgets = currentBudget?.categoryBudgets || {};
-  const [allocations, setAllocations] = useState<Record<string, string>>(
-    Object.fromEntries(Object.entries(existingBudgets).map(([k, v]) => [k, String(v)]))
-  );
+  const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [showAdd, setShowAdd] = useState(false);
+
+  // Re-seed from the current budget every time the modal opens. This wrapper is
+  // mounted for the app's lifetime (App.tsx) and never remounts, so a one-shot
+  // useState initializer would capture the boot-time budget (usually null,
+  // before the cloud load) — the user would then see NO existing allocations and
+  // saving would overwrite them with an empty map. Mirrors SetBudgetModal.
+  useEffect(() => {
+    if (isOpen) {
+      setAllocations(
+        Object.fromEntries(
+          Object.entries(currentBudget?.categoryBudgets ?? {}).map(([k, v]) => [k, String(v)])
+        )
+      );
+      setShowAdd(false);
+    }
+  }, [isOpen, currentBudget]);
 
   const activeCategories = Object.keys(allocations);
   const availableCategories = STUDENT_EXPENSE_CATEGORIES.filter(c => !activeCategories.includes(c.id));

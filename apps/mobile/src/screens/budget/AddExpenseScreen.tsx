@@ -44,30 +44,25 @@ export default function AddExpenseScreen() {
 
   const handleSubmit = useCallback(async () => {
     const amountNum = parseFloat(amount);
-    
+
     if (!amount || amountNum <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
       return;
     }
 
-    if (!description.trim()) {
-      Alert.alert('Missing Description', 'Please enter a description for this expense.');
-      return;
-    }
-
+    // Description is optional — fall back to the category label.
+    const selected = EXPENSE_CATEGORIES.find(c => c.id === category);
     try {
       await addTransaction({
         userId,
         type: 'EXPENSE',
         amount: amountNum,
         category,
-        description: description.trim(),
+        description: description.trim() || selected?.label || 'Expense',
         date: toDateOnlyLocal(date),
       });
-
-      Alert.alert('Success', 'Expense added successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      // Save silently and return — no blocking "Success" OK-tap between entries.
+      navigation.goBack();
     } catch (error) {
       Alert.alert('Error', 'Failed to add expense. Please try again.');
     }
@@ -156,7 +151,7 @@ export default function AddExpenseScreen() {
 
           {/* Description */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description (optional)</Text>
             <TextInput
               style={[styles.textInput, { backgroundColor: colors.card, color: colors.text }]}
               placeholder="What did you spend on?"

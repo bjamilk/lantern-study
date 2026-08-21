@@ -126,17 +126,26 @@ export class WalletService {
 
   async saveBudgetExtras(userId: string, extras: BudgetExtrasState): Promise<BudgetExtrasState> {
     const { theme, preferences } = await this.loadPrefsRow(userId);
+    // Wallet balance & awards are owned exclusively by the atomic wallet RPCs
+    // (adjustWallet / awardWalletOnce). This method persists goals/splits/plans,
+    // and its callers read `extras` at the START of their request — so writing
+    // `extras.walletBalance` here would roll a concurrent award/spend back to
+    // that stale value. Preserve the freshly-read server values instead, and
+    // reflect them back to the caller so its response reports the real balance.
+    const currentExtras = this.getExtrasFromPreferences(preferences);
+    const walletBalance = Math.max(0, currentExtras.walletBalance);
+    const walletAwards = currentExtras.walletAwards || {};
     const nextPrefs = {
       ...preferences,
       budgetExtras: {
         savingsGoals: extras.savingsGoals,
         expenseSplits: extras.expenseSplits,
-        walletBalance: Math.max(0, extras.walletBalance),
+        walletBalance,
         categoryBudgets: extras.categoryBudgets,
         plannedIncome: extras.plannedIncome,
         plannedSavings: extras.plannedSavings,
         plansByMonth: extras.plansByMonth,
-        walletAwards: extras.walletAwards || {},
+        walletAwards,
       },
     };
     await this.supabase.upsertUserPreferences(userId, {
@@ -144,6 +153,8 @@ export class WalletService {
       preferences: nextPrefs,
     });
     await this.invalidatePrefsCache(userId);
+    extras.walletBalance = walletBalance;
+    extras.walletAwards = walletAwards;
     return extras;
   }
 

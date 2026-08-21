@@ -37,7 +37,12 @@ export default function SetCategoryBudgetScreen() {
       Alert.alert('Enter at least one category budget');
       return;
     }
-    await setBudget(userId, total, categoryBudgets);
+    // Preserve the overall monthly cap — do NOT overwrite it with the sum of the
+    // category budgets. setBudget's 2nd arg is the monthlyLimit; passing `total`
+    // silently replaced the user's real cap (e.g. a ₦50,000 limit) with the much
+    // smaller category sum. Category budgets sit *within* the cap, they don't
+    // define it. (Matches web SetMonthlyPlanModal, which only edits categories.)
+    await setBudget(userId, budget?.monthlyLimit ?? 0, categoryBudgets);
     Alert.alert('Saved', 'Category budgets updated.');
     navigation.goBack();
   };

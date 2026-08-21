@@ -57,6 +57,7 @@ interface UIState {
     wallet: boolean;
     financialToolkit: boolean;
     expenseSplit: boolean;
+    recurring: boolean;
     createMarketplaceListing: boolean;
     editMarketplaceListing: boolean;
     testAnalysis: boolean;
@@ -180,6 +181,7 @@ const initialModals = {
   wallet: false,
   financialToolkit: false,
   expenseSplit: false,
+  recurring: false,
   createMarketplaceListing: false,
   editMarketplaceListing: false,
   testAnalysis: false,

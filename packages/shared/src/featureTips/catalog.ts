@@ -117,7 +117,7 @@ export const FEATURE_TIP_CATALOG: Record<FeatureTipId, FeatureTipCopy> = {
   },
   'nav.budget': {
     id: 'nav.budget',
-    title: 'Budget tracker',
+    title: 'Budget',
     body: 'Set a monthly budget and log spending so you can see where campus money goes.',
   },
   'nav.offline': {

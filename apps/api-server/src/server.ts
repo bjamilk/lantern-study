@@ -168,6 +168,9 @@ async function initializeServices() {
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
 
+    const { initializeRecurringBudgetService } = await import('./services/recurringBudget');
+    initializeRecurringBudgetService(supabaseService);
+
     const { initializeBudgetRoutes } = await import('./routes/budget');
     initializeBudgetRoutes(supabaseService, cacheService);
 

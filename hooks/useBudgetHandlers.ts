@@ -2,13 +2,15 @@ import { useCallback } from 'react';
 import { Budget, Transaction, TransactionType } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
-import { writePlanForMonth } from '@lantern/shared/utils';
+import { writePlanForMonth, toMonthYear } from '@lantern/shared/utils';
 import { useUIStore } from '../stores/uiStore';
+import { useToastStore } from '../stores/toastStore';
 import { saveUserBudget, saveBudgetTransaction, deleteBudgetTransaction, fetchBudgetTransactions } from '../services/supabase';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import {
   fetchBudgetWalletData,
   claimUnderBudgetAwardApi,
+  runRecurring,
 } from '../services/budgetApi';
 import { v4 as uuidv4 } from 'uuid';
 import { AppMode } from '../types';
@@ -20,6 +22,9 @@ export function useBudgetHandlers() {
       setBudget,
       transactions,
       setTransactions,
+      markTransactionPending,
+      markTransactionSynced,
+      reconcileTransactions,
       savingsGoals,
       expenseSplits,
       walletBalance,
@@ -36,7 +41,9 @@ export function useBudgetHandlers() {
 
     const handleSetBudget = useCallback((input: Budget | number) => {
         if (!currentUser) return;
-        const currentMonth = new Date().toISOString().slice(0, 7);
+        // LOCAL month — transactions are keyed by local date, so a UTC month here
+        // would drift a day at each month boundary in WAT (UTC+1).
+        const currentMonth = toMonthYear(new Date());
         const newBudget: Budget =
             typeof input === 'number'
                 ? {
@@ -103,7 +110,9 @@ export function useBudgetHandlers() {
         };
         const updatedTransactions = [...transactions, newTransaction].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setTransactions(updatedTransactions);
-        localStorage.setItem('budgetTransactions', JSON.stringify(updatedTransactions));
+        // Mark unsynced until the cloud save confirms — a server refetch reconciles
+        // against this set and will not drop a row whose save failed.
+        markTransactionPending(newTransaction.id);
         const typeMap: Record<string, 'income' | 'expense' | 'investment'> = {
             'INCOME': 'income',
             'EXPENSE': 'expense',
@@ -117,9 +126,15 @@ export function useBudgetHandlers() {
             description: newTransaction.description,
             date: newTransaction.date
         }).then(() => {
-            console.log('[Transactions Sync] Transaction saved to cloud');
+            markTransactionSynced(newTransaction.id);
         }).catch(error => {
             console.error('[Transactions Sync] Failed to save transaction to cloud:', error);
+            // Leave it pending (kept across refetch + reload) and tell the user,
+            // instead of losing the entry silently on the next refresh.
+            useToastStore.getState().showToast(
+                "Couldn't save that to the cloud — it's kept on this device and will retry.",
+                'error'
+            );
         });
 
         if (newTransaction.type === TransactionType.EXPENSE && budget?.categoryBudgets) {
@@ -140,32 +155,30 @@ export function useBudgetHandlers() {
                         spent,
                         limit,
                     });
-                    if (typeof window !== 'undefined') {
-                        window.setTimeout(() => {
-                            window.alert(
-                                `You have exceeded your budget for this category (spent ₦${spent.toLocaleString('en-NG')} of ₦${limit.toLocaleString('en-NG')}).`
-                            );
-                        }, 0);
-                    }
+                    // In-app toast, not a blocking window.alert — the alert was
+                    // unthemed, ignored dark mode, and interrupted rapid entry.
+                    useToastStore.getState().showToast(
+                        `Over budget for this category — spent ₦${spent.toLocaleString('en-NG')} of ₦${limit.toLocaleString('en-NG')}.`,
+                        'error'
+                    );
                 }
             }
         }
-
-        closeModal('addExpense');
-        closeModal('addIncome');
-        closeModal('addInvestment');
-    }, [currentUser, transactions, setTransactions, closeModal, budget?.categoryBudgets]);
+        // The add-expense / add-income sheets manage their own close now (so
+        // "Add another" can keep them open for rapid entry) — don't force-close here.
+    }, [currentUser, transactions, setTransactions, markTransactionPending, markTransactionSynced, budget?.categoryBudgets]);
 
     const handleDeleteTransaction = useCallback((transactionId: string) => {
         const updatedTransactions = transactions.filter(t => t.id !== transactionId);
         setTransactions(updatedTransactions);
-        localStorage.setItem('budgetTransactions', JSON.stringify(updatedTransactions));
+        // Drop it from the pending set too, so a delete can't leave a dangling id.
+        markTransactionSynced(transactionId);
         deleteBudgetTransaction(transactionId).then(() => {
             console.log('[Transactions Sync] Transaction deleted from cloud');
         }).catch(error => {
             console.error('[Transactions Sync] Failed to delete transaction from cloud:', error);
         });
-    }, [transactions, setTransactions]);
+    }, [transactions, setTransactions, markTransactionSynced]);
 
     const refreshBudgetTransactions = useCallback(async (userId?: string) => {
         const uid = userId || currentUser?.id;
@@ -181,11 +194,35 @@ export function useBudgetHandlers() {
                 description: t.description || '',
                 date: typeof t.date === 'string' ? t.date.split('T')[0] : t.date,
             }));
-            setTransactions(mapped);
+            // Reconcile, don't clobber: rows whose save is still pending are kept
+            // (previously this overwrite silently wiped a failed/in-flight save).
+            reconcileTransactions(mapped);
+
+            // Best-effort retry: re-save any row the server still doesn't have.
+            const serverIds = new Set(mapped.map((t) => t.id));
+            const store = useBudgetStore.getState();
+            const typeMap: Record<string, 'income' | 'expense' | 'investment'> = {
+                INCOME: 'income', EXPENSE: 'expense', INVESTMENT: 'investment',
+            };
+            for (const id of store.pendingTransactionIds) {
+                if (serverIds.has(id)) continue;
+                const tx = store.transactions.find((t) => t.id === id);
+                if (!tx) continue;
+                saveBudgetTransaction(uid, {
+                    id: tx.id,
+                    type: typeMap[tx.type] || 'expense',
+                    amount: tx.amount,
+                    category: tx.category,
+                    description: tx.description,
+                    date: tx.date,
+                })
+                    .then(() => useBudgetStore.getState().markTransactionSynced(tx.id))
+                    .catch(() => { /* stays pending; retried next refresh */ });
+            }
         } catch (error) {
             console.error('[Budget Sync] Failed to refresh transactions from cloud:', error);
         }
-    }, [currentUser?.id, setTransactions]);
+    }, [currentUser?.id, reconcileTransactions]);
 
     const refreshBudgetWallet = useCallback(async () => {
         if (!currentUser?.id) return;
@@ -196,9 +233,15 @@ export function useBudgetHandlers() {
             if (Array.isArray(data.expenseSplits)) setExpenseSplits(data.expenseSplits);
             if (data.categoryBudgets && typeof data.categoryBudgets === 'object') {
                 const current = useBudgetStore.getState().budget;
+                // Merge, don't replace: the wallet payload only carries
+                // categoryBudgets, so a plain rebuild would drop plannedIncome /
+                // plannedSavings and make the "every naira has a job" panel
+                // vanish on every window refocus (and a later save would then
+                // persist the wiped plan).
                 setBudget({
+                    ...current,
                     monthlyLimit: current?.monthlyLimit ?? 0,
-                    monthYear: current?.monthYear ?? new Date().toISOString().slice(0, 7),
+                    monthYear: current?.monthYear ?? toMonthYear(new Date()),
                     userId: currentUser.id,
                     categoryBudgets: data.categoryBudgets,
                 });
@@ -207,6 +250,18 @@ export function useBudgetHandlers() {
             console.error('[Budget Sync] Failed to refresh wallet:', error);
         }
     }, [currentUser?.id, setWalletBalance, setSavingsGoals, setExpenseSplits, setBudget]);
+
+    // Post any due recurring rules, then refresh so they appear. Idempotent on
+    // the server (a repeat run posts nothing), so calling it on every open is safe.
+    const materializeRecurring = useCallback(async () => {
+        if (!currentUser?.id) return;
+        try {
+            const { posted } = await runRecurring();
+            if (posted > 0) await refreshBudgetTransactions(currentUser.id);
+        } catch (error) {
+            console.error('[Budget] Failed to run recurring transactions:', error);
+        }
+    }, [currentUser?.id, refreshBudgetTransactions]);
 
     const claimUnderBudgetAward = useCallback(async () => {
         if (!currentUser?.id) return;
@@ -229,6 +284,7 @@ export function useBudgetHandlers() {
         handleDeleteTransaction,
         refreshBudgetTransactions,
         refreshBudgetWallet,
+        materializeRecurring,
         claimUnderBudgetAward,
     };
 }

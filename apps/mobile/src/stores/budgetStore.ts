@@ -149,6 +149,13 @@ export function getCategoryIcon(categoryId: string, type: TransactionType): stri
   return cats.find(c => c.id === categoryId)?.icon ?? '📦';
 }
 
+// Stable per-category swatch from the shared def — the same colour the web charts
+// use, so a category looks identical on both platforms (no index-based drift).
+export function getCategoryColor(categoryId: string, type: TransactionType): string {
+  const cats = type === 'INCOME' ? STUDENT_INCOME_CATEGORIES : STUDENT_EXPENSE_CATEGORIES;
+  return cats.find(c => c.id === categoryId)?.color ?? '#94a3b8';
+}
+
 function normalizeTransactions(transactions: Transaction[]): Transaction[] {
   return transactions.map(t => ({
     ...t,

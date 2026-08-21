@@ -34,6 +34,7 @@ interface BottomNavProps {
     dueCardsCount?: number;
     unreadNotificationCount?: number;
     onOpenNotifications?: () => void;
+    onOpenWallet?: () => void;
     onOpenSettings?: () => void;
     onToggleTheme?: () => void;
     theme?: 'light' | 'dark';
@@ -55,7 +56,7 @@ interface NavTab {
     tipId?: string;
 }
 
-const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadChatCount = 0, dueCardsCount = 0, unreadNotificationCount = 0, onOpenNotifications, onOpenSettings, onToggleTheme, theme, onLogout, onToggleCompanion, isCompanionOpen, isOnline = true, pendingSyncCount = 0, lowDataMode: lowDataProp }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadChatCount = 0, dueCardsCount = 0, unreadNotificationCount = 0, onOpenNotifications, onOpenWallet, onOpenSettings, onToggleTheme, theme, onLogout, onToggleCompanion, isCompanionOpen, isOnline = true, pendingSyncCount = 0, lowDataMode: lowDataProp }) => {
     const { lowDataMode: lowDataToggle, toggleLowDataMode } = useLowDataModeToggle();
     const lowDataMode = lowDataProp ?? lowDataToggle;
     const [isMoreOpen, setIsMoreOpen] = useState(false);
@@ -115,7 +116,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
         { label: 'Explore', icon: ShoppingBagIcon, mode: AppMode.MARKETPLACE, tipId: 'nav.marketplace' },
         ...(onToggleCompanion ? [{ label: isCompanionOpen ? 'Close Lantern AI' : 'Lantern AI', icon: SparklesIcon, action: onToggleCompanion, isCompanion: true, tipId: 'nav.companion' }] : []),
         ...(onOpenNotifications ? [{ label: 'Notifications', icon: BellAlertIcon, action: onOpenNotifications, badge: unreadNotificationCount }] : []),
-        { label: 'Budget Tracker', icon: CreditCardIcon, mode: AppMode.BUDGET_TRACKER, tipId: 'nav.budget' },
+        { label: 'Budget', icon: CreditCardIcon, mode: AppMode.BUDGET_TRACKER, tipId: 'nav.budget' },
+        ...(onOpenWallet ? [{ label: 'Study wallet', icon: SparklesIcon, action: onOpenWallet }] : []),
         { label: 'Offline Mode', icon: CloudArrowDownIcon, mode: AppMode.OFFLINE_MODE, tipId: 'nav.offline' },
     ];
 

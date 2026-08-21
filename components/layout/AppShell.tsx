@@ -371,6 +371,7 @@ const AppShell: React.FC<AppShellProps> = ({
                 unreadChatCount={unreadChatCount}
                 unreadNotificationCount={sidebarProps.unreadNotificationCount}
                 onOpenNotifications={sidebarProps.onOpenNotificationModal}
+                onOpenWallet={sidebarProps.onOpenWallet}
                 onOpenSettings={sidebarProps.onOpenSettingsModal}
                 onToggleTheme={sidebarProps.onToggleTheme}
                 theme={sidebarProps.theme}

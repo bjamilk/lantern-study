@@ -51,9 +51,9 @@ import InviteJoinScreen from './components/InviteJoinScreen';
 import NoteShareAcceptScreen from './components/NoteShareAcceptScreen';
 import AddExpenseModal from './components/AddExpenseModal';
 import AddIncomeModal from './components/AddIncomeModal';
-import AddInvestmentModal from './components/AddInvestmentModal';
 import SetBudgetModal from './components/SetBudgetModal';
 import SetMonthlyPlanModal from './components/SetMonthlyPlanModal';
+import RecurringModal from './components/RecurringModal';
 import SavingsGoalModal from './components/InvestModal';
 import WalletModal from './components/WalletModal';
 import ExpenseSplitModal from './components/ExpenseSplitModal';
@@ -374,7 +374,7 @@ export const App: React.FC = () => {
         return !localStorage.getItem('lantern_onboarding_complete');
     });
 
-    const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction } = useBudgetHandlers();
+    const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction, materializeRecurring } = useBudgetHandlers();
     const { handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
     const handleChallengeNotification = React.useCallback(async (type: string, challengeId: string) => {
         if (type === 'challenge_result') {
@@ -1395,12 +1395,11 @@ export const App: React.FC = () => {
                     transactions={transactions.filter(t => t.userId === currentUser.id)}
                     budget={budget?.userId === currentUser.id ? budget : null}
                     onOpenAddExpense={() => openModal('addExpense')} onOpenAddIncome={() => openModal('addIncome')}
-                    onOpenAddInvestment={() => openModal('addInvestment')}
                     onOpenSetBudget={() => openModal('setBudget')} onDeleteTransaction={handleDeleteTransaction}
                     onToggleSidebar={toggleSidebar}
                     onOpenSetMonthlyPlan={() => openModal('setMonthlyPlan')}
                     onOpenSavingsGoal={() => openModal('savingsGoal')}
-                    onOpenWallet={() => openModal('wallet')}
+                    onOpenRecurring={() => openModal('recurring')}
                     onOpenExpenseSplit={() => openModal('expenseSplit')}
                     onOpenFinancialToolkit={() => openModal('financialToolkit')} />;
             case AppMode.MARKETPLACE:
@@ -1722,6 +1721,7 @@ export const App: React.FC = () => {
         onOpenNewDmModal: () => openModal('newDm'),
         unreadNotificationCount: notifications.filter(n => !n.read).length,
         onOpenNotificationModal: () => openModal('notification'),
+        onOpenWallet: () => openModal('wallet'),
         activeTestSession, activeStudySession, activeGameSession,
         onResumeSession: handleResumeAnySession,
         onCancelSession: handleCancelPausedSession,
@@ -1867,9 +1867,9 @@ export const App: React.FC = () => {
             />
             <AddExpenseModal isOpen={modals.addExpense} onClose={() => closeModal('addExpense')} onSubmit={handleAddTransaction} />
             <AddIncomeModal isOpen={modals.addIncome} onClose={() => closeModal('addIncome')} onSubmit={handleAddTransaction} />
-            <AddInvestmentModal isOpen={modals.addInvestment} onClose={() => closeModal('addInvestment')} onSubmit={handleAddTransaction} />
             <SetBudgetModal isOpen={modals.setBudget} onClose={() => closeModal('setBudget')} onSubmit={handleSetBudget} currentBudget={budget} />
             <SetMonthlyPlanModal isOpen={modals.setMonthlyPlan} onClose={() => closeModal('setMonthlyPlan')} currentBudget={budget} onSave={(categoryBudgets) => { if (budget) { handleSetBudget({ ...budget, categoryBudgets }); } }} />
+            <RecurringModal isOpen={modals.recurring} onClose={() => closeModal('recurring')} onChanged={() => void materializeRecurring()} />
             <SavingsGoalModal isOpen={modals.savingsGoal} onClose={() => closeModal('savingsGoal')} currentUserId={currentUser?.id || ''} />
             <WalletModal isOpen={modals.wallet} onClose={() => closeModal('wallet')} />
             <SimulationControls isOpen={modals.financialToolkit} onClose={() => closeModal('financialToolkit')} />

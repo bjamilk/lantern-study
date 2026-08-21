@@ -369,14 +369,22 @@ router.post(
         categoryLimit = Number(extras.categoryBudgets?.[cat]) || 0;
         if (categoryLimit > 0) {
           const monthYear = txDate.slice(0, 7);
-          const { data: monthTxs } = await supabaseService.getClient()
+          // Exclusive upper bound = first day of the NEXT month. The old
+          // `${monthYear}-32` is not a valid date, so Postgres rejected the whole
+          // query, the error went unchecked, and this overspend warning never
+          // fired.
+          const [y, m] = monthYear.split('-').map(Number);
+          const nextMonthFirst =
+            m >= 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
+          const { data: monthTxs, error: spentErr } = await supabaseService.getClient()
             .from('budget_transactions')
             .select('amount')
             .eq('user_id', userId)
             .eq('type', 'expense')
             .eq('category', cat)
             .gte('date', `${monthYear}-01`)
-            .lt('date', `${monthYear}-32`);
+            .lt('date', nextMonthFirst);
+          if (spentErr) throw spentErr;
           categorySpent = (monthTxs || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
           categoryOverspend = categorySpent > categoryLimit;
         }
@@ -432,6 +440,94 @@ router.delete(
       return res.status(404).json({ success: false, error: 'Transaction not found' });
     }
     res.json({ success: true });
+  })
+);
+
+// ── Recurring transactions ───────────────────────────────────────────────────
+
+// GET /api/v1/budget/recurring — list the user's recurring rules
+router.get(
+  '/recurring',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { getRecurringBudgetService } = await import('../services/recurringBudget');
+    const rules = await getRecurringBudgetService().list(userId);
+    res.json({ success: true, data: { rules } });
+  })
+);
+
+// POST /api/v1/budget/recurring — create a recurring rule
+router.post(
+  '/recurring',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { type, amount, category, description, frequency, dayOfMonth, nextDate } = req.body ?? {};
+    const amt = Number(amount);
+    if (type !== 'income' && type !== 'expense') {
+      return res.status(400).json({ success: false, error: 'type must be income or expense' });
+    }
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return res.status(400).json({ success: false, error: 'amount must be a positive number' });
+    }
+    if (frequency !== 'weekly' && frequency !== 'monthly') {
+      return res.status(400).json({ success: false, error: 'frequency must be weekly or monthly' });
+    }
+    if (typeof nextDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) {
+      return res.status(400).json({ success: false, error: 'nextDate must be YYYY-MM-DD' });
+    }
+    let dom: number | null = null;
+    if (frequency === 'monthly') {
+      dom = Number(dayOfMonth) || Number(nextDate.slice(8, 10));
+      if (!Number.isInteger(dom) || dom < 1 || dom > 31) {
+        return res.status(400).json({ success: false, error: 'dayOfMonth must be 1-31' });
+      }
+    }
+
+    const { getRecurringBudgetService } = await import('../services/recurringBudget');
+    const rule = await getRecurringBudgetService().create(userId, {
+      type,
+      amount: amt,
+      category: typeof category === 'string' ? category : null,
+      description: typeof description === 'string' ? description : null,
+      frequency,
+      dayOfMonth: dom,
+      nextDate,
+    });
+    res.status(201).json({ success: true, data: { rule } });
+  })
+);
+
+// DELETE /api/v1/budget/recurring/:id — remove a rule (posted transactions stay)
+router.delete(
+  '/recurring/:id',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { getRecurringBudgetService } = await import('../services/recurringBudget');
+    const removed = await getRecurringBudgetService().remove(userId, req.params.id);
+    if (!removed) return res.status(404).json({ success: false, error: 'Rule not found' });
+    res.json({ success: true });
+  })
+);
+
+// POST /api/v1/budget/recurring/run — materialise all due rules (idempotent)
+router.post(
+  '/recurring/run',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const today = new Date();
+    const todayYmd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const { getRecurringBudgetService } = await import('../services/recurringBudget');
+    const result = await getRecurringBudgetService().runDue(userId, todayYmd);
+    res.json({ success: true, data: result });
   })
 );
 

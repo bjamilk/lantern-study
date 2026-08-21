@@ -1,5 +1,5 @@
 /**
- * Web Budget Store — Campus Pocket
+ * Web Budget Store — Budget
  * Manages budget, transactions, savings goals, expense splits, and wallet
  */
 import { create } from 'zustand';
@@ -11,6 +11,9 @@ interface BudgetState {
   // State
   ownerUserId: string | null;
   transactions: Transaction[];
+  /** Ids of transactions added locally whose cloud save has not confirmed yet.
+   *  A server refetch must not drop these, or a failed save is silently lost. */
+  pendingTransactionIds: string[];
   budget: Budget | null;
   /** Per-month plans, keyed yyyy-mm — the source of truth for history. */
   plansByMonth: MonthlyPlans;
@@ -24,6 +27,10 @@ interface BudgetState {
   setTransactions: (transactions: Transaction[]) => void;
   addTransaction: (transaction: Transaction) => void;
   removeTransaction: (transactionId: string) => void;
+  markTransactionPending: (transactionId: string) => void;
+  markTransactionSynced: (transactionId: string) => void;
+  /** Merge a fresh server list with any still-pending local rows (never drop them). */
+  reconcileTransactions: (serverTransactions: Transaction[]) => void;
   
   // Actions — Budget
   setBudget: (budget: Budget | null) => void;
@@ -68,6 +75,7 @@ export const useBudgetStore = create<BudgetState>()(
       // Initial State
       ownerUserId: null,
       transactions: [],
+      pendingTransactionIds: [],
       budget: null,
       plansByMonth: {},
       savingsGoals: [],
@@ -85,8 +93,35 @@ export const useBudgetStore = create<BudgetState>()(
       
       removeTransaction: (transactionId) => set((state) => ({
         transactions: state.transactions.filter(t => t.id !== transactionId),
+        pendingTransactionIds: state.pendingTransactionIds.filter(id => id !== transactionId),
       })),
-      
+
+      markTransactionPending: (transactionId) => set((state) => ({
+        pendingTransactionIds: state.pendingTransactionIds.includes(transactionId)
+          ? state.pendingTransactionIds
+          : [...state.pendingTransactionIds, transactionId],
+      })),
+
+      markTransactionSynced: (transactionId) => set((state) => ({
+        pendingTransactionIds: state.pendingTransactionIds.filter(id => id !== transactionId),
+      })),
+
+      reconcileTransactions: (serverTransactions) => set((state) => {
+        const serverIds = new Set(serverTransactions.map(t => t.id));
+        const pending = new Set(state.pendingTransactionIds);
+        // Keep local rows the server hasn't confirmed yet (a save that failed or
+        // is still in flight). Everything else comes from the server.
+        const unconfirmed = state.transactions.filter(t => pending.has(t.id) && !serverIds.has(t.id));
+        const merged = [...unconfirmed, ...serverTransactions].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+        return {
+          transactions: merged,
+          // Drop any pending ids the server now knows about (they synced).
+          pendingTransactionIds: state.pendingTransactionIds.filter(id => !serverIds.has(id)),
+        };
+      }),
+
       setBudget: (budget) => set({ budget }),
       setPlansByMonth: (plans) => set({ plansByMonth: plans }),
       
@@ -179,7 +214,12 @@ export const useBudgetStore = create<BudgetState>()(
         set({
           ownerUserId: userId,
           transactions: [],
+          pendingTransactionIds: [],
           budget: null,
+          // plansByMonth holds per-month financial plans; clearing it on an
+          // account switch stops the previous user's plan leaking into the next
+          // account in the same tab.
+          plansByMonth: {},
           savingsGoals: [],
           expenseSplits: [],
           walletBalance: 0,
@@ -191,7 +231,9 @@ export const useBudgetStore = create<BudgetState>()(
       reset: () => set({
         ownerUserId: null,
         transactions: [],
+        pendingTransactionIds: [],
         budget: null,
+        plansByMonth: {},
         savingsGoals: [],
         expenseSplits: [],
         walletBalance: 0,
@@ -206,6 +248,7 @@ export const useBudgetStore = create<BudgetState>()(
       partialize: (state) => ({
         ownerUserId: state.ownerUserId,
         transactions: state.transactions,
+        pendingTransactionIds: state.pendingTransactionIds,
         budget: state.budget,
         savingsGoals: state.savingsGoals,
         expenseSplits: state.expenseSplits,
