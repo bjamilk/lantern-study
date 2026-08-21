@@ -28,6 +28,7 @@ import {
 import { ACCOUNT_EXPORT_COPY } from '@lantern/shared';
 import { AccountDeletionModal } from './AccountDeletionModal';
 import { AccountImportModal } from './AccountImportModal';
+import { BlockedUsersModal } from './BlockedUsersModal';
 import { ContactForm } from './ContactForm';
 import { openCookiePreferenceCenter } from './CookieNoticeBanner';
 import Modal from './ui/Modal';
@@ -114,6 +115,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const setActiveTab = useUIStore((s) => s.setSettingsTab);
     const [deletionOpen, setDeletionOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
+    const [blockedOpen, setBlockedOpen] = useState(false);
     const [accountActionLoading, setAccountActionLoading] = useState(false);
     const [exporting, setExporting] = useState(false);
     const { showToast } = useToastStore();
@@ -391,15 +393,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                  <div>
                     <h3 className="text-lg font-semibold text-lantern-text">Notification Settings</h3>
                     <p className="text-sm text-lantern-text-secondary mb-4">Control how you receive notifications.</p>
+
+                    <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-3">Push &amp; in-app</p>
                     <div className="space-y-4 divide-y divide-lantern-border">
-                        <ToggleSwitch enabled={notifications.pushEnabled} onChange={(val) => onUpdateSettingsCategory('notifications', { pushEnabled: val })} label="Push Notifications" description="Mobile push alerts (synced across devices)." />
+                        <ToggleSwitch enabled={notifications.pushEnabled} onChange={(val) => onUpdateSettingsCategory('notifications', { pushEnabled: val })} label="Push Notifications" description="Device push alerts (synced across your phone and this browser)." />
                         <ToggleSwitch enabled={notifications.dailyReminder} onChange={(val) => onUpdateSettingsCategory('notifications', { dailyReminder: val })} label="Daily Study Reminders" description="One reminder at your chosen time — only if Lantern isn't already open." />
-                        <div className="pt-4">
+                        <div className={`pt-4 transition-opacity ${notifications.dailyReminder ? '' : 'opacity-50'}`}>
                             <label htmlFor="reminderTime" className="block text-sm font-medium text-lantern-text mb-1">Reminder time</label>
                             <input id="reminderTime" type="time" value={notifications.reminderTime}
+                                disabled={!notifications.dailyReminder}
                                 onChange={(e) => onUpdateSettingsCategory('notifications', { reminderTime: e.target.value })}
-                                className="p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
-                            <p className="text-xs text-lantern-text-secondary mt-1">Currently {formatReminderTime(notifications.reminderTime)}</p>
+                                className="p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text disabled:cursor-not-allowed" />
+                            <p className="text-xs text-lantern-text-secondary mt-1">
+                                {notifications.dailyReminder
+                                    ? `Currently ${formatReminderTime(notifications.reminderTime)}`
+                                    : 'Turn on Daily Study Reminders to set a time.'}
+                            </p>
                         </div>
                         <ToggleSwitch enabled={notifications.groupActivity} onChange={(val) => onUpdateSettingsCategory('notifications', { groupActivity: val })} label="Group Activity" description="Messages and questions in your groups." />
                         <ToggleSwitch enabled={notifications.groupInvites !== false} onChange={(val) => onUpdateSettingsCategory('notifications', { groupInvites: val })} label="Group Invites" description="When someone invites you to a group." />
@@ -407,8 +416,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <ToggleSwitch enabled={notifications.badgeUnlocks} onChange={(val) => onUpdateSettingsCategory('notifications', { badgeUnlocks: val })} label="Badge Unlocks" description="Achievement notifications." />
                         <ToggleSwitch enabled={notifications.srsReminders} onChange={(val) => onUpdateSettingsCategory('notifications', { srsReminders: val })} label="Review reminders" description="Browser alerts when cards are due — only while Lantern is in the background, at most every few hours." />
                         <ToggleSwitch enabled={notifications.testResults} onChange={(val) => onUpdateSettingsCategory('notifications', { testResults: val })} label="Test Results" description="Notifications when tests are completed." />
-                        <ToggleSwitch enabled={notifications.emailEnabled} onChange={(val) => onUpdateSettingsCategory('notifications', { emailEnabled: val })} label="Email Notifications" description="Receive important updates by email." />
-                        <ToggleSwitch enabled={notifications.weeklyDigest} onChange={(val) => onUpdateSettingsCategory('notifications', { weeklyDigest: val })} label="Weekly Digest" description="Summary of your weekly study activity." />
+                    </div>
+
+                    <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary mt-6 mb-3">Email</p>
+                    <div className="space-y-4">
+                        <ToggleSwitch enabled={notifications.emailEnabled} onChange={(val) => onUpdateSettingsCategory('notifications', { emailEnabled: val })} label="Email Notifications" description="Job alerts and important account updates by email." />
                     </div>
                 </div>
             );
@@ -497,11 +509,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <option value="large">Large</option>
                         </select>
                     </div>
-                    <ToggleSwitch enabled={appearance.compactMode} onChange={(val) => onUpdateSettingsCategory('appearance', { compactMode: val })} label="Compact Mode" description="Tighter spacing across the app." />
-                    <ToggleSwitch enabled={appearance.showAnimations} onChange={(val) => onUpdateSettingsCategory('appearance', { showAnimations: val })} label="Show Animations" description="Enable UI animations." />
-                    <ToggleSwitch enabled={accessibility.reduceMotion} onChange={(val) => onUpdateSettingsCategory('accessibility', { reduceMotion: val })} label="Reduce Motion" description="Minimize animations for accessibility." />
-                    <ToggleSwitch enabled={accessibility.highContrast} onChange={(val) => onUpdateSettingsCategory('accessibility', { highContrast: val })} label="High Contrast" description="Increase color contrast." />
-                    <ToggleSwitch enabled={accessibility.screenReaderOptimized} onChange={(val) => onUpdateSettingsCategory('accessibility', { screenReaderOptimized: val })} label="Screen Reader Optimized" description="Stronger focus outlines and readable layout." />
+                    <div className="border-t border-lantern-border pt-5 mt-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-3">Accessibility</p>
+                        <div className="space-y-4">
+                            <ToggleSwitch enabled={accessibility.reduceMotion} onChange={(val) => onUpdateSettingsCategory('accessibility', { reduceMotion: val })} label="Reduce Motion" description="Turn off animations and transitions across the app." />
+                            <ToggleSwitch enabled={accessibility.highContrast} onChange={(val) => onUpdateSettingsCategory('accessibility', { highContrast: val })} label="High Contrast" description="Increase color contrast." />
+                            <ToggleSwitch enabled={accessibility.screenReaderOptimized} onChange={(val) => onUpdateSettingsCategory('accessibility', { screenReaderOptimized: val })} label="Screen Reader Optimized" description="Stronger focus outlines and readable layout." />
+                        </div>
+                    </div>
                 </div>
             );
             case 'privacy': return (
@@ -540,6 +555,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow search for invites" description="Let others find you by name or @username in people search and when adding group or deck members. Turn off to hide from search entirely." />
                     <ToggleSwitch enabled={privacy.showOnlineStatus} onChange={(val) => onUpdateSettingsCategory('privacy', { showOnlineStatus: val })} label="Show online status" description="Let others see when you are active." />
                     <ToggleSwitch enabled={privacy.showStudyActivity} onChange={(val) => onUpdateSettingsCategory('privacy', { showStudyActivity: val })} label="Show study activity" description="Share study streaks and activity." />
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-lantern-border bg-lantern-background-secondary p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-lantern-text">Blocked users</p>
+                        <p className="text-xs text-lantern-text-secondary mt-0.5">Review and unblock people you've blocked from direct messages.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBlockedOpen(true)}
+                        className="flex-shrink-0 min-h-[44px] rounded-lg border border-lantern-border bg-lantern-surface px-4 py-2 text-sm font-medium text-lantern-text hover:bg-lantern-background"
+                      >
+                        Manage
+                      </button>
+                    </div>
                     <div className="rounded-lg border border-lantern-border bg-lantern-background-secondary p-3 space-y-2">
                       <div>
                         <p className="text-sm font-medium text-lantern-text">Cookie preferences</p>
@@ -578,13 +606,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </p>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Country</label>
-                        <select
-                            value={marketplace.country_code || 'NG'}
-                            onChange={(e) => onUpdateSettingsCategory('marketplace', { country_code: e.target.value })}
-                            className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text"
-                        >
-                            <option value="NG">Nigeria</option>
-                        </select>
+                        <div className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background-secondary text-lantern-text-secondary flex items-center justify-between">
+                            <span>Nigeria</span>
+                            <span className="text-xs text-lantern-text-tertiary">More countries coming soon</span>
+                        </div>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Your campus</label>
@@ -828,6 +853,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     setAccountActionLoading(false);
                 }
             }}
+        />
+        <BlockedUsersModal
+            open={blockedOpen}
+            onClose={() => setBlockedOpen(false)}
+            userId={currentUser.id}
         />
         <AccountImportModal
             open={importOpen}

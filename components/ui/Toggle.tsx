@@ -43,7 +43,11 @@ export const Toggle: React.FC<ToggleProps> = ({
         />
       </button>
       {(label || description) && (
-        <div id={labelId} className="flex-1 min-w-0">
+        <div
+          id={labelId}
+          onClick={() => !disabled && onChange(!checked)}
+          className={`flex-1 min-w-0 ${disabled ? '' : 'cursor-pointer select-none'}`}
+        >
           {label && <p className="text-sm font-medium text-lantern-text">{label}</p>}
           {description && <p className="text-xs text-lantern-text-secondary mt-0.5">{description}</p>}
         </div>

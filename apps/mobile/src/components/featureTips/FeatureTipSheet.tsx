@@ -28,9 +28,7 @@ export function FeatureTipSheet({ tipId }: FeatureTipSheetProps) {
   const dismiss = useFeatureTipStore((s) => s.dismiss);
   const skipAll = useFeatureTipStore((s) => s.skipAll);
   const dontShowAgain = useFeatureTipStore((s) => s.dontShowAgain);
-  const reduceMotion =
-    useSettingsStore((s) => s.settings.accessibility.reduceMotion) ||
-    !useSettingsStore((s) => s.settings.appearance.showAnimations);
+  const reduceMotion = useSettingsStore((s) => s.settings.accessibility.reduceMotion);
 
   if (!tipId) return null;
   const copy = getTipCopy(tipId) || FEATURE_TIP_CATALOG[tipId];

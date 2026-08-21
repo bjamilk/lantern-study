@@ -109,7 +109,7 @@ export const FeatureTipsHost: React.FC<FeatureTipsHostProps> = ({
 
   const settings = userSettings ? normalizeUserSettings(userSettings) : null;
   const reduce =
-    reduceMotion || Boolean(settings?.accessibility?.reduceMotion) || !(settings?.appearance?.showAnimations ?? true);
+    reduceMotion || Boolean(settings?.accessibility?.reduceMotion);
 
   return (
     <>
