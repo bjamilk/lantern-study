@@ -92,6 +92,7 @@ function sanitizeStudy(partial: Partial<StudySettings>, base: StudySettings): St
     shuffleOptions: asBoolean(partial.shuffleOptions ?? base.shuffleOptions, base.shuffleOptions),
     autoPlayAudio: asBoolean(partial.autoPlayAudio ?? base.autoPlayAudio, base.autoPlayAudio),
     showCardProgress: asBoolean(partial.showCardProgress ?? base.showCardProgress, base.showCardProgress),
+    lockAnsweredQuestions: asBoolean(partial.lockAnsweredQuestions ?? base.lockAnsweredQuestions, base.lockAnsweredQuestions),
   };
 }
 

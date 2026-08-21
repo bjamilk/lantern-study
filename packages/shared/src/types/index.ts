@@ -464,6 +464,12 @@ export interface TestConfig {
   selectedTags?: string[];
   focusOnNew?: boolean;
   /**
+   * Exam-style lock: once a question is answered and the user moves on, it is
+   * locked and cannot be returned to. Skipped (unanswered) questions stay open.
+   * Only meaningful for test sessions (mode === 'test'), never study.
+   */
+  lockAnsweredQuestions?: boolean;
+  /**
    * Offline bundle this session was started from, when applicable.
    * "qbank-<listingId>" identifies a marketplace question bank, which is how a
    * completed session is attributed to that bank's leaderboard.
@@ -500,6 +506,12 @@ export interface TestSessionData {
   title?: string;
   updatedAt?: string;
   pausedAt?: string;
+  /**
+   * Ids of questions locked from further navigation, when config.lockAnsweredQuestions
+   * is on. A question is added on leaving it once answered. Persisted with the session
+   * so the lock survives pause/resume and reloads (can't be dodged by refreshing).
+   */
+  lockedQuestionIds?: string[];
 }
 
 /** Lean row for Saved sessions list (paused / in-progress drafts). */

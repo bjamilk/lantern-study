@@ -117,6 +117,38 @@ export const checkAnswerIsCorrect = (question: AnswerCheckQuestion, answer: User
     }
 };
 
+/**
+ * Whether a stored answer record counts as "answered" (has a real selection).
+ * Shared by web + mobile so the exam-lock rule and the question palette agree.
+ */
+export const isUserAnswerAnswered = (record: UserAnswerRecord | undefined | null): boolean => {
+    if (!record) return false;
+    return (
+        (record.selectedOptionIds?.length ?? 0) > 0 ||
+        (record.fillText?.trim() ?? '') !== '' ||
+        (record.matchingAnswers?.length ?? 0) > 0 ||
+        (record.diagramAnswers?.length ?? 0) > 0
+    );
+};
+
+/**
+ * Exam-lock transition: given the locked set and the question being left, return the
+ * next locked set. A question locks only when lock mode is on and it was answered.
+ * Pure and idempotent — safe to call on every navigation.
+ */
+export const lockedIdsAfterLeaving = (params: {
+    lockEnabled: boolean;
+    lockedIds: string[] | undefined;
+    leavingQuestionId: string | undefined;
+    leavingAnswer: UserAnswerRecord | undefined;
+}): string[] => {
+    const current = params.lockedIds ?? [];
+    if (!params.lockEnabled || !params.leavingQuestionId) return current;
+    if (current.includes(params.leavingQuestionId)) return current;
+    if (!isUserAnswerAnswered(params.leavingAnswer)) return current;
+    return [...current, params.leavingQuestionId];
+};
+
 /** 20% of group members required to verify a question. */
 export function getQuestionVerificationThreshold(memberCount: number): number {
     return Math.max(1, Math.ceil(memberCount * 0.2));

@@ -473,6 +473,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <ToggleSwitch enabled={study.shuffleQuestions} onChange={(val) => onUpdateSettingsCategory('study', { shuffleQuestions: val })} label="Shuffle Questions" description="Randomize question order in tests." />
                         <ToggleSwitch enabled={study.shuffleOptions} onChange={(val) => onUpdateSettingsCategory('study', { shuffleOptions: val })} label="Shuffle Options" description="Randomize answer choices." />
                         <ToggleSwitch enabled={study.showExplanationsImmediately} onChange={(val) => onUpdateSettingsCategory('study', { showExplanationsImmediately: val })} label="Show Explanations" description="Show explanations immediately after answering in study mode." />
+                        <ToggleSwitch enabled={study.lockAnsweredQuestions} onChange={(val) => onUpdateSettingsCategory('study', { lockAnsweredQuestions: val })} label="Lock answered questions" description="Default new tests to exam mode — you can't return to a question once you've answered it. Can be toggled per test." />
                     </div>
                  </div>
             );

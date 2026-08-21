@@ -29,6 +29,8 @@ interface TestConfigModalProps {
   onSoloPractice?: (config: Omit<TestConfig, 'questionIds' | 'groupId'>) => void;
   onDownloadForOffline: (config: Omit<TestConfig, 'questionIds' | 'groupId'>, useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => void;
   isDownloading?: boolean;
+  /** Default state of the "lock answered questions" toggle, from the user's Study setting. */
+  defaultLockAnswered?: boolean;
 }
 
 const TESTABLE_QUESTION_TYPES: QuestionType[] = [
@@ -55,10 +57,12 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     onSubmit,
     onSoloPractice,
     onDownloadForOffline,
-    isDownloading 
+    isDownloading,
+    defaultLockAnswered,
 }) => {
   const [numberOfQuestions, setNumberOfQuestions] = useState(0);
   const [selectedTimerSeconds, setSelectedTimerSeconds] = useState<number>(0);
+  const [lockAnswered, setLockAnswered] = useState<boolean>(!!defaultLockAnswered);
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<QuestionType[]>([]);
   const [selectedTagsInModal, setSelectedTagsInModal] = useState<string[]>([]);
   const [useSpacedRepetition, setUseSpacedRepetition] = useState(false);
@@ -189,8 +193,9 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
       setFocusOnNew(false);
       setSelectedSubgroupIDs([]);
       setPresetName('');
+      setLockAnswered(!!defaultLockAnswered);
     }
-  }, [isOpen]);
+  }, [isOpen, defaultLockAnswered]);
   
   useEffect(() => {
     setNumberOfQuestions(prevNumOfQs => {
@@ -295,6 +300,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTagsInModal,
     focusOnNew: focusOnNew,
     timerDuration: mode === 'test' ? selectedTimerSeconds : undefined,
+    lockAnsweredQuestions: mode === 'test' ? lockAnswered : undefined,
   });
 
   const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
@@ -756,8 +762,22 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 />
               </div>
             )}
+            {mode === 'test' && (
+              <label className="flex items-start gap-2 sm:col-span-2 mt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lockAnswered}
+                  onChange={e => setLockAnswered(e.target.checked)}
+                  className="h-4 w-4 mt-0.5 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary"
+                />
+                <span className="text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
+                  Lock answered questions
+                  <span className="block text-xs text-lantern-text-secondary">Once you answer a question and move on, you can't go back to it — like a real exam. Skipped questions stay open.</span>
+                </span>
+              </label>
+            )}
           </div>
-          
+
           {mode !== 'game' && (
             <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
                 <h3 className="text-sm font-medium text-lantern-text mb-2">Special Learning Modes</h3>
