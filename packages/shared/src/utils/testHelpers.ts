@@ -149,6 +149,24 @@ export const lockedIdsAfterLeaving = (params: {
     return [...current, params.leavingQuestionId];
 };
 
+/**
+ * Nearest index strictly before `fromIndex` whose question id is NOT locked.
+ * Exam-lock "Previous" uses this so it skips locked (answered) questions and can
+ * still reach earlier *skipped* ones. Returns -1 when there is no open question before.
+ */
+export const nearestPreviousUnlockedIndex = (
+    orderedQuestionIds: readonly string[],
+    lockedIds: readonly string[] | Set<string> | undefined,
+    fromIndex: number
+): number => {
+    const locked = lockedIds instanceof Set ? lockedIds : new Set(lockedIds ?? []);
+    for (let i = fromIndex - 1; i >= 0; i--) {
+        const id = orderedQuestionIds[i];
+        if (id != null && !locked.has(id)) return i;
+    }
+    return -1;
+};
+
 /** 20% of group members required to verify a question. */
 export function getQuestionVerificationThreshold(memberCount: number): number {
     return Math.max(1, Math.ceil(memberCount * 0.2));

@@ -25,6 +25,7 @@ import {
   normalizeTestQuestionForSession,
   toUserAnswerRecord,
   shuffleArray,
+  nearestPreviousUnlockedIndex,
 } from '@lantern/shared/utils';
 import { useSettingsStore } from './settingsStore';
 import { resolveAttemptTimeLimitMinutes } from '../utils/resolveAttemptTimeLimitMinutes';
@@ -1399,6 +1400,16 @@ export const useTestStore = create<TestState>((set, get) => ({
   previousQuestion: () => {
     const activeTest = get().activeTest;
     if (!activeTest) return;
+    if (activeTest.lockAnswered) {
+      // Skip locked questions to reach the nearest earlier open (skipped) one.
+      const target = nearestPreviousUnlockedIndex(
+        activeTest.questions.map((q) => q.id),
+        activeTest.lockedQuestionIds,
+        activeTest.currentQuestionIndex
+      );
+      if (target >= 0) get().goToQuestion(target);
+      return;
+    }
     if (activeTest.currentQuestionIndex > 0) {
       get().goToQuestion(activeTest.currentQuestionIndex - 1);
     }

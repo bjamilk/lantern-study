@@ -25,7 +25,7 @@ import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, Diagr
 import { useTheme, type ThemeColors } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { useStudySettings } from '../../stores/settingsStore';
-import { shuffleArray } from '@lantern/shared/utils';
+import { shuffleArray, nearestPreviousUnlockedIndex } from '@lantern/shared/utils';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 import { hapticSuccess } from '../../utils/haptics';
@@ -563,8 +563,12 @@ export default function TestTakingScreen() {
   const isStudyMode = activeTest?.mode === 'study';
   // Exam lock: once answered + advanced, a question can't be returned to.
   const lockMode = !isStudyMode && activeTest?.lockAnswered === true;
-  const isIndexLocked = (idx: number): boolean =>
-    lockMode && !!activeTest?.lockedQuestionIds?.has(activeTest.questions[idx]?.id ?? '');
+  // In lock mode, "Previous" jumps to the nearest earlier open (skipped) question.
+  const prevTargetIndex = !activeTest
+    ? -1
+    : lockMode
+      ? nearestPreviousUnlockedIndex(activeTest.questions.map((q) => q.id), activeTest.lockedQuestionIds, activeTest.currentQuestionIndex)
+      : activeTest.currentQuestionIndex - 1;
 
   useConfirmBeforeExit(!!activeTest && !isSubmitting, {
     title: isStudyMode ? 'Exit Study Mode' : 'Exit Test',
@@ -1085,7 +1089,7 @@ export default function TestTakingScreen() {
         ]}
       >
         {(() => {
-          const prevDisabled = activeTest.currentQuestionIndex === 0 || isIndexLocked(activeTest.currentQuestionIndex - 1);
+          const prevDisabled = prevTargetIndex < 0;
           return (
         <TouchableOpacity
           style={[
@@ -1096,8 +1100,8 @@ export default function TestTakingScreen() {
           disabled={prevDisabled}
         >
           <Ionicons
-            name={isIndexLocked(activeTest.currentQuestionIndex - 1) ? 'lock-closed' : 'chevron-back'}
-            size={isIndexLocked(activeTest.currentQuestionIndex - 1) ? 18 : 24}
+            name="chevron-back"
+            size={24}
             color={prevDisabled ? colors.textTertiary : colors.text}
           />
           <Text style={[
