@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-20  
 **Branch:** `main`  
-**HEAD:** `7eda3c7` (clean tree, pushed — matches `origin/main`)  
+**HEAD:** `5278b54` (clean tree, pushed — matches `origin/main`)  
 **Production:** https://lanternstudy.com · API https://lantern-study-api.onrender.com  
 **Supabase project:** `tiizkjhbrnaibaagmurl`
 
@@ -32,28 +32,29 @@ Deploy: Cloudflare Pages (web), Render (API + worker), Supabase (Postgres/Auth),
 
 ---
 
-## 2. Current deploy state (at HEAD `7eda3c7`)
+## 2. Current deploy state (at HEAD `5278b54`)
 
 | Target | State | Verify by |
 |--------|-------|-----------|
-| **API → Render** | `f5f1e9a` | `curl -s https://lantern-study-api.onrender.com/health` → commit + AI-key presence |
-| **Web → Cloudflare Pages** | bundle `index-DEBeG8J_.js` (**manual** deploy — Pages is NOT git-connected) | bundle hash on lanternstudy.com, **never** the build log |
-| **Mobile** | **1.0.26 PUBLISHED** — Android APK live as GitHub release `v1.0.26`; download link serves it | GitHub release + site download link |
-| **iOS** | simulator-only build; **no distributable** (needs Apple membership) | — |
+| **Web → Cloudflare Pages** | **LIVE, bundle `index-CW8Loyo2.js`** — the full **chat overhaul (#19) + auth fix (#20)** (**manual** deploy — Pages is NOT git-connected) | bundle hash on lanternstudy.com, **never** the build log |
+| **API → Render** | unchanged by #19/#20 (web/mobile/shared only) — auto-deploys from `main` | `curl -s https://lantern-study-api.onrender.com/health` → commit + AI-key presence |
+| **Mobile** | overhaul is on `main` + the iOS **dev** build, but **NOT in the released APK** (`v1.0.26` predates it) — needs a new build/release | GitHub release + on-device |
+| **iOS** | simulator dev build only; **no distributable** (needs Apple membership) | — |
 | **Supabase** | FK RESTRICT migration `20260821120000` **hand-applied** 2026-08-20 | — |
 
 **Test suites at handover, all green:** API **453**, shared **496**, web **51**, mobile **53**.
 Root `tsc` carries a large **pre-existing baseline** — diff the set, never chase zero.
 `apps/web` BUILD tsc (`noUncheckedIndexedAccess`) is **stricter** than root tsc — see Trap 1.
 
-### Active detail docs (this session and the one before)
+### Active detail docs (newest first)
 
-- **[docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md](docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md)** — Jobs / Goods / Library section audits (26 verified fixes each), 1.0.26 mobile publish, traps. *(HEAD)*
+- **[docs/HANDOVER-2026-08-20-chat-ux-overhaul.md](docs/HANDOVER-2026-08-20-chat-ux-overhaul.md)** — the whole chat redesign (declutter/responsive/correctness/mobile parity + Phase 6 marketplace) & the spurious sign-out fix; both **LIVE**. *(HEAD)*
+- [docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md](docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md) — Jobs / Goods / Library section audits, 1.0.26 mobile publish.
 - [docs/HANDOVER-2026-08-20-payments-live-ai-recovery-admin.md](docs/HANDOVER-2026-08-20-payments-live-ai-recovery-admin.md) — Paystack live in test mode, AI outage recovery, admin telemetry.
-- Prior: `docs/HANDOVER-2026-08-15-security-sessions-monitoring-ios.md`, `…-08-11-releases-credits-xp.md`.
+- Prior: `…-08-15-security-sessions-monitoring-ios.md`, `…-08-11-releases-credits-xp.md`.
 
-Section-audit detail is in memory: `lantern-study-jobs-audit`, `lantern-study-goods-audit`,
-`lantern-study-library-audit`. Deploy/build traps: `lantern-study-web-deploy-traps`,
+Chat-overhaul detail + the iOS-sim verify recipe are in memory:
+`lantern-study-chat-ux-overhaul`. Deploy/build traps: `lantern-study-web-deploy-traps`,
 `lantern-study-eas-slim-lockfile`, `lantern-study-local-android-build`.
 
 ---
@@ -61,17 +62,23 @@ Section-audit detail is in memory: `lantern-study-jobs-audit`, `lantern-study-go
 ## 3. Recent commits on `main` (newest first)
 
 ```
+5278b54 Chat UX overhaul: declutter, responsive, correctness, mobile parity + Phase 6 marketplace (#19)
+9fe496c Recover spurious sign-outs from refresh-token 400s (#20)
+3967462 Refresh root HANDOVER pointer to HEAD 7eda3c7
 7eda3c7 Handover: Jobs/Goods/Library audits shipped + 1.0.26 mobile published
-2b059b6 Add one-command Android release script so the download link can't drift
-984f165 Add 1.0.26 release notes (publishable)
-f5f1e9a Mobile 1.0.26: capture the marketplace/jobs/study release + feature registry
-a5862f3 Fix strict-tsc (noUncheckedIndexedAccess) violations blocking the web build
 ```
 
 ---
 
 ## 4. Still outstanding
 
+- **Chat overhaul → mobile**: it's live on web but the released Android APK
+  (`v1.0.26`) predates it — build + release a new version to get it onto phones.
+  Also **verify the mobile order lifecycle on-device** (Pay-now/Mark-ready/Confirm) —
+  only the web money flow is live-verified. See the chat-overhaul dated doc.
+- **`DELETE` marketplace listing 500s** when the listing has historical
+  inquiry/offer records + a cancelled order (should archive gracefully) — its own
+  task was in progress.
 - **Two pre-gate junk postings on the live jobs board** — Ezeobi's
   "Internship — [team / function]" (test account, needs admin removal) and
   Benjamin's "Tutor needed for [PHM 101]". The publish gate blocks new ones; these predate it.
@@ -98,6 +105,9 @@ a5862f3 Fix strict-tsc (noUncheckedIndexedAccess) violations blocking the web bu
    commit finished slices early by explicit path; put any shared contract text in **both** agents' prompts.
 3. **Measure before "fixing".** Several reported bugs were false alarms confirmed by measurement,
    not code-reading (dev-only StrictMode double-fetch, offer-decline state, in-panel sort). Reproduce first.
+4. **`X.id` in a `useCallback`/effect DEPENDENCY ARRAY crashes when X is null.** A
+   `currentUser.id` dep crashed the whole app for logged-out users (deps eval every render).
+   Use `currentUser?.id`. Grep new deps arrays for bare `.id` on nullables. → chat-overhaul doc.
 
 ---
 
@@ -138,4 +148,4 @@ raise — see memory `lantern-study-local-android-build`.
 
 ---
 
-*Updated 2026-08-20 to track HEAD `7eda3c7`. This root file is the pointer; put session detail in a new `docs/HANDOVER-<date>-<topic>.md` and link it in §2.*
+*Updated 2026-08-20 to track HEAD `5278b54` (chat overhaul #19 + auth fix #20, both live). This root file is the pointer; put session detail in a new `docs/HANDOVER-<date>-<topic>.md` and link it in §2.*
