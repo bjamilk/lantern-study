@@ -1,9 +1,9 @@
 # Lantern Study — Session Handover
 
-**Date:** 2026-08-20  
+**Date:** 2026-08-21  
 **Branch:** `main`  
-**HEAD:** `5278b54` (clean tree, pushed — matches `origin/main`)  
-**Production:** https://lanternstudy.com · API https://lantern-study-api.onrender.com  
+**HEAD:** `943360b` (clean tree, pushed — matches `origin/main`)  
+**Production:** https://lanternstudy.com (bundle `index-C8HaQ8aH.js`) · API https://lantern-study-api.onrender.com (`/health` = `943360b`)  
 **Supabase project:** `tiizkjhbrnaibaagmurl`
 
 This is the canonical "resume here" pointer. Point a new agent at `@HANDOVER.md` plus
@@ -32,23 +32,25 @@ Deploy: Cloudflare Pages (web), Render (API + worker), Supabase (Postgres/Auth),
 
 ---
 
-## 2. Current deploy state (at HEAD `5278b54`)
+## 2. Current deploy state (at HEAD `943360b`)
 
 | Target | State | Verify by |
 |--------|-------|-----------|
-| **Web → Cloudflare Pages** | **LIVE, bundle `index-CW8Loyo2.js`** — the full **chat overhaul (#19) + auth fix (#20)** (**manual** deploy — Pages is NOT git-connected) | bundle hash on lanternstudy.com, **never** the build log |
-| **API → Render** | unchanged by #19/#20 (web/mobile/shared only) — auto-deploys from `main` | `curl -s https://lantern-study-api.onrender.com/health` → commit + AI-key presence |
-| **Mobile** | overhaul is on `main` + the iOS **dev** build, but **NOT in the released APK** (`v1.0.26` predates it) — needs a new build/release | GitHub release + on-device |
+| **Web → Cloudflare Pages** | **LIVE, bundle `index-C8HaQ8aH.js`** — the full **budget overhaul** (rename, correctness, ring, recurring, unified add-sheet) (**manual** deploy — Pages is NOT git-connected) | bundle hash on lanternstudy.com, **never** the build log |
+| **API → Render** | **LIVE `943360b`** (recurring endpoints, wallet/budget-save fixes) — auto-deploys from `main` | `curl -s https://lantern-study-api.onrender.com/health` → commit |
+| **Mobile** | budget overhaul + parity + recurring on `main`, **NOT in a released build** — a dev APK exists (`apps/mobile/build-mobile-parity-dev-1.0.15.apk`). Prod release = `scripts/publish-android-release.sh` | GitHub release + on-device |
 | **iOS** | simulator dev build only; **no distributable** (needs Apple membership) | — |
-| **Supabase** | FK RESTRICT migration `20260821120000` **hand-applied** 2026-08-20. `20260821130000` (allow `'archived'` status) **NOT yet applied** — DELETE-listing archive still 500s until it is | run it in the SQL editor; verify constraint |
+| **Supabase** | `20260821120000` (FK RESTRICT), `20260821130000` (listing `archived`), `20260821140000` (recurring) **all hand-applied & confirmed** | `SELECT to_regclass('public.budget_recurring_transactions')` |
 
-**Test suites at handover, all green:** API **453**, shared **496**, web **51**, mobile **53**.
-Root `tsc` carries a large **pre-existing baseline** — diff the set, never chase zero.
-`apps/web` BUILD tsc (`noUncheckedIndexedAccess`) is **stricter** than root tsc — see Trap 1.
+Root `tsc` carries a large **pre-existing baseline** (~3893, mostly shared `*.test.ts`
+without jest globals + `App.tsx` drift) — NOT a gate. Use **`npm run build:web`**
+and per-workspace `tsc` (apps/mobile, api-server). `apps/web` build tsc
+(`noUncheckedIndexedAccess`) is stricter than root — see Trap 1.
 
 ### Active detail docs (newest first)
 
-- **[docs/HANDOVER-2026-08-21-marketplace-listing-archive-fix.md](docs/HANDOVER-2026-08-21-marketplace-listing-archive-fix.md)** — DELETE-listing 500 fix: widen `marketplace_listings_status_check` to permit `'archived'` + regression guard. **Uncommitted; needs migration `20260821130000` hand-applied.** *(latest work)*
+- **[docs/HANDOVER-2026-08-21-budget-overhaul.md](docs/HANDOVER-2026-08-21-budget-overhaul.md)** — the whole **Budget** overhaul (rename, correctness backlog, declutter, fast-capture, ring, **recurring transactions**, mobile parity) + the marketplace archive fix. **All web LIVE; both migrations applied.** *(HEAD — latest work)*
+- [docs/HANDOVER-2026-08-21-marketplace-listing-archive-fix.md](docs/HANDOVER-2026-08-21-marketplace-listing-archive-fix.md) — the DELETE-listing 500 fix in detail (widen `marketplace_listings_status_check` incl. admin statuses). Shipped in `8b1dd3e`; migration applied.
 - [docs/HANDOVER-2026-08-20-chat-ux-overhaul.md](docs/HANDOVER-2026-08-20-chat-ux-overhaul.md) — the whole chat redesign (declutter/responsive/correctness/mobile parity + Phase 6 marketplace) & the spurious sign-out fix; both **LIVE**.
 - [docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md](docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md) — Jobs / Goods / Library section audits, 1.0.26 mobile publish.
 - [docs/HANDOVER-2026-08-20-payments-live-ai-recovery-admin.md](docs/HANDOVER-2026-08-20-payments-live-ai-recovery-admin.md) — Paystack live in test mode, AI outage recovery, admin telemetry.
@@ -63,24 +65,25 @@ Chat-overhaul detail + the iOS-sim verify recipe are in memory:
 ## 3. Recent commits on `main` (newest first)
 
 ```
-5278b54 Chat UX overhaul: declutter, responsive, correctness, mobile parity + Phase 6 marketplace (#19)
-9fe496c Recover spurious sign-outs from refresh-token 400s (#20)
-3967462 Refresh root HANDOVER pointer to HEAD 7eda3c7
-7eda3c7 Handover: Jobs/Goods/Library audits shipped + 1.0.26 mobile published
+943360b Budget polish: unified add-transaction sheet, mobile coin-award toast, contribute idempotency key
+3728b74 Mobile: recurring transactions UI (parity with web)
+0c17a11 Mobile budget parity: expense splits, savings goals, over-budget banner
+b605c9a Fix recurring auto-post 500: partial index can't arbitrate ON CONFLICT
+3c81dfd Budget: rename Campus Pocket->Budget, correctness/UX overhaul, recurring txns
+8b1dd3e Marketplace: allow 'archived' listing status so terminal-order deletes don't 500
+5278b54 Chat UX overhaul (#19) + 9fe496c auth fix (#20)  [prior session, live]
 ```
 
 ---
 
 ## 4. Still outstanding
 
-- **Chat overhaul → mobile**: it's live on web but the released Android APK
-  (`v1.0.26`) predates it — build + release a new version to get it onto phones.
-  Also **verify the mobile order lifecycle on-device** (Pay-now/Mark-ready/Confirm) —
-  only the web money flow is live-verified. See the chat-overhaul dated doc.
-- **`DELETE` marketplace listing 500s** — **FIXED (code-complete, uncommitted)**: the
-  archive path wrote `status = 'archived'` but the check constraint didn't allow it.
-  Migration `20260821130000` widens it; **still 500s in prod until that migration is
-  hand-applied**. See the 2026-08-21 dated doc in §2.
+- **Mobile production release**: the budget overhaul + chat overhaul are on `main`
+  but the released Android APK (`v1.0.26`) predates them — run
+  `scripts/publish-android-release.sh` (re-prebuilds at the prod variant / 1.0.26)
+  to get everything onto phones. A dev APK (`build-mobile-parity-dev-1.0.15.apk`)
+  proves the code but isn't a store build. Also **verify the mobile order lifecycle
+  on-device** (Pay-now/Mark-ready/Confirm) — only the web money flow is live-verified.
 - **Two pre-gate junk postings on the live jobs board** — Ezeobi's
   "Internship — [team / function]" (test account, needs admin removal) and
   Benjamin's "Tutor needed for [PHM 101]". The publish gate blocks new ones; these predate it.
@@ -150,4 +153,4 @@ raise — see memory `lantern-study-local-android-build`.
 
 ---
 
-*Updated 2026-08-20 to track HEAD `5278b54` (chat overhaul #19 + auth fix #20, both live). This root file is the pointer; put session detail in a new `docs/HANDOVER-<date>-<topic>.md` and link it in §2.*
+*Updated 2026-08-21 to track HEAD `943360b` (budget overhaul: rename, correctness, recurring, mobile parity + marketplace archive fix — web live, both migrations applied). This root file is the pointer; put session detail in a new `docs/HANDOVER-<date>-<topic>.md` and link it in §2.*
