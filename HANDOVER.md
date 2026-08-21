@@ -40,7 +40,7 @@ Deploy: Cloudflare Pages (web), Render (API + worker), Supabase (Postgres/Auth),
 | **API → Render** | unchanged by #19/#20 (web/mobile/shared only) — auto-deploys from `main` | `curl -s https://lantern-study-api.onrender.com/health` → commit + AI-key presence |
 | **Mobile** | overhaul is on `main` + the iOS **dev** build, but **NOT in the released APK** (`v1.0.26` predates it) — needs a new build/release | GitHub release + on-device |
 | **iOS** | simulator dev build only; **no distributable** (needs Apple membership) | — |
-| **Supabase** | FK RESTRICT migration `20260821120000` **hand-applied** 2026-08-20 | — |
+| **Supabase** | FK RESTRICT migration `20260821120000` **hand-applied** 2026-08-20. `20260821130000` (allow `'archived'` status) **NOT yet applied** — DELETE-listing archive still 500s until it is | run it in the SQL editor; verify constraint |
 
 **Test suites at handover, all green:** API **453**, shared **496**, web **51**, mobile **53**.
 Root `tsc` carries a large **pre-existing baseline** — diff the set, never chase zero.
@@ -48,7 +48,8 @@ Root `tsc` carries a large **pre-existing baseline** — diff the set, never cha
 
 ### Active detail docs (newest first)
 
-- **[docs/HANDOVER-2026-08-20-chat-ux-overhaul.md](docs/HANDOVER-2026-08-20-chat-ux-overhaul.md)** — the whole chat redesign (declutter/responsive/correctness/mobile parity + Phase 6 marketplace) & the spurious sign-out fix; both **LIVE**. *(HEAD)*
+- **[docs/HANDOVER-2026-08-21-marketplace-listing-archive-fix.md](docs/HANDOVER-2026-08-21-marketplace-listing-archive-fix.md)** — DELETE-listing 500 fix: widen `marketplace_listings_status_check` to permit `'archived'` + regression guard. **Uncommitted; needs migration `20260821130000` hand-applied.** *(latest work)*
+- [docs/HANDOVER-2026-08-20-chat-ux-overhaul.md](docs/HANDOVER-2026-08-20-chat-ux-overhaul.md) — the whole chat redesign (declutter/responsive/correctness/mobile parity + Phase 6 marketplace) & the spurious sign-out fix; both **LIVE**.
 - [docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md](docs/HANDOVER-2026-08-20-marketplace-jobs-library-audits.md) — Jobs / Goods / Library section audits, 1.0.26 mobile publish.
 - [docs/HANDOVER-2026-08-20-payments-live-ai-recovery-admin.md](docs/HANDOVER-2026-08-20-payments-live-ai-recovery-admin.md) — Paystack live in test mode, AI outage recovery, admin telemetry.
 - Prior: `…-08-15-security-sessions-monitoring-ios.md`, `…-08-11-releases-credits-xp.md`.
@@ -76,9 +77,10 @@ Chat-overhaul detail + the iOS-sim verify recipe are in memory:
   (`v1.0.26`) predates it — build + release a new version to get it onto phones.
   Also **verify the mobile order lifecycle on-device** (Pay-now/Mark-ready/Confirm) —
   only the web money flow is live-verified. See the chat-overhaul dated doc.
-- **`DELETE` marketplace listing 500s** when the listing has historical
-  inquiry/offer records + a cancelled order (should archive gracefully) — its own
-  task was in progress.
+- **`DELETE` marketplace listing 500s** — **FIXED (code-complete, uncommitted)**: the
+  archive path wrote `status = 'archived'` but the check constraint didn't allow it.
+  Migration `20260821130000` widens it; **still 500s in prod until that migration is
+  hand-applied**. See the 2026-08-21 dated doc in §2.
 - **Two pre-gate junk postings on the live jobs board** — Ezeobi's
   "Internship — [team / function]" (test account, needs admin removal) and
   Benjamin's "Tutor needed for [PHM 101]". The publish gate blocks new ones; these predate it.
