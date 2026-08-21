@@ -166,17 +166,19 @@ const TrueFalseComponent = ({
       style={[
         s(colors).trueFalseButton,
         {
-          backgroundColor: selectedAnswer === 'True' ? colors.success : colors.successBackground,
-          borderColor: colors.success,
+          // Neutral until the user actually picks it — an unanswered/skipped question
+          // must not look pre-selected (green ✓ read as "answer chosen for me").
+          backgroundColor: selectedAnswer === 'True' ? colors.success : colors.inputBackground,
+          borderColor: selectedAnswer === 'True' ? colors.success : colors.border,
         },
         selectedAnswer === 'True' && s(colors).trueFalseSelected,
       ]}
       onPress={() => onAnswer('True')}
     >
-      <Ionicons 
-        name="checkmark-circle" 
-        size={32} 
-        color={selectedAnswer === 'True' ? colors.textInverse : colors.success} 
+      <Ionicons
+        name="checkmark-circle"
+        size={32}
+        color={selectedAnswer === 'True' ? colors.textInverse : colors.textSecondary}
       />
       <Text style={[
         s(colors).trueFalseText,
@@ -185,22 +187,22 @@ const TrueFalseComponent = ({
         True
       </Text>
     </TouchableOpacity>
-    
+
     <TouchableOpacity
       style={[
         s(colors).trueFalseButton,
         {
-          backgroundColor: selectedAnswer === 'False' ? colors.error : colors.errorBackground,
-          borderColor: colors.error,
+          backgroundColor: selectedAnswer === 'False' ? colors.error : colors.inputBackground,
+          borderColor: selectedAnswer === 'False' ? colors.error : colors.border,
         },
         selectedAnswer === 'False' && s(colors).trueFalseSelected,
       ]}
       onPress={() => onAnswer('False')}
     >
-      <Ionicons 
-        name="close-circle" 
-        size={32} 
-        color={selectedAnswer === 'False' ? colors.textInverse : colors.error} 
+      <Ionicons
+        name="close-circle"
+        size={32}
+        color={selectedAnswer === 'False' ? colors.textInverse : colors.textSecondary}
       />
       <Text style={[
         s(colors).trueFalseText,
