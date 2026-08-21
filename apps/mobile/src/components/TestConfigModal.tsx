@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '../stores/testStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme, type ThemeColors } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { mobileQuestionTypesToWeb, webQuestionTypesToMobile } from '../utils/questionHelpers';
@@ -55,6 +56,8 @@ export interface TestConfigOptions {
   focusOnNew: boolean;
   selectedSubgroupIds: string[];
   visibilityMode?: QuestionVisibilityMode;
+  /** Exam lock: can't return to a question once answered (test mode only). */
+  lockAnswered?: boolean;
 }
 
 export interface TestConfigAvailableFilter {
@@ -114,6 +117,7 @@ export default function TestConfigModal({
   const [presetName, setPresetName] = useState('');
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [lockAnswered, setLockAnswered] = useState(false);
   const { colors } = useTheme();
   // The stylesheet used to hardcode slate-900/800 values, so this modal stayed
   // dark in light mode. Rebuild it whenever the theme changes.
@@ -166,6 +170,7 @@ export default function TestConfigModal({
       setPresetName('');
       setSelectedPresetId('');
       setShowAdvanced(false);
+      setLockAnswered(isStudyMode ? false : useSettingsStore.getState().settings.study.lockAnsweredQuestions);
     }
   }, [visible, maxQuestions, isStudyMode]);
 
@@ -327,6 +332,7 @@ export default function TestConfigModal({
         focusOnNew,
         selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
         visibilityMode: questionVisibilityMode,
+        lockAnswered: isStudyMode ? false : lockAnswered,
       },
       effectiveSessionMode
     );
@@ -339,6 +345,7 @@ export default function TestConfigModal({
     useSpacedRepetition,
     focusOnNew,
     selectedSubgroupIds,
+    lockAnswered,
     mode,
     questionVisibilityMode,
     forcesStudyFromVisibility,
@@ -598,6 +605,29 @@ export default function TestConfigModal({
                     </TouchableOpacity>
                   ))}
                 </View>
+              </View>
+            )}
+
+            {/* Lock answered questions - Test Mode only */}
+            {!isStudyMode && (
+              <View style={[styles.toggleSection, { backgroundColor: colors.inputBackground }]}>
+                <View style={styles.toggleInfo}>
+                  <View style={styles.toggleIcon}>
+                    <Ionicons name="lock-closed" size={20} color="#f59e0b" />
+                  </View>
+                  <View style={styles.toggleContent}>
+                    <Text style={[styles.toggleTitle, { color: colors.text }]}>Lock answered questions</Text>
+                    <Text style={[styles.toggleDescription, { color: colors.textSecondary }]}>
+                      Once you answer and move on, you can't go back — like a real exam. Skipped questions stay open.
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={lockAnswered}
+                  onValueChange={setLockAnswered}
+                  trackColor={{ false: colors.border, true: '#f59e0b40' }}
+                  thumbColor={lockAnswered ? '#f59e0b' : colors.textSecondary}
+                />
               </View>
             )}
 
