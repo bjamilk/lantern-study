@@ -7,7 +7,7 @@ import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { useTestStore } from '../stores/testStore';
 import { useBudgetStore } from '../stores/budgetStore';
-import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createShuffledQuestionSet, shuffleArray } from '../utils/helpers';
+import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createShuffledQuestionSet, shuffleQuestionOptionsOnly, shuffleArray } from '../utils/helpers';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createTestSession, createTestResult, upsertUserQuestionStat,
@@ -163,8 +163,10 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
 
         const studySettings = normalizeUserSettings(currentUser?.settings).study;
         const testQuestions: TestQuestion[] = studySettings.shuffleQuestions
-            ? createShuffledQuestionSet(selectedQuestions)
-            : selectedQuestions.map((q, i) => ({ ...q, questionNumber: i + 1 })) as TestQuestion[];
+            ? createShuffledQuestionSet(selectedQuestions, { shuffleOptions: studySettings.shuffleOptions })
+            : studySettings.shuffleOptions
+                ? shuffleQuestionOptionsOnly(selectedQuestions)
+                : selectedQuestions.map((q, i) => ({ ...q, questionNumber: i + 1 })) as TestQuestion[];
     
         const sessionConfig: TestConfig = {
             ...config,

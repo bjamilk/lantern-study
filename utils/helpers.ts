@@ -7,6 +7,7 @@ export {
     checkAnswerIsCorrect,
     isQuestionTestable,
     createShuffledQuestionSet,
+    shuffleQuestionOptionsOnly,
     computeDuelQuestionPoints,
 } from '@lantern/shared/utils';
 

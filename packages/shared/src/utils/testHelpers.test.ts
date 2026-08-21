@@ -14,6 +14,8 @@ import {
   normalizeTestResultSession,
   checkAnswerIsCorrect,
   resolveQuestionStatusAfterVote,
+  createShuffledQuestionSet,
+  shuffleQuestionOptionsOnly,
 } from './testHelpers';
 
 function baseQuestion(overrides: Partial<Message> = {}): Message {
@@ -172,5 +174,39 @@ describe('normalizeTestResultSession', () => {
     });
     const normalizedQ = normalizeTestQuestionForSession(question, 0);
     expect(checkAnswerIsCorrect(normalizedQ, answer)).toBe(true);
+  });
+});
+
+describe('createShuffledQuestionSet / shuffleQuestionOptionsOnly (Shuffle options setting)', () => {
+  const fourOptionQuestion = (id: string): Message =>
+    baseQuestion({
+      id,
+      options: [
+        { id: 'a', text: 'A' },
+        { id: 'b', text: 'B' },
+        { id: 'c', text: 'C' },
+        { id: 'd', text: 'D' },
+      ],
+      correctAnswerIds: ['c'],
+    });
+
+  it('keeps option order when shuffleOptions is false', () => {
+    const set = createShuffledQuestionSet([fourOptionQuestion('q1')], { shuffleOptions: false });
+    expect(set[0]!.options!.map((o) => o.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('preserves the option set and the correct answer regardless of shuffling', () => {
+    const [q] = createShuffledQuestionSet([fourOptionQuestion('q1')], { shuffleOptions: true });
+    expect([...q!.options!.map((o) => o.id)].sort()).toEqual(['a', 'b', 'c', 'd']);
+    expect(q!.correctAnswerIds).toEqual(['c']);
+  });
+
+  it('shuffleQuestionOptionsOnly keeps question order but re-numbers sequentially', () => {
+    const input = [fourOptionQuestion('q1'), fourOptionQuestion('q2'), fourOptionQuestion('q3')];
+    const out = shuffleQuestionOptionsOnly(input);
+    expect(out.map((q) => q.id)).toEqual(['q1', 'q2', 'q3']);
+    expect(out.map((q) => q.questionNumber)).toEqual([1, 2, 3]);
+    // Options are permuted in place; the set of ids is unchanged.
+    expect([...out[0]!.options!.map((o) => o.id)].sort()).toEqual(['a', 'b', 'c', 'd']);
   });
 });

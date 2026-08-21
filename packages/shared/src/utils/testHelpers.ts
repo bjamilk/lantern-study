@@ -188,19 +188,46 @@ export function messagePassesStudyQuestionPool(
     return isQuestionTestable(msg) || isUnverifiedQuestion(msg.questionStatus);
 }
 
-export const createShuffledQuestionSet = (questions: Message[]): TestQuestion[] => {
-    return shuffleArray(questions).map((q, i) => {
-        let questionWithOptions = { ...q };
+/** True for question types whose answer options can be safely reordered. */
+const questionOptionsAreShuffleable = (q: Message): boolean =>
+    (q.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE ||
+        q.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE ||
+        q.questionType === QuestionType.TRUE_FALSE) &&
+    !!q.options;
 
-        if (
-            (q.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE ||
-             q.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE ||
-             q.questionType === QuestionType.TRUE_FALSE) &&
-            q.options
-        ) {
-            questionWithOptions.options = shuffleArray(q.options);
+/**
+ * Shuffle question order (and, unless `shuffleOptions` is false, each MCQ's options).
+ * Options carry their own ids, so reordering never changes which answer is correct.
+ */
+export const createShuffledQuestionSet = (
+    questions: Message[],
+    opts: { shuffleOptions?: boolean } = {}
+): TestQuestion[] => {
+    const { shuffleOptions = true } = opts;
+    return shuffleArray(questions).map((q, i) => {
+        const questionWithOptions = { ...q };
+
+        if (shuffleOptions && questionOptionsAreShuffleable(q)) {
+            questionWithOptions.options = shuffleArray(q.options!);
         }
 
+        return {
+            ...questionWithOptions,
+            questionNumber: i + 1,
+        } as TestQuestion;
+    });
+};
+
+/**
+ * Keep question order but shuffle each MCQ's answer options.
+ * Used when the "Shuffle options" study setting is on but "Shuffle questions" is off.
+ */
+export const shuffleQuestionOptionsOnly = (questions: Message[]): TestQuestion[] => {
+    return questions.map((q, i) => {
+        const questionWithOptions = { ...q };
+        if (questionOptionsAreShuffleable(q)) {
+            questionWithOptions.options = shuffleArray(q.options!);
+        }
         return {
             ...questionWithOptions,
             questionNumber: i + 1,

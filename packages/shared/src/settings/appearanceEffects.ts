@@ -22,8 +22,9 @@ export function getFontScale(fontSize: AppearanceSettings['fontSize']): number {
 }
 
 export function getAppearanceEffectFlags(settings: UserSettings): AppearanceEffectFlags {
-  const reduceMotion =
-    settings.accessibility.reduceMotion || !settings.appearance.showAnimations;
+  // Motion is governed solely by the Reduce Motion accessibility setting.
+  // (The legacy standalone "Show Animations" toggle was removed as a duplicate.)
+  const reduceMotion = settings.accessibility.reduceMotion;
 
   return {
     reduceMotion,

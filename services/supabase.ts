@@ -4833,6 +4833,19 @@ export const unblockUser = async (userId: string, blockedUserId: string) => {
   return (await response.json()).data;
 };
 
+export const listBlockedUsers = async (userId: string): Promise<{ blockedUserIds: string[] }> => {
+  const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/blocks`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load blocked users');
+  }
+  const result = await response.json();
+  return { blockedUserIds: (result?.data?.blockedUserIds ?? []) as string[] };
+};
+
 export const acceptDmMessageRequest = async (threadId: string) => {
   const response = await fetch(
     `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/accept`,

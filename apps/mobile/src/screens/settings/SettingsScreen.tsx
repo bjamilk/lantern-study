@@ -22,21 +22,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Constants from 'expo-constants';
 import { useAuthStore } from '../../stores/authStore';
-import { 
-  useSettingsStore, 
-  DEFAULT_SETTINGS,
-  NotificationSettings,
-  StudySettings,
-  PrivacySettings,
-  AccessibilitySettings,
-  SyncSettings,
-} from '../../stores/settingsStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
-import { supabase } from '../../services/supabase';
 import { exportUserData, fetchMarketplaceCampuses, fetchUserProfile } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
 import { marketplaceComplianceBanner } from '@lantern/shared';
+import { SETTINGS_FAQ } from '@lantern/shared/settings';
 import { usePaystackEnabled } from '../../hooks/usePaystackEnabled';
 import { filterCampusesByQuery, isOtherCityCampus } from '@lantern/shared/marketplace';
 import { AccountLifecycleModals, AccountPausedBannerMobile } from '../../components/AccountLifecycleModals';
@@ -51,7 +44,9 @@ import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner'
 import { shareTextFile, SharingUnavailableError } from '../../utils/shareFile';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 
-const ACCENT_PRESETS = ['#6569EE', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
+// First entry must match DEFAULT_USER_SETTINGS.appearance.accentColor so a fresh
+// account shows a selected swatch (and matches the web default primary).
+const ACCENT_PRESETS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
 const THEME_OPTIONS = [
   { value: 'system' as const, label: 'System', icon: 'phone-portrait-outline' as const },
   { value: 'light' as const, label: 'Light', icon: 'sunny-outline' as const },
@@ -84,6 +79,8 @@ const SettingItem = ({
     onPress={onPress}
     disabled={!onPress && !rightElement}
     activeOpacity={onPress ? 0.7 : 1}
+    accessibilityRole={onPress ? 'button' : undefined}
+    accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
   >
     <View style={[styles.settingIcon, { backgroundColor: iconColor + '20' }]}>
       <Ionicons name={icon as any} size={22} color={iconColor} />
@@ -106,35 +103,11 @@ const formatTime = (timeString: string) => {
   return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`;
 };
 
-const FAQ_ITEMS = [
-  {
-    q: 'How do flashcard reviews work?',
-    a: 'Open a deck and tap Review. Rate each card Again, Hard, Good, or Easy — Lantern Study schedules the next review using spaced repetition.',
-  },
-  {
-    q: 'How do group tests and study sessions work?',
-    a: 'In a group chat, tap Test or Study to pick question types, tags, and how many questions to include. Shared questions from the group become your session.',
-  },
-  {
-    q: 'What is the difference between JSON and CSV export?',
-    a: 'JSON is a full deck backup including images, card types, and SRS progress. CSV is front/back text only for spreadsheets.',
-  },
-  {
-    q: 'How do duel challenges work?',
-    a: 'Challenge a group member from the group menu or Challenges inbox. When they accept, both players answer the same questions and results appear when finished.',
-  },
-  {
-    q: 'Can I use Lantern Study offline?',
-    a: 'Download test bundles and flashcard decks from Settings > Offline to study without a connection. Test results and reviews sync automatically when you reconnect. Chat, notes, and marketplace need an internet connection.',
-  },
-];
-
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
   const { user, signOut, profileName } = useAuthStore();
-  const { 
-    settings, 
-    isLoading, 
+  const {
+    settings,
     isSyncing,
     hasUnsyncedChanges,
     loadSettings, 
@@ -488,51 +461,20 @@ export default function SettingsScreen() {
         {/* Notifications Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Notifications</Text>
+          <Text style={[styles.subGroupTitle, { color: colors.textTertiary }]}>Push & in-app</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
               icon="notifications-outline"
               iconColor="#8b5cf6"
               title="Push Notifications"
-              subtitle="Enable all push notifications"
+              subtitle="Device push alerts, synced across devices"
               rightElement={
                 <Switch
                   value={settings.notifications.pushEnabled}
                   onValueChange={(val) => updateSingleSetting('notifications', 'pushEnabled', val)}
                   trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
                   thumbColor={settings.notifications.pushEnabled ? colors.switchThumbOn : colors.switchThumbOff}
-                />
-              }
-              showChevron={false}
-            />
-            <SettingItem
-              colors={colors}
-              icon="notifications-outline"
-              iconColor="#6366f1"
-              title="Email Notifications"
-              subtitle="Receive email updates"
-              rightElement={
-                <Switch
-                  value={settings.notifications.emailEnabled}
-                  onValueChange={(val) => updateSingleSetting('notifications', 'emailEnabled', val)}
-                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
-                  thumbColor={settings.notifications.emailEnabled ? colors.switchThumbOn : colors.switchThumbOff}
-                />
-              }
-              showChevron={false}
-            />
-            <SettingItem
-              colors={colors}
-              icon="mail-outline"
-              iconColor="#8b5cf6"
-              title="Weekly Digest"
-              subtitle="Summary of your study week"
-              rightElement={
-                <Switch
-                  value={settings.notifications.weeklyDigest}
-                  onValueChange={(val) => updateSingleSetting('notifications', 'weeklyDigest', val)}
-                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
-                  thumbColor={settings.notifications.weeklyDigest ? colors.switchThumbOn : colors.switchThumbOff}
                 />
               }
               showChevron={false}
@@ -552,6 +494,18 @@ export default function SettingsScreen() {
                 />
               }
               showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="alarm-outline"
+              iconColor="#ef4444"
+              title="Reminder Time"
+              subtitle={
+                settings.notifications.dailyReminder
+                  ? formatTime(settings.notifications.reminderTime)
+                  : 'Turn on Daily Reminders to set a time'
+              }
+              onPress={settings.notifications.dailyReminder ? () => setShowTimePicker(true) : undefined}
             />
             <SettingItem
               colors={colors}
@@ -650,6 +604,25 @@ export default function SettingsScreen() {
               showChevron={false}
             />
           </View>
+          <Text style={[styles.subGroupTitle, { color: colors.textTertiary }]}>Email</Text>
+          <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
+            <SettingItem
+              colors={colors}
+              icon="mail-outline"
+              iconColor="#6366f1"
+              title="Email Notifications"
+              subtitle="Job alerts and important account updates"
+              rightElement={
+                <Switch
+                  value={settings.notifications.emailEnabled}
+                  onValueChange={(val) => updateSingleSetting('notifications', 'emailEnabled', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.notifications.emailEnabled ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+          </View>
         </View>
 
         {/* Study Section */}
@@ -667,14 +640,6 @@ export default function SettingsScreen() {
                 setTempDailyTestGoal(settings.study.dailyTestGoal);
                 setShowDailyGoalModal(true);
               }}
-            />
-            <SettingItem
-              colors={colors}
-              icon="alarm-outline"
-              iconColor="#ef4444"
-              title="Reminder Time"
-              subtitle={formatTime(settings.notifications.reminderTime)}
-              onPress={() => setShowTimePicker(true)}
             />
             <SettingItem
               colors={colors}
@@ -862,38 +827,6 @@ export default function SettingsScreen() {
             </View>
             <SettingItem
               colors={colors}
-              icon="contract-outline"
-              iconColor="#0ea5e9"
-              title="Compact Mode"
-              subtitle="Tighter spacing across the app"
-              rightElement={
-                <Switch
-                  value={settings.appearance.compactMode}
-                  onValueChange={(val) => updateSingleSetting('appearance', 'compactMode', val)}
-                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
-                  thumbColor={settings.appearance.compactMode ? colors.switchThumbOn : colors.switchThumbOff}
-                />
-              }
-              showChevron={false}
-            />
-            <SettingItem
-              colors={colors}
-              icon="sparkles-outline"
-              iconColor="#fbbf24"
-              title="Show Animations"
-              subtitle="Enable UI animations"
-              rightElement={
-                <Switch
-                  value={settings.appearance.showAnimations}
-                  onValueChange={(val) => updateSingleSetting('appearance', 'showAnimations', val)}
-                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
-                  thumbColor={settings.appearance.showAnimations ? colors.switchThumbOn : colors.switchThumbOff}
-                />
-              }
-              showChevron={false}
-            />
-            <SettingItem
-              colors={colors}
               icon="text-outline"
               iconColor="#6366f1"
               title="Font Size"
@@ -928,7 +861,7 @@ export default function SettingsScreen() {
               icon="flag-outline"
               iconColor="#10b981"
               title="Country"
-              subtitle="Nigeria"
+              subtitle="Nigeria — more countries coming soon"
               showChevron={false}
             />
             <SettingItem
@@ -1029,6 +962,14 @@ export default function SettingsScreen() {
                 />
               }
               showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="cookie-outline"
+              iconColor="#a16207"
+              title="Manage cookie preferences"
+              subtitle="Optional analytics and cookie categories"
+              onPress={() => openCookiePreferenceCenter()}
             />
           </View>
         </View>
@@ -1140,26 +1081,6 @@ export default function SettingsScreen() {
               }
               showChevron={false}
             />
-            <SettingItem
-              colors={colors}
-              icon="accessibility-outline"
-              iconColor="#6366f1"
-              title="Screen Reader Optimized"
-              subtitle="Stronger focus and readable layout"
-              rightElement={
-                <Switch
-                  value={settings.accessibility.screenReaderOptimized}
-                  onValueChange={(val) => updateSingleSetting('accessibility', 'screenReaderOptimized', val)}
-                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
-                  thumbColor={
-                    settings.accessibility.screenReaderOptimized
-                      ? colors.switchThumbOn
-                      : colors.switchThumbOff
-                  }
-                />
-              }
-              showChevron={false}
-            />
           </View>
         </View>
 
@@ -1180,6 +1101,17 @@ export default function SettingsScreen() {
               iconColor="#10b981"
               title="Contact Support"
               onPress={() => setShowContactModal(true)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="bulb-outline"
+              iconColor="#8b5cf6"
+              title="Replay feature tips"
+              subtitle="Show the getting-started tips again"
+              onPress={() => {
+                useFeatureTipStore.getState().replay();
+                Alert.alert('Feature tips reset', 'Explore the app to see navigation tips again.');
+              }}
             />
             <SettingItem
               colors={colors}
@@ -1210,14 +1142,6 @@ export default function SettingsScreen() {
               iconColor="#8b5cf6"
               title="Privacy Policy"
               onPress={() => navigation.navigate('LegalDocument' as never, { document: 'privacy' } as never)}
-            />
-            <SettingItem
-              colors={colors}
-              icon="cookie-outline"
-              iconColor="#a16207"
-              title="Manage cookie preferences"
-              subtitle="Optional analytics and cookie categories"
-              onPress={() => openCookiePreferenceCenter()}
             />
             <SettingItem
               colors={colors}
@@ -1305,7 +1229,7 @@ export default function SettingsScreen() {
         </View>
 
         <Text style={[styles.versionText, { color: colors.textTertiary }]}>
-          Lantern Study v{otaDiagnostics.runtimeVersion || '1.0.2'}
+          Lantern Study v{Constants.expoConfig?.version || otaDiagnostics.runtimeVersion || '1.0.26'}
         </Text>
 
         <View style={{ height: 100 }} />
@@ -1326,7 +1250,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 420 }}>
-              {FAQ_ITEMS.map(item => (
+              {SETTINGS_FAQ.map(item => (
                 <View key={item.q} style={{ marginBottom: 16 }}>
                   <Text style={[styles.goalLabel, modalTheme.label]}>{item.q}</Text>
                   <Text style={[styles.settingSubtitle, modalTheme.optionDescription, { marginTop: 4 }]}>
@@ -1335,15 +1259,6 @@ export default function SettingsScreen() {
                 </View>
               ))}
             </ScrollView>
-            <TouchableOpacity
-              style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary + '18', borderWidth: 1, borderColor: colors.primary + '40' }]}
-              onPress={() => {
-                useFeatureTipStore.getState().replay();
-                Alert.alert('Feature tips reset', 'Explore the app to see navigation tips again.');
-              }}
-            >
-              <Text style={[styles.saveButtonText, { color: colors.primary }]}>Replay feature tips</Text>
-            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary }]}
               onPress={() => {
@@ -1854,6 +1769,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginLeft: 4,
   },
+  subGroupTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 14,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
   sectionContent: {
     backgroundColor: '#1e293b',
     borderRadius: 16,
@@ -2020,9 +1945,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   accentSwatch: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 2,
   },
   complianceBanner: {
