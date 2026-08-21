@@ -199,6 +199,7 @@ import {
   WalletScreen,
 
   ExpenseSplitScreen,
+  RecurringScreen,
 
   SetCategoryBudgetScreen,
 
@@ -436,6 +437,8 @@ function BudgetNavigator() {
       <BudgetStack.Screen name="Wallet" component={WalletScreen} />
 
       <BudgetStack.Screen name="ExpenseSplit" component={ExpenseSplitScreen} />
+
+      <BudgetStack.Screen name="Recurring" component={RecurringScreen} />
 
       <BudgetStack.Screen name="SetCategoryBudget" component={SetCategoryBudgetScreen} />
 

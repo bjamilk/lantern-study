@@ -84,6 +84,10 @@ export default function BudgetScreen() {
     fetchTransactions(userId);
     fetchBudget(userId);
     loadBudgetExtras(userId);
+    // Materialise any due recurring rules (idempotent), then refresh if it posted.
+    void api.runRecurring()
+      .then(res => { if (res?.posted > 0) fetchTransactions(userId); })
+      .catch(() => { /* table missing / offline — harmless, retried next open */ });
   }, [userId, fetchTransactions, fetchBudget, loadBudgetExtras]);
 
   const onRefresh = useCallback(async () => {
@@ -586,6 +590,7 @@ export default function BudgetScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>More tools</Text>
           {[
             { label: 'Savings goals', icon: 'flag-outline', route: 'SavingsGoals' },
+            { label: 'Recurring', icon: 'repeat-outline', route: 'Recurring' },
             { label: 'Study wallet', icon: 'wallet-outline', route: 'Wallet' },
             { label: 'Expense splits', icon: 'people-outline', route: 'ExpenseSplit' },
             { label: 'Category budgets', icon: 'grid-outline', route: 'SetCategoryBudget' },

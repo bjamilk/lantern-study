@@ -123,6 +123,7 @@ export type BudgetStackParamList = {
   SavingsGoals: undefined;
   Wallet: undefined;
   ExpenseSplit: undefined;
+  Recurring: undefined;
   SetCategoryBudget: undefined;
   FinancialToolkit: undefined;
   AddInvestment: undefined;

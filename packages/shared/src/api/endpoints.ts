@@ -2943,6 +2943,35 @@ export function createApiEndpoints(client: ApiClient) {
         method: "DELETE",
       }),
 
+    // Recurring budget rules (allowance, hostel, data). See routes/budget.ts.
+    listRecurring: () =>
+      apiRequest<{ rules: any[] }>("/budget/recurring"),
+
+    createRecurring: (rule: {
+      type: "income" | "expense";
+      amount: number;
+      category?: string | null;
+      description?: string | null;
+      frequency: "weekly" | "monthly";
+      dayOfMonth?: number | null;
+      nextDate: string;
+    }) =>
+      apiRequest<{ rule: any }>("/budget/recurring", {
+        method: "POST",
+        body: JSON.stringify(rule),
+      }),
+
+    deleteRecurring: (id: string) =>
+      apiRequest<Record<string, unknown>>(`/budget/recurring/${id}`, {
+        method: "DELETE",
+      }),
+
+    runRecurring: () =>
+      apiRequest<{ posted: number }>("/budget/recurring/run", {
+        method: "POST",
+        body: "{}",
+      }),
+
     contributeToSavingsGoal: (
       goalId: string,
       amount: number,
