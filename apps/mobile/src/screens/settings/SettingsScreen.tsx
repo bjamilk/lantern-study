@@ -719,6 +719,22 @@ export default function SettingsScreen() {
               }
               showChevron={false}
             />
+            <SettingItem
+              colors={colors}
+              icon="lock-closed-outline"
+              iconColor="#f59e0b"
+              title="Lock answered questions"
+              subtitle="Default tests to exam mode — no going back once answered"
+              rightElement={
+                <Switch
+                  value={settings.study.lockAnsweredQuestions}
+                  onValueChange={(val) => updateSingleSetting('study', 'lockAnsweredQuestions', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.study.lockAnsweredQuestions ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
           </View>
         </View>
 

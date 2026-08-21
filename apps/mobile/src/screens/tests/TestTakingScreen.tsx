@@ -561,6 +561,10 @@ export default function TestTakingScreen() {
 
   // Get mode from active test
   const isStudyMode = activeTest?.mode === 'study';
+  // Exam lock: once answered + advanced, a question can't be returned to.
+  const lockMode = !isStudyMode && activeTest?.lockAnswered === true;
+  const isIndexLocked = (idx: number): boolean =>
+    lockMode && !!activeTest?.lockedQuestionIds?.has(activeTest.questions[idx]?.id ?? '');
 
   useConfirmBeforeExit(!!activeTest && !isSubmitting, {
     title: isStudyMode ? 'Exit Study Mode' : 'Exit Test',
@@ -969,6 +973,14 @@ export default function TestTakingScreen() {
         <Text style={[s(colors).progressText, { color: colors.textSecondary }]}>
           {activeTest.currentQuestionIndex + 1} / {activeTest.questions.length}
         </Text>
+        {lockMode && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+            <Ionicons name="lock-closed" size={12} color={colors.warning} />
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.warning }}>
+              Locked — no going back once answered
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Question */}
@@ -1072,27 +1084,32 @@ export default function TestTakingScreen() {
           isStudyMode && s(colors).navigationStudy,
         ]}
       >
+        {(() => {
+          const prevDisabled = activeTest.currentQuestionIndex === 0 || isIndexLocked(activeTest.currentQuestionIndex - 1);
+          return (
         <TouchableOpacity
           style={[
             s(colors).navButton,
-            activeTest.currentQuestionIndex === 0 && s(colors).navButtonDisabled
+            prevDisabled && s(colors).navButtonDisabled
           ]}
           onPress={previousQuestion}
-          disabled={activeTest.currentQuestionIndex === 0}
+          disabled={prevDisabled}
         >
-          <Ionicons 
-            name="chevron-back" 
-            size={24} 
-            color={activeTest.currentQuestionIndex === 0 ? colors.textTertiary : colors.text} 
+          <Ionicons
+            name={isIndexLocked(activeTest.currentQuestionIndex - 1) ? 'lock-closed' : 'chevron-back'}
+            size={isIndexLocked(activeTest.currentQuestionIndex - 1) ? 18 : 24}
+            color={prevDisabled ? colors.textTertiary : colors.text}
           />
           <Text style={[
             s(colors).navButtonText,
             { color: colors.text },
-            activeTest.currentQuestionIndex === 0 && { color: colors.textTertiary },
+            prevDisabled && { color: colors.textTertiary },
           ]}>
             Previous
           </Text>
         </TouchableOpacity>
+          );
+        })()}
 
         <View style={s(colors).questionDots}>
           {activeTest.questions.slice(
@@ -1104,11 +1121,13 @@ export default function TestTakingScreen() {
             const isCurrent = actualIndex === activeTest.currentQuestionIndex;
             const isRevealed = activeTest.revealedAnswers.has(q.id);
             const isFlagged = activeTest.flaggedQuestions.has(q.id);
-            
+            const isLocked = lockMode && !isCurrent && !!activeTest.lockedQuestionIds?.has(q.id);
+
             return (
               <TouchableOpacity
                 key={q.id}
-                onPress={() => goToQuestion(actualIndex)}
+                onPress={() => { if (!isLocked) goToQuestion(actualIndex); }}
+                disabled={isLocked}
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               >
                 <View
@@ -1119,6 +1138,7 @@ export default function TestTakingScreen() {
                     isCurrent && { backgroundColor: colors.primary, width: 12 },
                     isStudyMode && isRevealed && { backgroundColor: colors.info },
                     isFlagged && { backgroundColor: colors.warning },
+                    isLocked && { backgroundColor: colors.textTertiary, opacity: 0.6 },
                   ]}
                 />
               </TouchableOpacity>
