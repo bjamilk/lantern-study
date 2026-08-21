@@ -17,6 +17,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as api from '../services/api';
+import { useToastStore } from './toastStore';
 import { syncService } from '../services/syncService';
 import { fetchBudgetExtras, saveBudgetExtras } from '../services/budgetExtrasSync';
 import {
@@ -843,6 +844,10 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
             : g
         );
         set({ savingsGoals: updated, walletBalance: result.walletBalance });
+        // Coin-award feedback on goal completion (parity with web).
+        if (result.awarded > 0) {
+          useToastStore.getState().showToast(`🎉 Goal complete! +${result.awarded} coins`, 'success');
+        }
         const goal = updated.find(g => g.id === goalId);
         if (goal) {
           await cacheBudgetExtrasLocally(goal.userId, {
@@ -1014,6 +1019,10 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
           const award = await api.claimUnderBudgetAward();
           if (typeof award.walletBalance === 'number') {
             set({ walletBalance: award.walletBalance });
+          }
+          // One-time award (idempotent server-side) — surface the coins once.
+          if (award.awarded > 0) {
+            useToastStore.getState().showToast(`+${award.awarded} coins for staying under last month's budget!`, 'success');
           }
         } catch {
           // non-critical

@@ -28,6 +28,10 @@ interface UIState {
   // Sidebar
   isSidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
+
+  /** Which side the unified Add-transaction sheet opens on. */
+  addTransactionType: 'expense' | 'income';
+  setAddTransactionType: (t: 'expense' | 'income') => void;
   toggleSidebar: () => void;
 
   /** When false, the Chats list is collapsed and unread rolls up to the Chats header. */
@@ -50,6 +54,7 @@ interface UIState {
     duplicateQuestion: boolean;
     addExpense: boolean;
     addIncome: boolean;
+    addTransaction: boolean;
     addInvestment: boolean;
     setBudget: boolean;
     setMonthlyPlan: boolean;
@@ -174,6 +179,7 @@ const initialModals = {
   duplicateQuestion: false,
   addExpense: false,
   addIncome: false,
+  addTransaction: false,
   addInvestment: false,
   setBudget: false,
   setMonthlyPlan: false,
@@ -233,6 +239,8 @@ export const useUIStore = create<UIState>()(
       // Sidebar
       isSidebarExpanded: true,
       setSidebarExpanded: (expanded) => set({ isSidebarExpanded: expanded }),
+      addTransactionType: 'expense',
+      setAddTransactionType: (t) => set({ addTransactionType: t }),
       toggleSidebar: () => set((state) => ({ isSidebarExpanded: !state.isSidebarExpanded })),
 
       isChatsSectionExpanded: true,

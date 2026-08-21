@@ -49,8 +49,7 @@ import ChallengesInboxModal from './components/ChallengesInboxModal';
 import CreateGroupScreen from './components/CreateGroupScreen';
 import InviteJoinScreen from './components/InviteJoinScreen';
 import NoteShareAcceptScreen from './components/NoteShareAcceptScreen';
-import AddExpenseModal from './components/AddExpenseModal';
-import AddIncomeModal from './components/AddIncomeModal';
+import AddTransactionModal from './components/AddTransactionModal';
 import SetBudgetModal from './components/SetBudgetModal';
 import SetMonthlyPlanModal from './components/SetMonthlyPlanModal';
 import RecurringModal from './components/RecurringModal';
@@ -193,6 +192,7 @@ export const App: React.FC = () => {
         isSidebarExpanded, toggleSidebar,
         theme,
         modals, openModal, closeModal,
+        addTransactionType, setAddTransactionType,
         activeTestConfigMode, setActiveTestConfigMode,
         subgroupParentId,
         selectedDeck, setSelectedDeck,
@@ -1394,7 +1394,7 @@ export const App: React.FC = () => {
                 return <BudgetTrackerScreen currentUser={currentUser}
                     transactions={transactions.filter(t => t.userId === currentUser.id)}
                     budget={budget?.userId === currentUser.id ? budget : null}
-                    onOpenAddExpense={() => openModal('addExpense')} onOpenAddIncome={() => openModal('addIncome')}
+                    onOpenAddExpense={() => { setAddTransactionType('expense'); openModal('addTransaction'); }} onOpenAddIncome={() => { setAddTransactionType('income'); openModal('addTransaction'); }}
                     onOpenSetBudget={() => openModal('setBudget')} onDeleteTransaction={handleDeleteTransaction}
                     onToggleSidebar={toggleSidebar}
                     onOpenSetMonthlyPlan={() => openModal('setMonthlyPlan')}
@@ -1865,8 +1865,7 @@ export const App: React.FC = () => {
                 currentUserId={currentUser.id}
                 onPlayChallenge={(id) => { void handleStartChallengePlay(id); }}
             />
-            <AddExpenseModal isOpen={modals.addExpense} onClose={() => closeModal('addExpense')} onSubmit={handleAddTransaction} />
-            <AddIncomeModal isOpen={modals.addIncome} onClose={() => closeModal('addIncome')} onSubmit={handleAddTransaction} />
+            <AddTransactionModal isOpen={modals.addTransaction} initialType={addTransactionType} onClose={() => closeModal('addTransaction')} onSubmit={handleAddTransaction} />
             <SetBudgetModal isOpen={modals.setBudget} onClose={() => closeModal('setBudget')} onSubmit={handleSetBudget} currentBudget={budget} />
             <SetMonthlyPlanModal isOpen={modals.setMonthlyPlan} onClose={() => closeModal('setMonthlyPlan')} currentBudget={budget} onSave={(categoryBudgets) => { if (budget) { handleSetBudget({ ...budget, categoryBudgets }); } }} />
             <RecurringModal isOpen={modals.recurring} onClose={() => closeModal('recurring')} onChanged={() => void materializeRecurring()} />

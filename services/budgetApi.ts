@@ -1,4 +1,4 @@
-import { getApiBaseUrl } from '@lantern/shared';
+import { getApiBaseUrl, createIdempotencyKey } from '@lantern/shared';
 import { getAuthHeaders } from './supabase';
 import type { SavingsGoal, Transaction } from '../types';
 
@@ -55,6 +55,9 @@ export async function contributeToSavingsGoalApi(
   return budgetRequest(`/goals/${goalId}/contribute`, {
     method: 'POST',
     body: JSON.stringify({ amount }),
+    // Idempotency-Key lets the server dedupe a retried request (matches the
+    // shared mobile client), so a network retry can't double-post a contribution.
+    headers: { 'Idempotency-Key': createIdempotencyKey(`budget-contribute-${goalId}`) },
   });
 }
 
