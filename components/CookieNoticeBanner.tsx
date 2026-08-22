@@ -15,6 +15,7 @@ import {
   type CookiePreferences,
 } from '@lantern/shared';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { useAuthStore } from '../stores/authStore';
 import { notifyProductAnalyticsConsentChange } from '../services/productAnalytics';
 
 type DraftPrefs = Pick<CookiePreferences, 'functional' | 'analytics' | 'advertising'>;
@@ -61,7 +62,11 @@ export function openCookiePreferenceCenter() {
 }
 
 export function CookieNoticeBanner() {
-  const [bannerVisible, setBannerVisible] = useState(false);
+    // The 4rem lift exists to clear the signed-in bottom tab bar. Signed-out
+  // pages (landing/auth) have no tab bar, so the lifted banner hovered 64px
+  // up and covered the lower form controls on small screens.
+  const hasBottomTabBar = useAuthStore((st) => !!st.currentUser);
+const [bannerVisible, setBannerVisible] = useState(false);
   const [centerOpen, setCenterOpen] = useState(false);
   const [hasChoice, setHasChoice] = useState(false);
   const [expanded, setExpanded] = useState<CookieCategoryId | null>('necessary');
@@ -133,7 +138,11 @@ export function CookieNoticeBanner() {
         <div
           role="region"
           aria-label="Cookie notice"
-          className="fixed inset-x-0 z-[80] border-t border-lantern-border bg-lantern-surface/95 dark:bg-lantern-background/95 backdrop-blur px-3 py-2.5 sm:px-4 sm:py-3 shadow-lg bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:bottom-0 max-h-[min(38vh,16rem)] overflow-y-auto"
+          className={`fixed inset-x-0 z-[80] border-t border-lantern-border bg-lantern-surface/95 dark:bg-lantern-background/95 backdrop-blur px-3 py-2.5 sm:px-4 sm:py-3 shadow-lg md:bottom-0 max-h-[min(38vh,16rem)] overflow-y-auto ${
+            hasBottomTabBar
+              ? 'bottom-[calc(4rem+env(safe-area-inset-bottom,0px))]'
+              : 'bottom-[env(safe-area-inset-bottom,0px)]'
+          }`}
         >
           <div className="max-w-4xl mx-auto flex flex-col gap-2 sm:gap-3 text-sm text-lantern-text">
             <p className="min-w-0 leading-snug text-xs sm:text-sm">

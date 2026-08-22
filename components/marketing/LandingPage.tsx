@@ -96,7 +96,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
         Notes, flashcards, and tests in one place — import your materials, generate study tools with AI, and learn with friends.
       </p>
       <div className="relative mt-9 flex flex-col sm:flex-row gap-3 justify-center">
-        <Button size="lg" onClick={onContinue}>Continue on the website</Button>
+        <Button size="lg" onClick={onContinue}>Get started free</Button>
         <Button size="lg" variant="secondary" onClick={onSignIn}>Sign in</Button>
         <a
           href={ANDROID_APK_URL}
@@ -106,7 +106,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
         </a>
       </div>
       <p className="relative mt-3 text-xs text-lantern-text-tertiary">
-        Android APK, direct download — no store account needed. iOS coming via TestFlight.
+        Android APK (~81 MB), direct download — no store account needed. iOS coming via TestFlight.
       </p>
     </section>
 

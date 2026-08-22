@@ -215,7 +215,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [countryCode, setCountryCode] = useState('+1');
+  // Nigeria is the core audience — don't make every student scroll for +234.
+  const [countryCode, setCountryCode] = useState('+234');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -239,7 +240,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
   const formatAuthError = (err: unknown, context: 'signup' | 'resend' | 'reset' | 'login' = 'login'): string => {
     if (isAuthRateLimitError(err)) {
-      return getAuthRateLimitMessage(context === 'login' ? 'signup' : context);
+      // Each context gets its own copy — a login 429 used to show signup
+      // email-quota text (with internal admin instructions) to a student
+      // who'd merely retried a wrong password.
+      return getAuthRateLimitMessage(context);
     }
     let message = 'An error occurred.';
     if (err instanceof Error) message = err.message;
@@ -258,6 +262,16 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   }, [resendCooldown]);
 
   const startResendCooldown = () => setResendCooldown(RESEND_COOLDOWN_SECONDS);
+
+  // Clear per-view transient state whenever the view changes — including via
+  // the browser Back button, which bypasses every click handler. Without
+  // this, a signup error or the reset-sent banner persisted onto other views.
+  useEffect(() => {
+    setError('');
+    setVerifyMessage('');
+    setResetEmailSent(false);
+    setShowPassword(false);
+  }, [authView]);
 
   const finishAuthSession = async (authUser: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) => {
     const session = (await supabase.auth.getSession()).data.session;
@@ -346,6 +360,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     }
     
     setUsernameError('');
+    // The verdict belongs to the PREVIOUS username until this check lands —
+    // keeping it produced a stale green check (or a wrong "taken" block).
+    setUsernameAvailable(null);
     setCheckingUsername(true);
     
     const timeoutId = setTimeout(async () => {
@@ -358,6 +375,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         }
       } catch (err) {
         console.error('Username check failed:', err);
+        // Unknown ≠ the previous username's verdict.
+        setUsernameAvailable(null);
       } finally {
         setCheckingUsername(false);
       }
@@ -375,7 +394,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: provider,
         options: {
-          redirectTo: window.location.origin,
+          // Return to /login with the original query so ?next= deep links
+          // (group invites, note shares) survive the OAuth round-trip.
+          redirectTo: `${window.location.origin}/login${window.location.search}`,
           queryParams: provider === 'google' ? {
             access_type: 'offline',
             prompt: 'consent',
@@ -622,6 +643,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           setError('Please enter a valid email address.');
           return;
         }
+        if (resendCooldown > 0) {
+          // The secondary Resend button already respects this cooldown; the
+          // main button used to fire straight into the server email limit.
+          setError('A reset email was just sent. Wait a moment before requesting another.');
+          return;
+        }
         try {
           await sendPasswordResetEmail(email);
           setResetEmailSent(true);
@@ -631,10 +658,21 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           setError(formatAuthError(err, 'reset'));
         }
       } else if (isLoginView) {
+        // Validate client-side first: the server's bare "missing email or
+        // phone" is internal copy (and this form has no phone field).
+        if (!email.trim() || !password) {
+          setError('Enter your email and password.');
+          return;
+        }
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
           if (isEmailNotConfirmedError(error)) {
             goToVerifyEmail(email);
+            return;
+          }
+          // Deliberately generic — never confirms whether the account exists.
+          if (/invalid login credentials/i.test(error.message)) {
+            setError('Incorrect email or password.');
             return;
           }
           setError(formatAuthError(error, 'login'));
@@ -677,17 +715,31 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           password,
           options: {
             data: signupMetadata,
+            // The confirmation link should come back to THIS deployment, not
+            // the dashboard Site URL (a preview signup's link landed on prod).
+            emailRedirectTo: `${window.location.origin}/login${window.location.search}`,
             ...(signupTurnstileToken ? { captchaToken: signupTurnstileToken } : {}),
           },
         });
         if (error) {
-          if (error.message.includes('already registered') || error.status === 422) {
+          // Only the explicit message means "already registered" — a bare 422
+          // also covers weak-password/invalid-domain, and telling those users
+          // their email is taken sent them to a login that can't work.
+          if (/already registered|user already exists/i.test(error.message)) {
             setError('This email is already registered. Please log in instead.');
           } else if (isAuthRateLimitError(error)) {
             setError(formatAuthError(error, 'signup'));
           } else {
-            setError(error.message);
+            setError(formatAuthError(error, 'signup'));
           }
+          return;
+        }
+        // Enumeration protection makes signUp return a FAKE success for an
+        // existing confirmed email (user with no identities, no session, and
+        // no email sent) — routing that to verify-email stranded the user
+        // waiting for a code that never comes.
+        if (data.user && !data.session && (data.user.identities?.length ?? 0) === 0) {
+          setError('This email is already registered. Please log in instead.');
           return;
         }
         if (data.user) {
@@ -755,6 +807,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         setAuthView('login');
       }
     } catch (err) {
+      // Don't leave the green 'Signing you in…' banner above a failure.
+      setVerifyMessage('');
       setError(err instanceof Error ? err.message : 'Verification failed.');
     } finally {
       setVerifyLoading(false);
@@ -791,40 +845,32 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     }
   };
 
+  // The typed email survives every view switch (a user who fails a password
+  // and taps "Forgot your password?" should not retype it); passwords and
+  // profile fields clear. Stale errors/banners are handled by the authView
+  // effect below, which also covers browser Back/Forward.
   const toggleView = () => {
     setAuthView(isLoginView ? 'signup' : 'login');
-    setError('');
     setFirstName('');
     setLastName('');
     setUsername('');
     setUsernameError('');
     setUsernameAvailable(null);
-    setEmail('');
     setPhoneNumber('');
-    setCountryCode('+1');
+    setCountryCode('+234');
     setPassword('');
     setConfirmPassword('');
-    setResetEmailSent(false);
     setOtpCode('');
-    setVerifyMessage('');
   };
 
   const showForgotPassword = () => {
     setAuthView('forgotPassword');
-    setError('');
-    setEmail('');
-    setResetEmailSent(false);
     setOtpCode('');
-    setVerifyMessage('');
   };
 
   const backToLogin = () => {
     setAuthView('login');
-    setError('');
-    setEmail('');
-    setResetEmailSent(false);
     setOtpCode('');
-    setVerifyMessage('');
   };
 
   return (
@@ -865,7 +911,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                 </h1>
                 <p className="mt-2 text-sm text-lantern-text-secondary">
                     {isVerifyEmailView
-                      ? 'Enter the 6-digit code sent to your email. You can also confirm via the link in the email.'
+                      ? 'Enter the 6-digit code from your email. If your code is old or never arrived, tap Resend below. You can also confirm via the link in the email. Not seeing it? Check your spam or promotions folder.'
                       : isForgotPasswordView
                         ? 'Enter your email to receive a reset link.'
                         : isLoginView
@@ -1023,13 +1069,13 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                             >
                                                 {countryCodes.map((country) => (
                                                     <option key={country.code} value={country.code}>
-                                                        {country.code}
+                                                        {country.name ? `${country.name} (${country.code})` : country.code}
                                                     </option>
                                                 ))}
                                             </select>
                                             <div className="relative flex-1 min-w-0">
                                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><PhoneIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                                <input id="phone" name="phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full min-w-0 pl-10 pr-3 py-2.5 border-l-0 border border-lantern-border rounded-r-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Phone Number"/>
+                                                <input id="phone" name="phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full min-w-0 pl-10 pr-3 py-2.5 border-l-0 border border-lantern-border rounded-r-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Phone number (optional)"/>
                                             </div>
                                         </div>
                                     </div>
@@ -1048,9 +1094,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 <label htmlFor="password" className="sr-only">Password</label>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-10 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Password"/>
-                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none"><span className="sr-only">Toggle password visibility</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
+                                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete={isLoginView ? 'current-password' : 'new-password'} required value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-10 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Password"/>
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-pressed={showPassword} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
                                 </div>
+                                {!isLoginView && (
+                                    <p className="mt-1 text-xs text-lantern-text-tertiary">At least 6 characters.</p>
+                                )}
                             </div>
 
                             {!isLoginView && (
@@ -1059,7 +1108,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
                                         <input id="confirmPassword" name="confirmPassword" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Confirm Password"/>
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none"><span className="sr-only">Toggle password visibility</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
+                                        <button type="button" onClick={() => setShowPassword(!showPassword)} aria-pressed={showPassword} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
                                     </div>
                                 </div>
                             )}
@@ -1086,7 +1135,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     {resetEmailSent && (
                         <div className="flex items-center text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 p-3 rounded-lg">
                             <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0"/>
-                            Password reset email sent! Check your inbox.
+                            If an account exists for this email, a reset link is on its way. Check your inbox and spam folder.
                         </div>
                     )}
 
@@ -1232,10 +1281,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 )}
                             </button>
                         </div>
-                        
-                        <p className="mt-4 text-xs text-center text-lantern-text-secondary">
-                            Google and Apple sign-in require OAuth configuration in Supabase Dashboard
-                        </p>
                     </>
                 )}
 

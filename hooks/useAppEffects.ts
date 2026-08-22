@@ -466,15 +466,23 @@ export function useAppEffects({
                         profileErr.message?.includes('404') ||
                         profileErr.message?.includes('status: 404')
                     ) {
+                        const meta = (authUser.user_metadata || {}) as Record<string, unknown>;
                         const userName =
-                            authUser.user_metadata?.name ||
+                            (meta.name as string) ||
                             authUser.email?.split('@')[0] ||
                             'User';
                         try {
+                            // Same fields finishAuthSession writes: verifying
+                            // via the EMAIL LINK boots here instead, and used
+                            // to drop the username/name/phone the user chose
+                            // at signup (then re-prompted for the username).
                             const newProfile = await createUserProfile({
                                 id: session.user.id,
                                 name: userName,
-                                phone: undefined,
+                                username: typeof meta.username === 'string' ? meta.username : undefined,
+                                first_name: typeof meta.first_name === 'string' ? meta.first_name : undefined,
+                                last_name: typeof meta.last_name === 'string' ? meta.last_name : undefined,
+                                phone: typeof meta.phone === 'string' ? meta.phone : undefined,
                                 points: 0,
                                 stats: {},
                                 settings: {},
