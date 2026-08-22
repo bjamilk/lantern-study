@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LockClosedIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-import { updateAuthPassword } from '../services/supabase';
+import { updateAuthPassword, revokeOtherSessions } from '../services/supabase';
 import { LanternIcon } from './ui/LanternIcon';
 
 interface ResetPasswordScreenProps {
@@ -31,6 +31,12 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ onComplete })
     setLoading(true);
     try {
       await updateAuthPassword(password);
+      // A reset is the flow people reach when they suspect compromise —
+      // matching the in-app password change, kick every OTHER device's
+      // session so the old password's sessions die with it.
+      await revokeOtherSessions().catch(() => {
+        /* best-effort: the password change itself succeeded */
+      });
       setSuccess(true);
       window.history.replaceState({}, '', '/');
       setTimeout(() => onComplete(), 1500);
@@ -72,7 +78,9 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ onComplete })
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none"
+                aria-pressed={showPassword}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"
               >
                 {showPassword ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
               </button>

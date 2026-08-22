@@ -51,12 +51,19 @@ export function isAuthRateLimitError(error: unknown): boolean {
 }
 
 /** User-facing message for Supabase Auth 429 / email quota errors. */
-export function getAuthRateLimitMessage(context: 'signup' | 'resend' | 'reset' = 'signup'): string {
+export function getAuthRateLimitMessage(
+  context: 'signup' | 'resend' | 'reset' | 'login' = 'signup'
+): string {
+  if (context === 'login') {
+    // A login 429 is credential throttling, not an email quota.
+    return 'Too many sign-in attempts. Wait a minute, then try again.';
+  }
   if (context === 'reset') {
     return 'Too many password reset emails were sent. Wait a few minutes, then try again.';
   }
   if (context === 'resend') {
     return 'Too many confirmation emails were sent. Wait a minute, then use Resend — or log in if you already verified.';
   }
-  return 'Too many signup emails were sent for this project. Wait a few minutes, then try again — or use Log in if you already signed up. For testing, an admin can add your user in Supabase Dashboard with Auto Confirm enabled.';
+  // No internal/admin instructions here: this copy renders to end users.
+  return 'Too many signup emails were sent. Wait a few minutes, then try again — or use Log in if you already signed up.';
 }

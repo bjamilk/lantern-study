@@ -838,7 +838,7 @@ export const App: React.FC = () => {
                         setCurrentUser(user);
                         setAuthLoading(false);
                         const next = new URLSearchParams(location.search).get('next');
-                        if (next && next.startsWith('/') && !next.startsWith('//')) {
+                        if (next && next.startsWith('/') && !next.startsWith('//') && !next.includes('://') && !next.includes('\\')) {
                             navigateToPath(next, { replace: true });
                         } else {
                             navigateToPath('/dashboard', { replace: true });
