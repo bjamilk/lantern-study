@@ -554,6 +554,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             timeLimit: config.timerDuration ? Math.round(config.timerDuration / 60) : 0,
             shuffleQuestions: true,
             includeExplanations: true,
+            lockAnswered: config.lockAnswered,
           },
           user?.id
         );
@@ -900,6 +901,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
         timeLimitMinutes,
         groupId,
         groupName: displayName,
+        lockAnswered: config.lockAnswered,
       });
       const parent = navigation.getParent?.();
       if (parent?.navigate) {

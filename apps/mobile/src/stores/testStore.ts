@@ -148,6 +148,10 @@ function buildDraftPayloadFromActive(activeTest: ActiveTest) {
       deckId: activeTest.test.deckId,
       deckName: activeTest.test.deckName,
       name: activeTest.test.name,
+      // Web's field name, so a cross-platform resume also enforces the lock.
+      // The locked-question set itself is not persisted: it is derivable on
+      // resume from answers + current index (see resumePausedSession).
+      lockAnsweredQuestions: activeTest.lockAnswered === true,
     },
     questions: canonicalQuestions,
     user_answers: userAnswers,
@@ -375,7 +379,7 @@ interface TestState {
     testName: string,
     questions: TestQuestion[],
     mode?: TestMode,
-    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string }
+    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string; lockAnswered?: boolean }
   ) => Promise<void>;
   /** Bind study-group attribution once route params are known (after draft create). */
   setActiveTestAttribution: (attribution: { groupId?: string; groupName?: string }) => void;
@@ -1007,7 +1011,7 @@ export const useTestStore = create<TestState>((set, get) => ({
     testName: string,
     questions: TestQuestion[],
     mode: TestMode = 'study',
-    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string }
+    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string; lockAnswered?: boolean }
   ) => {
     // Do not invent a timer — use the caller's value, or untimed (0).
     const timeLimit =
@@ -1036,7 +1040,10 @@ export const useTestStore = create<TestState>((set, get) => ({
       mode,
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
-      lockAnswered: mode === 'test' ? useSettingsStore.getState().settings.study.lockAnsweredQuestions : false,
+      lockAnswered:
+        mode === 'test'
+          ? (options?.lockAnswered ?? useSettingsStore.getState().settings.study.lockAnsweredQuestions)
+          : false,
       lockedQuestionIds: new Set(),
       groupId: options?.groupId,
       groupName: options?.groupName,
@@ -1264,6 +1271,15 @@ export const useTestStore = create<TestState>((set, get) => ({
             map[pair.promptItemId] = pair.answerItemId;
           }
           answers[qid] = map;
+        } else if (Array.isArray(record.diagramAnswers)) {
+          // Same round-trip as matching: pairs in the draft, map in the store.
+          // Without this, a paused diagram-labeling answer vanished on resume
+          // (and under exam lock the question came back unlocked).
+          const map: Record<string, string> = {};
+          for (const pair of record.diagramAnswers) {
+            if (pair && pair.labelId != null) map[String(pair.labelId)] = String(pair.selectedLabelId);
+          }
+          answers[qid] = map;
         }
       }
     }
@@ -1274,11 +1290,32 @@ export const useTestStore = create<TestState>((set, get) => ({
           ? draft.remaining_time_seconds
           : 0;
     const mode = (draft.sessionKind || draft.session_kind) === 'study' ? 'study' : 'test';
-    const draftConfig = (draft.config as { groupId?: string; groupName?: string } | undefined) || {};
+    const draftConfig =
+      (draft.config as
+        | { groupId?: string; groupName?: string; lockAnsweredQuestions?: boolean }
+        | undefined) || {};
     const title =
       (draft.title as string) ||
       draftConfig.groupName ||
       (mode === 'study' ? 'Study session' : 'Test');
+    const currentQuestionIndex =
+      (draft.currentQuestionIndex as number) ??
+      (draft.current_question_index as number) ??
+      0;
+    const lockAnswered = mode === 'test' && draftConfig.lockAnsweredQuestions === true;
+    // Reconstruct the locked set rather than persisting it: under lock mode a
+    // question is locked iff it's answered and not current — you can't have
+    // answered a non-current question without leaving it, and goToQuestion
+    // locks every answered question on leave. Answers + index are already in
+    // the draft, so this survives pause/resume exactly.
+    const currentQuestionId = questions[currentQuestionIndex]?.id;
+    const lockedQuestionIds = new Set<string>(
+      lockAnswered
+        ? Object.keys(answers).filter(
+            (qid) => qid !== currentQuestionId && isMobileAnswerAnswered(answers[qid]),
+          )
+        : [],
+    );
     const resumed: ActiveTest = {
       test: {
         id: String(draft.id),
@@ -1290,10 +1327,7 @@ export const useTestStore = create<TestState>((set, get) => ({
         createdAt: String(draft.startTime || draft.start_time || new Date().toISOString()),
       },
       questions,
-      currentQuestionIndex:
-        (draft.currentQuestionIndex as number) ??
-        (draft.current_question_index as number) ??
-        0,
+      currentQuestionIndex,
       answers,
       answerTimings: {},
       startTime: Date.parse(String(draft.startTime || draft.start_time || Date.now())) || Date.now(),
@@ -1301,6 +1335,8 @@ export const useTestStore = create<TestState>((set, get) => ({
       mode,
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
+      lockAnswered,
+      lockedQuestionIds,
       draftId: String(draft.id),
       groupId: draftConfig.groupId || (draft.groupId as string | undefined),
       groupName: draftConfig.groupName,

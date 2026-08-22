@@ -117,7 +117,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // end-of-session summary; a lapsed card no longer silently drops out of the
   // review queue; imported study material is actually saved (not just counted);
   // and note previews read as clean text instead of raw markdown.
-  version: '1.0.26',
+  // 1.0.27: the per-test "Lock answered questions" exam toggle now works for
+  // group question-bank tests — the group launch path (startQuestionSet) dropped
+  // the toggle and only ever read the global Settings default, so the modal
+  // switch silently did nothing on the main way people start tests.
+  version: '1.0.27',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
