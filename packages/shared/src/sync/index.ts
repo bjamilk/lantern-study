@@ -60,6 +60,27 @@ export type ConflictResolutionStrategy = 'local-wins' | 'remote-wins' | 'latest-
 const SYNC_QUEUE_KEY = 'lantern_sync_queue';
 const MAX_RETRIES = 3;
 
+/**
+ * Event-type entities are individually meaningful — every flashcard review
+ * moves FSRS scheduling, every test result is its own attempt. Deduping them
+ * by entity id silently discarded real work (review card A twice offline →
+ * only the second review ever synced). Only state-type entities keep
+ * last-write-wins dedupe.
+ */
+const EVENT_ENTITY_TYPES: ReadonlySet<SyncEntityType> = new Set([
+  'flashcard_review',
+  'test_result',
+]);
+
+/** A failure that means "the connection is down", not "the server said no".
+    Exported so sync handlers can RETHROW these instead of returning false —
+    a false return burns one of the operation's retries, which a dead
+    connection must never do. */
+export function isTransientSyncError(error: unknown): boolean {
+  const msg = String((error as { message?: string })?.message ?? error ?? '');
+  return /network|failed to fetch|fetch failed|timeout|timed out|abort|offline|econn|socket/i.test(msg);
+}
+
 export class SyncQueue {
   private storage: IStorageAdapter;
   private state: SyncQueueState;
@@ -161,10 +182,13 @@ export class SyncQueue {
       userId,
     };
 
-    // Check for existing operations on same entity and deduplicate
-    this.state.pendingOperations = this.state.pendingOperations.filter(
-      op => !(op.entityId === entityId && op.entityType === entityType && op.operation === operation)
-    );
+    // Check for existing operations on same entity and deduplicate.
+    // Never for event-type entities — each of those operations is real work.
+    if (!EVENT_ENTITY_TYPES.has(entityType)) {
+      this.state.pendingOperations = this.state.pendingOperations.filter(
+        op => !(op.entityId === entityId && op.entityType === entityType && op.operation === operation)
+      );
+    }
 
     this.state.pendingOperations.push(syncOp);
     await this.persistState();
@@ -225,8 +249,19 @@ export class SyncQueue {
       } catch (error: any) {
         console.error(`[SyncQueue] Error processing ${op.entityType}:${op.entityId}:`, error);
         op.lastError = error.message;
+
+        // A dead connection is not the operation's fault: don't burn one of
+        // its attempts, and stop the run — everything behind it will fail the
+        // same way. Before this, going through a tunnel three times moved an
+        // op into failedOperations, which nothing ever drained.
+        if (isTransientSyncError(error)) {
+          failed++;
+          this.onSyncComplete?.(op, false);
+          break;
+        }
+
         op.retryCount++;
-        
+
         if (op.retryCount >= op.maxRetries) {
           this.state.pendingOperations = this.state.pendingOperations.filter(
             p => p.id !== op.id
@@ -285,6 +320,11 @@ export class SyncQueue {
    */
   getPendingCount(): number {
     return this.state.pendingOperations.length;
+  }
+
+  /** Number of operations parked in failedOperations awaiting a retryFailed(). */
+  getFailedCount(): number {
+    return this.state.failedOperations.length;
   }
 
   /**

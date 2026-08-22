@@ -143,7 +143,7 @@ export default function OfflineScreen() {
     );
   };
 
-  const handleStartOfflineTest = async (test: OfflineTest) => {
+  const handleStartOfflineTest = async (test: OfflineTest, mode: 'test' | 'study' = 'test') => {
     if (!test.questions.length) {
       Alert.alert('No Questions', 'This offline bundle has no questions.');
       return;
@@ -151,9 +151,11 @@ export default function OfflineScreen() {
 
     try {
       const questions = offlineQuestionsToTestQuestions(test.questions);
-      await startQuestionSet(test.testName, questions, 'test', {
-        timeLimitMinutes: test.timeLimit || Math.max(questions.length * 2, 5),
-        lockAnswered: test.lockAnswered,
+      // Study mode: untimed, unscored practice — web bundles always offered
+      // it; mobile hardcoded scored tests.
+      await startQuestionSet(test.testName, questions, mode, {
+        timeLimitMinutes: mode === 'test' ? test.timeLimit || Math.max(questions.length * 2, 5) : 0,
+        lockAnswered: mode === 'test' ? test.lockAnswered : undefined,
       });
       // Offline is a ROOT-stack modal, so 'StudyTab' is not a sibling route
       // here — it lives inside 'Main'. The unnested navigate was silently
@@ -166,7 +168,7 @@ export default function OfflineScreen() {
           params: {
             testId: test.testId,
             testName: test.testName,
-            mode: 'test',
+            mode,
             isOffline: true,
             offlineTestId: test.id,
             groupName: test.groupName,
@@ -279,12 +281,21 @@ export default function OfflineScreen() {
             <Ionicons name="storefront-outline" size={18} color={colors.primary} />
           </TouchableOpacity>
         ) : null}
+        {/* Icon-only: with publish + delete this row holds four controls, and
+            text labels crushed the bundle name to nothing on 360dp screens. */}
+        <TouchableOpacity
+          style={[styles.startButton, { backgroundColor: colors.surfaceSecondary }]}
+          onPress={() => handleStartOfflineTest(test, 'study')}
+          accessibilityLabel="Study this bundle (untimed, unscored)"
+        >
+          <Ionicons name="book-outline" size={18} color={colors.primary} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.startButton, { backgroundColor: colors.primary }]}
-          onPress={() => handleStartOfflineTest(test)}
+          onPress={() => handleStartOfflineTest(test, 'test')}
+          accessibilityLabel="Take this bundle as a scored test"
         >
           <Ionicons name="play" size={18} color="#ffffff" />
-          <Text style={styles.startButtonText}>Start</Text>
         </TouchableOpacity>
         
         <TouchableOpacity
@@ -551,7 +562,9 @@ export default function OfflineScreen() {
             {groups.length > 0 && (
               <View style={styles.availableSection}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Available to Download</Text>
-                {groups.slice(0, 5).map(group => (
+                {/* All groups — the first-5 cap silently hid the rest with no
+                    hint that more existed. The screen scrolls. */}
+                {groups.map(group => (
                   <AvailableDownloadItem key={group.id} group={group} />
                 ))}
               </View>

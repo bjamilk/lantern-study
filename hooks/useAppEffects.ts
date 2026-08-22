@@ -71,6 +71,7 @@ import {
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
 import { isAccessTokenFreshEnough, shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
 import { resetSessionExpiredGuard } from '../services/sessionHandler';
+import { ensureOfflineQueueOwner, isOfflineQueueOwner } from '../services/offlineQueueOwner';
 import {
     sendPresenceHeartbeat,
     shouldRunPresenceHeartbeat,
@@ -617,6 +618,19 @@ export function useAppEffects({
         });
     }, [currentUser?.id, isAuthLoading, authTokenReady]);
 
+    // Cross-account guard: the offline queues live under fixed localStorage
+    // keys and survive logout — before this, signing in as another user on the
+    // same browser replayed the previous user's queued test results, flashcard
+    // reviews, and qbank scores INTO the new account. Purge foreign queues
+    // (storage AND the already-hydrated store copies) before any sync runs.
+    useEffect(() => {
+        if (!currentUser?.id) return;
+        if (ensureOfflineQueueOwner(currentUser.id)) {
+            useTestStore.getState().setPendingSyncResults([]);
+            useFlashcardStore.getState().clearPendingReviews();
+        }
+    }, [currentUser?.id]);
+
     // --- Theme / appearance DOM sync (not privacy/study — avoids re-render storms while Settings is open) ---
     const appearanceSettings = currentUser?.settings?.appearance;
     const accessibilitySettings = currentUser?.settings?.accessibility;
@@ -1076,8 +1090,10 @@ export function useAppEffects({
                     setDataLoaded(true);
                 }
 
-            // Sync pending results (non-critical, fire-and-forget)
-            if (!cancelled && pendingSyncResults.length > 0) {
+            // Sync pending results (non-critical, fire-and-forget).
+            // Gate on live store state (the render-scope array can be a stale
+            // pre-purge snapshot of another user's queue).
+            if (!cancelled && useTestStore.getState().pendingSyncResults.length > 0) {
                 const localPending = useTestStore.getState().pendingSyncResults;
                 const cloudFormatted = localPending.map(result => ({
                     id: result.id,
@@ -1881,9 +1897,15 @@ export function useAppEffects({
     }, [offlineBundles]);
 
     useEffect(() => {
-        localStorage.setItem('pendingSyncResults', JSON.stringify(pendingSyncResults));
-        if (currentUser && pendingSyncResults.length > 0) {
-            pendingSyncResults.forEach(result => {
+        // Read the LIVE store, never the render snapshot: on the commit where
+        // currentUser flips to a new user, this effect's closure still held
+        // the previous user's queue and re-uploaded it under the new user id
+        // — resurrecting exactly what the cross-account purge above deleted.
+        // The owner-stamp gate closes the same hole for the cloud upload.
+        const live = useTestStore.getState().pendingSyncResults;
+        localStorage.setItem('pendingSyncResults', JSON.stringify(live));
+        if (currentUser && live.length > 0 && isOfflineQueueOwner(currentUser.id)) {
+            live.forEach(result => {
                 savePendingSyncResult(currentUser.id, {
                     id: result.id,
                     resultData: result,

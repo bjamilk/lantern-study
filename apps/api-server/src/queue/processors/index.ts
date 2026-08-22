@@ -1,7 +1,8 @@
 import { Worker, type Job } from "bullmq";
 import { getQueueConnectionOptions } from "../connection";
 import { QUEUE_NAMES } from "../jobs/types";
-import { updateJobStatus } from "../jobStatus";
+import { updateJobStatus, getJobRecord, markJobChargeRefunded } from "../jobStatus";
+import { refundAiCredits, refundFeatureAiCredit } from "../../middleware/aiRateLimit";
 import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
@@ -331,6 +332,13 @@ async function processFileJob(job: Job): Promise<unknown> {
       meta: meta || {},
       buffer: bufferBase64 ? Buffer.from(bufferBase64, "base64") : undefined,
     });
+    if (result.status !== "ok") {
+      // OCR soft-fails (job completes with success:false so the poller keeps
+      // its contract) — the failure-path refund never fires, so refund here.
+      await refundJobCharge(job).catch((err) => {
+        console.error(`[queue] OCR credit refund failed for job ${job.id}:`, err);
+      });
+    }
     return { success: result.status === "ok", ...result };
   }
   throw new Error(`Unknown file job: ${job.name}`);
@@ -377,9 +385,42 @@ function wrapProcessor(processor: (job: Job) => Promise<unknown>) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await updateJobStatus(job.id!, "failed", { error: message });
+      await refundChargeOnFinalFailure(job).catch((refundErr) => {
+        console.error(`[queue] Credit refund failed for job ${job.id}:`, refundErr);
+      });
       throw err;
     }
   };
+}
+
+/** Refund whatever charge is stamped on this job's record (idempotent). */
+async function refundJobCharge(job: Job): Promise<void> {
+  const record = job.id ? await getJobRecord(job.id) : null;
+  const userId = record?.userId;
+  const charge = record?.charge;
+  if (!record || !userId || !charge || charge.credits <= 0) return;
+  if (!(await markJobChargeRefunded(job.id!))) return;
+
+  if (charge.featureKey) {
+    await refundFeatureAiCredit(userId, charge.featureKey);
+  } else {
+    await refundAiCredits(userId, charge.credits);
+  }
+  console.log(
+    `[queue] Refunded ${charge.credits} AI credit(s)${charge.featureKey ? ` (+1 ${charge.featureKey})` : ''} for failed job ${job.id}`
+  );
+}
+
+/**
+ * The request that enqueued this job reserved AI credits and answered 202 —
+ * a 2xx, so the middleware's non-2xx auto-refund never fired. If this was the
+ * job's final attempt, hand those credits back (markJobChargeRefunded makes
+ * this idempotent across racing retries).
+ */
+async function refundChargeOnFinalFailure(job: Job): Promise<void> {
+  const attemptsAllowed = job.opts?.attempts ?? 1;
+  if (job.attemptsMade + 1 < attemptsAllowed) return;
+  await refundJobCharge(job);
 }
 
 function envConcurrency(name: string, fallback: number, max = 32): number {
@@ -431,6 +472,16 @@ export function startWorkers(): Worker[] {
   for (const worker of [aiWorker, fileWorker, exportWorker, cronWorker]) {
     worker.on("failed", (job, err) => {
       console.error(`Job ${job?.id} failed:`, err.message);
+      // Crash/stall failures ("job stalled more than allowable limit") never
+      // run wrapProcessor's catch — the process that owned the job is gone.
+      // This hook DOES fire for them: record the failure and refund the
+      // charge (idempotent, so overlap with the catch path is harmless).
+      if (job?.id) {
+        void updateJobStatus(job.id, "failed", { error: err.message }).catch(() => {});
+        void refundChargeOnFinalFailure(job).catch((refundErr) => {
+          console.error(`[queue] Credit refund failed for stalled job ${job.id}:`, refundErr);
+        });
+      }
     });
   }
 

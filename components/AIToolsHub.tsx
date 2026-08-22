@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   DocumentArrowUpIcon,
   SparklesIcon,
@@ -18,8 +18,9 @@ import type { NoteAttachment, StudyNote } from '../types';
 interface AIToolsHubProps {
   theme?: 'light' | 'dark';
   onOpenNote: (noteId: string) => void;
-  onStartLearn?: () => void;
-  onTakePracticeTest?: () => void;
+  /** Receives the import result so the CTA can act on the deck/quiz JUST created. */
+  onStartLearn?: (result: ImportAndStudyResult) => void;
+  onTakePracticeTest?: (result: ImportAndStudyResult) => void;
   onComplete?: (result: ImportAndStudyResult) => void;
 }
 
@@ -32,6 +33,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
   onComplete,
 }) => {
   const [step, setStep] = useState<Step>('hub');
+  const pasteAreaRef = useRef<HTMLTextAreaElement>(null);
   const [textContent, setTextContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportAndStudyResult | null>(null);
@@ -121,6 +123,8 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       description: 'Upload readings or slides',
       icon: DocumentArrowUpIcon,
       action: 'file-pdf' as const,
+      // The label already styled a disabled state but nothing ever set it.
+      disabled: lowDataMode,
     },
     {
       id: 'pptx',
@@ -128,6 +132,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       description: 'Import lecture slides',
       icon: DocumentArrowUpIcon,
       action: 'file-pptx' as const,
+      disabled: lowDataMode,
     },
     {
       id: 'paste',
@@ -146,7 +151,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
     },
     {
       id: 'chat',
-      title: 'Ask Lantern AI',
+      title: 'Lantern AI',
       description: 'Chat about your materials',
       icon: ChatBubbleLeftRightIcon,
       action: 'chat' as const,
@@ -177,7 +182,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                     </label>
                   )}
                   {tool.action === 'file-pptx' && (
-                    <label className="cursor-pointer block">
+                    <label className={`cursor-pointer block ${tool.disabled ? 'opacity-50 pointer-events-none' : ''}`}>
                       <tool.icon className="w-7 h-7 text-violet-600 mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
@@ -185,11 +190,20 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                     </label>
                   )}
                   {tool.action === 'paste' && (
-                    <div>
+                    // Was an inert <div> — the one card on the grid that did
+                    // nothing when clicked. Take the user to the textarea.
+                    <button
+                      type="button"
+                      onClick={() => {
+                        pasteAreaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        pasteAreaRef.current?.focus({ preventScroll: true });
+                      }}
+                      className="text-left w-full"
+                    >
                       <tool.icon className="w-7 h-7 text-lantern-primary mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1 mb-3">{tool.description}</p>
-                    </div>
+                    </button>
                   )}
                   {tool.action === 'weak' && (
                     <button type="button" disabled={tool.disabled} onClick={() => openWithMessage('Generate flashcards for my weak topics from recent tests and save them to a new deck.')} className="text-left w-full disabled:opacity-50">
@@ -212,6 +226,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
             <Card padding="md">
               <p className="text-sm font-medium text-lantern-text mb-2">Paste lecture notes</p>
               <textarea
+                ref={pasteAreaRef}
                 placeholder="Paste your notes here..."
                 value={textContent}
                 onChange={(e) => setTextContent(e.target.value)}
@@ -279,13 +294,13 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                 Open note
               </Button>
               {onStartLearn && result.flashcardCount ? (
-                <Button variant="accent" onClick={onStartLearn}>
+                <Button variant="accent" onClick={() => onStartLearn(result)}>
                   <AcademicCapIcon className="w-4 h-4" />
                   Start Learn
                 </Button>
               ) : null}
               {onTakePracticeTest && result.quizQuestionCount ? (
-                <Button variant="secondary" onClick={onTakePracticeTest}>
+                <Button variant="secondary" onClick={() => onTakePracticeTest(result)}>
                   Practice test
                 </Button>
               ) : null}

@@ -20,6 +20,69 @@ import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
 import AIUsageBadge from './AIUsageBadge';
+import { navigate as navigateFromRef } from '../navigation/navigationRef';
+import { submitCompanionFeedback } from '../services/ai';
+import type { CompanionAction } from '@lantern/shared/types';
+
+/** Action chips the mobile panel can actually honor (web handles the rest). */
+const MOBILE_ACTION_ROUTES: Partial<Record<CompanionAction['type'], (payload?: Record<string, string>) => void>> = {
+  navigate_to_dashboard: () => navigateFromRef('Main', { screen: 'HomeTab' }),
+  navigate_to_chat: () => navigateFromRef('Main', { screen: 'ChatTab' }),
+  navigate_to_flashcards: () => navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'FlashcardsList' } }),
+  navigate_to_notes: () => navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'NotesList' } }),
+  open_note_learn: (payload) => {
+    if (payload?.noteId) {
+      navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'NoteEditor', params: { noteId: payload.noteId } } });
+    } else {
+      navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'NotesList' } });
+    }
+  },
+};
+
+/**
+ * Minimal chat-bubble formatting: the model answers with **bold** and "- "
+ * bullets, which used to render as literal asterisks and dashes. A full
+ * markdown dependency isn't worth the native-lockfile churn for two patterns.
+ */
+function FormattedBubbleText({ content, color }: { content: string; color: string }) {
+  const renderInline = (text: string, keyPrefix: string) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+    return parts.map((part, i) =>
+      part.startsWith('**') && part.endsWith('**') ? (
+        <Text key={`${keyPrefix}-${i}`} className="font-semibold">{part.slice(2, -2)}</Text>
+      ) : (
+        <Text key={`${keyPrefix}-${i}`}>{part}</Text>
+      )
+    );
+  };
+  const lines = content.split('\n');
+  return (
+    <View>
+      {lines.map((line, i) => {
+        // Keep the numbering for ordered lists — step order carries meaning.
+        const bullet = line.match(/^\s*([-*]|\d+\.)\s+(.*)$/);
+        if (bullet) {
+          const marker = /^\d+\.$/.test(bullet[1]) ? `${bullet[1]} ` : '• ';
+          return (
+            <View key={i} className="flex-row pl-1">
+              <Text className={color}>{marker}</Text>
+              <Text className={`${color} flex-1`}>{renderInline(bullet[2], `l${i}`)}</Text>
+            </View>
+          );
+        }
+        if (!line.trim()) {
+          // Blank line = paragraph gap (an empty <Text> has no height).
+          return <View key={i} className="h-2" />;
+        }
+        return (
+          <Text key={i} className={color}>
+            {renderInline(line, `l${i}`)}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
 import { useAuthStore } from '../stores/authStore';
 import { useAppTheme } from '../theme';
 import { Button } from './ui';
@@ -94,6 +157,7 @@ export function AICompanionPanel({ context }: Props) {
     loadConversations,
     openConversation,
     startNewChat,
+    setMessageFeedback,
   } = useCompanionStore();
   const notes = useNotesStore((s) => s.notes);
   const notesLoading = useNotesStore((s) => s.isLoading);
@@ -602,6 +666,10 @@ export function AICompanionPanel({ context }: Props) {
           }
           renderItem={({ item }) => {
             const isUser = item.role === 'user';
+            const supportedActions = ((item.actions || []) as CompanionAction[]).filter(
+              (a: CompanionAction) => MOBILE_ACTION_ROUTES[a.type]
+            );
+            const canRate = !isUser && !!item.id && !item.id.startsWith('tmp-');
             return (
               <View className={`max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}>
                 <View
@@ -611,10 +679,69 @@ export function AICompanionPanel({ context }: Props) {
                       : 'bg-lantern-background-secondary rounded-bl-sm'
                   }`}
                 >
-                  <Text className={isUser ? 'text-white' : 'text-lantern-text'}>
-                    {item.content}
-                  </Text>
+                  {isUser ? (
+                    <Text className="text-white">{item.content}</Text>
+                  ) : (
+                    <FormattedBubbleText content={item.content} color="text-lantern-text" />
+                  )}
                 </View>
+                {/* Action chips — the web panel had these from day one; mobile
+                    silently dropped them, so the companion's suggestions were
+                    dead ends here. */}
+                {!isUser && supportedActions.length > 0 && (
+                  <View className="flex-row flex-wrap gap-1.5 mt-1.5">
+                    {supportedActions.map((action: CompanionAction, i: number) => (
+                      <Pressable
+                        key={`${item.id}-action-${i}`}
+                        onPress={() => {
+                          close();
+                          MOBILE_ACTION_ROUTES[action.type]?.(action.payload);
+                        }}
+                        className="px-3 py-1.5 rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20"
+                      >
+                        <Text className="text-xs font-medium text-lantern-primary">{action.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                {canRate && (
+                  <View className="flex-row gap-2 mt-1 pl-1">
+                    {(['up', 'down'] as const).map((rating) => {
+                      const active = item.feedback === rating;
+                      return (
+                        <Pressable
+                          key={rating}
+                          accessibilityLabel={rating === 'up' ? 'Helpful' : 'Not helpful'}
+                          onPress={() => {
+                            const previous = item.feedback ?? null;
+                            const next = active ? null : rating;
+                            setMessageFeedback(item.id, next);
+                            void submitCompanionFeedback(item.id, next).catch(() => {
+                              // Revert only if OUR optimistic value is still
+                              // showing — a rapid second tap may have already
+                              // moved it, and its request decides that state.
+                              const current = useCompanionStore
+                                .getState()
+                                .messages.find((m) => m.id === item.id)?.feedback ?? null;
+                              if (current === next) setMessageFeedback(item.id, previous);
+                            });
+                          }}
+                          className="p-1"
+                        >
+                          <Ionicons
+                            name={
+                              rating === 'up'
+                                ? active ? 'thumbs-up' : 'thumbs-up-outline'
+                                : active ? 'thumbs-down' : 'thumbs-down-outline'
+                            }
+                            size={14}
+                            color={active ? '#4f46e5' : '#94a3b8'}
+                          />
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             );
           }}

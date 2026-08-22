@@ -1,7 +1,11 @@
 /**
  * Lantern Study – Service Worker
  * Strategy:
- *   - /assets/* (Vite hashed chunks): bypass SW — always network
+ *   - install: precache index.html + the entry assets it references, so a cold
+ *     offline boot works without depending on browser HTTP-cache luck
+ *   - /assets/* (Vite hashed chunks, immutable): cache-first with runtime fill;
+ *     responses are cached only when ok AND not HTML (never cache an error
+ *     page as a JS chunk)
  *   - Navigation: network-first; cache index.html only after successful HTML response
  *   - API / Supabase: never intercepted
  * CACHE_NAME is replaced at build time (__BUILD_ID__).
@@ -27,10 +31,55 @@ function isHtmlResponse(response) {
   return type.includes('text/html');
 }
 
+/** An asset response safe to serve later as a script/stylesheet. */
+function isCacheableAsset(response) {
+  return response && response.ok && !isHtmlResponse(response);
+}
+
+/**
+ * Precache the app shell: index.html plus every /assets/ URL it references.
+ * Vite writes hashed asset names into index.html, so parsing it IS the
+ * precache manifest — no build-plugin needed. Best-effort per asset: a miss
+ * only means that chunk falls back to runtime caching.
+ */
+async function precacheAppShell() {
+  const cache = await caches.open(CACHE_NAME);
+  const indexResponse = await fetch('/index.html', { cache: 'no-cache' });
+  if (!indexResponse.ok || !isHtmlResponse(indexResponse)) {
+    // Fail the install: activate unconditionally deletes the old cache, so
+    // promoting a new SW without a shell would trade a WORKING offline boot
+    // for a broken one. The old SW keeps serving until a later retry succeeds.
+    throw new Error(`App-shell precache failed (${indexResponse.status})`);
+  }
+  await cache.put('/index.html', indexResponse.clone());
+
+  const html = await indexResponse.text();
+  const assetUrls = new Set();
+  const re = /(?:src|href)="(\/assets\/[^"]+)"/g;
+  let match;
+  while ((match = re.exec(html)) !== null) assetUrls.add(match[1]);
+
+  await Promise.all(
+    [...assetUrls].map(async (url) => {
+      try {
+        const existing = await cache.match(url);
+        if (existing) return;
+        const response = await fetch(url);
+        if (isCacheableAsset(response)) await cache.put(url, response);
+      } catch {
+        /* runtime caching will pick it up on first use */
+      }
+    })
+  );
+}
+
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   if (IS_LOCAL_DEV) return;
-  event.waitUntil(Promise.resolve());
+  // No .catch here: a rejected waitUntil aborts THIS install and leaves the
+  // previous SW (and its working cache) in charge. Per-asset failures are
+  // already best-effort inside precacheAppShell.
+  event.waitUntil(precacheAppShell());
 });
 
 self.addEventListener('activate', (event) => {
@@ -57,8 +106,25 @@ self.addEventListener('fetch', (event) => {
 
   if (isApiRequest(url)) return;
 
-  // Hashed Vite chunks must always come from the network (never cache HTML as JS).
-  if (url.pathname.startsWith('/assets/')) return;
+  // Hashed Vite chunks are immutable: cache-first, filled at install and at
+  // runtime. isCacheableAsset guards against ever caching an HTML error page
+  // as a JS chunk (the reason this used to bypass the SW entirely — which
+  // also meant the app could not cold-boot offline).
+  if (url.pathname.startsWith('/assets/') && url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (isCacheableAsset(response)) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
 
   if (event.request.mode === 'navigate') {
     event.respondWith(

@@ -11,7 +11,7 @@ import { AuthenticatedRequest } from '../types';
 import { SupabaseService } from '../services/supabase';
 import { logAIInference } from '../services/aiInferenceLog';
 import { runSyncOrEnqueue } from '../queue/enqueue';
-import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import { sendAsyncJobAccepted, aiChargeFromRes } from '../queue/respondAsync';
 import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
@@ -100,6 +100,8 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
         await recordInference(req, 'generate-questions', generated);
         return generated;
       }
+    ,
+      aiChargeFromRes(res)
     );
     if (outcome.mode === 'async') {
       sendAsyncJobAccepted(res, outcome.jobId);
@@ -129,6 +131,8 @@ router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards')
         await recordInference(req, 'generate-flashcards', generated);
         return generated;
       }
+    ,
+      aiChargeFromRes(res)
     );
     if (outcome.mode === 'async') {
       sendAsyncJobAccepted(res, outcome.jobId);
@@ -158,6 +162,8 @@ router.post('/explain-answer', aiRateLimitForFeature('explain'), async (req: Aut
         await recordInference(req, 'explain-answer', explained);
         return explained;
       }
+    ,
+      aiChargeFromRes(res)
     );
     if (outcome.mode === 'async') {
       sendAsyncJobAccepted(res, outcome.jobId);
@@ -187,6 +193,8 @@ router.post('/study-recommendations', aiRateLimitForFeature('study_recommendatio
         await recordInference(req, 'study-recommendations', recommendations);
         return recommendations;
       }
+    ,
+      aiChargeFromRes(res)
     );
     if (outcome.mode === 'async') {
       sendAsyncJobAccepted(res, outcome.jobId);
@@ -216,6 +224,8 @@ router.post('/ask-tutor', aiRateLimitForFeature('study_plan'), async (req: Authe
         await recordInference(req, 'ask-tutor', answer);
         return answer;
       }
+    ,
+      aiChargeFromRes(res)
     );
     if (outcome.mode === 'async') {
       sendAsyncJobAccepted(res, outcome.jobId);
@@ -245,6 +255,8 @@ router.post('/enhance-flashcard', aiRateLimitForFeature('enhance_flashcard'), as
         await recordInference(req, 'enhance-flashcard', enhanced);
         return enhanced;
       }
+    ,
+      aiChargeFromRes(res)
     );
     if (outcome.mode === 'async') {
       sendAsyncJobAccepted(res, outcome.jobId);
