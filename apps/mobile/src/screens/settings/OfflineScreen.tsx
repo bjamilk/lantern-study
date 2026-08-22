@@ -184,8 +184,19 @@ export default function OfflineScreen() {
     }
     
     try {
-      await syncPendingResults(userId);
-      Alert.alert('Success', 'All results have been synced!');
+      const { synced, remaining } = await syncPendingResults(userId);
+      // Per-result failures don't throw — report what actually happened
+      // instead of an unconditional "Success".
+      if (remaining === 0) {
+        Alert.alert('Success', 'All results have been synced!');
+      } else if (synced > 0) {
+        Alert.alert(
+          'Partially synced',
+          `${synced} result${synced !== 1 ? 's' : ''} synced; ${remaining} still pending. Check your connection and try again.`
+        );
+      } else {
+        Alert.alert('Sync Failed', 'No results could be synced. Please check your internet connection and try again.');
+      }
     } catch (error) {
       Alert.alert('Sync Failed', 'Please check your internet connection and try again.');
     }

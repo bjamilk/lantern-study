@@ -101,7 +101,9 @@ interface OfflineState {
   ) => Promise<void>;
   deleteDownloadedTest: (id: string, userId?: string) => Promise<void>;
   savePendingResult: (result: Omit<PendingResult, 'id' | 'synced'>) => Promise<void>;
-  syncPendingResults: (userId: string) => Promise<void>;
+  /** Returns honest counts — per-result failures don't throw, so callers must
+      not treat a clean return as "everything synced". */
+  syncPendingResults: (userId: string) => Promise<{ synced: number; remaining: number }>;
   clearAllOfflineData: (userId?: string) => Promise<void>;
   getOfflineTest: (testId: string) => OfflineTest | undefined;
 }
@@ -252,7 +254,13 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       if (userId) {
         try {
           const apiBundles = await api.fetchOfflineBundles(userId);
-          downloadedTests = apiBundles.map(mapApiBundleToOfflineTest);
+          const cloud = apiBundles.map(mapApiBundleToOfflineTest);
+          const cloudIds = new Set(cloud.map(t => t.id));
+          // MERGE, don't replace: a bundle whose fire-and-forget cloud save
+          // failed exists only locally — wholesale replacement silently
+          // deleted it (and its questions) on the next refresh.
+          const localOnly = downloadedTests.filter(t => !cloudIds.has(t.id));
+          downloadedTests = [...cloud, ...localOnly];
           await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloadedTests));
         } catch (apiError) {
           console.warn('Failed to fetch offline bundles from API, using cache:', apiError);
@@ -433,14 +441,18 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       }
 
       const pendingResults = get().pendingResults.filter(r => !syncedIds.has(r.id));
-      
+
       await AsyncStorage.setItem(RESULTS_KEY, JSON.stringify(pendingResults));
-      
-      set({ 
+
+      set({
         pendingResults,
         isSyncing: false,
         lastSyncAt: new Date().toISOString(),
       });
+      return {
+        synced: syncedIds.size,
+        remaining: pendingResults.filter(r => !r.synced).length,
+      };
     } catch (error) {
       console.error('Failed to sync results:', error);
       set({ isSyncing: false });

@@ -18,16 +18,39 @@ export interface TestResultSyncGamification {
 export interface TestResultSyncOutcome {
   synced: number;
   remaining: number;
+  /** Results dropped because the server permanently rejected them (4xx). */
+  dropped?: number;
   /** Gamification payload from the last synced result, if the server returned one. */
   gamification?: TestResultSyncGamification;
 }
 
+/** HTTP status parsed from our API error messages ("HTTP error! status: 400"). */
+function parseHttpStatus(error: unknown): number | null {
+  const m = error instanceof Error ? error.message.match(/status:\s*(\d{3})/) : null;
+  return m ? Number(m[1]) : null;
+}
+
+let syncInFlight: Promise<TestResultSyncOutcome> | null = null;
+
 /**
  * Replay queued offline test results to the API (FIFO), then fold them into
- * local test results and question stats. Stops on the first failure so order
- * is preserved. Shared by the manual Sync button and the reconnect auto-sync.
+ * local test results and question stats. Stops on the first transient failure
+ * so order is preserved; a permanently rejected result (4xx other than
+ * 408/429) is dropped so one poisoned row can't wedge the queue forever.
+ * Shared by the manual Sync button and the reconnect auto-sync — concurrent
+ * calls coalesce onto one run, because the replay has no server-side
+ * idempotency key: two parallel runs would create duplicate sessions and
+ * double-award points.
  */
 export async function syncPendingTestResults(userId: string): Promise<TestResultSyncOutcome> {
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = doSyncPendingTestResults(userId).finally(() => {
+    syncInFlight = null;
+  });
+  return syncInFlight;
+}
+
+async function doSyncPendingTestResults(userId: string): Promise<TestResultSyncOutcome> {
   // Question-bank scores ride the same reconnect moment. Independent of the
   // result replay below: a failure on either side must not block the other.
   void import('./pendingQuestionBankScores')
@@ -40,6 +63,7 @@ export async function syncPendingTestResults(userId: string): Promise<TestResult
   if (pending.length === 0) return { synced: 0, remaining: 0 };
 
   const syncedIds: string[] = [];
+  const droppedIds: string[] = [];
   let gamification: TestResultSyncGamification | undefined;
 
   for (const result of pending) {
@@ -71,47 +95,60 @@ export async function syncPendingTestResults(userId: string): Promise<TestResult
       await markPendingSyncResultAsSynced(result.id);
       syncedIds.push(result.id);
     } catch (error) {
+      const status = parseHttpStatus(error);
+      const permanent = status !== null && status >= 400 && status < 500 && status !== 408 && status !== 429;
+      if (permanent) {
+        // The server will never accept this row — drop it instead of blocking
+        // every result queued behind it on each future sync attempt.
+        console.error('[TestResultSync] Permanently rejected; dropping pending result', result.id, error);
+        droppedIds.push(result.id);
+        continue;
+      }
       console.error('[TestResultSync] Failed for pending result', result.id, error);
       break;
     }
   }
 
-  if (syncedIds.length === 0) {
+  if (syncedIds.length === 0 && droppedIds.length === 0) {
     return { synced: 0, remaining: pending.length };
   }
 
   const store = useTestStore.getState();
   const syncedResults = pending.filter((r: TestResult) => syncedIds.includes(r.id));
-  const remaining = store.pendingSyncResults.filter((r: TestResult) => !syncedIds.includes(r.id));
+  const removedIds = new Set([...syncedIds, ...droppedIds]);
+  const remaining = store.pendingSyncResults.filter((r: TestResult) => !removedIds.has(r.id));
 
   store.updateTestResults(prev => {
     const existingIds = new Set(prev.map(r => r.id));
     return [...syncedResults.filter(r => !existingIds.has(r.id)), ...prev];
   });
 
-  const newStats = { ...store.userQuestionStats };
+  // The offline submit path already incremented local question stats for these
+  // answers (hooks/useTestHandlers offline branch) — re-incrementing here
+  // double-counted every attempt and pushed the doubled totals to the server.
+  // Replay only SYNCS the already-correct local stats for the questions the
+  // synced results touched.
+  const currentStats = store.userQuestionStats;
+  const touchedQuestionIds = new Set<string>();
   syncedResults.forEach(result => {
     Object.values(result.session.userAnswers).forEach((answer: UserAnswerRecord) => {
-      const stats = newStats[answer.questionId] || {
-        correctAttempts: 0,
-        incorrectAttempts: 0,
-        lastAttempted: '',
-      };
-      if (answer.isCorrect) stats.correctAttempts++;
-      else stats.incorrectAttempts++;
-      stats.lastAttempted = result.session.endTime
-        ? new Date(result.session.endTime).toISOString()
-        : new Date().toISOString();
-      newStats[answer.questionId] = stats;
-
-      upsertUserQuestionStat(userId, answer.questionId, stats).catch(error => {
-        console.error('[TestResultSync] Error saving user question stat:', error);
-      });
+      touchedQuestionIds.add(answer.questionId);
+    });
+  });
+  touchedQuestionIds.forEach(questionId => {
+    const stats = currentStats[questionId];
+    if (!stats) return;
+    upsertUserQuestionStat(userId, questionId, stats).catch(error => {
+      console.error('[TestResultSync] Error saving user question stat:', error);
     });
   });
 
-  store.setUserQuestionStats(newStats);
   store.setPendingSyncResults(remaining);
 
-  return { synced: syncedIds.length, remaining: remaining.length, gamification };
+  return {
+    synced: syncedIds.length,
+    remaining: remaining.length,
+    dropped: droppedIds.length || undefined,
+    gamification,
+  };
 }
