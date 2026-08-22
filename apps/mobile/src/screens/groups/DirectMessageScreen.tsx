@@ -32,6 +32,8 @@ import {
   ErrorState,
   InlineErrorBanner,
   LoadingState,
+  ActionSheet,
+  type ActionSheetItem,
 } from '../../components/ui';
 import { useChatImageAttach } from '../../hooks/useChatImageAttach';
 import { CHAT_LIST_WINDOWING } from '../../components/chat/chatListWindowing';
@@ -62,6 +64,7 @@ import {
   type ChatMuteDurationId,
 } from '@lantern/shared';
 import { useTheme } from '../../theme';
+import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 
 type ThreadInquiry = Awaited<ReturnType<typeof fetchInquiryByThread>>;
 
@@ -469,33 +472,44 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     );
   }, [user?.id, chatActionBusy, threadId, deleteDmThread, navigation]);
 
-  const openChatMenu = useCallback(() => {
-    Alert.alert('Conversation', undefined, [
-      {
-        text: chatMuted ? 'Unmute notifications' : 'Mute notifications',
-        onPress: openMutePicker,
-      },
-      {
-        text: thread?.isArchived ? 'Unarchive conversation' : 'Archive conversation',
-        onPress: () => void handleToggleArchive(),
-      },
-      {
-        text: iBlockedThem ? 'Unblock user' : 'Block user',
-        style: iBlockedThem ? 'default' : 'destructive',
-        onPress: handleToggleDmBlock,
-      },
-      { text: 'Delete conversation', style: 'destructive', onPress: handleDeleteChat },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }, [
-    thread?.isArchived,
-    chatMuted,
-    iBlockedThem,
-    openMutePicker,
-    handleToggleArchive,
-    handleToggleDmBlock,
-    handleDeleteChat,
-  ]);
+  // One ActionSheet for both platforms: Android's Alert caps at three buttons
+  // and silently dropped Block/Delete here; the sheet lists them all and gains
+  // "Report user" (Phase 1 · E). Actions that open an Alert are deferred so the
+  // sheet's Modal is gone first — iOS will not stack an Alert under a Modal.
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [showReportUser, setShowReportUser] = useState(false);
+  const openChatMenu = useCallback(() => setChatMenuOpen(true), []);
+  const afterSheet = (fn: () => void) => setTimeout(fn, Platform.OS === 'ios' ? 320 : 0);
+  const chatMenuItems: ActionSheetItem[] = [
+    {
+      label: chatMuted ? 'Unmute notifications' : 'Mute notifications',
+      icon: chatMuted ? 'notifications-outline' : 'notifications-off-outline',
+      onPress: () => afterSheet(openMutePicker),
+    },
+    {
+      label: thread?.isArchived ? 'Unarchive conversation' : 'Archive conversation',
+      icon: 'archive-outline',
+      onPress: () => void handleToggleArchive(),
+    },
+    {
+      label: 'Report user',
+      icon: 'flag-outline',
+      hint: 'Harassment, spam, scams or inappropriate messages',
+      onPress: () => afterSheet(() => setShowReportUser(true)),
+    },
+    {
+      label: iBlockedThem ? 'Unblock user' : 'Block user',
+      icon: 'ban-outline',
+      destructive: !iBlockedThem,
+      onPress: () => afterSheet(handleToggleDmBlock),
+    },
+    {
+      label: 'Delete conversation',
+      icon: 'trash-outline',
+      destructive: true,
+      onPress: () => afterSheet(handleDeleteChat),
+    },
+  ];
 
   const reloadThread = useCallback(async () => {
     if (!threadRootId) return;
@@ -1324,6 +1338,19 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         otherDisplayName={displayName}
         otherAvatarUrl={peerAvatarUrl}
         threadId={threadId}
+      />
+      <ActionSheet
+        visible={chatMenuOpen}
+        title="Conversation"
+        items={chatMenuItems}
+        onClose={() => setChatMenuOpen(false)}
+      />
+      <ReportContentSheet
+        visible={showReportUser}
+        targetType="user"
+        targetId={recipientId}
+        targetLabel={displayName}
+        onClose={() => setShowReportUser(false)}
       />
     </SafeAreaView>
   );

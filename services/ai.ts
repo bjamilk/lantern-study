@@ -7,6 +7,7 @@ import {
   parseGlobalAIUsageFromHeaderReader,
   parseGlobalAIUsageFromHeaders,
   xhrHeaderReader,
+  type AIStudyPerformanceData,
 } from '@lantern/shared/api';
 import type {
   CompanionAction,
@@ -249,11 +250,9 @@ export async function aiExplainAnswer(
   return aiRequest('/explain-answer', { question, userAnswer, correctAnswer, options });
 }
 
-export async function aiGetStudyRecommendations(performanceData: {
-  recentScores: { topic: string; score: number; date: string }[];
-  flashcardAccuracy: { topic: string; correctRate: number }[];
-  studyHoursThisWeek: number;
-}): Promise<{ recommendations: AIStudyRecommendation; provider: string }> {
+export async function aiGetStudyRecommendations(
+  performanceData: AIStudyPerformanceData
+): Promise<{ recommendations: AIStudyRecommendation; provider: string }> {
   return aiRequest('/study-recommendations', { performanceData });
 }
 

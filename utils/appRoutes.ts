@@ -267,6 +267,8 @@ export const PUBLIC_PATH_PREFIXES = [
   '/privacy',
   '/terms',
   '/cookies',
+  '/legal/prohibited',
+  '/legal/seller-terms',
   '/reset-password',
   '/welcome',
   '/login',

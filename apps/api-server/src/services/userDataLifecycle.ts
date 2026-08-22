@@ -56,6 +56,43 @@ async function purgeUserStorage(client: SupabaseClient, userId: string): Promise
   void imagePaths;
 }
 
+export const LEARNING_EXPORT_PAGE_SIZE = 1000;
+/** Hard ceiling on exported learning rows (100 pages). Past this the export notes the truncation. */
+export const LEARNING_EXPORT_MAX_ROWS = 100_000;
+
+/**
+ * Page through learning_events oldest-first (stable under concurrent appends).
+ * Missing table (migration not applied) or any error → what was read so far.
+ */
+export async function pageLearningEvents(
+  client: SupabaseClient,
+  userId: string,
+  pageSize = LEARNING_EXPORT_PAGE_SIZE,
+  maxRows = LEARNING_EXPORT_MAX_ROWS
+): Promise<Array<Record<string, unknown>>> {
+  const rows: Array<Record<string, unknown>> = [];
+  let from = 0;
+  while (rows.length < maxRows) {
+    const to = Math.min(from + pageSize, maxRows) - 1;
+    const { data, error } = await client
+      .from('learning_events')
+      .select('*')
+      .eq('user_id', userId)
+      .order('occurred_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) {
+      logger.warn('learning_events export page failed', { userId, from, error: error.message });
+      break;
+    }
+    const page = (data || []) as Array<Record<string, unknown>>;
+    rows.push(...page);
+    if (page.length < to - from + 1) break;
+    from = to + 1;
+  }
+  return rows;
+}
+
 async function purgeUserDmData(client: SupabaseClient, userId: string): Promise<void> {
   await client.from('dm_read_status').delete().eq('user_id', userId);
 
@@ -142,6 +179,18 @@ export async function exportUserDataArchive(
     .order('timestamp', { ascending: false })
     .limit(500);
 
+  // Learning activity (decision D9): product data kept while the account
+  // exists, so it travels with the export. Paged — a busy student has tens of
+  // thousands of review rows. concept_links: the ones this user authored
+  // (created_by); backfill/AI links are not personal data.
+  const learningEvents = await pageLearningEvents(client, userId);
+  const { data: conceptLinks } = await client
+    .from('concept_links')
+    .select('concept_id, target_type, target_id, confidence, source, created_at')
+    .eq('created_by', userId)
+    .order('created_at', { ascending: false })
+    .limit(LEARNING_EXPORT_PAGE_SIZE);
+
   return {
     exportedAt: new Date().toISOString(),
     format: 'lantern-study-gdpr-export-v1',
@@ -168,6 +217,9 @@ export async function exportUserDataArchive(
     dmThreads,
     dmMessages: dmMessages ?? [],
     messagesSent: sentMessages ?? [],
+    learningEvents,
+    learningEventsTruncated: learningEvents.length >= LEARNING_EXPORT_MAX_ROWS,
+    conceptLinks: conceptLinks ?? [],
   };
 }
 

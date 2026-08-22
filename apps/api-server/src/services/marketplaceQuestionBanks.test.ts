@@ -112,6 +112,9 @@ describe('publishQuestionBank', () => {
     title: 'GST 101 Past Questions',
     campusId: 'campus-1',
     content: CONTENT,
+    // Rights attestation is mandatory since Phase 1 · E (see
+    // marketplaceQuestionBanks.attestation.test.ts for the refusal path).
+    attestation: true,
   };
 
   it('rejects empty content', async () => {
@@ -307,7 +310,7 @@ describe('updateQuestionBankContent', () => {
       tables: { marketplace_question_banks: { data: BANK_ROW, error: null } },
     });
     await expect(
-      service.updateQuestionBankContent('listing-1', 'someone-else', CONTENT)
+      service.updateQuestionBankContent('listing-1', 'someone-else', CONTENT, { attestation: true })
     ).rejects.toThrow('Only the seller');
   });
 
@@ -326,7 +329,7 @@ describe('updateQuestionBankContent', () => {
     });
 
     await expect(
-      service.updateQuestionBankContent('listing-1', 'seller-1', CONTENT)
+      service.updateQuestionBankContent('listing-1', 'seller-1', CONTENT, { attestation: true })
     ).resolves.toEqual({ version: 3, questionCount: 2 });
 
     const bankUpdate = writes.find(
@@ -346,7 +349,7 @@ describe('updateQuestionBankContent', () => {
       },
     });
     await expect(
-      service.updateQuestionBankContent('listing-1', 'seller-1', CONTENT)
+      service.updateQuestionBankContent('listing-1', 'seller-1', CONTENT, { attestation: true })
     ).rejects.toThrow('updated elsewhere');
   });
 });

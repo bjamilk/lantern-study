@@ -16,6 +16,7 @@ import {
   resolveChatMuteDurationMinutes,
 } from '@lantern/shared/utils/chatMute';
 import { readDmHistoryClearedAt } from '@lantern/shared/utils/dmHistoryCutoff';
+import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
 const ALLOWED_AUDIO_TYPES = [
@@ -394,6 +395,21 @@ router.post(
 
     // Also invalidate group stats cache
     await cacheService.delete(`group:stats:${groupId}`);
+
+    // learning_events: group_question_posted (type QUESTION only; plain chat
+    // is not learning activity). course_id from the group. Never throws.
+    if (String(message?.type || '').toUpperCase() === 'QUESTION') {
+      await recordLearningEvent(supabaseService, {
+        userId,
+        eventType: 'group_question_posted',
+        targetType: 'question',
+        targetId: message?.id != null ? String(message.id) : null,
+        groupId,
+        courseId: (group as { courseId?: string | null })?.courseId ?? null,
+        surface: surfaceFromRequest(req),
+        occurredAt: typeof message?.timestamp === 'string' ? message.timestamp : null,
+      });
+    }
 
     res.status(201).json({
       success: true,

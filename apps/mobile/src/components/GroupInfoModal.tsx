@@ -24,6 +24,7 @@ import { uploadGroupAvatar } from '../services/api';
 import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
 import { useTheme } from '../theme';
 import type { ThemeColors } from '../theme';
+import { ReportContentSheet } from './moderation/ReportContentSheet';
 
 type TabType = 'details' | 'members' | 'danger';
 
@@ -90,6 +91,8 @@ export default function GroupInfoModal({
   const currentUserMember = group.members.find(m => m.userId === currentUserId);
   const isAdmin = currentUserMember?.role === 'owner' || currentUserMember?.role === 'admin';
   const isOwner = currentUserMember?.role === 'owner';
+  /** Report group to Lantern moderation (Phase 1 · E). */
+  const [showReportGroup, setShowReportGroup] = useState(false);
   const isSoleAdmin =
     Boolean(isAdmin) &&
     (group.adminIds?.length
@@ -541,6 +544,28 @@ export default function GroupInfoModal({
         </TouchableOpacity>
       </View>
 
+      {/* Report Section — any member; routes to Lantern moderation (Phase 1 · E) */}
+      <View style={styles.dangerSection}>
+        <View style={styles.dangerHeader}>
+          <Ionicons name="flag-outline" size={24} color="#f59e0b" />
+          <View style={styles.dangerInfo}>
+            <Text style={styles.dangerTitle}>Report Group</Text>
+            <Text style={styles.dangerDescription}>
+              Leaked exams, scams, harassment or other rule-breaking — reported confidentially to Lantern
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.dangerButton, styles.archiveButton]}
+          accessibilityRole="button"
+          accessibilityLabel="Report group"
+          onPress={() => setShowReportGroup(true)}
+        >
+          <Ionicons name="flag-outline" size={18} color="#ffffff" />
+          <Text style={styles.dangerButtonText}>Report Group</Text>
+        </TouchableOpacity>
+      </View>
+
       {isOwner ? (
           <View style={[styles.dangerSection, styles.deleteSection]}>
             <View style={styles.dangerHeader}>
@@ -614,6 +639,13 @@ export default function GroupInfoModal({
         </View>
         </KeyboardAvoidingView>
       </View>
+      <ReportContentSheet
+        visible={showReportGroup}
+        targetType="group"
+        targetId={group.id}
+        targetLabel={group.name}
+        onClose={() => setShowReportGroup(false)}
+      />
     </Modal>
   );
 }

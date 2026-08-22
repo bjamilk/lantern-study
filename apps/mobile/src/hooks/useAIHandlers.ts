@@ -16,6 +16,7 @@ import {
   type AIStudyRecommendation,
 } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
+import type { AIStudyPerformanceData } from '@lantern/shared/api';
 import { trackAIToolUsed } from '../services/productAnalytics';
 
 export function useAIHandlers() {
@@ -99,11 +100,7 @@ export function useAIHandlers() {
   // ─── 4. Study Recommendations (Coach) ──────────────────
 
   const handleAIStudyRecommendations = useCallback(
-    async (performanceData: {
-      recentScores: { topic: string; score: number; date: string }[];
-      flashcardAccuracy: { topic: string; correctRate: number }[];
-      studyHoursThisWeek: number;
-    }): Promise<AIStudyRecommendation | null> => {
+    async (performanceData: AIStudyPerformanceData): Promise<AIStudyRecommendation | null> => {
       setIsAILoading(true);
       setAiError(null);
       try {

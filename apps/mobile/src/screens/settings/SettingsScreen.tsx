@@ -30,6 +30,7 @@ import { exportUserData, fetchMarketplaceCampuses, fetchUserProfile } from '../.
 import type { AccountLifecycleInfo } from '@lantern/shared';
 import { marketplaceComplianceBanner } from '@lantern/shared';
 import { SETTINGS_FAQ } from '@lantern/shared/settings';
+import { studyLevelLabel } from '@lantern/shared/academic';
 import { usePaystackEnabled } from '../../hooks/usePaystackEnabled';
 import { filterCampusesByQuery, isOtherCityCampus } from '@lantern/shared/marketplace';
 import { AccountLifecycleModals, AccountPausedBannerMobile } from '../../components/AccountLifecycleModals';
@@ -37,6 +38,7 @@ import { reactivateUserAccount } from '../../services/accountLifecycle';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { ContactSupportModal } from '../../components/ContactSupportModal';
+import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
@@ -105,7 +107,7 @@ const formatTime = (timeString: string) => {
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
-  const { user, signOut, profileName } = useAuthStore();
+  const { user, signOut, profileName, academicProfile } = useAuthStore();
   const {
     settings,
     isSyncing,
@@ -863,6 +865,31 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Academic Section (university, programme, level, my courses) */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Academic</Text>
+          <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
+            <SettingItem
+              colors={colors}
+              icon="school-outline"
+              iconColor="#6366f1"
+              title="University, programme & courses"
+              subtitle={
+                academicProfile?.institution?.name
+                  ? [
+                      academicProfile.institution.name,
+                      academicProfile.programme,
+                      academicProfile.studyLevel ? studyLevelLabel(academicProfile.studyLevel) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : 'Set your university, level and this semester’s courses'
+              }
+              onPress={() => navigation.navigate('AcademicSettings' as never)}
+            />
+          </View>
+        </View>
+
         {/* Marketplace Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Marketplace</Text>
@@ -1172,6 +1199,22 @@ export default function SettingsScreen() {
               iconColor="#8b5cf6"
               title="Terms of Service"
               onPress={() => navigation.navigate('LegalDocument' as never, { document: 'terms' } as never)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="ban-outline"
+              iconColor="#8b5cf6"
+              title={LEGAL_DOCUMENT_TITLES.prohibited}
+              subtitle="What may not be shared or sold, how to report it"
+              onPress={() => navigation.navigate('LegalDocument' as never, { document: 'prohibited' } as never)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="storefront-outline"
+              iconColor="#8b5cf6"
+              title={LEGAL_DOCUMENT_TITLES['seller-terms']}
+              subtitle="Rights, takedowns, appeals, strikes and payouts"
+              onPress={() => navigation.navigate('LegalDocument' as never, { document: 'seller-terms' } as never)}
             />
             <SettingItem
               colors={colors}

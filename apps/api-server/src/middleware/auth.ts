@@ -3,7 +3,8 @@ import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
 import { SupabaseService } from '../services/supabase';
-import { isUserBanned } from '../services/adminAudit';
+import { getUserBlockState } from '../services/adminAudit';
+import { suspensionMessage } from '@lantern/shared/moderation';
 import {
   getAccountLifecycle,
   isAccountDeactivated,
@@ -112,14 +113,31 @@ function enforceApiKeyMutationPolicy(req: AuthenticatedRequest, res: Response): 
   return false;
 }
 
-async function rejectIfBanned(userId: string, res: Response): Promise<boolean> {
+/**
+ * Blocks banned and time-boxed suspended accounts. A ban answers
+ * ACCOUNT_BANNED (the admin route also revoked the session); a suspension
+ * (settings.suspended_until in the future — strikes or an admin "suspended"
+ * status) answers ACCOUNT_SUSPENDED with the date and no global sign-out, so
+ * the client can show the date and the account comes back by itself.
+ * Exported for tests only.
+ */
+export async function rejectIfBanned(userId: string, res: Response): Promise<boolean> {
   if (!supabaseService) return false;
-  const banned = await isUserBanned(supabaseService, userId);
-  if (banned) {
+  const state = await getUserBlockState(supabaseService, userId);
+  if (state.banned) {
     res.status(403).json({
       error: 'Forbidden',
       message: 'Your account has been suspended. Contact support if you believe this is an error.',
       code: 'ACCOUNT_BANNED',
+    });
+    return true;
+  }
+  if (state.suspendedUntil) {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: suspensionMessage(state.suspendedUntil),
+      code: 'ACCOUNT_SUSPENDED',
+      suspendedUntil: state.suspendedUntil,
     });
     return true;
   }

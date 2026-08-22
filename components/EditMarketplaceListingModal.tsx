@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
-import { isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared';
+import { CoursePicker } from './academic/CoursePicker';
+import { ATTESTATION_REQUIRED_MESSAGE, isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
+import { RightsAttestationCheckbox } from './moderation/RightsAttestationCheckbox';
+import {
+  attestationRequiredForEdit,
+  isInlineSubmitError,
+  listingNeedsAttestation,
+  resolveListingCategoryId,
+} from '../utils/moderationForms';
 import { compressImage } from '../utils/imageCompression';
 import { MarketplaceListing } from '../types';
 import {
@@ -52,6 +60,12 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     category: '',
     images: [] as ImageFile[]
   });
+  const [courseId, setCourseId] = useState<string | null>(null);
+  const [courseCode, setCourseCode] = useState<string>('');
+  // Rights attestation: shown for academic categories, required only when the
+  // listing is not already attested/cleared. 400s the seller can fix go inline.
+  const [attested, setAttested] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
@@ -111,6 +125,8 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         }))
       });
       setCustomCategory(isCustom ? listing.category.replace('custom:', '') : '');
+      setCourseId(listing.courseId ?? listing.course_id ?? null);
+      setCourseCode(typeof categoryFields.courseCode === 'string' ? categoryFields.courseCode : '');
     }
   }, [listing]);
 
@@ -240,12 +256,26 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     return { urls: uploadedUrls, failedNames };
   };
 
+  const editedCategory = resolveListingCategoryId(formData.category, customCategory);
+  const listingRightsStatus = listing?.rights_status ?? listing?.rightsStatus ?? null;
+  const showsAttestation = listingNeedsAttestation({ listingKind: listing?.listing_kind, category: editedCategory });
+  const attestationRequired = attestationRequiredForEdit({
+    listingKind: listing?.listing_kind,
+    category: editedCategory,
+    rightsStatus: listingRightsStatus,
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.campusId) {
       useToastStore.getState().showToast('Please select a campus or Other city');
       return;
     }
+    if (attestationRequired && !attested) {
+      setSubmitError(ATTESTATION_REQUIRED_MESSAGE);
+      return;
+    }
+    setSubmitError(null);
     if (usesOtherCity && !formData.location.trim()) {
       useToastStore.getState().showToast('Please enter the Nigerian city for this listing');
       return;
@@ -308,6 +338,9 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
       } else {
         delete categorySpecificFields.otherCity;
       }
+      // Keep the legacy free-text code in sync with the picked course.
+      if (courseCode) categorySpecificFields.courseCode = courseCode;
+      else delete categorySpecificFields.courseCode;
       const updates = {
         title: formData.title,
         description: formData.description || undefined,
@@ -320,7 +353,10 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         location: formData.location || undefined,
         category: resolvedCategory,
         categorySpecificFields,
-        images: imageUrls
+        courseId,
+        images: imageUrls,
+        // Re-sending it on an already-attested listing just refreshes rights_attested_at.
+        ...(attested ? { attestation: true } : {}),
       };
 
       await updateMarketplaceListing(listing.id, updates);
@@ -329,7 +365,19 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
       onClose();
     } catch (error) {
       console.error('Error updating listing:', error);
-      useToastStore.getState().showToast('Failed to update listing. Please try again.', 'error');
+      // 400s the seller can fix in the form (missing attestation, blocked
+      // wording) go inline; the API's 403 for moderated listings and anything
+      // else keep the seller-facing copy in a toast.
+      if (isInlineSubmitError(error)) {
+        setSubmitError((error as Error).message);
+      } else {
+        useToastStore
+          .getState()
+          .showToast(
+            error instanceof Error && error.message ? error.message : 'Failed to update listing. Please try again.',
+            'error'
+          );
+      }
     } finally {
       setLoading(false);
       setUploadingImages(false);
@@ -366,6 +414,18 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Course (academic archive) */}
+          <CoursePicker
+            id="edit-listing-course"
+            label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+            value={courseId}
+            onChange={(course) => {
+              setCourseId(course?.id ?? null);
+              setCourseCode(course?.code ?? '');
+            }}
+            placeholder="File this listing under a course"
+          />
+
           {/* Category */}
           <div>
             <label className="block text-sm font-medium text-lantern-text mb-2">
@@ -608,6 +668,33 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
               )}
             </div>
           </div>
+
+          {showsAttestation ? (
+            <div className="rounded-lg border border-lantern-border p-3 space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary">Rights</p>
+              {!attestationRequired ? (
+                <p className="text-xs text-lantern-text-tertiary">
+                  You already confirmed the rights for this listing
+                  {listingRightsStatus === 'cleared' ? ' (cleared after review)' : ''}. Tick again only if you
+                  want to refresh that confirmation.
+                </p>
+              ) : null}
+              <RightsAttestationCheckbox
+                id="edit-listing-attestation"
+                checked={attested}
+                onChange={(checked) => {
+                  setAttested(checked);
+                  if (checked && submitError === ATTESTATION_REQUIRED_MESSAGE) setSubmitError(null);
+                }}
+                disabled={loading || uploadingImages}
+              />
+            </div>
+          ) : null}
+          {submitError ? (
+            <p role="alert" className="text-sm text-lantern-error">
+              {submitError}
+            </p>
+          ) : null}
 
           {/* Submit Button */}
           <div className="flex justify-end gap-3 pt-4 border-t border-lantern-border">

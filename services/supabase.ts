@@ -106,6 +106,13 @@ const fetchWithTimeout = async (
     });
     clearTimeout(timeoutId);
 
+    // A suspended account gets 403 { code: 'ACCOUNT_SUSPENDED' } on every
+    // authenticated call and keeps its session; record it so App.tsx can show
+    // the blocking notice (see services/accountSuspension.ts). Non-blocking.
+    if (response.status === 403) {
+      void import('./accountSuspension').then(({ noteSuspendedResponse }) => noteSuspendedResponse(response));
+    }
+
     if (response.status === 401 && allowRetry) {
       let authCode: string | undefined;
       try {
@@ -684,7 +691,7 @@ export async function ensureNotesUploadSession(): Promise<{ userId: string }> {
 
 // For local development, the keys are default, but in production, set env vars.
 
-export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string }, userId: string, memberIds: string[]) => {
+export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string; courseId?: string | null }, userId: string, memberIds: string[]) => {
   console.log('Creating group with data:', groupData, 'userId:', userId, 'memberIds:', memberIds);
   
   const response = await fetch(`${getApiRoot()}/api/v1/groups`, {
@@ -719,6 +726,7 @@ export function mapGroupListFromApi(
     parentId: g.parent_id || g.parentId,
     isArchived: g.is_archived ?? g.isArchived ?? false,
     inviteId: g.invite_id || g.inviteId,
+    courseId: g.courseId !== undefined ? g.courseId : (g.course_id ?? null),
     unreadCount: unreadCounts[g.id] ?? g.unread_count ?? g.unreadCount ?? 0,
     pendingMembers: [],
     invitedPhoneNumbers: [],
@@ -1212,7 +1220,7 @@ export const updateQuestionStatus = async (messageId: string, questionStatus: st
 
 // --- Flashcard Functions ---
 
-export const createDeck = async (deckData: { name: string; description?: string; isShared?: boolean }, userId: string) => {
+export const createDeck = async (deckData: { name: string; description?: string; isShared?: boolean; courseId?: string | null }, userId: string) => {
   console.log('Creating deck:', deckData.name, 'isShared:', deckData.isShared);
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/decks`, {
@@ -1222,6 +1230,7 @@ export const createDeck = async (deckData: { name: string; description?: string;
         name: deckData.name,
         description: deckData.description,
         isShared: deckData.isShared,
+        ...(deckData.courseId !== undefined ? { courseId: deckData.courseId } : {}),
         userId,
       }),
     });
@@ -1251,6 +1260,7 @@ export const mapDeckFromApi = (d: any): Deck => ({
   createdAt: d.created_at || d.createdAt,
   userId: d.user_id || d.userId,
   isShared: d.is_shared ?? d.isShared ?? false,
+  courseId: d.courseId !== undefined ? d.courseId : (d.course_id ?? null),
 });
 
 /** Map raw API deck rows to client Deck objects, dropping malformed rows. */
@@ -1259,9 +1269,10 @@ export const mapDecksFromApi = (rows: any[]): Deck[] =>
     .filter((d: any) => d && d.id)
     .map(mapDeckFromApi);
 
-export const fetchDecks = async (userId: string, options?: { includeShared?: boolean }) => {
+export const fetchDecks = async (userId: string, options?: { includeShared?: boolean; courseId?: string | null }) => {
   const includeShared = options?.includeShared ?? false;
-  console.log('Fetching decks for user:', userId, 'includeShared:', includeShared);
+  const courseId = options?.courseId || undefined;
+  console.log('Fetching decks for user:', userId, 'includeShared:', includeShared, 'courseId:', courseId);
   try {
     if (!(await hasValidSession())) {
       return [];
@@ -1276,6 +1287,7 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
       const params = new URLSearchParams();
       params.set('userId', userId);
       if (includeShared) params.set('includeShared', 'true');
+      if (courseId) params.set('courseId', courseId);
       params.set('page', String(page));
       params.set('limit', String(DECK_API_PAGE_SIZE));
 
@@ -1308,7 +1320,7 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
   }
 };
 
-export const updateDeck = async (deckId: string, updates: { name?: string; description?: string; isShared?: boolean }) => {
+export const updateDeck = async (deckId: string, updates: { name?: string; description?: string; isShared?: boolean; courseId?: string | null }) => {
   console.log('Updating deck:', deckId, 'updates:', updates);
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}`, {
@@ -1676,7 +1688,10 @@ export const updateFlashcard = async (flashcardId: string, updates: {
 export const reviewFlashcard = async (
   flashcardId: string,
   rating: 'again' | 'hard' | 'good' | 'easy',
-  expectedVersion?: number
+  expectedVersion?: number,
+  /** Offline replay: when the grade was really given, so the server's learning
+   *  event carries the original time rather than the sync time. */
+  options?: { reviewedAt?: string }
 ) => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/flashcards/${flashcardId}/review`, {
@@ -1685,6 +1700,7 @@ export const reviewFlashcard = async (
       body: JSON.stringify({
         rating,
         ...(expectedVersion != null ? { expectedVersion } : {}),
+        ...(options?.reviewedAt ? { reviewedAt: options.reviewedAt } : {}),
       }),
     });
 
@@ -2354,6 +2370,12 @@ export const fetchUserProfile = async (userId: string) => {
     });
 
     if (!response.ok) {
+      // The boot-time profile fetch is the first call a suspended account
+      // makes; record ACCOUNT_SUSPENDED here so the notice shows immediately.
+      if (response.status === 403) {
+        const { noteSuspendedResponse } = await import('./accountSuspension');
+        await noteSuspendedResponse(response);
+      }
       const err = new Error(`HTTP error! status: ${response.status}`);
       if (response.status !== 404) {
         console.error('Error fetching user profile:', err);
@@ -2595,13 +2617,19 @@ export const checkUsernameAvailability = async (username: string): Promise<boole
   }
 };
 
-export const updateUsername = async (userId: string, username: string, firstName: string, lastName: string): Promise<any> => {
+export const updateUsername = async (userId: string, username: string, firstName?: string, lastName?: string): Promise<any> => {
   try {
     const headers = await getRequiredAuthHeaders();
     const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/username`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ username, firstName, lastName }),
+      // Names are optional on the profile-setup step; omit blanks so the
+      // server keeps whatever is already on file instead of writing ''.
+      body: JSON.stringify({
+        username,
+        ...(firstName && firstName.trim() ? { firstName: firstName.trim() } : {}),
+        ...(lastName && lastName.trim() ? { lastName: lastName.trim() } : {}),
+      }),
     });
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -2794,7 +2822,7 @@ export const deleteGroup = async (groupId: string) => {
   }
 };
 
-export const updateGroup = async (groupId: string, updates: { name?: string; description?: string; isArchived?: boolean; avatarUrl?: string }) => {
+export const updateGroup = async (groupId: string, updates: { name?: string; description?: string; isArchived?: boolean; avatarUrl?: string; courseId?: string | null }) => {
   console.log('Updating group:', groupId, 'updates:', updates);
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}`, {
@@ -2804,7 +2832,8 @@ export const updateGroup = async (groupId: string, updates: { name?: string; des
         name: updates.name,
         description: updates.description,
         isArchived: updates.isArchived,
-        avatarUrl: updates.avatarUrl
+        avatarUrl: updates.avatarUrl,
+        ...(updates.courseId !== undefined ? { courseId: updates.courseId } : {}),
       }),
     });
 
@@ -2894,6 +2923,14 @@ export const createMarketplaceListing = async (listingData: {
   location?: string;
   images?: string[];
   categorySpecificFields?: any;
+  /** Academic course (marketplace_listings.course_id). */
+  courseId?: string | null;
+  /**
+   * Rights attestation (RIGHTS_ATTESTATION_TEXT). The API requires it (400
+   * ATTESTATION_REQUIRED_MESSAGE) when isAcademicListing({ listingKind, category }).
+   */
+  attestation?: boolean;
+  [key: string]: unknown;
 }) => {
   console.log('Creating marketplace listing:', listingData.title);
   try {
@@ -2915,7 +2952,17 @@ export const createMarketplaceListing = async (listingData: {
     }
 
     if (!response.ok) {
-      throw new Error(result.error || result.message || 'Failed to create listing');
+      if (response.status === 403) {
+        const { noteSuspendedBody } = await import('./accountSuspension');
+        noteSuspendedBody(response.status, result);
+      }
+      // Keep the status so the form can show 400s (missing attestation,
+      // blocked wording) inline instead of a generic toast.
+      const error = new Error(result.error || result.message || 'Failed to create listing') as Error & {
+        status?: number;
+      };
+      error.status = response.status;
+      throw error;
     }
 
     console.log('Listing created:', result.data);
@@ -3080,8 +3127,18 @@ export const updateMarketplaceListing = async (listingId: string, updates: any) 
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update listing');
+      // API error bodies are { success:false, error:'<seller-facing copy>' } (e.g. 403
+      // when moderation has locked the listing); surface that copy to the seller.
+      const error = await response.json().catch(() => ({}));
+      if (response.status === 403) {
+        const { noteSuspendedBody } = await import('./accountSuspension');
+        noteSuspendedBody(response.status, error);
+      }
+      const requestError = new Error(error.error || error.message || 'Failed to update listing') as Error & {
+        status?: number;
+      };
+      requestError.status = response.status;
+      throw requestError;
     }
 
     const result = await response.json();
@@ -3241,8 +3298,8 @@ export const updateListingStatus = async (listingId: string, status: 'active' | 
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update status');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || error.message || 'Failed to update status');
     }
 
     const result = await response.json();
@@ -4184,7 +4241,15 @@ export const publishQuestionBank = async (input: {
   campusId: string;
   location?: string;
   groupId?: string | null;
+  /** Academic course written on both the listing and the bank. */
+  courseId?: string | null;
   content: { config?: Record<string, unknown>; questions: unknown[] };
+  /** Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; the API answers 400 without it. */
+  attestation: true;
+  /** "This pack was AI-assisted" toggle. */
+  aiAssisted?: boolean;
+  /** Up to 20 short references (≤ 200 chars each). */
+  sourcesCited?: string[];
 }): Promise<{ listing: any; bank: { listing_id: string; question_count: number } }> => {
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/marketplace/question-banks/publish`,
@@ -4197,7 +4262,11 @@ export const publishQuestionBank = async (input: {
   );
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error((err as any).error || 'Failed to publish question bank');
+    const error = new Error((err as any).error || (err as any).message || 'Failed to publish question bank') as Error & {
+      status?: number;
+    };
+    error.status = response.status;
+    throw error;
   }
   return (await response.json()).data;
 };
@@ -4305,23 +4374,32 @@ export const fetchQuestionBankLeaderboard = async (
   return (await response.json()).data;
 };
 
-/** Seller republish: replace the published snapshot, bumping the version. */
+/**
+ * Seller republish: replace the published snapshot, bumping the version.
+ * Re-requires the rights attestation (400 without it); aiAssisted /
+ * sourcesCited refresh the bank's provenance when sent.
+ */
 export const updateQuestionBankContent = async (
   listingId: string,
-  content: { config?: Record<string, unknown>; questions: unknown[] }
+  content: { config?: Record<string, unknown>; questions: unknown[] },
+  provenance: { attestation: true; aiAssisted?: boolean; sourcesCited?: string[] }
 ): Promise<{ version: number; questionCount: number }> => {
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/marketplace/question-banks/${encodeURIComponent(listingId)}/update-content`,
     {
       method: 'POST',
       headers: await getAuthHeaders(),
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, ...provenance }),
     },
     15000
   );
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error((err as any).error || 'Failed to update question bank');
+    const error = new Error((err as any).error || (err as any).message || 'Failed to update question bank') as Error & {
+      status?: number;
+    };
+    error.status = response.status;
+    throw error;
   }
   return (await response.json()).data;
 };

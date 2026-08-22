@@ -16,6 +16,8 @@ interface NotesState {
   isSaving: boolean;
   error: string | null;
   selectedFolderId: string | null;
+  /** Course chip filter (Notes list) — threaded into every loadNotes() as `courseId`. */
+  courseFilterId: string | null;
   /**
    * Increments whenever a save loses an optimistic-concurrency race and the
    * authoritative note is reloaded over the user's superseded edits. The editor
@@ -25,6 +27,8 @@ interface NotesState {
 
   setFolders: (folders: NoteFolder[]) => void;
   setSelectedFolderId: (id: string | null) => void;
+  /** Select a course chip (null = All) and reload the list with that filter. */
+  setCourseFilter: (courseId: string | null) => Promise<void>;
   setNotes: (notes: StudyNote[]) => void;
   setSelectedNote: (note: NotesState['selectedNote']) => void;
   setComments: (comments: NoteComment[]) => void;
@@ -33,9 +37,10 @@ interface NotesState {
   setError: (e: string | null) => void;
 
   loadFolders: () => Promise<void>;
-  loadNotes: (options?: { folderId?: string }) => Promise<void>;
+  loadNotes: (options?: { folderId?: string; courseId?: string | null }) => Promise<void>;
   loadNote: (noteId: string) => Promise<boolean>;
-  createFolder: (name: string, color?: string) => Promise<NoteFolder>;
+  /** `parentId` nests the new folder one level under an existing one (note_folders.parent_id). */
+  createFolder: (name: string, color?: string, parentId?: string | null) => Promise<NoteFolder>;
   updateFolder: (
     folderId: string,
     updates: { name?: string; color?: string },
@@ -62,10 +67,16 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   isSaving: false,
   error: null,
   selectedFolderId: null,
+  courseFilterId: null,
   conflictReloadToken: 0,
 
   setFolders: (folders) => set({ folders }),
   setSelectedFolderId: (selectedFolderId) => set({ selectedFolderId }),
+  setCourseFilter: async (courseId) => {
+    if (get().courseFilterId === (courseId || null)) return;
+    set({ courseFilterId: courseId || null });
+    await get().loadNotes();
+  },
   setNotes: (notes) => set({ notes }),
   setSelectedNote: (selectedNote) => set({ selectedNote }),
   setComments: (comments) => set({ comments }),
@@ -84,8 +95,14 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   loadNotes: async (options) => {
     set({ isLoading: true, error: null });
+    // The course chip is sticky: callers that just say loadNotes() keep the
+    // filter the user picked; an explicit courseId (or null) overrides it.
+    const courseId = options && 'courseId' in options ? options.courseId : get().courseFilterId;
+    const requestedFilter = get().courseFilterId;
     try {
-      const notes = await notesApi.fetchNotes(options);
+      const notes = await notesApi.fetchNotes({ ...options, courseId: courseId || undefined });
+      // A chip change mid-flight wins; drop the stale response.
+      if (get().courseFilterId !== requestedFilter) return;
       set({ notes, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
@@ -111,9 +128,13 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     }
   },
 
-  createFolder: async (name, color) => {
+  createFolder: async (name, color, parentId) => {
     try {
-      const folder = await notesApi.createNoteFolder({ name, color });
+      const folder = await notesApi.createNoteFolder({
+        name,
+        color,
+        ...(parentId ? { parentId } : {}),
+      });
       set({ folders: [...get().folders, folder], error: null });
       return folder;
     } catch (e: any) {
@@ -450,6 +471,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       isSaving: false,
       error: null,
       selectedFolderId: null,
+      courseFilterId: null,
       conflictReloadToken: 0,
     }),
 }));

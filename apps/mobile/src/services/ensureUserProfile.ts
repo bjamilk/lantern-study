@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { createUserProfile, fetchUserProfile } from './api';
+import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 
 function isMissingProfileError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -15,12 +16,15 @@ function isMissingProfileError(error: unknown): boolean {
 export async function ensureUserProfile(user: User): Promise<{
   displayName: string;
   firstName?: string;
+  /** Academic identity from the same GET /users/:id round-trip (null when just created). */
+  academic: AcademicProfile | null;
 }> {
   try {
     const profile = await fetchUserProfile(user.id);
     return {
       displayName: profile.name?.trim() || resolveFallbackName(user),
       firstName: resolveProfileFirstName(profile, user),
+      academic: extractAcademicProfile(profile),
     };
   } catch (error: unknown) {
     if (!isMissingProfileError(error)) {
@@ -32,6 +36,7 @@ export async function ensureUserProfile(user: User): Promise<{
     return {
       displayName: name,
       firstName: resolveProfileFirstName(null, user),
+      academic: null,
     };
   }
 }

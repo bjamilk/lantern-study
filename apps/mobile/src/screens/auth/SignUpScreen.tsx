@@ -14,18 +14,22 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Modal,
-  FlatList,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { studyLevelLabel } from '@lantern/shared/academic';
 import { useAuthStore } from '../../stores/authStore';
 import { checkUsername } from '../../services/api';
 import { supabase } from '../../services/supabase';
+import { saveAcademicProfile } from '../../services/academic';
+import { stashPendingAcademicProfile } from '../../services/pendingAcademicProfile';
 import { useTheme } from '../../theme';
 import { LanternLogo } from '../../components/LanternLogo';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
 import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
+import { StudyLevelPicker } from '../../components/academic/StudyLevelPicker';
+import { CampusPicker } from '../marketplace/CampusPicker';
+import { useInstitutions } from '../../hooks/useInstitutions';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type SignUpScreenProps = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
@@ -35,96 +39,11 @@ interface FormErrors {
   lastName?: string;
   username?: string;
   email?: string;
-  phoneNumber?: string;
+  institution?: string;
+  studyLevel?: string;
   password?: string;
   confirmPassword?: string;
 }
-
-interface CountryCode {
-  code: string;
-  name: string;
-}
-
-// Country codes list (matching web app)
-const COUNTRY_CODES: CountryCode[] = [
-  { code: '+1', name: 'United States/Canada' },
-  { code: '+7', name: 'Russia/Kazakhstan' },
-  { code: '+20', name: 'Egypt' },
-  { code: '+27', name: 'South Africa' },
-  { code: '+30', name: 'Greece' },
-  { code: '+31', name: 'Netherlands' },
-  { code: '+32', name: 'Belgium' },
-  { code: '+33', name: 'France' },
-  { code: '+34', name: 'Spain' },
-  { code: '+36', name: 'Hungary' },
-  { code: '+39', name: 'Italy' },
-  { code: '+40', name: 'Romania' },
-  { code: '+41', name: 'Switzerland' },
-  { code: '+43', name: 'Austria' },
-  { code: '+44', name: 'United Kingdom' },
-  { code: '+45', name: 'Denmark' },
-  { code: '+46', name: 'Sweden' },
-  { code: '+47', name: 'Norway' },
-  { code: '+48', name: 'Poland' },
-  { code: '+49', name: 'Germany' },
-  { code: '+51', name: 'Peru' },
-  { code: '+52', name: 'Mexico' },
-  { code: '+53', name: 'Cuba' },
-  { code: '+54', name: 'Argentina' },
-  { code: '+55', name: 'Brazil' },
-  { code: '+56', name: 'Chile' },
-  { code: '+57', name: 'Colombia' },
-  { code: '+58', name: 'Venezuela' },
-  { code: '+60', name: 'Malaysia' },
-  { code: '+61', name: 'Australia' },
-  { code: '+62', name: 'Indonesia' },
-  { code: '+63', name: 'Philippines' },
-  { code: '+64', name: 'New Zealand' },
-  { code: '+65', name: 'Singapore' },
-  { code: '+66', name: 'Thailand' },
-  { code: '+81', name: 'Japan' },
-  { code: '+82', name: 'South Korea' },
-  { code: '+84', name: 'Vietnam' },
-  { code: '+86', name: 'China' },
-  { code: '+90', name: 'Turkey' },
-  { code: '+91', name: 'India' },
-  { code: '+92', name: 'Pakistan' },
-  { code: '+93', name: 'Afghanistan' },
-  { code: '+94', name: 'Sri Lanka' },
-  { code: '+95', name: 'Myanmar' },
-  { code: '+98', name: 'Iran' },
-  { code: '+212', name: 'Morocco' },
-  { code: '+213', name: 'Algeria' },
-  { code: '+216', name: 'Tunisia' },
-  { code: '+218', name: 'Libya' },
-  { code: '+220', name: 'Gambia' },
-  { code: '+221', name: 'Senegal' },
-  { code: '+233', name: 'Ghana' },
-  { code: '+234', name: 'Nigeria' },
-  { code: '+254', name: 'Kenya' },
-  { code: '+255', name: 'Tanzania' },
-  { code: '+256', name: 'Uganda' },
-  { code: '+260', name: 'Zambia' },
-  { code: '+263', name: 'Zimbabwe' },
-  { code: '+351', name: 'Portugal' },
-  { code: '+352', name: 'Luxembourg' },
-  { code: '+353', name: 'Ireland' },
-  { code: '+354', name: 'Iceland' },
-  { code: '+358', name: 'Finland' },
-  { code: '+370', name: 'Lithuania' },
-  { code: '+371', name: 'Latvia' },
-  { code: '+372', name: 'Estonia' },
-  { code: '+380', name: 'Ukraine' },
-  { code: '+420', name: 'Czech Republic' },
-  { code: '+421', name: 'Slovakia' },
-  { code: '+852', name: 'Hong Kong' },
-  { code: '+853', name: 'Macau' },
-  { code: '+886', name: 'Taiwan' },
-  { code: '+966', name: 'Saudi Arabia' },
-  { code: '+971', name: 'United Arab Emirates' },
-  { code: '+972', name: 'Israel' },
-  { code: '+974', name: 'Qatar' },
-];
 
 export default function SignUpScreen({ navigation }: SignUpScreenProps) {
   const { colors } = useTheme();
@@ -134,15 +53,24 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [email, setEmail] = useState('');
-  const [countryCode, setCountryCode] = useState('+1');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  // Academic identity (replaces the old phone block): institution + level are
+  // required, programme optional. Written to profiles on insert AND via
+  // PUT /users/:id once a session exists (the API is the source of truth).
+  const [institutionId, setInstitutionId] = useState('');
+  const [programme, setProgramme] = useState('');
+  const [studyLevel, setStudyLevel] = useState<number | null>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const {
+    institutions,
+    loading: institutionsLoading,
+    error: institutionsError,
+    reload: reloadInstitutions,
+  } = useInstitutions();
 
   const { signUp, isLoading: authLoading, error: authError } = useAuthStore();
   const cookieNoticeInset = useCookieNoticeBottomInset();
@@ -214,10 +142,11 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
       newErrors.email = 'Please enter a valid email';
     }
 
-    // Phone is optional but validate format if provided
-    if (phoneNumber.trim() && !/^\d{7,15}$/.test(phoneNumber.replace(/\D/g, ''))) {
-      newErrors.phoneNumber = 'Please enter a valid phone number';
-    }
+    // Institution + level are OPTIONAL: activation must be free and under 3
+    // minutes, and a student at an unlisted school (sentinels are filtered out),
+    // a non-Nigerian student, or anyone hitting a slow/failed campuses fetch
+    // must never be blocked from creating an account. Whatever they pick is
+    // still collected and saved below.
 
     if (!password) {
       newErrors.password = 'Password is required';
@@ -233,7 +162,7 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [firstName, lastName, username, usernameAvailable, email, phoneNumber, password, confirmPassword]);
+  }, [firstName, lastName, username, usernameAvailable, email, institutionId, studyLevel, password, confirmPassword]);
 
   const handleSignUp = useCallback(async () => {
     if (!validateForm()) return;
@@ -241,13 +170,17 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
     setIsLoading(true);
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
-      const fullPhoneNumber = phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : '';
       const normalizedUsername = username.toLowerCase().trim();
+      const academicFields = {
+        institutionId: institutionId || null,
+        programme: programme.trim() || null,
+        studyLevel: studyLevel ?? null,
+      };
 
       void import('../../services/productAnalytics').then(({ trackSignupStarted }) => {
         trackSignupStarted();
       });
-      
+
       // Sign up with Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -255,8 +188,10 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
         options: {
           data: {
             name: fullName,
-            phone: fullPhoneNumber,
             username: normalizedUsername,
+            institution_id: academicFields.institutionId,
+            programme: academicFields.programme,
+            study_level: academicFields.studyLevel,
           },
         },
       });
@@ -271,14 +206,17 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
       }
 
       if (data.user) {
-        // Create profile in database
+        // Create profile in database (best-effort; handle_new_user may already
+        // have created the row). The academic columns ride along.
         const { error: profileError } = await supabase.from('profiles').insert({
           id: data.user.id,
           name: fullName,
           username: normalizedUsername,
           first_name: firstName.trim(),
           last_name: lastName.trim(),
-          phone: fullPhoneNumber || null,
+          institution_id: academicFields.institutionId,
+          programme: academicFields.programme,
+          study_level: academicFields.studyLevel,
           points: 0,
           stats: {},
           settings: {},
@@ -290,8 +228,19 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
         }
 
         if (data.session?.user) {
+          // Session exists: PUT /users/:id is the source of truth for the
+          // academic profile. Best-effort — never block the welcome.
+          try {
+            await saveAcademicProfile(data.user.id, academicFields);
+          } catch (academicError) {
+            console.warn('[SignUp] academic profile PUT failed; stashing for next boot:', academicError);
+            await stashPendingAcademicProfile(email, academicFields);
+          }
           Alert.alert('Welcome to Lantern Study!', 'Your account has been created successfully.');
         } else {
+          // Email confirmation pending: no token yet, so replay the academic
+          // fields on the first authenticated boot.
+          await stashPendingAcademicProfile(email, academicFields);
           navigation.replace('VerifyEmail', { email });
         }
       }
@@ -300,26 +249,24 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [firstName, lastName, username, email, countryCode, phoneNumber, password, validateForm, navigation]);
+  }, [
+    firstName,
+    lastName,
+    username,
+    email,
+    institutionId,
+    programme,
+    studyLevel,
+    password,
+    validateForm,
+    navigation,
+  ]);
 
   const clearError = (field: keyof FormErrors) => {
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
   };
-
-  const renderCountryItem = ({ item }: { item: CountryCode }) => (
-    <TouchableOpacity
-      style={styles.countryItem}
-      onPress={() => {
-        setCountryCode(item.code);
-        setShowCountryPicker(false);
-      }}
-    >
-      <Text style={[styles.countryCode, { color: colors.primary }]}>{item.code}</Text>
-      <Text style={[styles.countryName, { color: colors.text }]}>{item.name}</Text>
-    </TouchableOpacity>
-  );
 
   return (
     <KeyboardAvoidingView
@@ -441,36 +388,63 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
             </Text>
           </View>
 
-          {/* Phone Number Input */}
+          {/* Institution (optional; "Other" sentinels are never offered) */}
           <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Phone Number (Optional)</Text>
-            <View style={styles.phoneRow}>
-              <TouchableOpacity
-                style={[styles.countryCodeButton, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}
-                onPress={() => setShowCountryPicker(true)}
-                disabled={isLoading}
-              >
-                <Text style={[styles.countryCodeText, { color: colors.inputText }]}>{countryCode}</Text>
-                <Ionicons name="chevron-down" size={16} color={colors.inputPlaceholder} />
+            <Text style={[styles.label, { color: colors.textSecondary }]}>University / Polytechnic (Optional)</Text>
+            <CampusPicker
+              campuses={institutions}
+              value={institutionId}
+              onChange={(campusId) => {
+                setInstitutionId(campusId);
+                clearError('institution');
+              }}
+              emptyLabel={institutionsLoading ? 'Loading institutions…' : 'Choose your institution'}
+              searchPlaceholder="Search universities and polytechnics…"
+            />
+            {institutionsError ? (
+              <TouchableOpacity onPress={reloadInstitutions} accessibilityRole="button">
+                <Text style={[styles.errorText, { color: colors.error }]}>
+                  Couldn’t load institutions. Tap to retry.
+                </Text>
               </TouchableOpacity>
-              <View style={[styles.inputWrapper, styles.phoneInput, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.phoneNumber && styles.inputError]}>
-                <Ionicons name="call-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { color: colors.inputText }]}
-                  placeholder="Phone number"
-                  placeholderTextColor={colors.inputPlaceholder}
-                  value={phoneNumber}
-                  onChangeText={(text) => {
-                    setPhoneNumber(text.replace(/\D/g, ''));
-                    clearError('phoneNumber');
-                  }}
-                  keyboardType="phone-pad"
-                  autoComplete="tel"
-                  editable={!isLoading}
-                />
-              </View>
+            ) : (
+              <Text style={[styles.hintText, { color: colors.textSecondary }]}>
+                Not listed, or not in Nigeria? Skip this — you can add it later.
+              </Text>
+            )}
+          </View>
+
+          {/* Programme (optional) */}
+          <View style={styles.inputContainer}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Programme (Optional)</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
+              <Ionicons name="book-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { color: colors.inputText }]}
+                placeholder="e.g. Medicine and Surgery"
+                placeholderTextColor={colors.inputPlaceholder}
+                value={programme}
+                onChangeText={setProgramme}
+                autoCapitalize="words"
+                editable={!isLoading}
+              />
             </View>
-            {errors.phoneNumber && <Text style={[styles.errorText, { color: colors.error }]}>{errors.phoneNumber}</Text>}
+          </View>
+
+          {/* Level (optional) */}
+          <View style={styles.inputContainer}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Level (Optional){studyLevel ? ` — ${studyLevelLabel(studyLevel)}` : ''}
+            </Text>
+            <StudyLevelPicker
+              value={studyLevel}
+              onChange={(level) => {
+                setStudyLevel(level);
+                clearError('studyLevel');
+              }}
+              disabled={isLoading}
+            />
+            {errors.studyLevel && <Text style={[styles.errorText, { color: colors.error }]}>{errors.studyLevel}</Text>}
           </View>
 
           {/* Email Input */}
@@ -614,31 +588,6 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Country Code Picker Modal */}
-      <Modal
-        visible={showCountryPicker}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowCountryPicker(false)}
-      >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setShowCountryPicker(false)} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Select Country Code</Text>
-            <View style={{ width: 24 }} />
-          </View>
-          <FlatList
-            data={COUNTRY_CODES}
-            renderItem={renderCountryItem}
-            keyExtractor={(item) => item.code}
-            style={styles.countryList}
-            ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
-          />
-        </View>
-      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -750,26 +699,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: 4,
   },
-  phoneRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  countryCodeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    height: 52,
-    gap: 4,
-  },
-  countryCodeText: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  phoneInput: {
-    flex: 1,
-  },
   signUpButton: {
     borderRadius: 12,
     height: 52,
@@ -806,47 +735,5 @@ const styles = StyleSheet.create({
   signInText: {
     fontSize: 14,
     fontWeight: '600',
-  },
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 60 : 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  countryList: {
-    flex: 1,
-  },
-  countryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  countryCode: {
-    fontSize: 16,
-    fontWeight: '600',
-    width: 60,
-  },
-  countryName: {
-    fontSize: 16,
-    flex: 1,
-  },
-  separator: {
-    height: 1,
-    marginHorizontal: 24,
   },
 });

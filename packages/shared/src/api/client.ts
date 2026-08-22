@@ -155,7 +155,12 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
           errBody.data ?? null
         );
       }
-      const errBody = error as { message?: string; error?: string };
+      const errBody = error as {
+        message?: string;
+        error?: string;
+        code?: string;
+        suspendedUntil?: string;
+      };
       const genericErrors = new Set(['Error', 'ApiError', 'Request failed']);
       const detail =
         errBody.message && (!errBody.error || genericErrors.has(errBody.error))
@@ -164,9 +169,15 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       const requestError = new Error(detail) as Error & {
         status?: number;
         deliveryUncertain?: boolean;
+        /** Machine-readable code from the API body (e.g. ACCOUNT_SUSPENDED). */
+        code?: string;
+        /** ISO timestamp carried by ACCOUNT_SUSPENDED responses. */
+        suspendedUntil?: string;
       };
       requestError.status = response.status;
       requestError.deliveryUncertain = response.status === 408 || response.status >= 500;
+      if (typeof errBody.code === 'string') requestError.code = errBody.code;
+      if (typeof errBody.suspendedUntil === 'string') requestError.suspendedUntil = errBody.suspendedUntil;
       throw requestError;
     }
 

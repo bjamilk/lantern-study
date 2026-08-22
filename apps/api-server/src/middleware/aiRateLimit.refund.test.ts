@@ -22,6 +22,8 @@ describe('aiRateLimitForFeature refunds', () => {
   function mockRes() {
     return {
       headers: {} as Record<string, string>,
+      // Real responses carry res.locals; the middleware stamps the charge there.
+      locals: {} as Record<string, unknown>,
       listeners: {} as Record<string, Array<() => void>>,
       statusCode: 200,
       body: null as unknown,

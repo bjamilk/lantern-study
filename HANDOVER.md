@@ -40,12 +40,13 @@ Deploy: Cloudflare Pages (web, **git-connected — auto-deploys on push to `main
 | **API → Render** | **LIVE `04404b1`** — auto from `main` | `curl -s https://lantern-study-api.onrender.com/health` → commit |
 | **Mobile Android** | **v1.0.28 (versionCode 83) PUBLISHED** — release `v1.0.28` on `bjamilk/lantern-study-releases`, the site Download button tracks it (asset byte-verified 81,199,242 B == `apps/mobile/build-android-1.0.28-088e85b.apk`) | release asset size + on-device |
 | **iOS** | `apps/mobile/build-ios-sim-1.0.28-088e85b.tar.gz` — simulator parity build, boot-verified; **no distributable** (Apple signing not set up; runbook exists) | `tar -xzf … && xcrun simctl install booted LanternStudyDev.app` |
-| **Supabase** | no migrations this session; question-banks migration `20260818…` still awaiting hand-application | — |
+| **Supabase** | question-banks migration `20260818120000` is **applied** (E2E-verified 2026-08-16). **Seven Phase 1 migrations `20260822120000` → `20260822170000` are written but NOT applied — hand-apply all seven in filename order BEFORE the next API deploy** (the API build writes `course_id` / `rights_*` unconditionally); list + rationale in `docs/RELEASING.md` → "Apply migrations before deploying" | `SELECT column_name FROM information_schema.columns WHERE table_name='marketplace_listings' AND column_name='rights_status'` (row = 140000 applied) |
 
 **Type-checking gates:** root `npx tsc --noEmit` is a FALSE gate (~3.9k pre-existing errors; wrong tsconfig scope). Real gates: **`npm run build`** (turbo) for web, per-workspace `tsc` for `apps/mobile` and `apps/api-server`.
 
 ### Active detail docs (newest first)
 
+- **[docs/PLAN-2026-08-22-knowledge-network.md](docs/PLAN-2026-08-22-knowledge-network.md)** — the knowledge-network plan; Phase 1 server work is specified by `docs/phase1-academic-identity-contract.md`, `docs/phase1-rights-moderation-contract.md`, `docs/phase1-learning-events-contract.md`, `docs/phase1-library-archive-contract.md` (status line at the top of each) and lands as migrations `20260822120000`–`20260822170000` (apply order in `docs/RELEASING.md`; `170000` = post-review hardening: suspensions persist, moderation columns hidden from clients, purchased-pack `course_id` backfill).
 - **[docs/HANDOVER-2026-08-22-night-ship-marathon.md](docs/HANDOVER-2026-08-22-night-ship-marathon.md)** — this session: exam lock (#27), **dark-mode rebuild + AA contrast + AI-credit honesty + offline sync integrity** (#28), **ranked backlog: SW app-shell precache, cross-account queue guard, sync durability, 202-credit-refunds, companion parity** (#29), v1.0.27→v1.0.28 releases (#30), **auth funnel overhaul** (#31–#32: 3-field signup, fail-closed captcha, 8-char passwords, expired-link recovery, no enumeration leaks), Apple sign-in runbook. *(HEAD — latest work)*
 - [docs/APPLE-SIGN-IN-SETUP.md](docs/APPLE-SIGN-IN-SETUP.md) — Apple portal + Supabase provider + iOS signing + **the pending dashboard actions** (redirect allow-list, captcha toggle, password policy, PKCE test plan).
 - [docs/HANDOVER-2026-08-21-settings-locked-test-mode.md](docs/HANDOVER-2026-08-21-settings-locked-test-mode.md) — settings overhaul, first locked-test-mode ship, web auto-deploy pipeline (#21–#26).
@@ -87,7 +88,8 @@ fb6975b Ranked backlog: offline durability, AI credit refunds, companion parity 
 - Landing: social proof + product screenshot (real assets only).
 - `finishAuthSession` failure after successful OTP verify still strands on the auth screen (banner honest now; full recovery = enter app, let boot rebuild profile).
 - Two pre-gate junk postings on the live jobs board (Ezeobi "Internship — [team / function]", Benjamin "Tutor needed for [PHM 101]") — need admin removal.
-- Digital study bundles phases 1–2 live but **inert** until migration `20260818…` is hand-applied (memory `lantern-study-question-banks`).
+- Digital study bundles phases 1–2 are live (`20260818120000` applied); phase 3 per memory `lantern-study-question-banks`.
+- **Phase 1 knowledge-network migrations `20260822120000`–`20260822170000` await hand-application** (must precede the API deploy — `docs/RELEASING.md`).
 - Collaborative-notes last-write-wins body edits; note search misses content past the 2000-char cap; grade-history chips.
 
 ---

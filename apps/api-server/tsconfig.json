@@ -14,8 +14,12 @@
       "@lantern/shared/settings": ["../../packages/shared/dist/settings/index"],
       "@lantern/shared/settings/*": ["../../packages/shared/dist/settings/*"],
       "@lantern/shared/marketplace": ["../../packages/shared/dist/marketplace/index"],
+      "@lantern/shared/academic": ["../../packages/shared/dist/academic/index"],
+      "@lantern/shared/learning": ["../../packages/shared/dist/learning/index"],
       "@lantern/shared/jobs": ["../../packages/shared/dist/jobs/index"],
       "@lantern/shared/analytics": ["../../packages/shared/dist/analytics/index"],
+      "@lantern/shared/moderation": ["../../packages/shared/dist/moderation/index"],
+      "@lantern/shared/types": ["../../packages/shared/dist/types/index"],
       "@lantern/shared/accountLifecycle": ["../../packages/shared/dist/accountLifecycle"],
       "@lantern/shared/contactForm": ["../../packages/shared/dist/contactForm"]
     },

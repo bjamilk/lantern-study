@@ -1,6 +1,9 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Deck, Flashcard } from '../types';
+import { useAuthStore } from '../stores/authStore';
+import { fetchDecks } from '../services/supabase';
+import { CourseChips } from './academic/CourseChips';
 import {
   RectangleStackIcon,
   PlusCircleIcon,
@@ -14,6 +17,9 @@ import { isCardDue, getDeckListStatsLine, getStudyCtaLabel, getStudyAllDueLabel 
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
+import { useLibraryStore } from '../stores/libraryStore';
+import { UNFILED_COURSE_ID, matchesCourseFilter } from '../utils/libraryArchive';
+import { MoveToCourseModal } from './academic/MoveToCourseModal';
 import { SkeletonCard, ScreenHeader, Button, EmptyState, Menu, MenuTrigger, MenuContent, MenuItem } from './ui';
 
 interface FlashcardsScreenProps {
@@ -27,6 +33,8 @@ interface FlashcardsScreenProps {
   onStartStudy?: () => void;
   onStudyDeck?: (deck: Deck) => void;
   onOfflineToggle?: (deck: Deck, enable: boolean) => void;
+  /** "Move to course…" on a deck card (PUT /decks/:id { courseId }). Rejections surface in the dialog. */
+  onMoveDeckToCourse?: (deck: Deck, courseId: string | null) => void | Promise<void>;
   embedded?: boolean;
 }
 
@@ -50,6 +58,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   onStartStudy,
   onStudyDeck,
   onOfflineToggle,
+  onMoveDeckToCourse,
   embedded = false,
 }) => {
   const { isDeckOffline } = useFlashcardStore();
@@ -67,7 +76,68 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const isLoading = isInitialLoading;
-  const validDecks = decks.filter((deck): deck is Deck => Boolean(deck?.id && deck?.name));
+  // Course chip filter (Phase 1): the archive-wide selection lives in the
+  // library store (the Library rail sets it too); `GET /decks?courseId=`
+  // decides which decks show — `'null'` asks for unfiled decks — while the
+  // store keeps the full list for every other surface.
+  const currentUserId = useAuthStore((s) => s.currentUser?.id ?? null);
+  const courseFilterId = useLibraryStore((s) => s.courseFilterId);
+  const setCourseFilterId = useLibraryStore((s) => s.setCourseFilter);
+  const [courseDeckIds, setCourseDeckIds] = useState<Set<string> | null>(null);
+  const [courseFilterLoading, setCourseFilterLoading] = useState(false);
+  const [movingDeck, setMovingDeck] = useState<Deck | null>(null);
+  const [deckMenuId, setDeckMenuId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!courseFilterId || !currentUserId) {
+      setCourseDeckIds(null);
+      setCourseFilterLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCourseFilterLoading(true);
+    void fetchDecks(currentUserId, { includeShared: true, courseId: courseFilterId })
+      .then((rows) => {
+        if (cancelled) return;
+        setCourseDeckIds(new Set((rows || []).map((d: { id: string }) => d.id)));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Fall back to the deck rows already in the store.
+        setCourseDeckIds(new Set(decks.filter((d) => matchesCourseFilter(d?.courseId, courseFilterId)).map((d) => d.id)));
+      })
+      .finally(() => {
+        if (!cancelled) setCourseFilterLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseFilterId, currentUserId]);
+  const validDecks = decks
+    .filter((deck): deck is Deck => Boolean(deck?.id && deck?.name))
+    .filter((deck) => {
+      if (!courseFilterId) return true;
+      if (courseDeckIds) {
+        // Server answer wins; a deck the store already files under this course
+        // (just created / just moved) shows without waiting for a refetch.
+        return courseDeckIds.has(deck.id) || (courseFilterId !== UNFILED_COURSE_ID && deck.courseId === courseFilterId);
+      }
+      // No server answer yet: nothing while loading (skeleton), best effort after a failure.
+      return courseFilterLoading ? false : matchesCourseFilter(deck.courseId, courseFilterId);
+    });
+
+  const handleMoveDeck = async (deck: Deck, courseId: string | null) => {
+    if (!onMoveDeckToCourse) return;
+    await onMoveDeckToCourse(deck, courseId);
+    // Keep the filtered view honest without a refetch.
+    setCourseDeckIds((prev) => {
+      if (!prev || !courseFilterId) return prev;
+      const next = new Set(prev);
+      if (matchesCourseFilter(courseId, courseFilterId)) next.add(deck.id);
+      else next.delete(deck.id);
+      return next;
+    });
+  };
 
   const handleAIGenerate = () => {
     openWithMessage('Generate flashcards for my weak topics from recent tests and save them to a new deck.');
@@ -142,11 +212,36 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         {embedded && (
           <div className="flex justify-end mb-4">{headerActions}</div>
         )}
+        <CourseChips
+          value={courseFilterId}
+          onChange={setCourseFilterId}
+          className="mb-4"
+          ariaLabel="Filter decks by course"
+          showUnfiled
+        />
 
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
           </div>
+        ) : courseFilterId && courseFilterLoading && validDecks.length === 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
+          </div>
+        ) : courseFilterId && validDecks.length === 0 ? (
+          <EmptyState
+            icon={<RectangleStackIcon className="w-8 h-8" />}
+            title={courseFilterId === UNFILED_COURSE_ID ? 'No unfiled decks' : 'No decks for this course yet'}
+            description={
+              courseFilterId === UNFILED_COURSE_ID
+                ? 'Every deck is filed under a course. Pick All to see them.'
+                : 'Create a deck and file it under this course, or pick All to see every deck.'
+            }
+            actionLabel="Create deck"
+            onAction={onOpenCreateDeck}
+            secondaryActionLabel="Show all decks"
+            onSecondaryAction={() => setCourseFilterId(null)}
+          />
         ) : validDecks.length > 0 ? (
           <>
           {deckLoadError && (
@@ -200,6 +295,28 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                           <CloudArrowDownIcon className="w-4 h-4" />
                         )}
                       </button>
+                      {onMoveDeckToCourse ? (
+                        <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                          <Menu
+                            open={deckMenuId === deck.id}
+                            onOpenChange={(open) => setDeckMenuId(open ? deck.id : null)}
+                          >
+                            <MenuTrigger
+                              aria-label={`Deck options for ${deck.name}`}
+                              className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors inline-flex items-center justify-center"
+                            >
+                              <EllipsisVerticalIcon className="w-4 h-4" />
+                            </MenuTrigger>
+                            <MenuContent align="end" className="w-48">
+                              <MenuItem onSelect={() => setMovingDeck(deck)}>
+                                <span className="inline-flex items-center gap-2">
+                                  <AcademicCapIcon className="w-4 h-4" /> Move to course…
+                                </span>
+                              </MenuItem>
+                            </MenuContent>
+                          </Menu>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -259,6 +376,15 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           />
         )}
       </div>
+      {onMoveDeckToCourse ? (
+        <MoveToCourseModal
+          isOpen={Boolean(movingDeck)}
+          onClose={() => setMovingDeck(null)}
+          currentCourseId={movingDeck?.courseId ?? null}
+          title={movingDeck ? `Move “${movingDeck.name}” to course` : 'Move deck to course'}
+          onSubmit={(courseId) => (movingDeck ? handleMoveDeck(movingDeck, courseId) : undefined)}
+        />
+      ) : null}
     </div>
   );
 };

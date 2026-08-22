@@ -27,6 +27,8 @@ export interface OfflineTest {
   recentlyAddedDays?: number; // Filter for recently added questions
   /** Exam lock chosen at download time: can't revisit answered questions. */
   lockAnswered?: boolean;
+  /** Academic archive: offline_bundles.course_id (config.courseId is the fallback). */
+  courseId?: string | null;
 }
 
 export interface OfflineQuestion {
@@ -82,6 +84,8 @@ export interface DownloadOptions {
   recentlyAddedDays?: number; // 0 = all questions, 7 = last 7 days, 14, 30, etc.
   /** Exam lock: can't revisit answered questions when the bundle is taken. */
   lockAnswered?: boolean;
+  /** Academic archive: file the bundle under a course (defaults from the group's course). */
+  courseId?: string | null;
 }
 
 interface OfflineState {
@@ -144,6 +148,10 @@ const mapApiBundleToOfflineTest = (bundle: ApiOfflineBundle): OfflineTest => {
     shuffled: config.shuffleQuestions as boolean | undefined,
     recentlyAddedDays: config.recentlyAddedDays as number | undefined,
     lockAnswered: config.lockAnsweredQuestions as boolean | undefined,
+    // Column first (filterable server-side), config.courseId as the fallback.
+    courseId:
+      (bundle as { course_id?: string | null }).course_id ??
+      (typeof config.courseId === 'string' ? config.courseId : null),
   };
 };
 
@@ -320,6 +328,8 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         ...(typeof options?.lockAnswered === 'boolean'
           ? { lockAnsweredQuestions: options.lockAnswered }
           : {}),
+        // The API lifts config.courseId into offline_bundles.course_id.
+        ...(options?.courseId ? { courseId: options.courseId } : {}),
       };
 
       const newTest: OfflineTest = {
@@ -337,6 +347,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         shuffled: options?.shuffleQuestions,
         recentlyAddedDays: options?.recentlyAddedDays,
         lockAnswered: options?.lockAnswered,
+        courseId: options?.courseId ?? null,
       };
       
       const downloadedTests = [...get().downloadedTests, newTest];

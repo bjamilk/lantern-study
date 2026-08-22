@@ -9,3 +9,4 @@ export { useGroupStore, type ChatItem } from './groupStore';
 export { useFlashcardStore } from './flashcardStore';
 export { useTestStore } from './testStore';
 export { useBudgetStore } from './budgetStore';
+export { useLibraryStore } from './libraryStore';

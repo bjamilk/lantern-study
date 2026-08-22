@@ -1,0 +1,28 @@
+# Phase 1 · B — Library as the archive ("My Lantern Library") + `/library/search`: implementation contract
+
+Status: **queued** (after A1/A2/A3 land). Parent plan: `docs/PLAN-2026-08-22-knowledge-network.md` §4 B. Depends on the Course entity from `docs/phase1-academic-identity-contract.md`. **2026-08-22 review hardening:** `supabase/migrations/20260822170000_phase1_hardening.sql` backfills `offline_bundles.course_id` for already-purchased packs (`bundle_id = 'qbank-<listingId>'`) so the `purchasedPacks` counts below file under the right course; `deliverBundle` sets it going forward.
+
+## 1. API
+
+| Route | Behaviour |
+|---|---|
+| `GET /library/overview` (auth) | `{ success, data: { years: [{ academicYear, courses: [{ course: Course, enrolment: UserCourse, counts: { notes, decks, tests, bundles, purchasedPacks } }] }], unfiled: { notes, decks, tests, bundles } } }` — one round trip for the tree. Counts come from the `course_id` columns; "purchasedPacks" = `offline_bundles` whose `bundle_id` starts with `qbank-` (filed by the listing's `course_id`). Archived enrolments included with `status: 'archived'` (client groups them under "Past semesters"). |
+| `GET /library/search?q&courseId&types=notes,decks,flashcards,bundles&limit=30` (auth) | Server-side union: notes (title/body/summary + attachment `extracted_text` via `note_attachments`), decks (name/description), flashcards (front/back → grouped under their deck), offline_bundles (display_name/group_name). Uses `pg_trgm`/ILIKE; add GIN trigram indexes in migration `20260822160000_library_search_indexes.sql` on `notes.title`, `notes.body` (consider `left(body, 4000)` expression index to bound size), `decks.name`, `flashcards.front`, `flashcards.back`, `offline_bundles.display_name`. Owner-scoped (user_id = caller; shared notes/decks the caller collaborates on are included). Returns `[{ type, id, title, snippet, courseId, deckId?, updatedAt }]` sorted by rank then recency. Pattern: `marketplace_search_listings` (`20260601010000`), but a plain parameterised query in the service is fine. |
+| `GET /notes?courseId`, `GET /decks?courseId`, `GET /tests?courseId`, `GET /offline-bundles?courseId` | Already added in A1; `courseId=null` (literal) returns unfiled items. |
+| `PATCH /notes/:id`, `PUT /decks/:id`, `PUT /notes/folders/:id` | Already accept `courseId` (A1) — used for "Move to course". |
+
+## 2. Web (`components/LibraryScreen.tsx`, `NotesScreen.tsx`, `FlashcardsScreen.tsx`, `OfflineModeScreen.tsx`)
+
+- Library gets a left rail / top tree: **This semester** → my active courses (code — title, counts) → tapping filters the Notes / Flashcards / Tests / Offline tabs to that course; **Past semesters** (archived enrolments, collapsed); **Unfiled**. Search box calls `/library/search` (debounced) and renders grouped results with deep links.
+- Notes/Flashcards/Offline screens accept an initial `courseId` filter (route param or store) and show the active course chip with "clear"; rows get a "Move to course…" action (CoursePicker).
+- Nested folders: the API already accepts `parentId`; `NotesScreen` folder chips become a collapsible tree (one level is enough for v1).
+- Flashcard tag UI: show `flashcards.tags` chips on cards in `DeckDetailScreen`, editable in `CreateFlashcardModal` (stored already; no UI today).
+- Purchased packs appear in the course tree (from `offline_bundles` qbank-*), opening Offline Mode filtered.
+
+## 3. Mobile (`apps/mobile/src/screens/library/LibraryScreen.tsx`, notes/flashcards/offline screens)
+
+Same tree as a collapsible list at the top of Library; search bar → `/library/search`; course chip filters on the notes/flashcards/offline screens; "Move to course…" in row action sheets; tag chips on cards.
+
+## 4. Tests & gates
+
+API: search SQL builds only the requested types and escapes `%`/`_` in `q`; overview counts query shape. Web/mobile: typecheck + build. No stash/checkout; no commit.

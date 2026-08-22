@@ -34,10 +34,15 @@ import {
   uploadNoteImagesViaApi,
 } from '../../services/notes';
 import { trackNoteCreated } from '../../services/productAnalytics';
-import { Button, Card, ScreenHeader } from '../../components/ui';
+import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
+import { CoursePicker } from '../../components/CoursePicker';
+import { useUIStore } from '../../stores/uiStore';
+import { matchesCourseFilter, UNFILED_COURSE_ID } from '../../utils/libraryArchive';
+import type { Course } from '@lantern/shared/types';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import * as ImagePicker from 'expo-image-picker';
 
 type NavigationProp = {
@@ -225,6 +230,13 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     setSelectedFolderId,
     setError,
   } = useNotesStore();
+  // Library archive: course filter picked in the Library tree (uuid or 'null' = unfiled).
+  const courseFilter = useUIStore((s) => s.libraryCourseFilter);
+  const setCourseFilter = useUIStore((s) => s.setLibraryCourseFilter);
+  const courseFilterId = courseFilter?.id ?? null;
+  /** New notes are filed under the active course filter (never under "Unfiled"). */
+  const defaultCourseId =
+    courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : undefined;
 
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -242,20 +254,30 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [movePickerOpen, setMovePickerOpen] = useState(false);
   const [movingNotes, setMovingNotes] = useState(false);
   const [deletingNotes, setDeletingNotes] = useState(false);
-  const selectionBusy = movingNotes || deletingNotes;
+  /** Note whose row action sheet is open. */
+  const [noteActions, setNoteActions] = useState<StudyNote | null>(null);
+  /** "Move to course…" target: one note from the row sheet, or the selection. */
+  const [courseMoveTarget, setCourseMoveTarget] = useState<{
+    noteIds: string[];
+    currentCourseId: string | null;
+  } | null>(null);
+  const [movingCourse, setMovingCourse] = useState(false);
+  const selectionBusy = movingNotes || deletingNotes || movingCourse;
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
 
+  // Load notes UNFILTERED so every consumer keeps the full list — the AI
+  // companion's note picker reads notesStore.notes and only reloads when empty,
+  // so narrowing the store by the Library course filter here used to leak that
+  // filter into the companion. The course/folder/ownership/search filters are
+  // all applied client-side in `filteredNotes` below (FlashcardsScreen does the
+  // same with decks).
   const loadData = useCallback(async () => {
-    await Promise.all([loadFolders(), loadNotes(selectedFolderId || undefined)]);
-  }, [loadFolders, loadNotes, selectedFolderId]);
+    await Promise.all([loadFolders(), loadNotes()]);
+  }, [loadFolders, loadNotes]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    loadNotes(selectedFolderId || undefined);
-  }, [selectedFolderId, loadNotes]);
 
   // Recover collaborator/share updates missed while another screen was focused.
   useFocusEffect(
@@ -272,6 +294,11 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     list = list.filter((note) =>
       listFilter === 'archived' ? Boolean(note.isArchived) : !note.isArchived,
     );
+    // The API already narrows by course; filtering again keeps the list honest
+    // after a local "Move to course…" before the next reload.
+    if (courseFilterId) {
+      list = list.filter((note) => matchesCourseFilter(note.courseId, courseFilterId));
+    }
     if (selectedFolderId) {
       list = list.filter(n => n.folderId === selectedFolderId);
     }
@@ -288,13 +315,17 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
       return bTime - aTime;
     });
-  }, [notes, selectedFolderId, search, ownershipFilter, listFilter]);
+  }, [notes, selectedFolderId, search, ownershipFilter, listFilter, courseFilterId]);
 
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
 
   const canDeleteNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner';
+
+  /** Shared with me (editor or viewer) — reportable to Lantern moderation (Phase 1 · E). */
+  const isSharedNote = (note: StudyNote) => !!note.accessRole && note.accessRole !== 'owner';
+  const [reportNote, setReportNote] = useState<StudyNote | null>(null);
 
   const exitSelectMode = () => {
     setSelectMode(false);
@@ -366,63 +397,130 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     await handleDeleteNotesByIds(selectedNoteIds);
   };
 
+  /** PATCH /notes/:id { courseId } for every targeted note (null clears). */
+  const handleMoveToCourse = async (course: Course | null) => {
+    const target = courseMoveTarget;
+    if (!target || target.noteIds.length === 0) return;
+    const nextCourseId = course?.id ?? null;
+    setMovingCourse(true);
+    try {
+      const results = await Promise.allSettled(
+        target.noteIds.map((noteId) => saveNote(noteId, { courseId: nextCourseId })),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        Alert.alert(
+          'Could not move to course',
+          failed === target.noteIds.length
+            ? 'Try again.'
+            : `${failed} of ${target.noteIds.length} notes could not be moved.`,
+        );
+      } else if (selectMode) {
+        exitSelectMode();
+      }
+    } finally {
+      setMovingCourse(false);
+      setCourseMoveTarget(null);
+    }
+  };
+
+  // One ActionSheet for both platforms. This used to be Alert.alert, which on
+  // Android caps at three buttons and silently drops the rest — so Pin,
+  // Archive and Delete were unreachable there (and "Move to course…" would
+  // have pushed Pin off too).
   const handleNoteOptions = (note: StudyNote) => {
-    if (!canManageNote(note)) return;
+    if (!canManageNote(note) && !isSharedNote(note)) return;
     if (selectMode) {
-      toggleNoteSelected(note.id);
+      if (canManageNote(note)) toggleNoteSelected(note.id);
       return;
     }
-    const buttons: {
-      text: string;
-      style?: 'cancel' | 'destructive' | 'default';
-      onPress?: () => void;
-    }[] = [
-      {
-        text: 'Move to folder',
-        onPress: () => {
-          setTimeout(() => openMovePickerForNotes([note.id]), 50);
-        },
-      },
-      {
-        text: 'Select',
-        onPress: () => {
-          setSelectMode(true);
-          setSelectedNoteIds([note.id]);
-        },
-      },
-    ];
-    if (!note.isArchived) {
-      buttons.push({
-        text: note.isPinned ? 'Unpin' : 'Pin',
-        onPress: () => {
-          void saveNote(note.id, { isPinned: !note.isPinned }).catch((e: unknown) => {
-            Alert.alert('Could not update pin', e instanceof Error ? e.message : 'Try again.');
-          });
-        },
-      });
-    }
-    buttons.push({
-      text: note.isArchived ? 'Unarchive' : 'Archive',
-      onPress: () => {
-        void saveNote(note.id, { isArchived: !note.isArchived }).catch((e: unknown) => {
-          Alert.alert('Could not update archive', e instanceof Error ? e.message : 'Try again.');
-        });
-      },
-    });
-    if (canDeleteNote(note)) {
-      buttons.push({
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setTimeout(() => {
-            void handleDeleteNotesByIds([note.id]);
-          }, 50);
-        },
-      });
-    }
-    buttons.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert(note.title, undefined, buttons);
+    setNoteActions(note);
   };
+
+  const noteActionItems: ActionSheetItem[] = noteActions
+    ? [
+        ...(canManageNote(noteActions) ? ([
+        {
+          section: 'Organise',
+          label: 'Move to folder',
+          icon: 'folder-outline',
+          // Let the sheet dismiss before the next modal mounts.
+          onPress: () => setTimeout(() => openMovePickerForNotes([noteActions.id]), 50),
+        },
+        {
+          section: 'Organise',
+          label: 'Move to course…',
+          icon: 'school-outline',
+          hint: noteActions.courseId ? 'Filed under a course — pick another or clear it' : 'File this note under a course',
+          onPress: () =>
+            setTimeout(
+              () => setCourseMoveTarget({ noteIds: [noteActions.id], currentCourseId: noteActions.courseId ?? null }),
+              50,
+            ),
+        },
+        {
+          section: 'Organise',
+          label: 'Select',
+          icon: 'checkbox-outline',
+          hint: 'Move or delete several notes at once',
+          onPress: () => {
+            setSelectMode(true);
+            setSelectedNoteIds([noteActions.id]);
+          },
+        },
+        ...(!noteActions.isArchived
+          ? [
+              {
+                section: 'Note',
+                label: noteActions.isPinned ? 'Unpin' : 'Pin',
+                icon: (noteActions.isPinned ? 'bookmark' : 'bookmark-outline') as ActionSheetItem['icon'],
+                onPress: () => {
+                  void saveNote(noteActions.id, { isPinned: !noteActions.isPinned }).catch((e: unknown) => {
+                    Alert.alert('Could not update pin', e instanceof Error ? e.message : 'Try again.');
+                  });
+                },
+              },
+            ]
+          : []),
+        {
+          section: 'Note',
+          label: noteActions.isArchived ? 'Unarchive' : 'Archive',
+          icon: 'archive-outline',
+          onPress: () => {
+            void saveNote(noteActions.id, { isArchived: !noteActions.isArchived }).catch((e: unknown) => {
+              Alert.alert('Could not update archive', e instanceof Error ? e.message : 'Try again.');
+            });
+          },
+        },
+        ...(canDeleteNote(noteActions)
+          ? [
+              {
+                section: 'Note',
+                label: 'Delete',
+                icon: 'trash-outline' as ActionSheetItem['icon'],
+                destructive: true,
+                onPress: () =>
+                  setTimeout(() => {
+                    void handleDeleteNotesByIds([noteActions.id]);
+                  }, 50),
+              },
+            ]
+          : []),
+        ] as ActionSheetItem[]) : []),
+        ...(isSharedNote(noteActions)
+          ? [
+              {
+                section: 'Note',
+                label: 'Report note',
+                icon: 'flag-outline' as ActionSheetItem['icon'],
+                hint: 'Leaked exam, plagiarism, copyright or inappropriate content',
+                // Let the sheet dismiss before the report sheet mounts.
+                onPress: () => setTimeout(() => setReportNote(noteActions), 50),
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -435,6 +533,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       title: 'Untitled Note',
       body: '',
       folderId: selectedFolderId || undefined,
+      courseId: defaultCourseId,
     });
     trackNoteCreated('editor');
     navigation.navigate('NoteEditor', { noteId: note.id });
@@ -630,7 +729,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             'Note created, but the transcript could not be fetched for this video.'
         );
       }
-      await loadNotes(selectedFolderId || undefined);
+      await loadNotes();
       navigation.navigate('NoteEditor', { noteId: result.note.id });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'YouTube import failed');
@@ -670,7 +769,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             );
 
       setPendingImport(null);
-      await loadNotes(selectedFolderId || undefined);
+      await loadNotes();
       navigation.navigate('NoteEditor', { noteId: importResult.note.id });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Import failed');
@@ -728,6 +827,35 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ActionSheet
+        visible={!!noteActions}
+        title={noteActions?.title || 'Note'}
+        items={noteActionItems}
+        onClose={() => setNoteActions(null)}
+      />
+      <ReportContentSheet
+        visible={!!reportNote}
+        targetType="note"
+        targetId={reportNote?.id ?? ''}
+        targetLabel={reportNote?.title || undefined}
+        onClose={() => setReportNote(null)}
+      />
+
+      <CoursePicker
+        visible={!!courseMoveTarget}
+        onClose={() => {
+          if (!movingCourse) setCourseMoveTarget(null);
+        }}
+        value={courseMoveTarget?.currentCourseId ?? null}
+        onChange={(course) => void handleMoveToCourse(course)}
+        title={
+          courseMoveTarget && courseMoveTarget.noteIds.length > 1
+            ? `Move ${courseMoveTarget.noteIds.length} notes to course`
+            : 'Move to course'
+        }
+        placeholder="Choose a course"
+      />
 
       <Modal
         visible={movePickerOpen}
@@ -856,6 +984,15 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           </Button>
           <Button
             size="sm"
+            variant="secondary"
+            disabled={selectedNoteIds.length === 0 || selectionBusy}
+            loading={movingCourse}
+            onPress={() => setCourseMoveTarget({ noteIds: selectedNoteIds, currentCourseId: null })}
+          >
+            Course
+          </Button>
+          <Button
+            size="sm"
             variant="danger"
             disabled={selectedNoteIds.length === 0 || selectionBusy}
             loading={deletingNotes}
@@ -905,6 +1042,25 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           </ScrollView>
         ) : null}
       </View>
+
+      {courseFilter && !embedded ? (
+        <View className="mx-4 mb-2 flex-row items-center gap-2">
+          <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
+            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+              {courseFilter.label}
+            </Text>
+            <Pressable
+              onPress={() => setCourseFilter(null)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Clear course filter ${courseFilter.label}`}
+            >
+              <Ionicons name="close-circle" size={16} color={colors.primary} />
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       <View className="mx-4 mb-2 flex-row rounded-lg border border-lantern-border overflow-hidden">
         {(['mine', 'shared'] as const).map((filter) => (
@@ -1091,7 +1247,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
                   ? 'No archived notes. Long-press a note to archive it.'
                   : ownershipFilter === 'shared'
                     ? 'No shared notes yet.'
-                    : 'No notes yet. Create one to get started.'}
+                    : courseFilter
+                      ? `No notes in ${courseFilter.label} yet. Create one here, or use “Move to course…” on an existing note.`
+                      : 'No notes yet. Create one to get started.'}
               </Text>
               {listFilter === 'archived' ? (
                 <Button className="mt-4" size="sm" variant="secondary" onPress={() => setListFilter('active')}>
@@ -1124,7 +1282,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
                   }
                   navigation.navigate('NoteEditor', { noteId: item.id });
                 }}
-                onLongPress={manageable ? () => handleNoteOptions(item) : undefined}
+                onLongPress={manageable || isSharedNote(item) ? () => handleNoteOptions(item) : undefined}
               />
             );
           }}

@@ -32,7 +32,9 @@ import {
   validateNoteCreate,
   validateNoteUpdate,
   validateFolderCreate,
+  validateFolderUpdate,
 } from '../middleware/validation';
+import { COURSE_FILTER_INVALID_MESSAGE, parseCourseFilter } from '../services/academicCourses';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import {
@@ -85,6 +87,7 @@ import { ocrPlaceholder, runNoteOcrJob, shouldAutoEnqueueOcr } from '../services
 import { logger } from '../utils/logger';
 import { processImageForUpload } from '../services/imageProcessing';
 import { storageThumbPath } from '@lantern/shared/utils/storageUrl';
+import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
 
 const router = Router();
 
@@ -580,19 +583,25 @@ router.get('/folders', asyncHandler(async (req: Request, res: Response) => {
 router.post('/folders', validateFolderCreate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { name, color, groupId, parentId } = req.body;
+  const { name, color, groupId, parentId, courseId } = req.body;
   if (!name?.trim()) {
     res.status(400).json({ error: 'Folder name is required.' });
     return;
   }
-  const folder = await supabaseService.createNoteFolder(userId, { name: name.trim(), color, groupId, parentId });
+  const folder = await supabaseService.createNoteFolder(userId, { name: name.trim(), color, groupId, parentId, courseId });
   res.json({ success: true, data: folder });
 }));
 
-router.patch('/folders/:folderId', validateFolderId, validateFolderCreate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.patch('/folders/:folderId', validateFolderId, validateFolderUpdate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const folder = await supabaseService.updateNoteFolder(userId, req.params.folderId, req.body);
+  // Only columns the folder row owns; courseId (null clears) rides along.
+  const { name, color, courseId } = req.body || {};
+  const updates: { name?: string; color?: string; courseId?: string | null } = {};
+  if (name !== undefined) updates.name = name;
+  if (color !== undefined) updates.color = color;
+  if (courseId !== undefined) updates.courseId = courseId;
+  const folder = await supabaseService.updateNoteFolder(userId, req.params.folderId, updates);
   res.json({ success: true, data: folder });
 }));
 
@@ -1965,14 +1974,21 @@ router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, as
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { folderId, groupId, archived } = req.query;
+  const { folderId, groupId, archived, courseId } = req.query;
   let archivedFilter: boolean | undefined;
   if (archived === 'true' || archived === '1') archivedFilter = true;
   else if (archived === 'false' || archived === '0') archivedFilter = false;
+  // ?courseId= — uuid, the literal "null" (unfiled) or absent; anything else is a 400.
+  const courseFilter = parseCourseFilter(courseId);
+  if (courseFilter.kind === 'invalid') {
+    res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
+    return;
+  }
   const notes = await supabaseService.getNotes(userId, {
     folderId: folderId as string | undefined,
     groupId: groupId as string | undefined,
     archived: archivedFilter,
+    courseFilter,
   });
   res.json({ success: true, data: notes });
 }));
@@ -1982,13 +1998,26 @@ router.get('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(asyn
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
   const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  // learning_events: resource_opened — the single-note fetch is the "opened
+  // a note" signal (list/search reads are not). Never throws.
+  await recordLearningEvent(supabaseService, {
+    userId,
+    eventType: 'resource_opened',
+    targetType: 'note',
+    targetId: note?.id ?? req.params.noteId,
+    noteId: note?.id ?? req.params.noteId,
+    groupId: note?.groupId ?? null,
+    courseId: note?.courseId ?? null,
+    surface: surfaceFromRequest(req),
+  });
   res.json({ success: true, data: { ...note, attachments } });
 }));
 
 router.post('/', validateNoteCreate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.createNote(userId, req.body);
+  // createNote emits learning_events note_created; the surface header only exists here.
+  const note = await supabaseService.createNote(userId, req.body, { surface: surfaceFromRequest(req) });
   res.json({ success: true, data: note });
 }));
 
@@ -2146,9 +2175,12 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
   }
 
   const sliced = content.slice(0, 8000);
+  const surface = surfaceFromRequest(req);
   const outcome = await runSyncOrEnqueue(
     'notes.ai.quiz',
-    { content: sliced, studyGoal, count, noteId: note.id },
+    // surface/courseId ride on the payload so the queued path can emit the
+    // same learning event from the worker.
+    { content: sliced, studyGoal, count, noteId: note.id, courseId: note.courseId ?? null, surface },
     userId,
     async () => {
       const result = await generateDailyQuiz(sliced, { studyGoal, count });
@@ -2161,6 +2193,17 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
         explanation: q.explanation,
         topic: q.topic,
       }));
+      // learning_events: question_generated with count + note. Never throws.
+      await recordLearningEvent(supabaseService, {
+        userId,
+        eventType: 'question_generated',
+        targetType: 'note',
+        targetId: note.id,
+        noteId: note.id,
+        courseId: note.courseId ?? null,
+        count: questions.length,
+        surface,
+      });
       return supabaseService.upsertNoteQuiz(userId, note.id, {
         studyGoal: studyGoal || 'retention',
         questions,
@@ -2207,11 +2250,28 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
   const content = getNoteStudyContent(studyInput);
   const { count, style } = req.body || {};
   const sliced = content.slice(0, 8000);
+  const surface = surfaceFromRequest(req);
   const outcome = await runSyncOrEnqueue(
     'notes.ai.flashcards',
-    { content: sliced, count, style },
+    // noteId/courseId/surface ride on the payload so the queued path can emit
+    // the same learning event from the worker.
+    { content: sliced, count, style, noteId: note.id, courseId: note.courseId ?? null, surface },
     userId,
-    async () => generateFlashcardsFromNotes(sliced, { count, style })
+    async () => {
+      const generated = await generateFlashcardsFromNotes(sliced, { count, style });
+      // learning_events: card_generated with count + note. Never throws.
+      await recordLearningEvent(supabaseService, {
+        userId,
+        eventType: 'card_generated',
+        targetType: 'note',
+        targetId: note.id,
+        noteId: note.id,
+        courseId: note.courseId ?? null,
+        count: Array.isArray(generated.flashcards) ? generated.flashcards.length : 0,
+        surface,
+      });
+      return generated;
+    }
   ,
     aiChargeFromRes(res)
   );

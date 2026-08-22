@@ -11,6 +11,7 @@ import {
   getFreeformPaths,
   normalizeOcclusionData,
 } from '@lantern/shared/utils';
+import { formatFlashcardTags, parseFlashcardTags } from '../utils/flashcardTags';
 
 interface CreateFlashcardModalProps {
   isOpen: boolean;
@@ -79,6 +80,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
   const [dragMode, setDragMode] = useState<'move' | 'resize' | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  // Tags are edited as one comma-separated line and persisted as `flashcards.tags`.
+  const [tagsInput, setTagsInput] = useState('');
   const frontRef = useRef<HTMLTextAreaElement | null>(null);
   const backRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -98,6 +101,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
             const existingOcclusion = normalizeOcclusionData(editingFlashcard.occlusionData);
             setOcclusionType(existingOcclusion?.type ?? 'rectangles');
             setOcclusionData(existingOcclusion ?? getEmptyOcclusionData('rectangles'));
+            setTagsInput(formatFlashcardTags(editingFlashcard.tags));
         } else {
             setDeckId(initialDeckId || decks[0]?.id || '');
             setType(FlashcardType.BASIC);
@@ -105,6 +109,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
             setBack('');
             setClozeText('');
             setImageUrl('');
+            setTagsInput('');
         }
     }
   }, [isOpen, decks, initialDeckId, editingFlashcard, isEditing]);
@@ -640,9 +645,12 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
     
     onSubmit({
         id: isEditing ? editingFlashcard.id : undefined,
-        ...cardData
+        ...cardData,
+        tags: parseFlashcardTags(tagsInput),
     });
   };
+
+  const parsedTags = parseFlashcardTags(tagsInput);
 
   if (!isOpen) return null;
 
@@ -1357,7 +1365,31 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                         </div>
                     </div>
                 )}
-              
+
+                <div>
+                    <label htmlFor="cardTags" className="block text-sm font-medium text-lantern-text">
+                        Tags <span className="font-normal text-lantern-text-secondary">(optional, comma-separated)</span>
+                    </label>
+                    <input
+                        id="cardTags"
+                        type="text"
+                        value={tagsInput}
+                        onChange={e => setTagsInput(e.target.value)}
+                        placeholder="e.g. enzymes, chapter 3, exam-likely"
+                        autoComplete="off"
+                        className="w-full p-2 mt-1 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
+                    />
+                    {parsedTags.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1" aria-label="Tags preview">
+                            {parsedTags.map(tag => (
+                                <span key={tag} className="inline-flex items-center rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[11px] font-medium text-lantern-primary">
+                                    #{tag}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 <div className="flex justify-end space-x-3 pt-2">
                     <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary border border-lantern-border rounded-md dark:bg-lantern-surface-secondary dark:text-lantern-text-tertiary dark:border-lantern-border hover:bg-lantern-background-secondary dark:hover:bg-lantern-border">Cancel</button>
                     <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md shadow-sm dark:bg-green-500 dark:hover:bg-green-600">{isEditing ? 'Save Changes' : 'Create Card'}</button>

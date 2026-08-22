@@ -1,11 +1,16 @@
 /**
  * Mobile API Service — thin wrapper around @lantern/shared/api
  */
-import { createLanternApi } from '@lantern/shared/api';
+import { createApiClient, createApiEndpoints, type ApiClient } from '@lantern/shared/api';
 import { getAuthHeaders, API_BASE_URL, supabase } from './supabase';
 import { useAuthStore } from '../stores/authStore';
+import {
+  configureSuspensionProbe,
+  isForbiddenError,
+  probeAccountSuspension,
+} from './accountSuspension';
 
-const { api: lanternApi } = createLanternApi({
+const rawClient = createApiClient({
   getBaseUrl: () => API_BASE_URL,
   getAuthHeaders,
   refreshAuth: async () => {
@@ -17,6 +22,31 @@ const { api: lanternApi } = createLanternApi({
     void useAuthStore.getState().signOut();
   },
 });
+
+configureSuspensionProbe({ getBaseUrl: () => API_BASE_URL, getAuthHeaders });
+
+/**
+ * ACCOUNT_SUSPENDED (Phase 1 · E): the shared client reduces the suspension
+ * 403 to a bare "Forbidden", so every 403 triggers one throttled probe of
+ * GET /users/me/moderation that reads the code + date into moderationStore
+ * (see services/accountSuspension.ts). The original error still propagates —
+ * callers keep their own handling; the blocking banner is rendered by
+ * RootNavigator from the store. No sign-out: the account returns by itself.
+ */
+const rethrowAfterSuspensionCheck = (error: unknown): never => {
+  if (isForbiddenError(error)) void probeAccountSuspension();
+  throw error;
+};
+
+const client: ApiClient = {
+  ...rawClient,
+  request: <T,>(endpoint: string, options?: RequestInit, timeoutMs?: number) =>
+    rawClient.request<T>(endpoint, options, timeoutMs).catch(rethrowAfterSuspensionCheck),
+  requestRaw: <T,>(endpoint: string, options?: RequestInit, timeoutMs?: number) =>
+    rawClient.requestRaw<T>(endpoint, options, timeoutMs).catch(rethrowAfterSuspensionCheck),
+};
+
+const lanternApi = createApiEndpoints(client);
 
 /** Shared API instance for stores using `import * as api` */
 export const api = lanternApi;
@@ -237,6 +267,21 @@ export const {
   acceptChallenge,
   declineChallenge,
   submitChallenge,
+  // Academic identity: course catalogue + my enrolments (contract §3)
+  fetchCourses,
+  createCourse,
+  fetchMyCourses,
+  setMyCourses,
+  updateMyCourse,
+  removeMyCourse,
+  archiveSemester,
+  // Library archive: course tree + cross-artefact search (contract §1 / §3)
+  fetchLibraryOverview,
+  searchLibrary,
+  // Moderation (Phase 1 · E): reports, takedown appeals, own strike state
+  reportContent,
+  appealListingTakedown,
+  fetchMyModerationState,
 } = lanternApi;
 
 // Legacy type exports used by stores

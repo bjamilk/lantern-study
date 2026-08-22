@@ -2,10 +2,16 @@
   "name": "Lantern Study",
   "short_name": "Lantern",
   "description": "Collaborative study platform with flashcards, groups, and AI tools. Built for slow connections and offline learning.",
+  "id": "/",
+  "scope": "/",
   "start_url": "https://lanternstudy.com/",
   "display": "standalone",
   "background_color": "#6569EE",
   "theme_color": "#6569EE",
+  "categories": [
+    "education",
+    "productivity"
+  ],
   "icons": [
     {
       "src": "/lantern-icon-v2.png",
@@ -24,6 +30,59 @@
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Study",
+      "short_name": "Study",
+      "description": "Open your dashboard and pick up where you left off",
+      "url": "/dashboard",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png?v=2",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Flashcards",
+      "short_name": "Flashcards",
+      "description": "Review due cards",
+      "url": "/flashcards",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png?v=2",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "short_name": "Chat",
+      "description": "Study groups and messages",
+      "url": "/chat",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png?v=2",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

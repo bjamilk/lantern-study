@@ -245,8 +245,17 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds } = req.body;
-    const groupData = { name, description, avatarUrl: avatar_url, permissions, inviteId: invite_id, parentId: parent_id };
+    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds, courseId } = req.body;
+    const groupData = {
+      name,
+      description,
+      avatarUrl: avatar_url,
+      permissions,
+      inviteId: invite_id,
+      parentId: parent_id,
+      // Academic archive reference (uuid-validated by validateCreateGroup; null = none).
+      courseId: courseId ?? null,
+    };
 
     logger.debug('Creating group', { groupData, userId, memberIds });
 

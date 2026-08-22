@@ -85,6 +85,25 @@ export interface AIStudyRecommendation {
   estimatedMinutes: number;
 }
 
+/**
+ * Request body for POST /ai/study-recommendations (`performanceData`).
+ *
+ * Every field must mean what its name says — the coach prompt describes them
+ * to the model verbatim:
+ *  - recentScores: per-topic TEST accuracy (0..100), most relevant first.
+ *  - flashcardAccuracy: per-DECK share of reviewed cards that are mature
+ *    (see utils/flashcardAccuracy). OMIT when no card has been reviewed;
+ *    never substitute test accuracy under this name.
+ *  - studyDaysThisWeek: distinct days with study activity in the last 7 days
+ *    (0..7; utils/activity countActiveDaysInLastWeek). Replaces the legacy
+ *    `studyHoursThisWeek`, which the API still accepts from older builds.
+ */
+export interface AIStudyPerformanceData {
+  recentScores: { topic: string; score: number; date: string }[];
+  flashcardAccuracy?: { topic: string; correctRate: number }[];
+  studyDaysThisWeek: number;
+}
+
 export function createAIClient(config: AIClientConfig) {
   const defaultTimeout = config.defaultTimeoutMs ?? 30000;
   const USAGE_FETCH_TTL_MS = 60_000;
@@ -257,11 +276,7 @@ export function createAIClient(config: AIClientConfig) {
         options,
       }),
 
-    aiGetStudyRecommendations: (performanceData: {
-      recentScores: { topic: string; score: number; date: string }[];
-      flashcardAccuracy: { topic: string; correctRate: number }[];
-      studyHoursThisWeek: number;
-    }) =>
+    aiGetStudyRecommendations: (performanceData: AIStudyPerformanceData) =>
       aiRequest<{ recommendations: AIStudyRecommendation; provider: string }>(
         '/study-recommendations',
         { performanceData }

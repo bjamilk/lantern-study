@@ -27,10 +27,22 @@ import {
 } from '../services/accountLifecycle';
 import { importAccountArchive } from '../services/accountImport';
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@lantern/shared/accountLifecycle';
+import { getAcademicCoursesService } from '../services/academicCourses';
+import { PublicError } from '../utils/safeError';
 
 const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
-const NON_ADMIN_UPDATABLE_FIELDS = new Set([
+/** Academic identity fields a user may set on their own profile (PUT /users/:userId). */
+export const ACADEMIC_PROFILE_FIELDS = [
+  'institutionId',
+  'faculty',
+  'programme',
+  'studyLevel',
+  'entryYear',
+  'expectedGraduationYear',
+] as const;
+
+export const NON_ADMIN_UPDATABLE_FIELDS = new Set([
   'name',
   'phoneNumber',
   'phone',
@@ -38,6 +50,7 @@ const NON_ADMIN_UPDATABLE_FIELDS = new Set([
   'avatar_url',
   // settings must go through PUT /users/settings (merge + CAS).
   'test_presets',
+  ...ACADEMIC_PROFILE_FIELDS,
 ]);
 
 const ADMIN_ONLY_USER_FIELDS = ['points', 'badges', 'isAdmin'] as const;
@@ -56,8 +69,20 @@ async function applySettingsSideEffects(
   }
 }
 
-/** Normalize DB snake_case or API camelCase profile rows for clients. */
-const toPublicUser = (user: User & { avatar_url?: string; first_name?: string; last_name?: string }) => ({
+/**
+ * Normalize DB snake_case or API camelCase profile rows for clients.
+ * Public academic projection: institution + faculty/programme/level only —
+ * entryYear / expectedGraduationYear stay owner/admin-only.
+ */
+export const toPublicUser = (
+  user: User & {
+    avatar_url?: string;
+    first_name?: string;
+    last_name?: string;
+    institution_id?: string | null;
+    study_level?: number | null;
+  }
+) => ({
   id: user.id,
   name: user.name,
   username: user.username,
@@ -67,7 +92,28 @@ const toPublicUser = (user: User & { avatar_url?: string; first_name?: string; l
   avatar_url: user.avatarUrl ?? user.avatar_url ?? null,
   points: user.points,
   badges: user.badges,
+  institutionId: user.institutionId ?? user.institution_id ?? null,
+  institution: user.institution ?? null,
+  faculty: user.faculty ?? null,
+  programme: user.programme ?? null,
+  studyLevel: user.studyLevel ?? user.study_level ?? null,
 });
+
+/**
+ * Attach `institution: {id,name,slug} | null` resolved from marketplace_campuses
+ * (10-minute cache per institution; the user row itself is cached separately).
+ */
+async function withInstitution<T extends { institutionId?: string | null }>(user: T): Promise<T & { institution: { id: string; name: string; slug: string } | null }> {
+  const institutionId = user.institutionId ?? null;
+  if (!institutionId) return { ...user, institution: null };
+  const cacheKey = `institution:${institutionId}`;
+  let institution = (await cacheService.get(cacheKey)) as { id: string; name: string; slug: string } | null;
+  if (!institution) {
+    institution = await getAcademicCoursesService(supabaseService).resolveInstitution(institutionId);
+    if (institution) await cacheService.set(cacheKey, institution, 600);
+  }
+  return { ...user, institution: institution ?? null };
+}
 
 // Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
@@ -212,12 +258,27 @@ router.get(
     res.json({
       success: true,
       data: {
-        ...user,
+        ...(await withInstitution(user)),
         capabilities: {
           platformAdmin: isPlatformAdmin,
         },
       },
     });
+  })
+);
+
+// GET /api/v1/users/me/moderation — caller's active strikes + suspension
+// (Phase 1 · E). Suspended accounts are blocked by authMiddleware before they
+// get here, so this mainly powers the strikes hint in settings.
+router.get(
+  '/me/moderation',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { getModerationService } = await import('../services/moderation');
+    const state = await getModerationService(supabaseService).getModerationState(userId);
+    res.json({ success: true, data: state });
   })
 );
 
@@ -264,7 +325,8 @@ router.get(
       await cacheService.set(cacheKey, user, 600);
     }
 
-    const responseUser = isOwner || isAdmin ? user : toPublicUser(user);
+    const userWithInstitution = await withInstitution(user);
+    const responseUser = isOwner || isAdmin ? userWithInstitution : toPublicUser(userWithInstitution);
 
     res.json({
       success: true,
@@ -537,6 +599,40 @@ router.put(
       });
     }
 
+    // Academic identity: institutionId must be a real, non-"Other" institution.
+    // Strings are trimmed; empty strings clear (null) like an explicit null.
+    let selectedInstitutionId: string | null = null;
+    if (updateData.institutionId !== undefined) {
+      if (updateData.institutionId === null || updateData.institutionId === '') {
+        updateData.institutionId = null;
+      } else {
+        try {
+          selectedInstitutionId = (
+            await getAcademicCoursesService(supabaseService).assertSelectableInstitution(
+              String(updateData.institutionId)
+            )
+          ).id;
+          updateData.institutionId = selectedInstitutionId;
+        } catch (error) {
+          if (error instanceof PublicError) {
+            return res.status(400).json({ success: false, error: error.message });
+          }
+          throw error;
+        }
+      }
+    }
+    for (const textField of ['faculty', 'programme'] as const) {
+      if (typeof updateData[textField] === 'string') {
+        const trimmed = updateData[textField].trim().replace(/\s+/g, ' ');
+        updateData[textField] = trimmed ? trimmed : null;
+      }
+    }
+    for (const intField of ['studyLevel', 'entryYear', 'expectedGraduationYear'] as const) {
+      if (updateData[intField] !== undefined && updateData[intField] !== null) {
+        updateData[intField] = Number(updateData[intField]);
+      }
+    }
+
     logger.debug('Updating user', { userId, updateData, requestingUserId });
 
     let updatedUser;
@@ -561,13 +657,37 @@ router.put(
       });
     }
 
+    // Write-through: a chosen institution also seeds the marketplace campus
+    // preference when that preference is still unset (never the other way,
+    // and never overwriting a campus the user already picked). Best-effort —
+    // a concurrent settings write must not fail the profile update.
+    if (selectedInstitutionId) {
+      try {
+        const currentSettings = (updatedUser.settings ?? {}) as Record<string, unknown>;
+        const marketplaceSettings = (currentSettings.marketplace ?? {}) as Record<string, unknown>;
+        if (marketplaceSettings.campus_id == null) {
+          const mergedSettings = mergeUserSettings(currentSettings, {
+            marketplace: { campus_id: selectedInstitutionId },
+          });
+          const settingsUser = await supabaseService.updateUser(
+            userId,
+            { settings: mergedSettings },
+            { expectedSettingsVersion: (updatedUser as { settingsVersion?: number }).settingsVersion }
+          );
+          if (settingsUser) updatedUser = settingsUser;
+        }
+      } catch (error) {
+        logger.warn('Institution → marketplace campus write-through skipped', { userId, error });
+      }
+    }
+
     // Invalidate user + settings caches
     await cacheService.invalidateUserCache(userId);
     await cacheService.deletePattern('users:list:*');
 
     res.json({
       success: true,
-      data: updatedUser,
+      data: await withInstitution(updatedUser),
     });
   })
 );

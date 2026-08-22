@@ -19,6 +19,8 @@ export interface Deck {
   description?: string;
   user_id?: string;
   is_shared?: boolean;
+  /** Academic archive: decks.course_id (raw rows come back snake_case). */
+  course_id?: string | null;
   created_at?: string;
   updated_at?: string;
   card_count?: number;
@@ -91,6 +93,7 @@ function mapDeckFromApi(data: any): Deck | null {
     description: data.description,
     user_id: data.user_id,
     is_shared: data.is_shared ?? data.isShared,
+    course_id: data.course_id ?? data.courseId ?? null,
     created_at: data.created_at,
     updated_at: data.updated_at,
     card_count: data.card_count ?? data.cardCount,
@@ -220,12 +223,21 @@ interface FlashcardState {
   offlineDeckIds: string[];
   
   // Actions
-  fetchDecks: (userId: string) => Promise<void>;
+  fetchDecks: (userId: string, options?: { courseId?: string | null }) => Promise<void>;
   fetchFlashcards: (deckId: string) => Promise<void>;
   syncAllFlashcards: (userId: string) => Promise<void>;
   setCurrentDeck: (deck: Deck | null) => void;
-  createDeck: (name: string, description: string | undefined, userId: string) => Promise<Deck>;
-  updateDeck: (deckId: string, updates: { name?: string; description?: string }, userId: string) => Promise<void>;
+  createDeck: (
+    name: string,
+    description: string | undefined,
+    userId: string,
+    options?: { courseId?: string | null }
+  ) => Promise<Deck>;
+  updateDeck: (
+    deckId: string,
+    updates: { name?: string; description?: string; courseId?: string | null },
+    userId: string
+  ) => Promise<void>;
   deleteDeck: (deckId: string, userId: string) => Promise<void>;
   createFlashcard: (data: {
     deckId: string;
@@ -308,7 +320,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
   
-  fetchDecks: async (userId: string) => {
+  fetchDecks: async (userId: string, options?: { courseId?: string | null }) => {
     try {
       set({ isLoading: true, error: null });
       // Don't clobber in-memory SRS updates with stale disk cache when decks
@@ -324,7 +336,10 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       }
 
       try {
-        const rawDecks = await api.fetchDecks(userId, { includeShared: true });
+        const rawDecks = await api.fetchDecks(userId, {
+          includeShared: true,
+          ...(options?.courseId != null ? { courseId: options.courseId } : {}),
+        });
         const decks = enrichDecksWithStats(
           sanitizeDecks((rawDecks || []).map(mapDeckFromApi).filter((d): d is Deck => d !== null)),
           get().flashcards
@@ -429,7 +444,8 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     set({ currentDeck: deck });
   },
   
-  createDeck: async (name: string, description: string | undefined, userId: string) => {
+  createDeck: async (name: string, description: string | undefined, userId: string, options) => {
+    const courseId = options?.courseId ?? null;
     // Optimistic local ID
     const tempId = `temp_deck_${Date.now()}`;
     const tempDeck: Deck = {
@@ -437,20 +453,22 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       name,
       description,
       user_id: userId,
+      course_id: courseId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       card_count: 0,
     };
-    
+
     // Optimistic update
     set(state => ({
       decks: [...state.decks, tempDeck],
     }));
     await get().saveToStorage();
-    
+
+    const payload = courseId ? { name, description, courseId } : { name, description };
     try {
       // Try API call
-      const created = await api.createDeck(userId, { name, description });
+      const created = await api.createDeck(userId, payload);
       const mapped = mapDeckFromApi(created);
       const deck = mapped ?? tempDeck;
 
@@ -462,29 +480,33 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       return deck;
     } catch (error: any) {
       console.error('Failed to create deck on server:', error);
-      
+
       // Queue for later sync
-      await syncService.queueOperation('deck', tempId, 'create', { name, description }, userId);
+      await syncService.queueOperation('deck', tempId, 'create', payload, userId);
       trackDeckCreated(tempId);
-      
+
       // Return temp deck for now
       return tempDeck;
     }
   },
-  
-  updateDeck: async (deckId: string, updates: { name?: string; description?: string }, userId: string) => {
+
+  updateDeck: async (deckId, updates, userId) => {
     // Store previous state for rollback
     const previousDecks = get().decks;
-    
+
+    // Local rows keep the raw column name; the API payload uses courseId.
+    const { courseId, ...rest } = updates;
+    const localPatch: Partial<Deck> =
+      courseId === undefined ? rest : { ...rest, course_id: courseId };
     // Optimistic update
     set(state => ({
-      decks: state.decks.map(d => d.id === deckId ? { ...d, ...updates, updated_at: new Date().toISOString() } : d),
-      currentDeck: state.currentDeck?.id === deckId 
-        ? { ...state.currentDeck, ...updates, updated_at: new Date().toISOString() } 
+      decks: state.decks.map(d => d.id === deckId ? { ...d, ...localPatch, updated_at: new Date().toISOString() } : d),
+      currentDeck: state.currentDeck?.id === deckId
+        ? { ...state.currentDeck, ...localPatch, updated_at: new Date().toISOString() }
         : state.currentDeck,
     }));
     await get().saveToStorage();
-    
+
     try {
       await api.updateDeck(deckId, updates);
     } catch (error: any) {

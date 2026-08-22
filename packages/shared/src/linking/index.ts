@@ -6,6 +6,17 @@
 export const DEEP_LINK_SCHEME = 'lanternstudy';
 export const WEB_BASE_URL = 'https://lanternstudy.com';
 
+/**
+ * Public app-store listing URLs. `null` until a listing is live — the web
+ * landing page renders a store badge only for a non-null URL and otherwise
+ * keeps the direct APK download (see docs/RELEASING.md "Google Play").
+ * Expected values once live:
+ *   PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.lanternstudy.app'
+ *   APP_STORE_URL  = 'https://apps.apple.com/app/id<APPLE_APP_ID>'
+ */
+export const PLAY_STORE_URL: string | null = null;
+export const APP_STORE_URL: string | null = null;
+
 export type DeepLinkType =
     | 'flashcard'
     | 'deck'

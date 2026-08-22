@@ -10,13 +10,17 @@ import { Select } from '../ui/Select';
 import { StatPill } from '../ui/StatPill';
 import { Textarea } from '../ui/Textarea';
 import { PaginationBar } from './PaginationBar';
+import { AdminAppeals } from './AdminAppeals';
 import { exportCsv, formatDate, formatDateTime } from './types';
 
-export type AdminMarketplaceView = 'listings' | 'orders';
+export type AdminMarketplaceView = 'listings' | 'orders' | 'appeals';
 
 interface AdminMarketplaceProps {
   view: AdminMarketplaceView;
   onViewChange: (view: AdminMarketplaceView) => void;
+  /** Appeals tab reports its own outcomes through the shell banners. */
+  onSuccess: (msg: string) => void;
+  onError: (msg: string) => void;
   listings: AdminListing[];
   listingsPagination: AdminPagination | null;
   listingStatusFilter: string;
@@ -73,6 +77,8 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
   onResolveDispute,
   disputedOrdersTotal = 0,
   actionLoading,
+  onSuccess,
+  onError,
 }) => {
   const disputedCount =
     orderStatusFilter === 'disputed' ? ordersPagination?.total ?? orders.length : disputedOrdersTotal;
@@ -99,9 +105,18 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
             </span>
           ) : null}
         </Button>
+        <Button
+          size="sm"
+          variant={view === 'appeals' ? 'primary' : 'ghost'}
+          onClick={() => onViewChange('appeals')}
+        >
+          Takedown appeals
+        </Button>
       </div>
 
-      {view === 'listings' ? (
+      {view === 'appeals' ? (
+        <AdminAppeals onSuccess={onSuccess} onError={onError} />
+      ) : view === 'listings' ? (
   <Card className="space-y-3">
     <div className="flex flex-wrap gap-2 justify-between">
             <Select

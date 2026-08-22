@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { RectangleStackIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { Deck } from '../types';
+import { Course, Deck } from '../types';
 import Modal from './ui/Modal';
+import { CoursePicker } from './academic/CoursePicker';
 
 interface CreateDeckModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: { id?: string; name: string; description?: string; isShared?: boolean }) => void;
+  onSubmit: (data: { id?: string; name: string; description?: string; isShared?: boolean; courseId?: string | null }) => void;
   editingDeck?: Deck | null;
 }
 
@@ -15,6 +16,7 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isShared, setIsShared] = useState(false);
+  const [course, setCourse] = useState<Course | string | null>(null);
   const isEditing = !!editingDeck;
 
   useEffect(() => {
@@ -23,10 +25,12 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
         setName(editingDeck.name);
         setDescription(editingDeck.description || '');
         setIsShared(!!editingDeck.isShared);
+        setCourse(editingDeck.courseId || null);
       } else {
         setName('');
         setDescription('');
         setIsShared(false);
+        setCourse(null);
       }
     }
   }, [isOpen, editingDeck, isEditing]);
@@ -37,11 +41,13 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
       useToastStore.getState().showToast('Deck name cannot be empty.', 'info');
       return;
     }
+    const courseId = typeof course === 'string' ? course : course?.id ?? null;
     onSubmit({
       id: isEditing ? editingDeck.id : undefined,
       name: name.trim(),
       description: description.trim() || undefined,
       isShared,
+      courseId,
     });
   };
 
@@ -90,6 +96,13 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
             placeholder="A brief description of this deck's content"
           />
         </div>
+        <CoursePicker
+          id="deckCourse"
+          label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+          value={course}
+          onChange={(next) => setCourse(next)}
+          placeholder="File this deck under a course"
+        />
         <div className="flex items-center gap-2 min-h-[44px]">
           <input
             id="deckShared"

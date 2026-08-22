@@ -19,6 +19,7 @@ import { applyDesignTokensToDom } from './utils/applyDesignTokens';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import CookieNoticeBanner from './components/CookieNoticeBanner';
+import InstallAppBanner from './components/pwa/InstallAppBanner';
 import ProductAnalyticsRouteListener from './components/ProductAnalyticsRouteListener';
 import LegalPage from './components/LegalPage';
 
@@ -51,11 +52,14 @@ root.render(
           <Route path="/privacy" element={<LegalPage document="privacy" />} />
           <Route path="/terms" element={<LegalPage document="terms" />} />
           <Route path="/cookies" element={<LegalPage document="cookies" />} />
+          <Route path="/legal/prohibited" element={<LegalPage document="prohibited" />} />
+          <Route path="/legal/seller-terms" element={<LegalPage document="seller-terms" />} />
           <Route path="/*" element={<App />} />
         </Routes>
         {/* Mounted at router root so legal pages can open the Preference Center */}
         <ProductAnalyticsRouteListener />
         <CookieNoticeBanner />
+        <InstallAppBanner />
       </BrowserRouter>
     </ErrorBoundary>
   </React.StrictMode>

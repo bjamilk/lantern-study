@@ -20,6 +20,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { sendMessage } from '../services/supabase';
 import { trackAIToolUsed } from '../services/productAnalytics';
 import { reconcileDeliveredItem } from '@lantern/shared/utils';
+import type { AIStudyPerformanceData } from '@lantern/shared/api';
 
 export function useAIHandlers() {
   const { currentUser } = useAuthStore();
@@ -107,6 +108,9 @@ export function useAIHandlers() {
             options: qOptions,
             correctAnswerIds: correctIds,
             tags: q.topic ? [q.topic] : undefined,
+            // AI-declared difficulty, persisted in question_data as
+            // authored_difficulty (never `difficulty` — that is FSRS state).
+            authored_difficulty: q.difficulty,
             questionStatus: QuestionStatus.PENDING,
             acceptableAnswers:
               questionType === QuestionType.FILL_IN_THE_BLANK
@@ -228,11 +232,7 @@ export function useAIHandlers() {
   // ─── 4. Study Recommendations (Coach) ──────────────────────
 
   const handleAIStudyRecommendations = useCallback(
-    async (performanceData: {
-      recentScores: { topic: string; score: number; date: string }[];
-      flashcardAccuracy: { topic: string; correctRate: number }[];
-      studyHoursThisWeek: number;
-    }): Promise<AIStudyRecommendation | null> => {
+    async (performanceData: AIStudyPerformanceData): Promise<AIStudyRecommendation | null> => {
       setIsAILoading(true);
       setAiError(null);
       try {

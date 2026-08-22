@@ -10,10 +10,14 @@ import { normalizeUserSettings } from '@lantern/shared/settings';
 import { ChartBarIcon, CalendarDaysIcon, CheckCircleIcon, InformationCircleIcon, UsersIcon, ClockIcon, ArrowLeftIcon, PresentationChartLineIcon, ChevronUpIcon, ChevronDownIcon, FunnelIcon, SparklesIcon, TrophyIcon, RocketLaunchIcon, ClockIcon as ClockOutline, AcademicCapIcon as AcademicCapOutline, TagIcon, PresentationChartBarIcon, ExclamationTriangleIcon, RectangleStackIcon, ShoppingBagIcon, PlusCircleIcon, FireIcon, BoltIcon, BellIcon, XMarkIcon, DocumentTextIcon, PlayIcon } from '@heroicons/react/24/solid';
 import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
+import { useFlashcardStore } from '../stores/flashcardStore';
+import type { AIStudyPerformanceData } from '@lantern/shared/api';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
 import {
   buildActivityMap,
+  buildFlashcardAccuracyByDeck,
+  countActiveDaysInLastWeek,
   formatActivityLocalDate,
   normalizeTestQuestionForSession,
   normalizeStoredUserAnswer,
@@ -52,8 +56,61 @@ import {
   type TestResultsSort,
 } from '../services/supabase';
 import { useTestStore } from '../stores/testStore';
+import {
+  needsAcademicSetup,
+  readAcademicSetupDismissed,
+  markAcademicSetupDismissed,
+} from '../utils/academicSetup';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
+
+/**
+ * One-line "Finish setting up your profile" nudge (Phase 1 A/F) shown while
+ * `currentUser.institutionId` is null. Opens the profile-setup step. Dismissal
+ * is per-user and persistent (shared with the setup step's "Skip for now"), so
+ * once a user dismisses it — here or in the modal — it stays dismissed and the
+ * auto-open doesn't loop. Setting an institution (in setup or Settings) clears
+ * the flag.
+ */
+const AcademicSetupBanner: React.FC<{ currentUser: User }> = ({ currentUser }) => {
+  const openModal = useUIStore((s) => s.openModal);
+  const [dismissed, setDismissed] = useState<boolean>(() =>
+    readAcademicSetupDismissed(currentUser.id)
+  );
+  if (dismissed || !needsAcademicSetup(currentUser)) return null;
+  const dismiss = () => {
+    setDismissed(true);
+    markAcademicSetupDismissed(currentUser.id);
+  };
+  return (
+    <div
+      role="status"
+      className="bg-lantern-primary-background border-b border-lantern-border px-4 py-2 flex items-center justify-between gap-3 text-sm"
+    >
+      <p className="min-w-0 truncate text-lantern-text">
+        <AcademicCapOutline className="w-4 h-4 inline-block mr-1.5 -mt-0.5 text-lantern-primary" aria-hidden />
+        Finish setting up your profile — add your university and courses.
+      </p>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => openModal('usernameRequired')}
+          className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-lantern-primary hover:bg-lantern-primary-dark"
+        >
+          Set up
+        </button>
+        <button
+          type="button"
+          onClick={dismiss}
+          className="p-1.5 rounded-full text-lantern-text-secondary hover:bg-lantern-background-secondary"
+          aria-label="Dismiss profile setup reminder"
+        >
+          <XMarkIcon className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
 const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
 const RECENT_TESTS_PAGE_SIZE = 5;
 
@@ -183,11 +240,7 @@ interface DashboardScreenProps {
   // Study flow entry points — called with the selected groupId
   onOpenQuickTest?: (groupId: string) => void;
   onOpenQuickStudy?: (groupId: string) => void;
-  onGetStudyRecommendations?: (performanceData: {
-    recentScores: { topic: string; score: number; date: string }[];
-    flashcardAccuracy: { topic: string; correctRate: number }[];
-    studyHoursThisWeek: number;
-  }) => Promise<{ weakTopics: string[]; suggestedCards: string[]; suggestedQuestions: string[]; studyTip: string; estimatedMinutes: number } | null>;
+  onGetStudyRecommendations?: (performanceData: AIStudyPerformanceData) => Promise<{ weakTopics: string[]; suggestedCards: string[]; suggestedQuestions: string[]; studyTip: string; estimatedMinutes: number } | null>;
   onNavigateToNotes?: () => void;
   onOpenImportAndStudy?: () => void;
   onNavigateToAITools?: () => void;
@@ -454,6 +507,9 @@ export default function DashboardScreen({
   const displayStreak = Math.max(serverStreak, studyActivityStreak);
   const xpInfo = useMemo(() => getXPLevel(currentUser.points), [currentUser.points]);
   const { lowDataMode } = useUIStore();
+  // Deck names label the per-deck flashcard accuracy sent to the AI coach;
+  // `flashcards` (prop) comes from the same store in App.tsx.
+  const decks = useFlashcardStore(s => s.decks);
 
 
   const filteredTestResults = useMemo(() => {
@@ -1134,6 +1190,9 @@ export default function DashboardScreen({
         </div>
       )}
       
+      {/* ─── Academic profile setup nudge (Phase 1) ─── */}
+      <AcademicSetupBanner currentUser={currentUser} />
+
       {/* ═══════════════ HERO ═══════════════ */}
       <DashboardHero
         userName={getDashboardFirstName({
@@ -1327,17 +1386,27 @@ export default function DashboardScreen({
               <button
                 onClick={async () => {
                   setIsCoachLoading(true);
+                  // recentScores stays TEST-derived — that is what it claims to be.
                   const recentScores = analysisData.strongestTopics
                     .concat(analysisData.weakestTopics)
                     .map(t => ({ topic: t.tag, score: t.accuracy, date: new Date().toISOString() }));
-                  const flashcardAccuracy = analysisData.strongestTopics.map(t => ({
-                    topic: t.tag,
-                    correctRate: t.accuracy / 100,
-                  }));
+                  // Flashcard accuracy = mature / reviewed cards per deck from the
+                  // SRS state already in the store (topic = deck name). When no
+                  // card has been reviewed the field is OMITTED rather than
+                  // filled with test accuracy under the flashcard name.
+                  const flashcardAccuracy = buildFlashcardAccuracyByDeck(decks, flashcards);
+                  // Days studied in the last 7 days, from the same
+                  // /dashboard/summary activity data the heatmap shows. Only if
+                  // no activity data is loaded do we fall back to the
+                  // test-derived streak, capped at the 7-day window.
+                  const studyDaysThisWeek =
+                    studyActivityDays.length > 0
+                      ? countActiveDaysInLastWeek(studyActivityDays)
+                      : Math.min(studyStreak, 7);
                   const result = await onGetStudyRecommendations({
                     recentScores,
-                    flashcardAccuracy,
-                    studyHoursThisWeek: studyStreak,
+                    ...(flashcardAccuracy.length > 0 ? { flashcardAccuracy } : {}),
+                    studyDaysThisWeek,
                   });
                   if (result) setAiCoachData(result);
                   setIsCoachLoading(false);

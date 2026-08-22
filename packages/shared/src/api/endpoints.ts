@@ -8,6 +8,24 @@ import {
   RateLimitError,
 } from "./marketplaceCache";
 import { retryUncertainDelivery } from "../utils/deliveryIntegrity";
+import type {
+  Concept,
+  ConceptLink,
+  ContentReport,
+  ContentReportReason,
+  ContentReportStatus,
+  ContentReportTargetType,
+  Course,
+  LibraryOverview,
+  LibrarySearchResult,
+  LibrarySearchType,
+  ListingAppealStatus,
+  ListingRightsStatus,
+  ModerationFlag,
+  ModerationState,
+  ModerationStrike,
+  UserCourse,
+} from "../types";
 
 type ChatMessageMutationPayload = {
   id: string;
@@ -38,9 +56,17 @@ export function createApiEndpoints(client: ApiClient) {
   return {
     // ========== DECK API ==========
 
-    fetchDecks: (userId: string, options?: { includeShared?: boolean }) => {
+    fetchDecks: (
+      userId: string,
+      options?: {
+        includeShared?: boolean;
+        /** Course filter; pass the literal 'null' for unfiled decks. */
+        courseId?: string | null;
+      },
+    ) => {
       const params = new URLSearchParams({ userId });
       if (options?.includeShared) params.set("includeShared", "true");
+      if (options?.courseId != null) params.set("courseId", String(options.courseId));
       params.set("limit", "50");
       return apiRequest<
         Array<{
@@ -49,6 +75,7 @@ export function createApiEndpoints(client: ApiClient) {
           description?: string;
           user_id: string;
           is_shared?: boolean;
+          course_id?: string | null;
           created_at: string;
           updated_at: string;
           card_count?: number;
@@ -58,13 +85,14 @@ export function createApiEndpoints(client: ApiClient) {
 
     createDeck: (
       userId: string,
-      data: { name: string; description?: string },
+      data: { name: string; description?: string; courseId?: string | null },
     ) =>
       apiRequest<{
         id: string;
         name: string;
         description?: string;
         user_id: string;
+        course_id?: string | null;
         created_at: string;
         updated_at: string;
         card_count?: number;
@@ -75,7 +103,7 @@ export function createApiEndpoints(client: ApiClient) {
 
     updateDeck: (
       deckId: string,
-      updates: { name?: string; description?: string },
+      updates: { name?: string; description?: string; courseId?: string | null },
     ) =>
       apiRequest<{
         id: string;
@@ -299,6 +327,12 @@ export function createApiEndpoints(client: ApiClient) {
       flashcardId: string,
       rating: "again" | "hard" | "good" | "easy",
       expectedVersion?: number,
+      /**
+       * Offline replay: the ISO time the grade was actually given, so the
+       * server's learning_events row carries occurred_at = reviewedAt rather
+       * than the sync time. Omit for live reviews.
+       */
+      options?: { reviewedAt?: string },
     ) =>
       apiRequest<{
         id: string;
@@ -311,6 +345,7 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify({
           rating,
           ...(expectedVersion != null ? { expectedVersion } : {}),
+          ...(options?.reviewedAt ? { reviewedAt: options.reviewedAt } : {}),
         }),
       }),
 
@@ -416,6 +451,14 @@ export function createApiEndpoints(client: ApiClient) {
         stats?: unknown;
         badges?: unknown[];
         settings?: unknown;
+        // Academic identity (docs/phase1-academic-identity-contract.md §2).
+        institutionId?: string | null;
+        institution?: { id: string; name: string; slug: string } | null;
+        faculty?: string | null;
+        programme?: string | null;
+        studyLevel?: number | null;
+        entryYear?: number | null;
+        expectedGraduationYear?: number | null;
         created_at: string;
         updated_at: string;
       }>(`/users/${userId}`),
@@ -447,6 +490,13 @@ export function createApiEndpoints(client: ApiClient) {
         stats?: unknown;
         badges?: unknown[];
         settings?: unknown;
+        // Academic identity (PUT /users/:id; 400 for "other-*" sentinel campuses).
+        institutionId?: string | null;
+        faculty?: string | null;
+        programme?: string | null;
+        studyLevel?: number | null;
+        entryYear?: number | null;
+        expectedGraduationYear?: number | null;
       }>,
     ) =>
       apiRequest<{
@@ -455,6 +505,13 @@ export function createApiEndpoints(client: ApiClient) {
         avatar_url?: string;
         phone?: string;
         points: number;
+        institutionId?: string | null;
+        institution?: { id: string; name: string; slug: string } | null;
+        faculty?: string | null;
+        programme?: string | null;
+        studyLevel?: number | null;
+        entryYear?: number | null;
+        expectedGraduationYear?: number | null;
         created_at: string;
         updated_at: string;
       }>(`/users/${userId}`, {
@@ -640,6 +697,8 @@ export function createApiEndpoints(client: ApiClient) {
       parent_id?: string;
       userId: string;
       memberIds: string[];
+      /** Academic archive: the course this group studies (null clears). */
+      courseId?: string | null;
     }) =>
       apiRequest<{
         id: string;
@@ -647,6 +706,8 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         avatar_url?: string;
         invite_id: string;
+        course_id?: string | null;
+        courseId?: string | null;
         created_at: string;
         updated_at: string;
       }>("/groups", {
@@ -661,6 +722,7 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         avatarUrl?: string;
         isArchived?: boolean;
+        courseId?: string | null;
       },
     ) =>
       apiRequest<{
@@ -669,6 +731,8 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         avatar_url?: string;
         is_archived?: boolean;
+        course_id?: string | null;
+        courseId?: string | null;
         created_at: string;
         updated_at: string;
       }>(`/groups/${groupId}`, {
@@ -1787,6 +1851,18 @@ export function createApiEndpoints(client: ApiClient) {
         updated_at: string;
         seller?: { id: string; name: string; avatar_url?: string };
         profiles?: { id: string; name: string; avatar_url?: string };
+        // Rights / takedown / appeal state — present for the owner and
+        // platform admins only; stripped for every other viewer.
+        rights_status?: ListingRightsStatus;
+        rights_attested_at?: string | null;
+        rights_attestation_version?: string | null;
+        moderation_flags?: ModerationFlag[];
+        takedown_reason?: string | null;
+        takedown_at?: string | null;
+        appeal_status?: ListingAppealStatus;
+        appeal_note?: string | null;
+        appealed_at?: string | null;
+        appeal_decided_at?: string | null;
       }>(`/marketplace/listings/${listingId}`),
 
     /**
@@ -1849,6 +1925,14 @@ export function createApiEndpoints(client: ApiClient) {
         campus_id: string;
         images?: string[];
         categorySpecificFields?: unknown;
+        /** Academic archive: course this listing is for (marketplace_listings.course_id). */
+        courseId?: string | null;
+        /**
+         * Rights attestation (RIGHTS_ATTESTATION_TEXT). Required (400 otherwise)
+         * when isAcademicListing({ listingKind, category }) — i.e. pq_bank,
+         * lecture_notes, project_thesis, textbook_exchange — harmless elsewhere.
+         */
+        attestation?: boolean;
       },
       idempotencyKey?: string,
     ) =>
@@ -1862,6 +1946,7 @@ export function createApiEndpoints(client: ApiClient) {
         currency?: string;
         price?: number;
         status: string;
+        course_id?: string | null;
         created_at: string;
         updated_at: string;
       }>("/marketplace/listings", {
@@ -1890,6 +1975,16 @@ export function createApiEndpoints(client: ApiClient) {
         campus_id: string;
         images?: string[];
         status: "active" | "sold" | "inactive" | "reserved";
+        /** Merged server-side with the existing JSONB (server-owned keys preserved). */
+        categorySpecificFields?: unknown;
+        /** Academic archive: course this listing is for (null clears). */
+        courseId?: string | null;
+        /**
+         * Rights attestation. Required (400) when the edit moves an
+         * unattested listing into an academic category; re-sending it on an
+         * already-attested listing just refreshes rights_attested_at.
+         */
+        attestation?: boolean;
       }>,
     ) =>
       apiRequest<{
@@ -1937,6 +2032,14 @@ export function createApiEndpoints(client: ApiClient) {
           status: string;
           created_at: string;
           updated_at: string;
+          // Owner-visible rights / takedown / appeal state (Phase 1 · E).
+          rights_status?: ListingRightsStatus;
+          takedown_reason?: string | null;
+          takedown_at?: string | null;
+          appeal_status?: ListingAppealStatus;
+          appeal_note?: string | null;
+          appealed_at?: string | null;
+          appeal_decided_at?: string | null;
         }>
       >(`/marketplace/my-listings${params}`, {}, 5000);
     },
@@ -2118,6 +2221,124 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify(report),
       }),
 
+    // ─── Moderation (Phase 1 · E) ───────────────────────────────────────────
+
+    /**
+     * Generic content report — any listing / question bank / note / deck /
+     * user / group / message / DM / job posting. `reason` must be one of
+     * reasonsForTarget(targetType); the API answers 409 when the caller has
+     * already reported this target.
+     */
+    reportContent: (input: {
+      targetType: ContentReportTargetType;
+      targetId: string;
+      reason: ContentReportReason;
+      details?: string;
+    }) =>
+      apiRequest<{ id: string; status: ContentReportStatus }>("/reports", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    /** Seller appeal of a moderation takedown (one shot; 409 if already appealed). */
+    appealListingTakedown: (listingId: string, note: string) =>
+      apiRequest<{
+        id: string;
+        status: string;
+        appeal_status: ListingAppealStatus;
+        appealed_at: string;
+      }>(`/marketplace/listings/${encodeURIComponent(listingId)}/appeal`, {
+        method: "POST",
+        body: JSON.stringify({ note }),
+      }),
+
+    /** Caller's own strike count + suspension state. */
+    fetchMyModerationState: () =>
+      apiRequest<ModerationState>("/users/me/moderation", {}, 8000),
+
+    // Admin console (routes mounted under /admin; requirePlatformAdmin)
+    fetchAdminReports: (params?: {
+      status?: ContentReportStatus | "open";
+      targetType?: ContentReportTargetType;
+      page?: number;
+      limit?: number;
+    }) => {
+      const query = new URLSearchParams();
+      if (params?.status) query.set("status", params.status);
+      if (params?.targetType) query.set("targetType", params.targetType);
+      if (params?.page) query.set("page", String(params.page));
+      if (params?.limit) query.set("limit", String(params.limit));
+      const qs = query.toString();
+      return apiRequestRaw<{
+        success: boolean;
+        data: ContentReport[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      }>(`/admin/reports${qs ? `?${qs}` : ""}`);
+    },
+
+    resolveAdminReport: (
+      id: string,
+      body: {
+        action: "dismiss" | "under_review" | "warn" | "remove_content" | "strike";
+        note?: string;
+        severity?: 1 | 2 | 3;
+      },
+    ) =>
+      apiRequestRaw<{
+        success: boolean;
+        data: {
+          action: string;
+          status: ContentReportStatus;
+          strike?: ModerationStrike | null;
+          suspendedUntil?: string | null;
+        };
+      }>(`/admin/reports/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+
+    fetchAdminAppeals: () =>
+      apiRequestRaw<{
+        success: boolean;
+        data: Array<{
+          id: string;
+          title: string;
+          status: string;
+          user_id: string;
+          rights_status?: ListingRightsStatus;
+          takedown_reason?: string | null;
+          takedown_at?: string | null;
+          appeal_status: ListingAppealStatus;
+          appeal_note?: string | null;
+          appealed_at?: string | null;
+          seller?: { id: string; name?: string | null; username?: string | null } | null;
+        }>;
+      }>("/admin/appeals"),
+
+    decideListingAppeal: (
+      listingId: string,
+      body: { decision: "upheld" | "reversed"; note?: string },
+    ) =>
+      apiRequestRaw<{
+        success: boolean;
+        data: { id: string; status: string; appeal_status: ListingAppealStatus };
+      }>(`/admin/marketplace/listings/${encodeURIComponent(listingId)}/appeal`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+
+    addStrike: (
+      userId: string,
+      body: { reason: string; severity?: 1 | 2 | 3; reportId?: string },
+    ) =>
+      apiRequestRaw<{
+        success: boolean;
+        data: { strike: ModerationStrike; activeStrikes: number; suspendedUntil: string | null };
+      }>(`/admin/users/${encodeURIComponent(userId)}/strikes`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+
     createMarketplaceOffer: (
       listingId: string,
       amount: number,
@@ -2292,7 +2513,15 @@ export function createApiEndpoints(client: ApiClient) {
       campusId: string;
       location?: string;
       groupId?: string | null;
+      /** Academic archive: written on both the listing and the bank. */
+      courseId?: string | null;
       content: { config?: Record<string, unknown>; questions: unknown[] };
+      /** Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; 400 without it. */
+      attestation: true;
+      /** "This pack was AI-assisted" toggle. */
+      aiAssisted?: boolean;
+      /** Up to 20 short references (≤ 200 chars each). */
+      sourcesCited?: string[];
     }) =>
       apiRequest<{
         listing: { id: string; title: string };
@@ -2303,14 +2532,19 @@ export function createApiEndpoints(client: ApiClient) {
         20000,
       ),
 
-    /** Seller republish: replace the snapshot, bumping the version. */
+    /**
+     * Seller republish: replace the snapshot, bumping the version. Re-requires
+     * the rights attestation (400 without it); aiAssisted / sourcesCited
+     * refresh the bank's provenance when sent.
+     */
     updateQuestionBankContent: (
       listingId: string,
       content: { config?: Record<string, unknown>; questions: unknown[] },
+      provenance?: { attestation: boolean; aiAssisted?: boolean; sourcesCited?: string[] },
     ) =>
       apiRequest<{ version: number; questionCount: number }>(
         `/marketplace/question-banks/${listingId}/update-content`,
-        { method: "POST", body: JSON.stringify({ content }) },
+        { method: "POST", body: JSON.stringify({ content, ...(provenance ?? {}) }) },
         20000,
       ),
 
@@ -3153,6 +3387,162 @@ export function createApiEndpoints(client: ApiClient) {
           slug: string;
         }>
       >(`/marketplace/campuses?country=${encodeURIComponent(country)}`),
+
+    // ========== ACADEMIC: COURSES + MY COURSES (/api/v1/courses, /api/v1/users/me/courses) ==========
+    // Shapes pinned by docs/phase1-academic-identity-contract.md §2/§3.
+
+    /** Search the shared course catalogue (canonical first, then by code). */
+    fetchCourses: (
+      filters: { institutionId?: string | null; q?: string; limit?: number } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (filters.institutionId) params.set("institutionId", filters.institutionId);
+      if (filters.q && filters.q.trim()) params.set("q", filters.q.trim());
+      if (filters.limit) params.set("limit", String(filters.limit));
+      const qs = params.toString();
+      return apiRequest<Course[]>(`/courses${qs ? `?${qs}` : ""}`, {}, 10000);
+    },
+
+    /** Find-or-create a course by normalised code (201 created / 200 existing — both return the row). */
+    createCourse: (input: {
+      institutionId?: string | null;
+      code: string;
+      title: string;
+      faculty?: string | null;
+      level?: number | null;
+      semester?: 1 | 2 | null;
+    }) =>
+      apiRequest<Course>("/courses", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    /** The caller's enrolments (default: active only). */
+    fetchMyCourses: (
+      filters: { status?: "active" | "archived" | "all"; academicYear?: string } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (filters.status) params.set("status", filters.status);
+      if (filters.academicYear) params.set("academicYear", filters.academicYear);
+      const qs = params.toString();
+      return apiRequest<UserCourse[]>(`/users/me/courses${qs ? `?${qs}` : ""}`);
+    },
+
+    /**
+     * Replace the caller's course set for an academic year: listed ids are
+     * upserted as active, rows for that year not in the list are deleted.
+     */
+    setMyCourses: (input: { courseIds: string[]; academicYear?: string }) =>
+      apiRequest<UserCourse[]>("/users/me/courses", {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+
+    updateMyCourse: (
+      courseId: string,
+      patch: {
+        examDate?: string | null;
+        semester?: 1 | 2 | null;
+        status?: "active" | "archived";
+        academicYear?: string;
+      },
+    ) =>
+      apiRequest<UserCourse>(`/users/me/courses/${encodeURIComponent(courseId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+
+    removeMyCourse: (courseId: string, academicYear?: string) =>
+      apiRequest<void>(
+        `/users/me/courses/${encodeURIComponent(courseId)}${
+          academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : ""
+        }`,
+        { method: "DELETE" },
+      ),
+
+    /** Mark every enrolment of that academic year archived (nothing moves). */
+    archiveSemester: (academicYear: string) =>
+      apiRequest<{ archived: number }>("/users/me/courses/archive-semester", {
+        method: "POST",
+        body: JSON.stringify({ academicYear }),
+      }),
+
+    // ========== CONCEPTS (/api/v1/concepts) ==========
+    // Thin clients for the knowledge-network vocabulary (Phase 1 · C). The
+    // concept-tagging UI is Phase 3 P; shapes pinned by
+    // docs/phase1-learning-events-contract.md §2.
+
+    /** Search concepts by name (trigram), optionally scoped to a course. */
+    fetchConcepts: (
+      filters: { q?: string; courseId?: string | null; limit?: number } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (filters.q && filters.q.trim()) params.set("q", filters.q.trim());
+      if (filters.courseId) params.set("courseId", filters.courseId);
+      if (filters.limit) params.set("limit", String(filters.limit));
+      const qs = params.toString();
+      return apiRequest<Concept[]>(`/concepts${qs ? `?${qs}` : ""}`, {}, 10000);
+    },
+
+    /** Find-or-create a concept by normalised slug (201 created / 200 existing — both return the row). */
+    createConcept: (input: {
+      name: string;
+      courseId?: string | null;
+      parentId?: string | null;
+      source?: "ai" | "user" | "import";
+    }) =>
+      apiRequest<Concept>("/concepts", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    /** Link a concept to a flashcard / question / note / deck (idempotent upsert on the triple). */
+    linkConcept: (
+      conceptId: string,
+      input: {
+        targetType: "flashcard" | "question" | "note" | "deck";
+        targetId: string;
+        confidence?: number;
+        source?: "ai" | "user" | "import";
+      },
+    ) =>
+      apiRequest<ConceptLink>(`/concepts/${encodeURIComponent(conceptId)}/links`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    // ========== LIBRARY ARCHIVE (/api/v1/library) ==========
+    // Shapes pinned by docs/phase1-library-archive-contract.md §1.
+
+    /** The Library tree: years → courses (with enrolment + counts) + unfiled counts, in one round trip. */
+    fetchLibraryOverview: () =>
+      apiRequest<LibraryOverview>("/library/overview", {}, 15000),
+
+    /**
+     * Cross-artefact search over the caller's notes (incl. attachment text),
+     * decks, flashcards (grouped by deck) and offline bundles. `q` must be at
+     * least 2 characters; `courseId` may be the literal "null" for unfiled
+     * items; `types` defaults to all; `limit` is capped at 50 server-side.
+     */
+    searchLibrary: (params: {
+      q: string;
+      courseId?: string | null;
+      types?: LibrarySearchType[];
+      limit?: number;
+    }) => {
+      const search = new URLSearchParams();
+      search.set("q", params.q.trim());
+      if (params.courseId) search.set("courseId", params.courseId);
+      if (params.types && params.types.length > 0) {
+        search.set("types", params.types.join(","));
+      }
+      if (params.limit) search.set("limit", String(params.limit));
+      return apiRequest<LibrarySearchResult[]>(
+        `/library/search?${search.toString()}`,
+        {},
+        10000,
+      );
+    },
 
     // ========== JOBS BOARD API (/api/v1/jobs-board) ==========
 

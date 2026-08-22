@@ -79,6 +79,12 @@ export type DataRetentionPurgeResult = {
 /**
  * Single retention pass used by both the in-process daily timer and BullMQ cron.dataRetention.
  * Must include scheduled account hard-deletes so pause→grace→purge works when BULLMQ_ENABLED=true.
+ *
+ * Deliberately NOT purged here: `learning_events` (and concepts / concept_links).
+ * Decision D9 — learning activity is product data (mastery, readiness,
+ * recommendations read it), kept while the account exists and removed by the
+ * profiles ON DELETE CASCADE on account deletion. It is not the consent-gated,
+ * 90-day `product_events` log. docs/compliance/retention-schedule.md pins this.
  */
 export async function runDataRetentionPurge(
   supabaseService: SupabaseService

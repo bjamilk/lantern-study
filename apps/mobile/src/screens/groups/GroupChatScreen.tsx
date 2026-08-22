@@ -42,6 +42,7 @@ import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode';
 import { useTheme } from '../../theme';
+import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
 import { summarizeGroupChat } from '../../services/ai';
 import * as api from '../../services/api';
@@ -119,6 +120,7 @@ function mapAIQuestionToPayload(
     correctAnswer: string;
     explanation?: string;
     topic?: string;
+    difficulty?: 'easy' | 'medium' | 'hard';
   },
   senderId: string,
   senderName: string
@@ -162,6 +164,10 @@ function mapAIQuestionToPayload(
     options,
     correctAnswerIds,
     tags: q.topic ? [q.topic] : [],
+    // AI-declared difficulty → question_data.authored_difficulty (never
+    // `difficulty`, which is FSRS state). groupStore.submitQuestion must pass
+    // it through as `authored_difficulty` for it to reach the server.
+    authoredDifficulty: q.difficulty,
     acceptableAnswers:
       questionType === 'FILL_IN_THE_BLANK' && q.correctAnswer ? [q.correctAnswer] : undefined,
   };
@@ -287,6 +293,9 @@ interface MessageActionSheetProps {
   onCopy: (message: Message) => void;
   onEdit: (message: Message) => void;
   onRemove: (message: Message) => void;
+  /** Community duplicate/similar-question flag (enough flags auto-hide). */
+  onFlagDuplicate: (message: Message) => void;
+  /** Content report to Lantern moderation (Phase 1 · E). */
   onReport: (message: Message) => void;
 }
 
@@ -306,6 +315,7 @@ function MessageActionSheet({
   onCopy,
   onEdit,
   onRemove,
+  onFlagDuplicate,
   onReport,
 }: MessageActionSheetProps) {
   const { colors } = useTheme();
@@ -365,6 +375,17 @@ function MessageActionSheet({
         onPress: () => onRemove(message),
       });
     }
+    if (!isOwn && message.type === 'question') {
+      // Kept as the duplicate-question signal (flag-as-similar); a real
+      // moderation report is the separate "Report message" below.
+      items.push({
+        id: 'flag-duplicate',
+        label: 'Flag duplicate',
+        icon: 'copy-outline',
+        tone: 'default',
+        onPress: () => onFlagDuplicate(message),
+      });
+    }
     if (!isOwn) {
       items.push({
         id: 'report',
@@ -375,7 +396,7 @@ function MessageActionSheet({
       });
     }
     return items;
-  }, [message, currentUserId, onReply, onCopy, onEdit, onRemove, onReport]);
+  }, [message, currentUserId, onReply, onCopy, onEdit, onRemove, onFlagDuplicate, onReport]);
 
   const toneColor = (tone: MessageSheetTone) =>
     tone === 'destructive' ? colors.error : tone === 'warning' ? colors.warning : colors.text;
@@ -902,6 +923,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
         groupId,
         groupName: displayName,
         lockAnswered: config.lockAnswered,
+        // Explicit null from the modal means "no course"; only an absent key
+        // falls back to the group's course.
+        courseId: config.courseId !== undefined ? config.courseId : currentGroup?.courseId ?? null,
       });
       const parent = navigation.getParent?.();
       if (parent?.navigate) {
@@ -1115,27 +1139,26 @@ export function GroupChatScreen({ navigation, route }: Props) {
     }
   }, []);
 
-  // The only durable "this message is a problem" signal the app has is the
-  // community flag (enough flags auto-hide the message), so Report routes there.
-  const reportMessage = useCallback(
+  // Community duplicate flag (enough flags auto-hide the message). A content
+  // report to Lantern moderation is the separate ReportContentSheet below.
+  const flagDuplicateMessage = useCallback(
     (message: Message) => {
       if (!user?.id) return;
-      const alreadyReported = message.flaggedAsSimilarUserIds?.includes(user.id) ?? false;
-      if (alreadyReported) {
+      const alreadyFlagged = message.flaggedAsSimilarUserIds?.includes(user.id) ?? false;
+      if (alreadyFlagged) {
         Alert.alert(
-          'Already reported',
-          'You have already flagged this message for the group to review.'
+          'Already flagged',
+          'You have already flagged this message as a duplicate for the group to review.'
         );
         return;
       }
       Alert.alert(
-        'Report message?',
-        'This flags the message for the group and its admins to review.',
+        'Flag duplicate?',
+        'This flags the message as a duplicate or similar question for the group and its admins to review.',
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: 'Report',
-            style: 'destructive',
+            text: 'Flag',
             onPress: () => handleFlagMessage(message),
           },
         ]
@@ -1143,6 +1166,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
     },
     [handleFlagMessage, user?.id]
   );
+  /** Message being reported to moderation (drives the ReportContentSheet). */
+  const [reportTarget, setReportTarget] = useState<Message | null>(null);
 
   // Sheet actions all dismiss the sheet first. Remove/Report then open a
   // confirm Alert, deferred so the sheet Modal is gone before it shows — iOS
@@ -1175,13 +1200,17 @@ export function GroupChatScreen({ navigation, route }: Props) {
     },
     [confirmRemoveMessage]
   );
-  const handleSheetReport = useCallback(
+  const handleSheetFlagDuplicate = useCallback(
     (message: Message) => {
       setMessageActionTarget(null);
-      setTimeout(() => reportMessage(message), Platform.OS === 'ios' ? 320 : 0);
+      setTimeout(() => flagDuplicateMessage(message), Platform.OS === 'ios' ? 320 : 0);
     },
-    [reportMessage]
+    [flagDuplicateMessage]
   );
+  const handleSheetReport = useCallback((message: Message) => {
+    setMessageActionTarget(null);
+    setTimeout(() => setReportTarget(message), Platform.OS === 'ios' ? 320 : 0);
+  }, []);
 
   const handleMentionUser = useCallback((username: string) => {
     setSeedMentionUsername(username);
@@ -1761,7 +1790,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
         onCopy={handleSheetCopy}
         onEdit={handleSheetEdit}
         onRemove={handleSheetRemove}
+        onFlagDuplicate={handleSheetFlagDuplicate}
         onReport={handleSheetReport}
+      />
+      <ReportContentSheet
+        visible={!!reportTarget}
+        targetType="message"
+        targetId={reportTarget?.id ?? ''}
+        targetLabel={(reportTarget?.questionStem || reportTarget?.text || '').trim().slice(0, 120) || undefined}
+        onClose={() => setReportTarget(null)}
       />
 
       <TestConfigModal
@@ -1770,6 +1807,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
         onDownload={handleDownloadForOffline}
         isDownloading={isDownloadingBundle}
         mode={testMode}
+        defaultCourseId={currentGroup?.courseId ?? null}
         maxQuestions={Math.max(1, testableCount)}
         availableTags={availableTags}
         testName={displayName}

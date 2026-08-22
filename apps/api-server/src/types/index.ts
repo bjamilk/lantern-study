@@ -54,6 +54,14 @@ export interface User {
   badges: any[];
   stats: any;
   settings?: any;
+  // Academic identity (profiles.institution_id & friends)
+  institutionId?: string | null;
+  institution?: { id: string; name: string; slug: string } | null;
+  faculty?: string | null;
+  programme?: string | null;
+  studyLevel?: number | null;
+  entryYear?: number | null;
+  expectedGraduationYear?: number | null;
 }
 
 export interface Group {
@@ -73,6 +81,8 @@ export interface Group {
   members?: User[];
   memberEmails?: string[];
   invitedPhoneNumbers?: string[];
+  /** Course this group studies (academic archive). */
+  courseId?: string | null;
 }
 
 export interface Message {

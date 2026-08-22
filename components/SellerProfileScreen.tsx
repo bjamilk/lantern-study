@@ -6,6 +6,7 @@ import { useToastStore } from '../stores/toastStore';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { shareShopLink } from '../utils/shareShop';
 import EditShopModal from './EditShopModal';
+import ReportContentModal from './moderation/ReportContentModal';
 import {
   ArrowLeftIcon,
   StarIcon,
@@ -17,6 +18,7 @@ import {
   ClockIcon,
   PencilSquareIcon,
   ShareIcon,
+  FlagIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
@@ -41,6 +43,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const isOwner = !!currentUser?.id && currentUser.id === userId;
 
   useEffect(() => {
@@ -153,6 +156,24 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
               <ShareIcon className="w-3.5 h-3.5" />
               Share
             </button>
+            {!isOwner ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (guestMode || !currentUser?.id) {
+                    onSignInRequired?.();
+                    return;
+                  }
+                  setReportOpen(true);
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-black/30 text-white text-xs font-semibold hover:bg-red-600/70"
+                aria-label="Report this seller"
+                title="Report this seller"
+              >
+                <FlagIcon className="w-3.5 h-3.5" />
+                Report
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -210,6 +231,15 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
           showToast('Shop updated', 'success');
         }}
       />
+      {!isOwner && reportOpen ? (
+        <ReportContentModal
+          isOpen={reportOpen}
+          onClose={() => setReportOpen(false)}
+          targetType="user"
+          targetId={userId}
+          targetLabel={shopName}
+        />
+      ) : null}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">

@@ -24,6 +24,10 @@ import {
   initialUserStats,
   resolveQuestionStatusAfterVote,
 } from "@lantern/shared/utils/testHelpers";
+import {
+  BADGE_DEFINITIONS,
+  createBadge,
+} from "@lantern/shared/utils/gamification";
 import { mapUserStatsFromApi } from "@lantern/shared/utils/apiMappers";
 import { computeStudyStreak } from "@lantern/shared/utils/activity";
 import { calculateFsrsData } from "@lantern/shared/utils/fsrs";
@@ -34,10 +38,24 @@ import {
 import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
+  MARKETPLACE_MODERATED_LISTING_STATUSES,
+  isMarketplaceListingEditable,
+  isMarketplaceListingStatus,
+  sellerListingTransitionError,
 } from "@lantern/shared/marketplace";
+import { PublicError } from "../utils/safeError";
 // Value import (const array) — marketplaceOrders only type-imports supabase, so
 // this introduces no runtime import cycle.
 import { OPEN_ORDER_STATUSES } from "./marketplaceOrders";
+// Shared `?courseId=` filter (none / unfiled / course) for the artefact lists;
+// academicCourses only type-imports supabase, so no runtime cycle either.
+import {
+  applyCourseFilter,
+  courseFilterKey,
+  type CourseFilter,
+} from "./academicCourses";
+// Owner/admin-only moderation columns never ride along on embedded listings.
+import { stripListingModerationFields } from "./moderation";
 import {
   isPrivateStorageBucket,
   parseStorageObjectUrl,
@@ -71,6 +89,15 @@ import {
   detectImageMime,
 } from "../utils/fileValidation";
 import { VersionConflictError } from "../utils/versionConflict";
+// Append-only learning log (Phase 1 · C). Value import of a leaf module
+// (learningEvents only type-imports this file), so no runtime import cycle.
+import {
+  buildCardReviewedEvent,
+  lookupDeckCourseId,
+  recordLearningEvent,
+  recordTestSessionAnswers,
+} from "./learningEvents";
+import type { LearningSurface } from "@lantern/shared/learning";
 import { buildNoteStoragePath } from "./noteFiles";
 import { mapNoteCommentRow, NOTE_COMMENT_SELECT } from "./noteCommentMapping";
 import {
@@ -160,8 +187,22 @@ function mapProfileRowToUser(
     phone: (row.phone as string | undefined) || undefined,
     first_name: (row.first_name as string | undefined) || undefined,
     last_name: (row.last_name as string | undefined) || undefined,
+    // Academic identity (20260822130000). Absent columns (migration not yet
+    // applied) read as null so clients always see the keys.
+    institutionId: (row.institution_id as string | null | undefined) ?? null,
+    faculty: (row.faculty as string | null | undefined) ?? null,
+    programme: (row.programme as string | null | undefined) ?? null,
+    studyLevel: toNullableInt(row.study_level),
+    entryYear: toNullableInt(row.entry_year),
+    expectedGraduationYear: toNullableInt(row.expected_graduation_year),
   };
   return mapped as User;
+}
+
+function toNullableInt(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function buildProfileUpsertRow(
@@ -194,6 +235,21 @@ function buildProfileUpsertRow(
   return Object.fromEntries(
     Object.entries(row).filter(([, value]) => value !== undefined),
   );
+}
+
+/**
+ * Course reference carried on test/bundle payloads: top-level `courseId` wins,
+ * else `config.courseId`. Anything that is not a UUID is ignored (null).
+ */
+const COURSE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function resolveCourseIdFromConfigLike(
+  payload: { courseId?: unknown; config?: { courseId?: unknown } | null } | null | undefined,
+): string | null {
+  const candidate = payload?.courseId ?? payload?.config?.courseId ?? null;
+  return typeof candidate === "string" && COURSE_UUID_RE.test(candidate)
+    ? candidate
+    : null;
 }
 
 // ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
@@ -278,6 +334,47 @@ function assertValidListingQuantity(quantity: unknown): void {
   if (!Number.isInteger(n) || n < 0) {
     throw marketplaceWriteError("Quantity must be a whole number of 0 or more");
   }
+}
+
+/**
+ * 4xx error whose message is written for the seller and safe to return
+ * verbatim in production (see clientErrorMessage / the global error handler,
+ * which both honour statusCode on operational errors).
+ */
+function listingStateError(message: string, statusCode: 400 | 403): Error {
+  return Object.assign(new PublicError(message), { statusCode });
+}
+
+/**
+ * Guard for seller-initiated listing edits: moderated listings are read-only,
+ * and any requested status change must be a transition the shared lifecycle
+ * table (packages/shared/src/marketplace/lifecycle.ts) allows a seller to make.
+ * Module-level (not a method) so tests can drive the prototype with a stub.
+ */
+async function assertSellerListingUpdateAllowed(
+  service: { getMarketplaceListingById(id: string): Promise<any> },
+  listingId: string,
+  nextStatus: unknown,
+): Promise<void> {
+  const current = await service.getMarketplaceListingById(listingId);
+  const currentStatus = current?.status;
+  // Unknown row or legacy status: fall through to the update, which returns
+  // null / fails exactly as it did before this guard existed.
+  if (!isMarketplaceListingStatus(currentStatus)) return;
+  if (!isMarketplaceListingEditable(currentStatus)) {
+    throw listingStateError(
+      currentStatus === "removed_by_admin"
+        ? "This listing was removed by Lantern moderation and can no longer be edited."
+        : "This listing is suspended by Lantern moderation and cannot be edited until it is restored.",
+      403,
+    );
+  }
+  if (nextStatus === undefined || nextStatus === null) return;
+  if (!isMarketplaceListingStatus(nextStatus)) {
+    throw listingStateError("Unknown listing status", 400);
+  }
+  const refusal = sellerListingTransitionError(currentStatus, nextStatus);
+  if (refusal) throw listingStateError(refusal, 403);
 }
 
 export class SupabaseService {
@@ -1161,6 +1258,18 @@ export class SupabaseService {
     if (updates.points !== undefined) updateData.points = updates.points;
     if (updates.stats !== undefined) updateData.stats = updates.stats;
     if (updates.badges !== undefined) updateData.badges = updates.badges;
+    // Academic identity columns (validated + institution-checked in routes/users.ts).
+    if (updates.institutionId !== undefined)
+      updateData.institution_id = updates.institutionId || null;
+    if (updates.faculty !== undefined) updateData.faculty = updates.faculty || null;
+    if (updates.programme !== undefined)
+      updateData.programme = updates.programme || null;
+    if (updates.studyLevel !== undefined)
+      updateData.study_level = updates.studyLevel ?? null;
+    if (updates.entryYear !== undefined)
+      updateData.entry_year = updates.entryYear ?? null;
+    if (updates.expectedGraduationYear !== undefined)
+      updateData.expected_graduation_year = updates.expectedGraduationYear ?? null;
     if (updates.settings !== undefined) {
       // Never nest test_presets into the settings JSONB blob.
       const settingsPayload =
@@ -1357,6 +1466,7 @@ export class SupabaseService {
             parent_id,
             is_archived,
             invite_id,
+            course_id,
             created_at
           )
         `,
@@ -1408,7 +1518,7 @@ export class SupabaseService {
         const selectClause =
           profile === "compact"
             ? "id, name, avatar_url, last_message_time, is_archived"
-            : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, created_at";
+            : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at";
         let query = this.supabase
           .from("groups")
           .select(selectClause)
@@ -1471,6 +1581,7 @@ export class SupabaseService {
           parentId: item.parent_id,
           isArchived: item.is_archived,
           inviteId: item.invite_id,
+          courseId: item.course_id ?? null,
           createdAt: item.created_at,
           memberCount: memberCounts[item.id] || 0,
         })) as Group[];
@@ -1484,7 +1595,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase
         .from("groups")
         .select(
-          "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, created_at",
+          "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at",
         )
         .eq("id", groupId)
         .maybeSingle();
@@ -1502,6 +1613,7 @@ export class SupabaseService {
         parentId: data.parent_id,
         isArchived: data.is_archived,
         inviteId: data.invite_id,
+        courseId: data.course_id ?? null,
         createdAt: data.created_at,
       } as Group;
     }
@@ -1514,7 +1626,7 @@ export class SupabaseService {
         const { data, error } = await this.supabase
           .from("groups")
           .select(
-            "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, created_at",
+            "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at",
           )
           .eq("id", groupId)
           .single();
@@ -1550,6 +1662,7 @@ export class SupabaseService {
           parentId: data.parent_id,
           isArchived: data.is_archived,
           inviteId: data.invite_id,
+          courseId: data.course_id ?? null,
           createdAt: data.created_at,
         } as Group;
       },
@@ -1572,6 +1685,7 @@ export class SupabaseService {
         permissions: groupData.permissions || {},
         invite_id: groupData.inviteId,
         parent_id: groupData.parentId,
+        course_id: groupData.courseId || null,
         is_archived: false,
       })
       .select()
@@ -1643,6 +1757,7 @@ export class SupabaseService {
       parentId: data.parent_id,
       isArchived: data.is_archived,
       inviteId: data.invite_id,
+      courseId: data.course_id ?? null,
       createdAt: data.created_at,
       pendingInviteUserIds: Array.from(explicitInviteSet),
     } as Group & { pendingInviteUserIds?: string[] };
@@ -1661,6 +1776,7 @@ export class SupabaseService {
     if (updates.parentId !== undefined) dbUpdates.parent_id = updates.parentId;
     if (updates.isArchived !== undefined) dbUpdates.is_archived = updates.isArchived;
     if (updates.adminIds !== undefined) dbUpdates.admin_ids = updates.adminIds;
+    if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId || null;
 
     if (Object.keys(dbUpdates).length === 0) {
       return this.getGroupById(groupId);
@@ -1695,6 +1811,7 @@ export class SupabaseService {
       parentId: data.parent_id,
       isArchived: data.is_archived,
       inviteId: data.invite_id,
+      courseId: data.course_id ?? null,
       createdAt: data.created_at,
     } as Group;
   }
@@ -1723,6 +1840,7 @@ export class SupabaseService {
       parentId: data.parent_id,
       isArchived: data.is_archived,
       inviteId: data.invite_id,
+      courseId: data.course_id ?? null,
       createdAt: data.created_at,
     } as Group;
   }
@@ -3011,7 +3129,12 @@ export class SupabaseService {
   }
 
   async createDeck(
-    deckData: { name: string; description?: string; isShared?: boolean },
+    deckData: {
+      name: string;
+      description?: string;
+      isShared?: boolean;
+      courseId?: string | null;
+    },
     userId: string,
   ): Promise<any> {
     const { data, error } = await this.supabase
@@ -3021,6 +3144,7 @@ export class SupabaseService {
         description: deckData.description || "",
         user_id: userId,
         is_shared: deckData.isShared ?? false,
+        course_id: deckData.courseId || null,
       })
       .select()
       .single();
@@ -3043,6 +3167,8 @@ export class SupabaseService {
       page?: number;
       limit?: number;
       responseProfile?: "compact" | "full";
+      /** Academic archive filter (decks.course_id): unfiled → IS NULL, course → eq. */
+      courseFilter?: CourseFilter;
     } = {},
   ): Promise<any[]> {
     const page = Math.max(1, options.page || 1);
@@ -3053,20 +3179,22 @@ export class SupabaseService {
     const profile = this.getResponseProfile(options.responseProfile);
     const offset = (page - 1) * limit;
     // v2: includeShared means owned + collaborator decks — never every globally shared deck.
-    const cacheKey = `decks:user:${userId}:scope:${includeShared ? "owned_collab" : "owned"}:p${page}:l${limit}:profile:${profile}:v2`;
+    const cacheKey = `decks:user:${userId}:scope:${includeShared ? "owned_collab" : "owned"}:p${page}:l${limit}:profile:${profile}:course:${courseFilterKey(options.courseFilter)}:v2`;
     const cached = await cacheService.get<any[]>(cacheKey);
     if (cached !== null) return cached;
 
     const selectClause =
       profile === "compact"
-        ? "id, name, user_id, is_shared, created_at"
-        : "id, name, description, user_id, is_shared, created_at";
+        ? "id, name, user_id, is_shared, course_id, created_at"
+        : "id, name, description, user_id, is_shared, course_id, created_at";
 
     let query = this.supabase
       .from("decks")
       .select(selectClause)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
+
+    query = applyCourseFilter(query, "course_id", options.courseFilter);
 
     if (includeShared) {
       // Owned decks + decks where the user is an explicit collaborator.
@@ -3222,6 +3350,7 @@ export class SupabaseService {
       description?: string;
       isPublic?: boolean;
       isShared?: boolean;
+      courseId?: string | null;
     },
     userId: string,
   ): Promise<any | null> {
@@ -3235,6 +3364,8 @@ export class SupabaseService {
         description: updates.description,
         is_public: updates.isPublic,
         is_shared: updates.isShared,
+        // undefined = untouched (dropped by JSON), null = cleared
+        course_id: updates.courseId === undefined ? undefined : updates.courseId || null,
       })
       .eq("id", deckId)
       .select()
@@ -3918,12 +4049,21 @@ export class SupabaseService {
   }
 
   // Offline bundle persistence
-  async getOfflineBundles(userId: string): Promise<any[]> {
-    const { data, error } = await this.supabase
+  async getOfflineBundles(
+    userId: string,
+    options: {
+      /** Academic archive filter (offline_bundles.course_id): unfiled → IS NULL, course → eq. */
+      courseFilter?: CourseFilter;
+    } = {},
+  ): Promise<any[]> {
+    let query = this.supabase
       .from("offline_bundles")
       .select("*")
       .eq("user_id", userId)
       .order("downloaded_at", { ascending: false });
+    query = applyCourseFilter(query, "course_id", options.courseFilter);
+
+    const { data, error } = await query;
 
     if (error) {
       logger.error("Error fetching offline bundles:", { error, userId });
@@ -3934,10 +4074,17 @@ export class SupabaseService {
   }
 
   async saveOfflineBundle(userId: string, bundle: any): Promise<void> {
+    // Course lives in BOTH the column (filterable) and config.courseId (the
+    // shape the offline runtime already round-trips).
+    const courseId = resolveCourseIdFromConfigLike(bundle);
+    const config = { ...(bundle.config || {}) };
+    if (courseId) config.courseId = courseId;
+    else if (bundle.courseId === null) delete config.courseId;
     const insert = {
       user_id: userId,
       bundle_id: bundle.bundleId,
-      config: bundle.config || {},
+      config,
+      course_id: courseId,
       questions: bundle.questions || [],
       group_name: bundle.groupName || null,
       display_name: bundle.displayName ?? null,
@@ -4006,7 +4153,7 @@ export class SupabaseService {
   private async fetchDeckRecord(deckId: string): Promise<any | null> {
     const { data, error } = await this.supabase
       .from("decks")
-      .select("id, name, description, user_id, is_shared, created_at")
+      .select("id, name, description, user_id, is_shared, course_id, created_at")
       .eq("id", deckId)
       .maybeSingle();
 
@@ -4193,7 +4340,13 @@ export class SupabaseService {
     flashcardId: string,
     userId: string,
     rating: "again" | "hard" | "good" | "easy",
-    options: { expectedVersion?: number } = {},
+    options: {
+      expectedVersion?: number;
+      /** 'web' | 'mobile' from x-lantern-surface; default 'api'. */
+      surface?: LearningSurface;
+      /** Offline replay: when the grade was actually given (ISO). */
+      occurredAt?: string | null;
+    } = {},
   ): Promise<any | null> {
     const existing = await this.getFlashcardForUser(flashcardId, userId);
     if (!existing) return null;
@@ -4218,9 +4371,33 @@ export class SupabaseService {
       Number.isFinite(Number(options.expectedVersion))
         ? Number(options.expectedVersion)
         : Number(existing.version) || 1;
-    return this.updateFlashcard(flashcardId, { srsData: newSrsData }, userId, {
-      expectedVersion,
-    });
+    const updated = await this.updateFlashcard(
+      flashcardId,
+      { srsData: newSrsData },
+      userId,
+      { expectedVersion },
+    );
+
+    // learning_events: card_reviewed with the FSRS state before/after. Only
+    // after the CAS write landed (a 409 throws above and emits nothing).
+    // recordLearningEvent never throws — the review never fails on telemetry.
+    if (updated) {
+      await recordLearningEvent(
+        this,
+        buildCardReviewedEvent({
+          userId,
+          flashcardId,
+          deckId: existing.deck_id,
+          courseId: await lookupDeckCourseId(this, existing.deck_id),
+          rating,
+          srsBefore: existing.srs_data ?? null,
+          srsAfter: updated.srs_data ?? newSrsData,
+          surface: options.surface ?? "api",
+          occurredAt: options.occurredAt ?? null,
+        }),
+      );
+    }
+    return updated;
   }
 
   async updateFlashcard(
@@ -5549,7 +5726,8 @@ export class SupabaseService {
       page?: number;
       limit?: number;
       status?: string;
-      subject?: string;
+      /** Academic archive filter (test_sessions.course_id; unfiled → IS NULL, course → eq); replaces the dead config->>subject path. */
+      courseFilter?: CourseFilter;
       lean?: boolean;
       sort?: "newest" | "oldest" | "highestScore";
       from?: string;
@@ -5560,7 +5738,7 @@ export class SupabaseService {
       page = 1,
       limit = 20,
       status,
-      subject,
+      courseFilter,
       lean = false,
       sort = "newest",
       from,
@@ -5571,7 +5749,7 @@ export class SupabaseService {
     const fromKey = from || "";
     const toKey = to || "";
 
-    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:${subject || ""}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
+    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
 
     return cacheService.cached(
       cacheKey,
@@ -5589,6 +5767,7 @@ export class SupabaseService {
           end_time,
           is_offline,
           config,
+          course_id,
           status,
           session_kind,
           current_question_index,
@@ -5630,9 +5809,7 @@ export class SupabaseService {
           query = query.eq("status", "abandoned");
         }
 
-        if (subject) {
-          query = query.eq("config->>subject", subject);
-        }
+        query = applyCourseFilter(query, "course_id", courseFilter);
 
         if (from) {
           query = query.gte("start_time", from);
@@ -5685,7 +5862,7 @@ export class SupabaseService {
             fallback = fallback.is("start_time", null);
           else if (status === "abandoned")
             fallback = fallback.eq("status", "abandoned");
-          if (subject) fallback = fallback.eq("config->>subject", subject);
+          fallback = applyCourseFilter(fallback, "course_id", courseFilter);
           if (from) fallback = fallback.gte("start_time", from);
           if (to) fallback = fallback.lte("start_time", to);
           const retry = await fallback
@@ -5839,6 +6016,7 @@ export class SupabaseService {
 
     const insertData: any = {
       user_id: userId,
+      course_id: resolveCourseIdFromConfigLike(testConfig),
     };
 
     if (isCompletedSession) {
@@ -5892,6 +6070,7 @@ export class SupabaseService {
     return {
       id: session.id,
       config: session.config || {},
+      courseId: session.course_id ?? session.config?.courseId ?? null,
       questions,
       userAnswers: answers,
       currentQuestionIndex: session.current_question_index || 0,
@@ -5914,6 +6093,8 @@ export class SupabaseService {
   async createTestDraft(
     payload: {
       config: any;
+      /** Academic archive reference; also mirrored into config.courseId by the route. */
+      courseId?: string | null;
       questions: any[];
       user_answers?: Record<string, any>;
       start_time?: string;
@@ -5930,6 +6111,7 @@ export class SupabaseService {
     const insertData: any = {
       user_id: userId,
       config: payload.config || {},
+      course_id: resolveCourseIdFromConfigLike(payload),
       questions: Array.isArray(payload.questions) ? payload.questions : [],
       user_answers: payload.user_answers || {},
       start_time: payload.start_time || now,
@@ -6034,6 +6216,8 @@ export class SupabaseService {
       totalQuestions?: number;
       /** Merge into session config before completing (fixes mobile draft groupId). */
       config?: Record<string, unknown>;
+      /** 'web' | 'mobile' from x-lantern-surface (learning_events.surface); default 'api'. */
+      surface?: LearningSurface;
     },
   ): Promise<any> {
     const existing = await this.getTestById(draftId, userId);
@@ -6085,6 +6269,13 @@ export class SupabaseService {
     if (sessionKind === "study") {
       // Study sessions still affect lean history lists / draft caches.
       await cacheService.deletePattern(`tests:${userId}:*`);
+      // learning_events: study sessions never reach createTestResult, so emit
+      // their question_answered rows here (same once-per-session guard).
+      await recordTestSessionAnswers(this, {
+        session: data,
+        userId,
+        surface: options?.surface ?? "api",
+      });
       return {
         session: this.mapTestSessionRowToClient(data),
         sessionKind: "study",
@@ -6106,6 +6297,7 @@ export class SupabaseService {
         activityDate: options?.activityDate,
       },
       userId,
+      { surface: options?.surface ?? "api" },
     );
 
     return {
@@ -6260,6 +6452,10 @@ export class SupabaseService {
       activityDate?: string;
     },
     userId?: string,
+    options: {
+      /** 'web' | 'mobile' from x-lantern-surface (learning_events.surface); default 'api'. */
+      surface?: LearningSurface;
+    } = {},
   ): Promise<any> {
     let score = resultData.score;
     let correctAnswersCount = resultData.correctAnswersCount;
@@ -6289,6 +6485,19 @@ export class SupabaseService {
       .single();
 
     if (error) throw error;
+
+    // learning_events: one question_answered per attempted answer. This is the
+    // single function both completion paths call (completeTestDraft and
+    // POST /tests/:id/results), and recordTestSessionAnswers dedupes on
+    // (user_id, session_id) so a session never emits twice. Never throws.
+    const eventUserId = userId || (test?.user_id as string | undefined);
+    if (test && eventUserId) {
+      await recordTestSessionAnswers(this, {
+        session: test,
+        userId: eventUserId,
+        surface: options.surface ?? "api",
+      });
+    }
 
     // Invalidate caches. Dashboard Group Performance is built from lean completed
     // history (`tests:${userId}:*` / `/dashboard/summary`), so drop those AFTER
@@ -6468,6 +6677,7 @@ export class SupabaseService {
           .select(
             `
           config,
+          course_id,
           test_results (score)
         `,
           )
@@ -6476,22 +6686,49 @@ export class SupabaseService {
 
         if (error) throw error;
 
-        // Group by subject (extract from config)
+        // Group by course (test_sessions.course_id; label = course code).
+        // Sessions without a course fall into "General". config.subject was
+        // never written by any client, so it is no longer consulted.
+        const courseIds = Array.from(
+          new Set(
+            (data || [])
+              .map((test: any) => test.course_id ?? test.config?.courseId)
+              .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+          ),
+        );
+        const courseLabels = new Map<string, string>();
+        if (courseIds.length > 0) {
+          const { data: courseRows, error: courseError } = await this.supabase
+            .from("courses")
+            .select("id, code")
+            .in("id", courseIds);
+          if (!courseError && courseRows) {
+            for (const row of courseRows as Array<{ id: string; code: string }>) {
+              courseLabels.set(row.id, row.code);
+            }
+          }
+        }
+
         const subjectStats: { [key: string]: any } = {};
         data?.forEach((test: any) => {
-          const subject = test.config?.subject || "General";
+          const courseId: string | null =
+            test.course_id ?? test.config?.courseId ?? null;
+          const subject =
+            (courseId && courseLabels.get(courseId)) || "General";
+          const key = courseId && courseLabels.has(courseId) ? courseId : "general";
           const score = test.test_results?.[0]?.score;
           if (score !== undefined) {
-            if (!subjectStats[subject]) {
-              subjectStats[subject] = {
+            if (!subjectStats[key]) {
+              subjectStats[key] = {
                 subject,
+                courseId: courseId && courseLabels.has(courseId) ? courseId : null,
                 testsTaken: 0,
                 averageScore: 0,
                 scores: [],
               };
             }
-            subjectStats[subject].testsTaken++;
-            subjectStats[subject].scores.push(score);
+            subjectStats[key].testsTaken++;
+            subjectStats[key].scores.push(score);
           }
         });
 
@@ -6931,6 +7168,23 @@ export class SupabaseService {
     ); // Cache for 10 minutes
   }
 
+  // ---------------------------------------------------------------------------
+  // Badges
+  //
+  // There is no `badges` / `user_badges` table — no migration ever created one.
+  // Badges live in profiles.badges (JSONB array of Badge objects, the shape
+  // checkAndAwardBadges writes) and the gamification lockdown trigger
+  // (supabase/migrations/20260704100100_gamification_lockdown.sql) only lets the
+  // service role change that column, which is exactly the client this service
+  // holds. Everything below reads and writes that column directly.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The badge catalogue. Static — it is BADGE_DEFINITIONS, not a table — so the
+   * pagination args are honoured only to keep the route's contract. `category`
+   * was a column on the table that never existed; badges have no categories, so
+   * any non-empty category matches nothing.
+   */
   async getBadges(
     options: {
       page?: number;
@@ -6939,31 +7193,21 @@ export class SupabaseService {
     } = {},
   ): Promise<any[]> {
     const { page = 1, limit = 20, category } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `gamification:badges:${page}:${limit}:${category || ""}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase.from("badges").select("*");
-
-        if (category) {
-          query = query.eq("category", category);
-        }
-
-        const { data, error } = await query
-          .order("created_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+    if (category) return [];
+    const offset = (Math.max(1, page) - 1) * Math.max(1, limit);
+    return Object.values(BADGE_DEFINITIONS)
+      .map((def) => ({
+        id: def.id,
+        name: def.baseName,
+        description: def.baseDescription(def.levels[0]?.threshold ?? 0),
+        icon: def.icon,
+        metric: def.metric,
+        levels: def.levels,
+      }))
+      .slice(offset, offset + Math.max(1, limit));
   }
 
+  /** Badges the user holds, newest first, straight from profiles.badges. */
   async getUserBadges(
     userId: string,
     options: {
@@ -6972,78 +7216,91 @@ export class SupabaseService {
     } = {},
   ): Promise<any[]> {
     const { page = 1, limit = 20 } = options;
-    const offset = (page - 1) * limit;
+    const offset = (Math.max(1, page) - 1) * Math.max(1, limit);
 
-    const cacheKey = `gamification:user:badges:${userId}:${page}:${limit}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("user_badges")
-          .select(
-            `
-          *,
-          badges (*)
-        `,
-          )
-          .eq("user_id", userId)
-          .order("awarded_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return (
-          data?.map((ub: any) => ({
-            ...ub.badges,
-            awardedAt: ub.awarded_at,
-          })) || []
-        );
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
-  }
-
-  async awardBadge(userId: string, badgeId: string): Promise<any> {
-    // Check if user already has this badge
-    const { data: existing, error: checkError } = await this.supabase
-      .from("user_badges")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("badge_id", badgeId)
-      .single();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    if (existing) {
-      throw new Error("User already has this badge");
-    }
-
-    // Award the badge
     const { data, error } = await this.supabase
-      .from("user_badges")
-      .insert({
-        user_id: userId,
-        badge_id: badgeId,
-        awarded_at: new Date().toISOString(),
-      })
-      .select(
-        `
-        *,
-        badges (*)
-      `,
-      )
-      .single();
-
+      .from("profiles")
+      .select("badges")
+      .eq("id", userId)
+      .maybeSingle();
     if (error) throw error;
 
-    // Invalidate caches
-    await cacheService.deletePattern(`gamification:user:badges:${userId}:*`);
+    const badges = Array.isArray(data?.badges) ? [...data.badges] : [];
+    badges.sort(
+      (a: any, b: any) =>
+        Date.parse(String(b?.dateAwarded ?? "")) -
+          Date.parse(String(a?.dateAwarded ?? "")) || 0,
+    );
+    return badges.slice(offset, offset + Math.max(1, limit));
+  }
 
-    return {
-      ...data.badges,
-      awardedAt: data.awarded_at,
-    };
+  /**
+   * Manually grant a badge (admin console). Appends a level-1 Badge object in
+   * the exact shape checkAndAwardBadges writes, so the dashboards and the
+   * automatic levelling (which looks for `currentLevel + 1`) treat it as any
+   * earned badge. Idempotent: a badge the user already holds — at any level —
+   * is left untouched and reported as `awarded: false`. Points are not changed;
+   * the console has a separate control for that.
+   */
+  async awardBadge(
+    userId: string,
+    badgeId: string,
+    actorId?: string,
+  ): Promise<{
+    awarded: boolean;
+    badge: ReturnType<typeof createBadge> | null;
+    badges: ReturnType<typeof createBadge>[];
+  }> {
+    if (
+      typeof badgeId !== "string" ||
+      !Object.prototype.hasOwnProperty.call(BADGE_DEFINITIONS, badgeId)
+    ) {
+      throw Object.assign(
+        new PublicError(
+          `Unknown badge id: ${String(badgeId)}. Known ids: ${Object.keys(BADGE_DEFINITIONS).join(", ")}`,
+        ),
+        { statusCode: 400 },
+      );
+    }
+    const knownId = badgeId as keyof typeof BADGE_DEFINITIONS;
+
+    const { data: profile, error } = await this.supabase
+      .from("profiles")
+      .select("id, badges")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!profile) {
+      throw Object.assign(new PublicError("User not found"), {
+        statusCode: 404,
+      });
+    }
+
+    const current: ReturnType<typeof createBadge>[] = Array.isArray(
+      profile.badges,
+    )
+      ? [...profile.badges]
+      : [];
+    const existing = current.find((b: any) => b?.id === knownId);
+    if (existing) {
+      return { awarded: false, badge: existing, badges: current };
+    }
+
+    const badge = createBadge(knownId, 1);
+    const next = [...current, badge];
+
+    // Service-role client: the only role the lockdown trigger lets write here.
+    const { error: writeError } = await this.supabase
+      .from("profiles")
+      .update({ badges: next })
+      .eq("id", userId);
+    if (writeError) throw writeError;
+
+    await cacheService.invalidateUserCache(userId);
+    await cacheService.deletePattern(`gamification:user:badges:${userId}:*`);
+    logger.info("Badge granted manually", { userId, badgeId: knownId, actorId });
+
+    return { awarded: true, badge, badges: next };
   }
 
   async getLevels(): Promise<any[]> {
@@ -7204,12 +7461,34 @@ export class SupabaseService {
    * the increment and overcounted. Counting from the rows themselves is
    * self-healing — whatever the history, the answer converges on the truth.
    *
-   * Only derivable metrics are returned. gamesWon and the marketplace counters
-   * have no reliable source query yet, so they are deliberately absent and the
-   * caller must preserve the stored values rather than treat them as zero.
+   * Only derivable metrics are returned. gamesWon has no reliable source query
+   * yet, so it is deliberately absent and the caller must preserve the stored
+   * value rather than treat it as zero. The marketplace counters are derived:
+   *   listingsCreated  — every marketplace_listings row the user owns
+   *   listingsSold     — distinct listings that are either status 'sold' (manual
+   *                      mark-as-sold, or flipped by order completion) or have a
+   *                      completed marketplace_orders row for this seller. The
+   *                      union catches multi-quantity listings that stay active
+   *                      after a sale and sold listings later relisted/archived,
+   *                      while never counting one listing twice.
+   *   fiveStarReviews  — marketplace_reviews with rating 5 on the user's listings
+   *                      (reviews have no seller column; joined via the listing)
+   *   offersMade       — marketplace_offers rows where the user is buyer_id. Only
+   *                      buyers create offer rows; seller counters update the row
+   *                      in place, so buyer_id = "who made the offer".
    */
   async recomputeDerivedUserStats(userId: string): Promise<Partial<UserStats>> {
-    const [sessions, questionCount, topQuestion, groupCount] = await Promise.all(
+    const [
+      sessions,
+      questionCount,
+      topQuestion,
+      groupCount,
+      listingCount,
+      soldListings,
+      completedOrders,
+      fiveStarReviewCount,
+      offerCount,
+    ] = await Promise.all(
       [
         this.supabase
           .from("test_sessions")
@@ -7238,6 +7517,35 @@ export class SupabaseService {
           .from("groups")
           .select("admin_ids")
           .contains("admin_ids", [userId]),
+        this.supabase
+          .from("marketplace_listings")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId),
+        this.supabase
+          .from("marketplace_listings")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("status", "sold"),
+        this.supabase
+          .from("marketplace_orders")
+          .select("listing_id")
+          .eq("seller_id", userId)
+          .eq("status", "completed"),
+        // Reviews carry no seller column, so filter through an inner join on the
+        // listing: `!inner` makes the embedded filter drop parent rows too, and
+        // the exact count is taken over that joined result.
+        this.supabase
+          .from("marketplace_reviews")
+          .select("id, marketplace_listings!inner(user_id)", {
+            count: "exact",
+            head: true,
+          })
+          .eq("rating", 5)
+          .eq("marketplace_listings.user_id", userId),
+        this.supabase
+          .from("marketplace_offers")
+          .select("id", { count: "exact", head: true })
+          .eq("buyer_id", userId),
       ],
     );
 
@@ -7293,6 +7601,36 @@ export class SupabaseService {
         userId,
         error: sessions.error.message,
       });
+    }
+
+    // Marketplace counters — same rule: a failed read leaves the key out.
+    if (!listingCount.error && typeof listingCount.count === "number") {
+      derived.listingsCreated = listingCount.count;
+    }
+    if (soldListings.error || completedOrders.error) {
+      logger.warn("Could not recount listings sold; keeping stored value", {
+        userId,
+        error:
+          soldListings.error?.message ?? completedOrders.error?.message,
+      });
+    } else {
+      const soldIds = new Set<string>();
+      for (const row of (soldListings.data || []) as any[]) {
+        if (row?.id) soldIds.add(String(row.id));
+      }
+      for (const row of (completedOrders.data || []) as any[]) {
+        if (row?.listing_id) soldIds.add(String(row.listing_id));
+      }
+      derived.listingsSold = soldIds.size;
+    }
+    if (
+      !fiveStarReviewCount.error &&
+      typeof fiveStarReviewCount.count === "number"
+    ) {
+      derived.fiveStarReviews = fiveStarReviewCount.count;
+    }
+    if (!offerCount.error && typeof offerCount.count === "number") {
+      derived.offersMade = offerCount.count;
     }
 
     return derived;
@@ -7606,6 +7944,7 @@ export class SupabaseService {
             parent_id,
             is_archived,
             invite_id,
+            course_id,
             created_at
           )
         `,
@@ -9369,6 +9708,15 @@ export class SupabaseService {
       bundle_items: listingData.bundle_items || listingData.bundleItems || [],
       quantity: listingData.quantity ?? null,
       status: listingData.status || "active",
+      // Academic archive reference (validated as UUID by the route).
+      course_id: listingData.course_id ?? listingData.courseId ?? null,
+      // Rights attestation state — SERVER-SET by the route / publish service
+      // (services/moderation.ts listingRightsFields); the route strips any
+      // client-supplied rights_* keys before they reach here. Defaults to the
+      // unattested state so a plain (non-academic) listing is honest too.
+      rights_status: listingData.rights_status ?? "unattested",
+      rights_attested_at: listingData.rights_attested_at ?? null,
+      rights_attestation_version: listingData.rights_attestation_version ?? null,
     };
 
     const { data, error } = await this.supabase
@@ -9387,7 +9735,15 @@ export class SupabaseService {
   async updateMarketplaceListing(
     listingId: string,
     updates: any,
+    options: { actorIsAdmin?: boolean } = {},
   ): Promise<any | null> {
+    // Sellers cannot edit a listing moderation took down, nor move any listing
+    // along a transition the shared lifecycle table forbids (e.g. relisting a
+    // removed one by smuggling status into an edit). Admin callers keep full
+    // control; routes/admin.ts writes with the raw client anyway.
+    if (!options.actorIsAdmin) {
+      await assertSellerListingUpdateAllowed(this, listingId, updates?.status);
+    }
     const dbUpdates: Record<string, unknown> = {};
     const assign = (key: string, ...sources: string[]) => {
       for (const source of sources) {
@@ -10586,7 +10942,14 @@ export class SupabaseService {
   // ============ MARKETPLACE SELLER DASHBOARD METHODS ============
 
   // Get listings by seller (for seller dashboard)
-  async getListingsBySeller(userId: string, status?: string): Promise<any[]> {
+  async getListingsBySeller(
+    userId: string,
+    status?: string,
+    options: {
+      /** Academic archive filter (marketplace_listings.course_id): unfiled → IS NULL, course → eq. */
+      courseFilter?: CourseFilter;
+    } = {},
+  ): Promise<any[]> {
     let query = this.supabase
       .from("marketplace_listings")
       .select(
@@ -10599,9 +10962,18 @@ export class SupabaseService {
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
+    query = applyCourseFilter(query, "course_id", options.courseFilter);
+
     if (status === "active") {
       // Active shelf includes reserved (sale in progress) for seller inventory.
       query = query.in("status", ["active", "reserved"]);
+    } else if (status === "inactive") {
+      // The Inactive shelf also holds listings moderation took down, so a
+      // takedown is visible (read-only) to the seller instead of vanishing.
+      query = query.in("status", [
+        "inactive",
+        ...MARKETPLACE_MODERATED_LISTING_STATUSES,
+      ]);
     } else if (status) {
       query = query.eq("status", status);
     }
@@ -10645,6 +11017,17 @@ export class SupabaseService {
     }
 
     const previousStatus = listing.status;
+
+    // Seller-side transitions are limited to the shared lifecycle table: a
+    // listing moderation removed/suspended, one held by an open order, or an
+    // archived one cannot be flipped back to active (or anywhere) from here.
+    if (!isMarketplaceListingStatus(status)) {
+      throw listingStateError("Unknown listing status", 400);
+    }
+    if (isMarketplaceListingStatus(previousStatus)) {
+      const refusal = sellerListingTransitionError(previousStatus, status);
+      if (refusal) throw listingStateError(refusal, 403);
+    }
 
     const { data, error } = await this.supabase
       .from("marketplace_listings")
@@ -10890,7 +11273,7 @@ export class SupabaseService {
       }
       throw error;
     }
-    return data;
+    return this.stripInquiryListingModeration(data);
   }
 
   // Get inquiry by listing and buyer
@@ -10913,7 +11296,24 @@ export class SupabaseService {
       .maybeSingle();
 
     if (error) throw error;
-    return data;
+    return this.stripInquiryListingModeration(data);
+  }
+
+  /**
+   * The inquiry embeds the whole listing row (`marketplace_listings(*)`), which
+   * would carry the owner/admin-only rights/takedown/appeal columns to the
+   * buyer. Strip them from the embed; the inquiry itself is untouched.
+   */
+  private stripInquiryListingModeration<T extends { listing?: unknown } | null>(inquiry: T): T {
+    if (!inquiry || typeof inquiry !== "object") return inquiry;
+    const listing = (inquiry as { listing?: unknown }).listing;
+    if (!listing || typeof listing !== "object") return inquiry;
+    return {
+      ...(inquiry as Record<string, unknown>),
+      listing: Array.isArray(listing)
+        ? listing.map((row) => stripListingModerationFields(row as Record<string, unknown>))
+        : stripListingModerationFields(listing as Record<string, unknown>),
+    } as T;
   }
 
   // Get seller's inquiries
@@ -11178,6 +11578,7 @@ export class SupabaseService {
       userId: row.user_id,
       folderId: row.folder_id || undefined,
       groupId: row.group_id || undefined,
+      courseId: row.course_id ?? null,
       title: row.title,
       body: row.body || "",
       summary: row.summary || undefined,
@@ -11317,6 +11718,7 @@ export class SupabaseService {
       userId: row.user_id,
       groupId: row.group_id || undefined,
       parentId: row.parent_id || undefined,
+      courseId: row.course_id ?? null,
       name: row.name,
       color: row.color || "#6366f1",
       createdAt: row.created_at,
@@ -11341,6 +11743,7 @@ export class SupabaseService {
       color?: string;
       groupId?: string;
       parentId?: string;
+      courseId?: string | null;
     },
   ) {
     const { data, error } = await this.supabase
@@ -11351,6 +11754,7 @@ export class SupabaseService {
         color: payload.color || "#6366f1",
         group_id: payload.groupId || null,
         parent_id: payload.parentId || null,
+        course_id: payload.courseId || null,
       })
       .select()
       .single();
@@ -11361,11 +11765,17 @@ export class SupabaseService {
   async updateNoteFolder(
     userId: string,
     folderId: string,
-    updates: { name?: string; color?: string },
+    updates: { name?: string; color?: string; courseId?: string | null },
   ) {
+    const { courseId, ...rest } = updates;
+    const dbUpdates: Record<string, unknown> = {
+      ...rest,
+      updated_at: new Date().toISOString(),
+    };
+    if (courseId !== undefined) dbUpdates.course_id = courseId || null;
     const { data, error } = await this.supabase
       .from("note_folders")
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update(dbUpdates)
       .eq("id", folderId)
       .eq("user_id", userId)
       .select()
@@ -11386,7 +11796,13 @@ export class SupabaseService {
 
   async getNotes(
     userId: string,
-    options?: { folderId?: string; groupId?: string; archived?: boolean },
+    options?: {
+      folderId?: string;
+      groupId?: string;
+      archived?: boolean;
+      /** Academic archive filter (notes.course_id): unfiled → IS NULL, course → eq. */
+      courseFilter?: CourseFilter;
+    },
   ) {
     let ownedQuery = this.supabase
       .from("notes")
@@ -11399,6 +11815,9 @@ export class SupabaseService {
       ownedQuery = ownedQuery.eq("folder_id", options.folderId);
     if (options?.groupId)
       ownedQuery = ownedQuery.eq("group_id", options.groupId);
+    ownedQuery = applyCourseFilter(ownedQuery, "course_id", options?.courseFilter);
+    const courseFiltered =
+      options?.courseFilter?.kind === "course" || options?.courseFilter?.kind === "unfiled";
     if (options?.archived === true)
       ownedQuery = ownedQuery.eq("is_archived", true);
     else if (options?.archived === false)
@@ -11407,12 +11826,16 @@ export class SupabaseService {
     const { data: ownedRows, error: ownedError } = await ownedQuery;
     if (ownedError) throw ownedError;
 
-    const owned = (ownedRows || []).map((row: any) =>
-      this.mapNote(row, { accessRole: "owner" }),
-    );
+    // Notes moderation removed (notes.removed_by_admin_at, migration
+    // 20260822140000) disappear from the list for everyone but admins. Filtered
+    // in JS rather than .is(...) so the query still works before the column
+    // exists.
+    const owned = (ownedRows || [])
+      .filter((row: any) => !row?.removed_by_admin_at)
+      .map((row: any) => this.mapNote(row, { accessRole: "owner" }));
 
-    // Folder/group filtered lists stay owned-only (shared notes keep owner's folder).
-    if (options?.folderId || options?.groupId) {
+    // Folder/group/course filtered lists stay owned-only (shared notes keep owner's placement).
+    if (options?.folderId || options?.groupId || courseFiltered) {
       return this.attachNoteSearchText(owned);
     }
 
@@ -11446,6 +11869,7 @@ export class SupabaseService {
     const shared = (collabRows || [])
       .filter((row: any) => {
         if (!row.notes || ownedIds.has(row.notes.id)) return false;
+        if (row.notes.removed_by_admin_at) return false;
         if (options?.archived === true) return Boolean(row.notes.is_archived);
         if (options?.archived === false) return !row.notes.is_archived;
         return true;
@@ -11559,7 +11983,12 @@ export class SupabaseService {
       youtubeVideoId?: string;
       summary?: string;
       copiedFromNoteId?: string;
+      courseId?: string | null;
     },
+    options: {
+      /** 'web' | 'mobile' from x-lantern-surface (learning_events.surface); default 'api'. */
+      surface?: LearningSurface;
+    } = {},
   ) {
     const { data, error } = await this.supabase
       .from("notes")
@@ -11569,6 +11998,7 @@ export class SupabaseService {
         body: payload.body || "",
         folder_id: payload.folderId || null,
         group_id: payload.groupId || null,
+        course_id: payload.courseId || null,
         source_type: payload.sourceType || "typed",
         youtube_url: payload.youtubeUrl || null,
         youtube_video_id: payload.youtubeVideoId || null,
@@ -11578,6 +12008,20 @@ export class SupabaseService {
       .select()
       .single();
     if (error) throw error;
+    // learning_events: note_created — every creation path (typed, PDF/slides/
+    // image/audio/YouTube imports) lands here; only POST /notes knows the
+    // surface header, the rest default to 'api'. Never throws.
+    await recordLearningEvent(this, {
+      userId,
+      eventType: "note_created",
+      targetType: "note",
+      targetId: data?.id,
+      noteId: data?.id,
+      groupId: data?.group_id ?? null,
+      courseId: data?.course_id ?? null,
+      surface: options.surface ?? "api",
+      occurredAt: data?.created_at ?? null,
+    });
     return this.mapNote(data, { accessRole: "owner" });
   }
 
@@ -11617,6 +12061,8 @@ export class SupabaseService {
     if (!access.isOwner) {
       delete (updates as Record<string, unknown>).folderId;
       delete (updates as Record<string, unknown>).groupId;
+      // Course is the owner's archive taxonomy, same as folder placement.
+      delete (updates as Record<string, unknown>).courseId;
     }
 
     const dbUpdates: Record<string, unknown> = {};
@@ -11627,6 +12073,8 @@ export class SupabaseService {
       dbUpdates.folder_id = updates.folderId || null;
     if (updates.groupId !== undefined)
       dbUpdates.group_id = updates.groupId || null;
+    if (updates.courseId !== undefined)
+      dbUpdates.course_id = updates.courseId || null;
     if (updates.isShared !== undefined) dbUpdates.is_shared = updates.isShared;
     if (updates.youtubeUrl !== undefined)
       dbUpdates.youtube_url = updates.youtubeUrl;

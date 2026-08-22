@@ -65,6 +65,8 @@ interface MessageItemProps {
   onOpenThread?: (rootId: string) => void;
   onEditMessage?: (message: Message) => void;
   onRemoveMessage?: (message: Message) => void;
+  /** "Report" (content report to Lantern moderation) — distinct from "Flag as similar", which is a duplicate-question signal. */
+  onReportMessage?: (message: Message) => void;
   /** When true, show group-style seen-by tooltip on ticks. */
   isGroupChat?: boolean;
 }
@@ -281,7 +283,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
   );
 }
 
-const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onMentionUser, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, isGroupChat = false }) => {
+const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onMentionUser, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, onReportMessage, isGroupChat = false }) => {
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
   const audioUrl = message.type === MessageType.TEXT ? parseChatAudioUrl(message.text) : null;
@@ -292,6 +294,8 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
   const isRemoved = !!message.isRemoved || !!message.removedAt;
   const canEdit = !!onEditMessage && canEditChatMessage(message, currentUser.id);
   const canRemove = !!onRemoveMessage && canRemoveChatMessage(message, currentUser.id);
+  // Anyone can report someone else's message; your own messages are never reportable.
+  const canReport = !!onReportMessage && !isCurrentUserMessage;
 
   if (isRemoved) {
     return (
@@ -413,7 +417,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
       {/* Bubble */}
       <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 relative ${bubbleClasses}`}>
-        {(onReply || canEdit || canRemove) && (
+        {(onReply || canEdit || canRemove || canReport) && (
           <div
             className={`absolute -top-3 ${isCurrentUserMessage ? 'left-2' : 'right-2'} opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 flex items-center rounded-lg bg-lantern-surface border border-lantern-border shadow-sm transition-opacity overflow-hidden`}
           >
@@ -448,6 +452,17 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 title="Remove message"
               >
                 <TrashIcon className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {canReport && (
+              <button
+                type="button"
+                onClick={() => onReportMessage?.(message)}
+                className="p-1.5 text-lantern-text-secondary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                aria-label="Report message"
+                title="Report message"
+              >
+                <FlagIcon className="w-3.5 h-3.5" />
               </button>
             )}
           </div>

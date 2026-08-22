@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   PlusIcon,
   FolderPlusIcon,
@@ -16,8 +16,13 @@ import {
   ArchiveBoxIcon,
   CheckIcon,
   TrashIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  AcademicCapIcon,
+  FlagIcon,
 } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
+import ReportContentModal from './moderation/ReportContentModal';
 import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
@@ -35,6 +40,12 @@ import {
   MenuItem,
 } from './ui';
 import { useUIStore } from '../stores/uiStore';
+import { useNotesStore } from '../stores/notesStore';
+import { useLibraryStore } from '../stores/libraryStore';
+import { useAcademicStore } from '../stores/academicStore';
+import { CourseChips } from './academic/CourseChips';
+import { MoveToCourseModal } from './academic/MoveToCourseModal';
+import { buildFolderTree, folderParentOptions, folderScopeIds } from '../utils/libraryArchive';
 import { useNoteUploadStore, getVisibleUploadJobs } from '../stores/noteUploadStore';
 import { confirmDialog } from '../stores/confirmStore';
 
@@ -46,7 +57,10 @@ interface NotesScreenProps {
   error?: string | null;
   onBack?: () => void;
   onCreateNote: () => void;
-  onCreateFolder: (name: string) => void;
+  /** `parentId` nests the new folder one level under an existing one (note_folders.parent_id). */
+  onCreateFolder: (name: string, parentId?: string | null) => void;
+  /** "Move to course…" on a note row (PATCH /notes/:id { courseId }); rejections surface in the dialog. */
+  onMoveNoteToCourse?: (noteId: string, courseId: string | null) => void | Promise<void>;
   onRenameFolder?: (folderId: string, name: string) => void | Promise<void>;
   onDeleteFolder?: (folderId: string) => void | Promise<void>;
   onTogglePinNote?: (noteId: string, isPinned: boolean) => void | Promise<void>;
@@ -73,6 +87,27 @@ const folderButtonClass = (isActive: boolean, compact = false) =>
       : 'text-lantern-text-secondary bg-lantern-surface border border-lantern-border hover:bg-lantern-background-secondary'
   }`;
 
+/**
+ * Course chip row (Phase 1): the archive-wide selection lives in the library
+ * store (the Library rail sets it too) and is mirrored into
+ * notesStore.setCourseFilter, which reloads the list with
+ * `GET /notes?courseId=` (`'null'` = unfiled); "All" clears both.
+ */
+const NotesCourseFilter: React.FC = () => {
+  const courseFilterId = useNotesStore((s) => s.courseFilterId);
+  const libraryCourseId = useLibraryStore((s) => s.courseFilterId);
+  const setLibraryCourseFilter = useLibraryStore((s) => s.setCourseFilter);
+  // Mirror the archive-wide filter into the notes list on mount and whenever it changes.
+  useEffect(() => {
+    void useNotesStore.getState().setCourseFilter(libraryCourseId);
+  }, [libraryCourseId]);
+  const onChange = useCallback((courseId: string | null) => { setLibraryCourseFilter(courseId); }, [setLibraryCourseFilter]);
+  // Leaving the screen drops the notes-store filter so other surfaces see every
+  // note again; the library selection itself stays and is re-applied on return.
+  useEffect(() => () => { void useNotesStore.getState().setCourseFilter(null); }, []);
+  return <CourseChips value={courseFilterId} onChange={onChange} ariaLabel="Filter notes by course" showUnfiled />;
+};
+
 const NotesScreen: React.FC<NotesScreenProps> = ({
   theme,
   folders,
@@ -86,6 +121,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onTogglePinNote,
   onArchiveNote,
   onMoveNotesToFolder,
+  onMoveNoteToCourse,
   onDeleteNotes,
   onSelectNote,
   onPdfImport,
@@ -104,14 +140,47 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [accessFilter, setAccessFilter] = useState<'mine' | 'shared'>('mine');
+  // Shared-with-me note being reported (content report to Lantern moderation).
+  const [reportNote, setReportNote] = useState<StudyNote | null>(null);
   const [listFilter, setListFilter] = useState<'active' | 'archived'>('active');
   const [selectMode, setSelectMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [movePickerOpen, setMovePickerOpen] = useState(false);
   const [movingNotes, setMovingNotes] = useState(false);
   const [deletingNotes, setDeletingNotes] = useState(false);
+  /** Note whose "Move to course…" dialog is open. */
+  const [courseMoveNote, setCourseMoveNote] = useState<StudyNote | null>(null);
+  /** Parent folders the user collapsed (one-level tree, Phase 1 · B). */
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
   const selectionEnabled = Boolean(onMoveNotesToFolder || onDeleteNotes);
   const selectionBusy = movingNotes || deletingNotes;
+  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
+  const parentFolderOptions = useMemo(() => folderParentOptions(folders), [folders]);
+  const selectedFolder = useMemo(
+    () => (selectedFolderId ? folders.find((f) => f.id === selectedFolderId) ?? null : null),
+    [folders, selectedFolderId],
+  );
+  // New-folder default parent: the open folder (or its parent — one level only),
+  // but only when that id is actually offered as a parent option.
+  const defaultParentId = useMemo(() => {
+    if (!selectedFolder) return null;
+    const offered = (id: string | undefined | null) => Boolean(id && parentFolderOptions.some((o) => o.id === id));
+    if (offered(selectedFolder.parentId)) return selectedFolder.parentId ?? null;
+    if (offered(selectedFolder.id)) return selectedFolder.id;
+    return null;
+  }, [selectedFolder, parentFolderOptions]);
+  // Course code badge on note cards; courses load lazily on first use.
+  const resolveCourse = useAcademicStore((s) => s.resolveCourse);
+  const knownCourses = useAcademicStore((s) => s.knownCourses);
+  void knownCourses; // subscribe so badges resolve once courses load
+  const toggleFolderCollapsed = (folderId: string) => {
+    setCollapsedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
   // Mount only one folder surface: CSS-hidden Menus still portal and duplicate.
   const [isMdUp, setIsMdUp] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
@@ -164,7 +233,11 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     list = list.filter((note) =>
       listFilter === 'archived' ? Boolean(note.isArchived) : !note.isArchived,
     );
-    if (selectedFolderId) list = list.filter(n => n.folderId === selectedFolderId);
+    if (selectedFolderId) {
+      // A parent folder also shows the notes in its (one level of) subfolders.
+      const scope = new Set(folderScopeIds(folders, selectedFolderId));
+      list = list.filter(n => Boolean(n.folderId) && scope.has(n.folderId as string));
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -181,13 +254,17 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       if (pinDelta !== 0) return pinDelta;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
-  }, [notes, selectedFolderId, search, accessFilter, listFilter]);
+  }, [notes, folders, selectedFolderId, search, accessFilter, listFilter]);
 
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
 
   const canDeleteNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner';
+
+  // Only notes somebody else shared with me are reportable (never my own).
+  const canReportNote = (note: StudyNote) =>
+    !!note.accessRole && note.accessRole !== 'owner';
 
   // Folder placement is a single global column owned by the note's owner, so
   // only the owner may move a note into a folder. Editors would corrupt the
@@ -315,12 +392,34 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     return 'Note';
   };
 
-  const renderFolderButton = (folder: NoteFolder | null, compact = false) => {
+  const renderFolderButton = (
+    folder: NoteFolder | null,
+    compact = false,
+    tree?: { hasChildren?: boolean; expanded?: boolean; onToggle?: () => void; isChild?: boolean },
+  ) => {
     const isActive = folder ? selectedFolderId === folder.id : !selectedFolderId;
     const menuOpen = folder ? folderMenuId === folder.id : false;
     return (
       <div key={folder?.id ?? 'all'} className={`${compact ? 'w-full' : 'shrink-0'}`}>
         <div className={`${folderButtonClass(isActive, compact)} flex items-center gap-1.5`}>
+          {folder && tree?.hasChildren ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                tree.onToggle?.();
+              }}
+              aria-expanded={tree.expanded}
+              aria-label={`${tree.expanded ? 'Collapse' : 'Expand'} ${folder.name}`}
+              className={`shrink-0 rounded p-0.5 ${isActive ? 'text-white/90 hover:bg-white/15' : 'text-lantern-text-tertiary hover:bg-lantern-background-secondary'}`}
+            >
+              {tree.expanded ? (
+                <ChevronDownIcon className="h-3.5 w-3.5" aria-hidden />
+              ) : (
+                <ChevronRightIcon className="h-3.5 w-3.5" aria-hidden />
+              )}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -329,6 +428,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             }}
             className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           >
+            {folder && tree?.isChild && !compact ? (
+              <span className="text-lantern-text-tertiary shrink-0" aria-hidden>↳</span>
+            ) : null}
             {folder && (
               <span
                 className="w-2 h-2 rounded-full shrink-0"
@@ -397,7 +499,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       <FolderNameModal
         isOpen={folderModalOpen}
         onClose={() => setFolderModalOpen(false)}
-        onSubmit={onCreateFolder}
+        onSubmit={(name, parentId) => onCreateFolder(name, parentId ?? null)}
+        parentOptions={parentFolderOptions}
+        initialParentId={defaultParentId}
       />
       <FolderNameModal
         isOpen={!!renameFolder}
@@ -440,15 +544,21 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             <span className="min-w-0 flex-1">All notes</span>
             <span className="text-xs text-lantern-text-tertiary shrink-0">Unfiled</span>
           </button>
-          {folders.map((folder) => (
+          {folderTree.flatMap((node) => [
+            { folder: node.folder, isChild: false },
+            ...node.children.map((child) => ({ folder: child, isChild: true })),
+          ]).map(({ folder, isChild }) => (
             <button
               key={folder.id}
               type="button"
               role="option"
               disabled={selectionBusy}
               onClick={() => void handleMoveToFolder(folder.id)}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
+              className={`flex w-full items-center gap-2 rounded-lg py-2.5 pr-3 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60 ${
+                isChild ? 'pl-8' : 'pl-3'
+              }`}
             >
+              {isChild ? <span className="text-lantern-text-tertiary shrink-0" aria-hidden>↳</span> : null}
               <span
                 className="w-2.5 h-2.5 rounded-full shrink-0"
                 style={{ backgroundColor: folder.color || '#6366f1' }}
@@ -484,6 +594,16 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           </Button>
         </div>
       </Modal>
+
+      {onMoveNoteToCourse ? (
+        <MoveToCourseModal
+          isOpen={Boolean(courseMoveNote)}
+          onClose={() => setCourseMoveNote(null)}
+          currentCourseId={courseMoveNote?.courseId ?? null}
+          title={courseMoveNote ? `Move “${courseMoveNote.title || 'Untitled note'}” to course` : 'Move note to course'}
+          onSubmit={(courseId) => (courseMoveNote ? onMoveNoteToCourse(courseMoveNote.id, courseId) : undefined)}
+        />
+      ) : null}
 
       <Modal
         isOpen={youtubeModalOpen}
@@ -563,7 +683,24 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           <aside className="shrink-0 w-44 border-r border-lantern-border p-2 overflow-y-auto bg-lantern-surface">
             {renderFolderButton(null, true)}
             <div className="mt-1 space-y-1">
-              {folders.map(folder => renderFolderButton(folder, true))}
+              {folderTree.map((node) => {
+                const hasChildren = node.children.length > 0;
+                const expanded = !collapsedFolderIds.has(node.folder.id);
+                return (
+                  <div key={node.folder.id} className="space-y-1">
+                    {renderFolderButton(node.folder, true, {
+                      hasChildren,
+                      expanded,
+                      onToggle: () => toggleFolderCollapsed(node.folder.id),
+                    })}
+                    {hasChildren && expanded ? (
+                      <div className="ml-3 space-y-1 border-l border-lantern-border/60 pl-1.5">
+                        {node.children.map((child) => renderFolderButton(child, true, { isChild: true }))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </aside>
         ) : null}
@@ -596,10 +733,27 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             <div className="-mx-1 px-1 overflow-x-auto overflow-y-visible scrollbar-none">
               <div className="flex gap-2 pb-1 w-max max-w-none items-center">
                 {renderFolderButton(null)}
-                {folders.map(folder => renderFolderButton(folder))}
+                {folderTree.map((node) => {
+                  const hasChildren = node.children.length > 0;
+                  const expanded = !collapsedFolderIds.has(node.folder.id);
+                  return (
+                    <React.Fragment key={node.folder.id}>
+                      {renderFolderButton(node.folder, false, {
+                        hasChildren,
+                        expanded,
+                        onToggle: () => toggleFolderCollapsed(node.folder.id),
+                      })}
+                      {hasChildren && expanded
+                        ? node.children.map((child) => renderFolderButton(child, false, { isChild: true }))
+                        : null}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           ) : null}
+
+          <NotesCourseFilter />
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
             <div className="inline-flex w-full sm:w-auto rounded-lg border border-lantern-border bg-lantern-surface p-1">
@@ -814,8 +968,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               {filteredNotes.map(note => {
                 const menuOpen = noteMenuId === note.id;
                 const showMenu =
-                  canManageNote(note) &&
-                  (onTogglePinNote || onArchiveNote || onMoveNotesToFolder || onDeleteNotes);
+                  (canManageNote(note) &&
+                    (onTogglePinNote || onArchiveNote || onMoveNotesToFolder || onDeleteNotes)) ||
+                  canReportNote(note);
                 const isSelected = selectedNoteIds.includes(note.id);
                 const selectable = selectMode && canManageNote(note) && selectionEnabled;
                 return (
@@ -864,8 +1019,18 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                           ) : null}
                           {note.title}
                         </h3>
-                        <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary shrink-0">
-                          {sourceBadge(note)}
+                        <span className="flex items-center gap-1 shrink-0">
+                          {note.courseId && resolveCourse(note.courseId) ? (
+                            <span
+                              className="hidden sm:inline text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-lantern-primary/10 text-lantern-primary font-medium"
+                              title={resolveCourse(note.courseId)?.title}
+                            >
+                              {resolveCourse(note.courseId)?.code}
+                            </span>
+                          ) : null}
+                          <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary">
+                            {sourceBadge(note)}
+                          </span>
                         </span>
                       </div>
                       <p className="text-sm line-clamp-3 text-lantern-text-secondary">
@@ -913,7 +1078,21 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                 Move to folder
                               </button>
                             ) : null}
-                            {onTogglePinNote && !note.isArchived ? (
+                            {onMoveNoteToCourse && canMoveNote(note) ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                onClick={() => {
+                                  setNoteMenuId(null);
+                                  window.setTimeout(() => setCourseMoveNote(note), 50);
+                                }}
+                              >
+                                <AcademicCapIcon className="h-4 w-4" aria-hidden />
+                                Move to course…
+                              </button>
+                            ) : null}
+                            {onTogglePinNote && canManageNote(note) && !note.isArchived ? (
                               <button
                                 type="button"
                                 role="menuitem"
@@ -927,7 +1106,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                 {note.isPinned ? 'Unpin' : 'Pin'}
                               </button>
                             ) : null}
-                            {onArchiveNote ? (
+                            {onArchiveNote && canManageNote(note) ? (
                               <button
                                 type="button"
                                 role="menuitem"
@@ -939,6 +1118,20 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               >
                                 <ArchiveBoxIcon className="h-4 w-4" aria-hidden />
                                 {note.isArchived ? 'Unarchive' : 'Archive'}
+                              </button>
+                            ) : null}
+                            {canReportNote(note) ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                onClick={() => {
+                                  setNoteMenuId(null);
+                                  window.setTimeout(() => setReportNote(note), 50);
+                                }}
+                              >
+                                <FlagIcon className="h-4 w-4" aria-hidden />
+                                Report…
                               </button>
                             ) : null}
                             {onDeleteNotes && canDeleteNote(note) ? (
@@ -966,6 +1159,15 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           )}
         </main>
       </div>
+      {reportNote ? (
+        <ReportContentModal
+          isOpen={!!reportNote}
+          onClose={() => setReportNote(null)}
+          targetType="note"
+          targetId={reportNote.id}
+          targetLabel={reportNote.title}
+        />
+      ) : null}
     </div>
   );
 };

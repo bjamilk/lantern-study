@@ -30,8 +30,11 @@ import {
 } from '@lantern/shared/marketplace';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { Button } from '../../components/ui';
+import { CoursePicker } from '../../components/CoursePicker';
 import { CampusPicker } from './CampusPicker';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { ATTESTATION_REQUIRED_MESSAGE, isAcademicListing } from '@lantern/shared/moderation';
+import { RightsAttestationCheckbox } from '../../components/moderation/RightsAttestationCheckbox';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -50,6 +53,9 @@ interface ListingDraft {
   location: string;
   quantity: string;
   campusId: string;
+  /** Academic archive: picked course (id + code for the label/legacy field). */
+  courseId?: string | null;
+  courseCode?: string | null;
   images: string[];
   savedAt: number;
 }
@@ -83,6 +89,15 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [campusId, setCampusId] = useState('');
+  const [courseId, setCourseId] = useState<string | null>(null);
+  const [courseCode, setCourseCode] = useState<string | null>(null);
+  // Rights attestation (Phase 1 · E): required by the API for academic
+  // categories (past questions, notes, projects, textbooks). Never drafted.
+  const [attested, setAttested] = useState(false);
+  const [attestationError, setAttestationError] = useState<string | null>(null);
+  /** Server refusal shown inline (attestation missing, blocked content). */
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const needsAttestation = isAcademicListing({ category });
 
   // Draft persistence: survive app switches / process death mid-creation.
   const [draftLoaded, setDraftLoaded] = useState(false);
@@ -121,6 +136,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         setLocation(draft.location || '');
         setQuantity(draft.quantity || '');
         setCampusId(draft.campusId || '');
+        setCourseId(draft.courseId ?? null);
+        setCourseCode(draft.courseCode ?? null);
         // Draft image URIs are best-effort (local paths may expire after process death).
         setPendingImages(
           Array.isArray(draft.images)
@@ -160,6 +177,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         location,
         quantity,
         campusId,
+        courseId,
+        courseCode,
         images: pendingImages.map((img) => img.uri),
         savedAt: Date.now(),
       };
@@ -181,6 +200,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     location,
     quantity,
     campusId,
+    courseId,
+    courseCode,
     pendingImages,
   ]);
 
@@ -197,7 +218,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     setLocation('');
     setQuantity('');
     setCampusId('');
+    setCourseId(null);
+    setCourseCode(null);
     setPendingImages([]);
+    setAttested(false);
+    setAttestationError(null);
+    setSubmitError(null);
     setDraftRestored(false);
     void clearDraft();
   };
@@ -294,6 +320,13 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       Alert.alert('Invalid price', 'Please enter a valid price.');
       return;
     }
+    if (needsAttestation && !attested) {
+      setAttestationError(ATTESTATION_REQUIRED_MESSAGE);
+      Alert.alert('Confirm your rights', ATTESTATION_REQUIRED_MESSAGE);
+      return;
+    }
+    setAttestationError(null);
+    setSubmitError(null);
     // Photos are the strongest conversion lever a listing has; nudge — but
     // don't block — before publishing a photoless one.
     if (pendingImages.length === 0) {
@@ -358,6 +391,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           quantity: parsedQuantity,
           images: [],
           status: 'active',
+          // Academic archive: course_id column + legacy free-text courseCode
+          // in category_specific_fields for web/back-compat readers.
+          courseId: courseId ?? null,
+          ...(courseCode ? { category_specific_fields: { courseCode } } : {}),
+          // Rights attestation for academic categories (API: 400 without it).
+          ...(attested ? { attestation: true } : {}),
         },
         user.id
       );
@@ -422,10 +461,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       }
     } catch (e: unknown) {
       setUploading(false);
-      Alert.alert(
-        'Could not publish listing',
-        e instanceof Error && e.message ? e.message : 'Failed to create listing. Please try again.'
-      );
+      // 400s from the rights/content checks (ATTESTATION_REQUIRED_MESSAGE,
+      // CONTENT_BLOCK_MESSAGE) stay visible inline above the button.
+      const message =
+        e instanceof Error && e.message ? e.message : 'Failed to create listing. Please try again.';
+      setSubmitError(message);
+      Alert.alert('Could not publish listing', message);
     }
   };
 
@@ -533,6 +574,21 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           Listings are visible across Nigeria; this tells buyers where the item is based.
         </Text>
 
+        <Text className="text-sm font-semibold text-lantern-text mb-2">Course (optional)</Text>
+        <CoursePicker
+          value={courseId}
+          fallbackLabel={courseCode}
+          onChange={course => {
+            setCourseId(course?.id ?? null);
+            setCourseCode(course?.code ?? null);
+          }}
+          placeholder="Which course is this for? e.g. BIO 201"
+          title="Course for this listing"
+        />
+        <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+          Helps students at your level find it. Textbooks, past questions and notes sell faster with a course.
+        </Text>
+
         <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
         <TextInput
           value={price}
@@ -637,6 +693,26 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           textAlignVertical="top"
           className="min-h-[120px] p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-6"
         />
+
+        {needsAttestation ? (
+          <>
+            <Text className="text-sm font-semibold text-lantern-text mb-2">Rights confirmation *</Text>
+            <RightsAttestationCheckbox
+              value={attested}
+              onChange={(next) => {
+                setAttested(next);
+                if (next) setAttestationError(null);
+              }}
+              error={attestationError}
+            />
+          </>
+        ) : null}
+
+        {submitError ? (
+          <View className="mb-4 p-3 rounded-xl border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30">
+            <Text className="text-sm text-red-700 dark:text-red-300">{submitError}</Text>
+          </View>
+        ) : null}
 
         <Button fullWidth loading={isLoading || uploading} onPress={handleSubmit}>
           Publish Listing

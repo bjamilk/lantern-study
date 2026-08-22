@@ -10,8 +10,15 @@ import {
 } from '../../services/supabase';
 import { useToastStore } from '../../stores/toastStore';
 import type { OfflineSessionBundle } from '../../types';
-import type { MarketplaceCampus } from '@lantern/shared';
+import {
+  ATTESTATION_REQUIRED_MESSAGE,
+  SOURCES_CITED_MAX,
+  type MarketplaceCampus,
+} from '@lantern/shared';
 import { BuildingStorefrontIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { CoursePicker } from '../academic/CoursePicker';
+import { RightsAttestationCheckbox } from '../moderation/RightsAttestationCheckbox';
+import { isInlineSubmitError, parseSourcesCited } from '../../utils/moderationForms';
 
 interface PublishQuestionBankModalProps {
   bundle: OfflineSessionBundle;
@@ -36,9 +43,17 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [campusId, setCampusId] = useState('');
+  const [courseId, setCourseId] = useState<string | null>(
+    bundle.courseId ?? (bundle.config as { courseId?: string | null })?.courseId ?? null
+  );
   const [otherCity, setOtherCity] = useState('');
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [attested, setAttested] = useState(false);
+  const [aiAssisted, setAiAssisted] = useState(false);
+  // One source per line → sourcesCited (≤ 20 × 200 chars, validated by parseSourcesCited).
+  const [sourcesText, setSourcesText] = useState('');
+  // 400s the seller can fix in the form (missing attestation, blocked wording).
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Existing listing published from the same group, if any — offered as an
   // update target so republishing doesn't spawn duplicate listings.
@@ -77,15 +92,38 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
     questionCount > 0 &&
     (isUpdate || (!!title.trim() && !!campusId && !priceInvalid));
 
+  const parsedSources = parseSourcesCited(sourcesText);
+  const sourcesError = parsedSources.ok ? null : parsedSources.error;
+
   const handleSubmit = async () => {
     if (!canSubmit) return;
+    if (!attested) {
+      setSubmitError(ATTESTATION_REQUIRED_MESSAGE);
+      return;
+    }
+    if (!parsedSources.ok) {
+      setSubmitError(parsedSources.error);
+      return;
+    }
+    setSubmitError(null);
     setBusy(true);
+    // Both the first publish and every republish carry the attestation: the
+    // API refuses either without it (docs/phase1-rights-moderation-contract.md §3).
+    const provenance = {
+      attestation: true as const,
+      aiAssisted,
+      sourcesCited: parsedSources.value,
+    };
     try {
       if (isUpdate && existingBank) {
-        const result = await updateQuestionBankContent(existingBank.listingId, {
-          config: bundle.config as unknown as Record<string, unknown>,
-          questions: bundle.questions,
-        });
+        const result = await updateQuestionBankContent(
+          existingBank.listingId,
+          {
+            config: bundle.config as unknown as Record<string, unknown>,
+            questions: bundle.questions,
+          },
+          provenance
+        );
         useToastStore
           .getState()
           .showToast(
@@ -102,10 +140,12 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
         campusId,
         location: otherCity.trim() || undefined,
         groupId: (bundle.config as { groupId?: string })?.groupId || null,
+        courseId,
         content: {
           config: bundle.config as unknown as Record<string, unknown>,
           questions: bundle.questions,
         },
+        ...provenance,
       });
       useToastStore
         .getState()
@@ -117,7 +157,11 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
       onPublished?.(result.listing?.id);
       onClose();
     } catch (err: any) {
-      useToastStore.getState().showToast(err?.message || 'Could not publish question bank', 'error');
+      if (isInlineSubmitError(err)) {
+        setSubmitError(err.message);
+      } else {
+        useToastStore.getState().showToast(err?.message || 'Could not publish question bank', 'error');
+      }
     } finally {
       setBusy(false);
     }
@@ -236,6 +280,14 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
             ) : null}
           </label>
 
+          <CoursePicker
+            id="publish-qbank-course"
+            label={<span className="text-sm font-semibold text-lantern-text">Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></span>}
+            value={courseId}
+            onChange={(course) => setCourseId(course?.id ?? null)}
+            placeholder="Which course is this bank for?"
+          />
+
           <div className="text-sm">
             <span className="font-semibold text-lantern-text">Campus</span>
             <div className="mt-1.5">
@@ -253,18 +305,56 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
           </>
           )}
 
-          <label className="flex items-start gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
+          <div className="space-y-3 rounded-lg border border-lantern-border p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+              Rights &amp; provenance
+            </p>
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={aiAssisted}
+                onChange={(e) => setAiAssisted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-lantern-border text-lantern-primary focus:ring-lantern-primary"
+              />
+              <span className="text-lantern-text-secondary">
+                This pack was AI-assisted
+                <span className="block text-xs text-lantern-text-tertiary">
+                  Tick if an AI tool generated or rewrote some of these questions. Recorded with your listing.
+                </span>
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="font-semibold text-lantern-text">Sources</span>
+              <span className="ml-1 text-lantern-text-tertiary">(optional, one per line, up to {SOURCES_CITED_MAX})</span>
+              <textarea
+                value={sourcesText}
+                onChange={(e) => {
+                  setSourcesText(e.target.value);
+                  if (submitError) setSubmitError(null);
+                }}
+                rows={2}
+                className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm text-lantern-text resize-none focus:outline-none focus:ring-2 focus:ring-lantern-primary"
+                placeholder={'e.g. GST 101 lecture slides, week 3\nPast papers 2022/2023 (public)'}
+              />
+              {sourcesError ? (
+                <span className="mt-1 block text-xs text-lantern-error">{sourcesError}</span>
+              ) : null}
+            </label>
+            <RightsAttestationCheckbox
+              id="publish-qbank-attestation"
               checked={attested}
-              onChange={(e) => setAttested(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-lantern-border text-lantern-primary focus:ring-lantern-primary"
+              onChange={(checked) => {
+                setAttested(checked);
+                if (checked && submitError === ATTESTATION_REQUIRED_MESSAGE) setSubmitError(null);
+              }}
+              disabled={busy}
             />
-            <span className="text-lantern-text-secondary">
-              I confirm this content is original or I'm authorized to share it, and it doesn't
-              reproduce copyrighted exam papers without permission.
-            </span>
-          </label>
+          </div>
+          {submitError ? (
+            <p role="alert" className="text-sm text-lantern-error">
+              {submitError}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex justify-end gap-3 p-5 border-t border-lantern-border">

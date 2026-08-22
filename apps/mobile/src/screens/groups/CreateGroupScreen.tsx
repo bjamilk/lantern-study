@@ -18,6 +18,7 @@ import { useAuthStore } from '../../stores';
 import { useGroupStore, type GroupPermissions } from '../../stores/groupStore';
 import * as api from '../../services/api';
 import { Button, ScreenHeader, Avatar } from '../../components/ui';
+import { CoursePicker } from '../../components/CoursePicker';
 import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'CreateGroup'>;
@@ -78,6 +79,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   const [selectedUsers, setSelectedUsers] = useState<SearchResult[]>([]);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
+  const [courseId, setCourseId] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [pickingAvatar, setPickingAvatar] = useState(false);
   const [permissions, setPermissions] = useState<GroupPermissions>(DEFAULT_PERMISSIONS);
@@ -201,6 +203,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         ownerName,
         permissions,
         parentId,
+        courseId,
         memberIds: selectedUserIds,
         memberDetails: selectedUsers.map(u => ({
           id: u.id,
@@ -225,6 +228,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
     groupDescription,
     avatarUrl,
     permissions,
+    courseId,
     selectedUserIds,
     selectedUsers,
     parentId,
@@ -384,6 +388,19 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             multiline
             numberOfLines={2}
             className="w-full text-center text-sm border border-lantern-border rounded-xl px-3 py-2 text-lantern-text bg-lantern-surface"
+          />
+        </View>
+
+        <View className="p-4 rounded-2xl bg-lantern-surface border border-lantern-border mb-4">
+          <Text className="font-semibold text-lantern-text">Course</Text>
+          <Text className="text-sm text-lantern-text-secondary mt-0.5 mb-3">
+            Optional — tests and questions from this group file under it.
+          </Text>
+          <CoursePicker
+            value={courseId}
+            onChange={course => setCourseId(course?.id ?? null)}
+            placeholder="Choose the course this group studies"
+            title="Course for this group"
           />
         </View>
 

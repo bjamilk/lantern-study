@@ -24,6 +24,8 @@ import {
   isTranscriptionConfigured,
 } from '../services/aiService';
 import { handleValidationErrors, validateAIMessage } from '../middleware/validation';
+import { normalizeStudyPerformanceData } from '../services/aiStudyRecommendationInput';
+import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
 
 const router = Router();
 let supabaseService: SupabaseService;
@@ -91,13 +93,24 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
       res.status(400).json({ error: 'Notes must be at least 50 characters.' });
       return;
     }
+    const surface = surfaceFromRequest(req);
     const outcome = await runSyncOrEnqueue(
       'ai.generate.questions',
-      { notes, count, difficulty, questionTypes, subject },
+      // surface rides on the payload so the queued (async) path can emit the
+      // same learning event from the worker.
+      { notes, count, difficulty, questionTypes, subject, surface },
       userId,
       async () => {
         const generated = await generateQuestionsFromNotes(notes, { count, difficulty, questionTypes, subject });
         await recordInference(req, 'generate-questions', generated);
+        if (userId && supabaseService) {
+          await recordLearningEvent(supabaseService, {
+            userId,
+            eventType: 'question_generated',
+            count: Array.isArray(generated.questions) ? generated.questions.length : 0,
+            surface,
+          });
+        }
         return generated;
       }
     ,
@@ -122,13 +135,22 @@ router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards')
       res.status(400).json({ error: 'Notes must be at least 50 characters.' });
       return;
     }
+    const surface = surfaceFromRequest(req);
     const outcome = await runSyncOrEnqueue(
       'ai.generate.flashcards',
-      { notes, count, style },
+      { notes, count, style, surface },
       userId,
       async () => {
         const generated = await generateFlashcardsFromNotes(notes, { count, style });
         await recordInference(req, 'generate-flashcards', generated);
+        if (userId && supabaseService) {
+          await recordLearningEvent(supabaseService, {
+            userId,
+            eventType: 'card_generated',
+            count: Array.isArray(generated.flashcards) ? generated.flashcards.length : 0,
+            surface,
+          });
+        }
         return generated;
       }
     ,
@@ -179,11 +201,15 @@ router.post('/explain-answer', aiRateLimitForFeature('explain'), async (req: Aut
 router.post('/study-recommendations', aiRateLimitForFeature('study_recommendations'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { performanceData } = req.body;
-    if (!performanceData) {
-      res.status(400).json({ error: 'Performance data required.' });
+    // Normalise here so the sync path, the queued job payload and the cache key
+    // all see the same honest shape (studyDaysThisWeek preferred, legacy
+    // studyHoursThisWeek accepted for one release, flashcardAccuracy optional).
+    const normalized = normalizeStudyPerformanceData(req.body?.performanceData);
+    if (!normalized.ok) {
+      res.status(400).json({ error: normalized.error });
       return;
     }
+    const performanceData = normalized.data;
     const outcome = await runSyncOrEnqueue(
       'ai.study.recommendations',
       { performanceData },

@@ -30,6 +30,7 @@ import {
 import { processJobSavedSearchAlerts } from "../../services/jobAlerts";
 import { processJobDeadlineReminders } from "../../services/jobReminders";
 import { logAIInference } from "../../services/aiInferenceLog";
+import { normalizeSurface, recordLearningEvent } from "../../services/learningEvents";
 import { buildTrustedCompanionContext } from "../../services/companionContext";
 import {
   ensureConversationTitle,
@@ -58,6 +59,31 @@ async function recordInference(
   });
 }
 
+/**
+ * learning_events for the queued (async) AI paths — the sync paths emit in the
+ * routes. surface/noteId/courseId ride on the job payload (routes stamp them).
+ * Never throws.
+ */
+async function recordGenerationEvent(
+  userId: string | undefined,
+  eventType: "card_generated" | "question_generated",
+  count: number,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (!userId || !supabaseService) return;
+  const noteId = typeof data.noteId === "string" ? data.noteId : null;
+  await recordLearningEvent(supabaseService, {
+    userId,
+    eventType,
+    targetType: noteId ? "note" : null,
+    targetId: noteId,
+    noteId,
+    courseId: typeof data.courseId === "string" ? data.courseId : null,
+    count,
+    surface: normalizeSurface(data.surface),
+  });
+}
+
 async function processAiJob(job: Job): Promise<unknown> {
   const userId = job.data.userId as string | undefined;
   const name = job.name;
@@ -72,12 +98,24 @@ async function processAiJob(job: Job): Promise<unknown> {
         subject,
       });
       await recordInference(userId, "generate-questions", result);
+      await recordGenerationEvent(
+        userId,
+        "question_generated",
+        Array.isArray(result.questions) ? result.questions.length : 0,
+        job.data,
+      );
       return result;
     }
     case "ai.generate.flashcards": {
       const { notes, count, style } = job.data;
       const result = await generateFlashcardsFromNotes(notes, { count, style });
       await recordInference(userId, "generate-flashcards", result);
+      await recordGenerationEvent(
+        userId,
+        "card_generated",
+        Array.isArray(result.flashcards) ? result.flashcards.length : 0,
+        job.data,
+      );
       return result;
     }
     case "ai.explain.answer": {
@@ -214,6 +252,12 @@ async function processAiJob(job: Job): Promise<unknown> {
       };
       const result = await generateDailyQuiz(content, { studyGoal, count });
       await recordInference(userId, "note-quiz", result);
+      await recordGenerationEvent(
+        userId,
+        "question_generated",
+        Array.isArray(result.questions) ? result.questions.length : 0,
+        job.data as Record<string, unknown>,
+      );
       if (noteId && userId && supabaseService) {
         const questions = result.questions.map((q, index) => ({
           id: `nq-${index}`,
@@ -243,6 +287,12 @@ async function processAiJob(job: Job): Promise<unknown> {
         style: style as "concise" | "detailed" | undefined,
       });
       await recordInference(userId, "note-flashcards", result);
+      await recordGenerationEvent(
+        userId,
+        "card_generated",
+        Array.isArray(result.flashcards) ? result.flashcards.length : 0,
+        job.data as Record<string, unknown>,
+      );
       return result;
     }
     default:

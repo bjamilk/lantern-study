@@ -15,6 +15,9 @@ import { getNoteStudyContent } from '@lantern/shared';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
+import { useAcademicStore } from './stores/academicStore';
+import { useLibraryStore } from './stores/libraryStore';
+import { activeUserCourses } from './utils/academicSetup';
 import { setSentryUser } from './services/sentry';
 import { useGroupStore } from './stores/groupStore';
 import { useFlashcardStore } from './stores/flashcardStore';
@@ -38,6 +41,8 @@ import AuthScreen from './components/AuthScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
 import SettingsModal from './components/SettingsModal';
 import AccountPausedBanner from './components/AccountPausedBanner';
+import AccountSuspendedNotice from './components/AccountSuspendedNotice';
+import { useAccountSuspensionStore } from './services/accountSuspension';
 import DuplicateQuestionModal from './components/DuplicateQuestionModal';
 import CreateDeckModal from './components/CreateDeckModal';
 import CreateFlashcardModal from './components/CreateFlashcardModal';
@@ -272,6 +277,12 @@ export const App: React.FC = () => {
         });
     }, [showToast, setCurrentUser, setAuthLoading, setDataLoaded, setBootstrapLoad, navigateToPath]);
 
+    // The ACCOUNT_SUSPENDED notice belongs to one signed-in account: drop it
+    // when the user signs out (or another account signs in).
+    useEffect(() => {
+        if (!currentUser?.id) useAccountSuspensionStore.getState().clear();
+    }, [currentUser?.id]);
+
     const handleReactivateFromBanner = async () => {
         setReactivatingAccount(true);
         try {
@@ -328,7 +339,7 @@ export const App: React.FC = () => {
     const {
         isGeneratingFlashcards,
         handleSelectDeck, handleOpenCreateDeckModal, handleOpenEditDeckModal,
-        handleCreateOrUpdateDeck, handleDeleteDeck,
+        handleCreateOrUpdateDeck, handleMoveDeckToCourse, handleDeleteDeck,
         handleOpenCreateFlashcardModal, handleOpenEditFlashcardModal,
         handleCreateOrUpdateFlashcard, handleDeleteFlashcard,
         handleGenerateFlashcards,
@@ -384,6 +395,15 @@ export const App: React.FC = () => {
         if (typeof window === 'undefined') return false;
         return !localStorage.getItem('lantern_onboarding_complete');
     });
+    // Starter-deck pre-seed: the first active enrolment (Phase 1 onboarding).
+    const myAcademicCourses = useAcademicStore((s) => s.myCourses);
+    const onboardingFirstCourse = React.useMemo(() => {
+        const first = activeUserCourses(myAcademicCourses)[0];
+        return first ? { id: first.course.id, code: first.course.code, title: first.course.title } : null;
+    }, [myAcademicCourses]);
+    React.useEffect(() => {
+        if (showOnboarding && currentUser?.id) void useAcademicStore.getState().loadMyCourses();
+    }, [showOnboarding, currentUser?.id]);
 
     const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction, materializeRecurring } = useBudgetHandlers();
     const { isDownloadingBundle, handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
@@ -904,11 +924,17 @@ export const App: React.FC = () => {
                     showToast(e?.message || 'Failed to create note', 'error');
                 }
             }}
-            onCreateFolder={(name) => {
-                void noteHandlers.handleCreateFolder(name).catch((e: any) => {
+            onCreateFolder={(name, parentId) => {
+                void noteHandlers.handleCreateFolder(name, undefined, parentId ?? undefined).catch((e: any) => {
                     showToast(e?.message || 'Failed to create folder', 'error');
                 });
             }}
+            onMoveNoteToCourse={(noteId, courseId) =>
+                noteHandlers.handleMoveNoteToCourse(noteId, courseId).catch((e: any) => {
+                    showToast(e?.message || 'Failed to move note', 'error');
+                    throw e;
+                })
+            }
             onRenameFolder={(folderId, name) => {
                 void noteHandlers.handleRenameFolder(folderId, name).catch((e: any) => {
                     showToast(e?.message || 'Failed to rename folder', 'error');
@@ -991,6 +1017,7 @@ export const App: React.FC = () => {
                 await handleToggleDeckOffline(deck, enable);
                 showToast(enable ? 'Deck saved for offline use' : 'Deck removed from offline storage', 'success');
             }}
+            onMoveDeckToCourse={handleMoveDeckToCourse}
         />
     );
 
@@ -1177,6 +1204,15 @@ export const App: React.FC = () => {
                         deckCount={decks.length}
                         notesContent={renderNotesScreen(true)}
                         flashcardsContent={renderFlashcardsScreen(true)}
+                        onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
+                        onOpenDeck={(deckId) => {
+                            const deck = decks.find((d) => d.id === deckId);
+                            // Route hydration fetches a deck that is not in the store yet (e.g. shared).
+                            if (deck) handleSelectDeck(deck);
+                            else navigateTo(AppMode.DECK_DETAIL, { deckId });
+                        }}
+                        onOpenOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
+                        onOpenTests={() => navigateTo(AppMode.DASHBOARD)}
                     />
                 );
             case AppMode.STUDY_HUB:
@@ -1376,6 +1412,7 @@ export const App: React.FC = () => {
                     onStartMatch={handleStartMatch} onStartLearn={handleStartLearn}
                     onOpenCreateFlashcard={handleOpenCreateFlashcardModal} onOpenEditFlashcard={handleOpenEditFlashcardModal}
                     onDeleteFlashcard={handleDeleteFlashcard} onOpenEditDeck={handleOpenEditDeckModal}
+                    onMoveDeckToCourse={handleMoveDeckToCourse}
                     onDeleteDeck={handleDeleteDeck} onGenerateFlashcards={handleGenerateFlashcards}
                     isGenerating={isGeneratingFlashcards} onResetStatistics={handleResetDeckStatistics}
                     onExportDeck={handleExportDeck}
@@ -1781,6 +1818,7 @@ export const App: React.FC = () => {
             <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, navigateTo, setActiveTestResult })} />
             </div>
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <AccountSuspendedNotice variant="banner" />
             {accountLifecycle?.status === 'deactivated' && (
                 <AccountPausedBanner
                     deletionScheduledAt={accountLifecycle.deletionScheduledAt}
@@ -1937,10 +1975,14 @@ export const App: React.FC = () => {
                 error={aiError} />
             {currentUser && <UsernameRequiredModal isOpen={modals.usernameRequired}
                 onClose={() => closeModal('usernameRequired')} currentUser={currentUser}
-                onSuccess={(username, firstName, lastName) => {
+                onSuccess={(updates) => {
+                    const latest = useAuthStore.getState().currentUser || currentUser;
+                    const firstName = updates.firstName ?? latest.firstName;
+                    const lastName = updates.lastName ?? latest.lastName;
                     setCurrentUser({
-                        ...currentUser, username, firstName, lastName,
-                        name: firstName && lastName ? `${firstName} ${lastName}` : currentUser.name,
+                        ...latest,
+                        ...updates,
+                        name: firstName && lastName ? `${firstName} ${lastName}` : latest.name,
                     });
                     closeModal('usernameRequired');
                 }} />}
@@ -1964,6 +2006,9 @@ export const App: React.FC = () => {
                 <Suspense fallback={null}>
                     <OnboardingFlow
                         isOpen={showOnboarding}
+                        programme={currentUser.programme ?? null}
+                        studyLevel={currentUser.studyLevel ?? null}
+                        firstCourse={onboardingFirstCourse}
                         onSkip={() => { localStorage.setItem('lantern_onboarding_complete', '1'); setShowOnboarding(false); }}
                         onComplete={({ streakTarget }) => {
                             localStorage.setItem('lantern_onboarding_complete', '1');
@@ -1978,13 +2023,25 @@ export const App: React.FC = () => {
                                 count: normalizeFlashcardCount(),
                             });
                             if (cards?.length && currentUser) {
-                                const deck = await createDeck({ name: 'My First Deck', description: 'From onboarding' }, currentUser.id);
+                                // File the starter deck under the onboarding course (as promised
+                                // by "we'll file it under {course}") and name it after that course
+                                // like mobile does, else fall back to a friendly default.
+                                const starterCourse = onboardingFirstCourse;
+                                const deckName = starterCourse?.code
+                                    ? `${starterCourse.code} starter deck`
+                                    : 'My First Deck';
+                                const deck = await createDeck(
+                                    { name: deckName, description: 'From onboarding', courseId: starterCourse?.id ?? null },
+                                    currentUser.id
+                                );
                                 for (const c of cards) {
                                     await createFlashcard({ deckId: deck.id, type: 'BASIC' as any, front: c.front, back: c.back, userId: currentUser.id });
                                 }
                                 const allFlashcards = await fetchAllFlashcards(undefined, currentUser.id);
                                 useFlashcardStore.getState().setFlashcards(allFlashcards);
                                 useFlashcardStore.getState().updateDecks((prev) => [...prev, deck]);
+                                // The new course-filed deck changes the library overview counts.
+                                useLibraryStore.getState().invalidateOverview();
                             }
                         }}
                         onOpenLearnMode={() => {
@@ -2020,6 +2077,7 @@ export const App: React.FC = () => {
                 onCancel={globalConfirm.handleCancel}
             />
             <ToastBanner toast={toast} onDismiss={dismissToast} />
+            <AccountSuspendedNotice variant="modal" />
             <FeatureTipsHost
                 onboardingComplete={!showOnboarding && Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('lantern_onboarding_complete'))}
                 appMode={appMode}

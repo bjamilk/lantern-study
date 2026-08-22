@@ -1030,13 +1030,36 @@ router.post(
     if (!isJobReportReason(reason)) {
       return res.status(400).json({ success: false, error: "Invalid reason" });
     }
-    const data = await jobs().reportPosting(
-      req.params.id,
-      userId,
-      reason,
-      req.body?.details,
+    // New reports land in the generic content_reports table (target_type
+    // 'job_posting'); the legacy job_reports table is read-only history
+    // (backfilled by migration 20260822140000). Duplicate reports stay
+    // idempotent for old clients (201 with the existing state, no 409).
+    const { getModerationService, isMissingRelationError } = await import(
+      "../services/moderation"
     );
-    res.status(201).json({ success: true, data });
+    try {
+      const data = await getModerationService(supabaseService).createReport({
+        reporterId: userId,
+        targetType: "job_posting",
+        targetId: req.params.id,
+        reason,
+        details: req.body?.details,
+      });
+      res.status(201).json({ success: true, data });
+    } catch (err: any) {
+      if (err?.statusCode === 409) {
+        return res.status(201).json({ success: true, data: { status: "pending", duplicate: true } });
+      }
+      if (err?.statusCode === 404) {
+        return res.status(404).json({ success: false, error: err.message });
+      }
+      if (err?.statusCode === 503 || isMissingRelationError(err)) {
+        // Migration not applied yet: keep the old path alive.
+        const data = await jobs().reportPosting(req.params.id, userId, reason, req.body?.details);
+        return res.status(201).json({ success: true, data });
+      }
+      throw err;
+    }
   }),
 );
 

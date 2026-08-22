@@ -16,6 +16,8 @@ describe('aiRateLimitForFeature dual charge', () => {
     const headers: Record<string, string> = {};
     return {
       headers,
+      // Real responses carry res.locals; the middleware stamps the charge there.
+      locals: {} as Record<string, unknown>,
       setHeader(name: string, value: string) {
         headers[name.toLowerCase()] = value;
       },

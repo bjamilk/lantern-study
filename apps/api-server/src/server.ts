@@ -66,6 +66,11 @@ import jobsBoardRoutes, { initializeJobsBoardRoutes } from './routes/jobsBoard';
 import budgetRoutes from './routes/budget';
 import contactRoutes from './routes/contact';
 import analyticsRoutes, { initializeAnalyticsRoutes } from './routes/analytics';
+import courseRoutes, { initializeCourseRoutes } from './routes/courses';
+import userCourseRoutes, { initializeUserCourseRoutes } from './routes/userCourses';
+import conceptRoutes, { initializeConceptRoutes } from './routes/concepts';
+import libraryRoutes, { initializeLibraryRoutes } from './routes/library';
+import reportRoutes, { initializeReportRoutes } from './routes/reports';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -164,6 +169,11 @@ async function initializeServices() {
     initializeAuthRoutes(supabaseService, cacheService);
     initializeStorageRoutes(supabaseService);
     initializeAnalyticsRoutes(supabaseService);
+    initializeCourseRoutes(supabaseService, cacheService);
+    initializeUserCourseRoutes(supabaseService, cacheService);
+    initializeConceptRoutes(supabaseService, cacheService);
+    initializeLibraryRoutes(supabaseService, cacheService);
+    initializeReportRoutes(supabaseService, cacheService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -359,7 +369,14 @@ async function startServer() {
     }
 
     // API routes (mount after services initialization)
+    // /users/me/courses MUST be mounted before /users so the "me" segment is
+    // never captured by /users/:userId/* (Express matches in registration order).
+    app.use('/api/v1/users/me/courses', userCourseRoutes);
     app.use('/api/v1/users', userRoutes);
+    app.use('/api/v1/courses', courseRoutes);
+    app.use('/api/v1/concepts', conceptRoutes);
+    app.use('/api/v1/library', libraryRoutes);
+    app.use('/api/v1/reports', reportRoutes);
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);
     app.use('/api/v1/jobs', jobsRoutes);

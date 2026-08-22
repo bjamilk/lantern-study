@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { XCircleIcon } from '@heroicons/react/24/outline';
-import { Group } from '../types'; // Import Group type
+import { Course, Group } from '../types'; // Import Group type
 import Modal from './ui/Modal';
+import { CoursePicker } from './academic/CoursePicker';
 
 interface CreateGroupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (name: string, description: string, memberEmails: string, parentId?: string) => void;
+  onSubmit: (name: string, description: string, memberEmails: string, parentId?: string, courseId?: string | null) => void;
   parentId?: string; // For creating sub-groups
   allGroups?: Group[]; // To get parent group name for title
 }
@@ -23,6 +24,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [memberEmails, setMemberEmails] = useState('');
+  const [course, setCourse] = useState<Course | null>(null);
   const [modalTitle, setModalTitle] = useState('Create New Study Group');
   const [parentPath, setParentPath] = useState<string[]>([]);
 
@@ -47,6 +49,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
       setName('');
       setDescription('');
       setMemberEmails('');
+      setCourse(null);
       if (parentId && allGroups) {
         const path = buildParentPath(parentId, allGroups);
         setParentPath(path);
@@ -62,7 +65,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      onSubmit(name.trim(), description.trim(), memberEmails.trim(), parentId);
+      onSubmit(name.trim(), description.trim(), memberEmails.trim(), parentId, course?.id ?? null);
     }
   };
 
@@ -113,6 +116,15 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               rows={3}
               className="w-full p-2 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
               placeholder="A brief description of the group's purpose"
+            />
+          </div>
+          <div className="mb-4">
+            <CoursePicker
+              id="groupCourse"
+              label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+              value={course}
+              onChange={setCourse}
+              placeholder="Which course does this group study?"
             />
           </div>
           <div className="mb-6">

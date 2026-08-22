@@ -77,6 +77,7 @@ interface UIState {
   /** Active Settings dialog tab — lives in the store so Suspense remounts don't bounce to Profile. */
   settingsTab:
     | 'profile'
+    | 'academic'
     | 'notifications'
     | 'study'
     | 'appearance'

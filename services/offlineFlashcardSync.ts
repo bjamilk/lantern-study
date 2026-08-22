@@ -62,7 +62,9 @@ export async function syncPendingFlashcardReviews(): Promise<FlashcardReviewSync
       const updated = await reviewFlashcard(
         review.flashcardId,
         review.rating,
-        undefined
+        undefined,
+        // Carry the original grade time into the server-side learning event.
+        { reviewedAt: review.reviewedAt }
       );
       const mapped = updated ? mapFlashcardFromApi(updated) : null;
       if (mapped?.srsData || mapped?.version != null) {

@@ -19,6 +19,7 @@ import {
 } from '../services/flashcardImageUpload';
 import { OcclusionEditor, countShapes, type OcclusionMode } from './OcclusionEditor';
 import { Button, Card } from './ui';
+import { formatTagsInput, parseTagsInput } from '../utils/libraryArchive';
 
 export interface FlashcardDraft {
   type: FlashcardType;
@@ -27,6 +28,8 @@ export interface FlashcardDraft {
   clozeText?: string;
   imageUrl?: string;
   occlusionData?: OcclusionData;
+  /** Always an array on submit (possibly empty) so clearing tags persists. */
+  tags?: string[];
 }
 
 interface CreateFlashcardModalProps {
@@ -70,6 +73,8 @@ export default function CreateFlashcardModal({
   const [occlusionMode, setOcclusionMode] = useState<OcclusionMode>('rectangles');
   const [uploading, setUploading] = useState(false);
   const [drawing, setDrawing] = useState(false);
+  /** Comma-separated tags, parsed on submit. */
+  const [tagsInput, setTagsInput] = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -77,6 +82,7 @@ export default function CreateFlashcardModal({
     setFront(editingFlashcard?.front ?? '');
     setBack(editingFlashcard?.back ?? '');
     setClozeText(editingFlashcard?.clozeText ?? '');
+    setTagsInput(formatTagsInput(editingFlashcard?.tags));
     setImageUrl(editingFlashcard?.imageUrl ?? undefined);
     setOcclusion((editingFlashcard?.occlusionData as OcclusionData) ?? null);
     setOcclusionMode((editingFlashcard?.occlusionData?.type as OcclusionMode) ?? 'rectangles');
@@ -187,27 +193,31 @@ export default function CreateFlashcardModal({
         }
       }
 
+      const tags = parseTagsInput(tagsInput);
       if (isOcclusion) {
         await onSubmit({
           type: FlashcardType.IMAGE_OCCLUSION,
           front: front.trim(),
           imageUrl: storedUrl,
           occlusionData: occlusion ?? undefined,
+          tags,
         });
       } else if (isCloze) {
-        await onSubmit({ type: FlashcardType.CLOZE, clozeText: clozeText.trim() });
+        await onSubmit({ type: FlashcardType.CLOZE, clozeText: clozeText.trim(), tags });
       } else {
         await onSubmit({
           type: FlashcardType.BASIC,
           front: front.trim(),
           back: back.trim(),
           imageUrl: storedUrl,
+          tags,
         });
       }
 
       setFront('');
       setBack('');
       setClozeText('');
+      setTagsInput('');
       setPicked(null);
       setImageUrl(undefined);
       setOcclusion(null);
@@ -413,6 +423,21 @@ export default function CreateFlashcardModal({
                   ) : null}
                 </>
               )}
+
+              <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Tags (optional)</Text>
+              <TextInput
+                value={tagsInput}
+                onChangeText={setTagsInput}
+                placeholder="anatomy, week 3"
+                placeholderTextColor="#94a3b8"
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-1"
+                accessibilityLabel="Tags, comma-separated"
+              />
+              <Text className="text-[11px] text-lantern-text-secondary mb-3">
+                Comma-separated. Tags show on the card and are searchable from the Library.
+              </Text>
             </ScrollView>
 
             {error ? (

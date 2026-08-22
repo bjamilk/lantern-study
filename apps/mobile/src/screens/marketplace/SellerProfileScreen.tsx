@@ -15,10 +15,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useMarketplaceStore, type MarketplaceListing } from '../../stores';
+import { isMarketplaceListingStatus } from '@lantern/shared/marketplace';
 import * as api from '../../services/api';
 import { Avatar } from '../../components/ui';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 
 type NavigationProp = {
   goBack: () => void;
@@ -43,6 +45,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
   const [shopName, setShopName] = useState('');
   const [bio, setBio] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const isOwner = !!user?.id && user.id === sellerId;
 
   const loadListings = useCallback(async () => {
@@ -59,7 +62,9 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             ...l,
             seller_id: l.user_id || sellerId,
             images: l.images || [],
-            status: (l.status === 'reserved' || l.status === 'sold' || l.status === 'inactive'
+            // Never coerce a moderation status to 'active': the shop filter
+            // below must see suspended/removed rows as what they are.
+            status: (isMarketplaceListingStatus(l.status)
               ? l.status
               : 'active') as MarketplaceListing['status'],
           }))
@@ -201,8 +206,27 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             <Pressable onPress={() => void shareShop()} className="px-2.5 py-1.5 rounded-lg bg-black/30">
               <Text className="text-xs font-semibold text-white">Share</Text>
             </Pressable>
+            {!isOwner && user?.id ? (
+              <Pressable
+                onPress={() => setShowReport(true)}
+                className="px-2.5 py-1.5 rounded-lg bg-black/30 flex-row items-center gap-1"
+                accessibilityRole="button"
+                accessibilityLabel="Report user"
+              >
+                <Ionicons name="flag-outline" size={14} color="#fff" />
+                <Text className="text-xs font-semibold text-white">Report</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
+        {/* Report user (Phase 1 · E) — target is the seller's profile, not a listing. */}
+        <ReportContentSheet
+          visible={showReport}
+          targetType="user"
+          targetId={sellerId}
+          targetLabel={displayName}
+          onClose={() => setShowReport(false)}
+        />
 
         <View className="flex-row items-end gap-3">
           <Avatar name={displayName} size={64} />

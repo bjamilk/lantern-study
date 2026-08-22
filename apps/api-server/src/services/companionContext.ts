@@ -4,6 +4,11 @@
 import { isCardDue } from '@lantern/shared/utils/srs';
 import type { SupabaseService } from './supabase';
 import type { CompanionContext } from './aiService';
+import {
+  WEAK_TOPIC_SESSION_LIMIT,
+  buildTagBreakdown,
+  deriveWeakTopics,
+} from './companionWeakTopics';
 
 const MAX_HINT_LEN = 120;
 const MAX_NOTE_LEN = 6000;
@@ -78,18 +83,15 @@ export async function buildTrustedCompanionContext(
     isCardDue(card.srs_data || card.srsData)
   ).length;
 
-  const weakTopicSet = new Set<string>();
-  for (const result of testResults.slice(0, 10)) {
-    const breakdown = (result as { tagBreakdown?: Record<string, { total?: number; correct?: number }> })
-      .tagBreakdown;
-    if (!breakdown) continue;
-    for (const [tag, stats] of Object.entries(breakdown)) {
-      const total = stats?.total ?? 0;
-      const correct = stats?.correct ?? 0;
-      if (total > 0 && correct / total < 0.6) weakTopicSet.add(tag);
-    }
-  }
-  const weakTopics = [...weakTopicSet].slice(0, 5);
+  // Weak topics are derived here, server-side, from the most recent full
+  // sessions. fetchTestResults maps whole test_sessions rows (questions jsonb +
+  // user_answers), so no second query is needed; only the newest N feed the
+  // tally so the companion reflects current standing, not all-time history.
+  // (The old code read `result.tagBreakdown`, which nothing ever produced, so
+  // weakTopics was always empty.)
+  const weakTopics = deriveWeakTopics(
+    buildTagBreakdown(testResults.slice(0, WEAK_TOPIC_SESSION_LIMIT).map((result) => result.session))
+  );
 
   const recentTest = testResults[0];
   const recentTestSummary =

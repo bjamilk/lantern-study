@@ -74,6 +74,18 @@ export const mapUserFromApi = (data: any): User => {
     phone: phoneNumber,
     first_name: firstName,
     last_name: lastName,
+    // Academic identity (profiles.institution_id & friends). Undefined stays
+    // undefined so partial payloads don't clobber a loaded profile.
+    institutionId: data.institutionId !== undefined ? data.institutionId : data.institution_id,
+    institution: data.institution ?? undefined,
+    faculty: data.faculty,
+    programme: data.programme,
+    studyLevel: data.studyLevel !== undefined ? data.studyLevel : data.study_level,
+    entryYear: data.entryYear !== undefined ? data.entryYear : data.entry_year,
+    expectedGraduationYear:
+      data.expectedGraduationYear !== undefined
+        ? data.expectedGraduationYear
+        : data.expected_graduation_year,
   } as User;
 };
 
@@ -130,6 +142,7 @@ export const mapGroupFromApi = (data: any): Group => {
     inviteId: data.invite_id || data.inviteId,
     permissions: data.permissions,
     invitedPhoneNumbers: data.invited_phone_numbers || data.invitedPhoneNumbers,
+    courseId: data.courseId !== undefined ? data.courseId : (data.course_id ?? undefined),
   };
 };
 
@@ -315,6 +328,7 @@ export const mapFlashcardFromApi = (data: any): Flashcard => {
     occlusionData: data.occlusion_data || data.occlusionData,
     srsData: mapSrsDataFromApi(data.srs_data || data.srsData),
     tags: data.tags,
+    authoredDifficulty: data.authored_difficulty ?? data.authoredDifficulty ?? undefined,
     version:
       typeof data.version === 'number'
         ? data.version
@@ -337,6 +351,7 @@ export const mapDeckFromApi = (data: any): Deck => {
     name: data.name,
     description: data.description,
     createdAt: data.created_at || data.createdAt,
+    courseId: data.courseId !== undefined ? data.courseId : (data.course_id ?? undefined),
   };
 };
 
@@ -370,6 +385,8 @@ export const mapListingFromApi = (data: any): MarketplaceListing => {
     status: data.status,
     categorySpecificFields: data.category_specific_fields || data.categorySpecificFields,
     category_specific_fields: data.category_specific_fields,
+    courseId: data.courseId !== undefined ? data.courseId : (data.course_id ?? undefined),
+    course_id: data.course_id ?? data.courseId ?? undefined,
     views_count: data.views_count,
     favorites_count: data.favorites_count,
     inquiries_count: data.inquiries_count,
@@ -521,6 +538,7 @@ export const mapGroupToApi = (group: Partial<Group>): any => {
     parent_id: group.parentId,
     is_archived: group.isArchived,
     permissions: group.permissions,
+    course_id: group.courseId,
   };
 };
 

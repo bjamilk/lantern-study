@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -23,13 +23,18 @@ import {
 import { Button } from '../../components/ui';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import {
+  isMarketplaceListingEditable,
   isOtherCityCampus,
   type MarketplaceCampus,
 } from '@lantern/shared/marketplace';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { fetchMarketplaceCampuses } from '../../services/api';
+import { CoursePicker } from '../../components/CoursePicker';
 import { CampusPicker } from './CampusPicker';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { ATTESTATION_REQUIRED_MESSAGE, isAcademicListing } from '@lantern/shared/moderation';
+import { RightsAttestationCheckbox } from '../../components/moderation/RightsAttestationCheckbox';
+import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
 
 type NavigationProp = {
   goBack: () => void;
@@ -77,6 +82,14 @@ export function EditListingScreen({
   const [showCategories, setShowCategories] = useState(false);
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [campusId, setCampusId] = useState('');
+  const [courseId, setCourseId] = useState<string | null>(null);
+  const [courseCode, setCourseCode] = useState<string | null>(null);
+  // Rights attestation (Phase 1 · E): the API demands it when an edit moves
+  // an unattested listing into an academic category; already-attested
+  // listings just show a confirmation line.
+  const [attested, setAttested] = useState(false);
+  const [attestationError, setAttestationError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (listingId) void fetchListing(listingId);
@@ -88,8 +101,13 @@ export function EditListingScreen({
       .catch(() => {});
   }, []);
 
+  // Seed the form once per listing. The store swaps currentListing back to the
+  // pre-edit copy after a rejected save; re-seeding then would wipe the user's input.
+  const seededListingIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!currentListing || currentListing.id !== listingId) return;
+    if (seededListingIdRef.current === listingId) return;
+    seededListingIdRef.current = listingId;
     setTitle(currentListing.title);
     setCategory(currentListing.category as MarketplaceCategory);
     setPrice(currentListing.price != null ? String(currentListing.price) : '');
@@ -103,9 +121,16 @@ export function EditListingScreen({
     setImages(currentListing.images || []);
     setQuantity(currentListing.quantity != null ? String(currentListing.quantity) : '');
     setCampusId(currentListing.campus_id || currentListing.campus?.id || '');
+    setCourseId(currentListing.courseId ?? null);
+    const legacyCourseCode = currentListing.category_specific_fields?.courseCode;
+    setCourseCode(typeof legacyCourseCode === 'string' && legacyCourseCode.trim() ? legacyCourseCode : null);
   }, [currentListing, listingId]);
 
   const selectedCategory = ALL_CATEGORIES.find(c => c.id === category);
+  const isAcademic = isAcademicListing({ listingKind: currentListing?.listing_kind, category });
+  const alreadyAttested =
+    currentListing?.rights_status === 'attested' || currentListing?.rights_status === 'cleared';
+  const needsAttestation = isAcademic && !alreadyAttested;
   const listingCampus = currentListing?.campus;
   const campusOptions =
     listingCampus && !campuses.some(campus => campus.id === listingCampus.id)
@@ -232,6 +257,13 @@ export function EditListingScreen({
       ).toISOString();
     }
     const parsedQuantity = quantity.trim() ? parseInt(quantity, 10) : undefined;
+    if (needsAttestation && !attested) {
+      setAttestationError(ATTESTATION_REQUIRED_MESSAGE);
+      Alert.alert('Confirm your rights', ATTESTATION_REQUIRED_MESSAGE);
+      return;
+    }
+    setAttestationError(null);
+    setSubmitError(null);
     try {
       await updateListing(
         listingId,
@@ -247,15 +279,50 @@ export function EditListingScreen({
           campus_id: campusId,
           quantity: parsedQuantity,
           images,
+          // Academic archive: always send courseId (null clears); mirror the
+          // code into category_specific_fields.courseCode for legacy readers.
+          courseId: courseId ?? null,
+          ...(courseCode !== (currentListing?.category_specific_fields?.courseCode ?? null)
+            ? { category_specific_fields: { courseCode: courseCode ?? null } }
+            : {}),
+          // Rights attestation (academic categories; API 400 without it).
+          ...(attested ? { attestation: true } : {}),
         },
         user.id
       );
       Alert.alert('Saved', 'Listing updated.');
       navigation.goBack();
-    } catch {
-      Alert.alert('Error', 'Failed to update listing.');
+    } catch (e) {
+      // The API refuses edits to moderated listings (403) with seller-facing
+      // copy, and 400s the rights/content checks — keep the message inline too.
+      const message = e instanceof Error && e.message ? e.message : 'Failed to update listing.';
+      setSubmitError(message);
+      Alert.alert('Could not save', message);
     }
   };
+
+  // Moderation takedown: the listing is read-only for the seller, so show the
+  // notice instead of a form whose save can only be refused.
+  const loadedListing = currentListing?.id === listingId ? currentListing : null;
+  if (loadedListing && !isMarketplaceListingEditable(loadedListing.status)) {
+    return (
+      <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+        <View className="px-4 pt-2 pb-3 flex-row items-center">
+          <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
+            <Ionicons name="arrow-back" size={22} color="#64748b" />
+          </Pressable>
+          <Text className="text-xl font-bold text-lantern-text">Edit Listing</Text>
+        </View>
+        <View className="px-4">
+          {/* Takedown reason + appeal state / one-shot Appeal (Phase 1 · E). */}
+          <ListingTakedownNotice listing={loadedListing} />
+          <Button fullWidth variant="secondary" className="mt-4" onPress={() => navigation.goBack()}>
+            Go back
+          </Button>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
@@ -344,6 +411,21 @@ export function EditListingScreen({
           />
           <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
             Listings stay visible across Nigeria; this only identifies where yours is based.
+          </Text>
+
+          <Text className="text-sm font-semibold text-lantern-text mb-2">Course (optional)</Text>
+          <CoursePicker
+            value={courseId}
+            fallbackLabel={courseCode}
+            onChange={course => {
+              setCourseId(course?.id ?? null);
+              setCourseCode(course?.code ?? null);
+            }}
+            placeholder="Which course is this for? e.g. BIO 201"
+            title="Course for this listing"
+          />
+          <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+            Helps students at your level find it.
           </Text>
 
           <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
@@ -439,6 +521,33 @@ export function EditListingScreen({
             textAlignVertical="top"
             className="min-h-[120px] p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-6"
           />
+
+          {needsAttestation ? (
+            <>
+              <Text className="text-sm font-semibold text-lantern-text mb-2">Rights confirmation *</Text>
+              <RightsAttestationCheckbox
+                value={attested}
+                onChange={(next) => {
+                  setAttested(next);
+                  if (next) setAttestationError(null);
+                }}
+                error={attestationError}
+              />
+            </>
+          ) : isAcademic && alreadyAttested ? (
+            <View className="flex-row items-center gap-2 mb-4">
+              <Ionicons name="checkmark-circle" size={16} color="#059669" />
+              <Text className="text-xs text-lantern-text-secondary flex-1">
+                Rights confirmed for this listing. Editing keeps your attestation.
+              </Text>
+            </View>
+          ) : null}
+
+          {submitError ? (
+            <View className="mb-4 p-3 rounded-xl border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30">
+              <Text className="text-sm text-red-700 dark:text-red-300">{submitError}</Text>
+            </View>
+          ) : null}
 
           <Button fullWidth loading={isLoading || uploading} onPress={handleSubmit}>
             Save changes

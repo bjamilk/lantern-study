@@ -9,6 +9,7 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { clientErrorMessage } from '../utils/safeError';
+import { surfaceFromRequest } from '../services/learningEvents';
 
 const router = Router();
 const DEFAULT_FLASHCARD_PAGE_SIZE = 50;
@@ -259,9 +260,11 @@ router.post(
     if (!userId) return;
 
     const { flashcardId } = req.params;
-    const { rating, expectedVersion } = req.body as {
+    const { rating, expectedVersion, reviewedAt } = req.body as {
       rating: 'again' | 'hard' | 'good' | 'easy';
       expectedVersion?: number;
+      /** Offline replay: when the grade was actually given (validated ISO 8601). */
+      reviewedAt?: string | null;
     };
 
     try {
@@ -270,6 +273,8 @@ router.post(
           expectedVersion != null && Number.isFinite(Number(expectedVersion))
             ? Number(expectedVersion)
             : undefined,
+        surface: surfaceFromRequest(req),
+        occurredAt: typeof reviewedAt === 'string' && reviewedAt ? reviewedAt : null,
       });
 
       if (!updatedFlashcard) {

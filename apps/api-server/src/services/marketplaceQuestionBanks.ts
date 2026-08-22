@@ -8,7 +8,16 @@
  */
 import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
+import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
+import {
+  getModerationService,
+  listingRightsFields,
+  normalizePublishProvenance,
+  runListingContentFilter,
+} from './moderation';
 import { logger } from '../utils/logger';
+import { recordLearningEvent } from './learningEvents';
+import type { LearningSurface } from '@lantern/shared/learning';
 
 const MAX_QUESTIONS = 1000;
 const MAX_CONTENT_BYTES = 2_000_000;
@@ -36,7 +45,26 @@ export interface PublishQuestionBankInput {
   campusId: string;
   location?: string;
   groupId?: string | null;
+  /** Academic archive reference; written on both the listing and the bank. */
+  courseId?: string | null;
   content: QuestionBankContent;
+  /**
+   * Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; publish refuses
+   * with ATTESTATION_REQUIRED_MESSAGE otherwise. Recorded with its version on
+   * both the bank and the listing.
+   */
+  attestation?: unknown;
+  /** "This pack was AI-assisted" toggle. */
+  aiAssisted?: unknown;
+  /** Up to 20 short references (≤ 200 chars each); newline text is accepted. */
+  sourcesCited?: unknown;
+}
+
+export interface UpdateQuestionBankProvenance {
+  /** Re-required on every content update (400 without it). */
+  attestation?: unknown;
+  aiAssisted?: unknown;
+  sourcesCited?: unknown;
 }
 
 export class MarketplaceQuestionBanksService {
@@ -74,6 +102,32 @@ export class MarketplaceQuestionBanksService {
     const title = String(input.title || '').trim();
     if (!title) throw new PublicError('Title is required');
     if (!input.campusId) throw new PublicError('Campus is required');
+
+    // Rights attestation is mandatory for every digital listing (400 without
+    // it); AI-assisted flag + cited sources ride along as provenance.
+    const provenance = normalizePublishProvenance({
+      attestation: input.attestation,
+      aiAssisted: input.aiAssisted,
+      sourcesCited: input.sourcesCited,
+    });
+
+    // A non-UUID courseId would 500 at the DB write; reject it as a 400 the same
+    // way every other courseId-accepting route does.
+    if (
+      input.courseId != null &&
+      input.courseId !== '' &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(input.courseId))
+    ) {
+      throw new PublicError('courseId must be a valid course id');
+    }
+
+    // Same content moderation as the listing routes: hard-block leaked-exam /
+    // malpractice titles (throws a 400), collect advisory flags to record after
+    // the listing exists. Without this, publish was a filter bypass.
+    const contentFlags = runListingContentFilter({
+      title,
+      description: input.description || '',
+    });
 
     const questionCount = this.validateContent(input.content);
 
@@ -121,10 +175,13 @@ export class MarketplaceQuestionBanksService {
         listing_kind: 'question_bank',
         quantity: null,
         status: 'active',
+        courseId: input.courseId || null,
         categorySpecificFields: {
           questionCount,
           digital: true,
         },
+        // Server-set rights state (rights_status 'attested' + timestamp/version).
+        ...listingRightsFields(true),
       },
       userId
     );
@@ -135,8 +192,13 @@ export class MarketplaceQuestionBanksService {
         listing_id: listing.id,
         source_group_id: input.groupId || null,
         published_by: userId,
+        course_id: input.courseId || null,
         question_count: questionCount,
         content: { config: input.content.config || {}, questions: input.content.questions },
+        rights_attested_at: provenance.rights_attested_at,
+        rights_attestation_version: provenance.rights_attestation_version,
+        ai_assisted: provenance.ai_assisted,
+        sources_cited: provenance.sources_cited,
       })
       .select('id, listing_id, version, question_count, source_group_id')
       .single();
@@ -144,6 +206,20 @@ export class MarketplaceQuestionBanksService {
       // Don't leave a purchasable listing with no content behind it.
       await this.db.from('marketplace_listings').delete().eq('id', listing.id);
       throw error || new Error('Failed to store question bank content');
+    }
+
+    // Advisory content flags (lecturer slides / copyrighted material wording)
+    // become an under-review content_report on the listing; never blocks publish.
+    if (contentFlags.length > 0) {
+      try {
+        await getModerationService(this.supabaseService).recordListingFlags(
+          listing.id,
+          userId,
+          contentFlags,
+        );
+      } catch (flagErr) {
+        logger.warn('Failed to record question-bank content flags', { listingId: listing.id, flagErr });
+      }
     }
 
     return { listing, bank };
@@ -238,7 +314,14 @@ export class MarketplaceQuestionBanksService {
   }
 
   /** Free banks (and re-downloads by existing owners). */
-  async downloadQuestionBank(listingId: string, userId: string) {
+  async downloadQuestionBank(
+    listingId: string,
+    userId: string,
+    options: {
+      /** 'web' | 'mobile' from x-lantern-surface (learning_events.surface); default 'api'. */
+      surface?: LearningSurface;
+    } = {}
+  ) {
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
     if (!listing || listing.listing_kind !== 'question_bank') {
       throw new PublicError('Question bank not found');
@@ -261,7 +344,21 @@ export class MarketplaceQuestionBanksService {
       throw new PublicError('Purchase this question bank to download it');
     }
 
-    return this.grantEntitlement(listingId, userId, null);
+    const granted = await this.grantEntitlement(listingId, userId, null);
+
+    // learning_events: bank_downloaded (after the entitlement + bundle landed;
+    // restore/self-heal re-grants do not go through here). Never throws.
+    await recordLearningEvent(this.supabaseService, {
+      userId,
+      eventType: 'bank_downloaded',
+      targetType: 'listing',
+      targetId: listingId,
+      listingId,
+      courseId: (listing as { course_id?: string | null }).course_id ?? null,
+      surface: options.surface ?? 'api',
+    });
+
+    return granted;
   }
 
   /**
@@ -339,8 +436,11 @@ export class MarketplaceQuestionBanksService {
   async updateQuestionBankContent(
     listingId: string,
     userId: string,
-    content: QuestionBankContent
+    content: QuestionBankContent,
+    provenanceInput: UpdateQuestionBankProvenance = {}
   ): Promise<{ version: number; questionCount: number }> {
+    // Every republish re-requires the rights attestation (400 without it).
+    const provenance = normalizePublishProvenance(provenanceInput);
     const questionCount = this.validateContent(content);
 
     const bank = await this.getBankForListing(listingId);
@@ -351,6 +451,15 @@ export class MarketplaceQuestionBanksService {
     if (listing.user_id !== userId) {
       throw new PublicError('Only the seller can update this question bank');
     }
+    if (isMarketplaceListingModerated(listing.status)) {
+      // Moderated listings are read-only for the seller (see lifecycle.ts).
+      throw Object.assign(
+        new PublicError(
+          'This listing was taken down by Lantern moderation and its question bank cannot be updated.'
+        ),
+        { statusCode: 403 }
+      );
+    }
 
     const nextVersion = Number(bank.version) + 1;
     const { data: updatedRows, error } = await this.db
@@ -360,6 +469,10 @@ export class MarketplaceQuestionBanksService {
         question_count: questionCount,
         version: nextVersion,
         updated_at: new Date().toISOString(),
+        rights_attested_at: provenance.rights_attested_at,
+        rights_attestation_version: provenance.rights_attestation_version,
+        ...(provenanceInput.aiAssisted !== undefined ? { ai_assisted: provenance.ai_assisted } : {}),
+        ...(provenanceInput.sourcesCited !== undefined ? { sources_cited: provenance.sources_cited } : {}),
       })
       .eq('listing_id', listingId)
       .eq('version', bank.version) // optimistic lock against concurrent updates
@@ -494,7 +607,11 @@ export class MarketplaceQuestionBanksService {
     listingId: string,
     userId: string,
     correct: number,
-    total: number
+    total: number,
+    options: {
+      /** 'web' | 'mobile' from x-lantern-surface (learning_events.surface); default 'api'. */
+      surface?: LearningSurface;
+    } = {}
   ): Promise<{
     bestScorePct: number;
     bestCorrect: number;
@@ -530,13 +647,31 @@ export class MarketplaceQuestionBanksService {
     if (error) throw error;
 
     const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
-    return {
+    const result = {
       bestScorePct: Number(row?.best_score_pct ?? 0),
       bestCorrect: Number(row?.best_correct ?? 0),
       bestTotal: Number(row?.best_total ?? totalCount),
       attempts: Number(row?.attempts ?? 1),
       improved: !!row?.improved,
     };
+
+    // learning_events: bank_score_recorded — an engagement marker. count =
+    // questions in the attempt, attempt_no = the student's attempt number;
+    // the score itself lives in marketplace_question_bank_scores (join on
+    // listing_id + user_id) and per-question correctness in the session's
+    // question_answered rows (listing_id set from config.bundleId). Never throws.
+    await recordLearningEvent(this.supabaseService, {
+      userId,
+      eventType: 'bank_score_recorded',
+      targetType: 'listing',
+      targetId: listingId,
+      listingId,
+      count: totalCount,
+      attemptNo: Number.isFinite(result.attempts) ? result.attempts : null,
+      surface: options.surface ?? 'api',
+    });
+
+    return result;
   }
 
   /** Top scores for a bank, plus the caller's own standing. */

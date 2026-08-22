@@ -25,6 +25,7 @@ import {
   resetDeckStatistics,
 } from '../../services/api';
 import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
+import { CoursePicker } from '../../components/CoursePicker';
 import { confirmSheet } from '../../stores/confirmStore';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import CollaboratorsModal from '../../components/CollaboratorsModal';
@@ -71,9 +72,12 @@ function PracticeButton({
   );
 }
 
+const MAX_PREVIEW_TAGS = 4;
+
 function FlashcardPreview({ card, onPress }: { card: Flashcard; onPress: () => void }) {
   const { front } = getCardDisplayText(card);
   const status = getCardStatus(card);
+  const tags = Array.isArray(card.tags) ? card.tags.filter(Boolean) : [];
 
   // The row is a single Pressable rather than a Pressable wrapping a Card. The
   // nested version did not register taps on Android at all — the press never
@@ -96,6 +100,18 @@ function FlashcardPreview({ card, onPress }: { card: Flashcard; onPress: () => v
           </Text>
         </View>
       </View>
+      {tags.length > 0 ? (
+        <View className="flex-row flex-wrap items-center gap-1 mt-1.5" accessibilityLabel={`Tags: ${tags.join(', ')}`}>
+          {tags.slice(0, MAX_PREVIEW_TAGS).map((tag) => (
+            <View key={tag} className="px-1.5 py-0.5 rounded-full bg-lantern-background-secondary">
+              <Text className="text-[10px] text-lantern-text-secondary">#{tag}</Text>
+            </View>
+          ))}
+          {tags.length > MAX_PREVIEW_TAGS ? (
+            <Text className="text-[10px] text-lantern-text-tertiary">+{tags.length - MAX_PREVIEW_TAGS}</Text>
+          ) : null}
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -130,7 +146,10 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const [editDeckOpen, setEditDeckOpen] = useState(false);
   const [deckDraftName, setDeckDraftName] = useState('');
   const [deckDraftDescription, setDeckDraftDescription] = useState('');
+  const [deckDraftCourseId, setDeckDraftCourseId] = useState<string | null>(null);
   const [savingDeck, setSavingDeck] = useState(false);
+  /** "Move to course…" from the manage sheet (CoursePicker in controlled mode). */
+  const [courseMoveOpen, setCourseMoveOpen] = useState(false);
 
   const deck = useMemo(() => decks.find((d) => d.id === deckId), [decks, deckId]);
   const cards = flashcards[deckId] ?? [];
@@ -208,8 +227,12 @@ export function DeckDetailScreen({ navigation, route }: Props) {
               imageUrl: data.imageUrl ?? null,
             };
 
+    // Tags ride along for every card type; the modal always sends an array so
+    // clearing the field on edit actually clears them (PUT accepts `tags`).
+    const tags = data.tags;
+
     if (editingCard) {
-      await updateFlashcard(editingCard.id, deckId, payload, user.id);
+      await updateFlashcard(editingCard.id, deckId, { ...payload, ...(tags ? { tags } : {}) }, user.id);
       setEditingCard(null);
       return;
     }
@@ -222,7 +245,19 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       clozeText: payload.clozeText ?? undefined,
       imageUrl: ('imageUrl' in payload ? payload.imageUrl : undefined) ?? undefined,
       occlusionData: 'occlusionData' in payload ? payload.occlusionData : undefined,
+      tags,
     });
+  };
+
+  const handleMoveToCourse = async (course: { id: string } | null) => {
+    if (!user?.id || !deckId) return;
+    try {
+      await updateDeck(deckId, { courseId: course?.id ?? null }, user.id);
+    } catch (e) {
+      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setCourseMoveOpen(false);
+    }
   };
 
   const openCreateCard = () => {
@@ -325,6 +360,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const openEditDeck = () => {
     setDeckDraftName(deck?.name ?? deckName);
     setDeckDraftDescription(deck?.description ?? '');
+    setDeckDraftCourseId(deck?.course_id ?? null);
     setEditDeckOpen(true);
   };
 
@@ -334,7 +370,16 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     if (!name) return;
     setSavingDeck(true);
     try {
-      await updateDeck(deckId, { name, description: deckDraftDescription.trim() }, user.id);
+      const courseChanged = (deck?.course_id ?? null) !== deckDraftCourseId;
+      await updateDeck(
+        deckId,
+        {
+          name,
+          description: deckDraftDescription.trim(),
+          ...(courseChanged ? { courseId: deckDraftCourseId } : {}),
+        },
+        user.id
+      );
       setEditDeckOpen(false);
     } catch (e) {
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
@@ -462,6 +507,14 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       onPress: () => setCollaboratorsOpen(true),
     },
     { section: 'Deck', label: 'Edit deck', icon: 'pencil-outline', onPress: openEditDeck },
+    {
+      section: 'Deck',
+      label: 'Move to course…',
+      icon: 'school-outline',
+      hint: deck?.course_id ? 'Filed under a course — pick another or clear it' : 'File this deck under a course',
+      // Let the sheet dismiss before the course picker mounts.
+      onPress: () => setTimeout(() => setCourseMoveOpen(true), 50),
+    },
     {
       section: 'Deck',
       label: 'Reset progress',
@@ -674,6 +727,15 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         onClose={() => setManageOpen(false)}
       />
 
+      <CoursePicker
+        visible={courseMoveOpen}
+        onClose={() => setCourseMoveOpen(false)}
+        value={deck?.course_id ?? null}
+        onChange={(course) => void handleMoveToCourse(course)}
+        title="Move to course"
+        placeholder="Choose a course"
+      />
+
       <Modal transparent visible={editDeckOpen} animationType="fade" onRequestClose={() => setEditDeckOpen(false)}>
         <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setEditDeckOpen(false)}>
           <Pressable onPress={(e) => e.stopPropagation?.()}>
@@ -694,8 +756,17 @@ export function DeckDetailScreen({ navigation, route }: Props) {
                 placeholder="Optional"
                 placeholderTextColor="#94a3b8"
                 multiline
-                className="border border-lantern-border rounded-xl px-3 py-2 mb-4 text-lantern-text"
+                className="border border-lantern-border rounded-xl px-3 py-2 mb-3 text-lantern-text"
               />
+              <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Course (optional)</Text>
+              <View className="mb-4">
+                <CoursePicker
+                  value={deckDraftCourseId}
+                  onChange={course => setDeckDraftCourseId(course?.id ?? null)}
+                  placeholder="File this deck under a course"
+                  title="Course for this deck"
+                />
+              </View>
               <View className="flex-row gap-2">
                 <Button variant="secondary" className="flex-1" onPress={() => setEditDeckOpen(false)}>
                   Cancel

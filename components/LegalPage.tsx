@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 import {
+  LEGAL_DOCUMENT_DESCRIPTIONS,
+  LEGAL_DOCUMENT_IDS,
   LEGAL_DOCUMENT_TITLES,
   LEGAL_PATHS,
   getLegalDocumentContent,
@@ -9,11 +11,11 @@ import { MarkdownRenderer } from '@lantern/shared';
 import { usePageSeo } from '../hooks/usePageSeo';
 import { openCookiePreferenceCenter } from './CookieNoticeBanner';
 
-const PATH_TO_DOC: Record<string, LegalDocumentId> = {
-  [LEGAL_PATHS.privacy]: 'privacy',
-  [LEGAL_PATHS.terms]: 'terms',
-  [LEGAL_PATHS.cookies]: 'cookies',
-};
+// Every legal document the shared package knows about is routable here
+// (index.tsx mounts one <Route> per LEGAL_PATHS entry).
+const PATH_TO_DOC: Record<string, LegalDocumentId> = Object.fromEntries(
+  LEGAL_DOCUMENT_IDS.map((id) => [LEGAL_PATHS[id], id]),
+) as Record<string, LegalDocumentId>;
 
 export function getLegalDocFromPathname(pathname: string): LegalDocumentId | null {
   const normalized = pathname.replace(/\/$/, '') || '/';
@@ -24,12 +26,16 @@ interface LegalPageProps {
   document: LegalDocumentId;
 }
 
-const LEGAL_DESCRIPTIONS: Record<LegalDocumentId, string> = {
-  privacy: 'How Lantern Study collects, uses, and protects your personal data.',
-  terms: 'Terms of Service for using Lantern Study flashcards, tests, groups, and marketplace.',
-  cookies:
-    'Cookie Policy and Preference Center for Lantern Study — categories, choices, and what we use today.',
+/** Short nav labels; full titles stay in LEGAL_DOCUMENT_TITLES. */
+const LEGAL_NAV_LABELS: Record<LegalDocumentId, string> = {
+  privacy: 'Privacy',
+  terms: 'Terms',
+  cookies: 'Cookies',
+  prohibited: 'Prohibited content',
+  'seller-terms': 'Seller terms',
 };
+
+const LEGAL_DESCRIPTIONS: Record<LegalDocumentId, string> = LEGAL_DOCUMENT_DESCRIPTIONS;
 
 export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) => {
   const title = LEGAL_DOCUMENT_TITLES[documentId];
@@ -53,16 +59,17 @@ export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) =>
           <a href="/" className="text-sm font-medium text-lantern-primary hover:underline">
             ← Back to Lantern Study
           </a>
-          <nav className="flex gap-3 text-xs sm:text-sm">
-            <a href={LEGAL_PATHS.privacy} className={documentId === 'privacy' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
-              Privacy
-            </a>
-            <a href={LEGAL_PATHS.terms} className={documentId === 'terms' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
-              Terms
-            </a>
-            <a href={LEGAL_PATHS.cookies} className={documentId === 'cookies' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
-              Cookies
-            </a>
+          <nav className="flex flex-wrap justify-end gap-x-3 gap-y-1 text-xs sm:text-sm" aria-label="Legal documents">
+            {LEGAL_DOCUMENT_IDS.map((id) => (
+              <a
+                key={id}
+                href={LEGAL_PATHS[id]}
+                aria-current={documentId === id ? 'page' : undefined}
+                className={documentId === id ? 'font-semibold' : 'opacity-70 hover:opacity-100'}
+              >
+                {LEGAL_NAV_LABELS[id]}
+              </a>
+            ))}
           </nav>
         </div>
       </header>

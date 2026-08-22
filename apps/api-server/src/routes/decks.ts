@@ -10,6 +10,7 @@ import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import { COURSE_FILTER_INVALID_MESSAGE, courseFilterKey, parseCourseFilter } from '../services/academicCourses';
 
 const router = Router();
 const DEFAULT_DECK_PAGE_SIZE = 20;
@@ -34,17 +35,23 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { page = 1, limit, includeShared, responseProfile } = req.query;
+    const { page = 1, limit, includeShared, responseProfile, courseId } = req.query;
     const parsedPage = Math.max(1, parseInt(page as string, 10) || 1);
     const requestedLimit = parseInt((limit as string) || `${DEFAULT_DECK_PAGE_SIZE}`, 10);
     const parsedLimit = Math.min(MAX_DECK_PAGE_SIZE, Math.max(1, requestedLimit || DEFAULT_DECK_PAGE_SIZE));
     const profile = resolveResponseProfile(responseProfile);
     const includeSharedFlag = includeShared === 'true';
+    // ?courseId= — uuid, the literal "null" (unfiled) or absent; anything else is a 400.
+    const courseFilter = parseCourseFilter(courseId);
+    if (courseFilter.kind === 'invalid') {
+      return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
+    }
+    const courseKey = courseFilterKey(courseFilter);
 
-    logger.debug('Fetching decks', { page: parsedPage, limit: parsedLimit, userId, includeShared: includeSharedFlag, profile });
+    logger.debug('Fetching decks', { page: parsedPage, limit: parsedLimit, userId, includeShared: includeSharedFlag, profile, courseId: courseKey });
 
     // v2 busts caches that previously listed every globally shared deck.
-    const cacheKey = `decks:${userId}:scope:${includeSharedFlag ? "owned_collab" : "owned"}:${parsedPage}:${parsedLimit}:profile:${profile}:v2`;
+    const cacheKey = `decks:${userId}:scope:${includeSharedFlag ? "owned_collab" : "owned"}:${parsedPage}:${parsedLimit}:profile:${profile}:course:${courseKey}:v2`;
     let decks = await cacheService.get(cacheKey) as any[];
 
     if (!decks) {
@@ -52,6 +59,7 @@ router.get(
         page: parsedPage,
         limit: parsedLimit,
         responseProfile: profile,
+        courseFilter,
       });
       await cacheService.set(cacheKey, decks, 300);
     }
@@ -95,8 +103,8 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { name, description, isShared } = req.body;
-    const deck = await supabaseService.createDeck({ name, description, isShared }, userId);
+    const { name, description, isShared, courseId } = req.body;
+    const deck = await supabaseService.createDeck({ name, description, isShared, courseId }, userId);
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
@@ -121,8 +129,8 @@ router.put(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const { name, description, isShared } = req.body;
-    const updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared }, userId);
+    const { name, description, isShared, courseId } = req.body;
+    const updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared, courseId }, userId);
 
     if (!updatedDeck) {
       return res.status(404).json({ success: false, error: 'Deck not found or access denied' });

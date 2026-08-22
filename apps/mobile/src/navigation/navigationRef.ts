@@ -74,3 +74,20 @@ export function navigateToTestTaking(params: {
     })
   );
 }
+
+/** Onboarding → the freshly generated starter deck (Study tab → DeckDetail). */
+export function navigateToDeckDetail(params: { deckId: string; deckName?: string }) {
+  if (!navigationRef.isReady()) return;
+  navigationRef.dispatch(
+    CommonActions.navigate({
+      name: 'Main',
+      params: {
+        screen: 'StudyTab',
+        params: {
+          screen: 'DeckDetail',
+          params,
+        },
+      },
+    })
+  );
+}

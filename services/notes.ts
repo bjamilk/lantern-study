@@ -307,12 +307,15 @@ export async function deleteNoteFolder(folderId: string): Promise<void> {
 export async function fetchNotes(options?: {
   folderId?: string;
   groupId?: string;
+  /** Academic archive filter (`GET /notes?courseId`). */
+  courseId?: string | null;
   /** When set, only active (`false`) or archived (`true`) notes. Omit for both. */
   archived?: boolean;
 }): Promise<StudyNote[]> {
   const params = new URLSearchParams();
   if (options?.folderId) params.set('folderId', options.folderId);
   if (options?.groupId) params.set('groupId', options.groupId);
+  if (options?.courseId) params.set('courseId', options.courseId);
   if (options?.archived === true) params.set('archived', 'true');
   else if (options?.archived === false) params.set('archived', 'false');
   const qs = params.toString();
@@ -333,6 +336,7 @@ export async function createNote(payload: Partial<StudyNote>): Promise<StudyNote
       body: payload.body,
       folderId: payload.folderId,
       groupId: payload.groupId,
+      ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
       sourceType: payload.sourceType,
       youtubeUrl: payload.youtubeUrl,
       youtubeVideoId: payload.youtubeVideoId,

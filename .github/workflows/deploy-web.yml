@@ -96,3 +96,15 @@ jobs:
           done
           echo "::error::Live site never served $expected. Cloudflare may still be propagating, or the deploy did not take."
           exit 1
+
+      # Tell IndexNow-participating engines (Bing, Yandex, …) the homepage and
+      # key landing pages changed. The IndexNow key is a PUBLIC constant
+      # (scripts/seo/constants.mjs) served at /lanternstudyindex2026.txt, so no
+      # secret is needed; SITE_URL is optional and defaults to lanternstudy.com.
+      # Best-effort on purpose: an indexing hiccup must never fail a deploy
+      # that is already live. Google is notified via Search Console sitemaps.
+      - name: Notify search engines (IndexNow)
+        continue-on-error: true
+        env:
+          SITE_URL: https://lanternstudy.com
+        run: npm run seo:notify

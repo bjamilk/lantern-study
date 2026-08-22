@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
-import { User, GroupPermissions } from '../types';
+import { Course, User, GroupPermissions } from '../types';
+import { CoursePicker } from './academic/CoursePicker';
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -40,6 +41,7 @@ interface CreateGroupScreenProps {
     avatarFile: File | null;
     memberIds: string[];
     permissions: GroupPermissions;
+    courseId?: string | null;
   }) => Promise<CreatedGroupSummary | void>;
   onEnterGroup: (group: CreatedGroupSummary) => void;
   onBack: () => void;
@@ -77,6 +79,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   const [groupDescription, setGroupDescription] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [course, setCourse] = useState<Course | null>(null);
   const [permissions, setPermissions] = useState<GroupPermissions>({
     canSendMessages: true,
     canAddMembers: true,
@@ -154,6 +157,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         avatarFile,
         memberIds: selectedUserIds,
         permissions,
+        courseId: course?.id ?? null,
       });
       if (result?.inviteId) {
         setCreatedGroup(result);
@@ -378,6 +382,17 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             placeholder="Optional: Add group description"
             rows={2}
             className="w-full max-w-sm p-2 text-center text-sm border rounded-md focus:border-lantern-primary focus:outline-none bg-lantern-surface dark:bg-lantern-surface-secondary dark:text-lantern-text dark:border-lantern-border"
+          />
+        </div>
+
+        <div className="max-w-sm mx-auto p-4 bg-lantern-surface rounded-lg shadow-sm">
+          <CoursePicker
+            id="create-group-course"
+            label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+            value={course}
+            onChange={setCourse}
+            placeholder="Which course does this group study?"
+            hint="Tests and questions from this group get filed under the course."
           />
         </div>
 

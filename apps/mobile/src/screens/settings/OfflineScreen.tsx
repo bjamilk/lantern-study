@@ -18,9 +18,10 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useOfflineStore, OfflineTest, PendingResult, DownloadOptions } from '../../stores/offlineStore';
+import { matchesCourseFilter } from '../../utils/libraryArchive';
 import { useTestStore } from '../../stores/testStore';
 import { offlineQuestionsToTestQuestions } from '../../utils/questionHelpers';
 import { useFlashcardStore } from '../../stores/flashcardStore';
@@ -43,6 +44,17 @@ const QUESTION_TYPES = [
 
 export default function OfflineScreen() {
   const navigation = useNavigation<any>();
+  // Library tree deep link: { courseId, courseLabel } — courseId is a uuid or
+  // the literal 'null' (bundles not filed under any course).
+  const route = useRoute<any>();
+  const routeCourseId: string | null | undefined = route.params?.courseId;
+  const routeCourseLabel: string | undefined = route.params?.courseLabel;
+  const [courseFilter, setCourseFilter] = useState<{ id: string; label: string } | null>(
+    routeCourseId ? { id: routeCourseId, label: routeCourseLabel || 'Course' } : null
+  );
+  useEffect(() => {
+    if (routeCourseId) setCourseFilter({ id: routeCourseId, label: routeCourseLabel || 'Course' });
+  }, [routeCourseId, routeCourseLabel]);
   const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
   const [restoringBanks, setRestoringBanks] = useState(false);
@@ -98,8 +110,20 @@ export default function OfflineScreen() {
 
   // flashcard offline data
   const { decks, offlineDeckIds, unmarkDeckOffline } = useFlashcardStore();
-  
+
   const { groups } = useGroupStore();
+
+  // Course filter from the Library tree. Purchased packs (qbank-*) are plain
+  // bundles carrying the listing's course, so they filter the same way.
+  const visibleTests = courseFilter
+    ? downloadedTests.filter(t => matchesCourseFilter(t.courseId, courseFilter.id))
+    : downloadedTests;
+  const visibleOfflineDeckIds = courseFilter
+    ? offlineDeckIds.filter(id => {
+        const deck = decks.find(d => d.id === id);
+        return deck ? matchesCourseFilter(deck.course_id, courseFilter.id) : false;
+      })
+    : offlineDeckIds;
 
   useEffect(() => {
     loadOfflineData(userId || undefined);
@@ -357,6 +381,8 @@ export default function OfflineScreen() {
         timeLimit: 0,
         shuffleQuestions: true,
         includeExplanations: true,
+        // File the bundle under the group's course so it shows in the Library tree.
+        courseId: (group.courseId ?? group.course_id ?? null) as string | null,
       });
       setShowDownloadModal(true);
     };
@@ -463,6 +489,40 @@ export default function OfflineScreen() {
           )}
         </View>
 
+        {/* Library course filter (deep link from the Library tree) */}
+        {courseFilter ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 999,
+                backgroundColor: colors.primary + '20',
+                maxWidth: '70%',
+              }}
+            >
+              <Ionicons name="school-outline" size={14} color={colors.primary} />
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
+                {courseFilter.label}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setCourseFilter(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Clear course filter ${courseFilter.label}`}
+              >
+                <Ionicons name="close-circle" size={16} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+              {visibleTests.length} of {downloadedTests.length} bundles
+            </Text>
+          </View>
+        ) : null}
+
         {/* Tabs */}
         <View style={[styles.tabs, { backgroundColor: colors.cardSecondary }]}>
           <TouchableOpacity
@@ -512,10 +572,10 @@ export default function OfflineScreen() {
         {selectedTab === 'downloads' ? (
           <View style={styles.section}>
             {/* flashcard decks downloaded offline */}
-            {offlineDeckIds.length > 0 && (
+            {visibleOfflineDeckIds.length > 0 && (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Downloaded Decks</Text>
-                {offlineDeckIds.map(id => {
+                {visibleOfflineDeckIds.map(id => {
                   const deck = decks.find(d => d.id === id);
                   if (!deck) return null;
                   return (
@@ -541,19 +601,23 @@ export default function OfflineScreen() {
                 {restoringBanks ? 'Restoring…' : 'Restore marketplace purchases'}
               </Text>
             </TouchableOpacity>
-            {downloadedTests.length > 0 ? (
+            {visibleTests.length > 0 ? (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Downloaded Tests</Text>
-                {downloadedTests.map(test => (
+                {visibleTests.map(test => (
                   <DownloadedTestItem key={test.id} test={test} />
                 ))}
               </>
             ) : (
               <View style={styles.emptyState}>
                 <Ionicons name="cloud-download" size={48} color={colors.textTertiary} />
-                <Text style={[styles.emptyTitle, { color: colors.text }]}>No Downloads Yet</Text>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  {courseFilter && downloadedTests.length > 0 ? `Nothing filed under ${courseFilter.label}` : 'No Downloads Yet'}
+                </Text>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                  Download tests from your study groups to access them offline
+                  {courseFilter && downloadedTests.length > 0
+                    ? 'Bundles downloaded from a group linked to this course, and purchased packs for it, appear here.'
+                    : 'Download tests from your study groups to access them offline'}
                 </Text>
               </View>
             )}

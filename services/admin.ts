@@ -1,4 +1,11 @@
-import { getApiBaseUrl } from '@lantern/shared';
+import {
+  getApiBaseUrl,
+  type ContentReportTargetSummary,
+  type ContentReportTargetType,
+  type ListingAppealStatus,
+  type ListingRightsStatus,
+  type ModerationStrike,
+} from '@lantern/shared';
 import { getAuthHeaders } from './supabase';
 
 const API_BASE_URL = getApiBaseUrl();
@@ -81,18 +88,45 @@ export interface AdminMarketplaceOrder {
   transaction?: { id: string; status: string; amount?: number };
 }
 
+/**
+ * GET /admin/reports row (content_reports, Phase 1 · E). `target` is the
+ * per-type summary the API resolves; listing targets also keep the legacy
+ * `listing` / `listing_id` aliases so older rows keep rendering.
+ */
 export interface AdminReport {
   id: string;
-  listing_id: string;
+  listing_id?: string | null;
   reporter_id: string;
+  target_type?: ContentReportTargetType;
+  target_id?: string;
   reason: string;
-  details?: string;
+  details?: string | null;
   status: string;
   created_at: string;
-  admin_note?: string;
-  resolved_at?: string;
-  listing?: { id: string; title: string; status: string; user_id?: string };
-  reporter?: { id: string; name?: string };
+  admin_note?: string | null;
+  resolved_at?: string | null;
+  legacy_source?: string | null;
+  listing?: { id: string; title: string; status: string; user_id?: string } | null;
+  reporter?: { id: string; name?: string | null; username?: string | null } | null;
+  target?: ContentReportTargetSummary;
+}
+
+export type AdminReportAction = 'dismiss' | 'under_review' | 'warn' | 'remove_content' | 'strike';
+/** Pre-E action names the console used; the API still maps them. */
+export type LegacyAdminReportAction = 'remove_listing' | 'warn_seller';
+
+export interface AdminAppeal {
+  id: string;
+  title: string;
+  status: string;
+  user_id: string;
+  rights_status?: ListingRightsStatus;
+  takedown_reason?: string | null;
+  takedown_at?: string | null;
+  appeal_status: ListingAppealStatus;
+  appeal_note?: string | null;
+  appealed_at?: string | null;
+  seller?: { id: string; name?: string | null; username?: string | null } | null;
 }
 
 export interface AdminPagination {
@@ -246,15 +280,36 @@ export async function fetchAdminUsers(params?: { search?: string; page?: number;
   return { data: response.data || [], pagination: response.pagination };
 }
 
+/**
+ * PATCH /admin/users/:id/status. 'suspended' needs `until` (ISO, ≤ 365 days
+ * ahead) and sets settings.suspended_until; 'active' clears BOTH the ban and
+ * any suspension.
+ */
 export async function updateAdminUserStatus(
   userId: string,
-  status: 'active' | 'banned',
-  reason?: string
+  status: 'active' | 'banned' | 'suspended',
+  reason?: string,
+  until?: string
 ): Promise<void> {
   await adminRequest(`/users/${userId}/status`, {
     method: 'PATCH',
-    body: JSON.stringify({ status, reason }),
+    body: JSON.stringify({ status, reason, ...(until ? { until } : {}) }),
   });
+}
+
+/** POST /admin/users/:id/strikes — hand-issued strike (3 active → 14-day auto-suspension). */
+export async function addAdminStrike(
+  userId: string,
+  body: { reason: string; severity?: 1 | 2 | 3; reportId?: string }
+): Promise<{ strike: ModerationStrike; activeStrikes: number; suspendedUntil: string | null }> {
+  const response = await adminRequest<{
+    success: boolean;
+    data: { strike: ModerationStrike; activeStrikes: number; suspendedUntil: string | null };
+  }>(`/users/${userId}/strikes`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return response.data;
 }
 
 export async function updateAdminUserRole(
@@ -337,12 +392,18 @@ export async function resolveAdminMarketplaceDispute(
   return response.data;
 }
 
-export async function fetchAdminReports(params?: { status?: string; page?: number; limit?: number }): Promise<{
+export async function fetchAdminReports(params?: {
+  status?: string;
+  targetType?: ContentReportTargetType | string;
+  page?: number;
+  limit?: number;
+}): Promise<{
   data: AdminReport[];
   pagination?: AdminPagination;
 }> {
   const query = new URLSearchParams();
   if (params?.status) query.set('status', params.status);
+  if (params?.targetType) query.set('targetType', params.targetType);
   if (params?.page) query.set('page', String(params.page));
   if (params?.limit) query.set('limit', String(params.limit));
 
@@ -355,15 +416,47 @@ export async function fetchAdminReports(params?: { status?: string; page?: numbe
   return { data: response.data || [], pagination: response.pagination };
 }
 
+/**
+ * PUT /admin/reports/:id. `strike` takes an optional severity (1–3, default 1);
+ * `remove_content` only works for listing / question_bank / note / deck / group
+ * targets (the API answers 400 "use the dedicated tool" otherwise).
+ */
 export async function resolveAdminReport(
   reportId: string,
-  action: 'dismiss' | 'remove_listing' | 'warn_seller',
-  adminNote?: string
-): Promise<void> {
-  await adminRequest(`/reports/${reportId}`, {
+  action: AdminReportAction | LegacyAdminReportAction,
+  note?: string,
+  severity?: 1 | 2 | 3
+): Promise<{ action: string; status: string; strike?: ModerationStrike | null; suspendedUntil?: string | null } | undefined> {
+  const response = await adminRequest<{
+    success: boolean;
+    data?: { action: string; status: string; strike?: ModerationStrike | null; suspendedUntil?: string | null };
+  }>(`/reports/${reportId}`, {
     method: 'PUT',
-    body: JSON.stringify({ action, adminNote }),
+    body: JSON.stringify({ action, note, ...(severity ? { severity } : {}) }),
   });
+  return response?.data;
+}
+
+/** GET /admin/appeals — listings whose seller appealed a takedown. */
+export async function fetchAdminAppeals(): Promise<AdminAppeal[]> {
+  const response = await adminRequest<{ success: boolean; data: AdminAppeal[] }>('/appeals');
+  return response.data || [];
+}
+
+/** PUT /admin/marketplace/listings/:id/appeal — reversed restores the listing; upheld keeps it down. */
+export async function decideListingAppeal(
+  listingId: string,
+  decision: 'upheld' | 'reversed',
+  note?: string
+): Promise<{ id: string; status: string; appeal_status: ListingAppealStatus } | undefined> {
+  const response = await adminRequest<{
+    success: boolean;
+    data?: { id: string; status: string; appeal_status: ListingAppealStatus };
+  }>(`/marketplace/listings/${encodeURIComponent(listingId)}/appeal`, {
+    method: 'PUT',
+    body: JSON.stringify({ decision, ...(note ? { note } : {}) }),
+  });
+  return response?.data;
 }
 
 export async function fetchAdminAIAnalytics(days = 7): Promise<{
@@ -495,6 +588,10 @@ export interface AdminUserDetail {
   created_at: string;
   is_banned?: boolean;
   is_platform_admin?: boolean;
+  /** settings.suspended_until when it lies in the future; null otherwise. */
+  suspended_until?: string | null;
+  /** Unexpired moderation strikes (3 → automatic 14-day suspension). */
+  active_strikes?: number;
   counts?: { groups: number; listings: number; decks: number; aiEvents7d: number };
   aiQuota?: Array<{ feature: string; used: number; limit: number; resetsAt: string }>;
 }

@@ -218,6 +218,15 @@ export const useAuthStore = create<AuthState>()(
               username: profile.username || undefined,
               firstName: profile.firstName || undefined,
               lastName: profile.lastName || undefined,
+              // Academic identity (Phase 1): null = known-missing, so the
+              // profile-setup step / dashboard banner can prompt.
+              institutionId: profile.institutionId ?? null,
+              institution: profile.institution ?? null,
+              faculty: profile.faculty ?? null,
+              programme: profile.programme ?? null,
+              studyLevel: profile.studyLevel ?? null,
+              entryYear: profile.entryYear ?? null,
+              expectedGraduationYear: profile.expectedGraduationYear ?? null,
             } : {
               id: authUser.id,
               name: displayNameFromMeta(authUser.user_metadata, email),
@@ -359,6 +368,16 @@ export const useAuthStore = create<AuthState>()(
                 username: profile.username || currentUser.username,
                 firstName: profile.firstName || currentUser.firstName,
                 lastName: profile.lastName || currentUser.lastName,
+                institutionId: profile.institutionId !== undefined ? profile.institutionId : (currentUser.institutionId ?? null),
+                institution: profile.institution !== undefined ? profile.institution : (currentUser.institution ?? null),
+                faculty: profile.faculty !== undefined ? profile.faculty : (currentUser.faculty ?? null),
+                programme: profile.programme !== undefined ? profile.programme : (currentUser.programme ?? null),
+                studyLevel: profile.studyLevel !== undefined ? profile.studyLevel : (currentUser.studyLevel ?? null),
+                entryYear: profile.entryYear !== undefined ? profile.entryYear : (currentUser.entryYear ?? null),
+                expectedGraduationYear:
+                  profile.expectedGraduationYear !== undefined
+                    ? profile.expectedGraduationYear
+                    : (currentUser.expectedGraduationYear ?? null),
                 isAdmin,
               }
             });
@@ -492,6 +511,15 @@ export const useAuthStore = create<AuthState>()(
               username: profile.username || undefined,
               firstName: profile.firstName || undefined,
               lastName: profile.lastName || undefined,
+              // Academic identity (Phase 1): null = known-missing, so the
+              // profile-setup step / dashboard banner can prompt.
+              institutionId: profile.institutionId ?? null,
+              institution: profile.institution ?? null,
+              faculty: profile.faculty ?? null,
+              programme: profile.programme ?? null,
+              studyLevel: profile.studyLevel ?? null,
+              entryYear: profile.entryYear ?? null,
+              expectedGraduationYear: profile.expectedGraduationYear ?? null,
             } : {
               id: session.user.id,
               name: displayNameFromMeta(

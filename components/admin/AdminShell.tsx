@@ -7,6 +7,7 @@ import {
   AdminMarketplaceOrder,
   AdminPagination,
   AdminReport,
+  AdminReportAction,
   AdminStats,
   AdminUser,
   AdminAnalytics,
@@ -46,7 +47,7 @@ import { AdminMarketplace, AdminMarketplaceView } from './AdminMarketplace';
 import { AdminJobs } from './AdminJobs';
 import { AdminOverview } from './AdminOverview';
 import { AdminProductFeatures } from './AdminProductFeatures';
-import { AdminReports } from './AdminReports';
+import { AdminReports, type AdminReportStatusFilter, type AdminReportTargetFilter } from './AdminReports';
 import { AdminUsers } from './AdminUsers';
 import { ConfirmDialog } from './ConfirmDialog';
 import { UserDetailDrawer } from './UserDetailDrawer';
@@ -118,7 +119,8 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
 
   const [reports, setReports] = useState<AdminReport[]>([]);
   const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
-  const [reportStatusFilter, setReportStatusFilter] = useState<'open' | 'resolved' | 'dismissed'>('open');
+  const [reportStatusFilter, setReportStatusFilter] = useState<AdminReportStatusFilter>('open');
+  const [reportTargetFilter, setReportTargetFilter] = useState<AdminReportTargetFilter>('all');
   const [reportsPagination, setReportsPagination] = useState<AdminPagination | null>(null);
   const [reportsPage, setReportsPage] = useState(1);
   const [reportsLimit] = useState(20);
@@ -276,6 +278,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
       await runTabLoad('reports', async () => {
         const reportsData = await fetchAdminReports({
           status: reportStatusFilter,
+          targetType: reportTargetFilter === 'all' ? undefined : reportTargetFilter,
           page: reportsPage,
           limit: reportsLimit,
         });
@@ -283,7 +286,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
         setReportsPagination(reportsData.pagination || null);
       }, force);
     },
-    [reportStatusFilter, reportsLimit, reportsPage, runTabLoad]
+    [reportStatusFilter, reportTargetFilter, reportsLimit, reportsPage, runTabLoad]
   );
 
   const loadAI = useCallback(
@@ -397,7 +400,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     if (activeTab !== 'reports') return;
     setLoadedTabs((prev) => ({ ...prev, reports: false }));
     loadReports();
-  }, [reportStatusFilter, reportsPage]);
+  }, [reportStatusFilter, reportTargetFilter, reportsPage]);
 
   useEffect(() => {
     if (activeTab !== 'ai') return;
@@ -548,13 +551,31 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     }
   };
 
-  const onResolveReport = async (reportId: string, action: 'dismiss' | 'remove_listing' | 'warn_seller') => {
+  const onResolveReport = async (reportId: string, action: AdminReportAction, severity?: 1 | 2 | 3) => {
     const key = `report:${reportId}:${action}`;
     setRowLoading(key, true);
     try {
-      await resolveAdminReport(reportId, action, reportNotes[reportId]?.trim() || undefined);
-      setReports((prev) => prev.filter((r) => r.id !== reportId));
-      setSuccess('Report action applied successfully.');
+      const result = await resolveAdminReport(reportId, action, reportNotes[reportId]?.trim() || undefined, severity);
+      if (action === 'under_review') {
+        // Still open: keep the row, just reflect the new status.
+        setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, status: 'under_review' } : r)));
+        setSuccess('Report marked under review.');
+      } else {
+        setReports((prev) => prev.filter((r) => r.id !== reportId));
+        if (action === 'strike') {
+          setSuccess(
+            result?.suspendedUntil
+              ? `Strike issued — owner auto-suspended until ${new Date(result.suspendedUntil).toLocaleDateString()}.`
+              : 'Strike issued and report resolved.'
+          );
+        } else if (action === 'remove_content') {
+          setSuccess('Content removed and report resolved.');
+        } else if (action === 'warn') {
+          setSuccess('Owner warned and report resolved.');
+        } else {
+          setSuccess('Report dismissed.');
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to resolve report');
     } finally {
@@ -715,6 +736,8 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           onResolveDispute={onResolveDispute}
           disputedOrdersTotal={disputedOrdersTotal}
           actionLoading={actionLoading}
+          onSuccess={setSuccess}
+          onError={setError}
         />
       </TabPanel>
 
@@ -727,14 +750,23 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           reports={reports}
           pagination={reportsPagination}
           statusFilter={reportStatusFilter}
+          targetTypeFilter={reportTargetFilter}
           reportNotes={reportNotes}
           actionLoading={actionLoading}
-          onStatusFilterChange={setReportStatusFilter}
+          onStatusFilterChange={(value) => {
+            setReportsPage(1);
+            setReportStatusFilter(value);
+          }}
+          onTargetTypeFilterChange={(value) => {
+            setReportsPage(1);
+            setReportTargetFilter(value);
+          }}
           onNoteChange={(id, note) => setReportNotes((prev) => ({ ...prev, [id]: note }))}
           onPrev={() => setReportsPage((p) => Math.max(1, p - 1))}
           onNext={() => setReportsPage((p) => p + 1)}
           onResolve={onResolveReport}
           onBulkDismiss={onBulkDismissReports}
+          onSelectUser={setSelectedUserId}
         />
       </TabPanel>
 

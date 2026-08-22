@@ -42,6 +42,11 @@ export interface Flashcard {
   occlusionData?: OcclusionData;
   srsData?: SrsData;
   tags?: string[];
+  /**
+   * AI/author-declared difficulty (flashcards.authored_difficulty). Distinct
+   * from srsData.difficulty, which is FSRS scheduler state.
+   */
+  authoredDifficulty?: 'easy' | 'medium' | 'hard' | null;
   /** Optimistic concurrency token from API (CAS). */
   version?: number;
   createdAt: string;
@@ -56,6 +61,8 @@ export interface Deck {
   createdBy?: string;
   approvedBy?: string;
   isShared?: boolean;
+  /** Course this deck belongs to (academic archive). */
+  courseId?: string | null;
 }
 
 export interface FlashcardSession {
@@ -149,6 +156,77 @@ export interface User {
   testPresets?: TestPreset[];
   decks?: Deck[];
   flashcards?: Flashcard[];
+  // ---- Academic identity (profiles.institution_id & friends) ----
+  /** marketplace_campuses.id of the student's institution (never an "Other" sentinel). */
+  institutionId?: string | null;
+  /** Resolved summary of `institutionId`, present on GET /users/me and /users/:id. */
+  institution?: InstitutionSummary | null;
+  faculty?: string | null;
+  programme?: string | null;
+  /** 100..900 */
+  studyLevel?: number | null;
+  /** Owner/admin only in the public projection. */
+  entryYear?: number | null;
+  /** Owner/admin only in the public projection. */
+  expectedGraduationYear?: number | null;
+}
+
+/** Institution as surfaced on a user: a promoted marketplace_campuses row. */
+export interface InstitutionSummary {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/** One shared row per (institution, normalised code). */
+export interface Course {
+  id: string;
+  institutionId: string | null;
+  /** Normalised, e.g. "BIO 201". */
+  code: string;
+  title: string;
+  faculty?: string | null;
+  level?: number | null;
+  semester?: 1 | 2 | null;
+  /** Curated by Lantern/admins (sorts first in search). */
+  isCanonical: boolean;
+}
+
+/** A student's enrolment in a course for one academic year (the archive spine). */
+export interface UserCourse {
+  course: Course;
+  /** "2026/2027" */
+  academicYear: string;
+  semester?: 1 | 2 | null;
+  status: 'active' | 'archived';
+  /** "YYYY-MM-DD" */
+  examDate?: string | null;
+}
+
+/**
+ * A normalised topic in the knowledge network (concepts table). One row per
+ * (course, slug); slug comes from @lantern/shared/learning normalizeConceptSlug.
+ */
+export interface Concept {
+  id: string;
+  slug: string;
+  name: string;
+  parentId?: string | null;
+  courseId?: string | null;
+  source: 'ai' | 'user' | 'import' | 'backfill';
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+/** concept ↔ artefact edge (concept_links). target_id is text: question ids are messages.id. */
+export interface ConceptLink {
+  conceptId: string;
+  targetType: 'flashcard' | 'question' | 'note' | 'deck';
+  targetId: string;
+  confidence: number;
+  source: 'ai' | 'user' | 'import' | 'backfill';
+  createdBy?: string | null;
+  createdAt?: string;
 }
 
 export interface GroupPermissions {
@@ -175,6 +253,8 @@ export interface Group {
   inviteId?: string;
   permissions?: GroupPermissions;
   invitedPhoneNumbers?: string[];
+  /** Course this group studies (academic archive). */
+  courseId?: string | null;
 }
 
 export enum MessageType {
@@ -324,6 +404,8 @@ export interface NoteFolder {
   parentId?: string;
   name: string;
   color: string;
+  /** A folder can *be* a course (academic archive). */
+  courseId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -343,6 +425,8 @@ export interface StudyNote {
   userId: string;
   folderId?: string;
   groupId?: string;
+  /** Course this note belongs to (academic archive). */
+  courseId?: string | null;
   title: string;
   body: string;
   summary?: string;
@@ -475,6 +559,8 @@ export interface TestConfig {
    * completed session is attributed to that bank's leaderboard.
    */
   bundleId?: string;
+  /** Course this session is attributed to (mirrors test_sessions.course_id). */
+  courseId?: string | null;
 }
 
 export type UserAnswerRecord = {
@@ -640,6 +726,8 @@ export interface OfflineSessionBundle {
   downloadedAt: Date;
   groupName: string;
   displayName?: string;
+  /** Course this bundle belongs to (also written into config.courseId). */
+  courseId?: string | null;
 }
 
 export type DmThreadStatus = 'open' | 'pending' | 'declined';
@@ -842,9 +930,127 @@ export interface MarketplaceListing {
   /** 'question_bank' is a digital listing delivered into offline_bundles. */
   listing_kind?: 'single' | 'bundle' | 'question_bank';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
+  /** Course this listing is for (academic archive). */
+  courseId?: string | null;
+  /** Raw DB alias of `courseId` (listing rows are served snake_case). */
+  course_id?: string | null;
+  // ── Rights / takedown / appeal state (Phase 1 · E). The API returns these
+  // only to the listing owner and platform admins; other viewers never see them.
+  rights_status?: ListingRightsStatus;
+  rightsStatus?: ListingRightsStatus;
+  rights_attested_at?: string | null;
+  rights_attestation_version?: string | null;
+  /** Soft content-filter hits recorded at create/edit time. */
+  moderation_flags?: ModerationFlag[];
+  takedown_reason?: string | null;
+  takedownReason?: string | null;
+  takedown_at?: string | null;
+  appeal_status?: ListingAppealStatus;
+  appealStatus?: ListingAppealStatus;
+  appeal_note?: string | null;
+  appealed_at?: string | null;
+  appeal_decided_at?: string | null;
   created_at: string;
   updated_at: string;
   reviews?: MarketplaceReview[];
+}
+
+// ─── Moderation (Phase 1 · E) ──────────────────────────────────────────────
+// String unions mirror the CHECK constraints in
+// supabase/migrations/20260822140000_rights_and_moderation.sql; the
+// vocabulary helpers live in ../moderation.
+
+export type ListingRightsStatus = 'unattested' | 'attested' | 'under_review' | 'takedown' | 'cleared';
+
+export type ListingAppealStatus = 'none' | 'requested' | 'upheld' | 'reversed';
+
+export interface ModerationFlag {
+  /** RegExp source of the content-filter pattern that matched. */
+  pattern: string;
+  reason: ContentReportReason;
+  /** ISO timestamp of the write that tripped the filter. */
+  at: string;
+  /** Which field(s) matched, e.g. 'title+description'. */
+  field?: string;
+}
+
+export type ContentReportTargetType =
+  | 'listing'
+  | 'question_bank'
+  | 'note'
+  | 'deck'
+  | 'user'
+  | 'group'
+  | 'message'
+  | 'dm_message'
+  | 'job_posting';
+
+export type ContentReportReason =
+  | 'scam'
+  | 'spam'
+  | 'inappropriate'
+  | 'copyright'
+  | 'leaked_exam'
+  | 'plagiarism'
+  | 'harassment'
+  | 'prohibited_item'
+  | 'wrong_category'
+  | 'discriminatory'
+  | 'other';
+
+export type ContentReportStatus = 'pending' | 'under_review' | 'resolved' | 'dismissed';
+
+/** What the admin queue shows about the reported thing (resolved server-side per target type). */
+export interface ContentReportTargetSummary {
+  type: ContentReportTargetType;
+  id: string;
+  /** Listing/job title, note title, deck name, group name, username, or a message snippet. */
+  title?: string | null;
+  /** Listing/job status, or 'removed' for soft-deleted notes/decks, 'archived' for groups. */
+  status?: string | null;
+  ownerId?: string | null;
+  ownerName?: string | null;
+  /** False when the target row no longer exists. */
+  exists: boolean;
+}
+
+export interface ContentReport {
+  id: string;
+  reporter_id: string;
+  target_type: ContentReportTargetType;
+  target_id: string;
+  reason: ContentReportReason;
+  details?: string | null;
+  status: ContentReportStatus;
+  admin_note?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  /** 'marketplace_reports' | 'job_reports' for rows backfilled from the old tables. */
+  legacy_source?: string | null;
+  legacy_id?: string | null;
+  created_at: string;
+  reporter?: { id: string; name?: string | null; username?: string | null } | null;
+  target?: ContentReportTargetSummary;
+  /** Legacy alias kept for the existing admin console: populated when target_type is 'listing'. */
+  listing?: { id: string; title: string; status: string; user_id?: string } | null;
+  listing_id?: string | null;
+}
+
+export interface ModerationStrike {
+  id: string;
+  user_id: string;
+  report_id?: string | null;
+  severity: 1 | 2 | 3;
+  reason: string;
+  created_by?: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+/** GET /users/me/moderation */
+export interface ModerationState {
+  activeStrikes: number;
+  suspendedUntil: string | null;
 }
 
 export interface MarketplaceReview {
@@ -1263,4 +1469,71 @@ export interface StudyActivityDay {
   date: string;
   count: number;
   breakdown?: Partial<Record<ActivityType, number>>;
+}
+
+// ========== LIBRARY ARCHIVE (Phase 1 · B — docs/phase1-library-archive-contract.md §1) ==========
+
+export interface LibraryCourseCounts {
+  notes: number;
+  decks: number;
+  tests: number;
+  /** Every offline bundle filed under the course — purchased packs included. */
+  bundles: number;
+  /** Subset of `bundles`: offline_bundles whose bundle_id starts with `qbank-`. */
+  purchasedPacks: number;
+}
+
+export interface LibraryCourseNode {
+  course: Course;
+  /** Archived enrolments are included with `status: 'archived'` (group under "Past semesters"). */
+  enrolment: UserCourse;
+  counts: LibraryCourseCounts;
+}
+
+export interface LibraryYear {
+  /** "2026/2027" — newest first. */
+  academicYear: string;
+  /** Active enrolments first, then by course code. */
+  courses: LibraryCourseNode[];
+}
+
+/** GET /library/overview */
+export interface LibraryOverview {
+  years: LibraryYear[];
+  /** Items whose course_id is null. */
+  unfiled: { notes: number; decks: number; tests: number; bundles: number };
+}
+
+/** `types=` values accepted by GET /library/search. */
+export type LibrarySearchType = 'notes' | 'decks' | 'flashcards' | 'bundles';
+
+export type LibrarySearchResultType = 'note' | 'deck' | 'flashcard' | 'bundle';
+
+export type LibrarySearchMatchField =
+  | 'title'
+  | 'summary'
+  | 'body'
+  | 'attachment'
+  | 'name'
+  | 'description'
+  | 'front'
+  | 'back'
+  | 'displayName'
+  | 'groupName';
+
+/** One row of GET /library/search — ranked (title prefix > contains > secondary text), then by recency. */
+export interface LibrarySearchResult {
+  type: LibrarySearchResultType;
+  /** notes/decks/flashcards: row id; bundles: the client-facing bundleId. */
+  id: string;
+  title: string;
+  snippet: string;
+  courseId: string | null;
+  /** Flashcards only — results stay grouped under their deck. */
+  deckId?: string;
+  /** Flashcards only — the deck's name for group headers. */
+  deckTitle?: string;
+  /** Which field matched, when known. */
+  matchedIn?: LibrarySearchMatchField;
+  updatedAt: string;
 }

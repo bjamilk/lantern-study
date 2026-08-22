@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
+import { CoursePicker } from './academic/CoursePicker';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
 import usePaystackEnabled from './marketplace/usePaystackEnabled';
+import { RightsAttestationCheckbox } from './moderation/RightsAttestationCheckbox';
+import { isInlineSubmitError, listingNeedsAttestation, resolveListingCategoryId } from '../utils/moderationForms';
 import {
+  ATTESTATION_REQUIRED_MESSAGE,
   marketplaceCreateConfirmation,
   HEIC_IMAGE_UPLOAD_ERROR,
   isHeicImageUpload,
@@ -64,7 +68,10 @@ interface CreateListingFormData {
   subcategory: string;
   images: ImageFile[];
   condition: '' | 'new' | 'like-new' | 'good' | 'fair';
+  /** Legacy free-text code — now derived from the picked course (kept for buyers/search). */
   courseCode: string;
+  /** Academic course (marketplace_listings.course_id). */
+  courseId: string | null;
   year: string;
   semester: '' | '1st' | '2nd';
   edition: string;
@@ -97,6 +104,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     // Category-specific fields
     condition: '' as '' | 'new' | 'like-new' | 'good' | 'fair',
     courseCode: '',
+    courseId: null,
     year: '',
     semester: '' as '' | '1st' | '2nd',
     edition: '',
@@ -108,6 +116,10 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   const [loading, setLoading] = useState(false);
   // One-shot: the first photoless Publish warns; the second goes through.
   const [skipPhotoNudge, setSkipPhotoNudge] = useState(false);
+  // Rights attestation (academic categories only) + the 400s the seller can
+  // fix in the form (missing attestation, blocked wording) shown inline.
+  const [attested, setAttested] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
@@ -229,6 +241,13 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   ];
 
   const subcategories = category === 'academic' ? academicSubcategories : studentLifeSubcategories;
+
+  // Academic content categories (past questions, notes, projects, textbooks)
+  // need the rights attestation; the API refuses them without it (400).
+  const needsAttestation = listingNeedsAttestation({
+    listingKind: 'single',
+    category: resolveListingCategoryId(formData.subcategory, customCategory),
+  });
 
   const MAX_IMAGES = 5;
 
@@ -411,6 +430,12 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       return;
     }
 
+    if (needsAttestation && !attested) {
+      setSubmitError(ATTESTATION_REQUIRED_MESSAGE);
+      return;
+    }
+    setSubmitError(null);
+
     // Photos are the strongest conversion lever a listing has; nudge — but
     // don't block — before publishing a photoless one. Mirrors mobile.
     if (formData.images.length === 0 && !skipPhotoNudge) {
@@ -432,6 +457,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       if (fields.includes('condition') && formData.condition) categorySpecificFields.condition = formData.condition;
       if (fields.includes('isbn') && formData.isbn) categorySpecificFields.isbn = formData.isbn;
       if (fields.includes('edition') && formData.edition) categorySpecificFields.edition = formData.edition;
+      // courseCode stays in category_specific_fields for backwards compat — it is the picked course's code.
       if (fields.includes('courseCode') && formData.courseCode) categorySpecificFields.courseCode = formData.courseCode;
       if (fields.includes('year') && formData.year) categorySpecificFields.year = formData.year;
       if (fields.includes('semester') && formData.semester) categorySpecificFields.semester = formData.semester;
@@ -493,6 +519,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         currency: 'NGN',
         images: [],
         categorySpecificFields,
+        courseId: formData.courseId,
+        // Sent whenever the seller ticked it; required by the API for academic categories.
+        ...(attested ? { attestation: true } : {}),
       };
       
       if (import.meta.env.DEV) {
@@ -571,6 +600,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         images: [],
         condition: '',
         courseCode: '',
+        courseId: null,
         year: '',
         semester: '',
         edition: '',
@@ -580,9 +610,22 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         distanceToCampus: '',
       });
       setCustomCategory('');
+      setAttested(false);
+      setSubmitError(null);
     } catch (error) {
       console.error('Error creating listing:', error);
-      useToastStore.getState().showToast('Failed to create listing. Please try again.');
+      // 400s the seller can fix (missing attestation, blocked wording) go inline
+      // next to the submit button; everything else stays a toast.
+      if (isInlineSubmitError(error)) {
+        setSubmitError((error as Error).message);
+      } else {
+        useToastStore.getState().showToast(
+          error instanceof Error && error.message && !/^HTTP error/i.test(error.message)
+            ? error.message
+            : 'Failed to create listing. Please try again.',
+          'error'
+        );
+      }
     } finally {
       setLoading(false);
       setUploadingImages(false);
@@ -781,14 +824,15 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('courseCode') && (
                   <div>
-                    <label htmlFor="listing-course-code" className="block text-xs font-medium text-lantern-text-secondary mb-1">Course Code</label>
-                    <input
-                      id="listing-course-code"
-                      type="text"
-                      value={formData.courseCode}
-                      onChange={(e) => setFormData(prev => ({ ...prev, courseCode: e.target.value }))}
+                    <CoursePicker
+                      id="listing-course"
+                      label={<span className="text-xs font-medium text-lantern-text-secondary">Course</span>}
+                      value={formData.courseId}
+                      onChange={(course) =>
+                        setFormData(prev => ({ ...prev, courseId: course?.id ?? null, courseCode: course?.code ?? '' }))
+                      }
                       placeholder="e.g. CSC 201"
-                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
+                      compact
                     />
                   </div>
                 )}
@@ -984,6 +1028,17 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               />
               <span>{marketplaceCreateConfirmation(paystackEnabled)}</span>
             </label>
+            {needsAttestation ? (
+              <RightsAttestationCheckbox
+                id="create-listing-attestation"
+                checked={attested}
+                onChange={(checked) => {
+                  setAttested(checked);
+                  if (checked && submitError === ATTESTATION_REQUIRED_MESSAGE) setSubmitError(null);
+                }}
+                disabled={loading || uploadingImages}
+              />
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1086,6 +1141,12 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               )}
             </div>
           </div>
+
+          {submitError ? (
+            <p role="alert" className="text-sm text-lantern-error">
+              {submitError}
+            </p>
+          ) : null}
 
           {/* Actions */}
           <div className="flex justify-end space-x-3 pt-4 border-t border-lantern-border">

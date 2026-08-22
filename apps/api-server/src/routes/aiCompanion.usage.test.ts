@@ -26,6 +26,8 @@ describe('companion AI usage', () => {
     const req = { user: { id: userId } } as any;
     const res = {
       headers: {} as Record<string, string>,
+      // Real responses carry res.locals; the middleware stamps the charge there.
+      locals: {} as Record<string, unknown>,
       setHeader(name: string, value: string) {
         this.headers[name.toLowerCase()] = value;
       },

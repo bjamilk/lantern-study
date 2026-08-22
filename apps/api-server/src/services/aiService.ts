@@ -29,6 +29,8 @@ import { aiInflightGate } from '../utils/concurrencyGate';
 import { logger } from '../utils/logger';
 import { captureException } from '../utils/sentry';
 import { withAiResponseCache } from './aiResponseCache';
+import type { StudyPerformanceData } from './aiStudyRecommendationInput';
+export type { StudyPerformanceData } from './aiStudyRecommendationInput';
 
 const AI_FETCH_TIMEOUT_MS = parseInt(process.env.AI_FETCH_TIMEOUT_MS || '120000', 10);
 
@@ -1306,12 +1308,13 @@ Explain why the correct answer is right${userAnswer !== correctAnswer ? " and wh
   return { explanation: text, provider, usage };
 }
 
+/**
+ * Callers must pass data that has been through normalizeStudyPerformanceData
+ * (the route does) so the field meanings below are true for every request,
+ * including ones from older builds that still send `studyHoursThisWeek`.
+ */
 export async function getStudyRecommendations(
-  performanceData: {
-    recentScores: { topic: string; score: number; date: string }[];
-    flashcardAccuracy: { topic: string; correctRate: number }[];
-    studyHoursThisWeek: number;
-  }
+  performanceData: StudyPerformanceData
 ): Promise<{ recommendations: StudyRecommendation; provider: string; usage?: AiUsage }> {
   return withAiResponseCache(
     'study_recommendations',
@@ -1322,13 +1325,16 @@ export async function getStudyRecommendations(
 }
 
 async function getStudyRecommendationsUncached(
-  performanceData: {
-    recentScores: { topic: string; score: number; date: string }[];
-    flashcardAccuracy: { topic: string; correctRate: number }[];
-    studyHoursThisWeek: number;
-  }
+  performanceData: StudyPerformanceData
 ): Promise<{ recommendations: StudyRecommendation; provider: string; usage?: AiUsage }> {
+  // Describe each field in plain words. The numbers were previously mislabelled
+  // (a day streak sent as "hours", test accuracy sent as "flashcard accuracy"),
+  // so the prompt now states exactly what each one measures.
   const systemPrompt = `You are an AI study coach. Analyze performance and give actionable advice.
+The performance data fields mean:
+- recentScores: the student's recent TEST accuracy per topic (score is a percentage 0-100).
+- flashcardAccuracy: per flashcard DECK, the share (0-1) of reviewed cards that are currently mature (well remembered). This field is omitted when the student has not reviewed any flashcards yet — do not assume flashcard results in that case.
+- studyDaysThisWeek: the number of distinct days (0-7) the student studied in the last 7 days. It is NOT hours.
 Return ONLY valid JSON: {"weakTopics":["t1"],"suggestedCards":["s1"],"suggestedQuestions":["q1"],"studyTip":"tip","estimatedMinutes":30}`;
 
   const { text, provider, usage } = await chatCompletion(

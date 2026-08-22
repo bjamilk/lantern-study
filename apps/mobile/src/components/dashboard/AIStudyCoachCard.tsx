@@ -6,9 +6,11 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { buildFlashcardAccuracyByDeck, countActiveDaysInLastWeek } from '@lantern/shared/utils';
 import type { AIStudyRecommendation } from '../../services/ai';
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useFlashcardStore } from '../../stores/flashcardStore';
 import { Card } from '../ui';
 import { useTheme } from '../../theme';
 import type { DashboardStats } from '../../types/dashboardStats';
@@ -19,6 +21,10 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
   const { colors } = useTheme();
   const [loading, setLoading] = useState(false);
   const [coach, setCoach] = useState<AIStudyRecommendation | null>(null);
+  // Deck names + SRS state for the per-deck flashcard accuracy (hooks must run
+  // before the early return below).
+  const decks = useFlashcardStore(s => s.decks);
+  const flashcardsByDeck = useFlashcardStore(s => s.flashcards);
 
   const topics = stats?.topicPerformance ?? [];
   if (topics.length === 0) return null;
@@ -40,10 +46,21 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
     setLoading(true);
     const ranked = [...topics].sort((a, b) => b.accuracy - a.accuracy);
     const now = new Date().toISOString();
+    // Flashcard accuracy = mature / reviewed cards per deck from the SRS state
+    // in the flashcard store (topic = deck name). When no card has been
+    // reviewed the field is OMITTED rather than filled with test accuracy.
+    const flashcardAccuracy = buildFlashcardAccuracyByDeck(decks, flashcardsByDeck);
+    // Days studied in the last 7 days from the dashboard-summary activity data
+    // (same source as the heatmap). Only if no activity data is loaded do we
+    // fall back to the streak, capped at the 7-day window.
+    const activityDays = stats?.activityDays ?? [];
+    const studyDaysThisWeek =
+      activityDays.length > 0 ? countActiveDaysInLastWeek(activityDays) : Math.min(streak, 7);
     const result = await handleAIStudyRecommendations({
+      // recentScores stays TEST-derived — that is what it claims to be.
       recentScores: ranked.map(t => ({ topic: t.tag, score: t.accuracy, date: now })),
-      flashcardAccuracy: ranked.map(t => ({ topic: t.tag, correctRate: t.accuracy / 100 })),
-      studyHoursThisWeek: streak,
+      ...(flashcardAccuracy.length > 0 ? { flashcardAccuracy } : {}),
+      studyDaysThisWeek,
     });
     if (result) setCoach(result);
     setLoading(false);

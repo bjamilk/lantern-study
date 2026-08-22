@@ -800,14 +800,18 @@ export class MarketplaceOrdersService {
     if (!listing) return;
 
     if (listing.quantity != null) {
-      await this.db
-        .from('marketplace_listings')
-        .update({
-          quantity: Number(listing.quantity) + restoreQty,
-          status: 'active',
-          updated_at: now,
-        })
-        .eq('id', listingId);
+      // Always give the held units back, but only re-open availability from an
+      // order-held state. A listing moderation took down (removed/suspended),
+      // an archived one, or one the seller paused/sold meanwhile must keep its
+      // status — otherwise cancelling any open order would relist it.
+      const restore: Record<string, unknown> = {
+        quantity: Number(listing.quantity) + restoreQty,
+        updated_at: now,
+      };
+      if (listing.status === 'active' || listing.status === 'reserved') {
+        restore.status = 'active';
+      }
+      await this.db.from('marketplace_listings').update(restore).eq('id', listingId);
     } else {
       await this.db
         .from('marketplace_listings')

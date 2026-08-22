@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CampusPicker } from '../marketplace/CampusPicker';
+import { CoursePicker } from '../../components/CoursePicker';
 import {
   fetchMarketplaceCampuses,
   fetchMyQuestionBanks,
@@ -10,6 +11,13 @@ import {
 } from '../../services/api';
 import type { OfflineTest } from '../../stores/offlineStore';
 import { useTheme } from '../../theme';
+import {
+  RIGHTS_ATTESTATION_TEXT,
+  SOURCES_CITED_MAX,
+  normalizeSourcesCited,
+} from '@lantern/shared/moderation';
+import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
+import { openSellerTerms } from '../../components/moderation/RightsAttestationCheckbox';
 
 type MyBank = Awaited<ReturnType<typeof fetchMyQuestionBanks>>[number];
 type Campus = Awaited<ReturnType<typeof fetchMarketplaceCampuses>>[number];
@@ -31,8 +39,12 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [campusId, setCampusId] = useState('');
+  const [courseId, setCourseId] = useState<string | null>(null);
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [attested, setAttested] = useState(false);
+  const [aiAssisted, setAiAssisted] = useState(false);
+  /** One source per line → sourcesCited[] (Phase 1 · E provenance). */
+  const [sourcesText, setSourcesText] = useState('');
   const [busy, setBusy] = useState(false);
   const [existingBank, setExistingBank] = useState<MyBank | null>(null);
   const [mode, setMode] = useState<'new' | 'update'>('new');
@@ -43,7 +55,10 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
     setDescription('');
     setPrice('');
     setCampusId('');
+    setCourseId(null);
     setAttested(false);
+    setAiAssisted(false);
+    setSourcesText('');
     setExistingBank(null);
     setMode('new');
 
@@ -70,11 +85,20 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
   const priceValue = price.trim() === '' ? null : Number(price);
   const priceInvalid = price.trim() !== '' && (!Number.isFinite(priceValue!) || priceValue! < 0);
   const isUpdate = mode === 'update' && !!existingBank;
+  const sources = normalizeSourcesCited(sourcesText);
+  const sourcesError = sources.ok ? null : sources.error;
   const canSubmit =
     !busy &&
     attested &&
+    !sourcesError &&
     questionCount > 0 &&
     (isUpdate || (!!title.trim() && !!campusId && !priceInvalid));
+  // The API requires attestation: true on publish AND republish (400 without it).
+  const provenance = {
+    attestation: true as const,
+    aiAssisted,
+    sourcesCited: sources.ok ? sources.value : [],
+  };
 
   const content = {
     config: {
@@ -91,7 +115,7 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
     setBusy(true);
     try {
       if (isUpdate && existingBank) {
-        const result = await updateQuestionBankContent(existingBank.listingId, content);
+        const result = await updateQuestionBankContent(existingBank.listingId, content, provenance);
         Alert.alert(
           'Question bank updated',
           `"${existingBank.title}" is now version ${result.version}. Buyers will see an update.`
@@ -103,7 +127,9 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
           price: priceValue && priceValue > 0 ? priceValue : null,
           campusId,
           groupId: test.groupId || null,
+          courseId: courseId ?? null,
           content,
+          ...provenance,
         });
         Alert.alert(
           'Published',
@@ -129,7 +155,7 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
             backgroundColor: colors.card,
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
-            maxHeight: 640,
+            maxHeight: '88%',
           }}
         >
           <View
@@ -295,15 +321,78 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
                     emptyLabel="Choose the campus this bank fits"
                   />
                 </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Course (optional)</Text>
+                  <CoursePicker
+                    value={courseId}
+                    onChange={course => setCourseId(course?.id ?? null)}
+                    placeholder="Which course is this bank for? e.g. GST 101"
+                    title="Course for this question bank"
+                  />
+                </View>
               </>
             ) : null}
 
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-              <Switch value={attested} onValueChange={setAttested} />
-              <Text style={{ flex: 1, fontSize: 12, color: colors.textSecondary }}>
-                I confirm this content is original or I'm authorized to share it, and it doesn't
-                reproduce copyrighted exam papers without permission.
+              <Switch
+                value={aiAssisted}
+                onValueChange={setAiAssisted}
+                accessibilityLabel="This pack was AI-assisted"
+              />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                  This pack was AI-assisted
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  Recorded with your listing. Tick it if AI generated or rewrote questions.
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                Sources (optional)
               </Text>
+              <TextInput
+                value={sourcesText}
+                onChangeText={setSourcesText}
+                multiline
+                numberOfLines={3}
+                placeholder={`One per line — textbook, lecturer's slides, past paper year… (up to ${SOURCES_CITED_MAX})`}
+                placeholderTextColor={colors.textTertiary}
+                style={{
+                  borderWidth: 1,
+                  borderColor: sourcesError ? '#ef4444' : colors.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  color: colors.text,
+                  minHeight: 64,
+                  textAlignVertical: 'top',
+                }}
+              />
+              {sourcesError ? (
+                <Text style={{ fontSize: 11, color: '#ef4444' }}>{sourcesError}</Text>
+              ) : null}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <Switch
+                value={attested}
+                onValueChange={setAttested}
+                accessibilityLabel="Rights attestation"
+              />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  {RIGHTS_ATTESTATION_TEXT}
+                </Text>
+                <Pressable onPress={openSellerTerms} hitSlop={6} accessibilityRole="link">
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                    Read the {LEGAL_DOCUMENT_TITLES['seller-terms']}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           </ScrollView>
 

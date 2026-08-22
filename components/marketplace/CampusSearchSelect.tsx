@@ -17,6 +17,12 @@ interface CampusSearchSelectProps {
   onOtherCityChange?: (city: string) => void;
   otherCityRequired?: boolean;
   emptyLabel?: string;
+  /** Label for the "no campus" option (defaults to emptyLabel). Lets a caller
+   *  offer an explicit "My institution isn't listed" escape hatch. */
+  noneLabel?: string;
+  /** Guidance shown when a search returns nothing. Defaults to the generic
+   *  "Other (city in Nigeria)" hint, which is wrong where sentinels are hidden. */
+  noMatchHint?: string;
   id?: string;
   className?: string;
   /** When true (default), the search list collapses after a campus is chosen. */
@@ -35,10 +41,13 @@ export const CampusSearchSelect: React.FC<CampusSearchSelectProps> = ({
   onOtherCityChange,
   otherCityRequired = false,
   emptyLabel = 'No saved campus (browse All Nigeria)',
+  noneLabel,
+  noMatchHint,
   id = 'campus-search-select',
   className = '',
   collapsible = true,
 }) => {
+  const noneOptionLabel = noneLabel ?? emptyLabel;
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(!collapsible || !value);
   const selected = campuses.find((c) => c.id === value) || null;
@@ -113,7 +122,7 @@ export const CampusSearchSelect: React.FC<CampusSearchSelectProps> = ({
                     : 'text-lantern-text-secondary hover:bg-lantern-background'
                 }`}
               >
-                {emptyLabel}
+                {noneOptionLabel}
               </button>
             </li>
             {filtered.map((campus) => {
@@ -142,7 +151,7 @@ export const CampusSearchSelect: React.FC<CampusSearchSelectProps> = ({
           </ul>
           {query.trim() && filtered.length === 0 ? (
             <p className="px-3 py-2 text-xs text-lantern-text-secondary">
-              No matches. Try another spelling, or choose &quot;Other (city in Nigeria)&quot;.
+              {noMatchHint ?? 'No matches. Try another spelling, or choose "Other (city in Nigeria)".'}
             </p>
           ) : (
             <p className="px-3 py-2 text-xs text-lantern-text-secondary border-t border-lantern-border">

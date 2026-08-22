@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStats, TestPreset, User, QuestionStatus } from '../types';
+import { CoursePicker } from './academic/CoursePicker';
 import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { isQuestionTestable } from '../utils/helpers';
 import { featureAccents } from '@lantern/shared/design';
@@ -70,6 +71,11 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   const [selectedSubgroupIDs, setSelectedSubgroupIDs] = useState<string[]>([]);
   const [presetName, setPresetName] = useState('');
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
+  // Course the session is filed under — defaults to the group's course (Phase 1).
+  const [courseId, setCourseId] = useState<string | null>(group.courseId ?? null);
+  useEffect(() => {
+    if (isOpen) setCourseId(group.courseId ?? null);
+  }, [isOpen, group.id, group.courseId]);
 
   /** Unverified pool is study-only; starting Test with that filter becomes Study. */
   const forcesStudyFromVisibility =
@@ -243,6 +249,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTagsInModal,
           timerDuration: mode === 'test' && selectedTimerSeconds > 0 ? selectedTimerSeconds : undefined,
           focusOnNew: focusOnNew,
+          courseId: courseId ?? null,
       };
       onSavePreset(presetName, currentConfig);
       setPresetName('');
@@ -301,6 +308,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     focusOnNew: focusOnNew,
     timerDuration: mode === 'test' ? selectedTimerSeconds : undefined,
     lockAnsweredQuestions: mode === 'test' ? lockAnswered : undefined,
+    courseId: courseId ?? null,
   });
 
   const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
@@ -321,6 +329,17 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     }
     onSubmit(getCurrentConfig(), effectiveMode, useSpacedRepetition, selectedSubgroupIDs);
   };
+
+  const courseControl = (
+    <CoursePicker
+      id={`test-config-course-${mode}`}
+      label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+      value={courseId}
+      onChange={(course) => setCourseId(course?.id ?? null)}
+      placeholder={group.courseId ? 'Group course' : 'File this session under a course'}
+      compact
+    />
+  );
 
   const visibilityControl = (
     <div className="p-3 rounded-md border border-lantern-border bg-lantern-background-secondary/60">
@@ -366,6 +385,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
       selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTagsInModal,
       timerDuration: mode === 'test' && selectedTimerSeconds > 0 ? selectedTimerSeconds : undefined,
       focusOnNew: focusOnNew,
+      courseId: courseId ?? null,
     };
     onDownloadForOffline(config, useSpacedRepetition, selectedSubgroupIDs);
   };
@@ -472,6 +492,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {visibilityControl}
+            {courseControl}
             {/* Load Preset */}
             {testPresets.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
@@ -703,6 +724,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         
         <form onSubmit={handleSubmit} className="space-y-6">
           {visibilityControl}
+          {courseControl}
           {mode !== 'game' && testPresets.length > 0 && (
             <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
               <label htmlFor="preset-select" className="text-sm font-medium text-lantern-text flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>

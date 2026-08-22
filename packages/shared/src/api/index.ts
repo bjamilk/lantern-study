@@ -16,6 +16,7 @@ export {
   type AIGeneratedQuestion,
   type AIGeneratedFlashcard,
   type AIStudyRecommendation,
+  type AIStudyPerformanceData,
 } from './ai';
 export { createCompanionClient, type LanternCompanionClient } from './companion';
 export {

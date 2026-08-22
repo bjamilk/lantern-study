@@ -4,7 +4,36 @@ import {
   getActivityHeatHexColor,
   getActivityHeatColorForCount,
   computeStudyStreak,
+  countActiveDaysInLastWeek,
 } from './activity';
+
+describe('countActiveDaysInLastWeek', () => {
+  const ref = new Date(2026, 5, 15, 12); // local 2026-06-15 (June)
+
+  it('returns 0 with no activity data', () => {
+    expect(countActiveDaysInLastWeek([], ref)).toBe(0);
+  });
+
+  it('counts distinct active days inside today and the six days before it', () => {
+    const result = countActiveDaysInLastWeek(
+      [
+        { date: '2026-06-15', count: 3 }, // today
+        { date: '2026-06-13', count: 1 },
+        { date: '2026-06-09', count: 2 }, // 6 days ago — still inside the window
+        { date: '2026-06-08', count: 9 }, // 7 days ago — outside
+        { date: '2026-06-10', count: 0 }, // zero count — not active
+        { date: '2026-06-16', count: 4 }, // future — outside
+      ],
+      ref
+    );
+    expect(result).toBe(3);
+  });
+
+  it('never exceeds 7 and ignores duplicate rows for the same day', () => {
+    const days = Array.from({ length: 10 }, (_, i) => ({ date: `2026-06-${String(15 - i).padStart(2, '0')}`, count: 1 }));
+    expect(countActiveDaysInLastWeek([...days, { date: '2026-06-15', count: 2 }], ref)).toBe(7);
+  });
+});
 
 describe('getActivityHeatLevel', () => {
   it('returns 0 for zero or negative counts', () => {

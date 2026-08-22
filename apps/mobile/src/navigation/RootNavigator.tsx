@@ -178,7 +178,7 @@ import {
 
 } from '../screens/marketplace';
 
-import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen } from '../screens/settings';
+import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen } from '../screens/settings';
 
 import { TestScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
@@ -218,8 +218,15 @@ import { registerForPushNotifications, uploadPushToken } from '../services/pushN
 import { useLowDataMode } from '../hooks/useLowDataMode';
 
 import UsernameRequiredModal from '../components/UsernameRequiredModal';
+import { AccountSuspendedBanner } from '../components/moderation/AccountSuspendedBanner';
 
 import { getAuthHeaders, supabase } from '../services/supabase';
+import { applyPendingAcademicProfile } from '../services/pendingAcademicProfile';
+import { loadAcademicProfile } from '../services/academic';
+import { hasAcademicIdentity } from '../utils/academicProfile';
+
+/** Set when the user skips the academic-profile prompt; never re-raised after that. */
+const ACADEMIC_SETUP_DISMISSED_KEY = 'lantern_academic_setup_dismissed';
 
 
 
@@ -833,6 +840,11 @@ function RootNavigatorInner() {
   } | null>(null);
 
   const [showUsernameModal, setShowUsernameModal] = useState(false);
+  /**
+   * 'username': legacy/OAuth gate (no username yet — cannot be skipped).
+   * 'academic': username exists but no institution yet — offered once, skippable.
+   */
+  const [profileSetupMode, setProfileSetupMode] = useState<'username' | 'academic'>('username');
 
   // If auth/bootstrap never finishes, force past BootLoadingScreen (looks like splash).
   const [bootTimedOut, setBootTimedOut] = useState(false);
@@ -961,7 +973,7 @@ function RootNavigatorInner() {
 
   useEffect(() => {
 
-    if (!user?.id || showOnboarding) {
+    if (!user?.id) {
 
       setUserProfile(null);
 
@@ -971,12 +983,20 @@ function RootNavigatorInner() {
 
     }
 
+    // The profile-setup modal may sit on top of onboarding: an OAuth student
+    // picks username + university + programme + courses first, so the starter
+    // deck step can pre-seed from them.
+    let cancelled = false;
+    const userId = user.id;
+    const userEmail = user.email;
+
     void supabase
       .from('profiles')
       .select('username, first_name, last_name, name')
-      .eq('id', user.id)
+      .eq('id', userId)
       .single()
-      .then(({ data: profile, error }) => {
+      .then(async ({ data: profile, error }) => {
+        if (cancelled) return;
         if (error || !profile) {
           // A fetch failure is NOT "no username". Offline cold boots landed
           // here and trapped the user behind a modal whose Continue needs the
@@ -984,6 +1004,7 @@ function RootNavigatorInner() {
           // offline tests. Only a definitive empty result (PGRST116: no rows)
           // may re-raise the gate; transient/network errors never do.
           setUserProfile({ name: user.user_metadata?.name || 'User' });
+          setProfileSetupMode('username');
           setShowUsernameModal(error?.code === 'PGRST116');
           return;
         }
@@ -996,10 +1017,51 @@ function RootNavigatorInner() {
         };
 
         setUserProfile(nextProfile);
-        setShowUsernameModal(!nextProfile.username);
+        if (!nextProfile.username) {
+          setProfileSetupMode('username');
+          setShowUsernameModal(true);
+          return;
+        }
+
+        // Username present: offer the academic profile once (skippable) when
+        // no institution is set yet. Best-effort — a failed API call never
+        // raises the gate, and a sign-up stash is replayed first.
+        try {
+          // The stash is the single writer that runs before this check: when it
+          // just applied the sign-up academic fields we KNOW the student has an
+          // identity, so the modal is skipped without trusting a stale read.
+          const pendingApplied = await applyPendingAcademicProfile(userId, userEmail);
+          const dismissed = await AsyncStorage.getItem(`${ACADEMIC_SETUP_DISMISSED_KEY}:${userId}`);
+          if (cancelled) return;
+          if (dismissed === 'true') {
+            setShowUsernameModal(false);
+            return;
+          }
+          // Always reload — never trust the cached copy. A fresh email signup
+          // leaves academicProfile as a NON-null EMPTY row (the initial
+          // /users/:id fetched before the academic PUT landed); the old `??`
+          // short-circuit then popped this modal on top of onboarding even
+          // though the student had just entered their institution + level.
+          const academic = await loadAcademicProfile(userId).catch(
+            () => useAuthStore.getState().academicProfile
+          );
+          if (cancelled) return;
+          if (pendingApplied || hasAcademicIdentity(academic)) {
+            setShowUsernameModal(false);
+          } else {
+            setProfileSetupMode('academic');
+            setShowUsernameModal(true);
+          }
+        } catch {
+          if (!cancelled) setShowUsernameModal(false);
+        }
       });
 
-  }, [user?.id, showOnboarding]);
+    return () => {
+      cancelled = true;
+    };
+
+  }, [user?.id]);
 
 
 
@@ -1065,6 +1127,8 @@ function RootNavigatorInner() {
 
             <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ presentation: 'modal' }} />
 
+            <RootStack.Screen name="AcademicSettings" component={AcademicSettingsScreen} options={{ presentation: 'modal' }} />
+
             <RootStack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ presentation: 'modal' }} />
 
             <RootStack.Screen name="Offline" component={OfflineScreen} options={{ presentation: 'modal' }} />
@@ -1077,9 +1141,10 @@ function RootNavigatorInner() {
 
       </RootStack.Navigator>
 
-      {user && !showOnboarding ? (
+      {user ? (
         <UsernameRequiredModal
           visible={showUsernameModal}
+          mode={profileSetupMode}
           onClose={() => {}}
           currentUser={{
             id: user.id,
@@ -1093,8 +1158,19 @@ function RootNavigatorInner() {
             setUserProfile({ username, firstName, lastName, name: `${firstName} ${lastName}` });
             setShowUsernameModal(false);
           }}
+          onSkip={
+            profileSetupMode === 'academic'
+              ? () => {
+                  void AsyncStorage.setItem(`${ACADEMIC_SETUP_DISMISSED_KEY}:${user.id}`, 'true').catch(() => {});
+                  setShowUsernameModal(false);
+                }
+              : undefined
+          }
         />
       ) : null}
+
+      {/* Phase 1 · E: blocking notice while the API answers ACCOUNT_SUSPENDED (no sign-out). */}
+      {user ? <AccountSuspendedBanner /> : null}
 
     </>
 

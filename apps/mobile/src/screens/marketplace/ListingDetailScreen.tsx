@@ -25,6 +25,10 @@ import { addRecentlyViewedListing } from './marketplaceRecentlyViewed';
 import { SaleCountdown } from './SaleCountdown';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import {
+  isMarketplaceListingModerated,
+  MARKETPLACE_LISTING_STATUS_LABELS,
+} from '@lantern/shared/marketplace';
+import {
   fetchPickupNudge,
   validateMarketplaceCoupon,
   fetchListingOffersHistory,
@@ -33,6 +37,8 @@ import {
   fetchMarketplaceListingReviewEligibility,
 } from '../../services/api';
 import type { MarketplacePickupNudge } from '@lantern/shared/types';
+import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
+import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
 
 type NavigationProp = {
   goBack: () => void;
@@ -44,15 +50,6 @@ interface Props {
   navigation: NavigationProp;
   route: { params?: { listingId?: string; quantity?: number } };
 }
-
-const REPORT_REASONS = [
-  'spam',
-  'inappropriate',
-  'scam',
-  'wrong_category',
-  'prohibited_item',
-  'other',
-] as const;
 
 function StarRow({ rating }: { rating: number }) {
   return (
@@ -86,7 +83,6 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     sendInquiry,
     toggleFavorite,
     addReview,
-    reportListing,
     buyNowListing,
     addToCart,
     boostListing,
@@ -103,8 +99,6 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [canReview, setCanReview] = useState(false);
-  const [reportReason, setReportReason] = useState<(typeof REPORT_REASONS)[number]>('spam');
-  const [reportDetails, setReportDetails] = useState('');
   const [sending, setSending] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
@@ -390,21 +384,6 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleSubmitReport = async () => {
-    if (!listing) return;
-    setSending(true);
-    try {
-      await reportListing(listing.id, reportReason, reportDetails.trim() || undefined);
-      setShowReport(false);
-      setReportDetails('');
-      Alert.alert('Report submitted', 'Thank you for helping keep the marketplace safe.');
-    } catch {
-      Alert.alert('Error', 'Failed to submit report.');
-    } finally {
-      setSending(false);
-    }
-  };
-
   const handleMarkSold = () => {
     if (!listing || !user?.id) return;
     Alert.alert('Mark as sold', 'Mark this listing as sold?', [
@@ -534,8 +513,18 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               <SaleCountdown saleEndsAt={listing.sale_ends_at} />
             </View>
           ) : null}
-          {listing.status !== 'active' ? (
-            <Text className="text-sm font-semibold text-amber-600 mt-2 capitalize">{listing.status}</Text>
+          {own && isMarketplaceListingModerated(listing.status) ? (
+            // Moderation takedown: read-only for the seller (mirrors MyListingsScreen),
+            // with the takedown reason + appeal state/one-shot Appeal (Phase 1 · E).
+            <ListingTakedownNotice listing={listing} />
+          ) : listing.status !== 'active' ? (
+            <Text
+              className={`text-sm font-semibold mt-2 ${
+                isMarketplaceListingModerated(listing.status) ? 'text-red-700 dark:text-red-300' : 'text-amber-600'
+              }`}
+            >
+              {MARKETPLACE_LISTING_STATUS_LABELS[listing.status]}
+            </Text>
           ) : null}
 
           {listing.location ? (
@@ -921,47 +910,13 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      <Modal visible={showReport} transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
-        <View className="flex-1 justify-end bg-black/40">
-          <View className="bg-lantern-surface rounded-t-3xl p-5">
-            <Text className="text-lg font-bold text-lantern-text mb-3">Report listing</Text>
-            <View className="flex-row flex-wrap gap-2 mb-4">
-              {REPORT_REASONS.map(reason => (
-                <Pressable
-                  key={reason}
-                  onPress={() => setReportReason(reason)}
-                  className={`px-3 py-1.5 rounded-full border ${
-                    reportReason === reason
-                      ? 'bg-red-600 border-red-600'
-                      : 'border-lantern-border'
-                  }`}
-                >
-                  <Text className={`text-xs capitalize ${reportReason === reason ? 'text-white' : 'text-lantern-text-secondary'}`}>
-                    {reason.replace(/_/g, ' ')}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              value={reportDetails}
-              onChangeText={setReportDetails}
-              placeholder="Additional details (optional)"
-              placeholderTextColor="#94a3b8"
-              multiline
-              className="min-h-[80px] p-3 rounded-xl border border-lantern-border text-lantern-text mb-4"
-              textAlignVertical="top"
-            />
-            <View className="flex-row gap-3">
-              <Button variant="secondary" className="flex-1" onPress={() => setShowReport(false)}>
-                Cancel
-              </Button>
-              <Button className="flex-1" loading={sending} onPress={handleSubmitReport}>
-                Submit report
-              </Button>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <ReportContentSheet
+        visible={showReport}
+        targetType={listing.listing_kind === 'question_bank' ? 'question_bank' : 'listing'}
+        targetId={listing.id}
+        targetLabel={listing.title}
+        onClose={() => setShowReport(false)}
+      />
     </SafeAreaView>
   );
 }

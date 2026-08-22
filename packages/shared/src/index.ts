@@ -26,8 +26,17 @@ export * from './linking';
 // Marketplace (location, compliance)
 export * from './marketplace';
 
+// Academic identity (course codes, academic years, study levels)
+export * from './academic';
+
+// Learning events + concepts vocabulary (append-only learning log, concept slugs)
+export * from './learning';
+
 // Jobs board (campus employment — sibling of marketplace goods)
 export * from './jobs';
+
+// Moderation (content reports, rights attestation, content filter, strikes, appeals)
+export * from './moderation';
 
 // Flashcard plain-language labels (web + mobile)
 export * from './flashcards';

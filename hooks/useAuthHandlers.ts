@@ -5,6 +5,8 @@ import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
+import { useAcademicStore } from '../stores/academicStore';
+import { useLibraryStore } from '../stores/libraryStore';
 import { MOCK_USERS } from '../utils/helpers';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -251,6 +253,8 @@ export function useAuthHandlers() {
         setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
         useBudgetStore.getState().reset();
         useStudyGoalsStore.getState().reset();
+        useAcademicStore.getState().reset();
+        useLibraryStore.getState().reset();
     }, [setCurrentUser, setGroups, setAllMessages, setSelectedChat, setDmThreads, setAllDirectMessages]);
 
     const handleUpdateProfile = useCallback(async (name: string, phone: string): Promise<boolean> => {

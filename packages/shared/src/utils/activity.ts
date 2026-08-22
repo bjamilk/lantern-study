@@ -170,6 +170,30 @@ export function computeStudyStreak(
   return { current, longest, lastActiveDate };
 }
 
+/** Number of days in the 7-day window ending today (local calendar, inclusive). */
+export const ACTIVE_DAYS_WEEK_WINDOW = 7;
+
+/**
+ * Distinct days with any study activity in the last 7 local calendar days
+ * (today and the six days before it). 0..7.
+ *
+ * Feeds the AI Study Coach's `studyDaysThisWeek` — the honest replacement for
+ * the day-streak that used to be sent under the name "hours this week".
+ */
+export function countActiveDaysInLastWeek(
+  activityDays: StudyActivityDay[],
+  referenceDate: Date = new Date()
+): number {
+  const activeDates = getActiveDates(activityDays);
+  if (activeDates.size === 0) return 0;
+  const today = formatActivityLocalDate(referenceDate);
+  let count = 0;
+  for (let offset = 0; offset < ACTIVE_DAYS_WEEK_WINDOW; offset++) {
+    if (activeDates.has(addDaysToDateStr(today, -offset))) count++;
+  }
+  return count;
+}
+
 export function buildActivityMap(days: StudyActivityDay[]): Map<string, number> {
   const map = new Map<string, number>();
   for (const day of days) {

@@ -6,6 +6,7 @@ import {
   MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
+import { useLibraryStore } from '../stores/libraryStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
@@ -485,6 +486,23 @@ export function useNoteHandlers(currentUserId?: string) {
     [moveNotesToFolder],
   );
 
+  /**
+   * "Move to course…" (Phase 1 · B): PATCH /notes/:id { courseId } via
+   * saveNote (single-column save, no CAS). When a course filter is active the
+   * list is reloaded so a note moved out of scope disappears; the Library
+   * overview counts are marked stale.
+   */
+  const handleMoveNoteToCourse = useCallback(
+    async (noteId: string, courseId: string | null) => {
+      await saveNote(noteId, { courseId });
+      useLibraryStore.getState().invalidateOverview();
+      if (useNotesStore.getState().courseFilterId) {
+        await loadNotes();
+      }
+    },
+    [saveNote, loadNotes],
+  );
+
   return {
     navigateToNotes,
     openNote,
@@ -495,6 +513,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleTogglePinNote,
     handleArchiveNote,
     handleMoveNotesToFolder,
+    handleMoveNoteToCourse,
     handleAutoSave,
     cancelAutoSave,
     handleSmartNote,

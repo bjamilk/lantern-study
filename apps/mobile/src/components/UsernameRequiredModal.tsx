@@ -1,9 +1,12 @@
 // ===========================================
-// Lantern Study Mobile - Username Required Modal
+// Lantern Study Mobile - Profile Setup Modal
 // ===========================================
-// Prompts existing users to set a username on login
+// Mobile counterpart of the web "Set up your profile" step
+// (docs/phase1-academic-identity-contract.md §4/§5): username (OAuth path)
+// + institution + programme + level + optional courses. Also offered once,
+// skippable, to students who already have a username but no institution.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,8 +21,16 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import type { Course } from '@lantern/shared/types';
+import { currentAcademicYear, studyLevelLabel } from '@lantern/shared/academic';
 import { useTheme } from '../theme';
 import { checkUsername, updateUsername } from '../services/api';
+import { getMyActiveCourses, saveAcademicProfile, saveMyCourseSet } from '../services/academic';
+import { useAuthStore } from '../stores/authStore';
+import { useInstitutions } from '../hooks/useInstitutions';
+import { CampusPicker } from '../screens/marketplace/CampusPicker';
+import { StudyLevelPicker } from './academic/StudyLevelPicker';
+import { CourseMultiSelect } from './academic/CourseMultiSelect';
 
 interface User {
   id: string;
@@ -35,6 +46,12 @@ interface UsernameRequiredModalProps {
   onClose: () => void;
   currentUser: User;
   onSuccess: (username: string, firstName: string, lastName: string) => void;
+  /**
+   * 'username' (default): no username yet — username/name required, no skip.
+   * 'academic': username exists — academic fields only, "Skip for now" shown.
+   */
+  mode?: 'username' | 'academic';
+  onSkip?: () => void;
 }
 
 export default function UsernameRequiredModal({
@@ -42,13 +59,28 @@ export default function UsernameRequiredModal({
   onClose,
   currentUser,
   onSuccess,
+  mode = 'username',
+  onSkip,
 }: UsernameRequiredModalProps) {
   const { colors } = useTheme();
+  const academicProfile = useAuthStore(s => s.academicProfile);
+  const {
+    institutions,
+    loading: institutionsLoading,
+    error: institutionsError,
+    reload: reloadInstitutions,
+  } = useInstitutions();
+  const needsUsername = mode === 'username';
+
   const [username, setUsername] = useState('');
   const [firstName, setFirstName] = useState(currentUser.firstName || '');
   const [lastName, setLastName] = useState(currentUser.lastName || '');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
+  const [institutionId, setInstitutionId] = useState(academicProfile?.institutionId ?? '');
+  const [programme, setProgramme] = useState(academicProfile?.programme ?? '');
+  const [studyLevel, setStudyLevel] = useState<number | null>(academicProfile?.studyLevel ?? null);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -67,10 +99,19 @@ export default function UsernameRequiredModal({
     }
   }, [currentUser]);
 
+  // Hydrate academic fields if the profile arrives after first render.
+  useEffect(() => {
+    if (!academicProfile) return;
+    setInstitutionId(prev => prev || academicProfile.institutionId || '');
+    setProgramme(prev => prev || academicProfile.programme || '');
+    setStudyLevel(prev => prev ?? academicProfile.studyLevel ?? null);
+  }, [academicProfile]);
+
   // Debounced username availability check
   useEffect(() => {
+    if (!needsUsername) return;
     const normalizedUsername = username.toLowerCase().trim();
-    
+
     if (!normalizedUsername || normalizedUsername.length < 3) {
       setUsernameAvailable(null);
       return;
@@ -94,57 +135,105 @@ export default function UsernameRequiredModal({
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [username]);
+  }, [username, needsUsername]);
+
+  const title = needsUsername ? 'Complete Your Profile' : 'Set up your academic profile';
+  const intro = useMemo(
+    () =>
+      needsUsername
+        ? 'Pick a username so classmates can find you, then tell us where you study — your notes, decks and tests get filed under your courses.'
+        : 'Tell us where you study. Your notes, decks and tests get filed under your courses, and the marketplace shows what fits your level.',
+    [needsUsername]
+  );
 
   const handleSubmit = async () => {
     setError('');
-    
+
     const normalizedUsername = username.toLowerCase().trim();
     const trimmedFirstName = firstName.trim();
     const trimmedLastName = lastName.trim();
 
-    // Validate
-    if (!normalizedUsername) {
-      setError('Username is required');
-      return;
+    if (needsUsername) {
+      if (!normalizedUsername) {
+        setError('Username is required');
+        return;
+      }
+      if (normalizedUsername.length < 3) {
+        setError('Username must be at least 3 characters');
+        return;
+      }
+      if (!validateUsernameFormat(normalizedUsername)) {
+        setError('Username can only contain letters, numbers, and underscores');
+        return;
+      }
+      if (usernameAvailable === false) {
+        setError('This username is already taken');
+        return;
+      }
+      if (!trimmedFirstName) {
+        setError('First name is required');
+        return;
+      }
+      if (!trimmedLastName) {
+        setError('Last name is required');
+        return;
+      }
     }
-    
-    if (normalizedUsername.length < 3) {
-      setError('Username must be at least 3 characters');
-      return;
-    }
-    
-    if (!validateUsernameFormat(normalizedUsername)) {
-      setError('Username can only contain letters, numbers, and underscores');
-      return;
-    }
-    
-    if (usernameAvailable === false) {
-      setError('This username is already taken');
-      return;
-    }
-    
-    if (!trimmedFirstName) {
-      setError('First name is required');
-      return;
-    }
-    
-    if (!trimmedLastName) {
-      setError('Last name is required');
-      return;
-    }
+
+    // Institution + level are OPTIONAL — activation must never dead-end a
+    // student at an unlisted school or one hitting a failed campuses fetch. The
+    // username (username mode) is the only hard requirement; whatever academic
+    // fields are provided are saved best-effort below.
 
     setIsSubmitting(true);
     try {
-      await updateUsername(currentUser.id, normalizedUsername, {
-        firstName: trimmedFirstName,
-        lastName: trimmedLastName,
-      });
+      if (needsUsername) {
+        await updateUsername(currentUser.id, normalizedUsername, {
+          firstName: trimmedFirstName,
+          lastName: trimmedLastName,
+        });
+      }
+
+      const hasAcademicInput = !!institutionId || studyLevel != null || !!programme.trim();
+      if (hasAcademicInput) {
+        // Best-effort — a failed academic PUT must not trap the user behind the
+        // gate once the username is set.
+        try {
+          await saveAcademicProfile(currentUser.id, {
+            institutionId: institutionId || null,
+            programme: programme.trim() || null,
+            studyLevel: studyLevel ?? null,
+          });
+
+          if (courses.length > 0) {
+            // Union with anything already enrolled this year (PUT replaces the set).
+            const academicYear = currentAcademicYear();
+            let existingIds: string[] = [];
+            try {
+              existingIds = (await getMyActiveCourses({ force: true }))
+                .filter(row => row.academicYear === academicYear)
+                .map(row => row.course.id);
+            } catch {
+              existingIds = [];
+            }
+            const ids = Array.from(new Set([...existingIds, ...courses.map(c => c.id)]));
+            await saveMyCourseSet(ids, academicYear);
+          }
+        } catch (academicErr) {
+          console.warn('[ProfileSetup] academic profile save failed (non-blocking):', academicErr);
+        }
+      }
+
+      const finalUsername = needsUsername ? normalizedUsername : currentUser.username || '';
+      const finalFirst = needsUsername ? trimmedFirstName : currentUser.firstName || firstName.trim();
+      const finalLast = needsUsername ? trimmedLastName : currentUser.lastName || lastName.trim();
 
       Alert.alert(
-        'Welcome!',
-        `Your username @${normalizedUsername} has been set successfully.`,
-        [{ text: 'Continue', onPress: () => onSuccess(normalizedUsername, trimmedFirstName, trimmedLastName) }]
+        needsUsername ? 'Welcome!' : 'All set',
+        needsUsername
+          ? `Your username @${finalUsername} has been set successfully.`
+          : 'Your academic profile is saved.',
+        [{ text: 'Continue', onPress: () => onSuccess(finalUsername, finalFirst, finalLast) }]
       );
     } catch (err: any) {
       const message = err?.message || 'Failed to update profile';
@@ -158,12 +247,17 @@ export default function UsernameRequiredModal({
     }
   };
 
+  const submitDisabled =
+    isSubmitting || (needsUsername && (checkingUsername || usernameAvailable === false));
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={() => {}}
+      onRequestClose={() => {
+        if (onSkip) onSkip();
+      }}
     >
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -175,102 +269,184 @@ export default function UsernameRequiredModal({
       >
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerSpacer} />
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Complete Your Profile</Text>
-          <View style={styles.headerSpacer} />
+          <Text style={[styles.headerTitle, { color: colors.text }]}>{title}</Text>
+          {onSkip ? (
+            <TouchableOpacity onPress={onSkip} style={styles.headerSpacer} accessibilityRole="button" accessibilityLabel="Skip for now">
+              <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerSpacer} />
+          )}
         </View>
 
-        <ScrollView 
+        <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           keyboardShouldPersistTaps="handled"
         >
           <View style={[styles.infoBox, { backgroundColor: colors.primaryLight || '#EBF5FF' }]}>
-            <Ionicons name="information-circle" size={24} color={colors.primary} />
-            <Text style={[styles.infoText, { color: colors.text }]}>
-              We've updated our system! Please set a username to continue. Your username will be used by other members to find and add you to groups.
+            <Ionicons name="school" size={24} color={colors.primary} />
+            <Text style={[styles.infoText, { color: colors.text }]}>{intro}</Text>
+          </View>
+
+          {needsUsername ? (
+            <>
+              {/* First Name */}
+              <View style={styles.inputContainer}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>First Name</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
+                  <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, { color: colors.inputText }]}
+                    placeholder="First name"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    autoCapitalize="words"
+                    editable={!isSubmitting}
+                  />
+                </View>
+              </View>
+
+              {/* Last Name */}
+              <View style={styles.inputContainer}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Last Name</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
+                  <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, { color: colors.inputText }]}
+                    placeholder="Last name"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    value={lastName}
+                    onChangeText={setLastName}
+                    autoCapitalize="words"
+                    editable={!isSubmitting}
+                  />
+                </View>
+              </View>
+
+              {/* Username */}
+              <View style={styles.inputContainer}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Username</Text>
+                <View style={[
+                  styles.inputWrapper,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: usernameAvailable === true ? '#10B981' :
+                                 usernameAvailable === false ? colors.error :
+                                 colors.inputBorder,
+                  },
+                ]}>
+                  <Text style={[styles.atSymbol, { color: colors.primary }]}>@</Text>
+                  <TextInput
+                    style={[styles.input, { color: colors.inputText }]}
+                    placeholder="username"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    value={username}
+                    onChangeText={(text) => {
+                      const sanitized = text.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                      setUsername(sanitized);
+                      setError('');
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={20}
+                    editable={!isSubmitting}
+                  />
+                  {checkingUsername && (
+                    <ActivityIndicator size="small" color={colors.primary} style={styles.inputIconRight} />
+                  )}
+                  {!checkingUsername && usernameAvailable === true && username.length >= 3 && (
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
+                  )}
+                  {!checkingUsername && usernameAvailable === false && (
+                    <Ionicons name="close-circle" size={20} color={colors.error} style={styles.inputIconRight} />
+                  )}
+                </View>
+                {usernameAvailable === true && username.length >= 3 && (
+                  <Text style={[styles.successText, { color: '#10B981' }]}>Username is available!</Text>
+                )}
+                {usernameAvailable === false && (
+                  <Text style={[styles.errorText, { color: colors.error }]}>Username is already taken</Text>
+                )}
+                <Text style={[styles.hintText, { color: colors.textSecondary }]}>
+                  3-20 characters, letters, numbers, and underscores only
+                </Text>
+              </View>
+            </>
+          ) : null}
+
+          {/* Institution (optional) */}
+          <View style={styles.inputContainer}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>University / Polytechnic (Optional)</Text>
+            <CampusPicker
+              campuses={institutions}
+              value={institutionId}
+              onChange={(campusId) => {
+                setInstitutionId(campusId);
+                setError('');
+              }}
+              emptyLabel={institutionsLoading ? 'Loading institutions…' : 'Choose your institution'}
+              searchPlaceholder="Search universities and polytechnics…"
+            />
+            {institutionsError ? (
+              <TouchableOpacity onPress={reloadInstitutions} accessibilityRole="button">
+                <Text style={[styles.errorText, { color: colors.error }]}>
+                  Couldn’t load institutions. Tap to retry.
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.hintText, { color: colors.textSecondary }]}>
+                Not listed, or not in Nigeria? Leave this blank — you can add it later.
+              </Text>
+            )}
+          </View>
+
+          {/* Programme */}
+          <View style={styles.inputContainer}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Programme (Optional)</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
+              <Ionicons name="book-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { color: colors.inputText }]}
+                placeholder="e.g. Medicine and Surgery"
+                placeholderTextColor={colors.inputPlaceholder}
+                value={programme}
+                onChangeText={setProgramme}
+                autoCapitalize="words"
+                editable={!isSubmitting}
+              />
+            </View>
+          </View>
+
+          {/* Level */}
+          <View style={styles.inputContainer}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Level (Optional){studyLevel ? ` — ${studyLevelLabel(studyLevel)}` : ''}
             </Text>
+            <StudyLevelPicker
+              value={studyLevel}
+              onChange={(level) => {
+                setStudyLevel(level);
+                setError('');
+              }}
+              disabled={isSubmitting}
+            />
           </View>
 
-          {/* First Name */}
+          {/* Courses (optional) */}
           <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>First Name</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-              <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: colors.inputText }]}
-                placeholder="First name"
-                placeholderTextColor={colors.inputPlaceholder}
-                value={firstName}
-                onChangeText={setFirstName}
-                autoCapitalize="words"
-                editable={!isSubmitting}
-              />
-            </View>
-          </View>
-
-          {/* Last Name */}
-          <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Last Name</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-              <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: colors.inputText }]}
-                placeholder="Last name"
-                placeholderTextColor={colors.inputPlaceholder}
-                value={lastName}
-                onChangeText={setLastName}
-                autoCapitalize="words"
-                editable={!isSubmitting}
-              />
-            </View>
-          </View>
-
-          {/* Username */}
-          <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Username</Text>
-            <View style={[
-              styles.inputWrapper, 
-              { 
-                backgroundColor: colors.inputBackground, 
-                borderColor: usernameAvailable === true ? '#10B981' : 
-                             usernameAvailable === false ? colors.error : 
-                             colors.inputBorder 
-              }
-            ]}>
-              <Text style={[styles.atSymbol, { color: colors.primary }]}>@</Text>
-              <TextInput
-                style={[styles.input, { color: colors.inputText }]}
-                placeholder="username"
-                placeholderTextColor={colors.inputPlaceholder}
-                value={username}
-                onChangeText={(text) => {
-                  const sanitized = text.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                  setUsername(sanitized);
-                  setError('');
-                }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={20}
-                editable={!isSubmitting}
-              />
-              {checkingUsername && (
-                <ActivityIndicator size="small" color={colors.primary} style={styles.inputIconRight} />
-              )}
-              {!checkingUsername && usernameAvailable === true && username.length >= 3 && (
-                <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
-              )}
-              {!checkingUsername && usernameAvailable === false && (
-                <Ionicons name="close-circle" size={20} color={colors.error} style={styles.inputIconRight} />
-              )}
-            </View>
-            {usernameAvailable === true && username.length >= 3 && (
-              <Text style={[styles.successText, { color: '#10B981' }]}>Username is available!</Text>
-            )}
-            {usernameAvailable === false && (
-              <Text style={[styles.errorText, { color: colors.error }]}>Username is already taken</Text>
-            )}
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Courses this semester (Optional)</Text>
+            <CourseMultiSelect
+              selected={courses}
+              onChange={setCourses}
+              institutionId={institutionId || null}
+              includeMyCourses={false}
+              disabled={isSubmitting}
+              placeholder="Search or add, e.g. BIO 201"
+            />
             <Text style={[styles.hintText, { color: colors.textSecondary }]}>
-              3-20 characters, letters, numbers, and underscores only
+              Can’t find a course? Type its code (e.g. GST 101) and tap “Add”.
             </Text>
           </View>
 
@@ -285,12 +461,12 @@ export default function UsernameRequiredModal({
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
           <TouchableOpacity
             style={[
-              styles.submitButton, 
+              styles.submitButton,
               { backgroundColor: colors.primary },
-              (isSubmitting || checkingUsername || usernameAvailable === false) && styles.buttonDisabled
+              submitDisabled && styles.buttonDisabled,
             ]}
             onPress={handleSubmit}
-            disabled={isSubmitting || checkingUsername || usernameAvailable === false}
+            disabled={submitDisabled}
           >
             {isSubmitting ? (
               <ActivityIndicator color="#fff" />
@@ -298,6 +474,11 @@ export default function UsernameRequiredModal({
               <Text style={styles.submitButtonText}>Continue</Text>
             )}
           </TouchableOpacity>
+          {onSkip ? (
+            <TouchableOpacity onPress={onSkip} style={styles.skipButton} accessibilityRole="button">
+              <Text style={[styles.skipButtonText, { color: colors.textSecondary }]}>Skip for now</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -319,9 +500,17 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 18,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+  },
+  skipText: {
+    fontSize: 14,
     fontWeight: '600',
   },
   content: {
@@ -419,5 +608,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  skipButton: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  skipButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

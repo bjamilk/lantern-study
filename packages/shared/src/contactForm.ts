@@ -5,6 +5,7 @@ export const CONTACT_CATEGORIES = [
   'billing',
   'marketplace',
   'privacy',
+  'copyright',
   'other',
 ] as const;
 
@@ -17,6 +18,7 @@ export const CONTACT_CATEGORY_LABELS: Record<ContactCategory, string> = {
   billing: 'Billing & subscription',
   marketplace: 'Marketplace',
   privacy: 'Privacy & data',
+  copyright: 'Copyright / content complaint',
   other: 'Other',
 };
 

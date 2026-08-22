@@ -20,12 +20,17 @@ import {
   ArrowDownTrayIcon,
   ChevronDownIcon,
   EllipsisVerticalIcon,
+  FlagIcon,
 } from '@heroicons/react/24/outline';
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
 import CollaboratorsModal from './CollaboratorsModal';
 import Modal from './ui/Modal';
 import { Button } from './ui';
 import { Menu, MenuTrigger, MenuContent, MenuItem } from './ui/Menu';
+import ReportContentModal from './moderation/ReportContentModal';
+import { MoveToCourseModal } from './academic/MoveToCourseModal';
+import { useAcademicStore } from '../stores/academicStore';
+import { courseLabel } from '../utils/academicSetup';
 import {
   MarkdownRenderer,
   isCardDue,
@@ -46,6 +51,8 @@ interface DeckDetailScreenProps {
   onOpenEditFlashcard: (flashcard: Flashcard) => void;
   onDeleteFlashcard: (flashcardId: string) => void;
   onOpenEditDeck: (deck: Deck) => void;
+  /** "Move to course…" (PUT /decks/:id { courseId }); rejections surface in the dialog. */
+  onMoveDeckToCourse?: (deck: Deck, courseId: string | null) => void | Promise<void>;
   onDeleteDeck: (deckId: string) => void;
   onGenerateFlashcards: (deckId: string, notes: string, count: number) => void;
   isGenerating: boolean;
@@ -103,6 +110,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   onOpenEditFlashcard,
   onDeleteFlashcard,
   onOpenEditDeck,
+  onMoveDeckToCourse,
   onDeleteDeck,
   onGenerateFlashcards,
   isGenerating,
@@ -112,9 +120,23 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   onEnhanceFlashcard,
 }) => {
   const currentUser = useAuthStore((s) => s.currentUser);
+  // A deck somebody else shared with me is reportable; my own decks never are.
+  const isSharedWithMe = !!deck.userId && !!currentUser?.id && deck.userId !== currentUser.id;
   const cardsInDeck = flashcards.filter((fc) => fc && fc.deckId === deck.id);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
+  const [isMoveCourseOpen, setIsMoveCourseOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  // Course label under the title (Phase 1 · B); courses load lazily on first use.
+  const resolveCourse = useAcademicStore((s) => s.resolveCourse);
+  const knownCourses = useAcademicStore((s) => s.knownCourses);
+  const academicLoaded = useAcademicStore((s) => s.loaded);
+  const loadMyCourses = useAcademicStore((s) => s.loadMyCourses);
+  React.useEffect(() => {
+    if (deck.courseId && !academicLoaded) void loadMyCourses();
+  }, [deck.courseId, academicLoaded, loadMyCourses]);
+  void knownCourses; // subscribe so the label resolves once courses load
+  const deckCourse = deck.courseId ? resolveCourse(deck.courseId) : null;
   const [enhancingCardId, setEnhancingCardId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -356,6 +378,18 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             <p className="text-sm text-lantern-text-secondary mt-1">
               {deck.description || 'No description.'}
             </p>
+            {deck.courseId ? (
+              <button
+                type="button"
+                onClick={() => (onMoveDeckToCourse ? setIsMoveCourseOpen(true) : undefined)}
+                disabled={!onMoveDeckToCourse}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-lantern-primary/10 px-2.5 py-1 text-xs font-medium text-lantern-primary disabled:cursor-default"
+                title={onMoveDeckToCourse ? 'Move to another course' : undefined}
+              >
+                <AcademicCapIcon className="w-3.5 h-3.5" aria-hidden />
+                {deckCourse ? courseLabel(deckCourse) : 'Filed under a course'}
+              </button>
+            ) : null}
           </div>
           <Menu open={manageOpen} onOpenChange={setManageOpen}>
             <MenuTrigger
@@ -389,6 +423,13 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                   <PencilIcon className="w-4 h-4" /> Edit deck
                 </span>
               </MenuItem>
+              {onMoveDeckToCourse && (
+                <MenuItem onSelect={() => setIsMoveCourseOpen(true)}>
+                  <span className="inline-flex items-center gap-2">
+                    <AcademicCapIcon className="w-4 h-4" /> Move to course…
+                  </span>
+                </MenuItem>
+              )}
               {deck.isShared && (
                 <MenuItem onSelect={() => setIsCollaboratorsModalOpen(true)}>
                   <span className="inline-flex items-center gap-2">
@@ -422,6 +463,13 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                   <ArrowPathIcon className="w-4 h-4" /> Reset progress
                 </span>
               </MenuItem>
+              {isSharedWithMe && (
+                <MenuItem onSelect={() => setIsReportOpen(true)}>
+                  <span className="inline-flex items-center gap-2">
+                    <FlagIcon className="w-4 h-4" /> Report deck…
+                  </span>
+                </MenuItem>
+              )}
               <MenuItem destructive onSelect={() => void handleDeleteDeckClick()}>
                 <span className="inline-flex items-center gap-2">
                   <TrashIcon className="w-4 h-4" /> Delete deck
@@ -453,11 +501,22 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                     key={card.id}
                     className="p-4 flex justify-between items-center hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50"
                   >
-                    <div
-                      className="text-sm text-lantern-text flex-grow pr-4 truncate"
-                      title={getCardPreview(card)}
-                    >
-                      <MarkdownRenderer content={getCardPreview(card)} />
+                    <div className="min-w-0 flex-grow pr-4">
+                      <div className="text-sm text-lantern-text truncate" title={getCardPreview(card)}>
+                        <MarkdownRenderer content={getCardPreview(card)} />
+                      </div>
+                      {card.tags && card.tags.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-1" aria-label="Tags">
+                          {card.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[11px] font-medium text-lantern-primary"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex space-x-2 flex-shrink-0">
                       {onEnhanceFlashcard &&
@@ -586,6 +645,24 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         deckId={deck.id}
         currentUserId={currentUser?.id}
       />
+      {isSharedWithMe && isReportOpen ? (
+        <ReportContentModal
+          isOpen={isReportOpen}
+          onClose={() => setIsReportOpen(false)}
+          targetType="deck"
+          targetId={deck.id}
+          targetLabel={deck.name}
+        />
+      ) : null}
+      {onMoveDeckToCourse ? (
+        <MoveToCourseModal
+          isOpen={isMoveCourseOpen}
+          onClose={() => setIsMoveCourseOpen(false)}
+          currentCourseId={deck.courseId ?? null}
+          title={`Move “${deck.name}” to course`}
+          onSubmit={(courseId) => onMoveDeckToCourse(deck, courseId)}
+        />
+      ) : null}
       {cramMinutesOpen && (
         <Modal
           isOpen={cramMinutesOpen}

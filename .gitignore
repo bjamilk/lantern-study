@@ -66,3 +66,8 @@ DerivedData/
 
 # Agent worktrees / local session scratch
 .claude/
+
+# Local mobile build artifacts (never commit — large binaries)
+apps/mobile/build-*.apk
+apps/mobile/build-*.tar.gz
+apps/mobile/build-ios-sim-*.tar.gz

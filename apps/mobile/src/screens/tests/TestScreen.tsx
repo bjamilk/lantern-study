@@ -14,9 +14,10 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
+import { matchesCourseFilter } from '../../utils/libraryArchive';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
@@ -28,7 +29,21 @@ type TabType = 'tests' | 'history';
 
 export default function TestScreen() {
   const navigation = useNavigation<any>();
-  const [activeTab, setActiveTab] = useState<TabType>('tests');
+  // Library tree deep link: { tab: 'history', courseId, courseLabel } —
+  // courseId is a uuid or the literal 'null' (unfiled sessions).
+  const route = useRoute<any>();
+  const routeTab: TabType | undefined = route.params?.tab;
+  const routeCourseId: string | null | undefined = route.params?.courseId;
+  const routeCourseLabel: string | undefined = route.params?.courseLabel;
+  const [activeTab, setActiveTab] = useState<TabType>(routeTab === 'history' ? 'history' : 'tests');
+  const [historyCourse, setHistoryCourse] = useState<{ id: string; label: string } | null>(
+    routeCourseId ? { id: routeCourseId, label: routeCourseLabel || 'Course' } : null
+  );
+
+  useEffect(() => {
+    if (routeTab === 'history' || routeTab === 'tests') setActiveTab(routeTab);
+    if (routeCourseId) setHistoryCourse({ id: routeCourseId, label: routeCourseLabel || 'Course' });
+  }, [routeTab, routeCourseId, routeCourseLabel]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const [configTest, setConfigTest] = useState<Test | null>(null);
@@ -39,6 +54,11 @@ export default function TestScreen() {
   const defaultTestMode = useSettingsStore(s => s.settings.study.defaultTestMode);
   const { colors } = useTheme();
   const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, deleteAttempt, clearTestHistory } = useTestStore();
+
+  const visibleAttempts = useMemo(
+    () => (historyCourse ? attempts.filter(a => matchesCourseFilter(a.courseId, historyCourse.id)) : attempts),
+    [attempts, historyCourse]
+  );
 
   useEffect(() => {
     setSelectedMode(defaultTestMode === 'exam' ? 'test' : 'study');
@@ -91,6 +111,7 @@ export default function TestScreen() {
       spacedRepetition: config.useSpacedRepetition,
       focusOnNew: config.focusOnNew,
       lockAnswered: config.lockAnswered,
+      courseId: config.courseId ?? null,
     }).then(() => {
       trackTestStarted({
         mode: mode === 'test' ? 'test' : 'study',
@@ -342,13 +363,15 @@ export default function TestScreen() {
         {activeTab === 'tests' ? 'No Tests Available' : 'No Test History'}
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-        {activeTab === 'tests' 
+        {activeTab === 'tests'
           ? 'Saved deck quizzes you can launch appear here. Group chat tests show up in History after you finish them.'
-          : 'Your completed tests and scores appear here. Tap a result to review answers or retake.'
+          : historyCourse
+            ? `No completed tests filed under ${historyCourse.label} yet. Pick the course when you start a test and it will show up here.`
+            : 'Your completed tests and scores appear here. Tap a result to review answers or retake.'
         }
       </Text>
     </View>
-  ), [activeTab, colors]);
+  ), [activeTab, colors, historyCourse]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -387,6 +410,40 @@ export default function TestScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Library course filter (deep link from the Library tree) */}
+      {activeTab === 'history' && historyCourse ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 999,
+              backgroundColor: colors.primary + '20',
+              maxWidth: '70%',
+            }}
+          >
+            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
+              {historyCourse.label}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setHistoryCourse(null)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Clear course filter ${historyCourse.label}`}
+            >
+              <Ionicons name="close-circle" size={16} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+            {visibleAttempts.length} of {attempts.length} results
+          </Text>
+        </View>
+      ) : null}
+
       {/* List */}
       {activeTab === 'tests' ? (
         <FlatList
@@ -409,7 +466,7 @@ export default function TestScreen() {
       ) : (
         <FlatList
           key="history-list"
-          data={attempts}
+          data={visibleAttempts}
           keyExtractor={(item) => item.id}
           renderItem={renderAttemptItem}
           ListEmptyComponent={ListEmptyComponent}

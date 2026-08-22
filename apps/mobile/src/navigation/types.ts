@@ -7,9 +7,13 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Settings: undefined;
   EditProfile: undefined;
+  /** Academic identity + "My courses" management (Settings → Academic). */
+  AcademicSettings: undefined;
   BlockedUsers: undefined;
-  Offline: undefined;
-  LegalDocument: { document: "privacy" | "terms" | "cookies" };
+  /** Library tree → Offline filtered to a course (`'null'` = unfiled bundles). */
+  Offline: { courseId?: string | null; courseLabel?: string } | undefined;
+  /** Any shared legal document id (privacy, terms, cookies, prohibited, seller-terms). */
+  LegalDocument: { document: import("@lantern/shared/legal").LegalDocumentId };
 };
 
 export type AuthStackParamList = {
@@ -18,7 +22,7 @@ export type AuthStackParamList = {
   ForgotPassword: undefined;
   VerifyEmail: { email: string };
   ResetPassword: undefined;
-  LegalDocument: { document: "privacy" | "terms" | "cookies" };
+  LegalDocument: { document: import("@lantern/shared/legal").LegalDocumentId };
 };
 
 export type HomeStackParamList = {
@@ -43,7 +47,10 @@ export type StudyStackParamList = {
   NotesList: undefined;
   NoteEditor: { noteId: string };
   NoteShareAccept: { token: string };
-  TestsList: undefined;
+  /** Library tree → History filtered to a course (`'null'` = unfiled sessions). */
+  TestsList:
+    | { tab?: "tests" | "history"; courseId?: string | null; courseLabel?: string }
+    | undefined;
   TestTaking: {
     testId: string;
     testName: string;

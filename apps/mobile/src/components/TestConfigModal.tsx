@@ -25,6 +25,7 @@ import {
   type QuestionVisibilityMode,
 } from '@lantern/shared/utils';
 import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
+import { CoursePicker } from './CoursePicker';
 
 // Timer presets in seconds
 const TIMER_PRESETS = [
@@ -58,6 +59,8 @@ export interface TestConfigOptions {
   visibilityMode?: QuestionVisibilityMode;
   /** Exam lock: can't return to a question once answered (test mode only). */
   lockAnswered?: boolean;
+  /** Academic archive: course this session is for (defaults from the group). */
+  courseId?: string | null;
 }
 
 export interface TestConfigAvailableFilter {
@@ -89,6 +92,11 @@ interface TestConfigModalProps {
    */
   onDownload?: (config: TestConfigOptions) => void;
   isDownloading?: boolean;
+  /**
+   * Academic archive: the course this session is filed under. Defaults from
+   * the group's course; the student can change or clear it per session.
+   */
+  defaultCourseId?: string | null;
 }
 
 export default function TestConfigModal({
@@ -106,6 +114,7 @@ export default function TestConfigModal({
   subgroups = [],
   onDownload,
   isDownloading = false,
+  defaultCourseId = null,
 }: TestConfigModalProps) {
   const [numberOfQuestions, setNumberOfQuestions] = useState(Math.min(10, maxQuestions));
   const [timerDuration, setTimerDuration] = useState(0);
@@ -118,6 +127,11 @@ export default function TestConfigModal({
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lockAnswered, setLockAnswered] = useState(false);
+  const [courseId, setCourseId] = useState<string | null>(defaultCourseId ?? null);
+  // Re-seed from the group whenever the modal (re)opens for a different default.
+  useEffect(() => {
+    if (visible) setCourseId(defaultCourseId ?? null);
+  }, [visible, defaultCourseId]);
   const { colors } = useTheme();
   // The stylesheet used to hardcode slate-900/800 values, so this modal stayed
   // dark in light mode. Rebuild it whenever the theme changes.
@@ -333,6 +347,7 @@ export default function TestConfigModal({
         selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
         visibilityMode: questionVisibilityMode,
         lockAnswered: isStudyMode ? false : lockAnswered,
+        courseId,
       },
       effectiveSessionMode
     );
@@ -346,6 +361,7 @@ export default function TestConfigModal({
     focusOnNew,
     selectedSubgroupIds,
     lockAnswered,
+    courseId,
     mode,
     questionVisibilityMode,
     forcesStudyFromVisibility,
@@ -378,6 +394,7 @@ export default function TestConfigModal({
       // (toggle hidden) must not bake in an explicit false — undefined lets
       // the bundle fall back to the global setting, matching web bundles.
       lockAnswered: isStudyMode ? undefined : lockAnswered,
+      courseId,
     });
   }, [
     onDownload,
@@ -392,6 +409,7 @@ export default function TestConfigModal({
     questionVisibilityMode,
     isStudyMode,
     lockAnswered,
+    courseId,
   ]);
 
   const formatTime = (seconds: number): string => {
@@ -786,8 +804,22 @@ export default function TestConfigModal({
               </View>
             ) : null}
 
+            {/* Course (academic archive) */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="school-outline" size={20} color={colors.primary} />
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Course</Text>
+              </View>
+              <CoursePicker
+                value={courseId}
+                onChange={course => setCourseId(course?.id ?? null)}
+                placeholder="File this session under a course (optional)"
+                title="Course for this session"
+              />
+            </View>
+
             {/* Advanced Options */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.advancedToggle, { borderTopColor: colors.border }]}
               onPress={() => setShowAdvanced(!showAdvanced)}
             >

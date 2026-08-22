@@ -3,6 +3,8 @@ import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder, MessageReplyPreview } from '../types';
 import MessageItem from './MessageItem';
+import ReportContentModal from './moderation/ReportContentModal';
+import type { ContentReportTargetType } from '@lantern/shared';
 import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
 import GroupListItem from './GroupListItem';
 import { summarizeGroupChat } from '../services/ai';
@@ -37,6 +39,7 @@ import {
   NoSymbolIcon,
   BellSlashIcon,
   BellAlertIcon,
+  FlagIcon,
 } from '@heroicons/react/24/outline';
 import {
   CHAT_MUTE_DURATIONS,
@@ -155,6 +158,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  // "Report…" target: a group message (hover bar) or the DM peer (header menu).
+  const [reportTarget, setReportTarget] = useState<{
+    type: ContentReportTargetType;
+    id: string;
+    label?: string;
+  } | null>(null);
   const prevMessageCountRef = useRef(messages.length);
   const lastMessageIdRef = useRef<string | null>(null);
   const isNearBottomRef = useRef(true);
@@ -1317,6 +1326,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   onOpenThread={handleOpenThread}
                   onEditMessage={(m) => beginEditingMessage(m)}
                   onRemoveMessage={(m) => void handleRemoveMessage(m)}
+                  onReportMessage={
+                    isGroup
+                      ? (m) =>
+                          setReportTarget({
+                            type: 'message',
+                            id: m.id,
+                            label: m.sender?.name || m.sender?.username || 'this message',
+                          })
+                      : undefined
+                  }
                   onReply={(m) => {
                     setEditingMessage(null);
                     setReplyTo({
@@ -1528,6 +1547,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   isGroupChat={chat.chatType === 'group'}
                   onEditMessage={(m) => beginEditingMessage(m, true)}
                   onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
+                  onReportMessage={
+                    chat.chatType === 'group'
+                      ? (m) =>
+                          setReportTarget({
+                            type: 'message',
+                            id: m.id,
+                            label: m.sender?.name || m.sender?.username || 'this message',
+                          })
+                      : undefined
+                  }
                   onReply={(m) => {
                     setThreadEditingMessage(null);
                     setThreadReplyTo({
@@ -1842,6 +1871,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                       className="text-red-600 dark:text-red-400"
                     >
                       {iBlockedThem ? 'Unblock User' : 'Block User'}
+                    </MenuItem>
+                  )}
+                  {dmPeerId && (
+                    <MenuItem
+                      onSelect={() => {
+                        setIsDropdownOpen(false);
+                        setReportTarget({ type: 'user', id: dmPeerId, label: name });
+                      }}
+                      icon={<FlagIcon className="w-4 h-4" />}
+                      className="text-red-600 dark:text-red-400"
+                    >
+                      Report User…
                     </MenuItem>
                   )}
                   <MenuSeparator />
@@ -2369,6 +2410,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           }}
         />
       )}
+
+      {reportTarget ? (
+        <ReportContentModal
+          isOpen={!!reportTarget}
+          onClose={() => setReportTarget(null)}
+          targetType={reportTarget.type}
+          targetId={reportTarget.id}
+          targetLabel={reportTarget.label}
+        />
+      ) : null}
 
     </div>
   );

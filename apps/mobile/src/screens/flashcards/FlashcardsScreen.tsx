@@ -14,7 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
-import { Button, Card, ScreenHeader } from '../../components/ui';
+import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
+import { useUIStore } from '../../stores/uiStore';
+import { matchesCourseFilter, UNFILED_COURSE_ID } from '../../utils/libraryArchive';
+import type { Course } from '@lantern/shared/types';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
@@ -24,6 +27,7 @@ import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModa
 import { FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { CoursePicker } from '../../components/CoursePicker';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -52,6 +56,7 @@ function DeckCard({
   isOffline,
   onToggleOffline,
   onShare,
+  onMore,
 }: {
   deck: Deck;
   index: number;
@@ -61,13 +66,23 @@ function DeckCard({
   isOffline?: boolean;
   onToggleOffline?: () => void;
   onShare?: () => void;
+  /** Row action sheet (Move to course…, offline, share). Also on long-press. */
+  onMore?: () => void;
 }) {
   const cardCount = deck.card_count ?? 0;
   const dueCount = deck.due_count ?? 0;
   const gradient = ACCENT_GRADIENTS[index % ACCENT_GRADIENTS.length];
 
   return (
-    <Pressable onPress={onPress} className="mb-3 active:opacity-90">
+    <Pressable
+      onPress={onPress}
+      onLongPress={onMore}
+      delayLongPress={350}
+      className="mb-3 active:opacity-90"
+      accessibilityRole="button"
+      accessibilityLabel={`Deck ${deck.name}`}
+      accessibilityHint={onMore ? 'Long press for more actions' : undefined}
+    >
       <View className="rounded-2xl overflow-hidden border border-lantern-border bg-lantern-surface shadow-sm">
         <LinearGradient
           colors={gradient}
@@ -131,6 +146,20 @@ function DeckCard({
               <Ionicons name="sparkles-outline" size={14} color="#ffffff" />
               <Text className="text-[10px] font-bold text-white">Generate</Text>
             </Pressable>
+            {onMore ? (
+              <Pressable
+                onPress={e => {
+                  e.stopPropagation?.();
+                  onMore();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`More actions for ${deck.name}`}
+                className="px-2 py-1 rounded-full bg-white/20"
+                hitSlop={8}
+              >
+                <Ionicons name="ellipsis-horizontal" size={14} color="#ffffff" />
+              </Pressable>
+            ) : null}
           </View>
         </LinearGradient>
         <View className="px-4 py-3">
@@ -181,9 +210,24 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [deckName, setDeckName] = useState('');
+  const [deckCourseId, setDeckCourseId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [aiDeckId, setAiDeckId] = useState<string | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  /** Deck whose row action sheet is open. */
+  const [deckActions, setDeckActions] = useState<Deck | null>(null);
+  /** Deck being moved via "Move to course…". */
+  const [courseMoveDeck, setCourseMoveDeck] = useState<Deck | null>(null);
+
+  // Library archive: course filter picked in the Library tree. The shared
+  // GET /decks client has no courseId param yet, so decks filter client-side
+  // on the course_id every row carries.
+  const courseFilter = useUIStore(s => s.libraryCourseFilter);
+  const setCourseFilter = useUIStore(s => s.setLibraryCourseFilter);
+  const courseFilterId = courseFilter?.id ?? null;
+  const defaultCourseId =
+    courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : null;
+  const { updateDeck } = useFlashcardStore();
 
   const loadDecks = useCallback(async () => {
     if (!user?.id) return;
@@ -193,6 +237,28 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   useEffect(() => {
     loadDecks();
   }, [loadDecks]);
+
+  // New decks default to the course the Library is filtered to.
+  useEffect(() => {
+    if (createOpen) setDeckCourseId(defaultCourseId);
+  }, [createOpen, defaultCourseId]);
+
+  const visibleDecks = useMemo(
+    () => (courseFilterId ? decks.filter(d => matchesCourseFilter(d.course_id, courseFilterId)) : decks),
+    [decks, courseFilterId]
+  );
+
+  const handleMoveDeckToCourse = async (course: Course | null) => {
+    const deck = courseMoveDeck;
+    if (!deck || !user?.id) return;
+    try {
+      await updateDeck(deck.id, { courseId: course?.id ?? null }, user.id);
+    } catch (e) {
+      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setCourseMoveDeck(null);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -205,9 +271,10 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
     if (!name || !user?.id) return;
     setCreating(true);
     try {
-      const deck = await createDeck(name, undefined, user.id);
+      const deck = await createDeck(name, undefined, user.id, { courseId: deckCourseId });
       setCreateOpen(false);
       setDeckName('');
+      setDeckCourseId(null);
       navigation.navigate('DeckDetail', { deckId: deck.id, deckName: deck.name });
     } finally {
       setCreating(false);
@@ -264,6 +331,43 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   };
 
   const dueCount = useMemo(() => decks.reduce((s, d) => s + (d.due_count || 0), 0), [decks]);
+
+  const deckActionItems: ActionSheetItem[] = deckActions
+    ? [
+        {
+          section: 'Deck',
+          label: 'Open deck',
+          icon: 'layers-outline',
+          onPress: () => navigation.navigate('DeckDetail', { deckId: deckActions.id, deckName: deckActions.name }),
+        },
+        {
+          section: 'Deck',
+          label: getStudyCtaLabel(deckActions.due_count ?? 0, deckActions.card_count ?? 0),
+          icon: 'play-circle-outline',
+          onPress: () => navigation.navigate('FlashcardReview', { deckId: deckActions.id, deckName: deckActions.name }),
+        },
+        {
+          section: 'Organise',
+          label: 'Move to course…',
+          icon: 'school-outline',
+          hint: deckActions.course_id ? 'Filed under a course — pick another or clear it' : 'Not filed under a course yet',
+          // Let the sheet dismiss before the course picker mounts.
+          onPress: () => setTimeout(() => setCourseMoveDeck(deckActions), 50),
+        },
+        {
+          section: 'Organise',
+          label: offlineDeckIds.includes(deckActions.id) ? 'Remove from offline' : 'Save for offline',
+          icon: offlineDeckIds.includes(deckActions.id) ? 'cloud-offline-outline' : 'cloud-download-outline',
+          onPress: () => void handleToggleOffline(deckActions.id),
+        },
+        {
+          section: 'Organise',
+          label: 'Share as JSON',
+          icon: 'share-outline',
+          onPress: () => void handleShareDeck(deckActions.id, deckActions.name),
+        },
+      ]
+    : [];
 
   const Wrapper = embedded ? View : SafeAreaView;
   const wrapperProps = embedded ? { className: 'flex-1 bg-lantern-background' } : { className: 'flex-1 bg-lantern-background', edges: ['top'] as const };
@@ -334,21 +438,44 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
         </Pressable>
       ) : null}
 
+      {courseFilter && !embedded ? (
+        <View className="mx-4 mb-2 flex-row items-center gap-2">
+          <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
+            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+              {courseFilter.label}
+            </Text>
+            <Pressable
+              onPress={() => setCourseFilter(null)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Clear course filter ${courseFilter.label}`}
+            >
+              <Ionicons name="close-circle" size={16} color={colors.primary} />
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       {isLoading && decks.length === 0 ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
-          data={decks}
+          data={visibleDecks}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
-              <Text className="text-lg font-semibold text-lantern-text mb-2">No decks yet</Text>
+              <Text className="text-lg font-semibold text-lantern-text mb-2">
+                {courseFilter && decks.length > 0 ? `No decks in ${courseFilter.label}` : 'No decks yet'}
+              </Text>
               <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-                Create your first deck to start studying with spaced repetition.
+                {courseFilter && decks.length > 0
+                  ? 'Create a deck here, or use “Move to course…” on a deck to file it under this course.'
+                  : 'Create your first deck to start studying with spaced repetition.'}
               </Text>
               <Button onPress={() => setCreateOpen(true)}>Create Deck</Button>
               <Button className="mt-2" variant="secondary" onPress={() => setImportOpen(true)}>
@@ -366,10 +493,27 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
               isOffline={offlineDeckIds.includes(item.id)}
               onToggleOffline={() => void handleToggleOffline(item.id)}
               onShare={() => void handleShareDeck(item.id, item.name)}
+              onMore={() => setDeckActions(item)}
             />
           )}
         />
       )}
+
+      <ActionSheet
+        visible={!!deckActions}
+        title={deckActions?.name ?? 'Deck'}
+        items={deckActionItems}
+        onClose={() => setDeckActions(null)}
+      />
+
+      <CoursePicker
+        visible={!!courseMoveDeck}
+        onClose={() => setCourseMoveDeck(null)}
+        value={courseMoveDeck?.course_id ?? null}
+        onChange={course => void handleMoveDeckToCourse(course)}
+        title="Move to course"
+        placeholder="Choose a course"
+      />
 
       <ImportAndStudyModal
         visible={importOpen}
@@ -387,9 +531,18 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
                 onChangeText={setDeckName}
                 placeholder="Deck name"
                 autoFocus
-                className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-background mb-4"
+                className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-background mb-3"
                 placeholderTextColor={colors.inputPlaceholder}
               />
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-1">Course (optional)</Text>
+              <View className="mb-4">
+                <CoursePicker
+                  value={deckCourseId}
+                  onChange={course => setDeckCourseId(course?.id ?? null)}
+                  placeholder="File this deck under a course"
+                  title="Course for this deck"
+                />
+              </View>
               <View className="flex-row gap-2">
                 <Button variant="secondary" className="flex-1" onPress={() => setCreateOpen(false)}>
                   Cancel

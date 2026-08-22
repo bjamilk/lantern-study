@@ -10,6 +10,9 @@
 # the guardrail that guarantees both (v1.0.25 was skipped once, leaving the
 # download a version behind — this exists so that can't happen silently again).
 #
+# Google Play gets the SAME version as an AAB via scripts/publish-android-aab.sh
+# (production profile -> Play internal track); run both for a release.
+#
 # Usage:
 #   scripts/publish-android-release.sh <path-to-apk> [--dry-run]
 #

@@ -52,6 +52,7 @@ import {
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 
 import { Button, Card } from '../../components/ui';
+import { CoursePicker } from '../../components/CoursePicker';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
@@ -991,6 +992,24 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           </View> : null}
 
 
+
+          {/* Academic archive: file this note under a course (owner/editor only). */}
+          {selectedNote && (canEdit || selectedNote.courseId) ? (
+            <View className="mb-4">
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-1">Course</Text>
+              <CoursePicker
+                value={selectedNote.courseId ?? null}
+                disabled={!canEdit}
+                onChange={course => {
+                  const nextCourseId = course?.id ?? null;
+                  setSelectedNote({ ...selectedNote, courseId: nextCourseId });
+                  saveNote(noteId, { courseId: nextCourseId }).catch(() => {});
+                }}
+                placeholder="File this note under a course (optional)"
+                title="Course for this note"
+              />
+            </View>
+          ) : null}
 
           {documentAttachment ? (
             <View className="mb-4">

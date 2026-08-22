@@ -10,6 +10,8 @@ import { requireTestOwner } from '../middleware/authorizeResource';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { getWalletService } from '../services/walletService';
 import { WALLET_COINS, WALLET_TEST_PASS_THRESHOLD, testAwardKey } from '@lantern/shared/utils/walletCoins';
+import { surfaceFromRequest } from '../services/learningEvents';
+import { COURSE_FILTER_INVALID_MESSAGE, courseFilterKey, parseCourseFilter } from '../services/academicCourses';
 
 async function awardTestPassCoins(userId: string, testId: string, score: number) {
   if (score < WALLET_TEST_PASS_THRESHOLD) {
@@ -52,7 +54,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
       const limit = Math.min(1000, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
       const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-      const subject = typeof req.query.subject === 'string' ? req.query.subject : undefined;
+      // `courseId` (test_sessions.course_id) replaces the retired `subject`
+      // filter, which keyed on config->>subject — a path no client ever wrote.
+      // uuid, the literal "null" (unfiled) or absent; anything else is a 400.
+      const courseFilter = parseCourseFilter(req.query.courseId);
+      if (courseFilter.kind === 'invalid') {
+        return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
+      }
+      const courseId = courseFilterKey(courseFilter) || undefined;
       const lean =
         req.query.lean === '1' ||
         req.query.lean === 'true' ||
@@ -63,7 +72,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : undefined;
       const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : undefined;
 
-      logger.debug('Fetching tests', { page, limit, status, subject, lean, sort, from, to, userId });
+      logger.debug('Fetching tests', { page, limit, status, courseId, lean, sort, from, to, userId });
 
       try {
         if (!supabaseService) {
@@ -79,7 +88,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           page,
           limit,
           status,
-          subject,
+          courseFilter,
           lean,
           sort,
           from,
@@ -233,10 +242,23 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           error: 'config and questions are required',
         });
       }
+      // Course rides in both the column and config.courseId (the shape clients
+      // already persist/restore). Top-level courseId wins over config.courseId.
+      const rawCourseId = body.courseId ?? body.config?.courseId ?? null;
+      if (
+        rawCourseId != null &&
+        rawCourseId !== '' &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(rawCourseId))
+      ) {
+        return res.status(400).json({ success: false, error: 'courseId must be a valid UUID' });
+      }
+      const courseId = typeof rawCourseId === 'string' && rawCourseId ? rawCourseId : null;
+      const config = courseId ? { ...body.config, courseId } : body.config;
 
       const draft = await supabaseService.createTestDraft(
         {
-          config: body.config,
+          config,
+          courseId,
           questions,
           user_answers: body.user_answers || body.userAnswers || {},
           start_time: body.start_time || body.startTime,
@@ -336,6 +358,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
                   : {}),
               }
             : undefined,
+          surface: surfaceFromRequest(req),
         });
 
         // Group Performance chart reads lean completed history via
@@ -635,7 +658,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         correctAnswersCount,
         totalQuestions,
         activityDate: typeof activityDate === 'string' ? activityDate : undefined,
-      }, userId);
+      }, userId, { surface: surfaceFromRequest(req) });
 
       // Invalidate caches
       await cacheService.delete(userScopedCacheKey('test:results', userId, testId));

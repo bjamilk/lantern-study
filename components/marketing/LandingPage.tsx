@@ -7,6 +7,7 @@ import {
   AcademicCapIcon,
   ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
+import { APP_STORE_URL, PLAY_STORE_URL } from '@lantern/shared';
 import { Button, Card, LanternIcon } from '../ui';
 import { usePageSeo } from '../../hooks/usePageSeo';
 
@@ -19,6 +20,15 @@ interface LandingPageProps {
 // in the public releases repo (source repo stays private).
 const ANDROID_APK_URL =
   'https://github.com/bjamilk/lantern-study-releases/releases/latest/download/lantern-study.apk';
+
+// Store links are null until a listing is live (packages/shared/src/linking);
+// the hero then falls back to the direct APK download.
+const HAS_STORE_LINKS = PLAY_STORE_URL !== null || APP_STORE_URL !== null;
+
+// Text "badges" styled like the secondary Button — no badge artwork lives in the
+// repo, and a plain link is both accessible and licence-free.
+const STORE_BADGE_CLASS =
+  'inline-flex items-center justify-center gap-2 font-semibold tracking-tight transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-lantern-background bg-lantern-surface/90 border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary hover:border-lantern-primary/30 shadow-lantern px-6 py-3 text-base rounded-lantern';
 
 const features = [
   { icon: DocumentTextIcon, title: 'Import PDF & PowerPoint', description: 'Turn lectures and slides into organized notes instantly.' },
@@ -90,23 +100,46 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
         Study with clarity
       </p>
       <h1 className="relative font-display text-4xl md:text-6xl font-semibold tracking-tight text-lantern-text max-w-3xl mx-auto leading-[1.1]">
-        Lantern Study
+        Study smarter. Learn together.
       </h1>
       <p className="relative mt-5 text-lg md:text-xl text-lantern-text-secondary max-w-2xl mx-auto leading-relaxed">
-        Notes, flashcards, and tests in one place — import your materials, generate study tools with AI, and learn with friends.
+        Everything you need for university in one place — notes, flashcards, tests, study groups and a student marketplace, built for low-bandwidth campuses.
       </p>
       <div className="relative mt-9 flex flex-col sm:flex-row gap-3 justify-center">
         <Button size="lg" onClick={onContinue}>Get started free</Button>
         <Button size="lg" variant="secondary" onClick={onSignIn}>Sign in</Button>
-        <a
-          href={ANDROID_APK_URL}
-          className="inline-flex items-center justify-center gap-2 font-semibold tracking-tight transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-lantern-background bg-lantern-surface/90 border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary hover:border-lantern-primary/30 shadow-lantern px-6 py-3 text-base rounded-lantern"
-        >
-          Download for Android
-        </a>
       </div>
+      <nav aria-label="Get the mobile app" className="relative mt-5 flex flex-col sm:flex-row gap-3 justify-center">
+        {PLAY_STORE_URL !== null && (
+          <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" className={STORE_BADGE_CLASS}>
+            <span className="flex flex-col items-start leading-none">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-lantern-text-tertiary">Get it on</span>
+              <span>Google Play</span>
+            </span>
+          </a>
+        )}
+        {APP_STORE_URL !== null && (
+          <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer" className={STORE_BADGE_CLASS}>
+            <span className="flex flex-col items-start leading-none">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-lantern-text-tertiary">Download on the</span>
+              <span>App Store</span>
+            </span>
+          </a>
+        )}
+        {PLAY_STORE_URL === null && (
+          <a href={ANDROID_APK_URL} className={STORE_BADGE_CLASS}>
+            Download for Android
+          </a>
+        )}
+      </nav>
       <p className="relative mt-3 text-xs text-lantern-text-tertiary">
-        Android APK (~81 MB), direct download — no store account needed. iOS coming via TestFlight.
+        {HAS_STORE_LINKS
+          ? PLAY_STORE_URL === null
+            ? 'Android APK (~81 MB), direct download — no store account needed. Google Play listing in progress.'
+            : APP_STORE_URL === null
+              ? 'App Store listing in progress.'
+              : 'Free on Android and iOS.'
+          : 'Android APK (~81 MB), direct download — no store account needed. Google Play and App Store listings are in progress.'}
       </p>
     </section>
 
@@ -148,7 +181,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
     <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-tertiary space-y-2">
       <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
         <a href="/marketplace" className="hover:text-lantern-text-secondary transition-colors">Explore marketplace</a>
-        <a href={ANDROID_APK_URL} className="hover:text-lantern-text-secondary transition-colors">Android app</a>
+        <a href={PLAY_STORE_URL ?? ANDROID_APK_URL} className="hover:text-lantern-text-secondary transition-colors">Android app</a>
+        {APP_STORE_URL !== null && (
+          <a href={APP_STORE_URL} className="hover:text-lantern-text-secondary transition-colors">iOS app</a>
+        )}
         <a href="/privacy" className="hover:text-lantern-text-secondary transition-colors">Privacy</a>
         <a href="/terms" className="hover:text-lantern-text-secondary transition-colors">Terms</a>
         <a href="/cookies" className="hover:text-lantern-text-secondary transition-colors">Cookies</a>

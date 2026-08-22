@@ -88,6 +88,8 @@ export interface CreateGroupInput {
   avatarUrl?: string;
   permissions?: GroupPermissions;
   parentId?: string;
+  /** Academic archive: the course this group studies. */
+  courseId?: string | null;
   memberIds?: string[];
   memberDetails?: Array<{
     id: string;
@@ -103,6 +105,8 @@ export interface Group {
   avatarUrl?: string;
   ownerId: string;
   parentId?: string;
+  /** Academic archive: groups.course_id. */
+  courseId?: string | null;
   adminIds?: string[];
   /**
    * Server-side invite token. Distinct from `id` — invite links must carry this,
@@ -202,6 +206,7 @@ function mapApiGroup(g: any, unreadCounts: Record<string, number>): Group {
     avatarUrl: g.avatar_url || g.avatarUrl,
     ownerId: adminIds[0] || '',
     parentId: g.parent_id || g.parentId,
+    courseId: g.course_id ?? g.courseId ?? null,
     adminIds,
     inviteId: g.invite_id || g.inviteId,
     members: mappedMembers,
@@ -1201,6 +1206,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       avatarUrl: groupInput.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(groupInput.name)}&background=6366f1&color=fff`,
       ownerId: groupInput.ownerId,
       parentId: groupInput.parentId, // Set parent if creating a subgroup
+      courseId: groupInput.courseId ?? null,
       permissions: groupInput.permissions,
       members: allMembers,
       memberCount: allMembers.length,
@@ -1228,6 +1234,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         parent_id: groupInput.parentId,
         userId: groupInput.ownerId,
         memberIds: selectedMemberIds,
+        ...(groupInput.courseId ? { courseId: groupInput.courseId } : {}),
       });
 
       let persistedAvatarUrl = apiGroup.avatar_url || (apiGroup as any).avatarUrl || createAvatarUrl;
@@ -1257,6 +1264,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         avatarUrl: persistedAvatarUrl || newGroup.avatarUrl,
         ownerId: groupInput.ownerId,
         parentId: (apiGroup as any).parent_id || (apiGroup as any).parentId || groupInput.parentId,
+        courseId: apiGroup.course_id ?? apiGroup.courseId ?? groupInput.courseId ?? null,
         permissions: ((apiGroup as any).permissions as GroupPermissions | undefined) || groupInput.permissions,
         members: activeMembers,
         memberCount: activeMembers.length,
@@ -1487,6 +1495,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       correctAnswerIds: question.correctAnswerIds,
       imageUrl: question.imageUrl,
       tags: question.tags,
+      // AI-authored difficulty (easy|medium|hard) travels with the question so
+      // learning analytics can use it; undefined for hand-written questions.
+      authored_difficulty: question.authoredDifficulty,
       questionStatus: 'PENDING',
       acceptableAnswers: question.acceptableAnswers,
       matchingPromptItems: question.matchingPromptItems,

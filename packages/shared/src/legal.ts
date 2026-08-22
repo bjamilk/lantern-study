@@ -3,12 +3,26 @@ export const LEGAL_BASE_URL =
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_LEGAL_BASE_URL) ||
   'https://lanternstudy.com';
 
-export type LegalDocumentId = 'privacy' | 'terms' | 'cookies';
+export type LegalDocumentId = 'privacy' | 'terms' | 'cookies' | 'prohibited' | 'seller-terms';
+
+export const LEGAL_DOCUMENT_IDS: readonly LegalDocumentId[] = [
+  'privacy',
+  'terms',
+  'cookies',
+  'prohibited',
+  'seller-terms',
+];
+
+export function isLegalDocumentId(value: unknown): value is LegalDocumentId {
+  return typeof value === 'string' && (LEGAL_DOCUMENT_IDS as readonly string[]).includes(value);
+}
 
 export const LEGAL_PATHS: Record<LegalDocumentId, string> = {
   privacy: '/privacy',
   terms: '/terms',
   cookies: '/cookies',
+  prohibited: '/legal/prohibited',
+  'seller-terms': '/legal/seller-terms',
 };
 
 export function getLegalPageUrl(doc: LegalDocumentId): string {
@@ -20,6 +34,20 @@ export const LEGAL_DOCUMENT_TITLES: Record<LegalDocumentId, string> = {
   privacy: 'Privacy Policy',
   terms: 'Terms of Service',
   cookies: 'Cookie Policy',
+  prohibited: 'Prohibited Content & Academic Integrity Policy',
+  'seller-terms': 'Seller & Creator Terms',
+};
+
+/** One-line summaries for legal index pages / nav (web LegalPage, mobile Legal screen). */
+export const LEGAL_DOCUMENT_DESCRIPTIONS: Record<LegalDocumentId, string> = {
+  privacy: 'How Lantern Study collects, uses, and protects your personal data.',
+  terms: 'Terms of Service for using Lantern Study flashcards, tests, groups, and marketplace.',
+  cookies:
+    'Cookie Policy and Preference Center for Lantern Study — categories, choices, and what we use today.',
+  prohibited:
+    'What may not be shared or sold on Lantern Study — leaked exams, impersonation, harassment, scams, copyrighted material — how to report it, and what happens when it is.',
+  'seller-terms':
+    'What you promise when you publish or sell study material on Lantern Study: rights, takedowns, appeals, strikes, and payouts.',
 };
 
 export const PRIVACY_POLICY_MD = `# Privacy Policy
@@ -54,6 +82,10 @@ Information may be collected directly from you, automatically from your device o
 | **Inferences** — study preferences or product usage patterns derived from activity | Improve product design and (with consent where required) personalize experience | Internal systems; analytics providers if consented |
 
 We do not intentionally collect special-category data (for example health, biometric templates, or precise geolocation tracking) as part of core study features. Do not submit sensitive personal information unless we clearly ask for it and you consent.
+
+### Learning activity data
+
+When you study on Lantern, our servers keep a record of your learning activity: which flashcards you reviewed and how you graded them (with the scheduler state before and after), which test questions you answered, whether you were correct and how long you took, which notes you created or opened, how many flashcards or questions you generated with AI, which question banks you downloaded or scored, and which questions you posted to a study group — together with the course, deck, group or note involved and whether it happened on web or mobile. We use this to run the learning product itself: spaced-repetition scheduling, your mastery and readiness views, study recommendations and progress. The legal basis is performance of our contract with you (providing the Service). This data is kept for as long as your account exists, is included in your account data export, and is deleted when you delete your account. It is separate from the optional analytics events described in the Cookie Policy and does not depend on your cookie choices.
 
 ### Social media
 
@@ -116,6 +148,7 @@ We keep personal information only as long as needed for the purposes described, 
 | Data type | Typical retention |
 |-----------|-------------------|
 | Account and study content | Until you delete your account (subject to legal holds / backups) |
+| Learning activity data (reviews, answers, notes opened/created, AI generations, question-bank use) | While your account exists; exported with your data; deleted with your account |
 | AI inference metadata logs | About 90 days |
 | Server / request logs | About 30–90 days |
 | Admin audit logs | About 24 months (anonymized where practicable after deletion) |
@@ -250,6 +283,8 @@ You retain ownership of content you create (decks, notes, messages, listings). Y
 
 You are responsible for content you share in groups or the marketplace.
 
+You may only share or sell material you created or have the right to distribute. Leaked or unreleased exams and assessments, impersonation of lecturers or institutions, harassment, scams, and copyrighted material you do not hold rights to are prohibited — see our [Prohibited Content & Academic Integrity Policy](/legal/prohibited). Anyone can report content from the item's menu; we may remove content, issue strikes, and suspend or terminate accounts for repeat violations, and you may appeal a takedown from My Listings. Rights holders can send copyright complaints through the [contact form](/contact) (category "Copyright / content complaint").
+
 ## 4. AI features
 
 AI-generated flashcards, questions, explanations, and chat responses are provided **as-is** and may contain errors. AI output is **not professional advice**. You must review AI-generated study material before relying on it in academic or professional settings.
@@ -263,6 +298,8 @@ Marketplace listings are user-generated and intended for **Nigerian campus commu
 You must be at least **16 years old** to buy or sell on the marketplace. You are responsible for meeting safely on campus, verifying items, and complying with your institution's rules.
 
 We do not guarantee the quality, safety, or legality of items or services offered. Marketplace checkout is processed by Paystack on Lantern’s behalf: buyers pay the item total plus a **5% service charge**. After the buyer confirms receipt, Lantern transfers the item amount to the seller’s registered Nigerian bank account and retains the service charge. Refunds before seller payout follow our dispute process; after payout, remedies may be limited.
+
+If you publish or sell study material (question banks, notes, past questions, projects, textbooks), the [Seller & Creator Terms](/legal/seller-terms) also apply: you confirm at publish time that you hold the rights to the material, takedowns on complaint, counter-notice and appeal, a repeat-infringer policy (three active strikes lead to suspension), and payouts subject to disputes.
 
 ## 6. Privacy
 
@@ -370,10 +407,141 @@ We may update this Cookie Policy when our practices change. Material changes wil
 **privacy@lanternstudy.com**
 `;
 
+export const PROHIBITED_CONTENT_MD = `# Prohibited Content & Academic Integrity Policy
+
+**Last updated:** August 22, 2026
+
+**Important:** This document is a **draft for counsel review**. Have qualified legal counsel review it before relying on it as a binding policy.
+
+Lantern Study is a place to study together and to share and sell study material you made. This policy explains what may not be posted, listed, or sent on Lantern Study (web and mobile), how to report it, and what happens when it is.
+
+## 1. Academic integrity
+
+Lantern Study must never be used to cheat. You may not share, list, request, or sell:
+
+- **Leaked, stolen, or unreleased exams, tests, CBT questions, quizzes, or assessments** — including "expo", "runs", or answers to an exam that has not yet been sat, regardless of how you obtained them.
+- **Assessments that are currently in progress**, or answers to assignments that are still open for submission where your institution forbids collaboration.
+- **Impersonation of lecturers, departments, institutions, or examination bodies** — including fake "official" question papers, marking schemes, or grade changes.
+- **Ghost-writing or contract cheating services** — offering to sit an exam, write a graded project, thesis, or assignment for someone else to submit as their own.
+
+**Past questions from exams that have already been sat are allowed.** So are your own notes, summaries, flashcards, practice questions you wrote, and tutoring. Lantern's content filter blocks listings that read like leaked or upcoming exam material and flags copyright-adjacent wording for review.
+
+## 2. Rights and copyright
+
+You may only share or sell material that you created or have the right to distribute. You may not share:
+
+- Scanned or copied textbooks, solution manuals, or publisher material you do not hold rights to.
+- A lecturer's slides, handouts, or recordings without the lecturer's or institution's permission.
+- Another student's notes, decks, question banks, or projects passed off as your own (plagiarism).
+
+When you publish a question bank or list academic material, you confirm that you hold the rights to it (the **rights attestation**). Rights holders can send a copyright complaint through the contact form (category "Copyright / content complaint"); see the [Seller & Creator Terms](/legal/seller-terms) for notice, takedown, and counter-notice.
+
+## 3. People and conduct
+
+You may not use Lantern Study to:
+
+- **Harass, bully, threaten, or demean** anyone, in groups, direct messages, reviews, or listings.
+- Post **hate speech** or content that is discriminatory on the basis of ethnicity, religion, gender, disability, or similar characteristics.
+- **Impersonate** another person, a lecturer, an institution, or Lantern Study staff.
+- Share **sexual content**, graphic violence, or content that sexualises minors (which we report to the authorities).
+- Collect or publish someone's **personal information** (phone numbers, addresses, identity numbers) without consent.
+
+## 4. Scams and prohibited items
+
+On the marketplace and jobs board you may not:
+
+- Run **scams** — fake listings, advance-fee requests, payment outside the platform for digital goods, or money-mule "jobs".
+- Ask for **BVN, NIN, bank OTPs, passwords, or PINs**.
+- Sell **prohibited items or services**: weapons, drugs, stolen goods, counterfeit products, exam malpractice material, or anything illegal where you are.
+- **Spam** — duplicate listings, off-topic posts, or bulk unsolicited messages.
+
+## 5. How to report
+
+Every listing, question bank, note, deck, group, group message, direct message, job posting, and user profile has a **Report** option in its menu. Pick the reason that fits best (for example "Leaked or unreleased exam", "Copyright / not theirs to share", "Harassment") and add details. You can report something once; our moderation team reviews reports in order.
+
+## 6. Consequences
+
+Depending on severity and history, we may:
+
+- **Remove or hide** the content, and tell the owner why.
+- **Warn** the owner.
+- Issue a **strike**. Strikes expire after 180 days. **Three active strikes suspend the account for 14 days**; further violations can lead to longer suspension or termination.
+- **Suspend or terminate** the account immediately for severe cases (leaked exams, scams, threats, sexual content involving minors) and, where required, cooperate with institutions or law enforcement.
+
+## 7. Appeals
+
+If your listing was taken down you can **appeal once** from My Listings with a short note. A member of the team who did not make the original decision reviews it. If the appeal is upheld the takedown stands; if it is reversed the listing is restored and your rights status is marked as cleared. Decisions about suspensions can be appealed by contacting **support@lanternstudy.com**.
+
+## 8. Changes
+
+We may update this policy. Material changes are announced in the app; continued use after changes constitutes acceptance.
+
+## 9. Contact
+
+**support@lanternstudy.com**
+`;
+
+export const SELLER_TERMS_MD = `# Seller & Creator Terms
+
+**Last updated:** August 22, 2026
+
+**Important:** This document is a **draft for counsel review**. Have qualified legal counsel review it before relying on it as a binding agreement.
+
+These Seller & Creator Terms ("Seller Terms") apply whenever you publish, list, share for free, or sell study material on Lantern Study — question banks, notes, past questions, projects, textbooks, decks, and any other digital or physical academic material ("Content"). They supplement the [Terms of Service](/terms) and the [Prohibited Content & Academic Integrity Policy](/legal/prohibited). If they conflict, these Seller Terms control for Content you sell.
+
+## 1. Rights warranty at publish
+
+Each time you publish Content you confirm (the **rights attestation**) that:
+
+- you created the Content, or you hold a licence or permission that allows you to share and sell it on Lantern Study;
+- the Content is **not** a leaked, stolen, or unreleased exam, test, or assessment, and does not breach your institution's academic-integrity rules;
+- the Content does not infringe anyone's copyright, trademark, privacy, or other rights; and
+- any sources you relied on are cited where you were asked to cite them, and you have disclosed whether the Content was AI-assisted.
+
+We record the attestation (date and version) with the listing. Publishing without the attestation is not possible.
+
+## 2. Licence to Lantern
+
+You keep ownership of your Content. You grant Lantern Study a non-exclusive, worldwide, royalty-free licence to host, store, preview, deliver, back up, and display the Content to buyers and, for free Content, to users — solely to operate the service, including delivering purchased question banks into buyers' offline libraries and keeping copies buyers already received.
+
+## 3. Notice and takedown
+
+If we receive a complaint that your Content infringes someone's rights or breaches the Prohibited Content Policy, or our content filter or moderation team flags it, we may **take the listing down** (it becomes hidden from buyers and read-only for you) while we review. We tell you the reason in My Listings and by in-app notification. Takedowns are not reversible by you; they are reversed only through an appeal or by moderation.
+
+## 4. Counter-notice and appeal
+
+You may **appeal a takedown once** from My Listings, with a short explanation and, where relevant, evidence that you hold the rights (for example that you authored the notes). A reviewer who did not make the original decision decides the appeal. If the appeal is **reversed**, the listing is restored and its rights status is marked cleared. If it is **upheld**, the takedown stands. Repeated appeals on the same listing are not accepted; contact **support@lanternstudy.com** with new evidence.
+
+## 5. Repeat-infringer policy and strikes
+
+Serious or repeated violations earn **strikes**. A strike expires 180 days after it is issued. **Three active strikes suspend your account for 14 days**: you cannot publish, sell, post, or message during the suspension, and existing listings are hidden. Further violations can lead to longer suspensions or termination. We may terminate accounts of repeat infringers at any time, and we remove Content from terminated accounts.
+
+## 6. Payments, commission and payouts
+
+- Buyers pay in Nigerian Naira through Paystack. Lantern's service charge and any commission are shown at checkout and configured by Lantern; the current structure is described in the Terms of Service and on the seller dashboard.
+- Payouts go to the Nigerian bank account in your verified payout profile after the buyer confirms receipt (physical items) or instantly on delivery (digital items), less Lantern's charges.
+- **Payouts are subject to disputes.** If a buyer disputes an order, or Content is taken down for a rights breach, we may hold, reverse, or refund the related payment. Where a payout was already made for infringing Content, you agree to refund it on request.
+- We may withhold payouts for an account that is suspended or under investigation.
+
+## 7. Your responsibilities
+
+You are responsible for the accuracy of your listing, for delivering what you describe, for complying with your institution's rules, and for taxes on your earnings.
+
+## 8. Changes and termination
+
+We may update these Seller Terms; the version you accepted is recorded with each attestation. You may stop selling at any time by unpublishing your listings; obligations for already-sold Content (licence to buyers, refunds for rights breaches) survive.
+
+## 9. Contact
+
+**support@lanternstudy.com** (category "Copyright / content complaint" for rights holders)
+`;
+
 export const LEGAL_DOCUMENT_CONTENT: Record<LegalDocumentId, string> = {
   privacy: PRIVACY_POLICY_MD,
   terms: TERMS_OF_SERVICE_MD,
   cookies: COOKIE_NOTICE_MD,
+  prohibited: PROHIBITED_CONTENT_MD,
+  'seller-terms': SELLER_TERMS_MD,
 };
 
 export function getLegalDocumentContent(doc: LegalDocumentId): string {

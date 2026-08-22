@@ -8,6 +8,8 @@ import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
 import Modal from './ui/Modal';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
+import ReportContentModal from './moderation/ReportContentModal';
+import { FlagIcon } from '@heroicons/react/24/outline';
 
 
 interface GroupInfoModalProps {
@@ -55,6 +57,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'members' | 'danger'>('details');
   const [name, setName] = useState(group.name);
+  const [reportOpen, setReportOpen] = useState(false);
   const [description, setDescription] = useState(group.description || '');
   const [detailsChanged, setDetailsChanged] = useState(false);
 
@@ -323,6 +326,20 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
         case 'danger':
             return (
                 <div className="space-y-4">
+                    <div className="p-4 border border-lantern-border bg-lantern-background-secondary/40 rounded-lg">
+                        <h4 className="font-semibold text-lantern-text">Report Group</h4>
+                        <p className="text-xs text-lantern-text-secondary mt-1 mb-3">
+                          Leaked exams, scams, harassment or spam in this group? Tell Lantern moderation. Reports are private.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setReportOpen(true)}
+                          className="w-full flex items-center justify-center p-2 text-sm font-medium text-lantern-text border border-lantern-border rounded-md hover:bg-lantern-background-secondary"
+                        >
+                            <FlagIcon className="w-4 h-4 mr-2"/>
+                            Report Group…
+                        </button>
+                    </div>
                     <div className="p-4 border border-orange-500/30 dark:border-orange-600/50 bg-orange-50 dark:bg-orange-900/30 rounded-lg">
                         <h4 className="font-semibold text-orange-800 dark:text-orange-300">Leave Group</h4>
                         <p className="text-xs text-orange-700 dark:text-orange-400 mt-1 mb-3">
@@ -411,6 +428,15 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
             {renderContent('danger')}
         </TabPanel>
       </Tabs>
+      {reportOpen ? (
+        <ReportContentModal
+          isOpen={reportOpen}
+          onClose={() => setReportOpen(false)}
+          targetType="group"
+          targetId={group.id}
+          targetLabel={group.name}
+        />
+      ) : null}
     </Modal>
   );
 };

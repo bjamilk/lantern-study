@@ -856,7 +856,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         setSubgroupParentId(undefined);
     }, [closeModal, setSubgroupParentId]);
 
-    const handleCreateSubGroup = useCallback(async (name: string, description: string, memberEmailsStr: string, parentId?: string) => {
+    const handleCreateSubGroup = useCallback(async (name: string, description: string, memberEmailsStr: string, parentId?: string, courseId?: string | null) => {
         if (!currentUser) return;
       
         try {
@@ -866,7 +866,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 avatar_url: undefined,
                 permissions: {},
                 invite_id: uuidv4().substring(0, 8),
-                parent_id: parentId
+                parent_id: parentId,
+                ...(courseId !== undefined ? { courseId } : {}),
             };
             
             const newGroup = await createGroup(groupData, currentUser.id, []);
@@ -881,6 +882,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 parentId: newGroup.parentId,
                 memberEmails: [currentUser.email!, ...memberEmailsStr.split(',').map(e => e.trim()).filter(Boolean)],
                 inviteId: newGroup.inviteId,
+                courseId: newGroup.courseId ?? newGroup.course_id ?? courseId ?? null,
                 unreadCount: 0,
                 pendingMembers: [],
                 isArchived: newGroup.isArchived,
@@ -896,7 +898,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, updateGroups, handleSelectChat, updateMessages, handleCloseCreateGroupModal]);
 
-    const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; }) => {
+    const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; courseId?: string | null }) => {
         if (!currentUser) return;
 
         try {
@@ -906,7 +908,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 avatar_url: undefined as string | undefined,
                 permissions: details.permissions,
                 invite_id: uuidv4().substring(0, 8),
-                parent_id: undefined
+                parent_id: undefined,
+                ...(details.courseId !== undefined ? { courseId: details.courseId } : {}),
             };
             const newGroup = await createGroup(groupData, currentUser.id, details.memberIds);
 

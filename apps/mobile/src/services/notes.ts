@@ -59,6 +59,8 @@ export interface NoteFolder {
   color?: string;
   userId?: string;
   createdAt?: string;
+  /** Academic archive: a folder can belong to a course. */
+  courseId?: string | null;
 }
 
 export interface StudyNote {
@@ -67,6 +69,8 @@ export interface StudyNote {
   title: string;
   body: string;
   folderId?: string;
+  /** Academic archive: notes.course_id (null clears). */
+  courseId?: string | null;
   sourceType?: string;
   summary?: string;
   youtubeUrl?: string;
@@ -101,9 +105,16 @@ export const updateNoteFolder = (folderId: string, updates: { name?: string; col
 export const deleteNoteFolder = (folderId: string) =>
   notesRequest<void>(`/folders/${folderId}`, { method: 'DELETE' });
 
-export const fetchNotes = (folderId?: string) => {
-  const qs = folderId ? `?folderId=${folderId}` : '';
-  return notesRequest<StudyNote[]>(`${qs}`);
+/**
+ * GET /notes. `courseId` narrows to one course; the literal `'null'` returns
+ * unfiled notes (API contract, library archive §1).
+ */
+export const fetchNotes = (folderId?: string, options?: { courseId?: string | null }) => {
+  const params = new URLSearchParams();
+  if (folderId) params.set('folderId', folderId);
+  if (options?.courseId) params.set('courseId', options.courseId);
+  const qs = params.toString();
+  return notesRequest<StudyNote[]>(qs ? `?${qs}` : '');
 };
 export const fetchNote = (noteId: string) =>
   notesRequest<StudyNote & { attachments?: NoteAttachment[] }>(`/${noteId}`);

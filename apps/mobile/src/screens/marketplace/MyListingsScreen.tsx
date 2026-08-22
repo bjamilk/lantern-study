@@ -29,7 +29,17 @@ import { SellerCampaignModal } from './modals/SellerCampaignModal';
 import { SellerInsightsModal } from './modals/SellerInsightsModal';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
 import type { SellerAnalytics, SellerOnboardingStatus } from '@lantern/shared/types';
+import {
+  canSellerSetListingStatus,
+  isMarketplaceListingModerated,
+  MARKETPLACE_LISTING_STATUS_LABELS,
+  marketplaceListingModerationNotice,
+} from '@lantern/shared/marketplace';
+import type { MarketplaceListingStatus } from '@lantern/shared/marketplace';
+import { SUPPORT_EMAIL } from '@lantern/shared/contactForm';
+import { LISTING_APPEAL_STATUS_LABELS } from '@lantern/shared/moderation';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
 
 type StatusTab = 'active' | 'sold' | 'inactive';
 
@@ -101,7 +111,10 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
       myListings.filter(l =>
         activeTab === 'active'
           ? l.status === 'active' || l.status === 'reserved'
-          : l.status === activeTab
+          : activeTab === 'inactive'
+            ? // Takedowns sit on the Inactive shelf (read-only) instead of vanishing.
+              l.status === 'inactive' || isMarketplaceListingModerated(l.status)
+            : l.status === activeTab
       ),
     [myListings, activeTab]
   );
@@ -128,8 +141,18 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
 
   const handleStatusChange = async (listingId: string, status: StatusTab) => {
     if (!user?.id) return;
-    await updateListing(listingId, { status }, user.id);
-    await load();
+    try {
+      await updateListing(listingId, { status }, user.id);
+    } catch (e) {
+      // The store already rolled the optimistic row back; surface the API's
+      // seller-facing refusal (moderated / reserved / archived) instead of nothing.
+      Alert.alert(
+        'Could not update listing',
+        e instanceof Error && e.message ? e.message : 'Failed to update listing.'
+      );
+    } finally {
+      await load();
+    }
   };
 
   const handleDelete = (listingId: string, title: string) => {
@@ -155,58 +178,68 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
       ]);
       return;
     }
-    const options: string[] = ['Edit'];
-    if (activeTab === 'active') {
-      options.push('Mark sold', 'Deactivate');
+    if (isMarketplaceListingModerated(item.status)) {
+      // Moderation outcomes are read-only for the seller: no edit, no relist,
+      // no delete (the record backs the report trail). The row itself carries
+      // the takedown reason + the one-shot Appeal link (ListingTakedownNotice).
+      const appealLine =
+        item.appeal_status && item.appeal_status !== 'none'
+          ? ` ${LISTING_APPEAL_STATUS_LABELS[item.appeal_status]}.`
+          : ' You can appeal once from the listing row.';
+      Alert.alert(
+        MARKETPLACE_LISTING_STATUS_LABELS[item.status],
+        `${marketplaceListingModerationNotice(item.status)}${
+          item.takedown_reason ? ` Reason: ${item.takedown_reason}.` : ''
+        }${appealLine} Contact ${SUPPORT_EMAIL} if you think this is a mistake.`,
+        [
+          { text: 'View listing', onPress: () => navigation.navigate('ListingDetail', { listingId: item.id }) },
+          { text: 'OK', style: 'cancel' },
+        ]
+      );
+      return;
     }
-    if (activeTab === 'inactive') {
-      options.push('Reactivate');
+    // Offer only the moves the shared lifecycle table lets a seller make, so
+    // the sheet and the API can never disagree.
+    const offers = (to: MarketplaceListingStatus) =>
+      item.status !== to && canSellerSetListingStatus(item.status, to);
+    const actions: { label: string; onPress: () => void; destructive?: boolean }[] = [
+      { label: 'Edit', onPress: () => navigation.navigate('EditListing', { listingId: item.id }) },
+    ];
+    if (offers('sold')) {
+      actions.push({ label: 'Mark sold', onPress: () => void handleStatusChange(item.id, 'sold') });
     }
-    if (activeTab === 'sold') {
-      options.push('Reactivate');
+    if (offers('inactive')) {
+      actions.push({ label: 'Deactivate', onPress: () => void handleStatusChange(item.id, 'inactive') });
     }
-    options.push('Delete', 'Cancel');
-    const cancelIndex = options.length - 1;
-    const destructiveIndex = options.indexOf('Delete');
+    if (offers('active')) {
+      actions.push({ label: 'Reactivate', onPress: () => void handleStatusChange(item.id, 'active') });
+    }
+    actions.push({ label: 'Delete', destructive: true, onPress: () => handleDelete(item.id, item.title) });
 
     if (Platform.OS === 'ios') {
+      const options = [...actions.map(a => a.label), 'Cancel'];
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options,
-          cancelButtonIndex: cancelIndex,
-          destructiveButtonIndex: destructiveIndex,
+          cancelButtonIndex: options.length - 1,
+          destructiveButtonIndex: actions.findIndex(a => a.destructive),
           title: item.title,
         },
         buttonIndex => {
-          const choice = options[buttonIndex];
-          if (choice === 'Edit') navigation.navigate('EditListing', { listingId: item.id });
-          else if (choice === 'Mark sold') void handleStatusChange(item.id, 'sold');
-          else if (choice === 'Deactivate') void handleStatusChange(item.id, 'inactive');
-          else if (choice === 'Reactivate') void handleStatusChange(item.id, 'active');
-          else if (choice === 'Delete') handleDelete(item.id, item.title);
+          actions[buttonIndex]?.onPress();
         }
       );
       return;
     }
 
-    Alert.alert(
-      item.title,
-      'Choose an action',
-      [
-        { text: 'Edit', onPress: () => navigation.navigate('EditListing', { listingId: item.id }) },
-        ...(activeTab === 'active'
-          ? [
-              { text: 'Mark sold', onPress: () => void handleStatusChange(item.id, 'sold') },
-              { text: 'Deactivate', onPress: () => void handleStatusChange(item.id, 'inactive') },
-            ]
-          : []),
-        ...(activeTab !== 'active'
-          ? [{ text: 'Reactivate', onPress: () => void handleStatusChange(item.id, 'active') }]
-          : []),
-        { text: 'Delete', style: 'destructive' as const, onPress: () => handleDelete(item.id, item.title) },
-        { text: 'Cancel', style: 'cancel' as const },
-      ]
-    );
+    Alert.alert(item.title, 'Choose an action', [
+      ...actions.map(a => ({
+        text: a.label,
+        style: a.destructive ? ('destructive' as const) : undefined,
+        onPress: a.onPress,
+      })),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
   };
 
   const tabs: { id: StatusTab; label: string }[] = [
@@ -395,6 +428,10 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
                   <Text className="text-[11px] text-lantern-text-secondary mt-0.5">
                     {category.name} · {item.views_count ?? 0} views
                   </Text>
+                  {isMarketplaceListingModerated(item.status) ? (
+                    // Takedown reason + appeal state + one-shot Appeal (Phase 1 · E).
+                    <ListingTakedownNotice listing={item} compact />
+                  ) : null}
                   {item.status === 'reserved' ? (
                     <Pressable onPress={() => navigation.navigate('Orders')} className="mt-1 self-start">
                       <Text className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">

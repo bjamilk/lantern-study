@@ -4,6 +4,7 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validatePagination, validateListingId, validateMarketplaceListingWrite, validateMarketplaceListingUpdate, validateUserId } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { COURSE_FILTER_INVALID_MESSAGE, parseCourseFilter } from '../services/academicCourses';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -11,6 +12,16 @@ import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { getMarketplaceCartService } from '../services/marketplaceCart';
 import { getMarketplaceQuestionBanksService } from '../services/marketplaceQuestionBanks';
+import {
+  assertListingAttestation,
+  getModerationService,
+  listingRightsFields,
+  LISTING_MODERATION_FIELDS,
+  runListingContentFilter,
+  stripListingModerationFields,
+} from '../services/moderation';
+import { isAcademicListing } from '@lantern/shared/moderation';
+import { surfaceFromRequest } from '../services/learningEvents';
 import { PublicError } from '../utils/safeError';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
@@ -21,6 +32,8 @@ import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
   OTHER_CITY_CAMPUS_SLUG,
+  isMarketplaceListingModerated,
+  marketplaceListingModerationNotice,
 } from '@lantern/shared/marketplace';
 
 const router = Router();
@@ -269,6 +282,14 @@ router.get(
       listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
     }
 
+    // Rights / takedown / appeal columns are for the owner and platform admins
+    // only; everyone else gets the listing without them.
+    const viewerIsOwner = Boolean(viewerId) && listing.user_id === viewerId;
+    const viewerIsAdmin = !viewerIsOwner && viewerId ? await isLivePlatformAdmin(viewerId) : false;
+    if (!viewerIsOwner && !viewerIsAdmin) {
+      listing = stripListingModerationFields(listing);
+    }
+
     res.json({
       success: true,
       data: listing,
@@ -381,11 +402,41 @@ router.post(
     listingData.country_code = campusMetadata.countryCode;
     listingData.currency = MARKETPLACE_DEFAULT_CURRENCY;
 
+    // Rights attestation (academic categories / digital kinds must attest) and
+    // the content filter (block tier → 400; flag tier → stored + auto report).
+    // rights_* columns are server-set: strip anything the client sent first.
+    for (const key of LISTING_MODERATION_FIELDS) delete listingData[key];
+    let contentFlags: ReturnType<typeof runListingContentFilter> = [];
+    try {
+      const attested = assertListingAttestation({
+        listingKind: listingData.listing_kind ?? listingData.listingKind ?? 'single',
+        category: listingData.category,
+        attestation: listingData.attestation,
+      });
+      Object.assign(listingData, listingRightsFields(attested));
+      contentFlags = runListingContentFilter({ title: listingData.title, description: listingData.description });
+    } catch (error: any) {
+      if (error instanceof PublicError) {
+        const statusCode = (error as { statusCode?: unknown }).statusCode;
+        return res.status(statusCode === 403 ? 403 : 400).json({ success: false, error: error.message });
+      }
+      throw error;
+    }
+    delete listingData.attestation;
+
     logger.debug('Creating marketplace listing', { userId, category: listingData.category, title: listingData.title });
 
     try {
       const listing = await req.runIdempotent!(async () => {
         const created = await supabaseService.createMarketplaceListing(listingData, userId);
+
+        if (contentFlags.length > 0 && (created as { id?: string })?.id) {
+          await getModerationService(supabaseService).recordListingFlags(
+            (created as { id: string }).id,
+            userId,
+            contentFlags,
+          );
+        }
 
         if (listingData.category?.startsWith('custom:')) {
           const categoryName = listingData.category.replace('custom:', '');
@@ -502,7 +553,73 @@ router.put(
       delete updates.currency;
     }
 
-    const updatedListing = await supabaseService.updateMarketplaceListing(id, updates);
+    // Academic course reference. Written through a dedicated setter (not the
+    // generic assign() in updateMarketplaceListing) so the listing-lifecycle
+    // guard path stays untouched; uuid-validated by validateMarketplaceListingUpdate.
+    const courseWasProvided = Object.prototype.hasOwnProperty.call(updates, 'courseId');
+    const nextCourseId: string | null = courseWasProvided
+      ? typeof updates.courseId === 'string' && updates.courseId
+        ? updates.courseId
+        : null
+      : null;
+    delete updates.courseId;
+    delete updates.course_id;
+
+    // Rights attestation + content filter (Phase 1 · E). rights_* columns are
+    // server-set (never assignable through updateMarketplaceListing); an edit
+    // that lands an unattested listing in an academic category must attest,
+    // and re-sending attestation refreshes the timestamp. Title/description
+    // changes run the content filter: block → 400, flags → stored + auto report.
+    for (const key of LISTING_MODERATION_FIELDS) delete updates[key];
+    const attestationSent = updates.attestation === true;
+    delete updates.attestation;
+    const nextCategory =
+      typeof updates.category === 'string' && updates.category ? updates.category : listing.category;
+    const alreadyAttested = listing.rights_status === 'attested' || listing.rights_status === 'cleared';
+    let contentFlags: ReturnType<typeof runListingContentFilter> = [];
+    try {
+      if (!liveAdmin && !alreadyAttested) {
+        assertListingAttestation({
+          listingKind: listing.listing_kind ?? 'single',
+          category: nextCategory,
+          attestation: attestationSent,
+        });
+      }
+      if (updates.title !== undefined || updates.description !== undefined) {
+        contentFlags = runListingContentFilter({
+          title: updates.title !== undefined ? updates.title : listing.title,
+          description: updates.description !== undefined ? updates.description : listing.description,
+        });
+      }
+    } catch (error: any) {
+      if (error instanceof PublicError) {
+        const statusCode = (error as { statusCode?: unknown }).statusCode;
+        return res.status(statusCode === 403 ? 403 : 400).json({ success: false, error: error.message });
+      }
+      throw error;
+    }
+
+    let updatedListing = await supabaseService.updateMarketplaceListing(id, updates, {
+      actorIsAdmin: liveAdmin,
+    });
+
+    if (
+      updatedListing &&
+      attestationSent &&
+      (!alreadyAttested || isAcademicListing({ listingKind: listing.listing_kind, category: nextCategory }))
+    ) {
+      await getModerationService(supabaseService).markListingAttested(id);
+      updatedListing = { ...updatedListing, ...listingRightsFields(true) };
+    }
+    if (updatedListing && contentFlags.length > 0) {
+      await getModerationService(supabaseService).recordListingFlags(id, listing.user_id, contentFlags);
+    }
+
+    if (courseWasProvided && updatedListing) {
+      const { getAcademicCoursesService } = await import('../services/academicCourses');
+      await getAcademicCoursesService(supabaseService).setListingCourse(id, nextCourseId);
+      updatedListing = { ...updatedListing, course_id: nextCourseId };
+    }
 
     const priceFields = ['price', 'sale_price', 'sale_ends_at'] as const;
     const priceChanged = priceFields.some((field) => field in updates);
@@ -560,6 +677,15 @@ router.delete(
       return res.status(403).json({
         success: false,
         error: 'Access denied',
+      });
+    }
+
+    // A listing moderation took down is read-only for its seller: deleting it
+    // would cascade the report trail away and let the seller relist a copy.
+    if (!liveAdmin && isMarketplaceListingModerated(listing.status)) {
+      return res.status(403).json({
+        success: false,
+        error: `${marketplaceListingModerationNotice(listing.status)} It cannot be deleted by the seller.`,
       });
     }
 
@@ -740,7 +866,12 @@ router.post(
           campusId: req.body?.campusId ?? req.body?.campus_id,
           location: req.body?.location,
           groupId: req.body?.groupId ?? req.body?.group_id ?? null,
+          courseId: req.body?.courseId ?? req.body?.course_id ?? null,
           content: req.body?.content,
+          // Rights attestation (required) + provenance (Phase 1 · E).
+          attestation: req.body?.attestation,
+          aiAssisted: req.body?.aiAssisted ?? req.body?.ai_assisted,
+          sourcesCited: req.body?.sourcesCited ?? req.body?.sources_cited,
         }
       );
       await cacheService.deletePattern('marketplace:listings:*');
@@ -748,6 +879,11 @@ router.post(
     } catch (err: any) {
       if (err instanceof PublicError) {
         return res.status(400).json({ success: false, error: err.message });
+      }
+      // The content filter throws a moderationError (statusCode 400) with a
+      // user-safe message; surface it rather than masking it as a 500.
+      if (typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
       }
       throw err;
     }
@@ -767,7 +903,7 @@ router.post(
     try {
       const result = await getMarketplaceQuestionBanksService(
         supabaseService
-      ).downloadQuestionBank(req.params.id, userId);
+      ).downloadQuestionBank(req.params.id, userId, { surface: surfaceFromRequest(req) });
       res.json({ success: true, data: result });
     } catch (err: any) {
       if (err instanceof PublicError) {
@@ -832,7 +968,8 @@ router.post(
         req.params.id,
         userId,
         req.body?.correct,
-        req.body?.total
+        req.body?.total,
+        { surface: surfaceFromRequest(req) }
       );
       res.json({ success: true, data });
     } catch (err: any) {
@@ -905,7 +1042,12 @@ router.post(
     try {
       const result = await getMarketplaceQuestionBanksService(
         supabaseService
-      ).updateQuestionBankContent(req.params.id, userId, req.body?.content);
+      ).updateQuestionBankContent(req.params.id, userId, req.body?.content, {
+        // Every republish re-requires the rights attestation (400 without it).
+        attestation: req.body?.attestation,
+        aiAssisted: req.body?.aiAssisted ?? req.body?.ai_assisted,
+        sourcesCited: req.body?.sourcesCited ?? req.body?.sources_cited,
+      });
       await invalidateListingCaches(cacheService, req.params.id);
       await cacheService.deletePattern('marketplace:listings:*');
       res.json({ success: true, data: result });
@@ -1155,20 +1297,77 @@ router.post(
 router.post(
   '/listings/:id/reports',
   authMiddleware,
+  validateListingId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
-    const { reason, details } = req.body;
+    const { reason, details } = req.body || {};
     const userId = req.user?.id;
 
     logger.debug('Reporting listing', { id, userId, reason });
 
-    const report = await supabaseService.reportMarketplaceListing(id, userId, { reason, details });
+    // Writes the generic content_reports table (target_type 'listing'). Old
+    // clients send the legacy reason set (scam/spam/inappropriate/other plus
+    // mobile's wrong_category/prohibited_item); reasons the listing target does
+    // not know are folded into 'other' with the label kept in details, exactly
+    // as utils/marketplaceReportReason.ts did for marketplace_reports.
+    const { isReasonAllowedForTarget } = await import('@lantern/shared/moderation');
+    let nextReason = typeof reason === 'string' && reason ? reason : 'other';
+    let nextDetails: string | undefined = typeof details === 'string' ? details : undefined;
+    if (!isReasonAllowedForTarget('listing', nextReason)) {
+      const { normalizeMarketplaceReportReason } = await import('../utils/marketplaceReportReason');
+      const folded = normalizeMarketplaceReportReason(nextReason, nextDetails);
+      nextReason = folded.reason;
+      nextDetails = folded.details;
+    }
 
-    res.status(201).json({
-      success: true,
-      data: report,
-    });
+    try {
+      const report = await getModerationService(supabaseService).createReport({
+        reporterId: userId,
+        targetType: 'listing',
+        targetId: id,
+        reason: nextReason,
+        details: nextDetails,
+      });
+      res.status(201).json({ success: true, data: report });
+    } catch (error: any) {
+      if (error instanceof PublicError) {
+        const statusCode = (error as { statusCode?: unknown }).statusCode;
+        return res
+          .status(typeof statusCode === 'number' ? statusCode : 400)
+          .json({ success: false, error: error.message });
+      }
+      throw error;
+    }
+  })
+);
+
+// POST /api/v1/marketplace/listings/:id/appeal - Seller appeals a moderation takedown (one shot)
+router.post(
+  '/listings/:id/appeal',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const result = await getModerationService(supabaseService).appealListing(
+        req.params.id,
+        userId,
+        req.body?.note
+      );
+      await invalidateListingCaches(cacheService, req.params.id);
+      res.status(201).json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof PublicError) {
+        const statusCode = (error as { statusCode?: unknown }).statusCode;
+        return res
+          .status(typeof statusCode === 'number' ? statusCode : 400)
+          .json({ success: false, error: error.message });
+      }
+      throw error;
+    }
   })
 );
 
@@ -1193,15 +1392,22 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const userId = req.user?.id;
-    const { status } = req.query;
+    const { status, courseId } = req.query;
 
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
-    logger.debug('Fetching seller listings', { userId, status });
+    const courseFilter = parseCourseFilter(courseId);
+    if (courseFilter.kind === 'invalid') {
+      return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
+    }
 
-    const listings = await supabaseService.getListingsBySeller(userId, status as string | undefined);
+    logger.debug('Fetching seller listings', { userId, status, courseId });
+
+    const listings = await supabaseService.getListingsBySeller(userId, status as string | undefined, {
+      courseFilter,
+    });
 
     res.json({
       success: true,
@@ -1263,7 +1469,9 @@ router.put(
         data: listing,
       });
     } catch (error: any) {
-      res.status(403).json({
+      // Lifecycle refusals carry their own 4xx (403 moderation/held, 400 unknown).
+      const statusCode = typeof error?.statusCode === 'number' ? error.statusCode : 403;
+      res.status(statusCode).json({
         success: false,
         error: clientErrorMessage(error),
       });
@@ -2437,9 +2645,18 @@ router.get(
       }
     }
 
+    // Rights / takedown / appeal columns are owner/admin-only; strip for everyone
+    // else (the public cache above stores the raw row, so this must run on every
+    // response, cache hit or miss).
+    const fullViewerIsOwner = Boolean(viewerId) && listing.user_id === viewerId;
+    const fullViewerIsAdmin =
+      !fullViewerIsOwner && viewerId ? await isLivePlatformAdmin(viewerId) : false;
+    const responseListing =
+      fullViewerIsOwner || fullViewerIsAdmin ? listing : stripListingModerationFields(listing);
+
     res.json({
       success: true,
-      data: { listing, isFavorited, similarListings, canReview, questionBank },
+      data: { listing: responseListing, isFavorited, similarListings, canReview, questionBank },
     });
   })
 );

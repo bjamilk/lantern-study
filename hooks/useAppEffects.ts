@@ -46,6 +46,7 @@ import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/
 import { mapMessageFromApi, computeStudyStreak, getCardsDue, mergeChatMessagesById } from '@lantern/shared/utils';
 import { mapUserStatsFromApi, normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
+import { shouldOpenAcademicSetup, readAcademicSetupDismissed } from '../utils/academicSetup';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import { normalizeMonthlyPlans, readPlanForMonth } from '@lantern/shared/utils';
@@ -691,12 +692,16 @@ export function useAppEffects({
         };
     }, [currentUser?.id, authTokenReady]);
 
-    // --- Username check ---
+    // --- Profile setup check (username, and academic identity once per dismissal) ---
     useEffect(() => {
-        if (currentUser && !currentUser.username) {
+        if (!currentUser) return;
+        // Opens "Set up your profile" when the username is missing (original
+        // trigger) OR when the institution is known-missing and the user has not
+        // pressed "Skip for now" (utils/academicSetup.ts).
+        if (shouldOpenAcademicSetup(currentUser, readAcademicSetupDismissed(currentUser.id))) {
             openModal('usernameRequired');
         }
-    }, [currentUser?.id, currentUser?.username]);
+    }, [currentUser?.id, currentUser?.username, currentUser?.institutionId]);
 
     // --- Data loading ---
     useEffect(() => {

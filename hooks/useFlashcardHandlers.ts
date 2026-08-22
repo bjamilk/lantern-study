@@ -17,11 +17,12 @@ import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
 import { trackFlashcardReviewStarted, trackDeckCreated, trackFirstCardAdded, trackStudyModeCompleted, trackStudyModeSelected } from '../services/productAnalytics';
 import { useTestStore } from '../stores/testStore';
+import { useLibraryStore } from '../stores/libraryStore';
 import {
     createDeck, updateDeck, deleteDeck,
     createFlashcard, fetchFlashcards, fetchAllFlashcards, updateFlashcard, reviewFlashcard, deleteFlashcard,
     resetDeckStatistics, exportDeck, importDeck, exportDeckCsv, importDeckCsv, importDeckApkg, fetchDecks,
-    mapDecksFromApi
+    mapDecksFromApi, mapDeckFromApi
 } from '../services/supabase';
 import { aiGenerateFlashcards } from '../services/ai';
 import { buildFlashcardSourceFromTestResult } from '../utils/buildFlashcardSource';
@@ -94,18 +95,18 @@ export function useFlashcardHandlers() {
         openModal('createDeck');
     }, [setEditingDeck, openModal]);
 
-    const handleCreateOrUpdateDeck = useCallback(async (data: { id?: string; name: string; description?: string; isShared?: boolean }) => {
+    const handleCreateOrUpdateDeck = useCallback(async (data: { id?: string; name: string; description?: string; isShared?: boolean; courseId?: string | null }) => {
         if (!currentUser) return;
         try {
             if (data.id) {
-                await updateDeck(data.id, { name: data.name, description: data.description, isShared: data.isShared });
+                await updateDeck(data.id, { name: data.name, description: data.description, isShared: data.isShared, courseId: data.courseId });
                 updateDecks(prev => prev.map(d => d.id === data.id ? { ...d, ...data } : d));
                 if (selectedDeck?.id === data.id) {
                     setSelectedDeck({ ...selectedDeck, ...data } as Deck);
                 }
             } else {
-                const newDeck = await createDeck({ name: data.name, description: data.description, isShared: data.isShared }, currentUser.id);
-                updateDecks(prev => [...prev, newDeck]);
+                const newDeck = await createDeck({ name: data.name, description: data.description, isShared: data.isShared, courseId: data.courseId }, currentUser.id);
+                updateDecks(prev => [...prev, mapDeckFromApi(newDeck)]);
                 trackDeckCreated(newDeck.id);
             }
             closeModal('createDeck');
@@ -114,6 +115,21 @@ export function useFlashcardHandlers() {
             alert('Failed to create/update deck. Please try again.');
         }
     }, [currentUser, selectedDeck, updateDecks, setSelectedDeck, closeModal]);
+
+    /**
+     * "Move to course…" (Phase 1 · B): PUT /decks/:id { courseId } and mirror
+     * the new course into the store + the open deck. Throws so the dialog can
+     * show the failure; the Library overview counts are marked stale.
+     */
+    const handleMoveDeckToCourse = useCallback(async (deck: Deck, courseId: string | null) => {
+        if (!currentUser) return;
+        await updateDeck(deck.id, { courseId });
+        updateDecks(prev => prev.map(d => d.id === deck.id ? { ...d, courseId } : d));
+        if (selectedDeck?.id === deck.id) {
+            setSelectedDeck({ ...selectedDeck, courseId });
+        }
+        useLibraryStore.getState().invalidateOverview();
+    }, [currentUser, selectedDeck, updateDecks, setSelectedDeck]);
 
     const handleDeleteDeck = useCallback(async (deckId: string) => {
         if (!currentUser) return;
@@ -670,6 +686,7 @@ export function useFlashcardHandlers() {
         handleOpenCreateDeckModal,
         handleOpenEditDeckModal,
         handleCreateOrUpdateDeck,
+        handleMoveDeckToCourse,
         handleDeleteDeck,
         handleOpenCreateFlashcardModal,
         handleOpenEditFlashcardModal,

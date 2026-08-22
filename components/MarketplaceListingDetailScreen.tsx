@@ -4,7 +4,6 @@ import {
   fetchMarketplaceListingFull,
   fetchNegotiationHistory,
   addMarketplaceReview,
-  reportMarketplaceListing,
   createInquiry,
   addToFavorites,
   removeFromFavorites,
@@ -29,8 +28,21 @@ import {
   MARKETPLACE_DEFAULT_SERVICE_FEE_BPS,
   nairaToKobo,
   koboToNaira,
+  isMarketplaceListingEditable,
+  isMarketplaceListingModerated,
+  MARKETPLACE_LISTING_STATUS_LABELS,
+  marketplaceListingModerationNotice,
 } from '@lantern/shared/marketplace';
-import { generateListingLink, formatCampusLabel } from '@lantern/shared';
+import {
+  generateListingLink,
+  formatCampusLabel,
+  SUPPORT_EMAIL,
+  LISTING_APPEAL_STATUS_LABELS,
+  canAppealListing,
+} from '@lantern/shared';
+import { ScaleIcon } from '@heroicons/react/24/outline';
+import ReportContentModal from './moderation/ReportContentModal';
+import AppealListingModal from './moderation/AppealListingModal';
 import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import SaleCountdown from './marketplace/SaleCountdown';
@@ -82,8 +94,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [loading, setLoading] = useState(true);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [showReportForm, setShowReportForm] = useState(false);
+  const [showAppealForm, setShowAppealForm] = useState(false);
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
-  const [reportForm, setReportForm] = useState({ reason: '', details: '' });
   const [isFavorited, setIsFavorited] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showContactForm, setShowContactForm] = useState(false);
@@ -312,40 +324,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     }
   };
 
-  /**
-   * The reports table only accepts scam/spam/inappropriate/other, so the more
-   * specific UI choices ride on 'other' with the label folded into details —
-   * admins can still tell a wrong-category report from a prohibited-item one.
-   */
-  const REPORT_REASON_OPTIONS: Array<{ value: string; label: string; dbReason: string }> = [
-    { value: 'spam', label: 'Spam or misleading', dbReason: 'spam' },
-    { value: 'inappropriate', label: 'Inappropriate content', dbReason: 'inappropriate' },
-    { value: 'scam', label: 'Potential scam', dbReason: 'scam' },
-    { value: 'wrong_category', label: 'Wrong category', dbReason: 'other' },
-    { value: 'prohibited_item', label: 'Prohibited item', dbReason: 'other' },
-    { value: 'other', label: 'Other', dbReason: 'other' },
-  ];
-
-  const handleReport = async () => {
-    if (!listing) return;
-
-    const option = REPORT_REASON_OPTIONS.find(o => o.value === reportForm.reason);
-    if (!option) return;
-    const details =
-      option.dbReason === option.value
-        ? reportForm.details
-        : `[${option.label}] ${reportForm.details}`.trim();
-
-    try {
-      await reportMarketplaceListing(listing.id, { reason: option.dbReason, details });
-      setReportForm({ reason: '', details: '' });
-      setShowReportForm(false);
-      showToast('Report submitted successfully.');
-    } catch (error) {
-      console.error('Error reporting listing:', error);
-      showToast('Failed to submit report. Please try again.', 'error');
-    }
-  };
+  // Reporting goes through the shared ReportContentModal (reasons from
+  // reasonsForTarget('listing'); POST /reports; 409 = already reported).
 
   const handleContactSeller = () => {
     if (!listing) return;
@@ -622,7 +602,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             >
               <ShareIcon className="w-5 h-5" />
             </button>
-            {!guestMode && (
+            {!guestMode && !isOwner && (
             <button
               onClick={() => setShowReportForm(true)}
               className="p-2 rounded-lg text-lantern-text-tertiary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
@@ -918,6 +898,40 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   <span className="text-xs text-lantern-primary font-medium">This is your listing</span>
                 </div>
 
+                {/* Moderation takedown: read-only for the seller (mirrors MyListingsScreen) */}
+                {isMarketplaceListingModerated(listing.status) ? (
+                  <div className="mx-3 mb-3 p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40">
+                    <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 rounded">
+                      {MARKETPLACE_LISTING_STATUS_LABELS[listing.status]}
+                    </span>
+                    <p className="mt-1 text-[11px] text-red-700 dark:text-red-300">
+                      {marketplaceListingModerationNotice(listing.status)}
+                      {listing.takedown_reason ? (
+                        <>
+                          {' '}
+                          <span className="font-semibold">Reason given:</span> {listing.takedown_reason}.
+                        </>
+                      ) : null}{' '}
+                      Contact {SUPPORT_EMAIL} if you think this is a mistake.
+                    </p>
+                    {listing.appeal_status && listing.appeal_status !== 'none' ? (
+                      <p className="mt-1.5 text-[11px] font-semibold text-lantern-text-secondary">
+                        {LISTING_APPEAL_STATUS_LABELS[listing.appeal_status]}
+                        {listing.appeal_status === 'requested' ? ' — a reviewer will reply in your notifications.' : ''}
+                      </p>
+                    ) : canAppealListing(listing) ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAppealForm(true)}
+                        className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-lantern-primary hover:underline"
+                      >
+                        <ScaleIcon className="w-3.5 h-3.5" aria-hidden />
+                        Appeal this takedown
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {/* Stats row */}
                 {sellerStats && (
                   <div className="flex items-center gap-4 px-3 pb-2 text-xs text-lantern-primary">
@@ -938,23 +952,25 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   </div>
                 )}
 
-                {/* Action buttons */}
-                <div className="flex items-center gap-2 px-3 pb-3">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onNavigate('EditMarketplaceListing', { listing }); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
-                  >
-                    <PencilSquareIcon className="w-3.5 h-3.5" />
-                    Edit Listing
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleBoostListing(); }}
-                    disabled={boostingListing}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-lantern-surface text-lantern-primary text-xs font-semibold rounded-lg ring-1 ring-lantern-primary/20 dark:ring-lantern-primary/30 hover:bg-lantern-primary-background transition-colors"
-                  >
-                    {boostingListing ? 'Boosting...' : 'Boost Listing'}
-                  </button>
-                </div>
+                {/* Action buttons (hidden once moderation has locked the listing) */}
+                {isMarketplaceListingEditable(listing.status) ? (
+                  <div className="flex items-center gap-2 px-3 pb-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onNavigate('EditMarketplaceListing', { listing }); }}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                    >
+                      <PencilSquareIcon className="w-3.5 h-3.5" />
+                      Edit Listing
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleBoostListing(); }}
+                      disabled={boostingListing}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-lantern-surface text-lantern-primary text-xs font-semibold rounded-lg ring-1 ring-lantern-primary/20 dark:ring-lantern-primary/30 hover:bg-lantern-primary-background transition-colors"
+                    >
+                      {boostingListing ? 'Boosting...' : 'Boost Listing'}
+                    </button>
+                  </div>
+                ) : null}
 
                 {negotiationHistory.length > 0 && (
                   <div className="px-3 pb-3">
@@ -1485,78 +1501,28 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
         </Modal>
       )}
 
-      {/* Report Modal */}
-      {showReportForm && (
-        <Modal
+      {/* Report (non-owners): shared modal, reasons from reasonsForTarget('listing') */}
+      {showReportForm && !isOwner && (
+        <ReportContentModal
           isOpen={showReportForm}
           onClose={() => setShowReportForm(false)}
-          ariaLabelledBy="listing-report-title"
-          maxWidthClass="max-w-md"
-          panelClassName="!p-0 overflow-hidden rounded-xl"
-        >
-          <div className="w-full">
-            <div className="flex items-center justify-between p-6 border-b border-lantern-border">
-              <h3 id="listing-report-title" className="text-lg font-bold text-lantern-text">Report Listing</h3>
-              <button
-                type="button"
-                onClick={() => setShowReportForm(false)}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200"
-                aria-label="Close report form"
-              >
-                <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
-              </button>
-            </div>
+          targetType="listing"
+          targetId={listing.id}
+          targetLabel={listing.title}
+        />
+      )}
 
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-lantern-text mb-2">
-                  Reason for report
-                </label>
-                <select
-                  value={reportForm.reason}
-                  onChange={(e) => setReportForm(prev => ({ ...prev, reason: e.target.value }))}
-                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
-                >
-                  <option value="">Select a reason</option>
-                  {REPORT_REASON_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-lantern-text mb-2">
-                  Additional details
-                </label>
-                <textarea
-                  value={reportForm.details}
-                  onChange={(e) => setReportForm(prev => ({ ...prev, details: e.target.value }))}
-                  placeholder="Provide more information about the issue..."
-                  rows={3}
-                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  onClick={() => setShowReportForm(false)}
-                  className="px-4 py-2 border border-lantern-border text-lantern-text rounded-lg hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary font-semibold transition-colors duration-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleReport}
-                  disabled={!reportForm.reason}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors duration-200"
-                >
-                  Submit Report
-                </button>
-              </div>
-            </div>
-          </div>
-        </Modal>
+      {/* Appeal (owner, moderated listing): one-shot note to the admin appeals queue */}
+      {showAppealForm && isOwner && (
+        <AppealListingModal
+          isOpen={showAppealForm}
+          onClose={() => setShowAppealForm(false)}
+          listing={listing}
+          onAppealed={() => {
+            setShowAppealForm(false);
+            void loadListingFull();
+          }}
+        />
       )}
 
       {/* Contact Seller Modal */}

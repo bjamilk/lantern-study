@@ -108,6 +108,8 @@ function buildSessionPayload(
       deckName: activeTest.test.deckName,
       groupName: options?.groupName || activeTest.test.deckName,
       groupId: options?.groupId,
+      // Academic archive: the API lifts config.courseId into test_sessions.course_id.
+      ...(activeTest.courseId ? { courseId: activeTest.courseId } : {}),
       passingScore: activeTest.test.passingScore,
       mode: activeTest.mode,
       // Persist timer so retake restores the same conditions (minutes + seconds for web parity).
@@ -140,6 +142,8 @@ function buildDraftPayloadFromActive(activeTest: ActiveTest) {
     config: {
       groupId,
       groupName,
+      // Academic archive: the API lifts config.courseId into test_sessions.course_id.
+      ...(activeTest.courseId ? { courseId: activeTest.courseId } : {}),
       numberOfQuestions: activeTest.questions.length,
       questionIds: activeTest.questions.map((q) => q.id),
       timerDuration: (activeTest.test.timeLimit || 0) * 60,
@@ -256,6 +260,8 @@ export interface TestAttempt {
   testName: string;
   groupId?: string;
   groupName?: string;
+  /** Academic archive: test_sessions.course_id (lifted from config.courseId). Drives the Library's course filter on History. */
+  courseId?: string | null;
   startedAt: string;
   completedAt?: string;
   score: number;
@@ -306,6 +312,8 @@ export interface ActiveTest {
   /** Study group attribution for dashboard Group Performance */
   groupId?: string;
   groupName?: string;
+  /** Academic archive: course this session belongs to (test_sessions.course_id via config.courseId). */
+  courseId?: string | null;
 }
 
 export interface StartTestConfig {
@@ -320,6 +328,8 @@ export interface StartTestConfig {
   groupName?: string;
   /** Exam lock for this session; falls back to the study setting when omitted. */
   lockAnswered?: boolean;
+  /** Academic archive: course picked in TestConfig (defaults from the group). */
+  courseId?: string | null;
 }
 
 /** True when a stored mobile answer counts as answered (non-empty). */
@@ -379,7 +389,14 @@ interface TestState {
     testName: string,
     questions: TestQuestion[],
     mode?: TestMode,
-    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string; lockAnswered?: boolean }
+    options?: {
+      timeLimitMinutes?: number;
+      groupId?: string;
+      groupName?: string;
+      lockAnswered?: boolean;
+      /** Academic archive: course this session is filed under. */
+      courseId?: string | null;
+    }
   ) => Promise<void>;
   /** Bind study-group attribution once route params are known (after draft create). */
   setActiveTestAttribution: (attribution: { groupId?: string; groupName?: string }) => void;
@@ -860,6 +877,7 @@ export const useTestStore = create<TestState>((set, get) => ({
           testName: config.name || config.testName || config.groupName || config.deckName || 'Test',
           groupId: config.groupId,
           groupName: config.groupName,
+          courseId: session.course_id ?? session.courseId ?? config.courseId ?? null,
           startedAt: startTime ? new Date(startTime).toISOString() : new Date().toISOString(),
           completedAt: endTime ? new Date(endTime).toISOString() : undefined,
           score: correctAnswersCount,
@@ -992,6 +1010,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       lockedQuestionIds: new Set(),
       groupId: config?.groupId,
       groupName: config?.groupName,
+      courseId: config?.courseId ?? null,
     };
     set({ activeTest: started });
     const drafted = await ensureMobileDraft(started);
@@ -1011,7 +1030,13 @@ export const useTestStore = create<TestState>((set, get) => ({
     testName: string,
     questions: TestQuestion[],
     mode: TestMode = 'study',
-    options?: { timeLimitMinutes?: number; groupId?: string; groupName?: string; lockAnswered?: boolean }
+    options?: {
+      timeLimitMinutes?: number;
+      groupId?: string;
+      groupName?: string;
+      lockAnswered?: boolean;
+      courseId?: string | null;
+    }
   ) => {
     // Do not invent a timer — use the caller's value, or untimed (0).
     const timeLimit =
@@ -1047,6 +1072,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       lockedQuestionIds: new Set(),
       groupId: options?.groupId,
       groupName: options?.groupName,
+      courseId: options?.courseId ?? null,
     };
     set({ activeTest: started });
     void ensureMobileDraft(started).then((drafted) => {

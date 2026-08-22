@@ -17,12 +17,18 @@ import { fetchUserProfile } from '../services/api';
 import { signInWithGoogleOAuth, signInWithAppleNative } from '../services/socialAuth';
 import type { User, Session } from '@supabase/supabase-js';
 import { isEmailNotConfirmedError } from '@lantern/shared';
+import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 
 interface AuthState {
   user: User | null;
   session: Session | null;
   profileName: string | null;
   profileFirstName: string | null;
+  /**
+   * Academic identity from GET /users/me (institution, programme, level …).
+   * null until the profile has been fetched; see utils/academicProfile.
+   */
+  academicProfile: AcademicProfile | null;
   isLoading: boolean;
   isInitialized: boolean;
   isPasswordRecovery: boolean;
@@ -38,6 +44,7 @@ interface AuthState {
   clearError: () => void;
   setPasswordRecovery: (active: boolean) => void;
   refreshProfileName: (userId: string) => Promise<void>;
+  setAcademicProfile: (profile: AcademicProfile | null) => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -45,10 +52,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   profileName: null,
   profileFirstName: null,
+  academicProfile: null,
   isLoading: false,
   isInitialized: false,
   isPasswordRecovery: false,
   error: null,
+
+  setAcademicProfile: (academicProfile) => set({ academicProfile }),
 
   refreshProfileName: async (userId: string) => {
     try {
@@ -59,6 +69,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         ...(name ? { profileName: name } : {}),
         ...(firstName ? { profileFirstName: firstName } : {}),
+        academicProfile: extractAcademicProfile(profile),
       });
     } catch (error) {
       console.warn('[Auth] Failed to refresh profile name:', error);
@@ -96,19 +107,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (session) {
         let profileName: string | null = null;
         let profileFirstName: string | null = null;
+        let academicProfile: AcademicProfile | null = null;
         try {
           const profile = await ensureUserProfile(session.user);
           profileName = profile.displayName;
           profileFirstName = profile.firstName ?? null;
+          academicProfile = profile.academic ?? null;
         } catch (profileError) {
           console.warn('[Auth] Failed to ensure user profile:', profileError);
         }
 
-        set({ 
+        set({
           user: session.user,
           session,
           profileName,
           profileFirstName,
+          academicProfile,
           isInitialized: true,
           isLoading: false,
         });
@@ -118,6 +132,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           session: null,
           profileName: null,
           profileFirstName: null,
+          academicProfile: null,
           isInitialized: true,
           isLoading: false,
         });
@@ -135,7 +150,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         if (event === 'SIGNED_OUT') {
-          set({ user: null, session: null, profileName: null, profileFirstName: null, isPasswordRecovery: false });
+          set({ user: null, session: null, profileName: null, profileFirstName: null, academicProfile: null, isPasswordRecovery: false });
           return;
         }
         
@@ -174,11 +189,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       let profileName: string | null = null;
       let profileFirstName: string | null = null;
+      let academicProfile: AcademicProfile | null = null;
       if (user) {
         try {
           const profile = await ensureUserProfile(user);
           profileName = profile.displayName;
           profileFirstName = profile.firstName ?? null;
+          academicProfile = profile.academic ?? null;
         } catch (profileError) {
           console.warn('Profile sync failed after sign-in; continuing with auth session:', profileError);
           profileName =
@@ -187,12 +204,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             null;
         }
       }
-      
-      set({ 
+
+      set({
         user,
         session,
         profileName,
         profileFirstName,
+        academicProfile,
         isLoading: false,
       });
     } catch (error: any) {
@@ -220,6 +238,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         session,
         profileName: profile.displayName,
         profileFirstName: profile.firstName ?? null,
+        academicProfile: profile.academic ?? null,
         isLoading: false,
       });
     } catch (error: unknown) {
@@ -243,6 +262,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         session,
         profileName: profile.displayName,
         profileFirstName: profile.firstName ?? null,
+        academicProfile: profile.academic ?? null,
         isLoading: false,
       });
     } catch (error: unknown) {
@@ -268,18 +288,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       let profileName: string | null = null;
       let profileFirstName: string | null = null;
+      let academicProfile: AcademicProfile | null = null;
       if (user) {
         const profile = await ensureUserProfile(user);
         profileName = profile.displayName;
         profileFirstName = profile.firstName ?? null;
+        academicProfile = profile.academic ?? null;
       }
-      
+
       // Note: Depending on Supabase settings, user might need to verify email
-      set({ 
+      set({
         user,
         session,
         profileName,
         profileFirstName,
+        academicProfile,
         isLoading: false,
       });
     } catch (error: any) {
@@ -366,6 +389,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         session: null,
         profileName: null,
         profileFirstName: null,
+        academicProfile: null,
         isLoading: false,
       });
     }

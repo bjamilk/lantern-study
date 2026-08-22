@@ -172,13 +172,94 @@ describe('recomputeDerivedUserStats', () => {
     tables.test_sessions = { data: [], error: null };
     const stats = await service().recomputeDerivedUserStats('u1');
 
-    // gamesWon and the marketplace counters have no source query yet. Returning
-    // 0 for them would wipe real progress when merged over the stored stats.
+    // gamesWon has no source query yet. Returning 0 for it would wipe real
+    // progress when merged over the stored stats.
     expect(stats).not.toHaveProperty('gamesWon');
-    expect(stats).not.toHaveProperty('listingsCreated');
-    expect(stats).not.toHaveProperty('listingsSold');
-    expect(stats).not.toHaveProperty('fiveStarReviews');
-    expect(stats).not.toHaveProperty('offersMade');
+  });
+
+  describe('marketplace counters', () => {
+    // Before these had a source query the MARKETPLACE_SELLER, TRUSTED_SELLER
+    // and OFFER_MAKER badges could never be earned: the recompute omitted the
+    // metrics, and the event-time increments they relied on were never wired.
+    it('derives listingsCreated, listingsSold, fiveStarReviews and offersMade', async () => {
+      tables.test_sessions = { data: [], error: null };
+      // Both marketplace_listings queries see the same stub: the head count
+      // feeds listingsCreated, the row ids feed the sold set.
+      tables.marketplace_listings = { count: 3, data: [{ id: 'l1' }, { id: 'l2' }], error: null };
+      tables.marketplace_orders = { data: [{ listing_id: 'l2' }, { listing_id: 'l3' }], error: null };
+      tables.marketplace_reviews = { count: 2, data: null, error: null };
+      tables.marketplace_offers = { count: 4, data: null, error: null };
+
+      const stats = await service().recomputeDerivedUserStats('u1');
+
+      expect(stats).toMatchObject({
+        listingsCreated: 3,
+        // l1, l2 (marked sold) ∪ l2, l3 (completed orders) — l2 counted once.
+        listingsSold: 3,
+        fiveStarReviews: 2,
+        offersMade: 4,
+      });
+    });
+
+    it('reports zero for a seller with no marketplace activity', async () => {
+      tables.test_sessions = { data: [], error: null };
+      const stats = await service().recomputeDerivedUserStats('u1');
+      expect(stats).toMatchObject({ listingsCreated: 0, listingsSold: 0, fiveStarReviews: 0, offersMade: 0 });
+    });
+
+    it('scopes every query to the user in the right role', async () => {
+      tables.test_sessions = { data: [], error: null };
+      await service().recomputeDerivedUserStats('u1');
+
+      const filters = (table: string) => capturedFilters.filter(f => f.table === table);
+
+      expect(filters('marketplace_listings')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ method: 'eq', args: ['user_id', 'u1'] }),
+          expect.objectContaining({ method: 'eq', args: ['status', 'sold'] }),
+        ])
+      );
+      expect(filters('marketplace_orders')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ method: 'eq', args: ['seller_id', 'u1'] }),
+          expect.objectContaining({ method: 'eq', args: ['status', 'completed'] }),
+        ])
+      );
+      // Reviews have no seller column: the listing is inner-joined and the
+      // owner filter applied through it.
+      expect(filters('marketplace_reviews')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            method: 'select',
+            args: [expect.stringMatching(/marketplace_listings!inner\(user_id\)/), expect.objectContaining({ count: 'exact', head: true })],
+          }),
+          expect.objectContaining({ method: 'eq', args: ['rating', 5] }),
+          expect.objectContaining({ method: 'eq', args: ['marketplace_listings.user_id', 'u1'] }),
+        ])
+      );
+      // Only buyers create offer rows (seller counters update in place), so
+      // buyer_id is "who made the offer".
+      expect(filters('marketplace_offers')).toEqual(
+        expect.arrayContaining([expect.objectContaining({ method: 'eq', args: ['buyer_id', 'u1'] })])
+      );
+    });
+
+    it('leaves a marketplace metric unset when its query fails, without losing the others', async () => {
+      tables.test_sessions = { data: [], error: null };
+      tables.marketplace_listings = { count: 5, data: [{ id: 'l1' }], error: null };
+      tables.marketplace_orders = { data: null, error: { message: 'orders boom' } };
+      tables.marketplace_reviews = { count: null, data: null, error: { message: 'reviews boom' } };
+      tables.marketplace_offers = { count: 7, data: null, error: null };
+
+      const stats = await service().recomputeDerivedUserStats('u1');
+
+      expect(stats.listingsCreated).toBe(5);
+      // listingsSold is a union of two reads; if either fails the partial
+      // answer would be an undercount, so it is left for the stored value.
+      expect(stats).not.toHaveProperty('listingsSold');
+      expect(stats).not.toHaveProperty('fiveStarReviews');
+      expect(stats.offersMade).toBe(7);
+    });
   });
 
   it('leaves test counts alone when the query fails rather than zeroing them', async () => {

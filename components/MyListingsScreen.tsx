@@ -39,8 +39,20 @@ import {
   MegaphoneIcon,
   BuildingStorefrontIcon,
   ShareIcon,
+  ScaleIcon,
 } from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from './ui';
+import {
+  SUPPORT_EMAIL,
+  canSellerSetListingStatus,
+  canAppealListing,
+  isMarketplaceListingModerated,
+  LISTING_APPEAL_STATUS_LABELS,
+  listingAppealRefusal,
+  MARKETPLACE_LISTING_STATUS_LABELS,
+  marketplaceListingModerationNotice,
+} from '@lantern/shared';
+import AppealListingModal from './moderation/AppealListingModal';
 
 interface MyListingsScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -51,6 +63,8 @@ interface MyListingsScreenProps {
 const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack, refreshKey = 0 }) => {
   const { currentUser } = useAuthStore();
   const showToast = useToastStore((s) => s.showToast);
+  // Listing whose takedown the seller is appealing (one-shot modal).
+  const [appealListing, setAppealListing] = useState<MarketplaceListing | null>(null);
   const userId = currentUser?.id;
   const [activeTab, setActiveTab] = useState<'active' | 'sold' | 'inactive'>('active');
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
@@ -163,7 +177,15 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
       setActionMenuOpen(null);
     } catch (error) {
       console.error('Error updating status:', error);
-      useToastStore.getState().showToast('Failed to update listing status', 'error');
+      // The API refuses forbidden transitions (moderated, reserved, archived) with
+      // seller-facing copy in the body; surface it and re-sync the row to the server.
+      useToastStore
+        .getState()
+        .showToast(
+          error instanceof Error && error.message ? error.message : 'Failed to update listing status',
+          'error',
+        );
+      await loadListings();
     }
   };
 
@@ -210,6 +232,11 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
       (stats?.totalListings ?? 0) - (stats?.activeListings ?? 0) - (stats?.soldListings ?? 0)
     ),
   };
+
+  // A status action is offered only when the shared lifecycle table lets the
+  // seller make that move, so the menu and the API can never disagree.
+  const offersStatus = (from: MarketplaceListing['status'], to: 'active' | 'inactive' | 'sold') =>
+    from !== to && canSellerSetListingStatus(from, to);
 
   const openNewListing = (category: 'academic' | 'student-life') => {
     setShowCategoryPicker(false);
@@ -487,6 +514,10 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                   <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 rounded">
                                     Sale in progress
                                   </span>
+                                ) : isMarketplaceListingModerated(listing.status) ? (
+                                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 rounded">
+                                    {MARKETPLACE_LISTING_STATUS_LABELS[listing.status]}
+                                  </span>
                                 ) : (
                                   <span className="text-[10px] capitalize text-lantern-text-tertiary">{listing.status}</span>
                                 )}
@@ -514,6 +545,27 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                   {listing.inquiries_count || 0}
                                 </span>
                               </div>
+                              {isMarketplaceListingModerated(listing.status) ? (
+                                <span className="block mt-1 text-[11px] text-red-700 dark:text-red-300">
+                                  {marketplaceListingModerationNotice(listing.status)}
+                                  {listing.takedown_reason ? (
+                                    <>
+                                      {' '}
+                                      <span className="font-semibold">Reason given:</span> {listing.takedown_reason}.
+                                    </>
+                                  ) : null}
+                                  {listing.appeal_status && listing.appeal_status !== 'none' ? (
+                                    <span className="block mt-0.5 font-semibold text-lantern-text-secondary">
+                                      {LISTING_APPEAL_STATUS_LABELS[listing.appeal_status]}
+                                      {listing.appeal_status === 'requested' ? ' — a reviewer will reply in your notifications.' : ''}
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {' '}You can appeal once, or contact {SUPPORT_EMAIL} if you think this is a mistake.
+                                    </>
+                                  )}
+                                </span>
+                              ) : null}
                             </button>
 
                             <div className="flex flex-col items-end gap-1 shrink-0">
@@ -536,6 +588,15 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                   className="text-[11px] font-semibold text-lantern-primary hover:underline px-1 py-0.5"
                                 >
                                   View orders
+                                </button>
+                              ) : isMarketplaceListingModerated(listing.status) && canAppealListing(listing) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setAppealListing(listing)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-lantern-primary hover:underline px-1 py-0.5"
+                                >
+                                  <ScaleIcon className="w-3.5 h-3.5" aria-hidden />
+                                  Appeal
                                 </button>
                               ) : null}
 
@@ -562,12 +623,48 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     Open order
                                   </MenuItem>
                                 ) : null}
-                                {listing.status !== 'reserved' ? (
+                                {isMarketplaceListingModerated(listing.status) ? (
+                                  // Moderation outcomes are read-only for the seller: no edit,
+                                  // no relist, no delete (the record backs the report trail).
+                                  // Kept enabled so the roving-focus menu has something to land on.
+                                  <MenuItem
+                                    onSelect={() =>
+                                      useToastStore
+                                        .getState()
+                                        .showToast(
+                                          `${MARKETPLACE_LISTING_STATUS_LABELS[listing.status]}: ${marketplaceListingModerationNotice(listing.status)} Contact ${SUPPORT_EMAIL} if you think this is a mistake.`,
+                                          'info',
+                                        )
+                                    }
+                                    icon={<XCircleIcon className="w-4 h-4" />}
+                                  >
+                                    Why can&apos;t I edit this?
+                                  </MenuItem>
+                                ) : null}
+                                {isMarketplaceListingModerated(listing.status) ? (
+                                  <MenuItem
+                                    onSelect={() => {
+                                      const refusal = listingAppealRefusal(listing);
+                                      if (refusal) {
+                                        useToastStore.getState().showToast(refusal, 'info');
+                                        return;
+                                      }
+                                      setAppealListing(listing);
+                                    }}
+                                    icon={<ScaleIcon className="w-4 h-4" />}
+                                    className={canAppealListing(listing) ? 'text-lantern-primary' : 'opacity-60'}
+                                  >
+                                    {canAppealListing(listing)
+                                      ? 'Appeal takedown'
+                                      : LISTING_APPEAL_STATUS_LABELS[listing.appeal_status ?? 'none']}
+                                  </MenuItem>
+                                ) : null}
+                                {listing.status !== 'reserved' && !isMarketplaceListingModerated(listing.status) ? (
                                   <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
                                     Edit Listing
                                   </MenuItem>
                                 ) : null}
-                                {listing.status !== 'active' && listing.status !== 'reserved' && (
+                                {offersStatus(listing.status, 'active') && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'active')}
                                     icon={<CheckCircleIcon className="w-4 h-4" />}
@@ -576,7 +673,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     Mark Active
                                   </MenuItem>
                                 )}
-                                {listing.status !== 'sold' && listing.status !== 'reserved' && (
+                                {offersStatus(listing.status, 'sold') && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'sold')}
                                     icon={<ShoppingBagIcon className="w-4 h-4" />}
@@ -585,7 +682,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     Mark as Sold
                                   </MenuItem>
                                 )}
-                                {listing.status !== 'inactive' && listing.status !== 'reserved' && (
+                                {offersStatus(listing.status, 'inactive') && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'inactive')}
                                     icon={<XCircleIcon className="w-4 h-4" />}
@@ -594,7 +691,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     Deactivate
                                   </MenuItem>
                                 )}
-                                {listing.status !== 'reserved' ? (
+                                {listing.status !== 'reserved' && !isMarketplaceListingModerated(listing.status) ? (
                                   <>
                                     <MenuSeparator />
                                     <MenuItem
@@ -658,6 +755,17 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
           onDismiss={() => setShowOnboarding(false)}
         />
       )}
+      {appealListing ? (
+        <AppealListingModal
+          isOpen={!!appealListing}
+          listing={appealListing}
+          onClose={() => setAppealListing(null)}
+          onAppealed={() => {
+            setAppealListing(null);
+            void loadListings();
+          }}
+        />
+      ) : null}
     </div>
   );
 };

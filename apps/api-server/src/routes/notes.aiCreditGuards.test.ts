@@ -133,6 +133,8 @@ describe('autoStartPdfOcrOrRevert', () => {
       expect.objectContaining({ noteId: 'note-1', attachmentId: 'att-1', sourceKind: 'pdf' }),
       'u1',
       expect.any(Function),
+      // the charge handle is forwarded as a 5th arg (undefined in this fixture)
+      undefined
     );
     expect(supabase.updateNoteAttachment).not.toHaveBeenCalled();
   });
@@ -196,7 +198,7 @@ async function runQuizRoute(req: any) {
   const handlers = layer.route.stack.map((s: any) => s.handle);
   const handler = handlers[handlers.length - 1] as (req: any, res: any, next: any) => void;
 
-  const res: any = { statusCode: 200, body: undefined };
+  const res: any = { statusCode: 200, body: undefined, locals: {} };
   const settled = new Promise<void>((resolve, reject) => {
     res.status = (code: number) => {
       res.statusCode = code;

@@ -8,8 +8,9 @@ import {
     XCircleIcon, UserCircleIcon, BellIcon, ShieldExclamationIcon, 
     EyeIcon, EyeSlashIcon, ArrowRightOnRectangleIcon, TrashIcon,
     CameraIcon, AcademicCapIcon, PaintBrushIcon, LifebuoyIcon,
-    AdjustmentsHorizontalIcon, ShoppingBagIcon,
+    AdjustmentsHorizontalIcon, ShoppingBagIcon, BuildingLibraryIcon,
 } from '@heroicons/react/24/outline';
+import { AcademicSettingsSection } from './settings/AcademicSettingsSection';
 import { compressImage } from '../utils/imageCompression';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { Avatar, Button, Toggle, Tabs, TabList, Tab, TabPanel } from './ui';
@@ -36,6 +37,7 @@ import { useFeatureTipStore } from '../stores/featureTipStore';
 
 type SettingsTab =
     | 'profile'
+    | 'academic'
     | 'notifications'
     | 'study'
     | 'appearance'
@@ -292,6 +294,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const navItems: { id: SettingsTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
         { id: 'profile', label: 'Profile', icon: UserCircleIcon },
+        { id: 'academic', label: 'Academic', icon: BuildingLibraryIcon },
         { id: 'notifications', label: 'Notifications', icon: BellIcon },
         { id: 'study', label: 'Study', icon: AcademicCapIcon },
         { id: 'appearance', label: 'Appearance', icon: PaintBrushIcon },
@@ -388,6 +391,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                          )}
                      </div>
                 </div>
+            );
+            case 'academic': return (
+                <AcademicSettingsSection currentUser={currentUser} isOpen={isOpen} />
             );
             case 'notifications': return (
                  <div>

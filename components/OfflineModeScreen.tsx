@@ -1,13 +1,17 @@
 
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { OfflineSessionBundle, Deck } from '../types';
-import { CloudArrowDownIcon, ArrowPathIcon, DocumentTextIcon, ArrowUpTrayIcon, ShoppingBagIcon } from '@heroicons/react/24/outline';
+import { CloudArrowDownIcon, ArrowPathIcon, DocumentTextIcon, ArrowUpTrayIcon, ShoppingBagIcon, AcademicCapIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { syncCopy, featureAccents } from '@lantern/shared/design';
 import { useUIStore } from '../stores/uiStore';
 import { useAuthStore } from '../stores/authStore';
 import { useTestStore } from '../stores/testStore';
+import { useLibraryStore } from '../stores/libraryStore';
+import { useAcademicStore } from '../stores/academicStore';
+import { UNFILED_COURSE_ID, filterBundlesByCourse, matchesCourseFilter } from '../utils/libraryArchive';
+import { courseLabel } from '../utils/academicSetup';
 import {
   restoreQuestionBanks,
   fetchOfflineBundles,
@@ -57,6 +61,43 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
   const [updatingBundleId, setUpdatingBundleId] = useState<string | null>(null);
   const currentUserId = useAuthStore((s) => s.currentUser?.id);
   const setOfflineBundles = useTestStore((s) => s.setOfflineBundles);
+
+  // Course filter (Phase 1 · B): follows the Library's archive-wide selection
+  // (a course uuid or the 'null' literal for unfiled); filtered client-side by
+  // bundle.courseId / config.courseId. Purchased packs are bundleId qbank-*.
+  const courseFilterId = useLibraryStore((s) => s.courseFilterId);
+  const setCourseFilter = useLibraryStore((s) => s.setCourseFilter);
+  const pendingBundleId = useLibraryStore((s) => s.pendingOfflineBundleId);
+  const setPendingOfflineBundleId = useLibraryStore((s) => s.setPendingOfflineBundleId);
+  const resolveCourse = useAcademicStore((s) => s.resolveCourse);
+  const knownCourses = useAcademicStore((s) => s.knownCourses);
+  const academicLoaded = useAcademicStore((s) => s.loaded);
+  const loadMyCourses = useAcademicStore((s) => s.loadMyCourses);
+  void knownCourses; // subscribe so the chip label resolves once courses load
+  useEffect(() => {
+    if (courseFilterId && !academicLoaded) void loadMyCourses();
+  }, [courseFilterId, academicLoaded, loadMyCourses]);
+  const filterCourse = courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? resolveCourse(courseFilterId) : null;
+  const visibleBundles = useMemo(() => filterBundlesByCourse(offlineBundles, courseFilterId), [offlineBundles, courseFilterId]);
+  const visibleDecks = useMemo(
+    () => (courseFilterId ? offlineDecks.filter((d) => matchesCourseFilter(d.courseId, courseFilterId)) : offlineDecks),
+    [offlineDecks, courseFilterId]
+  );
+  // Library search deep link: scroll to + briefly highlight the bundle.
+  const [highlightedBundleId, setHighlightedBundleId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingBundleId) return;
+    setHighlightedBundleId(pendingBundleId);
+    setPendingOfflineBundleId(null);
+    const raf = window.requestAnimationFrame(() => {
+      document.getElementById(`offline-bundle-${pendingBundleId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    const timer = window.setTimeout(() => setHighlightedBundleId(null), 4000);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [pendingBundleId, setPendingOfflineBundleId]);
 
   useEffect(() => {
     if (!isOnline || !currentUserId) return;
@@ -228,6 +269,29 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
         </div>
       )}
 
+      {courseFilterId ? (
+        <div
+          className="mb-4 flex flex-wrap items-center gap-2 rounded-lantern border border-lantern-border bg-lantern-surface px-3 py-2 text-sm"
+          role="status"
+        >
+          <AcademicCapIcon className="w-4 h-4 text-lantern-primary shrink-0" aria-hidden />
+          <span className="text-lantern-text-secondary">Showing</span>
+          <span className="font-semibold text-lantern-text truncate">
+            {courseFilterId === UNFILED_COURSE_ID ? 'unfiled bundles' : filterCourse ? courseLabel(filterCourse) : 'one course'}
+          </span>
+          <span className="text-xs text-lantern-text-tertiary">
+            ({visibleBundles.length} of {offlineBundles.length} bundle{offlineBundles.length === 1 ? '' : 's'})
+          </span>
+          <button
+            type="button"
+            onClick={() => setCourseFilter(null)}
+            className="ml-auto inline-flex items-center gap-1 rounded-full border border-lantern-border px-2 py-0.5 text-xs font-medium text-lantern-text hover:bg-lantern-background-secondary"
+          >
+            <XMarkIcon className="w-3 h-3" aria-hidden /> Show all
+          </button>
+        </div>
+      ) : null}
+
       <section className="mb-8">
         <h2 className="text-lg font-semibold mb-3 text-lantern-text">Sync Status</h2>
         <div className="bg-lantern-surface border border-lantern-border p-4 rounded-lantern-xl shadow-lantern space-y-4">
@@ -275,11 +339,11 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
         </div>
       </section>
 
-      {offlineDecks.length > 0 && (
+      {visibleDecks.length > 0 && (
         <section className="mb-8">
           <h2 className="text-lg font-semibold mb-3 text-lantern-text">Downloaded Flashcard Decks</h2>
           <div className="space-y-2">
-            {offlineDecks.map(deck => (
+            {visibleDecks.map(deck => (
               <div
                 key={deck.id}
                 className="flex items-center justify-between p-3 bg-lantern-surface border border-lantern-border rounded-lantern"
@@ -294,11 +358,33 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
 
       <section>
         <h2 className="text-lg font-semibold mb-3 text-lantern-text">Downloaded Test Bundles</h2>
-        {offlineBundles.length > 0 ? (
+        {courseFilterId && visibleBundles.length === 0 && offlineBundles.length > 0 ? (
+          <div className="text-center py-10 bg-lantern-surface border border-lantern-border rounded-lantern-xl shadow-lantern">
+            <DocumentTextIcon className="w-16 h-16 text-lantern-text-tertiary mx-auto mb-4" />
+            <p className="text-lantern-text-secondary">
+              {courseFilterId === UNFILED_COURSE_ID
+                ? 'Every downloaded bundle is filed under a course.'
+                : 'No downloaded bundles for this course yet.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setCourseFilter(null)}
+              className="mt-3 text-sm font-medium text-lantern-primary underline-offset-2 hover:underline"
+            >
+              Show all bundles
+            </button>
+          </div>
+        ) : visibleBundles.length > 0 ? (
           <div className="space-y-4">
-            {offlineBundles.map(bundle => (
-              <OfflineBundleCard
+            {visibleBundles.map(bundle => (
+              <div
                 key={bundle.bundleId}
+                id={`offline-bundle-${bundle.bundleId}`}
+                className={`rounded-lantern-xl transition-shadow ${
+                  highlightedBundleId === bundle.bundleId ? 'ring-2 ring-lantern-primary ring-offset-2 ring-offset-lantern-background' : ''
+                }`}
+              >
+              <OfflineBundleCard
                 bundle={bundle}
                 isEditing={editingBundleId === bundle.bundleId}
                 editNameValue={editNameValue}
@@ -321,6 +407,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
                 onUpdate={() => void handleUpdateBank(bundle)}
                 updating={updatingBundleId === bundle.bundleId}
               />
+              </div>
             ))}
           </div>
         ) : (

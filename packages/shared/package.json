@@ -113,6 +113,18 @@
       "require": "./dist/marketplace/index.js",
       "default": "./src/marketplace/index.ts"
     },
+    "./academic": {
+      "types": "./src/academic/index.ts",
+      "import": "./src/academic/index.ts",
+      "require": "./dist/academic/index.js",
+      "default": "./src/academic/index.ts"
+    },
+    "./learning": {
+      "types": "./src/learning/index.ts",
+      "import": "./src/learning/index.ts",
+      "require": "./dist/learning/index.js",
+      "default": "./src/learning/index.ts"
+    },
     "./jobs": {
       "types": "./src/jobs/index.ts",
       "import": "./src/jobs/index.ts",
@@ -124,6 +136,12 @@
       "import": "./src/analytics/index.ts",
       "require": "./dist/analytics/index.js",
       "default": "./src/analytics/index.ts"
+    },
+    "./moderation": {
+      "types": "./src/moderation/index.ts",
+      "import": "./src/moderation/index.ts",
+      "require": "./dist/moderation/index.js",
+      "default": "./src/moderation/index.ts"
     }
   },
   "scripts": {

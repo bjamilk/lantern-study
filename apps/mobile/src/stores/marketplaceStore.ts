@@ -3,6 +3,9 @@
  * Manages marketplace listings and favorites with local-first pattern
  */
 import { create } from 'zustand';
+import { isMarketplaceListingStatus } from '@lantern/shared/marketplace';
+import type { MarketplaceListingStatus } from '@lantern/shared/marketplace';
+import type { ListingAppealStatus, ListingRightsStatus } from '@lantern/shared/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RateLimitError } from '@lantern/shared';
 import * as api from '../services/api';
@@ -71,6 +74,18 @@ export type RemoteListing = {
   profiles?: { id: string; name: string; avatar_url?: string };
   views_count?: number;
   favorites_count?: number;
+  /** Academic archive: listing rows are served snake_case (`course_id`). */
+  course_id?: string | null;
+  courseId?: string | null;
+  category_specific_fields?: Record<string, unknown> | null;
+  // Rights / takedown / appeal state (Phase 1 · E) — owner + admin views only.
+  rights_status?: ListingRightsStatus;
+  takedown_reason?: string | null;
+  takedown_at?: string | null;
+  appeal_status?: ListingAppealStatus;
+  appeal_note?: string | null;
+  appealed_at?: string | null;
+  appeal_decided_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -87,11 +102,11 @@ function mapSellerFromRemote(l: RemoteListing): MarketplaceListing['seller'] {
 }
 
 export function mapRemoteListing(l: RemoteListing): MarketplaceListing {
-  const status = (
-    l.status === 'sold' || l.status === 'inactive' || l.status === 'reserved'
-      ? l.status
-      : 'active'
-  ) as MarketplaceListing['status'];
+  // Preserve every status the server can send (incl. moderation outcomes) so a
+  // removed/suspended listing never masquerades as active in My Listings.
+  const status: MarketplaceListing['status'] = isMarketplaceListingStatus(l.status)
+    ? l.status
+    : 'active';
   return {
     id: l.id,
     user_id: l.user_id,
@@ -115,6 +130,19 @@ export function mapRemoteListing(l: RemoteListing): MarketplaceListing {
     status,
     views_count: l.views_count || 0,
     favorites_count: l.favorites_count || 0,
+    // Academic archive: map the raw column onto the camelCase field every
+    // screen reads; the raw JSONB keeps courseCode for older listings.
+    courseId: l.course_id ?? l.courseId ?? null,
+    category_specific_fields: l.category_specific_fields ?? undefined,
+    // Rights / takedown / appeal: the API only sends these to the owner, so a
+    // browse row simply leaves them undefined.
+    rights_status: l.rights_status,
+    takedown_reason: l.takedown_reason ?? null,
+    takedown_at: l.takedown_at ?? null,
+    appeal_status: l.appeal_status,
+    appeal_note: l.appeal_note ?? null,
+    appealed_at: l.appealed_at ?? null,
+    appeal_decided_at: l.appeal_decided_at ?? null,
     created_at: l.created_at,
     updated_at: l.updated_at,
   };
@@ -182,9 +210,22 @@ export interface MarketplaceListing {
   currency?: string;
   campus?: MarketplaceListingCampus;
   images?: string[];
-  status: 'active' | 'sold' | 'inactive' | 'reserved';
+  status: MarketplaceListingStatus;
   views_count?: number;
   favorites_count?: number;
+  /** Academic archive: marketplace_listings.course_id (mapped from the raw column). */
+  courseId?: string | null;
+  /** Free-form JSONB; `courseCode` mirrors the picked course for older clients. */
+  category_specific_fields?: Record<string, unknown>;
+  // Rights / takedown / appeal state (Phase 1 · E). Present for the seller's
+  // own listings (my-listings + owner detail); undefined for other viewers.
+  rights_status?: ListingRightsStatus;
+  takedown_reason?: string | null;
+  takedown_at?: string | null;
+  appeal_status?: ListingAppealStatus;
+  appeal_note?: string | null;
+  appealed_at?: string | null;
+  appeal_decided_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -196,11 +237,20 @@ export interface MarketplaceListing {
  */
 export type MarketplaceListingUpdate = Omit<
   Partial<MarketplaceListing>,
-  'sale_price' | 'sale_ends_at' | 'promo_label'
+  'sale_price' | 'sale_ends_at' | 'promo_label' | 'status'
 > & {
   sale_price?: number | null;
   sale_ends_at?: string | null;
   promo_label?: string | null;
+  // Sellers may only request these; reserved/archived/moderated statuses are
+  // set by the order lifecycle, the delete path, and Lantern moderation.
+  status?: 'active' | 'sold' | 'inactive';
+  /**
+   * Rights attestation (RIGHTS_ATTESTATION_TEXT). Required by the API when
+   * the edit moves an unattested listing into an academic category; sent
+   * through to PUT /marketplace/listings/:id, never stored on the local row.
+   */
+  attestation?: boolean;
 };
 
 type MarketplaceListingCreateInput = Omit<
@@ -208,6 +258,8 @@ type MarketplaceListingCreateInput = Omit<
   'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count' | 'campus_id'
 > & {
   campus_id: string;
+  /** Rights attestation — required (400) when isAcademicListing({ category }). */
+  attestation?: boolean;
 };
 
 export interface MarketplaceReview {
@@ -602,6 +654,8 @@ interface MarketplaceState {
   fetchSellerStats: () => Promise<void>;
   createListing: (listing: MarketplaceListingCreateInput, userId: string) => Promise<{ listing: MarketplaceListing; queued: boolean }>;
   updateListing: (listingId: string, updates: MarketplaceListingUpdate, userId: string) => Promise<void>;
+  /** Seller appeal of a moderation takedown (one shot; the API answers 409 if already appealed). */
+  appealListing: (listingId: string, note: string) => Promise<void>;
   deleteListing: (listingId: string, userId: string) => Promise<void>;
   toggleFavorite: (listingId: string, userId: string) => Promise<void>;
   setSearchQuery: (query: string) => void;
@@ -942,7 +996,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
   
-  createListing: async (listingData, userId) => {
+  createListing: async (listingInput, userId) => {
+    // The attestation is a request flag, not a listing field: keep it off the
+    // optimistic row and the offline queue payload's local copy.
+    const { attestation, ...listingData } = listingInput;
     // Create temp ID for optimistic update
     const tempId = `temp_listing_${Date.now()}`;
     const tempListing: MarketplaceListing = {
@@ -978,6 +1035,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         sale_price: listingData.sale_price,
         sale_ends_at: listingData.sale_ends_at,
         promo_label: listingData.promo_label,
+        ...(listingData.courseId !== undefined ? { courseId: listingData.courseId } : {}),
+        ...(listingData.category_specific_fields
+          ? { categorySpecificFields: listingData.category_specific_fields }
+          : {}),
+        ...(attestation ? { attestation: true } : {}),
       });
       
       const createdListing = created as unknown as RemoteListing;
@@ -1002,7 +1064,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       console.error('Failed to create listing on server:', error);
       if (isRetryableMarketplaceError(error)) {
         // Offline / transient: queue for later sync and keep the optimistic listing.
-        await syncService.queueOperation('listing', tempId, 'create', listingData, userId);
+        await syncService.queueOperation('listing', tempId, 'create', listingInput, userId);
         return { listing: tempListing, queued: true };
       }
       // Server rejected the listing — roll back the optimistic insert and
@@ -1025,8 +1087,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     // The server payload keeps explicit nulls (they clear a discount), but the
     // in-memory MarketplaceListing type expects number|string|undefined, so
     // coerce null -> undefined for the optimistic local copy only.
+    const { attestation, ...listingUpdates } = updates;
     const optimistic: Partial<MarketplaceListing> = {
-      ...updates,
+      ...listingUpdates,
       sale_price: updates.sale_price ?? undefined,
       sale_ends_at: updates.sale_ends_at ?? undefined,
       promo_label: updates.promo_label ?? undefined,
@@ -1049,9 +1112,13 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     if (DEMO_MODE) return;
     
     try {
+      const { category_specific_fields: categoryFields, ...serverUpdates } = listingUpdates;
       await api.updateMarketplaceListing(listingId, {
-        ...updates,
+        ...serverUpdates,
         campus_id: updates.campus_id ?? undefined,
+        // Server merges client keys with its own (server-owned keys preserved).
+        ...(categoryFields ? { categorySpecificFields: categoryFields } : {}),
+        ...(attestation ? { attestation: true } : {}),
       });
       if (updates.status === 'sold') {
         await refreshMarketplaceBudget(userId);
@@ -1081,6 +1148,23 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
   
+  appealListing: async (listingId: string, note: string) => {
+    const result = await api.appealListingTakedown(listingId, note);
+    const patch: Partial<MarketplaceListing> = {
+      appeal_status: result.appeal_status ?? 'requested',
+      appeal_note: note,
+      appealed_at: result.appealed_at ?? new Date().toISOString(),
+    };
+    set((state) => ({
+      myListings: state.myListings.map((l) => (l.id === listingId ? { ...l, ...patch } : l)),
+      currentListing:
+        state.currentListing?.id === listingId
+          ? { ...state.currentListing, ...patch }
+          : state.currentListing,
+    }));
+    await get().saveToStorage();
+  },
+
   deleteListing: async (listingId: string, userId: string) => {
     const previousMy = get().myListings.find((l) => l.id === listingId);
     const previousBrowse = get().listings.find((l) => l.id === listingId);

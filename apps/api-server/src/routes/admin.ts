@@ -25,8 +25,22 @@ import { setUserSessionCutoff } from '../services/tokenDenylist';
 import { clearAuthTokenCache } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
+import { getModerationService } from '../services/moderation';
+import { PublicError } from '../utils/safeError';
+import { MAX_SUSPENSION_DAYS, isSuspensionActive } from '@lantern/shared/moderation';
+import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
 
 const router = Router();
+
+/** PublicError(+statusCode) from the moderation service → 4xx; everything else → 500. */
+function respondModerationError(res: any, err: any): void {
+  if (err instanceof PublicError) {
+    const statusCode = (err as { statusCode?: unknown }).statusCode;
+    res.status(typeof statusCode === 'number' ? statusCode : 400).json({ success: false, error: err.message });
+    return;
+  }
+  res.status(500).json({ success: false, error: clientErrorMessage(err) });
+}
 let supabaseService: SupabaseService;
 let cacheService: CacheService;
 
@@ -365,10 +379,33 @@ router.get('/users', async (req: any, res: any) => {
 router.patch('/users/:id/status', validateAdminUserStatus, handleValidationErrors, async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { status, reason } = req.body as { status: 'active' | 'banned'; reason?: string };
+    const { status, reason, until } = req.body as {
+      status: 'active' | 'banned' | 'suspended';
+      reason?: string;
+      /** suspended only: ISO end date, at most MAX_SUSPENSION_DAYS ahead. */
+      until?: string;
+    };
 
-    if (!['active', 'banned'].includes(status)) {
-      return res.status(400).json({ success: false, error: 'status must be "active" or "banned"' });
+    if (!['active', 'banned', 'suspended'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'status must be "active", "banned" or "suspended"' });
+    }
+
+    // Time-boxed suspension: settings.suspended_until (no global sign-out —
+    // the API answers ACCOUNT_SUSPENDED until the date passes). 'active'
+    // clears both the ban and any suspension.
+    let suspendedUntil: string | null = null;
+    if (status === 'suspended') {
+      const parsed = typeof until === 'string' ? new Date(until) : null;
+      if (!parsed || Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ success: false, error: 'until must be an ISO date for a suspension' });
+      }
+      const maxMs = MAX_SUSPENSION_DAYS * 86_400_000;
+      if (parsed.getTime() <= Date.now() || parsed.getTime() - Date.now() > maxMs) {
+        return res
+          .status(400)
+          .json({ success: false, error: `until must be in the future and at most ${MAX_SUSPENSION_DAYS} days ahead` });
+      }
+      suspendedUntil = parsed.toISOString();
     }
 
     const client = supabaseService.getClient();
@@ -379,21 +416,36 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     }
 
     const currentSettings = (profile.settings || {}) as Record<string, any>;
-    const nextSettings = {
+    const wasSuspended = isSuspensionActive(currentSettings.suspended_until);
+    const nextSettings: Record<string, any> = {
       ...currentSettings,
-      account_status: status,
+      account_status: status === 'suspended' ? currentSettings.account_status ?? 'active' : status,
       is_banned: status === 'banned',
-      ...(status === 'banned' ? { banned_at: new Date().toISOString(), ban_reason: reason || null } : { banned_at: null, ban_reason: null }),
+      ...(status === 'banned'
+        ? { banned_at: new Date().toISOString(), ban_reason: reason || null }
+        : status === 'active'
+          ? { banned_at: null, ban_reason: null }
+          : {}),
     };
+    if (status === 'suspended') nextSettings.suspended_until = suspendedUntil;
+    else if (status === 'active') delete nextSettings.suspended_until;
 
     const { error } = await client.from('profiles').update({ settings: nextSettings }).eq('id', id);
     if (error) throw error;
 
     await logAdminAction(supabaseService, {
       actorId: req.user.id,
-      action: status === 'banned' ? 'user_ban' : 'user_unban',
+      action:
+        status === 'banned'
+          ? 'user_ban'
+          : status === 'suspended'
+            ? 'user_suspend'
+            : wasSuspended && !currentSettings.is_banned
+              ? 'user_unsuspend'
+              : 'user_unban',
       targetType: 'user',
       targetId: id,
+      metadata: status === 'suspended' ? { until: suspendedUntil, trigger: 'admin' } : {},
       reason,
     });
     await invalidateBanCache(id);
@@ -405,11 +457,67 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
         logger.warn('Supabase global signOut failed on ban', { id, signOutErr });
       }
       await setUserSessionCutoff(id);
+    } else if (status === 'suspended') {
+      await supabaseService
+        .createNotification(id, {
+          type: 'warning',
+          message: `Your account has been suspended by Lantern moderation until ${new Date(suspendedUntil!).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.${reason ? ` Reason: ${reason}.` : ''} Contact support@lanternstudy.com to appeal.`,
+          link: 'settings:account',
+          data: { suspendedUntil, kind: 'account_suspended' },
+          force: true,
+        })
+        .catch((notifyErr) => logger.warn('Suspension notification failed', { id, notifyErr }));
     }
 
-    res.json({ success: true, data: { id, status } });
+    res.json({ success: true, data: { id, status, suspendedUntil } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// POST /api/v1/admin/users/:id/strikes — add a moderation strike by hand
+// (3 active strikes auto-suspend for 14 days; audited inside the service).
+router.post('/users/:id/strikes', validateUuidParam('id'), handleValidationErrors, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { reason, severity, reportId } = req.body || {};
+    const result = await getModerationService(supabaseService).addStrike(id, {
+      reason,
+      severity,
+      reportId,
+      createdBy: req.user.id,
+    });
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'strike_add',
+      targetType: 'user',
+      targetId: id,
+      metadata: {
+        strike_id: result.strike.id,
+        severity: result.strike.severity,
+        report_id: reportId ?? null,
+        active_strikes: result.activeStrikes,
+        suspended_until: result.suspendedUntil,
+      },
+      reason: typeof reason === 'string' ? reason : undefined,
+    });
+    res.status(201).json({ success: true, data: result });
+  } catch (err: any) {
+    respondModerationError(res, err);
+  }
+});
+
+// GET /api/v1/admin/users/:id/strikes
+router.get('/users/:id/strikes', validateUuidParam('id'), handleValidationErrors, async (req: any, res: any) => {
+  try {
+    const moderation = getModerationService(supabaseService);
+    const [strikes, state] = await Promise.all([
+      moderation.listStrikes(req.params.id),
+      moderation.getModerationState(req.params.id),
+    ]);
+    res.json({ success: true, data: { strikes, ...state } });
+  } catch (err: any) {
+    respondModerationError(res, err);
   }
 });
 
@@ -531,14 +639,25 @@ router.get('/marketplace/listings', async (req: any, res: any) => {
 router.delete('/marketplace/listings/:id', async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { error } = await supabaseService.getClient().from('marketplace_listings').update({ status: 'removed_by_admin' }).eq('id', id);
-    if (error) throw error;
+    const reason =
+      typeof req.body?.reason === 'string' && req.body.reason.trim()
+        ? req.body.reason.trim()
+        : 'Removed by Lantern moderation';
+    // One write sets status removed_by_admin AND the takedown columns
+    // (rights_status 'takedown', takedown_reason/at/by) and notifies the seller
+    // force:true, so the seller sees why and can appeal from My Listings.
+    const removed = await getModerationService(supabaseService).takedownListing(id, {
+      reason,
+      actorId: req.user.id,
+    });
+    if (!removed) return res.status(404).json({ success: false, error: 'Listing not found' });
 
     await logAdminAction(supabaseService, {
       actorId: req.user.id,
       action: 'listing_remove',
       targetType: 'listing',
       targetId: id,
+      reason,
     });
 
     await invalidateListingCaches(cacheService, id);
@@ -559,14 +678,61 @@ router.patch('/marketplace/listings/:id', async (req: any, res: any) => {
       return res.status(400).json({ success: false, error: 'status must be active or suspended_by_admin' });
     }
 
-    const { error } = await supabaseService.getClient().from('marketplace_listings').update({ status }).eq('id', id);
+    const client = supabaseService.getClient();
+    const { data: current } = await client
+      .from('marketplace_listings')
+      .select('id, status, user_id, title')
+      .eq('id', id)
+      .maybeSingle();
+    if (!current) return res.status(404).json({ success: false, error: 'Listing not found' });
+
+    const moderation = getModerationService(supabaseService);
+    // Restoring from a takedown must not blindly re-list a unique item that was
+    // reserved/sold before it was removed (double-sell) — derive the real status.
+    const statusToWrite =
+      status === 'active' && isMarketplaceListingModerated(current.status)
+        ? await moderation.resolveRestoredListingStatus(id)
+        : status;
+
+    const { error } = await client
+      .from('marketplace_listings')
+      .update({ status: statusToWrite })
+      .eq('id', id);
     if (error) throw error;
+
+    // Restoring a listing outside the appeal flow clears its takedown state
+    // (rights_status 'cleared'); suspending records the reason for the seller.
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (status === 'active' && isMarketplaceListingModerated(current.status)) {
+      await moderation.clearListingTakedown(id).catch((e) => logger.warn('clearListingTakedown failed', { id, e }));
+    } else if (status === 'suspended_by_admin' && current.status !== 'suspended_by_admin') {
+      await client
+        .from('marketplace_listings')
+        .update({
+          rights_status: 'under_review',
+          takedown_reason: reason || 'Suspended pending Lantern review',
+          takedown_at: new Date().toISOString(),
+          takedown_by: req.user.id,
+        })
+        .eq('id', id)
+        .then(({ error: e }) => e && logger.warn('suspend takedown fields failed', { id, e }));
+      await supabaseService
+        .createNotification(current.user_id, {
+          type: 'warning',
+          message: `Your listing "${current.title}" was suspended by Lantern moderation and is hidden from buyers while we review it.${reason ? ` Reason: ${reason}.` : ''} You can appeal once from My Listings.`,
+          link: `marketplace:listing:${id}`,
+          data: { listingId: id, kind: 'listing_suspended' },
+          force: true,
+        })
+        .catch((e) => logger.warn('suspend notification failed', { id, e }));
+    }
 
     await logAdminAction(supabaseService, {
       actorId: req.user.id,
       action: status === 'active' ? 'listing_activate' : 'listing_suspend',
       targetType: 'listing',
       targetId: id,
+      reason: reason || undefined,
     });
 
     await invalidateListingCaches(cacheService, id);
@@ -651,120 +817,89 @@ router.patch('/marketplace/orders/:id/dispute', async (req: any, res: any) => {
   }
 });
 
+// GET /api/v1/admin/reports?status&targetType&page&limit — generic content
+// report queue (content_reports; Phase 1 · E). Each row carries a `target`
+// summary (title / status / owner) resolved per target type, plus the legacy
+// `listing` / `listing_id` aliases for listing targets so the existing console
+// keeps rendering.
 router.get('/reports', async (req: any, res: any) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
-    const status = normalizeReportStatus((req.query.status as string) || 'open');
-    const offset = (page - 1) * limit;
-
-    const { data, error, count } = await supabaseService
-      .getClient()
-      .from('marketplace_reports')
-      // admin_note and resolved_at are written by PUT /reports/:id below; the
-      // console renders the note, the "[warned]" badge and the CSV column from
-      // them, so omitting them here silently blanked all three. listing.user_id
-      // matches the PUT handler's own join.
-      .select('id, listing_id, reporter_id, reason, details, status, created_at, admin_note, resolved_at, listing:marketplace_listings(id, title, status, user_id), reporter:profiles!marketplace_reports_reporter_id_fkey(id, name)', { count: 'exact' })
-      .eq('status', status)
-      .order('created_at', { ascending: true })
-      .range(offset, offset + limit - 1);
-
-    if (error) throw error;
-
-    res.json({
-      success: true,
-      data: data || [],
-      pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) },
+    const result = await getModerationService(supabaseService).listReports({
+      status: normalizeReportStatus((req.query.status as string) || 'open'),
+      targetType: (req.query.targetType as string) || undefined,
+      page: parseInt(req.query.page as string) || 1,
+      limit: parseInt(req.query.limit as string) || 20,
     });
+    res.json({ success: true, ...result });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+    respondModerationError(res, err);
   }
 });
 
-router.put('/reports/:id', async (req: any, res: any) => {
+// PUT /api/v1/admin/reports/:id { action: dismiss|under_review|warn|remove_content|strike, note?, severity? }
+// Legacy aliases from the pre-E console still work: remove_listing → remove_content,
+// warn_seller → warn, adminNote → note.
+router.put('/reports/:id', validateUuidParam('id'), handleValidationErrors, async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { action, adminNote } = req.body as {
-      action: 'dismiss' | 'remove_listing' | 'warn_seller';
-      adminNote?: string;
-    };
+    const body = (req.body || {}) as { action?: string; note?: string; adminNote?: string; severity?: unknown };
+    const legacy: Record<string, string> = { remove_listing: 'remove_content', warn_seller: 'warn' };
+    const action = typeof body.action === 'string' ? legacy[body.action] ?? body.action : body.action;
+    const note = body.note ?? body.adminNote;
 
-    if (!['dismiss', 'remove_listing', 'warn_seller'].includes(action)) {
-      return res.status(400).json({ success: false, error: 'Invalid action' });
+    const result = await getModerationService(supabaseService).applyReportAction(
+      id,
+      { action, note, severity: body.severity },
+      req.user.id
+    );
+
+    if (result.action === 'remove_content') {
+      // Listing takedowns change what the public sees.
+      const { data: report } = await supabaseService
+        .getClient()
+        .from('content_reports')
+        .select('target_type, target_id')
+        .eq('id', id)
+        .maybeSingle();
+      if (report && (report.target_type === 'listing' || report.target_type === 'question_bank')) {
+        await invalidateListingCaches(cacheService, String(report.target_id));
+        await cacheService.deletePattern('marketplace:listings:*');
+      }
     }
 
-    const client = supabaseService.getClient();
-
-    const { data: report, error: fetchErr } = await client
-      .from('marketplace_reports')
-      .select('listing_id, listing:marketplace_listings(id, title, user_id)')
-      .eq('id', id)
-      .single();
-    if (fetchErr || !report) {
-      return res.status(404).json({ success: false, error: 'Report not found' });
-    }
-
-    const nextReportStatus = action === 'dismiss' ? 'dismissed' : 'resolved';
-    const noteWithMeta = action === 'warn_seller'
-      ? `[warned ${new Date().toISOString()}] ${adminNote || ''}`.trim()
-      : adminNote || null;
-
-    const { error: updateErr } = await client
-      .from('marketplace_reports')
-      .update({
-        status: nextReportStatus,
-        admin_note: noteWithMeta,
-        resolved_by: req.user.id,
-        resolved_at: new Date().toISOString(),
-      })
-      .eq('id', id);
-    if (updateErr) throw updateErr;
-
-    const listing = (report as any).listing;
-    const sellerId = listing?.user_id;
-
-    if (action === 'remove_listing') {
-      await client.from('marketplace_listings').update({ status: 'removed_by_admin' }).eq('id', report.listing_id);
-      await invalidateListingCaches(cacheService, report.listing_id);
-      await cacheService.deletePattern('marketplace:listings:*');
-      await logAdminAction(supabaseService, {
-        actorId: req.user.id,
-        action: 'report_remove_listing',
-        targetType: 'report',
-        targetId: id,
-        metadata: { listing_id: report.listing_id },
-        reason: adminNote,
-      });
-    } else if (action === 'warn_seller' && sellerId) {
-      const listingTitle = listing?.title || 'your listing';
-      await supabaseService.createNotification(sellerId, {
-        message: `Your marketplace listing "${listingTitle}" received a warning from platform moderation.${adminNote ? ` Note: ${adminNote}` : ''}`,
-        link: `/marketplace/listing/${report.listing_id}`,
-        type: 'warning',
-      });
-      await cacheService.deletePattern(`notifications:${sellerId}:*`);
-      await logAdminAction(supabaseService, {
-        actorId: req.user.id,
-        action: 'report_warn_seller',
-        targetType: 'report',
-        targetId: id,
-        metadata: { listing_id: report.listing_id, seller_id: sellerId },
-        reason: adminNote,
-      });
-    } else {
-      await logAdminAction(supabaseService, {
-        actorId: req.user.id,
-        action: 'report_dismiss',
-        targetType: 'report',
-        targetId: id,
-        reason: adminNote,
-      });
-    }
-
-    res.json({ success: true, data: { action, warned: action === 'warn_seller' } });
+    res.json({ success: true, data: { ...result, warned: result.action === 'warn' } });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+    respondModerationError(res, err);
+  }
+});
+
+// GET /api/v1/admin/appeals — listings whose seller appealed a takedown
+router.get('/appeals', async (_req: any, res: any) => {
+  try {
+    const data = await getModerationService(supabaseService).listAppeals();
+    res.json({ success: true, data });
+  } catch (err: any) {
+    respondModerationError(res, err);
+  }
+});
+
+// PUT /api/v1/admin/marketplace/listings/:id/appeal { decision: upheld|reversed, note? }
+router.put('/marketplace/listings/:id/appeal', validateUuidParam('id'), handleValidationErrors, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const result = await getModerationService(supabaseService).decideAppeal(
+      id,
+      req.body?.decision,
+      req.body?.note,
+      req.user.id
+    );
+    if (result.appeal_status === 'reversed') {
+      await invalidateListingCaches(cacheService, id);
+      await cacheService.deletePattern('marketplace:listings:*');
+    }
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    respondModerationError(res, err);
   }
 });
 
@@ -1062,12 +1197,18 @@ router.get('/users/:id', async (req: any, res: any) => {
       { count: listingCount },
       { count: deckCount },
       { count: aiEvents7d },
+      activeStrikes,
     ] = await Promise.all([
       client.from('group_members').select('group_id', { count: 'exact', head: true }).eq('user_id', id),
       client.from('marketplace_listings').select('id', { count: 'exact', head: true }).eq('user_id', id),
       client.from('decks').select('id', { count: 'exact', head: true }).eq('user_id', id).is('removed_by_admin_at', null),
       client.from('ai_analytics').select('id', { count: 'exact', head: true }).eq('user_id', id).gte('created_at', last7d),
+      getModerationService(supabaseService).countActiveStrikes(id).catch(() => 0),
     ]);
+
+    const suspendedUntil = isSuspensionActive(profile?.settings?.suspended_until)
+      ? (profile.settings.suspended_until as string)
+      : null;
 
     res.json({
       success: true,
@@ -1075,6 +1216,8 @@ router.get('/users/:id', async (req: any, res: any) => {
         ...profile,
         email: authMap[id]?.email,
         is_banned: profile?.settings?.is_banned === true || profile?.settings?.account_status === 'banned',
+        suspended_until: suspendedUntil,
+        active_strikes: activeStrikes,
         is_platform_admin: authMap[id]?.isPlatformAdmin === true,
         counts: {
           groups: groupCount ?? 0,
@@ -1161,18 +1304,21 @@ router.post('/users/:id/badge', async (req: any, res: any) => {
     const { id } = req.params;
     const { badgeId } = req.body;
     if (!badgeId) return res.status(400).json({ success: false, error: 'badgeId is required' });
-    const result = await supabaseService.awardBadge(id, badgeId);
+    const result = await supabaseService.awardBadge(id, badgeId, req.user.id);
     await cacheService.deletePattern(`gamification:user:badges:${id}:*`);
     await logAdminAction(supabaseService, {
       actorId: req.user.id,
       action: 'badge_award',
       targetType: 'user',
       targetId: id,
-      metadata: { badgeId },
+      metadata: { badgeId, awarded: result.awarded },
     });
     res.json({ success: true, data: result });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+    // awardBadge raises 400 (unknown badge id) / 404 (no such user) as
+    // PublicError with a statusCode; surface those instead of a blanket 500.
+    const status = typeof err?.statusCode === 'number' && err.statusCode < 500 ? err.statusCode : 500;
+    res.status(status).json({ success: false, error: clientErrorMessage(err) });
   }
 });
 
@@ -1505,28 +1651,72 @@ router.patch('/jobs/companies/:id/verification', async (req: any, res: any) => {
   }
 });
 
+// Thin job-posting filter over the generic queue (content_reports, target_type
+// 'job_posting'; legacy job_reports rows were backfilled). Keeps the shape the
+// jobs admin console reads (`posting: { id, title, status }`).
 router.get('/jobs/reports', async (req: any, res: any) => {
   try {
-    const { getJobsBoardService } = await import('../services/jobsBoard');
     const status = (req.query.status as string) || 'pending';
-    const data = await getJobsBoardService(supabaseService).adminListReports(status);
-    res.json({ success: true, data });
+    const result = await getModerationService(supabaseService).listReports({
+      status,
+      targetType: 'job_posting',
+      page: parseInt(req.query.page as string) || 1,
+      limit: Math.min(100, parseInt(req.query.limit as string) || 100),
+    });
+    const data = result.data.map((r) => ({
+      ...r,
+      posting_id: r.target_id,
+      posting: r.target?.exists
+        ? { id: r.target.id, title: r.target.title ?? '', status: r.target.status ?? '' }
+        : null,
+    }));
+    res.json({ success: true, data, pagination: result.pagination });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+    respondModerationError(res, err);
   }
 });
 
-router.patch('/jobs/reports/:id', async (req: any, res: any) => {
+router.patch('/jobs/reports/:id', validateUuidParam('id'), handleValidationErrors, async (req: any, res: any) => {
   try {
-    const { getJobsBoardService } = await import('../services/jobsBoard');
-    const { status } = req.body as { status: 'resolved' | 'dismissed' };
+    const { status, note } = req.body as { status: 'resolved' | 'dismissed'; note?: string };
     if (!['resolved', 'dismissed'].includes(status)) {
       return res.status(400).json({ success: false, error: 'status must be resolved or dismissed' });
     }
-    await getJobsBoardService(supabaseService).resolveReport(req.params.id, status);
-    res.json({ success: true });
+    // dismissed = closed as not actionable (generic dismiss action, audited);
+    // resolved = reviewed, no automatic action on the posting (the jobs tools
+    // handle suspend/remove) — mark resolved + audit.
+    if (status === 'dismissed') {
+      const result = await getModerationService(supabaseService).applyReportAction(
+        req.params.id,
+        { action: 'dismiss', note },
+        req.user.id
+      );
+      return res.json({ success: true, data: result });
+    }
+    const { data: updated, error } = await supabaseService
+      .getClient()
+      .from('content_reports')
+      .update({
+        status: 'resolved',
+        admin_note: typeof note === 'string' && note.trim() ? note.trim().slice(0, 1000) : null,
+        resolved_by: req.user.id,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) return res.status(404).json({ success: false, error: 'Report not found' });
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'report_resolve',
+      targetType: 'report',
+      targetId: req.params.id,
+      reason: typeof note === 'string' ? note : undefined,
+    });
+    res.json({ success: true, data: { action: 'resolve', status: 'resolved' } });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+    respondModerationError(res, err);
   }
 });
 

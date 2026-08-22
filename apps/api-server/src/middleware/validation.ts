@@ -59,7 +59,25 @@ export const validateUpdateUser = [
   // settings updates must use PUT /users/settings (merge + CAS); rejected in route.
   body('settings').optional().isObject().withMessage('Settings must be an object'),
   body('test_presets').optional().isArray().withMessage('Test presets must be an array'),
+  // Academic identity (profiles.institution_id & friends). null clears.
+  body('institutionId').optional({ values: 'null' }).isUUID().withMessage('institutionId must be a valid UUID'),
+  body('faculty').optional({ values: 'null' }).isString().trim().isLength({ max: 200 }).withMessage('Faculty must be at most 200 characters'),
+  body('programme').optional({ values: 'null' }).isString().trim().isLength({ max: 200 }).withMessage('Programme must be at most 200 characters'),
+  body('studyLevel')
+    .optional({ values: 'null' })
+    .isInt({ min: 100, max: 900 })
+    .custom((value) => Number(value) % 100 === 0)
+    .withMessage('studyLevel must be one of 100, 200, … 900'),
+  body('entryYear').optional({ values: 'null' }).isInt({ min: 1990, max: 2100 }).withMessage('entryYear must be 1990-2100'),
+  body('expectedGraduationYear')
+    .optional({ values: 'null' })
+    .isInt({ min: 1990, max: 2100 })
+    .withMessage('expectedGraduationYear must be 1990-2100'),
 ];
+
+/** Shared rule: nullable course reference on artefact create/update bodies. */
+export const courseIdBodyRule = () =>
+  body('courseId').optional({ values: 'null' }).isUUID().withMessage('courseId must be a valid UUID');
 
 // Group validation rules
 export const validateGroupId = [
@@ -73,6 +91,7 @@ export const validateCreateGroup = [
   body('permissions').optional().isObject().withMessage('Permissions must be an object'),
   body('memberIds').optional().isArray().withMessage('Member IDs must be an array'),
   body('memberIds.*').optional().isUUID().withMessage('Each member ID must be a valid UUID'),
+  courseIdBodyRule(),
 ];
 
 export const validateUpdateGroup = [
@@ -80,6 +99,7 @@ export const validateUpdateGroup = [
   body('description').optional().trim().isLength({ max: 500 }).withMessage('Description must be max 500 characters'),
   body('avatarUrl').optional().isURL().withMessage('Invalid avatar URL'),
   body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
+  courseIdBodyRule(),
 ];
 
 // Message validation rules
@@ -119,6 +139,8 @@ export const validateTestConfig = [
   body('end_time').optional().isString().withMessage('End time must be a string'),
   body('is_offline').optional().isBoolean().withMessage('Is offline must be a boolean'),
   body('userId').optional().isUUID().withMessage('User ID must be a valid UUID'),
+  courseIdBodyRule(),
+  body('config.courseId').optional({ values: 'null' }).isUUID().withMessage('config.courseId must be a valid UUID'),
 ];
 
 // Pagination validation
@@ -212,6 +234,7 @@ export const validateNoteCreate = [
   body('folderId').optional().isUUID().withMessage('folderId must be a valid UUID'),
   body('groupId').optional().isUUID().withMessage('groupId must be a valid UUID'),
   body('sourceType').optional().isIn(['typed', 'youtube', 'pdf', 'audio', 'import', 'presentation', 'photos']).withMessage('Invalid sourceType'),
+  courseIdBodyRule(),
 ];
 
 export const validateNoteUpdate = [
@@ -225,6 +248,7 @@ export const validateNoteUpdate = [
     .withMessage('folderId must be a valid UUID'),
   body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
   body('isPinned').optional().isBoolean().withMessage('isPinned must be a boolean'),
+  courseIdBodyRule(),
 ];
 
 export const validateFolderCreate = [
@@ -232,6 +256,16 @@ export const validateFolderCreate = [
   body('color').optional().isString().isLength({ max: 32 }),
   body('groupId').optional().isUUID(),
   body('parentId').optional().isUUID(),
+  courseIdBodyRule(),
+];
+
+// PATCH reuses the create shape but every field is optional (a "move to course"
+// edit sends only courseId), so name must not be required here.
+export const validateFolderUpdate = [
+  body('name').optional().trim().isLength({ min: 1, max: 200 }).withMessage('Folder name must be 1-200 characters'),
+  body('color').optional().isString().isLength({ max: 32 }),
+  body('parentId').optional().isUUID(),
+  courseIdBodyRule(),
 ];
 
 export const validateAdminUserStatus = [
@@ -298,6 +332,7 @@ export const validateMarketplaceListingWrite = [
   body('description').optional().isString().isLength({ max: 10000 }),
   body('location').optional().isString().isLength({ max: 200 }),
   body('promo_label').optional({ values: 'null' }).isString().isLength({ max: 100 }),
+  courseIdBodyRule(),
 ];
 
 export const validateMarketplaceListingUpdate = [
@@ -314,16 +349,19 @@ export const validateMarketplaceListingUpdate = [
     .isUUID()
     .withMessage('campusId must be a valid campus identifier'),
   body('status').optional().isIn(['active', 'sold', 'inactive', 'archived', 'draft']),
+  courseIdBodyRule(),
 ];
 
 export const validateDeckCreate = [
   body('name').trim().isLength({ min: 1, max: 200 }).withMessage('Deck name must be 1-200 characters'),
   body('description').optional().isString().isLength({ max: 2000 }),
+  courseIdBodyRule(),
 ];
 
 export const validateDeckUpdate = [
   body('name').optional().trim().isLength({ min: 1, max: 200 }),
   body('description').optional().isString().isLength({ max: 2000 }),
+  courseIdBodyRule(),
 ];
 
 export const validateFlashcardCreate = [
@@ -364,6 +402,8 @@ export const validateFlashcardCreate = [
 export const validateFlashcardReview = [
   body('rating').isIn(['again', 'hard', 'good', 'easy']).withMessage('rating must be again, hard, good, or easy'),
   body('responseTime').optional().isInt({ min: 0, max: 300000 }),
+  // Offline replay: when the grade was actually given (learning_events.occurred_at).
+  body('reviewedAt').optional({ values: 'null' }).isISO8601().withMessage('reviewedAt must be an ISO 8601 timestamp'),
 ];
 
 export const validateAIMessage = [
