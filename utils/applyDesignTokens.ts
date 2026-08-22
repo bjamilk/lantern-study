@@ -1,11 +1,10 @@
 import {
   darkTheme,
   featureAccents,
-  fontStacks,
   lightTheme,
   paletteToCssVars,
-  type ThemePalette,
 } from '@lantern/shared/design';
+import { DEFAULT_USER_SETTINGS } from '@lantern/shared/settings';
 
 const FEATURE_VAR_MAP: Record<keyof typeof featureAccents, string> = {
   dashboard: '--color-feature-dashboard',
@@ -25,26 +24,49 @@ export function featureAccentsToCssVars(): Record<string, string> {
   );
 }
 
+/**
+ * Every var this module (or older versions of it) ever inlined on <html>.
+ * Inline custom properties outrank the stylesheet, so anything left here
+ * permanently pins one theme's value and breaks the `.dark` overrides.
+ */
+const LEGACY_INLINE_VARS = [
+  ...Object.keys(paletteToCssVars(lightTheme)),
+  ...Object.keys(paletteToCssVars(darkTheme)),
+  ...Object.values(FEATURE_VAR_MAP),
+  '--font-sans',
+  '--font-display',
+];
+
+/**
+ * Theme palettes live ONLY in index.css (`:root` + `.dark`), so toggling the
+ * `dark` class is the complete theme switch. This function no longer inlines
+ * the palette — it removes any inlined tokens (which used to freeze the app
+ * in one theme) and applies just the user's custom accent, if any.
+ *
+ * The `theme` argument is kept for call-site compatibility; the palette now
+ * follows the `dark` class, not this value. Fonts are owned by useFontMode.
+ */
 export function applyDesignTokensToDom(
-  theme: 'light' | 'dark',
+  _theme: 'light' | 'dark',
   opts?: { accentColor?: string }
 ): void {
   if (typeof document === 'undefined') return;
-  const palette: ThemePalette = theme === 'dark' ? darkTheme : lightTheme;
   const root = document.documentElement;
-  const vars = {
-    ...paletteToCssVars(palette),
-    ...featureAccentsToCssVars(),
-    '--font-sans': fontStacks.full,
-    '--font-display': fontStacks.display,
-  };
 
-  Object.entries(vars).forEach(([name, value]) => {
-    root.style.setProperty(name, value);
-  });
+  for (const name of LEGACY_INLINE_VARS) {
+    root.style.removeProperty(name);
+  }
 
-  if (opts?.accentColor) {
-    root.style.setProperty('--lantern-accent', opts.accentColor);
-    root.style.setProperty('--color-primary', opts.accentColor);
+  const accent = opts?.accentColor?.trim().toLowerCase();
+  const defaultAccent = DEFAULT_USER_SETTINGS.appearance.accentColor.toLowerCase();
+  if (accent && accent !== defaultAccent) {
+    // An explicit custom accent applies to both themes (the user's choice).
+    root.style.setProperty('--lantern-accent', accent);
+    root.style.setProperty('--color-primary', accent);
+  } else {
+    // Default accent = no override: each theme keeps its designed primary
+    // (#4f46e5 light / #818cf8 dark), which also fixes primary contrast in dark.
+    root.style.removeProperty('--lantern-accent');
+    root.style.removeProperty('--color-primary');
   }
 }

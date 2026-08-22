@@ -36,7 +36,7 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
                         ) : (
                             <button
                                 onClick={item.onClick}
-                                className="flex items-center gap-1 text-lantern-text-secondary hover:text-lantern-primary transition-colors truncate"
+                                className="flex items-center gap-1 min-h-[28px] text-lantern-text-secondary hover:text-lantern-primary transition-colors truncate"
                             >
                                 {isFirst && <HomeIcon className="w-3.5 h-3.5 flex-shrink-0" />}
                                 <span className="truncate">{item.label}</span>

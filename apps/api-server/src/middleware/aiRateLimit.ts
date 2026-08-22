@@ -312,6 +312,36 @@ export function aiRateLimitWithCost(
       return;
     }
 
+    // Same guarantee as aiRateLimitForFeature below: credits reserved up front
+    // must not survive a request that never produced a completion. Without
+    // this, a failed Smart Notes run kept its 1-3 credit charge.
+    res.on('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) return;
+      void refundAiCredits(userId, cost).catch((error) => {
+        logger.warn('Failed to refund AI credits for a request that did not succeed', {
+          userId,
+          cost,
+          status: res.statusCode,
+          error,
+        });
+      });
+    });
+
+    // Restate pre-charge global counts on a failed answer so the badge does
+    // not tick down for work that was never done (mirrors the feature
+    // middleware's json wrapper below).
+    const sendJson = res.json.bind(res);
+    res.json = ((body?: unknown) => {
+      const succeeded = res.statusCode >= 200 && res.statusCode < 300;
+      if (!succeeded && !res.headersSent) {
+        setLegacyAndGlobalUsageHeaders(res, {
+          count: Math.max(0, result.count - cost),
+          resetTime: result.resetTime,
+        });
+      }
+      return sendJson(body);
+    }) as Response['json'];
+
     (res.locals as Record<string, unknown>).aiCreditsCharged = cost;
     next();
   };

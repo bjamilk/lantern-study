@@ -1582,7 +1582,11 @@ export default function DashboardScreen({
                   Select one or more groups or subgroups. Archived groups are included, since their tests still count towards your totals. Metrics follow the period you pick below.
                 </p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2 sm:items-center flex-shrink-0">
+              {/* min-w-0 + wrap, not flex-shrink-0: sm: is viewport-based, so
+                  with the sidebar docked this row lives in a ~460px column at
+                  a 768px viewport — refusing to shrink pushed the chart-mode
+                  toggle past the card edge where it couldn't be clicked. */}
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center min-w-0">
                 <label className="inline-flex items-center gap-1.5 min-w-0">
                   <span className="sr-only">Group performance period</span>
                   <FunnelIcon className="w-4 h-4 text-lantern-text-tertiary shrink-0" aria-hidden />

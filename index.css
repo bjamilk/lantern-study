@@ -21,15 +21,20 @@
   --color-surface-secondary: #f1f5f9;
   --color-text: #0f172a;
   --color-text-secondary: #475569;
-  --color-text-tertiary: #64748b;
+  /* #64748b was 4.39:1 on the warm background — fails AA for the 10-12px
+     text this token mostly styles. #5b6a7f clears 4.5:1 on cream and white. */
+  --color-text-tertiary: #5b6a7f;
   --color-primary: #4f46e5;
   --color-primary-light: #6366f1;
   --color-primary-dark: #3730a3;
   --color-primary-background: #eef2ff;
-  --color-accent: #d97706;
+  /* Accent/success/warning darkened one step: the 600-weight values sat at
+     3.0-3.6:1 as text on white/cream and behind white button labels. The 700
+     weights clear AA both as text and as button fills with white labels. */
+  --color-accent: #b45309;
   --color-accent-background: #fff7ed;
-  --color-success: #059669;
-  --color-warning: #d97706;
+  --color-success: #047857;
+  --color-warning: #b45309;
   --color-error: #dc2626;
   --color-border: #c5cedd;
   --radius-lg: 16px;
@@ -67,9 +72,11 @@
   --color-primary: #818cf8;
   --color-primary-light: #a5b4fc;
   --color-primary-dark: #6366f1;
-  --color-primary-background: rgba(99, 102, 241, 0.16);
+  /* Values mirror packages/shared/src/design/tokens.ts darkTheme exactly —
+     that file is the palette's source of truth for both platforms. */
+  --color-primary-background: #6366f120;
   --color-accent: #fbbf24;
-  --color-accent-background: rgba(251, 191, 36, 0.12);
+  --color-accent-background: #f59e0b20;
   --color-border: #243044;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.35);
@@ -87,6 +94,16 @@
     radial-gradient(1000px 520px at 10% -15%, rgba(99, 102, 241, 0.18), transparent 55%),
     radial-gradient(800px 420px at 90% 0%, rgba(251, 191, 36, 0.08), transparent 50%),
     linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+}
+
+/* Dark-mode primary (#818cf8) and accent (#fbbf24) are bright fills — white
+   labels sit at 2.98:1 / 1.77:1 on them. Dark ink clears 7:1 on both. Scoped
+   to dark only; light fills (#4f46e5 / #b45309) pass with white labels. */
+.dark .bg-lantern-primary,
+.dark .bg-lantern-primary .text-white,
+.dark .bg-lantern-accent,
+.dark .bg-lantern-accent .text-white {
+  color: #0f172a;
 }
 
 .font-full {

@@ -102,12 +102,14 @@ export function createCompanionClient(config: AIClientConfig) {
 
   return {
     companionSendMessage: (message: string, context?: CompanionUserContext) =>
+      // /message is the billable call — it must update the usage badge.
+      // (trackUsage: false stays only on the read-only endpoints.)
       companionRequest<{
         reply: string;
         actions: CompanionAction[];
         provider: string;
         conversationId?: string;
-      }>('/message', 'POST', { message, context }, { trackUsage: false }),
+      }>('/message', 'POST', { message, context }),
 
     fetchCompanionConversations: () =>
       companionRequest<{ conversations: CompanionConversation[] }>(
@@ -180,13 +182,15 @@ export function createCompanionClient(config: AIClientConfig) {
       // "token" instead of a trickle, which is the only difference they see.
       if (config.supportsResponseStreaming === false) {
         try {
+          // Billable send: keep the usage badge in sync (this is the path ALL
+          // mobile chat takes, since RN can't read streamed bodies).
           const result = await companionRequest<{
             reply: string;
             actions: CompanionAction[];
             messageId?: string;
             userMessageId?: string;
             conversationId?: string;
-          }>('/message', 'POST', { message, context }, { trackUsage: false });
+          }>('/message', 'POST', { message, context });
           if (result.reply) onToken(result.reply);
           onDone({
             actions: result.actions || [],
@@ -217,6 +221,36 @@ export function createCompanionClient(config: AIClientConfig) {
       parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
 
       if (!response.ok || !response.body) {
+        // Surface the daily-limit message instead of a bare status code, and
+        // let the badge learn the true count from the 429 body.
+        if (response.status === 429) {
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            used?: number;
+            limit?: number;
+            resetsAt?: string;
+            feature?: string;
+          };
+          if (
+            !body.feature &&
+            typeof body.used === 'number' &&
+            typeof body.limit === 'number'
+          ) {
+            config.onUsageUpdate?.({
+              used: body.used,
+              limit: body.limit,
+              remaining: Math.max(0, body.limit - body.used),
+              resetsAt: body.resetsAt || '',
+            });
+          }
+          onError(
+            new Error(
+              body.error ||
+                "You've used today's AI requests. They reset at midnight UTC."
+            )
+          );
+          return;
+        }
         onError(new Error(`Stream request failed (${response.status})`));
         return;
       }
