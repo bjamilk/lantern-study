@@ -81,11 +81,13 @@ interface TurnstileWidgetProps {
   onToken: (token: string) => void;
   /** Called when the token expires or the challenge fails, so callers can clear state. */
   onExpire?: () => void;
+  /** Called once if the widget script cannot load (ad blocker / network). */
+  onLoadFailure?: () => void;
   className?: string;
 }
 
 export const TurnstileWidget = React.forwardRef<TurnstileHandle, TurnstileWidgetProps>(
-  ({ action, onToken, onExpire, className = '' }, ref) => {
+  ({ action, onToken, onExpire, onLoadFailure, className = '' }, ref) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const widgetIdRef = useRef<string | null>(null);
     const [failed, setFailed] = useState(false);
@@ -95,8 +97,10 @@ export const TurnstileWidget = React.forwardRef<TurnstileHandle, TurnstileWidget
     // discard an unspent token every time the parent re-rendered.
     const onTokenRef = useRef(onToken);
     const onExpireRef = useRef(onExpire);
+    const onLoadFailureRef = useRef(onLoadFailure);
     onTokenRef.current = onToken;
     onExpireRef.current = onExpire;
+    onLoadFailureRef.current = onLoadFailure;
 
     React.useImperativeHandle(ref, () => ({
       reset: () => {
@@ -120,12 +124,13 @@ export const TurnstileWidget = React.forwardRef<TurnstileHandle, TurnstileWidget
             'expired-callback': () => onExpireRef.current?.(),
             'error-callback': () => {
               setFailed(true);
+              onLoadFailureRef.current?.();
               onExpireRef.current?.();
             },
           });
         })
         .catch(() => {
-          if (!cancelled) setFailed(true);
+          if (!cancelled) { setFailed(true); onLoadFailureRef.current?.(); }
         });
 
       return () => {

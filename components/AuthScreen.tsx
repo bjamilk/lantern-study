@@ -5,8 +5,9 @@ import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSl
 import type MatterType from 'matter-js';
 import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability, setCachedAuthToken, resendSignupConfirmation, sendPasswordResetEmail, verifySignupOtp, getWebAuthRedirectOrigin } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
+import { takeStashedAuthLinkError } from '../utils/authErrorHash';
 import { LanternIcon } from './ui/LanternIcon';
-import TurnstileWidget, { type TurnstileHandle } from './TurnstileWidget';
+import TurnstileWidget, { type TurnstileHandle, getTurnstileSitekey } from './TurnstileWidget';
 import {
   LEGAL_PATHS,
   isEmailNotConfirmedError,
@@ -206,17 +207,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const isForgotPasswordView = authView === 'forgotPassword';
   const isVerifyEmailView = authView === 'verifyEmail';
   const [signupTurnstileToken, setSignupTurnstileToken] = useState('');
+  const [turnstileLoadFailed, setTurnstileLoadFailed] = useState(false);
   const signupTurnstileRef = useRef<TurnstileHandle | null>(null);
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [username, setUsername] = useState('');
-  const [usernameError, setUsernameError] = useState('');
-  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
-  const [checkingUsername, setCheckingUsername] = useState(false);
   const [email, setEmail] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  // Nigeria is the core audience — don't make every student scroll for +234.
-  const [countryCode, setCountryCode] = useState('+234');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -271,6 +264,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     setVerifyMessage('');
     setResetEmailSent(false);
     setShowPassword(false);
+    // A failed email link / cancelled OAuth captured at boot surfaces here.
+    const linkError = takeStashedAuthLinkError();
+    if (linkError) setError(linkError);
   }, [authView]);
 
   const finishAuthSession = async (authUser: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) => {
@@ -343,48 +339,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     setAuthView('verifyEmail');
   };
 
-  // Username validation regex: lowercase alphanumeric + underscore, 3-20 chars
-  const usernameRegex = /^[a-z0-9_]{3,20}$/;
-
-  // Debounced username availability check
-  useEffect(() => {
-    if (!username || authView !== 'signup') return;
-    
-    const normalizedUsername = username.toLowerCase().trim();
-    
-    // Validate format first
-    if (!usernameRegex.test(normalizedUsername)) {
-      setUsernameError('3-20 characters: letters, numbers, underscore only');
-      setUsernameAvailable(null);
-      return;
-    }
-    
-    setUsernameError('');
-    // The verdict belongs to the PREVIOUS username until this check lands —
-    // keeping it produced a stale green check (or a wrong "taken" block).
-    setUsernameAvailable(null);
-    setCheckingUsername(true);
-    
-    const timeoutId = setTimeout(async () => {
-      try {
-        const isAvailable = await checkUsernameAvailability(normalizedUsername);
-
-        setUsernameAvailable(isAvailable);
-        if (!isAvailable) {
-          setUsernameError('Username is already taken');
-        }
-      } catch (err) {
-        console.error('Username check failed:', err);
-        // Unknown ≠ the previous username's verdict.
-        setUsernameAvailable(null);
-      } finally {
-        setCheckingUsername(false);
-      }
-    }, 500); // Debounce 500ms
-    
-    return () => clearTimeout(timeoutId);
-  }, [username, authView]);
-
   // Handle OAuth sign in
   const handleSocialLogin = async (provider: 'google' | 'apple') => {
     try {
@@ -417,213 +371,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     }
   };
 
-  const countryCodes = [
-    { code: '+1', name: 'United States/Canada' },
-    { code: '+7', name: 'Russia/Kazakhstan' },
-    { code: '+20', name: 'Egypt' },
-    { code: '+27', name: 'South Africa' },
-    { code: '+30', name: 'Greece' },
-    { code: '+31', name: 'Netherlands' },
-    { code: '+32', name: 'Belgium' },
-    { code: '+33', name: 'France' },
-    { code: '+34', name: 'Spain' },
-    { code: '+36', name: 'Hungary' },
-    { code: '+39', name: 'Italy' },
-    { code: '+40', name: 'Romania' },
-    { code: '+41', name: 'Switzerland' },
-    { code: '+43', name: 'Austria' },
-    { code: '+44', name: 'United Kingdom' },
-    { code: '+45', name: 'Denmark' },
-    { code: '+46', name: 'Sweden' },
-    { code: '+47', name: 'Norway' },
-    { code: '+48', name: 'Poland' },
-    { code: '+49', name: 'Germany' },
-    { code: '+51', name: 'Peru' },
-    { code: '+52', name: 'Mexico' },
-    { code: '+53', name: 'Cuba' },
-    { code: '+54', name: 'Argentina' },
-    { code: '+55', name: 'Brazil' },
-    { code: '+56', name: 'Chile' },
-    { code: '+57', name: 'Colombia' },
-    { code: '+58', name: 'Venezuela' },
-    { code: '+60', name: 'Malaysia' },
-    { code: '+61', name: 'Australia' },
-    { code: '+62', name: 'Indonesia' },
-    { code: '+63', name: 'Philippines' },
-    { code: '+64', name: 'New Zealand' },
-    { code: '+65', name: 'Singapore' },
-    { code: '+66', name: 'Thailand' },
-    { code: '+81', name: 'Japan' },
-    { code: '+82', name: 'South Korea' },
-    { code: '+84', name: 'Vietnam' },
-    { code: '+86', name: 'China' },
-    { code: '+90', name: 'Turkey' },
-    { code: '+91', name: 'India' },
-    { code: '+92', name: 'Pakistan' },
-    { code: '+93', name: 'Afghanistan' },
-    { code: '+94', name: 'Sri Lanka' },
-    { code: '+95', name: 'Myanmar' },
-    { code: '+98', name: 'Iran' },
-    { code: '+212', name: 'Morocco' },
-    { code: '+213', name: 'Algeria' },
-    { code: '+216', name: 'Tunisia' },
-    { code: '+218', name: 'Libya' },
-    { code: '+220', name: 'Gambia' },
-    { code: '+221', name: 'Senegal' },
-    { code: '+222', name: 'Mauritania' },
-    { code: '+223', name: 'Mali' },
-    { code: '+224', name: 'Guinea' },
-    { code: '+225', name: 'Ivory Coast' },
-    { code: '+226', name: 'Burkina Faso' },
-    { code: '+227', name: 'Niger' },
-    { code: '+228', name: 'Togo' },
-    { code: '+229', name: 'Benin' },
-    { code: '+230', name: 'Mauritius' },
-    { code: '+231', name: 'Liberia' },
-    { code: '+232', name: 'Sierra Leone' },
-    { code: '+233', name: 'Ghana' },
-    { code: '+234', name: 'Nigeria' },
-    { code: '+235', name: 'Chad' },
-    { code: '+236', name: 'Central African Republic' },
-    { code: '+237', name: 'Cameroon' },
-    { code: '+238', name: 'Cape Verde' },
-    { code: '+239', name: 'São Tomé and Príncipe' },
-    { code: '+240', name: 'Equatorial Guinea' },
-    { code: '+241', name: 'Gabon' },
-    { code: '+242', name: 'Republic of the Congo' },
-    { code: '+243', name: 'Democratic Republic of the Congo' },
-    { code: '+244', name: 'Angola' },
-    { code: '+245', name: 'Guinea-Bissau' },
-    { code: '+246', name: 'British Indian Ocean Territory' },
-    { code: '+248', name: 'Seychelles' },
-    { code: '+249', name: 'Sudan' },
-    { code: '+250', name: 'Rwanda' },
-    { code: '+251', name: 'Ethiopia' },
-    { code: '+252', name: 'Somalia' },
-    { code: '+253', name: 'Djibouti' },
-    { code: '+254', name: 'Kenya' },
-    { code: '+255', name: 'Tanzania' },
-    { code: '+256', name: 'Uganda' },
-    { code: '+257', name: 'Burundi' },
-    { code: '+258', name: 'Mozambique' },
-    { code: '+260', name: 'Zambia' },
-    { code: '+261', name: 'Madagascar' },
-    { code: '+262', name: 'Réunion/Mayotte' },
-    { code: '+263', name: 'Zimbabwe' },
-    { code: '+264', name: 'Namibia' },
-    { code: '+265', name: 'Malawi' },
-    { code: '+266', name: 'Lesotho' },
-    { code: '+267', name: 'Botswana' },
-    { code: '+268', name: 'Eswatini' },
-    { code: '+269', name: 'Comoros' },
-    { code: '+290', name: 'Saint Helena' },
-    { code: '+291', name: 'Eritrea' },
-    { code: '+297', name: 'Aruba' },
-    { code: '+298', name: 'Faroe Islands' },
-    { code: '+299', name: 'Greenland' },
-    { code: '+350', name: 'Gibraltar' },
-    { code: '+351', name: 'Portugal' },
-    { code: '+352', name: 'Luxembourg' },
-    { code: '+353', name: 'Ireland' },
-    { code: '+354', name: 'Iceland' },
-    { code: '+355', name: 'Albania' },
-    { code: '+356', name: 'Malta' },
-    { code: '+357', name: 'Cyprus' },
-    { code: '+358', name: 'Finland' },
-    { code: '+359', name: 'Bulgaria' },
-    { code: '+370', name: 'Lithuania' },
-    { code: '+371', name: 'Latvia' },
-    { code: '+372', name: 'Estonia' },
-    { code: '+373', name: 'Moldova' },
-    { code: '+374', name: 'Armenia' },
-    { code: '+375', name: 'Belarus' },
-    { code: '+376', name: 'Andorra' },
-    { code: '+377', name: 'Monaco' },
-    { code: '+378', name: 'San Marino' },
-    { code: '+380', name: 'Ukraine' },
-    { code: '+381', name: 'Serbia' },
-    { code: '+382', name: 'Montenegro' },
-    { code: '+383', name: 'Kosovo' },
-    { code: '+385', name: 'Croatia' },
-    { code: '+386', name: 'Slovenia' },
-    { code: '+387', name: 'Bosnia and Herzegovina' },
-    { code: '+389', name: 'North Macedonia' },
-    { code: '+420', name: 'Czech Republic' },
-    { code: '+421', name: 'Slovakia' },
-    { code: '+423', name: 'Liechtenstein' },
-    { code: '+500', name: 'Falkland Islands' },
-    { code: '+501', name: 'Belize' },
-    { code: '+502', name: 'Guatemala' },
-    { code: '+503', name: 'El Salvador' },
-    { code: '+504', name: 'Honduras' },
-    { code: '+505', name: 'Nicaragua' },
-    { code: '+506', name: 'Costa Rica' },
-    { code: '+507', name: 'Panama' },
-    { code: '+508', name: 'Saint Pierre and Miquelon' },
-    { code: '+509', name: 'Haiti' },
-    { code: '+590', name: 'Guadeloupe' },
-    { code: '+591', name: 'Bolivia' },
-    { code: '+592', name: 'Guyana' },
-    { code: '+593', name: 'Ecuador' },
-    { code: '+594', name: 'French Guiana' },
-    { code: '+595', name: 'Paraguay' },
-    { code: '+596', name: 'Martinique' },
-    { code: '+597', name: 'Suriname' },
-    { code: '+598', name: 'Uruguay' },
-    { code: '+599', name: 'Curaçao' },
-    { code: '+670', name: 'East Timor' },
-    { code: '+672', name: 'Antarctica' },
-    { code: '+673', name: 'Brunei' },
-    { code: '+674', name: 'Nauru' },
-    { code: '+675', name: 'Papua New Guinea' },
-    { code: '+676', name: 'Tonga' },
-    { code: '+677', name: 'Solomon Islands' },
-    { code: '+678', name: 'Vanuatu' },
-    { code: '+679', name: 'Fiji' },
-    { code: '+680', name: 'Palau' },
-    { code: '+681', name: 'Wallis and Futuna' },
-    { code: '+682', name: 'Cook Islands' },
-    { code: '+683', name: 'Niue' },
-    { code: '+684', name: 'American Samoa' },
-    { code: '+685', name: 'Samoa' },
-    { code: '+686', name: 'Kiribati' },
-    { code: '+687', name: 'New Caledonia' },
-    { code: '+688', name: 'Tuvalu' },
-    { code: '+689', name: 'French Polynesia' },
-    { code: '+690', name: 'Tokelau' },
-    { code: '+691', name: 'Micronesia' },
-    { code: '+692', name: 'Marshall Islands' },
-    { code: '+850', name: 'North Korea' },
-    { code: '+852', name: 'Hong Kong' },
-    { code: '+853', name: 'Macau' },
-    { code: '+855', name: 'Cambodia' },
-    { code: '+856', name: 'Laos' },
-    { code: '+880', name: 'Bangladesh' },
-    { code: '+886', name: 'Taiwan' },
-    { code: '+960', name: 'Maldives' },
-    { code: '+961', name: 'Lebanon' },
-    { code: '+962', name: 'Jordan' },
-    { code: '+963', name: 'Syria' },
-    { code: '+964', name: 'Iraq' },
-    { code: '+965', name: 'Kuwait' },
-    { code: '+966', name: 'Saudi Arabia' },
-    { code: '+967', name: 'Yemen' },
-    { code: '+968', name: 'Oman' },
-    { code: '+970', name: 'Palestine' },
-    { code: '+971', name: 'United Arab Emirates' },
-    { code: '+972', name: 'Israel' },
-    { code: '+973', name: 'Bahrain' },
-    { code: '+974', name: 'Qatar' },
-    { code: '+975', name: 'Bhutan' },
-    { code: '+976', name: 'Mongolia' },
-    { code: '+977', name: 'Nepal' },
-    { code: '+992', name: 'Tajikistan' },
-    { code: '+993', name: 'Turkmenistan' },
-    { code: '+994', name: 'Azerbaijan' },
-    { code: '+995', name: 'Georgia' },
-    { code: '+996', name: 'Kyrgyzstan' },
-    { code: '+998', name: 'Uzbekistan' },
-  ];
 
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -683,24 +430,21 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           await finishAuthSession(data.user);
         }
       } else {
-        if (!firstName.trim() || !lastName.trim()) { setError('Please enter both first and last name.'); return; }
-        if (!username.trim()) { setError('Please enter a username.'); return; }
-        const normalizedUsername = username.toLowerCase().trim();
-        if (!usernameRegex.test(normalizedUsername)) { setError('Username must be 3-20 characters, using only lowercase letters, numbers, and underscores.'); return; }
-        if (usernameAvailable === false) { setError('This username is already taken. Please choose another.'); return; }
         if (!validateEmail(email)) { setError('Please enter a valid email address.'); return; }
-        if (password.length < 6) { setError('Password must be at least 6 characters long.'); return; }
+        if (password.length < 8) { setError('Password must be at least 8 characters long.'); return; }
+        // Fail closed: when the widget rendered, a submit needs its token.
+        // (If the script itself couldn't load — ad blocker — we let the
+        // attempt through and the server-side setting has the final word.)
+        if (getTurnstileSitekey() && !signupTurnstileToken && !turnstileLoadFailed) {
+          setError('Please complete the verification check above, then try again.');
+          return;
+        }
         if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
 
-        const signupName = `${firstName.trim()} ${lastName.trim()}`;
-        const signupPhone = phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : undefined;
-        const signupMetadata = {
-          name: signupName,
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          username: normalizedUsername,
-          ...(signupPhone ? { phone: signupPhone } : {}),
-        };
+        // Minimal metadata: the post-signin onboarding modal collects username
+        // and real names; until then the email prefix stands in as the name.
+        const signupName = email.split('@')[0];
+        const signupMetadata = { name: signupName };
 
         void import('../services/productAnalytics').then(({ trackSignupStarted }) => {
           trackSignupStarted();
@@ -755,10 +499,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
               await createUserProfile({
                 id: data.user.id,
                 name: signupName,
-                username: normalizedUsername,
-                first_name: firstName.trim(),
-                last_name: lastName.trim(),
-                phone: signupPhone,
                 points: 0,
                 stats: {},
                 settings: {},
@@ -851,13 +591,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   // effect below, which also covers browser Back/Forward.
   const toggleView = () => {
     setAuthView(isLoginView ? 'signup' : 'login');
-    setFirstName('');
-    setLastName('');
-    setUsername('');
-    setUsernameError('');
-    setUsernameAvailable(null);
-    setPhoneNumber('');
-    setCountryCode('+234');
     setPassword('');
     setConfirmPassword('');
     setOtpCode('');
@@ -986,102 +719,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                     {!isForgotPasswordView && !isVerifyEmailView && (
                         <>
-                            {!isLoginView && (
-                            <div className="space-y-5 min-w-0">
-                                    <div className="flex gap-2 sm:gap-4 min-w-0">
-                                        <div className="w-1/2 min-w-0">
-                                            <label htmlFor="firstName" className="sr-only">First Name</label>
-                                            <div className="relative min-w-0">
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                                <input id="firstName" name="firstName" type="text" autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} title={firstName} className="w-full min-w-0 pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="First Name"/>
-                                            </div>
-                                        </div>
-                                        <div className="w-1/2 min-w-0">
-                                            <label htmlFor="lastName" className="sr-only">Last Name</label>
-                                            <div className="relative min-w-0">
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                                <input id="lastName" name="lastName" type="text" autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} title={lastName} className="w-full min-w-0 pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Last Name"/>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label htmlFor="username" className="sr-only">Username</label>
-                                        <div className="relative">
-                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                <span className="text-lantern-text-tertiary font-medium" aria-hidden="true">@</span>
-                                            </div>
-                                            <input 
-                                                id="username" 
-                                                name="username" 
-                                                type="text" 
-                                                autoComplete="username" 
-                                                value={username} 
-                                                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} 
-                                                aria-invalid={usernameError ? true : undefined}
-                                                aria-describedby={
-                                                    usernameError
-                                                        ? 'username-error'
-                                                        : username && usernameAvailable === true
-                                                          ? 'username-available'
-                                                          : undefined
-                                                }
-                                                className={`w-full pl-8 pr-10 py-2.5 border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 ${
-                                                    usernameError ? 'border-red-500 focus:ring-red-500' : 
-                                                    usernameAvailable === true ? 'border-green-500 focus:ring-green-500' : 
-                                                    'border-lantern-border focus:ring-lantern-primary'
-                                                }`}
-                                                placeholder="username"
-                                                maxLength={20}
-                                            />
-                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none" aria-hidden="true">
-                                                {checkingUsername && (
-                                                    <svg className="animate-spin h-5 w-5 text-lantern-text-tertiary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                    </svg>
-                                                )}
-                                                {!checkingUsername && usernameAvailable === true && (
-                                                    <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                                                )}
-                                                {!checkingUsername && usernameError && (
-                                                    <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
-                                                )}
-                                            </div>
-                                        </div>
-                                        {usernameError && (
-                                            <p id="username-error" role="alert" aria-live="polite" className="mt-1 text-xs text-red-500">{usernameError}</p>
-                                        )}
-                                        {!usernameError && username && usernameAvailable === true && (
-                                            <p id="username-available" className="mt-1 text-xs text-green-500">@{username} is available!</p>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <label htmlFor="phone" className="sr-only">Phone Number</label>
-                                        <div className="flex min-w-0">
-                                            <label htmlFor="country-code" className="sr-only">Country code</label>
-                                            <select
-                                                id="country-code"
-                                                name="countryCode"
-                                                value={countryCode}
-                                                onChange={(e) => setCountryCode(e.target.value)}
-                                                aria-label="Country code"
-                                                className="w-20 sm:w-24 shrink-0 px-2 sm:px-3 py-2.5 border border-lantern-border rounded-l-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
-                                            >
-                                                {countryCodes.map((country) => (
-                                                    <option key={country.code} value={country.code}>
-                                                        {country.name ? `${country.name} (${country.code})` : country.code}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <div className="relative flex-1 min-w-0">
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><PhoneIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                                <input id="phone" name="phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full min-w-0 pl-10 pr-3 py-2.5 border-l-0 border border-lantern-border rounded-r-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Phone number (optional)"/>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            
+                            {/* Signup asks only for email + password. Username and name are
+                                collected right after first sign-in (UsernameRequiredModal —
+                                the same flow OAuth signups already use), and phone lives in
+                                Profile settings. 7 fields → 3. */}
                             <div>
                                 <label htmlFor="email" className="sr-only">Email address</label>
                                 <div className="relative">
@@ -1098,7 +739,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                     <button type="button" onClick={() => setShowPassword(!showPassword)} aria-pressed={showPassword} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
                                 </div>
                                 {!isLoginView && (
-                                    <p className="mt-1 text-xs text-lantern-text-tertiary">At least 6 characters.</p>
+                                    <p className="mt-1 text-xs text-lantern-text-tertiary">At least 8 characters.</p>
                                 )}
                             </div>
 
@@ -1150,7 +791,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                         <TurnstileWidget
                             ref={signupTurnstileRef}
                             action="signup"
-                            onToken={setSignupTurnstileToken}
+                            onLoadFailure={() => setTurnstileLoadFailed(true)}
+                                    onToken={setSignupTurnstileToken}
                             onExpire={() => setSignupTurnstileToken('')}
                         />
                     )}
