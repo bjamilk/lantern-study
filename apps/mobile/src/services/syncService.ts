@@ -10,7 +10,8 @@ import {
   SyncManager, 
   SyncOperation, 
   SyncEntityType,
-  IStorageAdapter 
+  IStorageAdapter,
+  isTransientSyncError,
 } from '@lantern/shared';
 import * as api from './api';
 import { supabase, saveBudgetTransaction, deleteBudgetTransaction } from './supabase';
@@ -76,6 +77,14 @@ class SyncService {
 
     await this.queue.initialize();
     this.registerSyncHandlers();
+    // Cold start online never sees an offline→online transition, so ops
+    // parked in failedOperations by a previous session would sit forever.
+    // Revive them now; the first sync pass picks them up.
+    if (this.queue.getFailedCount() > 0) {
+      await this.queue.retryFailed().catch(err =>
+        console.error('[SyncService] Failed to revive failed operations at boot:', err)
+      );
+    }
     this.setupNetworkListener();
     this.setupAppStateListener();
     this.startPeriodicSync();
@@ -200,6 +209,9 @@ class SyncService {
         }
         return true;
       } catch (error) {
+        // Dead connection: rethrow so the queue stops the run without burning
+        // one of this operation's retries. `return false` means "server said no".
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:flashcard] Error:', error);
         return false;
       }
@@ -210,9 +222,11 @@ class SyncService {
       try {
         if (op.operation === 'create') {
           const rating = op.data.rating as 'again' | 'hard' | 'good' | 'easy';
-          const expectedVersion =
-            typeof op.data.expectedVersion === 'number' ? op.data.expectedVersion : undefined;
-          await api.reviewFlashcard(op.entityId, rating, expectedVersion);
+          // No CAS for queued replay: every op of a same-card double review
+          // carried the same pre-sync version, so the second (and every later)
+          // review 409'd and was dropped — one of N offline reviews survived.
+          // Reviews are events; the server applies each on its current state.
+          await api.reviewFlashcard(op.entityId, rating, undefined);
         }
         return true;
       } catch (error: any) {
@@ -223,6 +237,7 @@ class SyncService {
           });
           return true;
         }
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:flashcard_review] Error:', error);
         return false;
       }
@@ -247,6 +262,9 @@ class SyncService {
         }
         return true;
       } catch (error) {
+        // Dead connection: rethrow so the queue stops the run without burning
+        // one of this operation's retries. `return false` means "server said no".
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:deck] Error:', error);
         return false;
       }
@@ -266,6 +284,9 @@ class SyncService {
         }
         return true;
       } catch (error) {
+        // Dead connection: rethrow so the queue stops the run without burning
+        // one of this operation's retries. `return false` means "server said no".
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:transaction] Error:', error);
         return false;
       }
@@ -285,6 +306,9 @@ class SyncService {
         }
         return true;
       } catch (error) {
+        // Dead connection: rethrow so the queue stops the run without burning
+        // one of this operation's retries. `return false` means "server said no".
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:budget] Error:', error);
         return false;
       }
@@ -318,6 +342,9 @@ class SyncService {
         }
         return true;
       } catch (error) {
+        // Dead connection: rethrow so the queue stops the run without burning
+        // one of this operation's retries. `return false` means "server said no".
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:test_result] Error:', error);
         return false;
       }
@@ -360,6 +387,7 @@ class SyncService {
           });
           return true;
         }
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:listing] Error:', error);
         return false;
       }
@@ -386,6 +414,9 @@ class SyncService {
         }
         return true;
       } catch (error) {
+        // Dead connection: rethrow so the queue stops the run without burning
+        // one of this operation's retries. `return false` means "server said no".
+        if (isTransientSyncError(error)) throw error;
         console.error('[SyncHandler:group] Error:', error);
         return false;
       }
@@ -398,9 +429,20 @@ class SyncService {
    * Setup network connectivity listener
    */
   private setupNetworkListener(): void {
+    let wasOnline: boolean | null = null;
     this.networkUnsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      const isOnline = state.isConnected && state.isInternetReachable !== false;
-      this.manager.setOnline(isOnline ?? false);
+      const isOnline = (state.isConnected && state.isInternetReachable !== false) ?? false;
+      // Reconnect: give operations that exhausted their retries while the
+      // connection was flaky another shot before the manager's sync kicks in.
+      // (retryFailed existed but had NO caller — failedOperations was a black
+      // hole nothing ever drained.)
+      if (isOnline && wasOnline === false && this.queue.getFailedCount() > 0) {
+        void this.queue
+          .retryFailed()
+          .catch(err => console.error('[SyncService] Failed to revive failed operations:', err));
+      }
+      wasOnline = isOnline;
+      this.manager.setOnline(isOnline);
       console.log(`[SyncService] Network status: ${isOnline ? 'online' : 'offline'}`);
     });
   }

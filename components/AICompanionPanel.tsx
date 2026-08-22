@@ -32,6 +32,41 @@ import {
 import { transcribeAudioForNote } from '../services/notes';
 import { AIDisclaimer } from './AIDisclaimer';
 import AIUsageInline from './AIUsageInline';
+import ReactMarkdown from 'react-markdown';
+
+/**
+ * Compact markdown mapping for chat bubbles: the model is instructed to use
+ * bullets/bold, but replies rendered as raw text (`**bold**` and `- ` shown
+ * literally). Spacing stays tight so short answers still look like chat.
+ */
+const bubbleMarkdownComponents = {
+  p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <p className="my-1 first:mt-0 last:mb-0" {...props} />,
+  ul: (props: React.HTMLAttributes<HTMLUListElement>) => <ul className="my-1 pl-4 list-disc space-y-0.5" {...props} />,
+  ol: (props: React.HTMLAttributes<HTMLOListElement>) => <ol className="my-1 pl-4 list-decimal space-y-0.5" {...props} />,
+  li: (props: React.HTMLAttributes<HTMLLIElement>) => <li className="leading-relaxed" {...props} />,
+  strong: (props: React.HTMLAttributes<HTMLElement>) => <strong className="font-semibold" {...props} />,
+  code: (props: React.HTMLAttributes<HTMLElement>) => (
+    <code className="px-1 py-0.5 rounded bg-black/10 dark:bg-white/10 text-[0.85em]" {...props} />
+  ),
+  a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a className="underline" target="_blank" rel="noopener noreferrer" {...props} />
+  ),
+  h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => <p className="font-semibold my-1" {...props} />,
+  h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => <p className="font-semibold my-1" {...props} />,
+  h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => <p className="font-semibold my-1" {...props} />,
+};
+
+/**
+ * CommonMark collapses single newlines into spaces, but replies (and stored
+ * history) often use plain newlines as line breaks. Convert them to hard
+ * breaks — except inside fenced code blocks, where newlines are literal.
+ */
+function withHardBreaks(content: string): string {
+  return content
+    .split(/(```[\s\S]*?```)/g)
+    .map((part) => (part.startsWith('```') ? part : part.replace(/(?<!\n)\n(?!\n)/g, '  \n')))
+    .join('');
+}
 import Drawer from './ui/Drawer';
 
 interface AICompanionPanelProps {
@@ -108,7 +143,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
   const {
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
     failedMessage, consumeFailedMessage,
-    loadHistory, sendMessageStreaming, clearHistory, clearError,
+    loadHistory, sendMessageStreaming, clearHistory, deleteConversation, clearError,
     pendingMessage, setPendingMessage,
     pendingAssistantMessage, setPendingAssistantMessage, injectAssistantMessage,
     activeNoteContext, setActiveNoteContext,
@@ -125,6 +160,15 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showHistoryList, setShowHistoryList] = useState(false);
+  const [confirmDeleteConversationId, setConfirmDeleteConversationId] = useState<string | null>(null);
+
+  // Auto-disarm the two-tap trash: Safari doesn't focus buttons on click, so
+  // the onBlur disarm never fires there and an armed trash would stay red.
+  useEffect(() => {
+    if (!confirmDeleteConversationId) return;
+    const id = window.setTimeout(() => setConfirmDeleteConversationId(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [confirmDeleteConversationId]);
   const [showNotePicker, setShowNotePicker] = useState(false);
   const [noteSearch, setNoteSearch] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -555,7 +599,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             <SparklesIcon className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p id="ai-companion-title" className="font-semibold text-sm text-lantern-primary">Lantern</p>
+            <p id="ai-companion-title" className="font-semibold text-sm text-lantern-primary">Lantern AI</p>
             <p className={`text-xs truncate ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
               {context?.currentScreen ? `On: ${context.currentScreen}` : 'Your AI study companion'}
             </p>
@@ -642,12 +686,13 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             ) : (
               conversations.map((conversation) => {
                 const isActive = conversation.id === activeConversationId;
+                const confirmingDelete = confirmDeleteConversationId === conversation.id;
                 return (
+                  <div key={conversation.id} className="relative group">
                   <button
-                    key={conversation.id}
                     type="button"
                     onClick={() => void handleSelectConversation(conversation)}
-                    className={`w-full text-left rounded-xl px-3 py-2.5 transition-colors border
+                    className={`w-full text-left rounded-xl px-3 py-2.5 pr-9 transition-colors border
                       ${isActive
                         ? theme === 'dark'
                           ? 'border-lantern-primary/40 bg-lantern-primary/15'
@@ -677,6 +722,28 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                       </p>
                     )}
                   </button>
+                  {/* Two-tap delete: first tap arms (icon turns red), second deletes. */}
+                  <button
+                    type="button"
+                    aria-label={confirmingDelete ? `Confirm delete "${conversation.title}"` : `Delete "${conversation.title}"`}
+                    title={confirmingDelete ? 'Tap again to delete' : 'Delete chat'}
+                    onClick={() => {
+                      if (confirmingDelete) {
+                        setConfirmDeleteConversationId(null);
+                        void deleteConversation(conversation.id);
+                      } else {
+                        setConfirmDeleteConversationId(conversation.id);
+                      }
+                    }}
+                    onBlur={() => setConfirmDeleteConversationId((id) => (id === conversation.id ? null : id))}
+                    className={`absolute right-2 bottom-2 p-1.5 rounded-lg transition-opacity
+                      ${confirmingDelete
+                        ? 'opacity-100 text-red-500 bg-red-500/10'
+                        : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-lantern-text-tertiary hover:text-red-500'}`}
+                  >
+                    <TrashIcon className="w-3.5 h-3.5" />
+                  </button>
+                  </div>
                 );
               })
             )}
@@ -955,14 +1022,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
         </div>
       )}
       <div className={`flex flex-col gap-1.5 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
-        <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
+        <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${isUser || isStreaming ? 'whitespace-pre-wrap' : ''}
           ${isUser
             ? 'bg-lantern-primary text-white rounded-tr-none'
             : theme === 'dark'
               ? 'bg-lantern-surface-secondary text-white rounded-tl-none'
               : 'bg-lantern-background-secondary text-lantern-text rounded-tl-none'
           }`}>
-          {message.content}
+          {isUser || isStreaming ? (
+            // Plain while streaming: the caret stays inline with the text and
+            // half-typed markdown never renders literally mid-stream.
+            message.content
+          ) : (
+            <ReactMarkdown components={bubbleMarkdownComponents}>{withHardBreaks(message.content)}</ReactMarkdown>
+          )}
           {isStreaming && (
             <span className="inline-block w-0.5 h-3.5 ml-0.5 bg-current animate-pulse align-middle" />
           )}

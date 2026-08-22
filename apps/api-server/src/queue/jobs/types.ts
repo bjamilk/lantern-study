@@ -19,6 +19,12 @@ export interface JobRecord {
   error?: string;
   createdAt: string;
   updatedAt: string;
+  /** AI credits reserved by the request that enqueued this job — refunded if
+      the job permanently fails (a 202 is a 2xx, so the middleware's own
+      non-2xx auto-refund can never fire for async work). */
+  charge?: { credits: number; featureKey?: string };
+  /** Set once the failure refund has been issued, so retries can't double-refund. */
+  chargeRefunded?: boolean;
 }
 
 export type AIJobName =

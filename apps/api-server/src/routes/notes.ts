@@ -46,7 +46,7 @@ import {
   transcribeAudioBuffer,
 } from '../services/aiService';
 import { runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
-import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import { sendAsyncJobAccepted, stampAiChargeOnJob, aiChargeFromRes } from '../queue/respondAsync';
 import { isVersionConflictError } from '../utils/versionConflict';
 import { runPresentationPreviewJob } from '../services/presentationPreview';
 import {
@@ -395,6 +395,9 @@ async function startNoteOcrJob(params: {
   meta: Record<string, unknown>;
   userId: string;
   buffer?: Buffer;
+  /** AI credits reserved by the calling request; stamped on the job record at
+      enqueue so a permanently failed OCR job refunds them (race-free). */
+  charge?: { credits: number; featureKey?: string };
 }): Promise<{ mode: 'sync' | 'async'; jobId?: string }> {
   const payload = {
     noteId: params.noteId,
@@ -409,7 +412,8 @@ async function startNoteOcrJob(params: {
     runNoteOcrJob(supabaseService, {
       ...params,
       buffer: params.buffer,
-    })
+    }),
+    params.charge
   );
   if (outcome.mode === 'async') {
     return { mode: 'async', jobId: outcome.jobId };
@@ -1570,9 +1574,12 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
         videoId,
         meta: attachmentMeta,
       })
+  ,
+    aiChargeFromRes(res)
   );
 
   if (outcome.mode === 'async') {
+    stampAiChargeOnJob(res, outcome.jobId);
     res.status(202).json({
       success: true,
       data: { note, attachment, status: 'processing' },
@@ -2055,12 +2062,9 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
   const note = await supabaseService.getNote(req.params.noteId, userId);
   const content = await resolveNoteStudyContent(note.id, note, { forSmartNotes: true });
   if (!content || content.length < MIN_NOTE_STUDY_CONTENT_CHARS) {
-    // No AI work happened — give the reserved credits back.
-    const charged = Number((res.locals as Record<string, unknown>).aiCreditsCharged) || 0;
-    if (charged > 0) {
-      await refundAiCredits(userId, charged);
-      await applyGlobalUsageHeaders(res, userId);
-    }
+    // No manual refund here: aiRateLimitWithCost's finish hook refunds every
+    // non-2xx response — the old manual refundAiCredits DOUBLED the refund,
+    // minting free credits for anyone with other usage that day.
     res.status(400).json({
       error: `Note needs at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content to summarize. For scanned PDFs, wait for OCR or add your own notes.`,
     });
@@ -2099,6 +2103,8 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
       );
       return { summary: result.summary, provider: result.provider, note: updated };
     }
+  ,
+    aiChargeFromRes(res)
   );
   if (outcome.mode === 'async') {
     sendAsyncJobAccepted(res, outcome.jobId);
@@ -2160,6 +2166,8 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
         questions,
       });
     }
+  ,
+    aiChargeFromRes(res)
   );
   if (outcome.mode === 'async') {
     sendAsyncJobAccepted(res, outcome.jobId);
@@ -2204,6 +2212,8 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
     { content: sliced, count, style },
     userId,
     async () => generateFlashcardsFromNotes(sliced, { count, style })
+  ,
+    aiChargeFromRes(res)
   );
   if (outcome.mode === 'async') {
     sendAsyncJobAccepted(res, outcome.jobId);
@@ -2272,9 +2282,12 @@ router.post(
           videoId,
           meta: attachmentMeta,
         })
-    );
+    ,
+    aiChargeFromRes(res)
+  );
 
     if (outcome.mode === 'async') {
+      stampAiChargeOnJob(res, outcome.jobId);
       res.status(202).json({
         success: true,
         data: { note, attachment, status: 'processing' },
@@ -2509,6 +2522,10 @@ router.post(
         return;
       }
       await applyGlobalUsageHeaders(res, userId);
+      // chargeAiCredits is not middleware, so nothing else records this
+      // reservation — without it a permanently failed OCR job (the costliest
+      // charge) kept the user's credits.
+      (res.locals as Record<string, unknown>).aiCharge = { credits: NOTE_OCR_CREDIT_COST };
     }
 
     const fileName =
@@ -2545,9 +2562,11 @@ router.post(
       sourceKind,
       meta: processingMeta,
       userId,
+      charge: aiChargeFromRes(res),
     });
 
     if (outcome.mode === 'async') {
+      // Charge already stamped at enqueue via startNoteOcrJob's charge param.
       res.status(202).json({
         success: true,
         data: {

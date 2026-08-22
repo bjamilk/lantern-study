@@ -194,6 +194,9 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
   }
 
   setLegacyAndGlobalUsageHeaders(res, result);
+  // For 202 handlers: lets sendAsyncJobAccepted stamp the charge onto the job
+  // record so a permanently failed async job can refund it.
+  (res.locals as Record<string, unknown>).aiCharge = { credits: 1 };
   next();
 }
 
@@ -343,6 +346,7 @@ export function aiRateLimitWithCost(
     }) as Response['json'];
 
     (res.locals as Record<string, unknown>).aiCreditsCharged = cost;
+    (res.locals as Record<string, unknown>).aiCharge = { credits: cost };
     next();
   };
 }
@@ -436,6 +440,7 @@ export function aiRateLimitForFeature(featureKey: string) {
     });
 
     res.setHeader('X-AI-Feature', featureKey);
+    (res.locals as Record<string, unknown>).aiCharge = { credits: 1, featureKey };
     // Feature-scoped counts (for inline "N left" next to that tool).
     res.setHeader('X-AI-Usage-Used', featureResult.count.toString());
     res.setHeader('X-AI-Usage-Limit', limit.toString());

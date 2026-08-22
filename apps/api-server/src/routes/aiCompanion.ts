@@ -11,7 +11,7 @@ import { logAIInference } from '../services/aiInferenceLog';
 import { clientErrorMessage } from '../utils/safeError';
 import { handleValidationErrors, validateAICompanionMessage } from '../middleware/validation';
 import { runSyncOrEnqueue } from '../queue/enqueue';
-import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import { sendAsyncJobAccepted, aiChargeFromRes } from '../queue/respondAsync';
 import {
   buildTrustedCompanionContext,
   fetchAuthorizedGroupSummaryMessages,
@@ -444,6 +444,8 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
 
         return { reply, actions, provider, conversationId: conversation.id };
       }
+    ,
+      aiChargeFromRes(res)
     );
 
     if (outcome.mode === 'async') {

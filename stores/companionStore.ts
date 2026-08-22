@@ -106,6 +106,9 @@ interface CompanionState {
   sendMessage: (text: string, context?: CompanionUserContext) => Promise<void>;
   sendMessageStreaming: (text: string, context?: CompanionUserContext) => Promise<void>;
   clearHistory: () => Promise<void>;
+  /** Delete one conversation from Past chats (the API always supported this;
+      the UI only offered deleting the active chat). */
+  deleteConversation: (conversationId: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -146,6 +149,19 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   close: () => set({ isOpen: false }),
   toggle: () => set(s => ({ isOpen: !s.isOpen })),
   clearError: () => set({ error: null }),
+  deleteConversation: async (conversationId: string) => {
+    try {
+      await clearCompanionHistory({ conversationId });
+      const wasActive = get().activeConversationId === conversationId;
+      set(s => ({ conversations: s.conversations.filter(c => c.id !== conversationId) }));
+      if (wasActive) {
+        persistConversationId(null);
+        set({ messages: [], activeConversationId: null, pendingNewConversation: true });
+      }
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to delete chat.' });
+    }
+  },
   failedMessage: null,
   consumeFailedMessage: () => {
     const msg = get().failedMessage;

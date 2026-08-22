@@ -55,11 +55,14 @@ export async function syncPendingFlashcardReviews(): Promise<FlashcardReviewSync
 
   for (const review of pendingFlashcardReviews) {
     try {
-      const card = store.flashcards.find((fc) => fc.id === review.flashcardId);
+      // No CAS for queued replay: the local version snapshot goes stale as the
+      // loop itself advances the server (each success bumps server version),
+      // so the second queued review of a card self-409'd and was dropped.
+      // Reviews are events — the server applies each on its current state.
       const updated = await reviewFlashcard(
         review.flashcardId,
         review.rating,
-        card?.version
+        undefined
       );
       const mapped = updated ? mapFlashcardFromApi(updated) : null;
       if (mapped?.srsData || mapped?.version != null) {

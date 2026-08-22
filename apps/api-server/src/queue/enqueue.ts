@@ -31,10 +31,13 @@ export interface EnqueueResult {
   async: true;
 }
 
+export type AiJobCharge = { credits: number; featureKey?: string };
+
 export async function enqueueJob(
   name: JobName,
   payload: Record<string, unknown>,
   userId?: string,
+  charge?: AiJobCharge,
 ): Promise<EnqueueResult | null> {
   if (!isBullMqEnabled()) return null;
 
@@ -43,7 +46,7 @@ export async function enqueueJob(
   if (!queue) return null;
 
   const jobId = randomUUID();
-  await createJobRecord({ id: jobId, queue: queueName, name, userId });
+  await createJobRecord({ id: jobId, queue: queueName, name, userId, charge });
 
   await queue.add(
     name,
@@ -63,8 +66,9 @@ export async function runSyncOrEnqueue<T>(
   payload: Record<string, unknown>,
   userId: string | undefined,
   syncFn: () => Promise<T>,
+  charge?: AiJobCharge,
 ): Promise<{ mode: "sync"; result: T } | { mode: "async"; jobId: string }> {
-  const enqueued = await enqueueJob(name, payload, userId);
+  const enqueued = await enqueueJob(name, payload, userId, charge);
   if (enqueued) {
     return { mode: "async", jobId: enqueued.jobId };
   }

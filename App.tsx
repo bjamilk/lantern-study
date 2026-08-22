@@ -375,7 +375,7 @@ export const App: React.FC = () => {
     });
 
     const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction, materializeRecurring } = useBudgetHandlers();
-    const { handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
+    const { isDownloadingBundle, handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
     const handleChallengeNotification = React.useCallback(async (type: string, challengeId: string) => {
         if (type === 'challenge_result') {
             void handleStartChallengePlay(challengeId);
@@ -1198,8 +1198,22 @@ export const App: React.FC = () => {
                     <AIToolsHub
                         theme={theme}
                         onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
-                        onStartLearn={handleFlashcardStudy}
-                        onTakePracticeTest={() => navigateTo(AppMode.DASHBOARD)}
+                        onStartLearn={(result) => {
+                            // Review the deck the import JUST created — not whichever
+                            // deck happens to have the most due cards globally.
+                            const created = result.deckId
+                                ? useFlashcardStore.getState().decks.find(d => d.id === result.deckId)
+                                : undefined;
+                            if (created) handleStudyDeck(created);
+                            else handleFlashcardStudy();
+                        }}
+                        onTakePracticeTest={(result) => {
+                            navigateTo(AppMode.DASHBOARD);
+                            showToast(
+                                `Your ${result.quizQuestionCount}-question quiz is ready in the Daily quiz card.`,
+                                'success'
+                            );
+                        }}
                         onComplete={() => showToast('Study materials ready!', 'success')}
                     />
                 );
@@ -1798,7 +1812,8 @@ export const App: React.FC = () => {
                 }}
                 onSoloPractice={(config) => handleStartSoloPractice(config)}
                 defaultLockAnswered={getUserSettings().study.lockAnsweredQuestions}
-                onDownloadForOffline={handleDownloadForOffline} />}
+                onDownloadForOffline={handleDownloadForOffline}
+                isDownloading={isDownloadingBundle} />}
             <NewDirectMessageModal isOpen={modals.newDm} onClose={() => closeModal('newDm')}
                 currentUser={currentUser}
                 onStartDm={(userId) => { handleInitiateDm(userId); closeModal('newDm'); }} />

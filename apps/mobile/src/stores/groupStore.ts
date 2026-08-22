@@ -22,6 +22,7 @@ import {
   reconcileDeliveredItem,
 } from '@lantern/shared/utils';
 import * as api from '../services/api';
+import { isTransientSyncError } from '@lantern/shared';
 import { syncService } from '../services/syncService';
 import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
@@ -2415,6 +2416,9 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
       });
       return true;
     }
+    // Dead connection: rethrow so the queue halts the run without burning one
+    // of this message's retries (a false return counts as a server rejection).
+    if (isTransientSyncError(error)) throw error;
     console.warn('[SyncHandler:message] send failed, will retry:', error);
     return false;
   }

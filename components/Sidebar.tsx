@@ -599,7 +599,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary-dark/50'
                       : 'text-lantern-text-secondary hover:text-lantern-primary'
                   }`}
-                  title="Lantern AI Companion"
+                  title="Lantern AI"
               >
                   <SparklesIcon className="w-6 h-6" />
               </button>

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
     AppMode, TestConfig, TestQuestion, TestSessionData, StudySessionData,
     Message, QuestionType, OfflineQuestion, OfflineSessionBundle,
@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useTestStore } from '../stores/testStore';
 import { useUIStore } from '../stores/uiStore';
+import { useToastStore } from '../stores/toastStore';
 import { shuffleArray, isQuestionTestable, createShuffledQuestionSet } from '../utils/helpers';
 import { BADGE_DEFINITIONS } from '../gamification';
 import { saveOfflineBundle, deleteOfflineBundle } from '../services/supabase';
@@ -34,6 +35,10 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         closeModal
     } = useUIStore();
 
+    // Busy state so the modal's spinner (already wired for a prop nobody
+    // passed) actually shows, and a double-click can't create two bundles.
+    const [isDownloadingBundle, setIsDownloadingBundle] = useState(false);
+
     const handleDownloadForOffline = useCallback(async (
         config: Omit<TestConfig, 'questionIds' | 'groupId'>,
         useSpacedRepetition: boolean,
@@ -41,6 +46,9 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
     ) => {
         console.log('[Offline] download requested', config, useSpacedRepetition, selectedSubgroupIDs);
         if (!selectedChat || selectedChat.chatType !== 'group') return;
+        if (isDownloadingBundle) return;
+        setIsDownloadingBundle(true);
+        try {
         
         const sourceGroupIds = [selectedChat.id, ...selectedSubgroupIDs];
         let candidateQuestions: Message[] = [];
@@ -96,11 +104,11 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         if (config.focusOnNew) {
             selectedQuestions = finalSelectedQuestions;
             if (selectedQuestions.length < config.numberOfQuestions && selectedQuestions.length > 0) {
-                alert(`Only found ${selectedQuestions.length} questions matching your criteria. A bundle will be created with these questions.`);
+                useToastStore.getState().showToast(`Only ${selectedQuestions.length} questions matched — creating the bundle with those.`, 'info');
             }
         } else {
             if (candidateQuestions.length < config.numberOfQuestions) {
-                alert(`Not enough questions matching your criteria. Found ${candidateQuestions.length}, but you requested ${config.numberOfQuestions}.`);
+                useToastStore.getState().showToast(`Not enough questions: found ${candidateQuestions.length} of the ${config.numberOfQuestions} requested.`, 'error');
                 return;
             }
             const shuffled = shuffleArray(candidateQuestions);
@@ -108,7 +116,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         }
         
         if (selectedQuestions.length === 0) {
-            alert(`No questions found to download.`);
+            useToastStore.getState().showToast('No questions found to download.', 'error');
             return;
         }
         
@@ -169,9 +177,15 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
             });
         }
         
-        alert(`Test bundle "${selectedChat.name}" with ${selectedQuestions.length} questions has been downloaded!`);
+        useToastStore.getState().showToast(
+            `Bundle "${selectedChat.name}" saved with ${selectedQuestions.length} questions — find it under Offline Activity.`,
+            'success'
+        );
         closeModal('testConfig');
-    }, [selectedChat, messages, userQuestionStats, currentUser, updateOfflineBundles, closeModal]);
+        } finally {
+            setIsDownloadingBundle(false);
+        }
+    }, [selectedChat, messages, userQuestionStats, currentUser, updateOfflineBundles, closeModal, isDownloadingBundle]);
 
     const handleStartOfflineSession = useCallback((bundleId: string, mode: 'test' | 'study') => {
         console.log('[Offline] start session bundleId=', bundleId, 'mode=', mode);
@@ -234,7 +248,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
 
     const handleSyncFlashcardReviews = useCallback(async () => {
         if (!isOnline) {
-            alert('You must be online to sync flashcard reviews.');
+            useToastStore.getState().showToast('You must be online to sync flashcard reviews.', 'info');
             return;
         }
         const pendingCount = useFlashcardStore.getState().pendingFlashcardReviews.length;
@@ -243,7 +257,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         try {
             const { synced, remaining } = await syncPendingFlashcardReviews();
             if (synced === 0 && remaining > 0) {
-                alert('Failed to sync flashcard reviews. Please try again.');
+                useToastStore.getState().showToast('Failed to sync flashcard reviews. Please try again.', 'error');
                 return;
             }
             if (remaining === 0) {
@@ -253,7 +267,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
             }
         } catch (error) {
             console.error('Error syncing flashcard reviews:', error);
-            alert('Failed to sync flashcard reviews. Please try again.');
+            useToastStore.getState().showToast('Failed to sync flashcard reviews. Please try again.', 'error');
         }
     }, [isOnline, addNotification]);
 
@@ -273,7 +287,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
 
     const handleSyncResults = useCallback(async () => {
         if (!isOnline) {
-            alert("You must be online to sync results.");
+            useToastStore.getState().showToast('You must be online to sync results.', 'info');
             return;
         }
         if (pendingSyncResults.length === 0 || !currentUser) return;
@@ -282,7 +296,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         const { synced, remaining, gamification } = await syncPendingTestResults(currentUser.id);
 
         if (synced === 0) {
-            alert('Failed to sync results. Please try again.');
+            useToastStore.getState().showToast('Failed to sync results. Please try again.', 'error');
             return;
         }
 
@@ -322,7 +336,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
                  b.config.numberOfQuestions === imported.config.numberOfQuestions
         );
         if (isDuplicate) {
-            alert(`A bundle for "${imported.groupName}" with ${imported.questions.length} questions already exists.`);
+            useToastStore.getState().showToast(`A bundle for "${imported.groupName}" with ${imported.questions.length} questions already exists.`, 'info');
             return null;
         }
 
@@ -358,6 +372,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
     }, [updateOfflineBundles, currentUser]);
 
     return {
+        isDownloadingBundle,
         handleDownloadForOffline,
         handleStartOfflineSession,
         handleDeleteBundle,
