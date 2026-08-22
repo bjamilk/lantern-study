@@ -121,7 +121,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // group question-bank tests — the group launch path (startQuestionSet) dropped
   // the toggle and only ever read the global Settings default, so the modal
   // switch silently did nothing on the main way people start tests.
-  version: '1.0.27',
+  // 1.0.28: Lantern AI chat gains the assistant's action chips, feedback
+  // thumbs, and formatted replies (bold/bullets/numbered steps) — all
+  // previously web-only. Offline bundles can be taken as untimed Study
+  // sessions next to scored Tests, and the offline screen lists every group
+  // (the old first-5 cap hid the rest with no hint). Sync is sturdier: a dead
+  // connection no longer burns an operation's retries or strands work in a
+  // queue nothing drained, reviewing the same flashcard twice offline now
+  // counts both reviews, and "Sync Results" reports what actually happened.
+  version: '1.0.28',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
