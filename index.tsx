@@ -24,6 +24,15 @@ import LegalPage from './components/LegalPage';
 
 bootstrapAuthFromStorage();
 
+// Failed auth-link hashes (#error_code=otp_expired etc.) must be captured
+// before anything else touches the URL — supabase-js and the router both
+// rewrite it. Consumed here, surfaced on the login screen.
+import { consumeAuthErrorHash, stashAuthLinkError } from './utils/authErrorHash';
+{
+  const authLinkError = consumeAuthErrorHash();
+  if (authLinkError) stashAuthLinkError(authLinkError);
+}
+
 const initialTheme =
   typeof window !== 'undefined' && localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
 applyDesignTokensToDom(initialTheme);

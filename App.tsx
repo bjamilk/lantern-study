@@ -116,6 +116,7 @@ import { useNoteShareLink } from './hooks/useNoteShareLink';
 import { useAppNavigation } from './hooks/useAppNavigation';
 import { useRouteSync } from './hooks/useRouteSync';
 import { isPublicMarketplacePath } from './utils/appRoutes';
+import { peekStashedAuthLinkError } from './utils/authErrorHash';
 import GuestMarketplaceShell from './components/marketplace/GuestMarketplaceShell';
 import { useAIHandlers } from './hooks/useAIHandlers';
 import AIGenerateQuestionsModal from './components/AIGenerateQuestionsModal';
@@ -143,6 +144,16 @@ const AppContentLoadingFallback: React.FC = () => (
 export const App: React.FC = () => {
     const { navigateTo, navigateToPath } = useAppNavigation();
     const { routeHydrating } = useRouteSync();
+
+    // A failed auth link was captured at boot (index.tsx) — route to the
+    // login screen so its message is actually seen, instead of landing on
+    // the marketing page with the explanation stuck in storage.
+    useEffect(() => {
+        if (peekStashedAuthLinkError()) {
+            navigateToPath('/login', { replace: true });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot at mount
+    }, []);
     const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, isPasswordRecovery, setPasswordRecovery } = useAuthStore();
     const isPlatformAdmin = usePlatformAdmin();
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
