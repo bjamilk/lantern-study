@@ -374,6 +374,10 @@ export default function TestConfigModal({
       focusOnNew,
       selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
       visibilityMode: questionVisibilityMode,
+      // Downloads are always TAKEN in test mode later, so a study-mode modal
+      // (toggle hidden) must not bake in an explicit false — undefined lets
+      // the bundle fall back to the global setting, matching web bundles.
+      lockAnswered: isStudyMode ? undefined : lockAnswered,
     });
   }, [
     onDownload,
@@ -386,6 +390,8 @@ export default function TestConfigModal({
     focusOnNew,
     selectedSubgroupIds,
     questionVisibilityMode,
+    isStudyMode,
+    lockAnswered,
   ]);
 
   const formatTime = (seconds: number): string => {

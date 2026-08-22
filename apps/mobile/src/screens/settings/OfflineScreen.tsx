@@ -153,6 +153,7 @@ export default function OfflineScreen() {
       const questions = offlineQuestionsToTestQuestions(test.questions);
       await startQuestionSet(test.testName, questions, 'test', {
         timeLimitMinutes: test.timeLimit || Math.max(questions.length * 2, 5),
+        lockAnswered: test.lockAnswered,
       });
       // Offline is a ROOT-stack modal, so 'StudyTab' is not a sibling route
       // here — it lives inside 'Main'. The unnested navigate was silently

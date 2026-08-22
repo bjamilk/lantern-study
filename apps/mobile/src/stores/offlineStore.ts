@@ -25,6 +25,8 @@ export interface OfflineTest {
   questionTypes?: string[];
   shuffled?: boolean;
   recentlyAddedDays?: number; // Filter for recently added questions
+  /** Exam lock chosen at download time: can't revisit answered questions. */
+  lockAnswered?: boolean;
 }
 
 export interface OfflineQuestion {
@@ -78,6 +80,8 @@ export interface DownloadOptions {
   shuffleQuestions?: boolean;
   includeExplanations?: boolean;
   recentlyAddedDays?: number; // 0 = all questions, 7 = last 7 days, 14, 30, etc.
+  /** Exam lock: can't revisit answered questions when the bundle is taken. */
+  lockAnswered?: boolean;
 }
 
 interface OfflineState {
@@ -137,6 +141,7 @@ const mapApiBundleToOfflineTest = (bundle: ApiOfflineBundle): OfflineTest => {
     questionTypes: config.allowedQuestionTypes as string[] | undefined,
     shuffled: config.shuffleQuestions as boolean | undefined,
     recentlyAddedDays: config.recentlyAddedDays as number | undefined,
+    lockAnswered: config.lockAnsweredQuestions as boolean | undefined,
   };
 };
 
@@ -300,6 +305,13 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         allowedQuestionTypes: options?.questionTypes,
         shuffleQuestions: options?.shuffleQuestions,
         recentlyAddedDays: options?.recentlyAddedDays,
+        // Web's config field name, so cross-device bundles keep the lock.
+        // Emit only an explicit choice: flows with no lock toggle must stay
+        // undefined so taking the bundle falls back to the global setting —
+        // a bare `false` here would override a global lock-ON after sync.
+        ...(typeof options?.lockAnswered === 'boolean'
+          ? { lockAnsweredQuestions: options.lockAnswered }
+          : {}),
       };
 
       const newTest: OfflineTest = {
@@ -316,6 +328,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         questionTypes: options?.questionTypes,
         shuffled: options?.shuffleQuestions,
         recentlyAddedDays: options?.recentlyAddedDays,
+        lockAnswered: options?.lockAnswered,
       };
       
       const downloadedTests = [...get().downloadedTests, newTest];
