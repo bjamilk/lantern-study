@@ -12,7 +12,6 @@ import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useUIStore } from '../stores/uiStore';
 import { formatUnreadBadgeCount, getTotalActiveUnreadChatCount } from '../utils/chatUnread';
 import { isInboundDmMessageRequest } from '../utils/dmThreads';
-import { featureAccents } from '@lantern/shared/design';
 
 interface SidebarProps {
   currentUser: User;
@@ -355,7 +354,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                 aria-expanded={isChatsSectionExpanded}
                 title={isChatsSectionExpanded ? 'Collapse chats' : 'Expand chats'}
               >
-                <h3 className="text-xs font-semibold uppercase text-lantern-text-secondary tracking-wider truncate" style={{ color: featureAccents.groups }}>Chats</h3>
+                {/* emerald-700/400 instead of the inline featureAccents.groups
+                    (#10b981): that read at 2.34:1 on the light background and,
+                    being an inline style, could never adapt to dark mode. */}
+                <h3 className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400 tracking-wider truncate">Chats</h3>
                 {showChatsHeaderBadge && (
                   <span className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
                     {formatUnreadBadgeCount(totalUnreadChatCount)}
@@ -559,8 +561,11 @@ const Sidebar: React.FC<SidebarProps> = ({
             {showText && (
               <div className="min-w-0 flex-1">
                   <span className="text-sm font-medium text-lantern-text truncate block">{currentUser.name}</span>
-                  <div className="flex items-center text-xs text-yellow-400" title={`${currentUser.points} Points`}>
-                      <SparklesIcon className="w-4 h-4 mr-1 text-yellow-500"/>
+                  {/* yellow-400 on the light background was 1.41:1 — amber-800
+                      clears AA at this 12px size; yellow-400 back in dark
+                      where it reads fine. */}
+                  <div className="flex items-center text-xs text-amber-800 dark:text-yellow-400" title={`${currentUser.points} Points`}>
+                      <SparklesIcon className="w-4 h-4 mr-1 text-amber-700 dark:text-yellow-500"/>
                       {currentUser.points}
                   </div>
               </div>

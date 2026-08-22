@@ -2,7 +2,7 @@
  * AI Companion Routes — persistent, context-aware "Lantern" study companion
  */
 import { Router, Request, Response } from 'express';
-import { aiRateLimit, aiRateLimitForFeature } from '../middleware/aiRateLimit';
+import { aiRateLimit, aiRateLimitForFeature, refundFeatureAiCredit } from '../middleware/aiRateLimit';
 import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import { companionChat, summarizeGroupChat, CompanionContext } from '../services/aiService';
@@ -561,6 +561,12 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     res.end();
   } catch (err: any) {
     console.error('Companion stream error:', err.message);
+    // SSE failures end as HTTP 200, so the feature middleware's non-2xx
+    // auto-refund never fires — refund here: the user got no reply, and
+    // without this every failed stream still burned a daily credit.
+    void refundFeatureAiCredit(userId, 'companion').catch((refundErr) => {
+      console.error('Companion stream credit refund failed:', refundErr);
+    });
     sendEvent({ error: clientErrorMessage(err, 'AI companion is temporarily unavailable') });
     res.end();
   } finally {

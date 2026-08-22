@@ -6,7 +6,9 @@ export const lanternColors = {
   primary: '#4f46e5',
   primaryLight: '#6366f1',
   primaryDark: '#3730a3',
-  accent: '#d97706',
+  // UI-02: amber-600 (#d97706) was 3.0-3.6:1 as text on white/cream and under
+  // white button labels; amber-700 clears AA for both roles.
+  accent: '#b45309',
   accentLight: '#f59e0b',
   accentDark: '#b45309',
 } as const;
@@ -21,7 +23,9 @@ const lightBase = {
   cardSecondary: '#f1f5f9',
   text: '#0f172a',
   textSecondary: '#475569',
-  textTertiary: '#64748b',
+  // UI-02: #64748b was 4.39:1 on the warm background at the 10-12px sizes
+  // this token styles; #5b6a7f clears 4.5:1 on cream and white.
+  textTertiary: '#5b6a7f',
   textInverse: '#ffffff',
   primary: lanternColors.primary,
   primaryLight: lanternColors.primaryLight,
@@ -29,9 +33,10 @@ const lightBase = {
   primaryBackground: '#eef2ff',
   accent: lanternColors.accent,
   accentBackground: '#fff7ed',
-  success: '#059669',
+  // UI-02: 700-weight for AA as small text on white/cream (see accent above).
+  success: '#047857',
   successBackground: '#d1fae5',
-  warning: '#d97706',
+  warning: '#b45309',
   warningBackground: '#fff7ed',
   error: '#dc2626',
   errorBackground: '#fee2e2',
@@ -42,11 +47,11 @@ const lightBase = {
   tabBar: '#ffffff',
   tabBarBorder: '#c5cedd',
   tabBarActive: lanternColors.primary,
-  tabBarInactive: '#64748b',
+  tabBarInactive: '#5b6a7f',
   inputBackground: '#f1f5f9',
   inputBorder: '#c5cedd',
   inputText: '#0f172a',
-  inputPlaceholder: '#64748b',
+  inputPlaceholder: '#5b6a7f',
   modalOverlay: 'rgba(0, 0, 0, 0.5)',
   modalBackground: '#ffffff',
   switchTrackOn: '#4f46e580',

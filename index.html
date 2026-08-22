@@ -55,7 +55,10 @@
   <script src="/theme-init.js"></script>
 </head>
 <body class="bg-lantern-background text-lantern-text transition-colors duration-300 antialiased">
-  <main id="seo-content" class="seo-fallback">
+  <!-- inert: crawlers still read this, but it leaves the tab order and the
+       accessibility tree — its link was a focusable stop inside invisible,
+       app-duplicated content. -->
+  <main id="seo-content" class="seo-fallback" inert>
     <h1>Lantern Study</h1>
     <p>
       Study smarter with flashcards, timed practice tests, collaborative study groups,

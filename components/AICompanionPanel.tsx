@@ -31,6 +31,7 @@ import {
 } from '../services/ai';
 import { transcribeAudioForNote } from '../services/notes';
 import { AIDisclaimer } from './AIDisclaimer';
+import AIUsageInline from './AIUsageInline';
 import Drawer from './ui/Drawer';
 
 interface AICompanionPanelProps {
@@ -106,6 +107,7 @@ function formatRelativeTime(iso: string): string {
 const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, theme = 'light' }) => {
   const {
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
+    failedMessage, consumeFailedMessage,
     loadHistory, sendMessageStreaming, clearHistory, clearError,
     pendingMessage, setPendingMessage,
     pendingAssistantMessage, setPendingAssistantMessage, injectAssistantMessage,
@@ -256,6 +258,18 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
   useEffect(() => {
     inputValueRef.current = input;
   }, [input]);
+
+  // A failed send hands the typed text back: restore it into the composer
+  // (unless the user has already started typing something new).
+  useEffect(() => {
+    if (!failedMessage) return;
+    const restored = consumeFailedMessage();
+    if (restored && !inputValueRef.current.trim()) {
+      setInput(restored);
+      inputValueRef.current = restored;
+      inputRef.current?.focus();
+    }
+  }, [failedMessage, consumeFailedMessage]);
 
   const stopMediaStream = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -881,7 +895,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                 : 'Converting speech to text…'}
             </p>
           )}
-          <div className={`mt-1.5 text-center ${theme === 'dark' ? 'text-lantern-text-secondary' : 'text-lantern-text-tertiary'}`}>
+          <div className={`mt-1.5 flex items-center justify-center gap-2 text-center ${theme === 'dark' ? 'text-lantern-text-secondary' : 'text-lantern-text-tertiary'}`}>
+            {/* Chat spends daily AI credits — show the countdown where it's spent. */}
+            <AIUsageInline cost={1} />
+            <span aria-hidden>·</span>
             <AIDisclaimer compact />
           </div>
         </div>

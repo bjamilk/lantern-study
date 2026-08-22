@@ -19,6 +19,7 @@ import { useCompanionStore } from '../stores/companionStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
+import AIUsageBadge from './AIUsageBadge';
 import { useAuthStore } from '../stores/authStore';
 import { useAppTheme } from '../theme';
 import { Button } from './ui';
@@ -76,6 +77,8 @@ export function AICompanionPanel({ context }: Props) {
     historyLoaded,
     isStreaming,
     error,
+    failedMessage,
+    consumeFailedMessage,
     loadHistory,
     sendMessageStreaming,
     clearHistory,
@@ -98,6 +101,16 @@ export function AICompanionPanel({ context }: Props) {
 
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+
+  // A failed send hands the typed text back: restore it into the composer
+  // (unless the user has already started typing something new).
+  useEffect(() => {
+    if (!failedMessage) return;
+    const restored = consumeFailedMessage();
+    if (restored) {
+      setInput((prev) => (prev.trim() ? prev : restored));
+    }
+  }, [failedMessage, consumeFailedMessage]);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [showNotePicker, setShowNotePicker] = useState(false);
@@ -476,8 +489,11 @@ export function AICompanionPanel({ context }: Props) {
             <Ionicons name="close" size={24} color="#94a3b8" />
           </Pressable>
         </View>
-        <View className="px-4 pb-2">
+        <View className="px-4 pb-2 flex-row items-center justify-between">
           <AIDisclaimer compact textColor="#64748b" linkColor="#c45c26" />
+          {/* Chat spends daily AI credits; the floating badge is hidden while
+              the panel is open, so show the countdown here instead. */}
+          <AIUsageBadge variant="inline" />
         </View>
 
         {showHistoryList ? (

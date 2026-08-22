@@ -96,6 +96,10 @@ interface CompanionState {
   historyLoaded: boolean;
   isStreaming: boolean;
   error: string | null;
+  /** The text of a send that failed — the panel restores it into the composer
+      so a network blip can't destroy what the user typed. */
+  failedMessage: string | null;
+  consumeFailedMessage: () => string | null;
 
   loadHistory: () => Promise<void>;
   setMessageFeedback: (messageId: string, rating: 'up' | 'down' | null) => void;
@@ -142,6 +146,12 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   close: () => set({ isOpen: false }),
   toggle: () => set(s => ({ isOpen: !s.isOpen })),
   clearError: () => set({ error: null }),
+  failedMessage: null,
+  consumeFailedMessage: () => {
+    const msg = get().failedMessage;
+    if (msg !== null) set({ failedMessage: null });
+    return msg;
+  },
   setPendingMessage: (msg) => set({ pendingMessage: msg }),
   openWithMessage: (msg) => set({ isOpen: true, pendingMessage: msg }),
   setPendingAssistantMessage: (msg) => set({ pendingAssistantMessage: msg }),
@@ -404,6 +414,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           messages: s.messages.filter(m => m.id !== tempUserMsg.id && m.id !== tempAiId),
           isStreaming: false,
           error: err.message || 'Failed to reach Lantern. Please try again.',
+          // Hand the typed text back to the composer instead of destroying it.
+          failedMessage: text,
         }));
       }
     );
