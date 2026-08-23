@@ -88,6 +88,7 @@ const StudyProductDraftsScreen = lazyWithRetry(() => import('./components/StudyP
 const CreatorProfileScreen = lazyWithRetry(() => import('./components/CreatorProfileScreen'));
 const DiscoverScreen = lazyWithRetry(() => import('./components/DiscoverScreen'));
 const InviteFriendsScreen = lazyWithRetry(() => import('./components/InviteFriendsScreen'));
+const CampusScreen = lazyWithRetry(() => import('./components/CampusScreen'));
 const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
@@ -125,7 +126,7 @@ import { useInviteLink } from './hooks/useInviteLink';
 import { useNoteShareLink } from './hooks/useNoteShareLink';
 import { useAppNavigation } from './hooks/useAppNavigation';
 import { useRouteSync } from './hooks/useRouteSync';
-import { isPublicMarketplacePath } from './utils/appRoutes';
+import { isPublicMarketplacePath, parseAppRoute } from './utils/appRoutes';
 import { peekStashedAuthLinkError } from './utils/authErrorHash';
 import GuestMarketplaceShell from './components/marketplace/GuestMarketplaceShell';
 import { useAIHandlers } from './hooks/useAIHandlers';
@@ -1629,6 +1630,20 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE);
                         }
                     }} />;
+            case AppMode.CAMPUS_PAGE: {
+                // Phase 4 R: guest-visible, so the slug is read straight from the
+                // URL rather than plumbed through the UI store — a public page
+                // always has it in the path, and this works before any hydration.
+                const campusRoute = parseAppRoute(window.location.pathname);
+                const campusSlug = String(campusRoute.params?.slug || '');
+                if (!campusSlug) return null;
+                return <CampusScreen
+                    slug={campusSlug}
+                    programme={(campusRoute.params as { programme?: string })?.programme ?? null}
+                    onSignUp={() => { window.location.assign('/signup'); }}
+                    onBack={() => { window.location.assign('/'); }}
+                />;
+            }
             case AppMode.INVITE_FRIENDS:
                 return <InviteFriendsScreen onBack={() => setAppMode(AppMode.DASHBOARD)} />;
             case AppMode.DISCOVER:

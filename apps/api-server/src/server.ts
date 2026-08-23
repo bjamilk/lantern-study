@@ -80,6 +80,8 @@ import communityRoutes, {
 import feedRoutes, { masteryRouter, initializeFeedRoutes } from './routes/feed';
 // Phase 4 Q — referrals + ambassadors
 import referralRoutes, { initializeReferralRoutes } from './routes/referrals';
+// Phase 4 R — public campus pages (SEO)
+import campusRoutes, { initializeCampusRoutes } from './routes/campuses';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -187,6 +189,7 @@ async function initializeServices() {
     initializeCommunityRoutes(supabaseService);
     initializeFeedRoutes(supabaseService);
     initializeReferralRoutes(supabaseService);
+    initializeCampusRoutes(supabaseService, cacheService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -395,6 +398,8 @@ async function startServer() {
     app.use('/api/v1/feed', feedRoutes);
     app.use('/api/v1/mastery', masteryRouter);
     app.use('/api/v1/referrals', referralRoutes);
+    // Public + crawled: same guard shape as the jobs board.
+    app.use('/api/v1/campuses', optionalAuthMiddleware, applyPublicRateLimits, campusRoutes);
     app.use('/api/v1/reports', reportRoutes);
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);

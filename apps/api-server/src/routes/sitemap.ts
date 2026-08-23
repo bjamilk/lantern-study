@@ -22,6 +22,50 @@ function sitemapXmlResponse(res: Response, xml: string) {
 }
 
 router.get(
+  '/campuses.xml',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const cacheKey = 'sitemap:campuses';
+    const cached = await cacheService.get<string>(cacheKey);
+    if (cached) {
+      return sitemapXmlResponse(res, cached);
+    }
+
+    // Phase 4 R. Active, non-'other' campuses only — the same visibility rule
+    // the summary endpoint hand-writes, because the API bypasses RLS.
+    const client = supabaseService.getClient();
+    const { data, error } = await client
+      .from('marketplace_campuses')
+      .select('slug')
+      .eq('active', true)
+      .neq('kind', 'other')
+      .order('name', { ascending: true })
+      .limit(5000);
+
+    if (error) {
+      return res.status(500).send('<?xml version="1.0" encoding="UTF-8"?><error />');
+    }
+
+    const urls = (data || [])
+      .map((row: { slug: string }) => row.slug)
+      .filter(Boolean)
+      .map(
+        (slug: string) =>
+          `<url><loc>https://lanternstudy.com/campus/${encodeURIComponent(slug)}</loc>` +
+          `<changefreq>weekly</changefreq><priority>0.6</priority></url>`
+      )
+      .join('');
+
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+      urls +
+      '</urlset>';
+    await cacheService.set(cacheKey, xml, 3600);
+    sitemapXmlResponse(res, xml);
+  })
+);
+
+router.get(
   '/marketplace.xml',
   asyncHandler(async (_req: Request, res: Response) => {
     const cacheKey = 'sitemap:marketplace';

@@ -48,6 +48,10 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return '/flashcards';
     case AppMode.DECK_DETAIL:
       return params.deckId ? `/flashcards/deck/${encodeURIComponent(params.deckId)}` : '/flashcards';
+    case AppMode.CAMPUS_PAGE:
+      return params.slug
+        ? `/campus/${encodeURIComponent(params.slug)}${params.programme ? `/${encodeURIComponent(params.programme)}` : ''}`
+        : '/campus';
     case AppMode.INVITE_FRIENDS:
       return '/invite';
     case AppMode.DISCOVER:
@@ -139,6 +143,16 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/chat') return { mode: AppMode.CHAT, params: {}, clearChat: true };
   if (path === '/groups/new') return { mode: AppMode.CREATE_GROUP, params: {} };
   if (path === '/flashcards') return { mode: AppMode.FLASHCARDS, params: {}, clearDeck: true };
+  if (path.startsWith('/campus/')) {
+    const rest = path.slice('/campus/'.length).split('/').filter(Boolean);
+    const slug = decodeURIComponent(rest[0] || '');
+    if (slug) {
+      return {
+        mode: AppMode.CAMPUS_PAGE,
+        params: { slug, ...(rest[1] ? { programme: decodeURIComponent(rest[1]) } : {}) },
+      };
+    }
+  }
   if (path === '/invite') return { mode: AppMode.INVITE_FRIENDS, params: {} };
   if (path === '/discover') return { mode: AppMode.DISCOVER, params: {} };
   if (path.startsWith('/discover/c/')) {
@@ -305,6 +319,9 @@ export function isPublicAppPath(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (PUBLIC_PATH_PREFIXES.includes(path)) return true;
   if (path === '/' || path.startsWith('/invite/') || path.startsWith('/notes/share/')) return true;
+  // Phase 4 R: campus pages are the SEO surface — they MUST render for a
+  // logged-out visitor, or the crawler's link goes to a login wall.
+  if (path.startsWith('/campus/')) return true;
   if (isPublicMarketplacePath(path)) return true;
   return false;
 }

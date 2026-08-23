@@ -4866,6 +4866,40 @@ export const fetchExamReadiness = () => networkGet<ExamReadiness[]>('/mastery/ex
 
 export const fetchReferralSummary = () => networkGet<ReferralSummary>('/referrals');
 
+// ── Phase 4 R — public campus pages ──
+
+export interface CampusSummary {
+  slug: string;
+  name: string;
+  city: string;
+  state: string;
+  kind: string;
+  counts: { students: number; courses: number; communities: number; listings: number; creators: number };
+  courses: Array<{ code: string; title: string }>;
+  programmes: string[];
+}
+
+/**
+ * PUBLIC: this must work for a logged-out visitor, so it deliberately does NOT
+ * send auth headers — getAuthHeaders() would stall on a cold guest session.
+ */
+export const fetchCampusSummary = async (
+  slug: string,
+  programme?: string
+): Promise<CampusSummary> => {
+  const qs = programme ? `?programme=${encodeURIComponent(programme)}` : '';
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/campuses/${encodeURIComponent(slug)}/summary${qs}`,
+    { method: 'GET' },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Campus not found');
+  }
+  return (await response.json()).data as CampusSummary;
+};
+
 export const fetchAmbassadors = (institutionId: string, limit?: number) =>
   networkGet<Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>>(
     `/referrals/ambassadors${networkQuery({ institutionId, limit })}`

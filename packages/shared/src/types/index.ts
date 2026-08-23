@@ -376,6 +376,8 @@ export enum AppMode {
   DISCOVER = 'DISCOVER',
   // Phase 4 Q — invite friends / referrals
   INVITE_FRIENDS = 'INVITE_FRIENDS',
+  // Phase 4 R — public campus/programme SEO page
+  CAMPUS_PAGE = 'CAMPUS_PAGE',
   COMMUNITY_DETAIL = 'COMMUNITY_DETAIL',
   MARKETPLACE = 'MARKETPLACE',
   MARKETPLACE_LISTING_DETAIL = 'MARKETPLACE_LISTING_DETAIL',
