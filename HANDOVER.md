@@ -6,11 +6,12 @@
 **Production:** https://lanternstudy.com · API https://lantern-study-api.onrender.com (`/health` = deployed short SHA)  
 **Supabase project:** `tiizkjhbrnaibaagmurl`
 
-> **Latest: Phase 4 Q (referrals + ambassadors) is LIVE** — commit `d1aeef5`.
-> Referral codes, activation-gated wallet rewards for both sides, ambassadors and
-> an Invite friends screen. **Migration `20260825120000_referrals.sql` is
-> outstanding but NOT deploy-blocking.** The plan's stated attribution point was
-> wrong and would have lost most referrals — see the doc.
+> **Latest: Phase 4 Q + R are LIVE** — commit `276ce5c`. Referrals with
+> activation-gated wallet rewards, and public SEO campus pages with a bot
+> prerender. Both E2E-verified in production.
+> The plan's stated referral attribution point was wrong and would have lost most
+> referrals — see the doc. Only outstanding migration in the whole programme is
+> `20260824126000_drop_notes_view_count.sql` (not deploy-blocking).
 > **[docs/HANDOVER-2026-08-23-phase4-qr.md](docs/HANDOVER-2026-08-23-phase4-qr.md)**
 >
 > **Knowledge Network Phase 3 (Network) is LIVE** — commits `5b6a119`
@@ -79,7 +80,7 @@ Deploy: Cloudflare Pages (web, **git-connected — auto-deploys on push to `main
 
 ### Active detail docs (newest first)
 
-- **[docs/HANDOVER-2026-08-23-phase4-qr.md](docs/HANDOVER-2026-08-23-phase4-qr.md)** — **Phase 4 Q SHIPPED**: referrals, activation-gated wallet rewards, ambassadors; why the plan's attribution point was wrong; T and W deferred as plan-gated; R next. *(HEAD)*
+- **[docs/HANDOVER-2026-08-23-phase4-qr.md](docs/HANDOVER-2026-08-23-phase4-qr.md)** — **Phase 4 Q + R SHIPPED**: referrals with activation-gated wallet rewards; public SEO campus pages with bot prerender; why the plan's attribution point was wrong; T and W deferred as plan-gated. *(HEAD)*
 - **[docs/HANDOVER-2026-08-23-phase3-network.md](docs/HANDOVER-2026-08-23-phase3-network.md)** — **Phase 3 BUILT, NOT DEPLOYED**: communities + Discover hub (D12 = Discover with marketplace nested), academic feed + counters + presence, trust score v2 + dispute UI, learning-connections north-star metric, Mastery Graph. Five `20260824*` migrations awaiting hand-application; gates green; no E2E yet. *(HEAD — latest work)*
 - **[docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md](docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md)** — **Knowledge Network Phase 2 SHIPPED LIVE (`af97879`→`00350b3`)**: study packs, AI study-product factory, fee model, creators; production E2E results; **the unimplemented Phases 3–4 in full**, open decisions (D8/D11/D12), pending user/ops actions, traps, and the known gaps in what shipped. *(HEAD — latest work)*
 - **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)** — **Knowledge Network Phase 1 SHIPPED LIVE (`504b32c`)**; what shipped, deploy state, decisions made vs open, pending user/ops actions, traps. *(Its "Phases 2–4 not built" section is superseded — Phase 2 is now live.)*

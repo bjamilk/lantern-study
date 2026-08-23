@@ -1,6 +1,6 @@
-# Handover — Phase 4 Q (referrals) SHIPPED; R (SEO campus pages) NOT STARTED
+# Handover — Phase 4 Q + R SHIPPED and E2E-verified
 
-**Date:** 2026-08-23 · **Branch:** `main` · **HEAD:** `d1aeef5`
+**Date:** 2026-08-23 · **Branch:** `main` · **HEAD:** `276ce5c`
 **API:** live on `d1aeef5` · **Web:** live
 
 Phase 4 is plan §4 **Q–W**. This session built **Q**. See
@@ -8,19 +8,14 @@ Phase 4 is plan §4 **Q–W**. This session built **Q**. See
 
 ---
 
-## 0. Outstanding migration
+## 0. Migration state
 
-```
-20260825120000_referrals.sql
-```
+`20260825120000_referrals.sql` is **APPLIED** (verified: `referrals` table and
+both functions return `42501`). The only outstanding migration in the whole
+programme is now **step 7**, `20260824126000_drop_notes_view_count.sql` —
+not deploy-blocking.
 
-**Not deploy-blocking** — the API is already live and everything fails closed
-until it is applied: `handle_new_user()` in production is untouched, the
-`/referrals` routes error into a caught warn, and the clients merely attach
-extra signup metadata that nothing reads yet.
-
-Runbook (steps 7 and 8 outstanding):
-https://claude.ai/code/artifact/d76bc8e5-83ad-424b-9314-b3b178b4bd26
+Runbook: https://claude.ai/code/artifact/d76bc8e5-83ad-424b-9314-b3b178b4bd26
 
 ---
 
@@ -29,7 +24,7 @@ https://claude.ai/code/artifact/d76bc8e5-83ad-424b-9314-b3b178b4bd26
 | Workstream | State | Why |
 |---|---|---|
 | **Q** Campus playbook + referrals | **SHIPPED** | this session |
-| **R** SEO campus/programme pages | **NOT STARTED** | next |
+| **R** SEO campus/programme pages | **SHIPPED** | this session |
 | **S** Turn my semester into products | not started | thin layer over Phase 2 H |
 | **T** Learning effectiveness | **DEFERRED — plan-gated** | "needs C + P to have accrued data". `learning_events` has ~2 days; `user_topic_mastery` was first populated 2026-08-23. Building now would fit a model to noise. |
 | **U** Retention loops | not started | needs retained users |
@@ -113,16 +108,57 @@ recorded end to end. The mobile deep-link path has not been exercised on device.
 
 ---
 
-## 5. Next: R
+## 5. R — what shipped (`276ce5c`)
 
-`/campus/:slug(/:programme)` guest routes, `GET /campuses/:slug/summary`, a Pages
-prerender modelled on `functions/marketplace/listing/[id].ts`, sitemap entries
-and IndexNow.
+- **`services/campusSummary.ts`** + public `GET /api/v1/campuses/:slug/summary`
+  and `GET /api/v1/campuses`, mounted with the public rate limits.
+- **`functions/campus/[slug].ts`** — bot prerender mirroring
+  `functions/marketplace/listing/[id].ts`; every failure path is
+  `context.next()`. `public/_routes.json` already includes `/*`.
+- **`/api/v1/sitemap/campuses.xml`**.
+- **`components/CampusScreen.tsx`** + `AppMode.CAMPUS_PAGE` + guest visibility
+  via `isPublicAppPath`.
 
-**The trap discovery already surfaced:** the API client uses the **service
-role**, so RLS protects nothing on a public endpoint. A campus summary must
-hand-write `active = TRUE`, `status = 'active'`, `visibility = 'public'`,
-`kind <> 'other'` filters. Reading the policies and assuming they apply is the
-easiest way to leak private data onto a public SEO page. Also check
-`public/_routes.json` — it controls which paths invoke Functions, and getting it
-wrong means the prerender never runs.
+**The rule it is built around:** the API client uses the **service role**, so it
+bypasses RLS entirely and every protective policy is inert. Each query
+hand-writes `active`, `status='active'`, `visibility='public'`, `kind <> 'other'`.
+The page exposes aggregate counts, course codes and programme names only — no
+names, avatars, ids or user content. Programme names carry **no counts**, because
+at a small campus "1 student studies X" identifies a person.
+
+### E2E verified in production
+- `GET /campuses/:slug/summary` **200 without any auth header**; response scanned
+  for `email`/`avatar`/`user_id`/`phone`/`settings` — **none present**.
+- Unknown slug → **404**, not 500.
+- `sitemap/campuses.xml` generating real campus URLs.
+- **Bot UA** gets `<title>AbdulKadir Kure University — study groups, past
+  questions & notes</title>` and a campus-specific description; **human UA** gets
+  the SPA shell. The bot/human split works.
+- The page renders with real data (Minna, Niger · 2 listings · Join your campus).
+
+### Not verified
+- **Guest rendering.** Both browsers available were signed in, so `/campus/:slug`
+  has only been seen as a logged-in user. The route is allowed by
+  `isPublicAppPath` and the bot path is confirmed, but a real logged-out visit is
+  unverified.
+- **IndexNow** was not wired into `deploy-web.yml` — sitemap only.
+- No `/campus` index page; only `/campus/:slug`.
+
+## 6. Q — E2E verified in production
+- Migration applied; `referral_code` backfilled (`GET /api/v1/referrals` returns
+  a real code, e.g. `3HYKM7Q`).
+- The Invite screen renders the link, the stat tiles and the honest activation
+  explainer.
+- **A referral has NOT been recorded end to end** — that needs a real signup, and
+  creating a throwaway account on production is the account owner's call. The
+  trigger logic is proven 13/13 in PGlite, and the referral insert is wrapped in
+  `EXCEPTION WHEN OTHERS` so it cannot block a signup even if it errors.
+
+### Fixed during the E2E (`59bfaeb`)
+`readReferralCode()` only ran at signup submit and stashed as a side effect, so a
+link landing on `/`, `/welcome` or a campus page lost the attribution before the
+user ever reached the form. Capture now happens once at app boot in `index.tsx`
+via `utils/referral.ts`, is cleared after signup, and lives in sessionStorage so
+it cannot claim an unrelated signup weeks later. This also revived
+`utils/xhrHeaders.test.ts`, which had never run — the vitest `include` omitted
+`utils/`. Web suites are now 17 files / 115 tests.
