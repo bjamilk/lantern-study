@@ -335,18 +335,27 @@ committed; re-create them from §4 if the migrations change.
    row — a DELETE would be undone by the next profile save.
 4. **The feed must stay pull-based.** Do not turn `activity_events` into a
    realtime channel or fan it out per recipient.
-5. **Not every O writer is wired yet.** Wired: pack entitlement, completed
-   order, question upvote, follow. **Not wired:** challenge completion,
-   group-mate question answered, question VERIFIED, deck-collaborator study,
-   note redemption/copy, pack score, review left, accepted DM request. The
-   service and schema handle them; the hooks are one call each
-   (`getLearningConnectionsService(...).record({...})`).
-6. **Counters `notes.view_count` and `decks.study_count` have columns and an
-   RPC (`record_deck_study`) but no writer wired yet** — nothing calls them, so
-   they stay 0 until a study/view path calls the RPC.
-7. **`Alert.prompt` is iOS-only.** The mobile dispute flow falls back to sending
-   the category alone on Android rather than silently doing nothing; a proper
-   Android text step is a follow-up.
+5. **ALL 12 O writers are now wired** (`8f58bbf`) — the metric no longer
+   systematically undercounts. `challenge_completed` writes a SYMMETRIC PAIR: a
+   duel is mutual, and writing both directions makes an actor/beneficiary
+   inversion impossible by construction. The weekly unique index means a pair
+   duelling ten times still yields exactly two rows.
+6. **Counters resolved** (`8f58bbf`). `decks.study_count` is written from
+   `reviewFlashcard` behind a 6h per-(deck,user) cache guard — that path fires on
+   EVERY graded card (20-100 per session), so an unguarded call would be correct
+   but burn a round trip per card. Owner self-study is excluded so it cannot
+   inflate "studied by N people", and one combined deck lookup now serves the
+   counter, the connection and the pre-existing telemetry, keeping the hot path
+   at its previous query count.
+   **`notes.view_count` was DROPPED** (`20260824126000`), not wired: `public.notes`
+   is in the `supabase_realtime` publication and web subscribes UNFILTERED, so
+   every increment would broadcast to every connected client, each debouncing
+   into `loadNotes()` — a self-amplifying write on a high-traffic read path.
+7. **The mobile dispute flow is a real modal now** (`8f58bbf`). It previously
+   used `Alert.prompt`, which is iOS-only — and iOS has no distributable, so on
+   the ONLY shipping mobile platform the fallback sent the category LABEL as the
+   reason, making `dispute_reason` a duplicate of `dispute_category` and useless
+   for the support triage it exists for.
 8. All the standing repo traps still apply — real repo is `~/Desktop/lantern-study`
    (lowercase), root `tsc` is a FALSE gate, jest must run from inside
    `apps/api-server`, two client trees, `UNFILED_COURSE_ID` is the string
