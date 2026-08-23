@@ -279,6 +279,20 @@ router.get(
       }
     }
 
+    // Phase 4 Q: if this user was referred and has now genuinely activated, pay
+    // both sides. GET /users/me is the right trigger — it fires when the REFEREE
+    // is actually using the app, which is precisely the condition being
+    // rewarded, and it needs no new probe on a hot path. Cached like the
+    // verification sync so it is at most one check an hour per user, and
+    // fire-and-forget so the reward never delays the profile response.
+    const referralCacheKey = `referral:activation:${userId}`;
+    if (!(await cacheService.get(referralCacheKey))) {
+      await cacheService.set(referralCacheKey, '1', 3600);
+      void import('../services/referrals')
+        .then(({ getReferralsService }) => getReferralsService(supabaseService).checkActivation(userId))
+        .catch(() => {});
+    }
+
     res.json({
       success: true,
       data: {

@@ -25,6 +25,7 @@ import type {
   MasteryGraph,
   MyCommunity,
   PresenceSnapshot,
+  ReferralSummary,
   TopicMastery,
 } from "../network";
 import type {
@@ -2971,6 +2972,17 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<{ topics: TopicMastery[] }>('/mastery/refresh', { method: 'POST' }, 20000),
 
     fetchExamReadiness: () => apiRequest<ExamReadiness[]>('/mastery/exam-readiness', {}, 10000),
+
+    /** Phase 4 Q — the caller's referral code, stats and referred users. */
+    fetchReferralSummary: () => apiRequest<ReferralSummary>('/referrals', {}, 10000),
+
+    fetchAmbassadors: (institutionId: string, limit?: number) => {
+      const qs = new URLSearchParams({ institutionId });
+      if (limit) qs.set('limit', String(limit));
+      return apiRequest<
+        Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>
+      >(`/referrals/ambassadors?${qs}`, {}, 10000);
+    },
 
     /** Population aggregate; the server refuses below a 20-student cohort. */
     fetchCourseMastery: (courseId: string) =>

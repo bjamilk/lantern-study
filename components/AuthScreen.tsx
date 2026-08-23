@@ -195,6 +195,29 @@ const AnimatedBackground = () => {
 };
 
 
+/**
+ * Referral code for this signup, if any (Phase 4 · Q).
+ *
+ * Read from `?ref=` and mirrored into sessionStorage, because the code must
+ * survive the login↔signup toggle and a bounce through the confirmation email.
+ * Kept to a conservative charset/length so nothing odd reaches signup metadata.
+ */
+const REFERRAL_STORAGE_KEY = 'lantern_referral_code';
+
+function readReferralCode(): string | null {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('ref');
+    const candidate = (fromUrl || window.sessionStorage.getItem(REFERRAL_STORAGE_KEY) || '')
+      .trim()
+      .toUpperCase();
+    if (!/^[A-Z0-9]{4,16}$/.test(candidate)) return null;
+    if (fromUrl) window.sessionStorage.setItem(REFERRAL_STORAGE_KEY, candidate);
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const { lowDataMode } = useUIStore();
   const location = useLocation();
@@ -444,7 +467,17 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         // Minimal metadata: the post-signin onboarding modal collects username
         // and real names; until then the email prefix stands in as the name.
         const signupName = email.split('@')[0];
-        const signupMetadata = { name: signupName };
+        // Phase 4 Q: referral attribution rides signUp metadata and is consumed
+        // SERVER-SIDE by handle_new_user(). It deliberately is NOT read back in
+        // finishAuthSession: confirming by clicking the emailed link never runs
+        // that function (the session arrives via detectSessionInUrl and
+        // AuthScreen unmounts), so a client-side consumer would silently lose
+        // every email-link signup — the majority of them.
+        const referralCode = readReferralCode();
+        const signupMetadata = {
+          name: signupName,
+          ...(referralCode ? { referral_code: referralCode, referral_source: 'link' } : {}),
+        };
 
         void import('../services/productAnalytics').then(({ trackSignupStarted }) => {
           trackSignupStarted();

@@ -30,6 +30,7 @@ import type {
   MasteryGraph,
   MyCommunity,
   PresenceSnapshot,
+  ReferralSummary,
   TopicMastery,
 } from '@lantern/shared/network'
 import {
@@ -4860,6 +4861,15 @@ export const refreshMasteryGraph = () =>
   networkWrite<{ topics: TopicMastery[] }>('/mastery/refresh', 'POST', undefined, 'Could not refresh');
 
 export const fetchExamReadiness = () => networkGet<ExamReadiness[]>('/mastery/exam-readiness');
+
+// ── Phase 4 Q — referrals ──
+
+export const fetchReferralSummary = () => networkGet<ReferralSummary>('/referrals');
+
+export const fetchAmbassadors = (institutionId: string, limit?: number) =>
+  networkGet<Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>>(
+    `/referrals/ambassadors${networkQuery({ institutionId, limit })}`
+  );
 
 export interface SellerPaymentRow {
   orderId: string;

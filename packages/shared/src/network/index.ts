@@ -331,3 +331,66 @@ export function examCountdownLabel(daysUntil: number): string {
 
 /** Minimum cohort before any population aggregate is shown. Mirrors the RPC. */
 export const MASTERY_MIN_COHORT = 20;
+
+// ---------------------------------------------------------------------------
+// Q — Referrals and ambassadors (Phase 4)
+// ---------------------------------------------------------------------------
+
+export interface ReferralRow {
+  id: string;
+  refereeId: string;
+  /** First name only — a referrer does not get a directory of full names. */
+  refereeName: string | null;
+  status: 'pending' | 'qualified' | 'rewarded';
+  createdAt: string;
+  qualifiedAt: string | null;
+  rewardAmount: number | null;
+}
+
+export interface ReferralSummary {
+  code: string | null;
+  isAmbassador: boolean;
+  total: number;
+  pending: number;
+  qualified: number;
+  coinsEarned: number;
+  referrals: ReferralRow[];
+}
+
+export const REFERRAL_REWARD_REFERRER = 200;
+export const REFERRAL_REWARD_REFEREE = 100;
+
+/** Build the shareable invite link for a code. */
+export function referralLink(code: string, origin = 'https://lanternstudy.com'): string {
+  return `${origin}/signup?ref=${encodeURIComponent(code)}`;
+}
+
+/**
+ * The message a student actually sends. Kept here so web and mobile share one
+ * wording — an invite that reads differently per platform looks like a scam.
+ */
+export function referralShareMessage(code: string, origin?: string): string {
+  return (
+    `I'm using Lantern Study for flashcards, past questions and study groups. ` +
+    `Join with my link and we both get ${REFERRAL_REWARD_REFEREE} coins once you get going: ` +
+    referralLink(code, origin)
+  );
+}
+
+const REFERRAL_STATUS_LABELS: Record<ReferralRow['status'], string> = {
+  pending: 'Signed up',
+  qualified: 'Started studying',
+  rewarded: 'Bonus paid',
+};
+
+export function referralStatusLabel(status: ReferralRow['status']): string {
+  return REFERRAL_STATUS_LABELS[status] ?? 'Signed up';
+}
+
+/**
+ * Explains the gate honestly. The reward lands when the person you invited
+ * actually studies — saying so up front prevents the "I invited 5 people and
+ * got nothing" support ticket.
+ */
+export const REFERRAL_ACTIVATION_EXPLAINER =
+  'Your bonus lands once they have really started — about ten study actions across two different days.';

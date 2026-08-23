@@ -78,6 +78,8 @@ import communityRoutes, {
   initializeCommunityRoutes,
 } from './routes/communities';
 import feedRoutes, { masteryRouter, initializeFeedRoutes } from './routes/feed';
+// Phase 4 Q — referrals + ambassadors
+import referralRoutes, { initializeReferralRoutes } from './routes/referrals';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -184,6 +186,7 @@ async function initializeServices() {
     initializeReportRoutes(supabaseService, cacheService);
     initializeCommunityRoutes(supabaseService);
     initializeFeedRoutes(supabaseService);
+    initializeReferralRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -391,6 +394,7 @@ async function startServer() {
     app.use('/api/v1/discover', discoverRouter);
     app.use('/api/v1/feed', feedRoutes);
     app.use('/api/v1/mastery', masteryRouter);
+    app.use('/api/v1/referrals', referralRoutes);
     app.use('/api/v1/reports', reportRoutes);
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);

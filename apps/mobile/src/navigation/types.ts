@@ -18,7 +18,8 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
-  SignUp: undefined;
+  // Phase 4 Q: `ref` carries a referral code in from an invite deep link.
+  SignUp: { ref?: string } | undefined;
   ForgotPassword: undefined;
   VerifyEmail: { email: string };
   ResetPassword: undefined;

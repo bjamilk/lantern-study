@@ -48,6 +48,8 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return '/flashcards';
     case AppMode.DECK_DETAIL:
       return params.deckId ? `/flashcards/deck/${encodeURIComponent(params.deckId)}` : '/flashcards';
+    case AppMode.INVITE_FRIENDS:
+      return '/invite';
     case AppMode.DISCOVER:
       return '/discover';
     case AppMode.COMMUNITY_DETAIL:
@@ -137,6 +139,7 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/chat') return { mode: AppMode.CHAT, params: {}, clearChat: true };
   if (path === '/groups/new') return { mode: AppMode.CREATE_GROUP, params: {} };
   if (path === '/flashcards') return { mode: AppMode.FLASHCARDS, params: {}, clearDeck: true };
+  if (path === '/invite') return { mode: AppMode.INVITE_FRIENDS, params: {} };
   if (path === '/discover') return { mode: AppMode.DISCOVER, params: {} };
   if (path.startsWith('/discover/c/')) {
     const slug = decodeURIComponent(path.slice('/discover/c/'.length));

@@ -87,6 +87,7 @@ const MarketplacePurchasesScreen = lazyWithRetry(() => import('./components/Mark
 const StudyProductDraftsScreen = lazyWithRetry(() => import('./components/StudyProductDraftsScreen'));
 const CreatorProfileScreen = lazyWithRetry(() => import('./components/CreatorProfileScreen'));
 const DiscoverScreen = lazyWithRetry(() => import('./components/DiscoverScreen'));
+const InviteFriendsScreen = lazyWithRetry(() => import('./components/InviteFriendsScreen'));
 const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
@@ -1157,6 +1158,7 @@ export const App: React.FC = () => {
                     onOpenCreateDeck={handleOpenCreateDeckModal}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
                     onNavigateToDiscover={() => navigateTo(AppMode.DISCOVER)}
+                    onNavigateToInvite={() => navigateTo(AppMode.INVITE_FRIENDS)}
                     onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
@@ -1627,6 +1629,8 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE);
                         }
                     }} />;
+            case AppMode.INVITE_FRIENDS:
+                return <InviteFriendsScreen onBack={() => setAppMode(AppMode.DASHBOARD)} />;
             case AppMode.DISCOVER:
                 // Phase 3 L / decision D12: Discover is the hub and the
                 // marketplace is one of its tabs, so 'Marketplace' here is a
@@ -1899,6 +1903,7 @@ export const App: React.FC = () => {
         onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
         onNavigateToMarketplace: () => navigateTo(AppMode.MARKETPLACE),
         onNavigateToDiscover: () => navigateTo(AppMode.DISCOVER),
+        onNavigateToInvite: () => navigateTo(AppMode.INVITE_FRIENDS),
         onNavigateToAdmin: () => navigateTo(AppMode.ADMIN),
         pendingSyncCount: pendingSyncResults.length + pendingFlashcardReviews.length, isOnline,
         onSyncPendingResults: handleSyncResults,

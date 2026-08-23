@@ -6,7 +6,7 @@ import AIUsageBadge from './AIUsageBadge';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
 import { compressImage } from '../utils/imageCompression';
 import { resolveAvatarSrc } from '../utils/avatar';
-import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, GlobeAltIcon, GiftIcon } from '@heroicons/react/24/outline';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useUIStore } from '../stores/uiStore';
@@ -27,6 +27,8 @@ interface SidebarProps {
   onNavigateToMarketplace: () => void;
   /** Phase 3 L / D12: Discover replaces Explore; the marketplace nests inside it. */
   onNavigateToDiscover?: () => void;
+  /** Phase 4 Q — invite friends / referrals. */
+  onNavigateToInvite?: () => void;
   onNavigateToAdmin?: () => void;
   pendingSyncCount: number;
   isOnline: boolean;
@@ -66,6 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNavigateToBudgetTracker,
   onNavigateToMarketplace,
   onNavigateToDiscover,
+  onNavigateToInvite,
   onNavigateToAdmin,
   pendingSyncCount,
   isOnline,
@@ -344,6 +347,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             <NavButton navFunc={onNavigateToBudgetTracker} icon={BanknotesIcon} label="Budget" appMode={AppMode.BUDGET_TRACKER} tipId="nav.budget" />
             {onOpenWallet && (
               <NavButton navFunc={onOpenWallet} icon={SparklesIcon} label="Study wallet" />
+            )}
+            {onNavigateToInvite && (
+              <NavButton navFunc={onNavigateToInvite} icon={GiftIcon} label="Invite friends" appMode={AppMode.INVITE_FRIENDS} />
             )}
             <NavButton navFunc={onNavigateToOfflineMode} icon={CloudArrowDownIcon} label="Offline Activity" appMode={AppMode.OFFLINE_MODE} badgeCount={pendingSyncCount} tipId="nav.offline" />
             {isPlatformAdmin && onNavigateToAdmin && (

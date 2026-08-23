@@ -374,6 +374,8 @@ export enum AppMode {
   // Phase 3 L (decision D12): Discover is the hub — communities, groups,
   // people, trending — with the marketplace nested as one of its tabs.
   DISCOVER = 'DISCOVER',
+  // Phase 4 Q — invite friends / referrals
+  INVITE_FRIENDS = 'INVITE_FRIENDS',
   COMMUNITY_DETAIL = 'COMMUNITY_DETAIL',
   MARKETPLACE = 'MARKETPLACE',
   MARKETPLACE_LISTING_DETAIL = 'MARKETPLACE_LISTING_DETAIL',

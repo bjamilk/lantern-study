@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +46,7 @@ interface FormErrors {
   confirmPassword?: string;
 }
 
-export default function SignUpScreen({ navigation }: SignUpScreenProps) {
+export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
   const { colors } = useTheme();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -192,6 +193,10 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
             institution_id: academicFields.institutionId,
             programme: academicFields.programme,
             study_level: academicFields.studyLevel,
+            // Phase 4 Q: consumed SERVER-SIDE by handle_new_user(); the client
+            // never grants anything. Signup is worth nothing on its own —
+            // mobile has no Turnstile, so the reward is gated on activation.
+            ...(referralCode ? { referral_code: referralCode, referral_source: 'link' } : {}),
           },
         },
       });
@@ -261,6 +266,39 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
     validateForm,
     navigation,
   ]);
+
+  /**
+   * Referral code for this signup (Phase 4 · Q).
+   *
+   * Sourced from the invite deep link (`lanternstudy://signup?ref=CODE` or the
+   * https equivalent). Read once on mount so it survives re-renders, and
+   * validated to a conservative charset so nothing odd reaches signup metadata.
+   */
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const normalize = (raw?: string | null): string | null => {
+      const candidate = (raw || '').trim().toUpperCase();
+      return /^[A-Z0-9]{4,16}$/.test(candidate) ? candidate : null;
+    };
+    const fromParams = normalize((route?.params as { ref?: string } | undefined)?.ref);
+    if (fromParams) {
+      setReferralCode(fromParams);
+      return;
+    }
+    void Linking.getInitialURL()
+      .then((url) => {
+        if (cancelled || !url) return;
+        const match = /[?&]ref=([^&#]+)/.exec(url);
+        const code = normalize(match ? decodeURIComponent(match[1]) : null);
+        if (code) setReferralCode(code);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [route?.params]);
 
   const clearError = (field: keyof FormErrors) => {
     if (errors[field]) {
