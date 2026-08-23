@@ -1293,6 +1293,17 @@ export default function DashboardScreen({
           />
         )}
 
+        {/*
+          Phase 3 M: the academic feed is a PRIMARY surface, so it sits above
+          "Progress & analytics" rather than inside it — that section is
+          collapsed by default and unmounts its children, and a feed nobody
+          sees is not a feed. Fetches and fails independently: it cannot blank
+          the dashboard if /feed is unavailable.
+        */}
+        <div className="mb-6">
+          <AcademicFeedPanel onNavigate={onNavigateFromFeed} />
+        </div>
+
         <DashboardProgress defaultOpen={false}>
         {/* ─── Stat Cards Row ─── */}
         <DashboardStatGrid
@@ -1499,12 +1510,12 @@ export default function DashboardScreen({
 
         {/* ─── Two-Column Layout: Achievements + Analysis ─── */}
         {/*
-          Phase 3 M + P: the network feed and the server-side mastery graph.
-          Both panels fetch independently and fail independently — neither can
-          blank the dashboard if its endpoint is unavailable.
+          Phase 3 P: the server-side mastery graph. This one belongs inside
+          "Progress & analytics" — it IS topic analytics, and it sits next to
+          Achievements & Topic Insights. The FEED does not belong here and is
+          rendered above, outside the collapsible.
         */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <AcademicFeedPanel onNavigate={onNavigateFromFeed} />
+        <div className="mb-6">
           <MasteryPanel />
         </div>
 

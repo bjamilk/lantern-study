@@ -4740,7 +4740,10 @@ export const unfollowCreator = async (userId: string): Promise<void> => {
 const networkGet = async <T>(path: string, timeout = 10000, fallbackError = 'Request failed'): Promise<T> => {
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1${path}`,
-    { method: 'GET', headers: await getAuthHeaders() },
+    // withApiCredentials adds `credentials: 'include'` in cookie-auth mode.
+    // Without it these reads depend on getAuthHeaders() having a bearer token,
+    // which is not guaranteed on a cold start.
+    withApiCredentials({ method: 'GET', headers: await getAuthHeaders() }),
     timeout
   );
   if (!response.ok) {
@@ -4758,11 +4761,16 @@ const networkWrite = async <T>(
 ): Promise<T> => {
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1${path}`,
-    {
+    // MUST go through withApiCredentials: it supplies the
+    // `X-Requested-With: LanternStudy` header that csrfProtectionMiddleware
+    // demands on every mutating cookie-authenticated request. Without it these
+    // writes 403 with CSRF_VALIDATION_FAILED whenever getAuthHeaders() has no
+    // bearer token to fall back on.
+    withApiCredentials({
       method,
       headers: { ...(await getAuthHeaders()), 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    },
+    }),
     10000
   );
   if (!response.ok) {
