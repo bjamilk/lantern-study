@@ -9,6 +9,12 @@ import {
 } from "./marketplaceCache";
 import { retryUncertainDelivery } from "../utils/deliveryIntegrity";
 import type {
+  StudyPackContentInput,
+  StudyPackCounts,
+  StudyPackDraft,
+  StudyPackDraftSummary,
+} from "../marketplace/studyPacks";
+import type {
   Concept,
   ConceptLink,
   ContentReport,
@@ -2626,6 +2632,247 @@ export function createApiEndpoints(client: ApiClient) {
           questionCount: number;
         }>
       >(`/marketplace/question-banks/updates`, {}, 10000),
+
+    // ── Study packs (digital study products: guide + summaries + flashcards + questions) ──
+
+    /** Free packs and owner re-downloads; delivers into offline_bundles + a deck + a note. */
+    downloadStudyPack: (listingId: string) =>
+      apiRequest<{
+        bundleId: string | null;
+        deckId: string | null;
+        noteId: string | null;
+        version: number;
+      }>(
+        `/marketplace/listings/${listingId}/study-pack/download`,
+        { method: "POST" },
+        15000,
+      ),
+
+    /** Public sample — question answers are stripped server-side. */
+    fetchStudyPackPreview: (listingId: string) =>
+      apiRequest<{
+        title: string;
+        counts: StudyPackCounts;
+        toc: Array<{ title: string; anchor: string }>;
+        summaryPreview: string | null;
+        flashcardFronts: string[];
+        questions: Array<{
+          id?: string;
+          questionStem?: string;
+          text?: string;
+          questionType?: string;
+          options?: Array<{ id: string; text: string }>;
+          imageUrl?: string;
+          tags?: string[];
+        }>;
+        owned: boolean;
+        isSeller: boolean;
+        version: number;
+      }>(`/marketplace/listings/${listingId}/study-pack/preview`, {}, 10000),
+
+    /** Publish a study pack as a digital listing (from inline content or an AI draft). */
+    publishStudyPack: (input: {
+      title: string;
+      description?: string;
+      price?: number | null;
+      campusId: string;
+      location?: string;
+      courseId?: string | null;
+      content?: StudyPackContentInput;
+      /** Consume a ready AI draft instead of inline content (Phase 2 · H). */
+      draftId?: string | null;
+      /** Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; 400 without it. */
+      attestation: true;
+      aiAssisted?: boolean;
+      sourcesCited?: string[];
+    }) =>
+      apiRequest<{
+        listing: { id: string; title: string };
+        pack: { listingId: string; packId: string; version: number };
+      }>(
+        `/marketplace/study-packs/publish`,
+        { method: "POST", body: JSON.stringify(input) },
+        20000,
+      ),
+
+    /** Seller republish: replace the snapshot, bumping the version. Re-requires attestation. */
+    updateStudyPackContent: (
+      listingId: string,
+      content: StudyPackContentInput,
+      provenance?: { attestation: boolean; aiAssisted?: boolean; sourcesCited?: string[] },
+    ) =>
+      apiRequest<{ version: number; counts: StudyPackCounts }>(
+        `/marketplace/study-packs/${listingId}/update-content`,
+        { method: "POST", body: JSON.stringify({ content, ...(provenance ?? {}) }) },
+        20000,
+      ),
+
+    /** Study packs the caller has published. */
+    fetchMyStudyPacks: () =>
+      apiRequest<
+        Array<{
+          listingId: string;
+          version: number;
+          counts: StudyPackCounts;
+          courseId: string | null;
+          title: string;
+          price: number | null;
+          status: string;
+        }>
+      >(`/marketplace/study-packs/mine`, {}, 10000),
+
+    /** Re-materialize owned packs onto this device (deck/note/bundle). */
+    restoreStudyPacks: () =>
+      apiRequest<{ restored: number }>(
+        `/marketplace/study-packs/restore`,
+        { method: "POST" },
+        20000,
+      ),
+
+    /** Owned packs whose published version is newer than the local copy. */
+    fetchStudyPackUpdates: () =>
+      apiRequest<
+        Array<{
+          listingId: string;
+          bundleId: string;
+          version: number;
+          counts: StudyPackCounts;
+        }>
+      >(`/marketplace/study-packs/updates`, {}, 10000),
+
+    /** Unified buyer library across question banks + study packs. */
+    fetchMarketplacePurchases: () =>
+      apiRequest<
+        Array<{
+          listingId: string;
+          kind: "question_bank" | "study_pack";
+          title: string;
+          sellerId: string;
+          sellerName: string;
+          version: number;
+          versionAtDownload: number;
+          updateAvailable: boolean;
+          deliveredRefs: { bundleId?: string; deckId?: string; noteId?: string; version?: number };
+          courseId: string | null;
+          purchasedAt: string;
+        }>
+      >(`/marketplace/purchases`, {}, 10000),
+
+    // ── AI Study Product Factory (Phase 2 · H) ──
+
+    /** Charge 5 AI credits and start generating a study-pack draft (async). */
+    // Uses the raw response: the route replies with a flat 202/201 (draftId at
+    // the top level), not a { data } envelope.
+    createStudyPackDraft: (input: {
+      noteIds?: string[];
+      folderId?: string | null;
+      courseId?: string | null;
+      title?: string;
+    }) =>
+      apiRequestRaw<{
+        success: true;
+        draftId: string;
+        jobId?: string;
+        status?: string;
+        draft?: StudyPackDraft;
+      }>(
+        `/ai/study-pack/draft`,
+        { method: "POST", body: JSON.stringify(input) },
+        30000,
+      ),
+
+    /** The caller's drafts (excludes already-published ones). */
+    fetchStudyPackDrafts: () =>
+      apiRequest<StudyPackDraftSummary[]>(`/ai/study-pack/drafts`, {}, 10000),
+
+    /** One draft with its full generated content. */
+    fetchStudyPackDraft: (draftId: string) =>
+      apiRequest<StudyPackDraft>(`/ai/study-pack/drafts/${draftId}`, {}, 10000),
+
+    deleteStudyPackDraft: (draftId: string) =>
+      apiRequestRaw<{ success: true }>(
+        `/ai/study-pack/drafts/${draftId}`,
+        { method: "DELETE" },
+        10000,
+      ),
+
+    // ── Creators (Phase 2 · J) ──
+
+    /** Public creator profile: academic line, bio, stats, packs. Never earnings. */
+    fetchCreatorProfile: (userId: string) =>
+      apiRequest<{
+        id: string;
+        username: string | null;
+        name: string;
+        avatarUrl: string | null;
+        bio: string | null;
+        institution: string | null;
+        programme: string | null;
+        studyLevel: number | null;
+        stats: {
+          activePacks: number;
+          learnersHelped: number;
+          avgRating: number;
+          reviewCount: number;
+          followerCount: number;
+          followingCount?: number;
+        };
+        isFollowing: boolean;
+        isVerified: boolean;
+        trustLevel: string;
+        packs: Array<{
+          id: string;
+          title: string;
+          price: number | null;
+          images: string[];
+          listingKind: string;
+          courseId: string | null;
+        }>;
+      }>(`/creators/${userId}`, {}, 10000),
+
+    fetchCreatorDiscovery: (params: { institutionId?: string; courseId?: string; limit?: number } = {}) => {
+      const q = new URLSearchParams();
+      if (params.institutionId) q.set('institutionId', params.institutionId);
+      if (params.courseId) q.set('courseId', params.courseId);
+      if (params.limit) q.set('limit', String(params.limit));
+      return apiRequest<
+        Array<{
+          id: string;
+          name: string;
+          username: string | null;
+          avatarUrl: string | null;
+          programme: string | null;
+          activePacks: number;
+          learnersHelped: number;
+          avgRating: number;
+          followerCount: number;
+          trustLevel: string;
+          isVerified: boolean;
+        }>
+      >(`/creators/discover${q.toString() ? `?${q}` : ''}`, {}, 10000);
+    },
+
+    followCreator: (userId: string) =>
+      apiRequest<{ following: true }>(`/users/${userId}/follow`, { method: 'POST' }, 10000),
+
+    unfollowCreator: (userId: string) =>
+      apiRequest<{ following: false }>(`/users/${userId}/follow`, { method: 'DELETE' }, 10000),
+
+    /** The seller's earnings ledger (Phase 2 · I). Owner-only server-side. */
+    fetchSellerPayments: (page = 1) =>
+      apiRequest<
+        Array<{
+          orderId: string;
+          listingId: string | null;
+          title: string;
+          itemAmountKobo: number;
+          platformFeeKobo: number;
+          sellerPayoutKobo: number;
+          status: string;
+          paidAt: string | null;
+          payoutAt: string | null;
+        }>
+      >(`/marketplace/seller/payments?page=${page}`, {}, 10000),
 
     fetchMarketplacePaymentsConfig: () =>
       apiRequest<{

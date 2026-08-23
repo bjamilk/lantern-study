@@ -102,6 +102,11 @@ export type MarketStackParamList = {
   Favorites: undefined;
   Orders: undefined;
   Cart: undefined;
+  Purchases: undefined;
+  StudyProductDrafts:
+    | { source?: { noteIds?: string[]; folderId?: string | null; courseId?: string | null; title?: string } }
+    | undefined;
+  CreatorProfile: { userId: string };
   OrderDetail: {
     orderId: string;
     paymentReturn?: boolean;

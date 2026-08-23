@@ -208,6 +208,11 @@ export class MarketplaceQuestionBanksService {
       throw error || new Error('Failed to store question bank content');
     }
 
+    // Creator counters (Phase 2 · J) — question banks count as published
+    // products too. Never throws.
+    const { getCreatorsService } = await import('./creators');
+    await getCreatorsService(this.supabaseService).refreshStats(userId);
+
     // Advisory content flags (lecturer slides / copyrighted material wording)
     // become an under-review content_report on the listing; never blocks publish.
     if (contentFlags.length > 0) {

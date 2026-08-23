@@ -7,6 +7,7 @@ import {
   ReceiptPercentIcon,
   PlusIcon,
   HeartIcon,
+  RectangleStackIcon,
   EllipsisHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import { Menu, MenuTrigger, MenuContent, MenuItem } from '../ui';
@@ -15,6 +16,7 @@ export type MarketplaceWorkspaceSection =
   | 'browse'
   | 'orders'
   | 'cart'
+  | 'purchases'
   | 'selling'
   | 'inquiries'
   | 'favorites';
@@ -123,6 +125,15 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
         >
           <ShoppingCartIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Cart</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate('MarketplacePurchases')}
+          className={navBtn(active === 'purchases')}
+          aria-current={active === 'purchases' ? 'page' : undefined}
+        >
+          <RectangleStackIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <span>Purchases</span>
         </button>
         <button
           type="button"

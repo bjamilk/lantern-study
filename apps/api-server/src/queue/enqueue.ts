@@ -15,6 +15,7 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   "notes.ai.summarize": "ai-generation",
   "notes.ai.quiz": "ai-generation",
   "notes.ai.flashcards": "ai-generation",
+  "ai.studyPack.generate": "ai-generation",
   "deck.importApkg": "file-processing",
   "notes.presentation.preview": "file-processing",
   "notes.youtube.transcript": "file-processing",

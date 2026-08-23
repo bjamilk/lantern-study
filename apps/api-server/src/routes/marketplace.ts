@@ -12,6 +12,7 @@ import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { getMarketplaceCartService } from '../services/marketplaceCart';
 import { getMarketplaceQuestionBanksService } from '../services/marketplaceQuestionBanks';
+import { getMarketplaceStudyPacksService } from '../services/marketplaceStudyPacks';
 import {
   assertListingAttestation,
   getModerationService,
@@ -32,6 +33,7 @@ import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
   OTHER_CITY_CAMPUS_SLUG,
+  isDigitalListingKind,
   isMarketplaceListingModerated,
   marketplaceListingModerationNotice,
 } from '@lantern/shared/marketplace';
@@ -1060,6 +1062,192 @@ router.post(
   })
 );
 
+// ============================================================
+// STUDY PACKS (digital study products: guide + summaries + flashcards + questions)
+// ============================================================
+
+// POST /api/v1/marketplace/study-packs/publish - Publish a pack as a listing
+router.post(
+  '/study-packs/publish',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const result = await getMarketplaceStudyPacksService(supabaseService).publishStudyPack(userId, {
+        title: req.body?.title,
+        description: req.body?.description,
+        price: req.body?.price,
+        campusId: req.body?.campusId ?? req.body?.campus_id,
+        location: req.body?.location,
+        courseId: req.body?.courseId ?? req.body?.course_id ?? null,
+        content: req.body?.content,
+        draftId: req.body?.draftId ?? req.body?.draft_id ?? null,
+        // Rights attestation (required) + provenance (Phase 1 · E).
+        attestation: req.body?.attestation,
+        aiAssisted: req.body?.aiAssisted ?? req.body?.ai_assisted,
+        sourcesCited: req.body?.sourcesCited ?? req.body?.sources_cited,
+      });
+      await cacheService.deletePattern('marketplace:listings:*');
+      res.status(201).json({ success: true, data: result });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+      // The content filter throws a moderationError (statusCode 400) with a
+      // user-safe message; surface it rather than masking it as a 500.
+      if (typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// POST /api/v1/marketplace/listings/:id/study-pack/download - Free download / owner re-download
+router.post(
+  '/listings/:id/study-pack/download',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const result = await getMarketplaceStudyPacksService(supabaseService).downloadStudyPack(
+        req.params.id,
+        userId,
+        { surface: surfaceFromRequest(req) }
+      );
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// POST /api/v1/marketplace/study-packs/restore - Re-materialize owned packs
+// (new device / reinstall), self-healing missed fulfillments.
+router.post(
+  '/study-packs/restore',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const result = await getMarketplaceStudyPacksService(supabaseService).restoreEntitlements(userId);
+    res.json({ success: true, data: result });
+  })
+);
+
+// GET /api/v1/marketplace/listings/:id/study-pack/preview - Public sample
+router.get(
+  '/listings/:id/study-pack/preview',
+  optionalAuthMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    try {
+      const data = await getMarketplaceStudyPacksService(supabaseService).getStudyPackPreview(
+        req.params.id,
+        req.user?.id
+      );
+      res.json({ success: true, data });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        return res.status(404).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// GET /api/v1/marketplace/study-packs/mine - Packs published by the caller
+router.get(
+  '/study-packs/mine',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const data = await getMarketplaceStudyPacksService(supabaseService).listMyStudyPacks(userId);
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/marketplace/study-packs/updates - Owned packs with a newer version
+router.get(
+  '/study-packs/updates',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const data = await getMarketplaceStudyPacksService(supabaseService).listAvailableUpdates(userId);
+    res.json({ success: true, data });
+  })
+);
+
+// POST /api/v1/marketplace/study-packs/:id/update-content - Seller republish (version+1)
+router.post(
+  '/study-packs/:id/update-content',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const result = await getMarketplaceStudyPacksService(supabaseService).updateStudyPackContent(
+        req.params.id,
+        userId,
+        req.body?.content,
+        {
+          // Every republish re-requires the rights attestation (400 without it).
+          attestation: req.body?.attestation,
+          aiAssisted: req.body?.aiAssisted ?? req.body?.ai_assisted,
+          sourcesCited: req.body?.sourcesCited ?? req.body?.sources_cited,
+        }
+      );
+      await invalidateListingCaches(cacheService, req.params.id);
+      await cacheService.deletePattern('marketplace:listings:*');
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        const code = (err as { statusCode?: number }).statusCode;
+        const status =
+          typeof code === 'number' && code >= 400 && code < 500 ? code : 400;
+        return res.status(status).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// GET /api/v1/marketplace/purchases - Unified buyer library (question banks + study packs)
+router.get(
+  '/purchases',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const data = await getMarketplaceStudyPacksService(supabaseService).listPurchases(userId);
+    res.json({ success: true, data });
+  })
+);
+
 // GET /api/v1/marketplace/cart - Buyer cart lines
 router.get(
   '/cart',
@@ -1923,12 +2111,13 @@ router.post(
     if (listing.user_id === userId) {
       return res.status(400).json({ success: false, error: 'Cannot make an offer on your own listing' });
     }
-    // Question banks are fixed-price digital goods; the offer-accept order path
-    // is meetup-shaped (reserves the listing), so offers are not supported.
-    if (listing.listing_kind === 'question_bank') {
+    // Digital products (question banks, study packs) are fixed-price; the
+    // offer-accept order path is meetup-shaped (reserves the listing), so offers
+    // are not supported.
+    if (isDigitalListingKind(listing.listing_kind)) {
       return res.status(400).json({
         success: false,
-        error: 'Question banks are fixed-price — use Buy Now or the free download',
+        error: 'Digital products are fixed-price — use Buy Now or the free download',
       });
     }
 
@@ -2645,6 +2834,33 @@ router.get(
       }
     }
 
+    // --- 6b. Study-pack meta (digital listings): counts/version + ownership ---
+    let studyPack: { counts: unknown; version: number; owned: boolean } | null = null;
+    if (listing.listing_kind === 'study_pack') {
+      try {
+        const { data: pack } = await supabaseService.getClient()
+          .from('marketplace_study_packs')
+          .select('counts, version')
+          .eq('listing_id', id)
+          .maybeSingle();
+        if (pack) {
+          let owned = false;
+          if (viewerId) {
+            const { data: entitlement } = await supabaseService.getClient()
+              .from('marketplace_question_bank_entitlements')
+              .select('id')
+              .eq('listing_id', id)
+              .eq('user_id', viewerId)
+              .maybeSingle();
+            owned = !!entitlement;
+          }
+          studyPack = { counts: pack.counts, version: pack.version, owned };
+        }
+      } catch {
+        studyPack = null; // meta is decorative; never block the listing
+      }
+    }
+
     // Rights / takedown / appeal columns are owner/admin-only; strip for everyone
     // else (the public cache above stores the raw row, so this must run on every
     // response, cache hit or miss).
@@ -2656,7 +2872,7 @@ router.get(
 
     res.json({
       success: true,
-      data: { listing: responseListing, isFavorited, similarListings, canReview, questionBank },
+      data: { listing: responseListing, isFavorited, similarListings, canReview, questionBank, studyPack },
     });
   })
 );
@@ -2975,15 +3191,41 @@ router.get(
   asyncHandler(async (_req: any, res: any) => {
     const { marketplacePaystackEnabled } = await import('../services/marketplacePayments');
     const { getPaystackPublicKey } = await import('../services/paystack');
-    const { resolveMarketplaceServiceFeeBps } = await import('@lantern/shared/marketplace');
+    const {
+      resolveMarketplaceServiceFeeBps,
+      resolveMarketplaceDigitalBuyerFeeBps,
+      resolveMarketplaceCreatorFeeBps,
+    } = await import('@lantern/shared/marketplace');
     res.json({
       success: true,
       data: {
         paystackEnabled: marketplacePaystackEnabled(),
         publicKey: marketplacePaystackEnabled() ? getPaystackPublicKey() : null,
         serviceFeeBps: resolveMarketplaceServiceFeeBps(process.env.MARKETPLACE_SERVICE_FEE_BPS),
+        // Digital fee model (Phase 2 · I): buyer surcharge on digital (default 0)
+        // and the creator commission taken from the payout (default 1500 = 15%).
+        digitalBuyerFeeBps: resolveMarketplaceDigitalBuyerFeeBps(process.env.MARKETPLACE_DIGITAL_BUYER_FEE_BPS),
+        creatorFeeBps: resolveMarketplaceCreatorFeeBps(process.env.MARKETPLACE_CREATOR_FEE_BPS),
       },
     });
+  })
+);
+
+// GET /api/v1/marketplace/seller/payments - the seller's earnings ledger (Phase 2 · I)
+router.get(
+  '/seller/payments',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { getMarketplacePaymentsService } = await import('../services/marketplacePayments');
+    const page = req.query?.page ? Number(req.query.page) : 1;
+    const data = await getMarketplacePaymentsService(supabaseService).getSellerPayments(
+      userId,
+      Number.isFinite(page) && page > 0 ? page : 1
+    );
+    res.json({ success: true, data });
   })
 );
 

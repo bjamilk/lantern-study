@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { ChartBarIcon, HeartIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import React, { useEffect, useState } from 'react';
+import { ChartBarIcon, HeartIcon, XMarkIcon, BanknotesIcon } from '@heroicons/react/24/outline';
 import type { SellerAnalytics } from '../../types';
 import { Drawer } from '../ui';
-import { updateSellerPreferences } from '../../services/supabase';
+import { updateSellerPreferences, fetchSellerPayments, type SellerPaymentRow } from '../../services/supabase';
 import { SellerPayoutSetup } from './SellerPayoutSetup';
 import { useToastStore } from '../../stores/toastStore';
 
@@ -34,6 +34,15 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
   onHallDropoffMinChange,
 }) => {
   const [savingPrefs, setSavingPrefs] = useState(false);
+  // Earnings ledger (Phase 2 · I): what each sale paid out after the Lantern fee.
+  const [payments, setPayments] = useState<SellerPaymentRow[] | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void fetchSellerPayments(1)
+      .then(setPayments)
+      .catch(() => setPayments([]));
+  }, [isOpen]);
 
   return (
     <Drawer isOpen={isOpen} onClose={onClose} maxWidthClass="max-w-md" side="right" ariaLabelledBy="seller-insights-title">
@@ -217,6 +226,44 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
             ) : null}
           </>
         )}
+
+        {payments && payments.length > 0 ? (
+          <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border overflow-x-auto">
+            <p className="text-xs font-semibold text-lantern-text-secondary mb-2 flex items-center gap-1">
+              <BanknotesIcon className="w-4 h-4" /> Earnings
+            </p>
+            <table className="w-full text-xs text-left tabular-nums">
+              <thead>
+                <tr className="text-lantern-text-secondary border-b border-lantern-border">
+                  <th className="py-1 pr-2 font-medium">Sale</th>
+                  <th className="py-1 px-1 font-medium">Price</th>
+                  <th className="py-1 px-1 font-medium">Fee</th>
+                  <th className="py-1 px-1 font-medium">You get</th>
+                  <th className="py-1 pl-1 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.slice(0, 10).map((p) => (
+                  <tr key={p.orderId} className="border-b border-lantern-border/60 last:border-0">
+                    <td className="py-1.5 pr-2 text-lantern-text max-w-[9rem] truncate" title={p.title}>
+                      {p.title}
+                    </td>
+                    <td className="py-1.5 px-1">₦{Math.round(p.itemAmountKobo / 100).toLocaleString()}</td>
+                    <td className="py-1.5 px-1 text-lantern-text-tertiary">
+                      {p.platformFeeKobo > 0 ? `−₦${Math.round(p.platformFeeKobo / 100).toLocaleString()}` : '—'}
+                    </td>
+                    <td className="py-1.5 px-1 font-semibold text-lantern-text">
+                      ₦{Math.round(p.sellerPayoutKobo / 100).toLocaleString()}
+                    </td>
+                    <td className="py-1.5 pl-1 capitalize">
+                      {p.payoutAt ? 'paid out' : p.status.replace(/_/g, ' ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
 
         <SellerPayoutSetup
           showToast={(message, type) => useToastStore.getState().showToast(message, type || 'info')}

@@ -28,6 +28,26 @@ export function isMarketplaceListingStatus(
   );
 }
 
+/**
+ * Digital listing kinds. These fulfil instantly by copying content into the
+ * buyer's own data (offline bundles / decks / notes), never sell out, are never
+ * reserved, and cannot be sold via cart/checkout or offers — only Buy Now or a
+ * free download. Keep in sync with the `listing_kind IN (...)` sets in
+ * supabase/migrations/20260823120000_study_packs.sql.
+ */
+export const MARKETPLACE_DIGITAL_LISTING_KINDS = ['question_bank', 'study_pack'] as const;
+export type MarketplaceDigitalListingKind =
+  (typeof MARKETPLACE_DIGITAL_LISTING_KINDS)[number];
+
+export function isDigitalListingKind(
+  kind: MarketplaceListing['listing_kind'] | string | null | undefined,
+): kind is MarketplaceDigitalListingKind {
+  return (
+    typeof kind === 'string' &&
+    (MARKETPLACE_DIGITAL_LISTING_KINDS as readonly string[]).includes(kind)
+  );
+}
+
 /** Set by moderation only. A seller can never enter or leave these. */
 export const MARKETPLACE_MODERATED_LISTING_STATUSES: readonly MarketplaceListingStatus[] = [
   'suspended_by_admin',

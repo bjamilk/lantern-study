@@ -18,9 +18,13 @@ import {
   downloadQuestionBank,
   fetchQuestionBankPreview,
   fetchQuestionBankLeaderboard,
+  downloadStudyPack,
+  fetchStudyPackPreview,
   type MarketplaceQuestionBankMeta,
   type QuestionBankPreview,
   type QuestionBankLeaderboardEntry,
+  type MarketplaceStudyPackMeta,
+  type StudyPackPreview,
 } from '../services/supabase';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import {
@@ -30,6 +34,8 @@ import {
   koboToNaira,
   isMarketplaceListingEditable,
   isMarketplaceListingModerated,
+  isDigitalListingKind,
+  summarizeStudyPackCounts,
   MARKETPLACE_LISTING_STATUS_LABELS,
   marketplaceListingModerationNotice,
 } from '@lantern/shared/marketplace';
@@ -118,6 +124,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
   const [canReview, setCanReview] = useState(false);
   const [questionBank, setQuestionBank] = useState<MarketplaceQuestionBankMeta | null>(null);
+  const [studyPack, setStudyPack] = useState<MarketplaceStudyPackMeta | null>(null);
+  const [studyPackPreview, setStudyPackPreview] = useState<StudyPackPreview | null>(null);
   const [downloadingBank, setDownloadingBank] = useState(false);
   const [bankPreview, setBankPreview] = useState<QuestionBankPreview | null>(null);
   const [leaderboard, setLeaderboard] = useState<{
@@ -130,6 +138,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [paymentConfig, setPaymentConfig] = useState<{
     paystackEnabled: boolean;
     serviceFeeBps: number;
+    /** Buyer surcharge on digital listings (Phase 2 · I); 0 = buyer pays list price. */
+    digitalBuyerFeeBps: number;
   } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listingLoadId = useRef(0);
@@ -214,6 +224,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           setPaymentConfig({
             paystackEnabled: !!config.paystackEnabled,
             serviceFeeBps: config.serviceFeeBps,
+            digitalBuyerFeeBps: Number((config as { digitalBuyerFeeBps?: number }).digitalBuyerFeeBps ?? 0),
           });
         }
       })
@@ -275,6 +286,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       setSimilarListings(data.similarListings);
       setCanReview(!!data.canReview);
       setQuestionBank(data.questionBank || null);
+      setStudyPack(data.studyPack || null);
       if (data.listing?.listing_kind === 'question_bank') {
         // Preview is decorative; a failure must not block the listing.
         void fetchQuestionBankPreview(listingId)
@@ -291,9 +303,21 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             }
           })
           .catch(() => setLeaderboard(null));
+        setStudyPackPreview(null);
+      } else if (data.listing?.listing_kind === 'study_pack') {
+        void fetchStudyPackPreview(listingId)
+          .then((preview) => {
+            if (loadId === undefined || loadId === listingLoadId.current) {
+              setStudyPackPreview(preview);
+            }
+          })
+          .catch(() => setStudyPackPreview(null));
+        setBankPreview(null);
+        setLeaderboard(null);
       } else {
         setBankPreview(null);
         setLeaderboard(null);
+        setStudyPackPreview(null);
       }
       const sellerId = data.listing.user_id || data.listing.seller_id;
       if (sellerId && currentUser?.id && sellerId !== currentUser.id) {
@@ -392,7 +416,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     // Manual/cash mode charges no service fee server-side; only Paystack does.
     // Default conservative (no fee) until config loads, matching usePaystackEnabled.
     const paystackEnabled = paymentConfig?.paystackEnabled ?? false;
-    const serviceFeeBps = paymentConfig?.serviceFeeBps ?? MARKETPLACE_DEFAULT_SERVICE_FEE_BPS;
+    // Digital products charge the buyer the LIST price (the platform's cut comes
+    // out of the creator's payout), so quoting the physical 5% here would
+    // overstate what the server actually charges.
+    const serviceFeeBps = isDigital
+      ? (paymentConfig?.digitalBuyerFeeBps ?? 0)
+      : (paymentConfig?.serviceFeeBps ?? MARKETPLACE_DEFAULT_SERVICE_FEE_BPS);
     const fees = computeMarketplaceCheckoutFees(
       nairaToKobo(itemTotal),
       paystackEnabled ? serviceFeeBps : 0
@@ -471,16 +500,22 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     }
   };
 
-  const handleDownloadQuestionBank = async () => {
+  const handleDownloadDigital = async () => {
     if (!listing) return;
     if (requireAuth()) return;
     setDownloadingBank(true);
     try {
-      await downloadQuestionBank(listing.id);
-      setQuestionBank(prev => (prev ? { ...prev, owned: true } : prev));
-      showToast('Added to your Offline Mode — available on all your devices.');
+      if (listing.listing_kind === 'study_pack') {
+        await downloadStudyPack(listing.id);
+        setStudyPack(prev => (prev ? { ...prev, owned: true } : prev));
+        showToast('Added to your Library — available on all your devices.');
+      } else {
+        await downloadQuestionBank(listing.id);
+        setQuestionBank(prev => (prev ? { ...prev, owned: true } : prev));
+        showToast('Added to your Offline Mode — available on all your devices.');
+      }
     } catch (error: any) {
-      showToast(error?.message || 'Could not download question bank.', 'error');
+      showToast(error?.message || 'Could not download this item.', 'error');
     } finally {
       setDownloadingBank(false);
     }
@@ -547,7 +582,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     : 0;
 
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
-  const isDigital = listing.listing_kind === 'question_bank';
+  const isDigital = isDigitalListingKind(listing.listing_kind);
+  const isStudyPack = listing.listing_kind === 'study_pack';
+  const digitalOwned = isStudyPack ? !!studyPack?.owned : !!questionBank?.owned;
   // quantity null = unlimited/digital stock (not sold out); only a literal 0 is sold out.
   const isSoldOut = listing.quantity === 0;
 
@@ -851,14 +888,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 </div>
                 <div className="flex-1 min-w-0">
                   <button
-                    onClick={() => onNavigate('SellerProfile', { userId: listing.user_id || listing.seller_id })}
+                    onClick={() => onNavigate(isDigital ? 'CreatorProfile' : 'SellerProfile', { userId: listing.user_id || listing.seller_id })}
                     className="font-semibold text-sm text-lantern-primary hover:underline truncate block text-left"
                   >
                     {listing.seller?.name || listing.profiles?.name || 'Anonymous Seller'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => onNavigate('SellerProfile', { userId: listing.user_id || listing.seller_id })}
+                    onClick={() => onNavigate(isDigital ? 'CreatorProfile' : 'SellerProfile', { userId: listing.user_id || listing.seller_id })}
                     className="text-[11px] font-semibold text-lantern-text-secondary hover:text-lantern-primary"
                   >
                     View shop
@@ -1013,7 +1050,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 listing.status !== 'reserved' &&
                 listing.price &&
                 listing.price > 0 &&
-                !(isDigital && questionBank?.owned) &&
+                !(isDigital && digitalOwned) &&
                 isSoldOut && (
                 <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 space-y-2">
                   <p className="text-sm font-semibold text-red-900 dark:text-red-200">Sold out</p>
@@ -1030,25 +1067,39 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   </button>
                 </div>
               )}
-              {/* Digital question banks: download/own panel replaces physical CTAs. */}
+              {/* Digital products (question banks, study packs): download/own panel replaces physical CTAs. */}
               {isDigital && (
                 <div className="p-3 rounded-xl bg-lantern-primary-background border border-lantern-primary/20 text-xs sm:text-sm text-lantern-text-secondary">
-                  <span className="font-semibold text-lantern-primary">Digital question bank</span>
-                  {questionBank ? ` · ${questionBank.questionCount} questions` : ''} · delivered
-                  instantly to Offline Mode on all your devices
+                  {isStudyPack ? (
+                    <>
+                      <span className="font-semibold text-lantern-primary">Digital study pack</span>
+                      {studyPack && summarizeStudyPackCounts(studyPack.counts)
+                        ? ` · ${summarizeStudyPackCounts(studyPack.counts)}`
+                        : ''}{' '}
+                      · delivered instantly to your Library on all your devices
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-lantern-primary">Digital question bank</span>
+                      {questionBank ? ` · ${questionBank.questionCount} questions` : ''} · delivered
+                      instantly to Offline Mode on all your devices
+                    </>
+                  )}
                 </div>
               )}
-              {isDigital && !isOwner && questionBank?.owned && (
+              {isDigital && !isOwner && digitalOwned && (
                 <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 space-y-2">
                   <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
-                    You own this question bank
+                    You own this {isStudyPack ? 'study pack' : 'question bank'}
                   </p>
                   <p className="text-xs text-emerald-800 dark:text-emerald-300">
-                    Find it under Offline Mode → Downloaded Test Bundles.
+                    {isStudyPack
+                      ? 'Find it in your Library — notes, flashcards and questions.'
+                      : 'Find it under Offline Mode → Downloaded Test Bundles.'}
                   </p>
                   <button
                     type="button"
-                    onClick={() => void handleDownloadQuestionBank()}
+                    onClick={() => void handleDownloadDigital()}
                     disabled={downloadingBank}
                     className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
                   >
@@ -1058,11 +1109,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               )}
               {isDigital &&
                 !isOwner &&
-                !questionBank?.owned &&
+                !digitalOwned &&
                 !(listing.price && listing.price > 0) && (
                   <button
                     type="button"
-                    onClick={() => void handleDownloadQuestionBank()}
+                    onClick={() => void handleDownloadDigital()}
                     disabled={downloadingBank}
                     className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                   >
@@ -1114,7 +1165,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   </div>
                 </div>
               )}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && !isSoldOut && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && digitalOwned) && !isSoldOut && (
                 <div className="p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border space-y-2">
                   <p className="text-xs font-semibold text-lantern-text-secondary">Have a coupon?</p>
                   <div className="flex gap-2">
@@ -1157,7 +1208,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               {/* Purchase actions, strongest first: Buy Now is the one path with
                   buyer protection, so it leads; cart and offer are secondary;
                   chat is the fallback, not the headline. */}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && questionBank?.owned) && !isSoldOut && (
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && digitalOwned) && !isSoldOut && (
                 <>
                   <button
                     onClick={handleBuyNow}
@@ -1215,9 +1266,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     <CheckBadgeIcon className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                     <span>
                       <span className="font-semibold text-lantern-text">Buyer protection:</span>{' '}
-                      {isDigital
-                        ? 'pay in the app and your question bank is delivered instantly to Offline Mode.'
-                        : "pay in the app and Lantern holds your payment until you confirm you received the item. Payments made outside the app aren't covered."}
+                      {isStudyPack
+                        ? 'pay in the app and your study pack is delivered instantly to your Library.'
+                        : isDigital
+                          ? 'pay in the app and your question bank is delivered instantly to Offline Mode.'
+                          : "pay in the app and Lantern holds your payment until you confirm you received the item. Payments made outside the app aren't covered."}
                     </span>
                   </p>
 
@@ -1267,6 +1320,98 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             <p className="mt-3 text-xs text-lantern-text-tertiary">
               Answers and explanations are included with the full bank
               {questionBank?.owned ? ', which you own.' : '.'}
+            </p>
+          </div>
+        )}
+
+        {/* Study pack preview — a peek at the guide, cards and questions */}
+        {isStudyPack && studyPackPreview && (
+          <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60 space-y-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-base sm:text-lg font-bold text-lantern-text">What's inside</h2>
+              <p className="text-xs text-lantern-text-tertiary">
+                {summarizeStudyPackCounts(studyPackPreview.counts)}
+              </p>
+            </div>
+
+            {studyPackPreview.toc.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-lantern-text-secondary uppercase tracking-wide mb-2">
+                  Study guide
+                </h3>
+                <ul className="space-y-1">
+                  {studyPackPreview.toc.slice(0, 8).map((entry, index) => (
+                    <li key={entry.anchor || index} className="text-sm text-lantern-text-secondary flex gap-2">
+                      <span className="text-lantern-text-tertiary">{index + 1}.</span>
+                      {entry.title}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {studyPackPreview.summaryPreview && (
+              <div>
+                <h3 className="text-xs font-semibold text-lantern-text-secondary uppercase tracking-wide mb-2">
+                  Summary preview
+                </h3>
+                <p className="text-sm text-lantern-text-secondary whitespace-pre-wrap line-clamp-6">
+                  {studyPackPreview.summaryPreview}
+                  {studyPackPreview.summaryPreview.length >= 600 ? '…' : ''}
+                </p>
+              </div>
+            )}
+
+            {studyPackPreview.flashcardFronts.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-lantern-text-secondary uppercase tracking-wide mb-2">
+                  Sample flashcards
+                </h3>
+                <ul className="space-y-1.5">
+                  {studyPackPreview.flashcardFronts.map((front, index) => (
+                    <li
+                      key={index}
+                      className="text-sm text-lantern-text-secondary rounded-lg bg-lantern-background-secondary/50 border border-lantern-border px-3 py-2"
+                    >
+                      {front}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {studyPackPreview.questions.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-lantern-text-secondary uppercase tracking-wide mb-2">
+                  Sample questions
+                </h3>
+                <ol className="space-y-3">
+                  {studyPackPreview.questions.map((question, index) => (
+                    <li
+                      key={question.id || index}
+                      className="rounded-xl bg-lantern-background-secondary/50 border border-lantern-border p-3"
+                    >
+                      <p className="text-sm font-medium text-lantern-text">
+                        {index + 1}. {question.questionStem || question.text || 'Question'}
+                      </p>
+                      {question.options && question.options.length > 0 ? (
+                        <ul className="mt-2 space-y-1">
+                          {question.options.map((option, optionIndex) => (
+                            <li key={option.id || optionIndex} className="text-xs text-lantern-text-secondary">
+                              {String.fromCharCode(65 + optionIndex)}. {option.text}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            <p className="text-xs text-lantern-text-tertiary">
+              The full guide, all flashcards and every question — with answers — are included when you
+              {digitalOwned ? ' open this pack in your Library.' : ' get this pack.'}
             </p>
           </div>
         )}

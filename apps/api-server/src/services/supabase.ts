@@ -195,6 +195,10 @@ function mapProfileRowToUser(
     studyLevel: toNullableInt(row.study_level),
     entryYear: toNullableInt(row.entry_year),
     expectedGraduationYear: toNullableInt(row.expected_graduation_year),
+    // Creator identity (20260823123000). Read back so "Edit bio" can prefill
+    // and the profile can render it; verification_level drives the Verified badge.
+    bio: (row.bio as string | null | undefined) ?? null,
+    verificationLevel: toNullableInt(row.verification_level) ?? 0,
   };
   return mapped as User;
 }
@@ -254,8 +258,9 @@ function resolveCourseIdFromConfigLike(
 
 // ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
 // Known listing kinds, mirroring the DB CHECK constraint on
-// marketplace_listings.listing_kind (migration 20260818120000).
-const KNOWN_LISTING_KINDS = ["single", "bundle", "question_bank"];
+// marketplace_listings.listing_kind (migrations 20260818120000 +
+// 20260823120000, which adds 'study_pack').
+const KNOWN_LISTING_KINDS = ["single", "bundle", "question_bank", "study_pack"];
 const MAX_LISTING_IMAGES = 24;
 
 function marketplaceWriteError(message: string): Error & { statusCode: number } {
@@ -1258,6 +1263,9 @@ export class SupabaseService {
     if (updates.points !== undefined) updateData.points = updates.points;
     if (updates.stats !== undefined) updateData.stats = updates.stats;
     if (updates.badges !== undefined) updateData.badges = updates.badges;
+    // Creator bio (Phase 2 · J); normalized + length-checked in routes/users.ts.
+    if ((updates as { bio?: string | null }).bio !== undefined)
+      updateData.bio = (updates as { bio?: string | null }).bio ?? null;
     // Academic identity columns (validated + institution-checked in routes/users.ts).
     if (updates.institutionId !== undefined)
       updateData.institution_id = updates.institutionId || null;
@@ -3515,6 +3523,76 @@ export class SupabaseService {
     }
 
     return { deck: newDeck, flashcards: insertedFlashcards };
+  }
+
+  /**
+   * Replace all cards in an existing deck in place, keeping the deck row (and
+   * its id) stable. Used when a study pack the buyer owns publishes a new
+   * version: the buyer's delivered deck is refreshed without creating a
+   * duplicate deck. The deck's owner is NOT re-checked here — callers pass a
+   * deck id they materialised for that buyer (delivered_refs.deckId), never a
+   * client-supplied id.
+   */
+  async replaceDeckCards(
+    deckId: string,
+    cards: Array<{
+      front?: string;
+      back?: string;
+      type?: string;
+      clozeText?: string;
+      cloze_text?: string;
+      occlusion_data?: unknown;
+      occlusionData?: unknown;
+      image_url?: string;
+      imageUrl?: string;
+      tags?: unknown;
+    }>,
+  ): Promise<void> {
+    const { error: deleteError } = await this.supabase
+      .from("flashcards")
+      .delete()
+      .eq("deck_id", deckId);
+    if (deleteError) {
+      logger.error("Error clearing deck cards for replacement:", deleteError);
+      throw deleteError;
+    }
+
+    if (cards && cards.length > 0) {
+      const rows = cards.map((card) => {
+        const cardType = card.type || "BASIC";
+        const insertData: any = { deck_id: deckId, type: cardType };
+        if (cardType === "CLOZE") {
+          insertData.cloze_text = card.clozeText || card.cloze_text;
+        } else if (cardType === "IMAGE_OCCLUSION") {
+          insertData.front = card.front;
+          insertData.back = card.back;
+          const occlusionData = card.occlusion_data || card.occlusionData;
+          if (occlusionData) insertData.occlusion_data = occlusionData;
+        } else {
+          insertData.front = card.front;
+          insertData.back = card.back;
+        }
+        const imageUrl = card.image_url || card.imageUrl;
+        if (imageUrl) insertData.image_url = imageUrl;
+        if (Array.isArray(card.tags) && card.tags.length > 0) {
+          insertData.tags = card.tags;
+        }
+        return insertData;
+      });
+      const { error: insertError } = await this.supabase
+        .from("flashcards")
+        .insert(rows);
+      if (insertError) {
+        logger.error("Error inserting replacement deck cards:", insertError);
+        throw insertError;
+      }
+    }
+
+    await cacheService.deletePattern("flashcards:*");
+    await cacheService.delete(`deck:${deckId}`);
+    // The per-user deck list bakes in a computed card_count, so it must be
+    // rebuilt after the card set changes (same broad pattern importDeck uses).
+    await cacheService.deletePattern(`decks:user:*`);
   }
 
   async createFlashcard(flashcardData: {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AcademicCapIcon,
+  BuildingStorefrontIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   DocumentTextIcon,
@@ -34,6 +35,8 @@ interface LibraryScreenProps {
   onOpenOffline: () => void;
   /** Opens recent tests — the web has no per-course test history yet, so this is unfiltered. */
   onOpenTests: () => void;
+  /** Generate a sellable study pack from the selected course's notes (Phase 2 · H). */
+  onCreateStudyPackFromCourse?: (courseId: string, courseLabel?: string) => void;
 }
 
 const tabs: { id: LibraryTab; label: string; icon: React.ElementType }[] = [
@@ -58,6 +61,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   onOpenDeck,
   onOpenOffline,
   onOpenTests,
+  onCreateStudyPackFromCourse,
 }) => {
   const courseFilterId = useLibraryStore((s) => s.courseFilterId);
   const setCourseFilter = useLibraryStore((s) => s.setCourseFilter);
@@ -205,6 +209,21 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               >
                 <XMarkIcon className="h-3 w-3" aria-hidden /> Clear
               </button>
+              {onCreateStudyPackFromCourse && courseFilterId !== UNFILED_COURSE_ID ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onCreateStudyPackFromCourse(
+                      courseFilterId,
+                      selectedCourse ? courseLabel(selectedCourse) : undefined
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-full border border-lantern-primary/30 bg-lantern-primary/5 px-2 py-0.5 font-medium text-lantern-primary hover:bg-lantern-primary/10"
+                  title="Turn this course's notes into a sellable study pack"
+                >
+                  <BuildingStorefrontIcon className="h-3 w-3" aria-hidden /> Create a study pack
+                </button>
+              ) : null}
             </div>
           ) : null}
 

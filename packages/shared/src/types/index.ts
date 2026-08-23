@@ -169,6 +169,10 @@ export interface User {
   entryYear?: number | null;
   /** Owner/admin only in the public projection. */
   expectedGraduationYear?: number | null;
+  /** Creator bio, ≤ 280 chars (Phase 2 · J). */
+  bio?: string | null;
+  /** Verified v1: 0 none, 1 confirmed email, 2 + active payout profile. Server-owned. */
+  verificationLevel?: number | null;
 }
 
 /** Institution as surfaced on a user: a promoted marketplace_campuses row. */
@@ -371,6 +375,9 @@ export enum AppMode {
   MARKETPLACE_LISTING_DETAIL = 'MARKETPLACE_LISTING_DETAIL',
   CREATE_MARKETPLACE_LISTING = 'CREATE_MARKETPLACE_LISTING',
   MY_LISTINGS = 'MY_LISTINGS',
+  MARKETPLACE_PURCHASES = 'MARKETPLACE_PURCHASES',
+  STUDY_PRODUCT_DRAFTS = 'STUDY_PRODUCT_DRAFTS',
+  CREATOR_PROFILE = 'CREATOR_PROFILE',
   MARKETPLACE_FAVORITES = 'MARKETPLACE_FAVORITES',
   MARKETPLACE_INQUIRIES = 'MARKETPLACE_INQUIRIES',
   MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
@@ -927,8 +934,12 @@ export interface MarketplaceListing {
   is_boosted?: boolean;
   search_score?: number;
   quantity?: number | null;
-  /** 'question_bank' is a digital listing delivered into offline_bundles. */
-  listing_kind?: 'single' | 'bundle' | 'question_bank';
+  /**
+   * Digital listing kinds deliver into the buyer's own data instead of a
+   * physical handoff: 'question_bank' → offline_bundles; 'study_pack' →
+   * offline_bundles + a deck + a note.
+   */
+  listing_kind?: 'single' | 'bundle' | 'question_bank' | 'study_pack';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   /** Course this listing is for (academic archive). */
   courseId?: string | null;

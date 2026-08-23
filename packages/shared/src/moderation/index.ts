@@ -199,7 +199,9 @@ export function isAcademicListing(input: {
   listingKind?: MarketplaceListing['listing_kind'] | string | null;
   category?: string | null;
 }): boolean {
-  if (input.listingKind === 'question_bank') return true;
+  // Every digital study product (question bank, study pack) always carries
+  // authored academic content, so it always requires the rights attestation.
+  if (input.listingKind === 'question_bank' || input.listingKind === 'study_pack') return true;
   const category = typeof input.category === 'string' ? input.category.trim() : '';
   return category.length > 0 && ACADEMIC_LISTING_CATEGORIES.includes(category);
 }

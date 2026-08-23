@@ -1,7 +1,9 @@
 import {
   computeMarketplaceCheckoutFees,
+  isDigitalListingKind,
   isMarketplacePaystackCheckoutEnabled,
   nairaToKobo,
+  resolveMarketplaceFees,
   resolveMarketplaceServiceFeeBps,
 } from '@lantern/shared/marketplace';
 import type { SupabaseService } from './supabase';
@@ -130,10 +132,18 @@ export class MarketplacePaymentsService {
     const order = await this.createAwaitingPaymentBuyNowOrder(input);
 
     const itemAmountKobo = nairaToKobo(Number(order.amount));
-    const fees = computeMarketplaceCheckoutFees(
+    // Fee split by listing kind: digital takes a creator commission out of the
+    // payout (buyer pays list); physical charges the buyer a service fee.
+    const resolved = resolveMarketplaceFees({
+      listingKind: listing.listing_kind,
       itemAmountKobo,
-      resolveMarketplaceServiceFeeBps(process.env.MARKETPLACE_SERVICE_FEE_BPS)
-    );
+      env: process.env,
+    });
+    const fees = {
+      itemAmountKobo: resolved.itemAmountKobo,
+      serviceFeeKobo: resolved.buyerFeeKobo,
+      totalChargeKobo: resolved.totalChargedKobo,
+    };
     const reference = createPaystackReference('ls_buy');
 
     const { data: payment, error: payErr } = await this.db
@@ -145,6 +155,8 @@ export class MarketplacePaymentsService {
         item_amount_kobo: fees.itemAmountKobo,
         service_fee_kobo: fees.serviceFeeKobo,
         total_charged_kobo: fees.totalChargeKobo,
+        platform_fee_kobo: resolved.platformFeeKobo,
+        seller_payout_kobo: resolved.sellerPayoutKobo,
         currency: 'NGN',
         paystack_reference: reference,
         status: 'initialized',
@@ -325,10 +337,24 @@ export class MarketplacePaymentsService {
       }
     }
 
-    const fees = computeMarketplaceCheckoutFees(
+    // This path serves offer-accept AND the resume-checkout fall-through from
+    // getCheckoutSessionForOrder, which carries orders of ANY kind — so the fee
+    // model must be resolved from the listing, never assumed physical.
+    const { data: kindRow } = await this.db
+      .from('marketplace_listings')
+      .select('listing_kind')
+      .eq('id', order.listing_id)
+      .maybeSingle();
+    const resolved = resolveMarketplaceFees({
+      listingKind: (kindRow as { listing_kind?: string } | null)?.listing_kind,
       itemAmountKobo,
-      resolveMarketplaceServiceFeeBps(process.env.MARKETPLACE_SERVICE_FEE_BPS)
-    );
+      env: process.env,
+    });
+    const fees = {
+      itemAmountKobo: resolved.itemAmountKobo,
+      serviceFeeKobo: resolved.buyerFeeKobo,
+      totalChargeKobo: resolved.totalChargedKobo,
+    };
     const reference = createPaystackReference('ls_off');
 
     const { data: payment, error: payErr } = await this.db
@@ -340,6 +366,8 @@ export class MarketplacePaymentsService {
         item_amount_kobo: fees.itemAmountKobo,
         service_fee_kobo: fees.serviceFeeKobo,
         total_charged_kobo: fees.totalChargeKobo,
+        platform_fee_kobo: resolved.platformFeeKobo,
+        seller_payout_kobo: resolved.sellerPayoutKobo,
         currency: 'NGN',
         paystack_reference: reference,
         status: 'initialized',
@@ -535,9 +563,9 @@ export class MarketplacePaymentsService {
         .in('status', ['awaiting_payment', 'pending_payment']);
       await this.orders.stampOrderPaidAt(payment.order_id, now);
 
-      // Digital question banks fulfill instantly: deliver, complete, pay out.
-      // Everything else keeps the meetup flow.
-      const digital = await this.fulfillQuestionBankOrderIfDigital(payment.order_id, updated);
+      // Digital products (question banks, study packs) fulfill instantly:
+      // deliver, complete, pay out. Everything else keeps the meetup flow.
+      const digital = await this.fulfillDigitalOrderAfterPayment(payment.order_id, updated);
       if (!digital) {
         await this.orders.notifyOrderParty(payment.seller_id, {
           type: 'marketplace_order_update',
@@ -558,16 +586,17 @@ export class MarketplacePaymentsService {
   }
 
   /**
-   * Instant fulfillment for question-bank orders. Returns false when the order
-   * is not digital (caller falls back to the meetup flow).
+   * Instant fulfillment for digital orders (question banks + study packs).
+   * Returns false when the order is not digital (caller falls back to the
+   * meetup flow).
    *
    * Delivery comes first and is the one step that matters to the buyer; order
    * completion and seller payout follow, each isolated so a failure in one
-   * never rolls back delivery. A missed delivery self-heals via
-   * POST /question-banks/restore; a missed payout stays visible as a payment
-   * stuck in 'paid' and is recoverable via forcePayoutForOrder.
+   * never rolls back delivery. A missed delivery self-heals via the kind's
+   * restore endpoint; a missed payout stays visible as a payment stuck in
+   * 'paid' and is recoverable via forcePayoutForOrder.
    */
-  private async fulfillQuestionBankOrderIfDigital(
+  private async fulfillDigitalOrderAfterPayment(
     orderId: string,
     payment: Record<string, any>
   ): Promise<boolean> {
@@ -578,23 +607,48 @@ export class MarketplacePaymentsService {
       .maybeSingle();
     if (!order) return false;
 
-    const { getMarketplaceQuestionBanksService } = await import('./marketplaceQuestionBanks');
-    const qbanks = getMarketplaceQuestionBanksService(this.supabaseService);
-    if (!(await qbanks.isQuestionBankListing(order.listing_id))) return false;
+    const { data: listing } = await this.db
+      .from('marketplace_listings')
+      .select('listing_kind')
+      .eq('id', order.listing_id)
+      .maybeSingle();
+    const kind = (listing as { listing_kind?: string } | null)?.listing_kind;
+    if (!isDigitalListingKind(kind)) return false;
 
     try {
-      await qbanks.grantEntitlement(order.listing_id, order.buyer_id, order.id);
-      await this.orders.notifyOrderParty(order.buyer_id, {
-        type: 'marketplace_order_update',
-        message: 'Your question bank is ready — find it in Offline Mode on any of your devices.',
-        link: `marketplace:order:${orderId}`,
-        data: { orderId, questionBankDelivered: true },
-      });
+      if (kind === 'study_pack') {
+        const { getMarketplaceStudyPacksService } = await import('./marketplaceStudyPacks');
+        await getMarketplaceStudyPacksService(this.supabaseService).grantEntitlement(
+          order.listing_id,
+          order.buyer_id,
+          order.id
+        );
+        await this.orders.notifyOrderParty(order.buyer_id, {
+          type: 'marketplace_order_update',
+          message: 'Your study pack is ready — find it in your Library on any of your devices.',
+          link: `marketplace:order:${orderId}`,
+          data: { orderId, studyPackDelivered: true },
+        });
+      } else {
+        const { getMarketplaceQuestionBanksService } = await import('./marketplaceQuestionBanks');
+        await getMarketplaceQuestionBanksService(this.supabaseService).grantEntitlement(
+          order.listing_id,
+          order.buyer_id,
+          order.id
+        );
+        await this.orders.notifyOrderParty(order.buyer_id, {
+          type: 'marketplace_order_update',
+          message: 'Your question bank is ready — find it in Offline Mode on any of your devices.',
+          link: `marketplace:order:${orderId}`,
+          data: { orderId, questionBankDelivered: true },
+        });
+      }
     } catch (err) {
-      logger.error('Question bank delivery failed after payment', {
+      logger.error('Digital delivery failed after payment', {
         orderId,
         listingId: order.listing_id,
         buyerId: order.buyer_id,
+        kind,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -602,7 +656,7 @@ export class MarketplacePaymentsService {
     try {
       await this.orders.releaseEscrow(orderId, order.buyer_id);
     } catch (err) {
-      logger.error('Question bank order completion failed', {
+      logger.error('Digital order completion failed', {
         orderId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -611,7 +665,7 @@ export class MarketplacePaymentsService {
     try {
       await this.transferSellerPayout(orderId, order.seller_id, payment);
     } catch (err) {
-      logger.error('Question bank payout failed; recover with forcePayoutForOrder', {
+      logger.error('Digital payout failed; recover with forcePayoutForOrder', {
         orderId,
         sellerId: order.seller_id,
         error: err instanceof Error ? err.message : String(err),
@@ -678,7 +732,9 @@ export class MarketplacePaymentsService {
     const transferRef = createPaystackReference('ls_po');
     try {
       const transfer = await initiatePaystackTransfer({
-        amountKobo: Number(working.item_amount_kobo),
+        // The seller is paid the item minus any platform commission. Legacy
+        // rows (pre-split) fall back to the full item amount.
+        amountKobo: Number(working.seller_payout_kobo ?? working.item_amount_kobo),
         recipientCode: profile.paystack_recipient_code,
         reference: transferRef,
         reason: `Lantern marketplace order ${orderId}`,
@@ -814,6 +870,75 @@ export class MarketplacePaymentsService {
         .update({ status: 'failed', updated_at: new Date().toISOString() })
         .eq('id', payment.id);
     }
+  }
+
+  /**
+   * The seller's earnings ledger (Phase 2 · I): one row per payment they
+   * received, with the item / platform-commission / payout split and status.
+   */
+  async getSellerPayments(
+    sellerId: string,
+    page = 1,
+    pageSize = 20
+  ): Promise<
+    Array<{
+      orderId: string;
+      listingId: string | null;
+      title: string;
+      itemAmountKobo: number;
+      platformFeeKobo: number;
+      sellerPayoutKobo: number;
+      status: string;
+      paidAt: string | null;
+      payoutAt: string | null;
+    }>
+  > {
+    const size = Math.min(Math.max(1, Math.floor(pageSize)), 50);
+    const from = Math.max(0, (Math.max(1, Math.floor(page)) - 1) * size);
+    const { data: payments, error } = await this.db
+      .from('marketplace_payments')
+      .select(
+        'order_id, item_amount_kobo, platform_fee_kobo, seller_payout_kobo, status, paid_at, payout_at, created_at'
+      )
+      .eq('seller_id', sellerId)
+      .order('created_at', { ascending: false })
+      .range(from, from + size - 1);
+    if (error) throw error;
+    const rows = payments || [];
+
+    const orderIds = Array.from(new Set(rows.map((p: any) => String(p.order_id)).filter(Boolean)));
+    const orderToListing = new Map<string, string>();
+    const listingTitle = new Map<string, string>();
+    if (orderIds.length > 0) {
+      const { data: orders } = await this.db
+        .from('marketplace_orders')
+        .select('id, listing_id')
+        .in('id', orderIds);
+      for (const o of orders || []) orderToListing.set(String(o.id), String((o as any).listing_id));
+      const listingIds = Array.from(new Set([...orderToListing.values()].filter(Boolean)));
+      if (listingIds.length > 0) {
+        const { data: listings } = await this.db
+          .from('marketplace_listings')
+          .select('id, title')
+          .in('id', listingIds);
+        for (const l of listings || []) listingTitle.set(String(l.id), String((l as any).title || 'Listing'));
+      }
+    }
+
+    return rows.map((p: any) => {
+      const listingId = orderToListing.get(String(p.order_id)) || null;
+      return {
+        orderId: String(p.order_id),
+        listingId,
+        title: (listingId && listingTitle.get(listingId)) || 'Listing',
+        itemAmountKobo: Number(p.item_amount_kobo),
+        platformFeeKobo: Number(p.platform_fee_kobo ?? 0),
+        sellerPayoutKobo: Number(p.seller_payout_kobo ?? p.item_amount_kobo),
+        status: String(p.status),
+        paidAt: p.paid_at ?? null,
+        payoutAt: p.payout_at ?? null,
+      };
+    });
   }
 
   /**

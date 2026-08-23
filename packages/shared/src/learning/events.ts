@@ -22,6 +22,7 @@ export const LEARNING_EVENT_TYPES = [
   'question_generated',
   'bank_downloaded',
   'bank_score_recorded',
+  'pack_downloaded',
   'group_question_posted',
 ] as const;
 
@@ -133,6 +134,12 @@ export function normalizeConceptName(raw: unknown): string {
 }
 
 export const QUESTION_BANK_BUNDLE_PREFIX = 'qbank-';
+export const STUDY_PACK_BUNDLE_PREFIX = 'pack-';
+/** Offline-bundle id prefixes for the digital marketplace products. */
+export const MARKETPLACE_BUNDLE_PREFIXES = [
+  QUESTION_BANK_BUNDLE_PREFIX,
+  STUDY_PACK_BUNDLE_PREFIX,
+] as const;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -142,13 +149,19 @@ export function isUuidLike(value: unknown): value is string {
 }
 
 /**
- * `test_sessions.config.bundleId` is the string "qbank-<listingId>" for
- * marketplace question banks. Returns the listing uuid, or null for anything
- * else (other bundle kinds, malformed ids).
+ * `test_sessions.config.bundleId` is the string "qbank-<listingId>" for a
+ * marketplace question bank and "pack-<listingId>" for a study pack. Returns
+ * the listing uuid for either, or null for anything else (other bundle kinds,
+ * malformed ids) — so a quiz taken from a purchased pack keeps its listing_id
+ * on the learning event, exactly like a question bank.
  */
 export function parseQuestionBankListingId(bundleId: unknown): string | null {
   if (typeof bundleId !== 'string') return null;
-  if (!bundleId.startsWith(QUESTION_BANK_BUNDLE_PREFIX)) return null;
-  const listingId = bundleId.slice(QUESTION_BANK_BUNDLE_PREFIX.length);
+  const prefix = MARKETPLACE_BUNDLE_PREFIXES.find((p) => bundleId.startsWith(p));
+  if (!prefix) return null;
+  const listingId = bundleId.slice(prefix.length);
   return isUuidLike(listingId) ? listingId.toLowerCase() : null;
 }
+
+/** Clearer alias for {@link parseQuestionBankListingId} — handles both kinds. */
+export const parseMarketplaceBundleListingId = parseQuestionBankListingId;

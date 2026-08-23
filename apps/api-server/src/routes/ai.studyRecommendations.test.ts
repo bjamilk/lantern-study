@@ -15,6 +15,7 @@ jest.mock('../middleware/auth', () => ({
 jest.mock('../middleware/aiRateLimit', () => ({
   aiRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
   aiRateLimitForFeature: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  aiRateLimitWithCost: () => (_req: unknown, _res: unknown, next: () => void) => next(),
   getAIUsage: jest.fn(),
 }));
 jest.mock('../middleware/rateLimit', () => ({

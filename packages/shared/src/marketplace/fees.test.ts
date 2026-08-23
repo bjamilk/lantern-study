@@ -4,7 +4,60 @@ import {
   koboToNaira,
   nairaToKobo,
   resolveMarketplaceServiceFeeBps,
+  resolveMarketplaceFees,
 } from './fees';
+
+describe('resolveMarketplaceFees', () => {
+  it('physical: buyer pays list + 5%, seller gets the full item, no platform fee', () => {
+    const f = resolveMarketplaceFees({ listingKind: 'single', itemAmountKobo: 200_000, env: {} });
+    expect(f).toMatchObject({
+      isDigital: false,
+      buyerFeeBps: 500,
+      creatorFeeBps: 0,
+      buyerFeeKobo: 10_000,
+      platformFeeKobo: 0,
+      sellerPayoutKobo: 200_000,
+      totalChargedKobo: 210_000,
+    });
+  });
+
+  it('digital default: buyer pays list price, platform takes 15% from the payout', () => {
+    for (const kind of ['question_bank', 'study_pack']) {
+      const f = resolveMarketplaceFees({ listingKind: kind, itemAmountKobo: 200_000, env: {} });
+      expect(f).toMatchObject({
+        isDigital: true,
+        buyerFeeBps: 0,
+        creatorFeeBps: 1500,
+        buyerFeeKobo: 0,
+        platformFeeKobo: 30_000,
+        sellerPayoutKobo: 170_000,
+        totalChargedKobo: 200_000,
+      });
+    }
+  });
+
+  it('honours env overrides for both split knobs', () => {
+    const f = resolveMarketplaceFees({
+      listingKind: 'study_pack',
+      itemAmountKobo: 100_000,
+      env: { MARKETPLACE_DIGITAL_BUYER_FEE_BPS: '300', MARKETPLACE_CREATOR_FEE_BPS: '2000' },
+    });
+    expect(f).toMatchObject({
+      buyerFeeKobo: 3_000,
+      platformFeeKobo: 20_000,
+      sellerPayoutKobo: 80_000,
+      totalChargedKobo: 103_000,
+    });
+  });
+
+  it('the seller payout + platform fee always reconstruct the item amount', () => {
+    for (const amt of [1, 99, 100, 12_345, 999_999]) {
+      const f = resolveMarketplaceFees({ listingKind: 'study_pack', itemAmountKobo: amt, env: {} });
+      expect(f.sellerPayoutKobo + f.platformFeeKobo).toBe(amt);
+      expect(f.totalChargedKobo).toBe(amt + f.buyerFeeKobo);
+    }
+  });
+});
 
 describe('marketplace fees', () => {
   it('converts naira to kobo safely', () => {

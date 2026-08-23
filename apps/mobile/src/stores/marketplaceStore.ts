@@ -61,7 +61,7 @@ export type RemoteListing = {
   effective_price?: number;
   is_on_sale?: boolean;
   quantity?: number | null;
-  listing_kind?: 'single' | 'bundle' | 'question_bank';
+  listing_kind?: 'single' | 'bundle' | 'question_bank' | 'study_pack';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
   campus_id?: string | null;
@@ -202,7 +202,7 @@ export interface MarketplaceListing {
   effective_price?: number;
   is_on_sale?: boolean;
   quantity?: number | null;
-  listing_kind?: 'single' | 'bundle' | 'question_bank';
+  listing_kind?: 'single' | 'bundle' | 'question_bank' | 'study_pack';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
   campus_id?: string | null;
@@ -390,10 +390,11 @@ const refreshMarketplaceBudget = async (userId: string) => {
   }
 };
 
-export type MarketplaceCategory = 
-  | 'textbook_exchange' 
-  | 'pq_bank' 
-  | 'lecture_notes' 
+export type MarketplaceCategory =
+  | 'textbook_exchange'
+  | 'pq_bank'
+  | 'study_pack'
+  | 'lecture_notes'
   | 'project_thesis' 
   | 'data_collection' 
   | 'equipment_rental'
@@ -409,6 +410,7 @@ export type MarketplaceTab = 'academic' | 'student-life' | 'shops';
 export const ACADEMIC_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] = [
   { id: 'textbook_exchange', name: 'Textbooks', icon: 'book' },
   { id: 'pq_bank', name: 'Past Questions', icon: 'sparkles' },
+  { id: 'study_pack', name: 'Study Packs', icon: 'albums' },
   { id: 'lecture_notes', name: 'Lecture Notes', icon: 'document-text' },
   { id: 'project_thesis', name: 'Projects & Thesis', icon: 'briefcase' },
   { id: 'data_collection', name: 'Data Collection', icon: 'chart-bar' },

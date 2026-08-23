@@ -70,6 +70,7 @@ import courseRoutes, { initializeCourseRoutes } from './routes/courses';
 import userCourseRoutes, { initializeUserCourseRoutes } from './routes/userCourses';
 import conceptRoutes, { initializeConceptRoutes } from './routes/concepts';
 import libraryRoutes, { initializeLibraryRoutes } from './routes/library';
+import creatorRoutes, { initializeCreatorRoutes } from './routes/creators';
 import reportRoutes, { initializeReportRoutes } from './routes/reports';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
@@ -173,6 +174,7 @@ async function initializeServices() {
     initializeUserCourseRoutes(supabaseService, cacheService);
     initializeConceptRoutes(supabaseService, cacheService);
     initializeLibraryRoutes(supabaseService, cacheService);
+    initializeCreatorRoutes(supabaseService);
     initializeReportRoutes(supabaseService, cacheService);
 
     const { initializeWalletService } = await import('./services/walletService');
@@ -376,6 +378,7 @@ async function startServer() {
     app.use('/api/v1/courses', courseRoutes);
     app.use('/api/v1/concepts', conceptRoutes);
     app.use('/api/v1/library', libraryRoutes);
+    app.use('/api/v1/creators', creatorRoutes);
     app.use('/api/v1/reports', reportRoutes);
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);

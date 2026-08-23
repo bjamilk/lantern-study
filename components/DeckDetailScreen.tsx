@@ -21,8 +21,10 @@ import {
   ChevronDownIcon,
   EllipsisVerticalIcon,
   FlagIcon,
+  BuildingStorefrontIcon,
 } from '@heroicons/react/24/outline';
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
+import { PublishStudyPackModal } from './marketplace/PublishStudyPackModal';
 import CollaboratorsModal from './CollaboratorsModal';
 import Modal from './ui/Modal';
 import { Button } from './ui';
@@ -127,6 +129,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
   const [isMoveCourseOpen, setIsMoveCourseOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isSellOpen, setIsSellOpen] = useState(false);
   // Course label under the title (Phase 1 · B); courses load lazily on first use.
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
   const knownCourses = useAcademicStore((s) => s.knownCourses);
@@ -447,6 +450,13 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                   <ArrowDownTrayIcon className="w-4 h-4" /> Export CSV
                 </span>
               </MenuItem>
+              {!isSharedWithMe && cardsInDeck.length > 0 && (
+                <MenuItem onSelect={() => setIsSellOpen(true)}>
+                  <span className="inline-flex items-center gap-2">
+                    <BuildingStorefrontIcon className="w-4 h-4" /> Sell as study pack…
+                  </span>
+                </MenuItem>
+              )}
               <MenuItem
                 onSelect={() => {
                   void confirmDialog({
@@ -661,6 +671,23 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           currentCourseId={deck.courseId ?? null}
           title={`Move “${deck.name}” to course`}
           onSubmit={(courseId) => onMoveDeckToCourse(deck, courseId)}
+        />
+      ) : null}
+      {isSellOpen ? (
+        <PublishStudyPackModal
+          isOpen={isSellOpen}
+          onClose={() => setIsSellOpen(false)}
+          defaultTitle={deck.name}
+          defaultCourseId={deck.courseId ?? null}
+          content={{
+            flashcards: cardsInDeck
+              .map((c) => ({
+                front: c.front || (c as unknown as { clozeText?: string }).clozeText || '',
+                back: c.back || '',
+                tags: Array.isArray(c.tags) ? c.tags : undefined,
+              }))
+              .filter((c) => c.front.trim().length > 0),
+          }}
         />
       ) : null}
       {cramMinutesOpen && (

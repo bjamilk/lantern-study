@@ -26,6 +26,8 @@ import { SaleCountdown } from './SaleCountdown';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import {
   isMarketplaceListingModerated,
+  isDigitalListingKind,
+  summarizeStudyPackCounts,
   MARKETPLACE_LISTING_STATUS_LABELS,
 } from '@lantern/shared/marketplace';
 import {
@@ -34,6 +36,8 @@ import {
   fetchListingOffersHistory,
   downloadQuestionBank,
   fetchQuestionBankPreview,
+  downloadStudyPack,
+  fetchStudyPackPreview,
   fetchMarketplaceListingReviewEligibility,
 } from '../../services/api';
 import type { MarketplacePickupNudge } from '@lantern/shared/types';
@@ -118,6 +122,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     }>;
   } | null>(null);
   const [bankOwned, setBankOwned] = useState(false);
+  const [studyPackPreview, setStudyPackPreview] =
+    useState<Awaited<ReturnType<typeof fetchStudyPackPreview>> | null>(null);
   const [downloadingBank, setDownloadingBank] = useState(false);
 
   const load = useCallback(async () => {
@@ -163,7 +169,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           setNegotiationHistory([]);
         }
       }
-      // Digital banks: sample + ownership in one public request.
+      // Digital products: sample + ownership in one public request.
       if (listing.listing_kind === 'question_bank') {
         try {
           const preview = await fetchQuestionBankPreview(listingId);
@@ -172,25 +178,45 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         } catch {
           setBankPreview(null);
         }
+        setStudyPackPreview(null);
+      } else if (listing.listing_kind === 'study_pack') {
+        try {
+          const preview = await fetchStudyPackPreview(listingId);
+          setStudyPackPreview(preview);
+          setBankOwned(!!preview.owned);
+        } catch {
+          setStudyPackPreview(null);
+        }
+        setBankPreview(null);
       } else {
         setBankPreview(null);
+        setStudyPackPreview(null);
         setBankOwned(false);
       }
     }
   }, [listingId, fetchListing, fetchListingReviews, fetchSimilar, user?.id, initialQuantity]);
 
   const handleDownloadBank = async () => {
-    if (!listingId) return;
+    if (!listingId || !listing) return;
     setDownloadingBank(true);
     try {
-      await downloadQuestionBank(listingId);
-      setBankOwned(true);
-      Alert.alert(
-        'Added to Offline Mode',
-        'This question bank is now available offline on all your devices.'
-      );
+      if (listing.listing_kind === 'study_pack') {
+        await downloadStudyPack(listingId);
+        setBankOwned(true);
+        Alert.alert(
+          'Added to your Library',
+          'This study pack — notes, flashcards and questions — is now on all your devices.'
+        );
+      } else {
+        await downloadQuestionBank(listingId);
+        setBankOwned(true);
+        Alert.alert(
+          'Added to Offline Mode',
+          'This question bank is now available offline on all your devices.'
+        );
+      }
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not download question bank');
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not download this item');
     } finally {
       setDownloadingBank(false);
     }
@@ -265,11 +291,16 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     const qty = listing.quantity == null ? 1 : selectedQuantity;
     const unitPay = couponPreview?.finalAmount ?? pricing.effective;
     const itemTotal = Math.round(unitPay * qty * 100) / 100;
-    const serviceFee = Math.round(itemTotal * 0.05 * 100) / 100;
+    // Digital products charge the buyer the LIST price — the platform's cut is
+    // taken from the creator's payout — so only physical listings add the 5%.
+    const digital = isDigitalListingKind(listing.listing_kind);
+    const serviceFee = digital ? 0 : Math.round(itemTotal * 0.05 * 100) / 100;
     const payAmount = Math.round((itemTotal + serviceFee) * 100) / 100;
     Alert.alert(
       'Buy Now',
-      `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ${formatPrice(itemTotal)}\nService charge (5%): ${formatPrice(serviceFee)}\nTotal: ${formatPrice(payAmount)}`,
+      digital
+        ? `Purchase "${listing.title}"?\n\nTotal: ${formatPrice(payAmount)}`
+        : `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ${formatPrice(itemTotal)}\nService charge (5%): ${formatPrice(serviceFee)}\nTotal: ${formatPrice(payAmount)}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -566,9 +597,15 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
           <Pressable
             onPress={() =>
-              navigation.navigate('SellerProfile', {
-                sellerId: listing.seller_id || listing.user_id,
-              })
+              // Digital products are sold by creators — show the creator profile
+              // (follows, packs, learners helped) rather than the seller page.
+              isDigitalListingKind(listing.listing_kind)
+                ? navigation.navigate('CreatorProfile', {
+                    userId: listing.user_id || listing.seller_id,
+                  })
+                : navigation.navigate('SellerProfile', {
+                    sellerId: listing.seller_id || listing.user_id,
+                  })
             }
             className="flex-row items-center gap-3 mt-4 p-3 rounded-2xl bg-lantern-surface border border-lantern-border"
           >
@@ -621,6 +658,85 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               ))}
               <Text className="text-xs text-lantern-text-tertiary">
                 Answers and explanations come with the full bank.
+              </Text>
+            </Card>
+          ) : null}
+
+          {studyPackPreview ? (
+            <Card className="mt-4">
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-sm font-semibold text-lantern-text">What's inside</Text>
+                <Text className="text-xs text-lantern-text-tertiary">
+                  {summarizeStudyPackCounts(studyPackPreview.counts)}
+                </Text>
+              </View>
+
+              {studyPackPreview.toc.length > 0 ? (
+                <View className="mb-3">
+                  <Text className="text-xs font-semibold uppercase text-lantern-text-secondary mb-1">
+                    Study guide
+                  </Text>
+                  {studyPackPreview.toc.slice(0, 8).map((entry, index) => (
+                    <Text key={entry.anchor || index} className="text-sm text-lantern-text-secondary">
+                      {index + 1}. {entry.title}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+
+              {studyPackPreview.summaryPreview ? (
+                <View className="mb-3">
+                  <Text className="text-xs font-semibold uppercase text-lantern-text-secondary mb-1">
+                    Summary preview
+                  </Text>
+                  <Text className="text-sm text-lantern-text-secondary leading-5">
+                    {studyPackPreview.summaryPreview}
+                    {studyPackPreview.summaryPreview.length >= 600 ? '…' : ''}
+                  </Text>
+                </View>
+              ) : null}
+
+              {studyPackPreview.flashcardFronts.length > 0 ? (
+                <View className="mb-3">
+                  <Text className="text-xs font-semibold uppercase text-lantern-text-secondary mb-1">
+                    Sample flashcards
+                  </Text>
+                  {studyPackPreview.flashcardFronts.map((front, index) => (
+                    <View key={index} className="mb-1.5 rounded-lg border border-lantern-border p-2.5">
+                      <Text className="text-sm text-lantern-text-secondary">{front}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {studyPackPreview.questions.length > 0 ? (
+                <View>
+                  <Text className="text-xs font-semibold uppercase text-lantern-text-secondary mb-1">
+                    Sample questions
+                  </Text>
+                  {studyPackPreview.questions.map((question, index) => (
+                    <View
+                      key={question.id || index}
+                      className="mb-2 rounded-xl border border-lantern-border p-3"
+                    >
+                      <Text className="text-sm font-medium text-lantern-text">
+                        {index + 1}. {question.questionStem || question.text || 'Question'}
+                      </Text>
+                      {question.options?.map((option, optionIndex) => (
+                        <Text
+                          key={option.id || optionIndex}
+                          className="mt-1 text-xs text-lantern-text-secondary"
+                        >
+                          {String.fromCharCode(65 + optionIndex)}. {option.text}
+                        </Text>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              <Text className="text-xs text-lantern-text-tertiary mt-1">
+                The full guide, flashcards and questions — with answers — come with the pack.
               </Text>
             </Card>
           ) : null}
@@ -700,8 +816,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         </View>
       </ScrollView>
 
-      {/* Digital question banks: own bar — no cart, no offers, instant delivery. */}
-      {!own && listing.status === 'active' && listing.listing_kind === 'question_bank' ? (
+      {/* Digital products (question banks, study packs): own bar — no cart, no offers, instant delivery. */}
+      {!own && listing.status === 'active' && isDigitalListingKind(listing.listing_kind) ? (
         <View
           style={{ paddingBottom: insets.bottom + 24 }}
           className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
@@ -709,7 +825,9 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           {bankOwned ? (
             <>
               <Text className="text-xs text-emerald-700 mb-2">
-                You own this question bank — find it in Offline Mode.
+                {listing.listing_kind === 'study_pack'
+                  ? 'You own this study pack — find it in your Library.'
+                  : 'You own this question bank — find it in Offline Mode.'}
               </Text>
               <Button
                 variant="secondary"
@@ -722,7 +840,9 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           ) : listing.price && listing.price > 0 ? (
             <>
               <Text className="text-xs text-lantern-text-secondary mb-2">
-                Pay in the app and your question bank is delivered instantly to Offline Mode.
+                {listing.listing_kind === 'study_pack'
+                  ? 'Pay in the app and your study pack is delivered instantly to your Library.'
+                  : 'Pay in the app and your question bank is delivered instantly to Offline Mode.'}
               </Text>
               <Button loading={actionLoading} onPress={handleBuyNow}>
                 Buy Now
@@ -736,7 +856,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      {!own && listing.status === 'active' && listing.listing_kind !== 'question_bank' ? (
+      {!own && listing.status === 'active' && !isDigitalListingKind(listing.listing_kind) ? (
         <View
           style={{ paddingBottom: insets.bottom + 24 }}
           className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"

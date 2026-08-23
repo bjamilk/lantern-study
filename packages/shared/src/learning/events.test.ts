@@ -73,10 +73,17 @@ describe('parseQuestionBankListingId', () => {
     expect(parseQuestionBankListingId(`qbank-${id.toUpperCase()}`)).toBe(id);
   });
 
+  it('extracts the listing uuid from a study-pack bundle id', () => {
+    expect(parseQuestionBankListingId(`pack-${id}`)).toBe(id);
+    expect(parseQuestionBankListingId(`pack-${id.toUpperCase()}`)).toBe(id);
+  });
+
   it('returns null for other bundle kinds and malformed ids', () => {
     expect(parseQuestionBankListingId('deck-abc')).toBeNull();
     expect(parseQuestionBankListingId('qbank-not-a-uuid')).toBeNull();
+    expect(parseQuestionBankListingId('pack-not-a-uuid')).toBeNull();
     expect(parseQuestionBankListingId('qbank-')).toBeNull();
+    expect(parseQuestionBankListingId('pack-')).toBeNull();
     expect(parseQuestionBankListingId(undefined)).toBeNull();
     expect(parseQuestionBankListingId(null)).toBeNull();
   });
@@ -92,7 +99,7 @@ describe('isUuidLike', () => {
 });
 
 describe('LEARNING_EVENT_TYPES', () => {
-  it('matches the migration CHECK list (10 types)', () => {
+  it('matches the migration CHECK list (11 types)', () => {
     expect(LEARNING_EVENT_TYPES).toEqual([
       'card_reviewed',
       'question_shown',
@@ -103,6 +110,7 @@ describe('LEARNING_EVENT_TYPES', () => {
       'question_generated',
       'bank_downloaded',
       'bank_score_recorded',
+      'pack_downloaded',
       'group_question_posted',
     ]);
   });

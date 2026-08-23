@@ -3,7 +3,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
-import { aiRateLimit, aiRateLimitForFeature, getAIUsage } from '../middleware/aiRateLimit';
+import { aiRateLimit, aiRateLimitForFeature, aiRateLimitWithCost, getAIUsage } from '../middleware/aiRateLimit';
 import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
@@ -11,7 +11,12 @@ import { AuthenticatedRequest } from '../types';
 import { SupabaseService } from '../services/supabase';
 import { logAIInference } from '../services/aiInferenceLog';
 import { runSyncOrEnqueue } from '../queue/enqueue';
-import { sendAsyncJobAccepted, aiChargeFromRes } from '../queue/respondAsync';
+import { sendAsyncJobAccepted, stampAiChargeOnJob, aiChargeFromRes } from '../queue/respondAsync';
+import { PublicError } from '../utils/safeError';
+import {
+  getStudyPackFactoryService,
+  STUDY_PACK_DRAFT_CREDIT_COST,
+} from '../services/studyPackFactory';
 import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
@@ -324,6 +329,99 @@ router.post('/generate-listing-description', aiRateLimitForFeature('listing_desc
     console.error('AI listing description error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate description.') });
   }
+});
+
+// ============================================================
+// STUDY PRODUCT FACTORY (Phase 2 · H) — turn notes into a sellable study pack
+// ============================================================
+
+// POST /api/v1/ai/study-pack/draft - one credit charge; generates a draft (async)
+router.post(
+  '/study-pack/draft',
+  requirePermission('ai'),
+  aiPostBurstRateLimit,
+  aiRateLimitWithCost(() => STUDY_PACK_DRAFT_CREDIT_COST, { label: 'Turn into a Study Product' }),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Authentication required' });
+        return;
+      }
+      const factory = getStudyPackFactoryService(supabaseService);
+      const { noteIds, folderId, courseId, title } = req.body || {};
+      const { draftId } = await factory.createDraft(userId, {
+        noteIds: Array.isArray(noteIds) ? noteIds.map(String) : undefined,
+        folderId: folderId ?? null,
+        courseId: courseId ?? null,
+        title: typeof title === 'string' ? title : undefined,
+      });
+
+      const outcome = await runSyncOrEnqueue(
+        'ai.studyPack.generate',
+        { draftId },
+        userId,
+        async () => factory.generate(draftId),
+        aiChargeFromRes(res),
+      );
+
+      if (outcome.mode === 'async') {
+        await factory.attachJobId(draftId, outcome.jobId);
+        // 202 with the draftId so the client can poll either the job or the draft.
+        stampAiChargeOnJob(res, outcome.jobId);
+        res.status(202).json({
+          success: true,
+          draftId,
+          jobId: outcome.jobId,
+          status: 'queued',
+          pollUrl: `/api/v1/jobs/${outcome.jobId}`,
+        });
+        return;
+      }
+      // Sync fallback (BullMQ disabled): the draft is already ready.
+      const draft = await factory.getDraft(userId, draftId);
+      res.status(201).json({ success: true, draftId, draft });
+    } catch (error: any) {
+      if (error instanceof PublicError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Study pack draft error:', error?.message);
+      res.status(503).json({ error: clientErrorMessage(error, 'Could not start the study pack.') });
+    }
+  },
+);
+
+// GET /api/v1/ai/study-pack/drafts - the caller's drafts (excludes published)
+router.get('/study-pack/drafts', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const data = await getStudyPackFactoryService(supabaseService).listDrafts(userId);
+  res.json({ success: true, data });
+});
+
+// GET /api/v1/ai/study-pack/drafts/:id - one draft with full content
+router.get('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  try {
+    const draft = await getStudyPackFactoryService(supabaseService).getDraft(userId, req.params.id);
+    res.json({ success: true, data: draft });
+  } catch (error: any) {
+    if (error instanceof PublicError) {
+      res.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+});
+
+// DELETE /api/v1/ai/study-pack/drafts/:id
+router.delete('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  await getStudyPackFactoryService(supabaseService).deleteDraft(userId, req.params.id);
+  res.json({ success: true });
 });
 
 export default router;

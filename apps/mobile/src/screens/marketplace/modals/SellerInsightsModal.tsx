@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { SellerAnalytics } from '@lantern/shared/types';
 import { Button } from '../../../components/ui';
-import { updateSellerPreferences } from '../../../services/api';
+import { updateSellerPreferences, fetchSellerPayments } from '../../../services/api';
 import { formatPrice } from '../marketplaceHelpers';
 import { SellerPayoutSetup } from '../SellerPayoutSetup';
 
@@ -41,6 +41,16 @@ export function SellerInsightsModal({
 }: Props) {
   const insets = useSafeAreaInsets();
   const [savingPrefs, setSavingPrefs] = useState(false);
+  // Earnings ledger (Phase 2 · I): what each sale paid out after the Lantern fee.
+  const [payments, setPayments] = useState<Awaited<ReturnType<typeof fetchSellerPayments>>>([]);
+
+  useEffect(() => {
+    if (!visible) return;
+    void fetchSellerPayments(1)
+      .then(setPayments)
+      .catch(() => setPayments([]));
+  }, [visible]);
+
   const weeklyMax = analytics?.salesByWeek?.length
     ? Math.max(...analytics.salesByWeek.map(w => w.revenue), 1)
     : 1;
@@ -181,6 +191,33 @@ export function SellerInsightsModal({
                 Analytics will appear once you have selling activity.
               </Text>
             )}
+
+            {payments.length > 0 ? (
+              <View className="mb-3 p-3 rounded-xl bg-lantern-background border border-lantern-border">
+                <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Earnings</Text>
+                {payments.slice(0, 10).map((p) => (
+                  <View
+                    key={p.orderId}
+                    className="flex-row items-center py-1.5 border-b border-lantern-border/60"
+                  >
+                    <Text className="flex-1 text-xs text-lantern-text" numberOfLines={1}>
+                      {p.title}
+                    </Text>
+                    {p.platformFeeKobo > 0 ? (
+                      <Text className="text-[11px] text-lantern-text-tertiary mr-2">
+                        −{formatPrice(Math.round(p.platformFeeKobo / 100))}
+                      </Text>
+                    ) : null}
+                    <Text className="text-xs font-semibold text-lantern-text">
+                      {formatPrice(Math.round(p.sellerPayoutKobo / 100))}
+                    </Text>
+                  </View>
+                ))}
+                <Text className="mt-2 text-[11px] text-lantern-text-tertiary">
+                  Amounts shown are what you receive after the Lantern fee.
+                </Text>
+              </View>
+            ) : null}
 
             <SellerPayoutSetup />
 

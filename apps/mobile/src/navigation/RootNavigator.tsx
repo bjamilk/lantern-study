@@ -156,6 +156,12 @@ import {
 
   CartScreen,
 
+  PurchasesScreen,
+
+  StudyProductDraftsScreen,
+
+  CreatorProfileScreen,
+
   OrderDetailScreen,
 
   SellerCustomersScreen,
@@ -396,6 +402,12 @@ function MarketNavigator() {
       <MarketStack.Screen name="Orders" component={OrdersScreen} />
 
       <MarketStack.Screen name="Cart" component={CartScreen} />
+
+      <MarketStack.Screen name="Purchases" component={PurchasesScreen} />
+
+      <MarketStack.Screen name="StudyProductDrafts" component={StudyProductDraftsScreen} />
+
+      <MarketStack.Screen name="CreatorProfile" component={CreatorProfileScreen} />
 
       <MarketStack.Screen name="OrderDetail" component={OrderDetailScreen} />
 

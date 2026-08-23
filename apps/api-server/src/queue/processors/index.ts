@@ -32,6 +32,7 @@ import { processJobDeadlineReminders } from "../../services/jobReminders";
 import { logAIInference } from "../../services/aiInferenceLog";
 import { normalizeSurface, recordLearningEvent } from "../../services/learningEvents";
 import { buildTrustedCompanionContext } from "../../services/companionContext";
+import { getStudyPackFactoryService } from "../../services/studyPackFactory";
 import {
   ensureConversationTitle,
   parseCompanionUuid,
@@ -294,6 +295,14 @@ async function processAiJob(job: Job): Promise<unknown> {
         job.data as Record<string, unknown>,
       );
       return result;
+    }
+    case "ai.studyPack.generate": {
+      const { draftId } = job.data as { draftId: string };
+      if (!draftId || !supabaseService) {
+        throw new Error("Study pack generation job requires draftId and supabase service");
+      }
+      // Throws on total failure → the worker wrapper refunds the AI charge.
+      return getStudyPackFactoryService(supabaseService).generate(draftId);
     }
     default:
       throw new Error(`Unknown AI job: ${name}`);

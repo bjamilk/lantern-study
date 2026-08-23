@@ -29,6 +29,7 @@ import { CoursePicker } from '../../components/CoursePicker';
 import { confirmSheet } from '../../stores/confirmStore';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import CollaboratorsModal from '../../components/CollaboratorsModal';
+import { PublishStudyPackModal } from '../settings/PublishStudyPackModal';
 import CreateFlashcardModal, { type FlashcardDraft } from '../../components/CreateFlashcardModal';
 import {
   FlashcardType,
@@ -143,6 +144,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [moreModesOpen, setMoreModesOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  const [sellOpen, setSellOpen] = useState(false);
   const [editDeckOpen, setEditDeckOpen] = useState(false);
   const [deckDraftName, setDeckDraftName] = useState('');
   const [deckDraftDescription, setDeckDraftDescription] = useState('');
@@ -493,6 +495,17 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       icon: 'share-outline',
       onPress: () => void handleExportCsv(),
     },
+    ...(hasCards
+      ? [
+          {
+            section: 'Share & offline',
+            label: 'Sell as study pack…',
+            icon: 'storefront-outline',
+            hint: 'List these flashcards on the Marketplace',
+            onPress: () => setTimeout(() => setSellOpen(true), 50),
+          } as ActionSheetItem,
+        ]
+      : []),
     {
       section: 'Share & offline',
       label: 'Import',
@@ -725,6 +738,25 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         title="Manage deck"
         items={manageItems}
         onClose={() => setManageOpen(false)}
+      />
+
+      <PublishStudyPackModal
+        visible={sellOpen}
+        onClose={() => setSellOpen(false)}
+        defaultTitle={deck?.name}
+        defaultCourseId={deck?.course_id ?? null}
+        content={{
+          flashcards: cards
+            .map((c) => {
+              const { front, back } = getCardDisplayText(c);
+              return {
+                front,
+                back,
+                tags: Array.isArray(c.tags) ? (c.tags.filter(Boolean) as string[]) : undefined,
+              };
+            })
+            .filter((c) => c.front.trim().length > 0),
+        }}
       />
 
       <CoursePicker

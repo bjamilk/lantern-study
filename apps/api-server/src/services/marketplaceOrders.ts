@@ -1,6 +1,7 @@
 import type { SupabaseService } from './supabase';
 import { cacheService } from './cache';
 import { logger } from '../utils/logger';
+import { isDigitalListingKind } from '@lantern/shared/marketplace';
 // PublicError messages survive production error masking (clientErrorMessage);
 // every throw in this service is written for the end user.
 import { PublicError } from '../utils/safeError';
@@ -271,11 +272,12 @@ export class MarketplaceOrdersService {
     if (!listing) throw new PublicError('Listing not found');
     if (listing.user_id === buyerId) throw new PublicError('Cannot buy your own listing');
 
-    // This method is the non-Paystack path (manual payment + meetup). Question
-    // banks are delivered digitally on payment confirmation, which only the
-    // Paystack flow provides — free banks use the download endpoint instead.
-    if (listing.listing_kind === 'question_bank') {
-      throw new PublicError('Question banks are delivered digitally and require in-app payment');
+    // This method is the non-Paystack path (manual payment + meetup). Digital
+    // products (question banks, study packs) are delivered on payment
+    // confirmation, which only the Paystack flow provides — free ones use the
+    // download endpoint instead.
+    if (isDigitalListingKind(listing.listing_kind)) {
+      throw new PublicError('Digital products are delivered in-app and require in-app payment');
     }
 
     this.assertListingInStock(listing, quantity);

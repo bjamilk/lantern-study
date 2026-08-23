@@ -56,6 +56,7 @@ export function isOwnListing(listing: MarketplaceListing, userId?: string): bool
 const CATEGORY_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   book: 'book-outline',
   sparkles: 'star-outline',
+  albums: 'albums-outline',
   'document-text': 'document-text-outline',
   briefcase: 'briefcase-outline',
   'chart-bar': 'bar-chart-outline',

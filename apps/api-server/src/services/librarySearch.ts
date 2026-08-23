@@ -48,8 +48,13 @@ export const LIBRARY_SEARCH_MAX_QUERY_LENGTH = 100;
 export const LIBRARY_SEARCH_DEFAULT_LIMIT = 30;
 export const LIBRARY_SEARCH_MAX_LIMIT = 50;
 
-/** offline_bundles rows created by a question-bank purchase (see marketplaceQuestionBanks.ts). */
+/**
+ * offline_bundles rows created by a digital marketplace purchase: a question
+ * bank ('qbank-<listingId>') or a study pack ('pack-<listingId>'). Both are
+ * "purchased packs" in the Library overview.
+ */
 export const PURCHASED_PACK_BUNDLE_PREFIX = 'qbank-';
+export const PURCHASED_PACK_BUNDLE_PREFIXES = ['qbank-', 'pack-'] as const;
 
 /** PostgREST returns at most 1000 rows per request; the overview pages past that. */
 const OVERVIEW_PAGE_SIZE = 1000;
@@ -177,10 +182,13 @@ export function parseLibrarySearchTypes(raw: unknown): LibrarySearchType[] | nul
 }
 
 export const isPurchasedPackBundleId = (bundleId: unknown): bundleId is string =>
-  typeof bundleId === 'string' && bundleId.startsWith(PURCHASED_PACK_BUNDLE_PREFIX);
+  typeof bundleId === 'string' &&
+  PURCHASED_PACK_BUNDLE_PREFIXES.some((prefix) => bundleId.startsWith(prefix));
 
 export const listingIdFromBundleId = (bundleId: string): string | null => {
-  const listingId = bundleId.slice(PURCHASED_PACK_BUNDLE_PREFIX.length);
+  const prefix = PURCHASED_PACK_BUNDLE_PREFIXES.find((p) => bundleId.startsWith(p));
+  if (!prefix) return null;
+  const listingId = bundleId.slice(prefix.length);
   return isUuid(listingId) ? listingId : null;
 };
 

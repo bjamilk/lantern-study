@@ -1,4 +1,5 @@
 import type { SupabaseService } from './supabase';
+import { isDigitalListingKind } from '@lantern/shared/marketplace';
 import { getMarketplaceOrdersService, type MarketplaceOrderRow } from './marketplaceOrders';
 
 export type MarketplaceCartItemRow = {
@@ -47,12 +48,19 @@ export class MarketplaceCartService {
       user_id: string;
       status: string;
       quantity?: number | null;
+      listing_kind?: string | null;
     },
     buyerId: string,
     quantity: number
   ): void {
     if (listing.user_id === buyerId) {
       throw new Error('Cannot add your own listing to cart');
+    }
+    // Digital products (question banks, study packs) are Buy-Now / free-download
+    // only — they never go through the cart. Clients hide them, but enforce it
+    // server-side too so a crafted request can't cart-checkout a digital item.
+    if (isDigitalListingKind(listing.listing_kind)) {
+      throw new Error('Digital products are bought instantly and cannot be added to the cart');
     }
     if (listing.status !== 'active') {
       throw new Error('Listing is not available for purchase');

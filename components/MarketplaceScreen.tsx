@@ -40,6 +40,7 @@ import {
   TrashIcon,
   PlusIcon,
   BuildingStorefrontIcon,
+  RectangleStackIcon,
   StarIcon,
   ExclamationTriangleIcon,
   ArrowPathIcon,
@@ -133,6 +134,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const academicCategories = [
     { id: 'textbook_exchange', name: 'Textbooks', icon: AcademicCapIcon },
     { id: 'pq_bank', name: 'Past Questions', icon: SparklesIcon },
+    { id: 'study_pack', name: 'Study Packs', icon: RectangleStackIcon },
     { id: 'lecture_notes', name: 'Lecture Notes', icon: BriefcaseIcon },
     { id: 'project_thesis', name: 'Projects & Thesis', icon: BriefcaseIcon },
     { id: 'data_collection', name: 'Data Collection', icon: HomeIcon },

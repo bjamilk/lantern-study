@@ -13,6 +13,7 @@ import {
   TrashIcon,
   UserPlusIcon,
   ShareIcon,
+  BuildingStorefrontIcon,
   DocumentDuplicateIcon,
   MicrophoneIcon,
   StopIcon,
@@ -73,6 +74,8 @@ interface NoteEditorScreenProps {
   onTranscriptReady: (transcript: string) => void;
   /** Cancel pending autosave before/after voice transcription. */
   onCancelPendingSave?: () => void;
+  /** Owner-only: generate a sellable study pack from this note (Phase 2 · H). */
+  onSellAsStudyPack?: () => void;
 }
 
 const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
@@ -101,6 +104,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   onShareWithGroup,
   onTranscriptReady,
   onCancelPendingSave,
+  onSellAsStudyPack,
 }) => {
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
@@ -718,6 +722,19 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         />
         {isSaving && <span className="hidden sm:inline text-xs text-lantern-text-tertiary shrink-0">Saving...</span>}
         {isOwner && <>
+          {onSellAsStudyPack && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onSellAsStudyPack}
+              aria-label="Turn into a Study Product"
+              title="Turn into a Study Product"
+              className="shrink-0 px-2 sm:px-3"
+            >
+              <BuildingStorefrontIcon className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1">Sell</span>
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={handleShareGroup} aria-label="Share with group" className="shrink-0 px-2 sm:px-3">
             <ShareIcon className="w-4 h-4" />
           </Button>

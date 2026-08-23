@@ -210,6 +210,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
     const categoryNames: Record<string, string> = {
       textbook_exchange: 'Textbooks',
       pq_bank: 'Past Questions',
+      study_pack: 'Study Pack',
       lecture_notes: 'Lecture Notes',
       project_thesis: 'Projects & Thesis',
       data_collection: 'Data Collection',

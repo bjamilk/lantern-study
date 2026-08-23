@@ -83,6 +83,9 @@ const BudgetTrackerScreen = lazyWithRetry(() => import('./components/BudgetTrack
 const MarketplaceScreen = lazyWithRetry(() => import('./components/MarketplaceScreen'));
 const MarketplaceListingDetailScreen = lazyWithRetry(() => import('./components/MarketplaceListingDetailScreen'));
 const MyListingsScreen = lazyWithRetry(() => import('./components/MyListingsScreen'));
+const MarketplacePurchasesScreen = lazyWithRetry(() => import('./components/MarketplacePurchasesScreen'));
+const StudyProductDraftsScreen = lazyWithRetry(() => import('./components/StudyProductDraftsScreen'));
+const CreatorProfileScreen = lazyWithRetry(() => import('./components/CreatorProfileScreen'));
 const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
@@ -230,6 +233,12 @@ export const App: React.FC = () => {
         isOnline,
         libraryTab, setLibraryTab,
     } = useUIStore();
+
+    // Source handed to the Study Product Drafts screen by a "Turn into a Study
+    // Product" entry (a note / folder / course); null = just view past drafts.
+    const [studyProductSource, setStudyProductSource] = useState<
+        { noteIds?: string[]; folderId?: string | null; courseId?: string | null; title?: string } | null
+    >(null);
 
     useEffect(() => {
         if (isCompanionOpen) markChecklist('tryCompanion');
@@ -1213,6 +1222,10 @@ export const App: React.FC = () => {
                         }}
                         onOpenOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
                         onOpenTests={() => navigateTo(AppMode.DASHBOARD)}
+                        onCreateStudyPackFromCourse={(courseId, courseLabel) => {
+                            setStudyProductSource({ courseId, title: courseLabel });
+                            setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                        }}
                     />
                 );
             case AppMode.STUDY_HUB:
@@ -1280,6 +1293,10 @@ export const App: React.FC = () => {
                         onBack={() => navigateTo(AppMode.NOTES)}
                         onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
                         onCancelPendingSave={noteHandlers.cancelAutoSave}
+                        onSellAsStudyPack={() => {
+                            setStudyProductSource({ noteIds: [selectedNote.id], title: selectedNote.title });
+                            setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                        }}
                         onDelete={async () => {
                             const noteId = selectedNote.id;
                             const lecture = useLectureRecordingStore.getState();
@@ -1479,6 +1496,8 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     } else if (screen === 'MyListings') {
                         setAppMode(AppMode.MY_LISTINGS);
+                    } else if (screen === 'MarketplacePurchases') {
+                        setAppMode(AppMode.MARKETPLACE_PURCHASES);
                     } else if (screen === 'MarketplaceFavorites') {
                         setAppMode(AppMode.MARKETPLACE_FAVORITES);
                     } else if (screen === 'MarketplaceInquiries') {
@@ -1507,7 +1526,11 @@ export const App: React.FC = () => {
                     }}
                     onNavigate={(screen, params) => {
                         if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
-                        else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
+                        else if (screen === 'CreatorProfile' && (params?.userId || params?.sellerId)) {
+                            setSellerProfileReturnMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                            setSelectedSellerId(params.userId || params.sellerId);
+                            setAppMode(AppMode.CREATOR_PROFILE);
+                        } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
                             setSellerProfileReturnMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                             setSelectedSellerId(params.userId || params.sellerId);
                             setAppMode(AppMode.SELLER_PROFILE);
@@ -1558,6 +1581,43 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE);
                     }
                 }} onBack={() => setAppMode(AppMode.MARKETPLACE)} refreshKey={myListingsRefreshKey} />;
+            case AppMode.MARKETPLACE_PURCHASES:
+                return <MarketplacePurchasesScreen
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setSelectedMarketplaceListingInitialQuantity(null);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        } else if (screen === 'Marketplace') {
+                            setAppMode(AppMode.MARKETPLACE);
+                        }
+                    }} />;
+            case AppMode.CREATOR_PROFILE:
+                if (!selectedSellerId) return null;
+                return <CreatorProfileScreen
+                    userId={selectedSellerId}
+                    currentUserId={currentUser?.id}
+                    onBack={() => setAppMode(sellerProfileReturnMode || AppMode.MARKETPLACE)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setSelectedMarketplaceListingInitialQuantity(null);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        }
+                    }} />;
+            case AppMode.STUDY_PRODUCT_DRAFTS:
+                return <StudyProductDraftsScreen
+                    initialSource={studyProductSource}
+                    onBack={() => { setStudyProductSource(null); setAppMode(AppMode.LIBRARY); }}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setStudyProductSource(null);
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setSelectedMarketplaceListingInitialQuantity(null);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        }
+                    }} />;
             case AppMode.MARKETPLACE_FAVORITES:
                 return <MarketplaceFavoritesScreen
                     onBack={() => setAppMode(AppMode.MARKETPLACE)}

@@ -1220,6 +1220,58 @@ For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit o
   return { provider, usage, questions: usable };
 }
 
+export interface GeneratedEssayQuestion {
+  text: string;
+  /** The key points a strong answer must cover (markdown bullet list). */
+  rubric: string;
+}
+
+/**
+ * Long-answer / essay questions with a marking rubric (Phase 2 · H). Kept
+ * separate from generateQuestionsFromNotes (whose parser is MCQ/short-answer
+ * only) so the strict answer-key handling there is never loosened.
+ */
+export async function generateEssayQuestionsFromNotes(
+  notes: string,
+  options: { count?: number; subject?: string } = {}
+): Promise<{ questions: GeneratedEssayQuestion[]; provider: string; usage?: AiUsage }> {
+  const count = Math.min(Math.max(options.count ?? 3, 1), 5);
+  const source = notes.substring(0, 6000);
+  return withAiResponseCache(
+    'generate_essays',
+    source,
+    { count, subject: options.subject },
+    async () => {
+      const systemPrompt = `You are an expert examiner writing exam essay / long-answer questions.
+Generate exactly ${count} essay questions from the study material${options.subject ? ` (subject: ${options.subject})` : ''}.
+Each question needs a concise marking rubric: the key points a strong answer must cover.
+
+Return ONLY valid JSON: {"questions":[{"text":"the essay question","rubric":"- point one\\n- point two\\n- point three"}]}`;
+
+      const { text, provider, usage } = await chatCompletion(
+        systemPrompt,
+        `Write essay questions from:\n\n${source}`,
+        { temperature: 0.7, jsonOutput: true }
+      );
+
+      const parsed = extractJSON(text);
+      const raw = parsed.questions || parsed;
+      if (!Array.isArray(raw)) throw new Error('Invalid AI response format');
+
+      const questions = raw
+        .slice(0, count)
+        .map((q: any) => ({
+          text: String(q.text || q.question || '').trim(),
+          rubric: String(q.rubric || q.markingScheme || q.marking_scheme || '').trim(),
+        }))
+        .filter((q: GeneratedEssayQuestion) => q.text.length > 0);
+      if (questions.length === 0) throw new Error('Essay generation produced no questions');
+
+      return { provider, usage, questions };
+    }
+  );
+}
+
 export async function generateFlashcardsFromNotes(
   notes: string,
   options: { count?: number; style?: 'concise' | 'detailed' } = {}

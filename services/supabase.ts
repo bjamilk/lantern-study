@@ -18,6 +18,7 @@ import {
   RateLimitError,
 } from '@lantern/shared'
 import { normalizeTestResultSession, retryUncertainDelivery } from '@lantern/shared/utils'
+import type { StudyPackContentInput, StudyPackCounts, StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/marketplace'
 import {
   type UserSettings,
   normalizeUserSettings,
@@ -4463,6 +4464,345 @@ export const restoreQuestionBanks = async (): Promise<{ restored: number }> => {
   return (await response.json()).data;
 };
 
+// ── Study packs (digital study products: guide + summaries + flashcards + questions) ──
+
+export interface MarketplaceStudyPackMeta {
+  counts: StudyPackCounts;
+  version: number;
+  owned: boolean;
+}
+
+/** Publish a study pack as a digital listing (from inline content or an AI draft). */
+export const publishStudyPack = async (input: {
+  title: string;
+  description?: string;
+  price?: number | null;
+  campusId: string;
+  location?: string;
+  courseId?: string | null;
+  content?: StudyPackContentInput;
+  draftId?: string | null;
+  /** Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; 400 without it. */
+  attestation: true;
+  aiAssisted?: boolean;
+  sourcesCited?: string[];
+}): Promise<{ listing: any; pack: { listingId: string; packId: string; version: number } }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/study-packs/publish`,
+    { method: 'POST', headers: await getAuthHeaders(), body: JSON.stringify(input) },
+    20000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const error = new Error(
+      (err as any).error || (err as any).message || 'Failed to publish study pack'
+    ) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return (await response.json()).data;
+};
+
+/** Free packs and owner re-downloads: grants the entitlement and delivers the pack. */
+export const downloadStudyPack = async (
+  listingId: string
+): Promise<{ bundleId: string | null; deckId: string | null; noteId: string | null; version: number }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/listings/${encodeURIComponent(listingId)}/study-pack/download`,
+    { method: 'POST', headers: await getAuthHeaders() },
+    15000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to download study pack');
+  }
+  return (await response.json()).data;
+};
+
+export interface StudyPackPreview {
+  title: string;
+  counts: StudyPackCounts;
+  toc: Array<{ title: string; anchor: string }>;
+  summaryPreview: string | null;
+  flashcardFronts: string[];
+  questions: Array<{
+    id?: string;
+    questionStem?: string;
+    text?: string;
+    questionType?: string;
+    options?: Array<{ id: string; text: string }>;
+    imageUrl?: string;
+    tags?: string[];
+  }>;
+  owned: boolean;
+  isSeller: boolean;
+  version: number;
+}
+
+/** Public sample of a study pack — question answers are stripped server-side. */
+export const fetchStudyPackPreview = async (listingId: string): Promise<StudyPackPreview> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/listings/${encodeURIComponent(listingId)}/study-pack/preview`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load preview');
+  }
+  return (await response.json()).data;
+};
+
+/** Seller republish: replace the snapshot, bumping the version. Re-requires attestation. */
+export const updateStudyPackContent = async (
+  listingId: string,
+  content: StudyPackContentInput,
+  provenance: { attestation: true; aiAssisted?: boolean; sourcesCited?: string[] }
+): Promise<{ version: number; counts: StudyPackCounts }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/study-packs/${encodeURIComponent(listingId)}/update-content`,
+    { method: 'POST', headers: await getAuthHeaders(), body: JSON.stringify({ content, ...provenance }) },
+    20000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const error = new Error(
+      (err as any).error || (err as any).message || 'Failed to update study pack'
+    ) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return (await response.json()).data;
+};
+
+export interface MyStudyPack {
+  listingId: string;
+  version: number;
+  counts: StudyPackCounts;
+  courseId: string | null;
+  title: string;
+  price: number | null;
+  status: string;
+}
+
+/** Study packs the current user has published. */
+export const fetchMyStudyPacks = async (): Promise<MyStudyPack[]> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/study-packs/mine`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load your study packs');
+  }
+  return (await response.json()).data;
+};
+
+/** Re-materialize purchased packs (deck/note/bundle) on this device. */
+export const restoreStudyPacks = async (): Promise<{ restored: number }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/study-packs/restore`,
+    { method: 'POST', headers: await getAuthHeaders() },
+    20000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to restore study packs');
+  }
+  return (await response.json()).data;
+};
+
+export interface MarketplacePurchase {
+  listingId: string;
+  kind: 'question_bank' | 'study_pack';
+  title: string;
+  sellerId: string;
+  sellerName: string;
+  version: number;
+  versionAtDownload: number;
+  updateAvailable: boolean;
+  deliveredRefs: { bundleId?: string; deckId?: string; noteId?: string; version?: number };
+  courseId: string | null;
+  purchasedAt: string;
+}
+
+/** Unified buyer library across question banks + study packs. */
+export const fetchMarketplacePurchases = async (): Promise<MarketplacePurchase[]> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/purchases`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load your purchases');
+  }
+  return (await response.json()).data;
+};
+
+// ── Creators (Phase 2 · J) ──
+
+export interface CreatorProfile {
+  id: string;
+  username: string | null;
+  name: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  institution: string | null;
+  programme: string | null;
+  studyLevel: number | null;
+  stats: {
+    activePacks: number;
+    learnersHelped: number;
+    avgRating: number;
+    reviewCount: number;
+    followerCount: number;
+    followingCount?: number;
+  };
+  isFollowing: boolean;
+  isVerified: boolean;
+  trustLevel: string;
+  packs: Array<{
+    id: string;
+    title: string;
+    price: number | null;
+    images: string[];
+    listingKind: string;
+    courseId: string | null;
+  }>;
+}
+
+export const fetchCreatorProfile = async (userId: string): Promise<CreatorProfile> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/creators/${encodeURIComponent(userId)}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Creator not found');
+  }
+  return (await response.json()).data;
+};
+
+export const followCreator = async (userId: string): Promise<void> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/follow`,
+    { method: 'POST', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Could not follow this creator');
+  }
+};
+
+export const unfollowCreator = async (userId: string): Promise<void> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/follow`,
+    { method: 'DELETE', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Could not unfollow this creator');
+  }
+};
+
+export interface SellerPaymentRow {
+  orderId: string;
+  listingId: string | null;
+  title: string;
+  itemAmountKobo: number;
+  platformFeeKobo: number;
+  sellerPayoutKobo: number;
+  status: string;
+  paidAt: string | null;
+  payoutAt: string | null;
+}
+
+/** The seller's earnings ledger (Phase 2 · I). */
+export const fetchSellerPayments = async (page = 1): Promise<SellerPaymentRow[]> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/seller/payments?page=${page}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load your earnings');
+  }
+  return (await response.json()).data;
+};
+
+// ── AI Study Product Factory (Phase 2 · H) ──
+
+export type { StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/marketplace';
+
+/** Charge 5 AI credits and start generating a study-pack draft (async). */
+export const createStudyPackDraft = async (input: {
+  noteIds?: string[];
+  folderId?: string | null;
+  courseId?: string | null;
+  title?: string;
+}): Promise<{ draftId: string; jobId?: string; status?: string; draft?: StudyPackDraft }> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/ai/study-pack/draft`,
+    { method: 'POST', headers: await getAuthHeaders(), body: JSON.stringify(input) },
+    30000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const error = new Error((err as any).error || 'Could not start the study pack') as Error & {
+      status?: number;
+    };
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+};
+
+/** The caller's study-pack drafts (excludes published). */
+export const fetchStudyPackDrafts = async (): Promise<StudyPackDraftSummary[]> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/ai/study-pack/drafts`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load your drafts');
+  }
+  return (await response.json()).data;
+};
+
+/** One draft with its full generated content. */
+export const fetchStudyPackDraft = async (draftId: string): Promise<StudyPackDraft> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/ai/study-pack/drafts/${encodeURIComponent(draftId)}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Draft not found');
+  }
+  return (await response.json()).data;
+};
+
+export const deleteStudyPackDraft = async (draftId: string): Promise<void> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/ai/study-pack/drafts/${encodeURIComponent(draftId)}`,
+    { method: 'DELETE', headers: await getAuthHeaders() },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Could not delete draft');
+  }
+};
+
 export const fetchMarketplaceListingFull = async (
   listingId: string,
   userId?: string
@@ -4472,6 +4812,7 @@ export const fetchMarketplaceListingFull = async (
   similarListings: any[];
   canReview?: boolean;
   questionBank?: MarketplaceQuestionBankMeta | null;
+  studyPack?: MarketplaceStudyPackMeta | null;
 }> => {
   const params = userId ? `` : '';
   const response = await fetchWithTimeout(

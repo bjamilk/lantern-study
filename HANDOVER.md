@@ -2,9 +2,19 @@
 
 **Date:** 2026-08-22  
 **Branch:** `main`  
-**HEAD:** `04404b1` (clean tree, pushed — matches `origin/main`)  
-**Production:** https://lanternstudy.com (SW `lantern-mt4ba648-cee27c47`) · API https://lantern-study-api.onrender.com (`/health` = `04404b1`)  
+**HEAD:** `504b32c` (clean tree, pushed — matches `origin/main`)  
+**Production:** https://lanternstudy.com (SW `lantern-mt4zulk1-f0bc8650`) · API https://lantern-study-api.onrender.com (`/health` = `504b32c`)  
 **Supabase project:** `tiizkjhbrnaibaagmurl`
+
+> **Latest: Knowledge Network Phase 1 is LIVE (commit `504b32c`).** Academic
+> identity + courses, My Lantern Library, the learning-events graph, and
+> rights/attestation/moderation shipped and deployed; the 7 Phase-1 migrations
+> were hand-applied first. **Phases 2–4 are designed but NOT built.** Full map,
+> the unimplemented phases, and pending user actions:
+> **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)**.
+> The master plan/roadmap is
+> **[docs/PLAN-2026-08-22-knowledge-network.md](docs/PLAN-2026-08-22-knowledge-network.md)**
+> (the "Lantern Knowledge Network").
 
 This is the canonical "resume here" pointer. Point a new agent at `@HANDOVER.md` plus
 the specific task. Per-session detail lives in the dated docs under `docs/` (linked in §2)
@@ -37,17 +47,18 @@ Deploy: Cloudflare Pages (web, **git-connected — auto-deploys on push to `main
 | Target | State | Verify by |
 |--------|-------|-----------|
 | **Web → Cloudflare Pages** | **LIVE `04404b1`** — auto-deployed on merge; workflow verifies prod Supabase + live SW id before succeeding | `curl -s https://lanternstudy.com/sw.js \| grep -oE 'lantern-[a-z0-9]+-[a-z0-9]+'` |
-| **API → Render** | **LIVE `04404b1`** — auto from `main` | `curl -s https://lantern-study-api.onrender.com/health` → commit |
+| **API → Render** | **LIVE `504b32c`** — auto from `main` | `curl -s https://lantern-study-api.onrender.com/health` → commit |
 | **Mobile Android** | **v1.0.28 (versionCode 83) PUBLISHED** — release `v1.0.28` on `bjamilk/lantern-study-releases`, the site Download button tracks it (asset byte-verified 81,199,242 B == `apps/mobile/build-android-1.0.28-088e85b.apk`) | release asset size + on-device |
 | **iOS** | `apps/mobile/build-ios-sim-1.0.28-088e85b.tar.gz` — simulator parity build, boot-verified; **no distributable** (Apple signing not set up; runbook exists) | `tar -xzf … && xcrun simctl install booted LanternStudyDev.app` |
-| **Supabase** | question-banks migration `20260818120000` is **applied** (E2E-verified 2026-08-16). **Seven Phase 1 migrations `20260822120000` → `20260822170000` are written but NOT applied — hand-apply all seven in filename order BEFORE the next API deploy** (the API build writes `course_id` / `rights_*` unconditionally); list + rationale in `docs/RELEASING.md` → "Apply migrations before deploying" | `SELECT column_name FROM information_schema.columns WHERE table_name='marketplace_listings' AND column_name='rights_status'` (row = 140000 applied) |
+| **Supabase** | Seven Phase 1 migrations `20260822120000` → `20260822170000` are **APPLIED** (hand-applied 2026-08-22 before the `504b32c` API deploy). Future API deploys still require any new migrations applied FIRST — the build writes new columns unconditionally (`docs/RELEASING.md` → "Apply migrations before deploying"). | `SELECT column_name FROM information_schema.columns WHERE table_name='marketplace_listings' AND column_name='rights_status'` (row = 140000 applied) |
 
 **Type-checking gates:** root `npx tsc --noEmit` is a FALSE gate (~3.9k pre-existing errors; wrong tsconfig scope). Real gates: **`npm run build`** (turbo) for web, per-workspace `tsc` for `apps/mobile` and `apps/api-server`.
 
 ### Active detail docs (newest first)
 
+- **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)** — **Knowledge Network Phase 1 SHIPPED LIVE (`504b32c`)**; what shipped, deploy state, **the unimplemented Phases 2–4**, decisions made vs open, pending user/ops actions, traps. *(HEAD — latest work)*
 - **[docs/PLAN-2026-08-22-knowledge-network.md](docs/PLAN-2026-08-22-knowledge-network.md)** — the knowledge-network plan; Phase 1 server work is specified by `docs/phase1-academic-identity-contract.md`, `docs/phase1-rights-moderation-contract.md`, `docs/phase1-learning-events-contract.md`, `docs/phase1-library-archive-contract.md` (status line at the top of each) and lands as migrations `20260822120000`–`20260822170000` (apply order in `docs/RELEASING.md`; `170000` = post-review hardening: suspensions persist, moderation columns hidden from clients, purchased-pack `course_id` backfill).
-- **[docs/HANDOVER-2026-08-22-night-ship-marathon.md](docs/HANDOVER-2026-08-22-night-ship-marathon.md)** — this session: exam lock (#27), **dark-mode rebuild + AA contrast + AI-credit honesty + offline sync integrity** (#28), **ranked backlog: SW app-shell precache, cross-account queue guard, sync durability, 202-credit-refunds, companion parity** (#29), v1.0.27→v1.0.28 releases (#30), **auth funnel overhaul** (#31–#32: 3-field signup, fail-closed captcha, 8-char passwords, expired-link recovery, no enumeration leaks), Apple sign-in runbook. *(HEAD — latest work)*
+- **[docs/HANDOVER-2026-08-22-night-ship-marathon.md](docs/HANDOVER-2026-08-22-night-ship-marathon.md)** — this session: exam lock (#27), **dark-mode rebuild + AA contrast + AI-credit honesty + offline sync integrity** (#28), **ranked backlog: SW app-shell precache, cross-account queue guard, sync durability, 202-credit-refunds, companion parity** (#29), v1.0.27→v1.0.28 releases (#30), **auth funnel overhaul** (#31–#32), Apple sign-in runbook.
 - [docs/APPLE-SIGN-IN-SETUP.md](docs/APPLE-SIGN-IN-SETUP.md) — Apple portal + Supabase provider + iOS signing + **the pending dashboard actions** (redirect allow-list, captcha toggle, password policy, PKCE test plan).
 - [docs/HANDOVER-2026-08-21-settings-locked-test-mode.md](docs/HANDOVER-2026-08-21-settings-locked-test-mode.md) — settings overhaul, first locked-test-mode ship, web auto-deploy pipeline (#21–#26).
 - [docs/HANDOVER-2026-08-21-budget-overhaul.md](docs/HANDOVER-2026-08-21-budget-overhaul.md) — Budget overhaul + marketplace archive fix.

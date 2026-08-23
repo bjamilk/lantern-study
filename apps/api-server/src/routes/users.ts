@@ -48,6 +48,9 @@ export const NON_ADMIN_UPDATABLE_FIELDS = new Set([
   'phone',
   'avatarUrl',
   'avatar_url',
+  // Creator bio (Phase 2 · J) — ≤ 280 chars, enforced by a DB CHECK and by
+  // CreatorsService.normalizeBio on the way in.
+  'bio',
   // settings must go through PUT /users/settings (merge + CAS).
   'test_presets',
   ...ACADEMIC_PROFILE_FIELDS,
@@ -254,6 +257,26 @@ router.get(
     }
 
     const isPlatformAdmin = await isLivePlatformAdmin(userId);
+
+    // Verified v1 (Phase 2 · J): keep verification_level in step with the
+    // account's email confirmation + payout profile. Cached for an hour — the
+    // auth lookup is the expensive part and neither input changes often.
+    const verificationCacheKey = `creator:verification:${userId}`;
+    if (!(await cacheService.get(verificationCacheKey))) {
+      try {
+        const { getCreatorsService } = await import('../services/creators');
+        const { data: authUser } = await supabaseService
+          .getClient()
+          .auth.admin.getUserById(userId);
+        await getCreatorsService(supabaseService).syncVerificationLevel(
+          userId,
+          (authUser?.user as { email_confirmed_at?: string | null } | undefined)?.email_confirmed_at ?? null
+        );
+        await cacheService.set(verificationCacheKey, '1', 3600);
+      } catch (err) {
+        logger.warn('verification level sync failed', { userId });
+      }
+    }
 
     res.json({
       success: true,
@@ -630,6 +653,18 @@ router.put(
     for (const intField of ['studyLevel', 'entryYear', 'expectedGraduationYear'] as const) {
       if (updateData[intField] !== undefined && updateData[intField] !== null) {
         updateData[intField] = Number(updateData[intField]);
+      }
+    }
+    // Creator bio: trimmed, ≤ 280 chars (400 rather than a DB CHECK violation).
+    if (updateData.bio !== undefined) {
+      const { getCreatorsService } = await import('../services/creators');
+      try {
+        updateData.bio = getCreatorsService(supabaseService).normalizeBio(updateData.bio);
+      } catch (error) {
+        if (error instanceof PublicError) {
+          return res.status(400).json({ success: false, error: error.message });
+        }
+        throw error;
       }
     }
 
@@ -1707,6 +1742,93 @@ router.put(
         month_year: data?.month_year ?? monthYear,
       },
     });
+  })
+);
+
+// ============================================================
+// CREATOR FOLLOWS (Phase 2 · J)
+// ============================================================
+
+// POST /api/v1/users/:userId/follow
+router.post(
+  '/:userId/follow',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { getCreatorsService } = await import('../services/creators');
+    try {
+      const data = await getCreatorsService(supabaseService).follow(userId, req.params.userId);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      // Only user-facing PublicErrors become 4xx; DB/internal errors must keep
+      // escaping to the global handler (masking them as 400 hides real faults).
+      if (err instanceof PublicError) {
+        const raw = (err as { statusCode?: number }).statusCode;
+        const code = typeof raw === 'number' && raw >= 400 && raw < 500 ? raw : 400;
+        return res.status(code).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// DELETE /api/v1/users/:userId/follow
+router.delete(
+  '/:userId/follow',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { getCreatorsService } = await import('../services/creators');
+    const data = await getCreatorsService(supabaseService).unfollow(userId, req.params.userId);
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/users/:userId/followers
+router.get(
+  '/:userId/followers',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const viewerId = requireAuthUserId(req, res);
+    if (!viewerId) return;
+    const { getCreatorsService } = await import('../services/creators');
+    const page = req.query?.page ? Number(req.query.page) : 1;
+    const data = await getCreatorsService(supabaseService).listFollowers(
+      req.params.userId,
+      page,
+      30,
+      viewerId
+    );
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/users/:userId/following
+router.get(
+  '/:userId/following',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const viewerId = requireAuthUserId(req, res);
+    if (!viewerId) return;
+    const { getCreatorsService } = await import('../services/creators');
+    const page = req.query?.page ? Number(req.query.page) : 1;
+    const data = await getCreatorsService(supabaseService).listFollowing(
+      req.params.userId,
+      page,
+      30,
+      viewerId
+    );
+    res.json({ success: true, data });
   })
 );
 
