@@ -242,9 +242,40 @@ export function LibraryScreen({ navigation, route }: Props) {
                 <Ionicons name="close-circle" size={16} color={colors.primary} />
               </Pressable>
             </View>
-            <Text className="text-[11px] text-lantern-text-secondary flex-1" numberOfLines={1}>
-              Notes and Flashcards below are filtered
-            </Text>
+            {/* Turn this course's notes into a sellable study pack (Phase 2 · H).
+                UNFILED_COURSE_ID is the string 'null' (truthy!), and there is no
+                course to build from there — so gate on a real course id, which
+                the API validates as a uuid. */}
+            {courseFilter.id && courseFilter.id !== UNFILED_COURSE_ID ? (
+              <Pressable
+                onPress={() =>
+                  // The market stack is nested under Main > MarketTab (there is
+                  // no root-level Market route), same shape as
+                  // navigationRef.navigateToChallengesInbox uses for ChatTab.
+                  navigateRootStack('Main', {
+                    screen: 'MarketTab',
+                    params: {
+                      screen: 'StudyProductDrafts',
+                      params: {
+                        source: { courseId: courseFilter.id, title: courseFilter.label },
+                      },
+                    },
+                  })
+                }
+                className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-lantern-primary/30 bg-lantern-primary/5 min-h-[36px]"
+                accessibilityRole="button"
+                accessibilityLabel={`Create a study pack from ${courseFilter.label}`}
+              >
+                <Ionicons name="storefront-outline" size={13} color={colors.primary} />
+                <Text className="text-[11px] font-semibold text-lantern-primary">
+                  Create a study pack
+                </Text>
+              </Pressable>
+            ) : (
+              <Text className="text-[11px] text-lantern-text-secondary flex-1" numberOfLines={1}>
+                Notes and Flashcards below are filtered
+              </Text>
+            )}
           </View>
         ) : null}
 

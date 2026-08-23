@@ -163,8 +163,9 @@ export function StudyProductDraftsScreen({
           <Ionicons name="sparkles-outline" size={40} color="#94a3b8" />
           <Text className="mt-3 text-base font-semibold text-lantern-text">No study products yet</Text>
           <Text className="mt-1 text-sm text-lantern-text-secondary text-center">
-            Open a note and tap the shop icon. Lantern drafts the guide, flashcards and questions for
-            you to review before publishing.
+            Open a note and tap the shop icon, or pick a course in your Library and choose "Create a
+            study pack". Lantern drafts the guide, flashcards and questions for you to review before
+            publishing.
           </Text>
           <Text className="mt-2 text-xs text-lantern-text-tertiary">
             Uses {STUDY_PACK_DRAFT_CREDITS} AI credits per draft.
