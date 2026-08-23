@@ -8,6 +8,7 @@ import { useUIStore } from '../stores/uiStore';
 import { takeStashedAuthLinkError } from '../utils/authErrorHash';
 import { LanternIcon } from './ui/LanternIcon';
 import TurnstileWidget, { type TurnstileHandle, getTurnstileSitekey } from './TurnstileWidget';
+import { readReferralCode, clearReferralCode } from '../utils/referral';
 import {
   LEGAL_PATHS,
   isEmailNotConfirmedError,
@@ -194,29 +195,6 @@ const AnimatedBackground = () => {
   return <div ref={sceneRef} className="absolute inset-0 w-full h-full" />;
 };
 
-
-/**
- * Referral code for this signup, if any (Phase 4 · Q).
- *
- * Read from `?ref=` and mirrored into sessionStorage, because the code must
- * survive the login↔signup toggle and a bounce through the confirmation email.
- * Kept to a conservative charset/length so nothing odd reaches signup metadata.
- */
-const REFERRAL_STORAGE_KEY = 'lantern_referral_code';
-
-function readReferralCode(): string | null {
-  try {
-    const fromUrl = new URLSearchParams(window.location.search).get('ref');
-    const candidate = (fromUrl || window.sessionStorage.getItem(REFERRAL_STORAGE_KEY) || '')
-      .trim()
-      .toUpperCase();
-    if (!/^[A-Z0-9]{4,16}$/.test(candidate)) return null;
-    if (fromUrl) window.sessionStorage.setItem(REFERRAL_STORAGE_KEY, candidate);
-    return candidate;
-  } catch {
-    return null;
-  }
-}
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const { lowDataMode } = useUIStore();
@@ -519,6 +497,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           setError('This email is already registered. Please log in instead.');
           return;
         }
+        // The code is now durably attached to this auth user's metadata, where
+        // handle_new_user() consumes it. Clear the stash so it cannot also
+        // attach to a second signup from the same browser session.
+        if (data.user) clearReferralCode();
         if (data.user) {
           // Only write the profile when signUp actually returned a session.
           // With email confirmation on it does not: there is no bearer token

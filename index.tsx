@@ -29,6 +29,12 @@ bootstrapAuthFromStorage();
 // before anything else touches the URL — supabase-js and the router both
 // rewrite it. Consumed here, surfaced on the login screen.
 import { consumeAuthErrorHash, stashAuthLinkError } from './utils/authErrorHash';
+
+// Phase 4 Q: capture ?ref= from WHATEVER url the visitor landed on, before any
+// routing can drop the query string. An ambassador's link often lands on '/',
+// '/welcome' or a campus page rather than '/signup'.
+import { captureReferralCode } from './utils/referral';
+captureReferralCode();
 {
   const authLinkError = consumeAuthErrorHash();
   if (authLinkError) stashAuthLinkError(authLinkError);
