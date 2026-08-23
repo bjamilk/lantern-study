@@ -57,6 +57,7 @@ import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import { MarketplaceListing, MarketplaceReview, MarketplacePickupNudge } from '../types';
 import MakeOfferModal from './MakeOfferModal';
 import Modal from './ui/Modal';
+import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 import {
   ArrowLeftIcon,
   MapPinIcon,
@@ -887,12 +888,25 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   <UserIcon className="w-5 h-5 text-lantern-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <button
-                    onClick={() => onNavigate(isDigital ? 'CreatorProfile' : 'SellerProfile', { userId: listing.user_id || listing.seller_id })}
-                    className="font-semibold text-sm text-lantern-primary hover:underline truncate block text-left"
-                  >
-                    {listing.seller?.name || listing.profiles?.name || 'Anonymous Seller'}
-                  </button>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <button
+                      onClick={() => onNavigate(isDigital ? 'CreatorProfile' : 'SellerProfile', { userId: listing.user_id || listing.seller_id })}
+                      className="font-semibold text-sm text-lantern-primary hover:underline truncate block text-left"
+                    >
+                      {listing.seller?.name || listing.profiles?.name || 'Anonymous Seller'}
+                    </button>
+                    {/*
+                      Phase 3 N: trust on the SELLER EMBED, where the buying
+                      decision is actually made. 'new' shows no chip on purpose —
+                      labelling every newcomer reads as a warning and punishes
+                      exactly the people we want publishing.
+                    */}
+                    {shouldShowTrustChip((listing.seller as { trustLevel?: string } | undefined)?.trustLevel) && (
+                      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[10px] font-medium text-lantern-primary">
+                        {trustLabel((listing.seller as { trustLevel?: string } | undefined)?.trustLevel)}
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => onNavigate(isDigital ? 'CreatorProfile' : 'SellerProfile', { userId: listing.user_id || listing.seller_id })}

@@ -9307,32 +9307,56 @@ export class SupabaseService {
       variant: "thumb",
     });
 
-    // Phase 3 N: trust on the SELLER EMBED, not only on the creator profile.
-    // One batched lookup for the whole page — creator_stats is service-role
-    // only, so this cannot be a PostgREST embed, and a per-card query would be
-    // N+1 on every browse page.
-    const trustBySeller = await this.fetchSellerTrust(
-      listings.map((listing) => listing?.user_id).filter(Boolean),
-    );
-
-    return listings.map((listing, index) => {
+    const cards = listings.map((listing, index) => {
       const entry = entries[index];
       const cardImage = entry
         ? (signedByIndex.get(index) ?? entry.first)
         : null;
-      const normalized = this.normalizeListingRecord(listing);
-      const trust = trustBySeller.get(listing?.user_id);
       return {
-        ...normalized,
+        ...this.normalizeListingRecord(listing),
         images: cardImage ? [cardImage] : [],
         image_count: entry?.imageCount ?? 0,
-        seller: normalized.seller
-          ? {
-              ...normalized.seller,
-              trustLevel: trust?.trust_level ?? null,
-              verificationLevel: trust?.verification_level ?? 0,
-            }
-          : normalized.seller,
+      };
+    });
+
+    // Phase 3 N: trust on the SELLER EMBED, not only on the creator profile.
+    return this.attachSellerTrust(cards);
+  }
+
+  /**
+   * Attach `seller.trustLevel` / `seller.verificationLevel` to listing rows
+   * (Phase 3 · N). One batched lookup for the whole page — creator_stats is
+   * service-role only so this cannot be a PostgREST embed, and a per-row query
+   * would be N+1 on every browse page.
+   *
+   * This lives OUTSIDE toListingCardRecords because that function only runs on
+   * the `compact` response profile; the default `full` browse response returns
+   * the search-RPC rows directly, and attaching trust only in the card builder
+   * silently left trust off every default browse response.
+   *
+   * Idempotent: rows that already carry trust are returned untouched, so the
+   * compact path (card builder + RPC branch) does not pay for it twice.
+   */
+  private async attachSellerTrust(rows: any[]): Promise<any[]> {
+    if (!Array.isArray(rows) || rows.length === 0) return rows;
+    const needsTrust = rows.some(
+      (row) => row?.seller && (row.seller as any).trustLevel === undefined,
+    );
+    if (!needsTrust) return rows;
+
+    const trustBySeller = await this.fetchSellerTrust(
+      rows.map((row) => row?.user_id).filter(Boolean),
+    );
+    return rows.map((row) => {
+      if (!row?.seller || (row.seller as any).trustLevel !== undefined) return row;
+      const trust = trustBySeller.get(row.user_id);
+      return {
+        ...row,
+        seller: {
+          ...row.seller,
+          trustLevel: trust?.trust_level ?? null,
+          verificationLevel: trust?.verification_level ?? 0,
+        },
       };
     });
   }
@@ -9566,7 +9590,10 @@ export class SupabaseService {
             total,
           };
         }
-        return { data: mapped, total };
+        // The `full` profile returns the RPC rows directly and never reaches
+        // toListingCardRecords, so trust has to be attached here too — this is
+        // the DEFAULT browse response.
+        return { data: await this.attachSellerTrust(mapped), total };
       }
       if (rpcError) {
         console.warn(
@@ -9809,7 +9836,13 @@ export class SupabaseService {
       throw error;
     }
 
-    return data ? this.normalizeListingRecordAsync(data) : null;
+    if (!data) return null;
+    // Phase 3 N: the listing DETAIL seller row is where a buyer decides whether
+    // to trust the seller, so it carries the trust chip too. attachSellerTrust
+    // is idempotent and batched; here the batch is one row.
+    const normalized = await this.normalizeListingRecordAsync(data);
+    const [withTrust] = await this.attachSellerTrust([normalized]);
+    return withTrust ?? normalized;
   }
 
   /**

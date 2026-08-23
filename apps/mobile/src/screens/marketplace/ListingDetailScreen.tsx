@@ -43,6 +43,7 @@ import {
 import type { MarketplacePickupNudge } from '@lantern/shared/types';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
+import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 
 type NavigationProp = {
   goBack: () => void;
@@ -611,9 +612,19 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           >
             <Avatar name={listing.seller?.name || 'Anonymous Seller'} size={44} />
             <View className="flex-1">
-              <Text className="text-sm font-semibold text-lantern-text">
-                {listing.seller?.name || 'Anonymous Seller'}
-              </Text>
+              <View className="flex-row items-center" style={{ gap: 6 }}>
+                <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
+                  {listing.seller?.name || 'Anonymous Seller'}
+                </Text>
+                {/* Phase 3 N — see the web screen for why 'new' shows no chip. */}
+                {shouldShowTrustChip((listing.seller as { trustLevel?: string } | undefined)?.trustLevel) ? (
+                  <View className="rounded-full bg-lantern-primary/15 px-2 py-0.5">
+                    <Text className="text-[11px] font-semibold text-lantern-primary">
+                      {trustLabel((listing.seller as { trustLevel?: string } | undefined)?.trustLevel)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text className="text-xs text-lantern-text-secondary">
                 {reviews.length > 0
                   ? `${avgRating.toFixed(1)} · ${reviews.length} review${reviews.length === 1 ? '' : 's'}`
