@@ -1,20 +1,27 @@
 # Lantern Study — Session Handover
 
-**Date:** 2026-08-22  
+**Date:** 2026-08-23  
 **Branch:** `main`  
-**HEAD:** `504b32c` (clean tree, pushed — matches `origin/main`)  
-**Production:** https://lanternstudy.com (SW `lantern-mt4zulk1-f0bc8650`) · API https://lantern-study-api.onrender.com (`/health` = `504b32c`)  
+**HEAD:** `00350b3` (clean tree, pushed — matches `origin/main`)  
+**Production:** https://lanternstudy.com · API https://lantern-study-api.onrender.com (`/health` = deployed short SHA)  
 **Supabase project:** `tiizkjhbrnaibaagmurl`
 
-> **Latest: Knowledge Network Phase 1 is LIVE (commit `504b32c`).** Academic
-> identity + courses, My Lantern Library, the learning-events graph, and
-> rights/attestation/moderation shipped and deployed; the 7 Phase-1 migrations
-> were hand-applied first. **Phases 2–4 are designed but NOT built.** Full map,
-> the unimplemented phases, and pending user actions:
-> **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)**.
+> **Latest: Knowledge Network Phase 2 is LIVE (commits `af97879` → `00350b3`).**
+> The creator loop shipped: **Study Packs** as a second digital product, the
+> **AI Study Product Factory**, the **fee model** (buyers pay list price on
+> digital; creators pay a 15 % commission out of their payout), and **creator
+> profiles with follows, stats and trust**. All four `20260823*` migrations are
+> applied and were verified end-to-end in production.
+> **Phases 3 and 4 are designed but NOT built.** Full map of what remains, the
+> open decisions, pending user actions and the repo traps:
+> **[docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md](docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md)**.
+> Phase 1 detail: **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)**.
 > The master plan/roadmap is
 > **[docs/PLAN-2026-08-22-knowledge-network.md](docs/PLAN-2026-08-22-knowledge-network.md)**
 > (the "Lantern Knowledge Network").
+>
+> **Money is not live yet:** Paystack is still in TEST mode, so no real funds
+> move for study packs or anything else until the live keys are swapped.
 
 This is the canonical "resume here" pointer. Point a new agent at `@HANDOVER.md` plus
 the specific task. Per-session detail lives in the dated docs under `docs/` (linked in §2)
@@ -56,7 +63,8 @@ Deploy: Cloudflare Pages (web, **git-connected — auto-deploys on push to `main
 
 ### Active detail docs (newest first)
 
-- **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)** — **Knowledge Network Phase 1 SHIPPED LIVE (`504b32c`)**; what shipped, deploy state, **the unimplemented Phases 2–4**, decisions made vs open, pending user/ops actions, traps. *(HEAD — latest work)*
+- **[docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md](docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md)** — **Knowledge Network Phase 2 SHIPPED LIVE (`af97879`→`00350b3`)**: study packs, AI study-product factory, fee model, creators; production E2E results; **the unimplemented Phases 3–4 in full**, open decisions (D8/D11/D12), pending user/ops actions, traps, and the known gaps in what shipped. *(HEAD — latest work)*
+- **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)** — **Knowledge Network Phase 1 SHIPPED LIVE (`504b32c`)**; what shipped, deploy state, decisions made vs open, pending user/ops actions, traps. *(Its "Phases 2–4 not built" section is superseded — Phase 2 is now live.)*
 - **[docs/PLAN-2026-08-22-knowledge-network.md](docs/PLAN-2026-08-22-knowledge-network.md)** — the knowledge-network plan; Phase 1 server work is specified by `docs/phase1-academic-identity-contract.md`, `docs/phase1-rights-moderation-contract.md`, `docs/phase1-learning-events-contract.md`, `docs/phase1-library-archive-contract.md` (status line at the top of each) and lands as migrations `20260822120000`–`20260822170000` (apply order in `docs/RELEASING.md`; `170000` = post-review hardening: suspensions persist, moderation columns hidden from clients, purchased-pack `course_id` backfill).
 - **[docs/HANDOVER-2026-08-22-night-ship-marathon.md](docs/HANDOVER-2026-08-22-night-ship-marathon.md)** — this session: exam lock (#27), **dark-mode rebuild + AA contrast + AI-credit honesty + offline sync integrity** (#28), **ranked backlog: SW app-shell precache, cross-account queue guard, sync durability, 202-credit-refunds, companion parity** (#29), v1.0.27→v1.0.28 releases (#30), **auth funnel overhaul** (#31–#32), Apple sign-in runbook.
 - [docs/APPLE-SIGN-IN-SETUP.md](docs/APPLE-SIGN-IN-SETUP.md) — Apple portal + Supabase provider + iOS signing + **the pending dashboard actions** (redirect allow-list, captcha toggle, password policy, PKCE test plan).
