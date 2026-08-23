@@ -12,6 +12,7 @@ import { getWalletService } from '../services/walletService';
 import { WALLET_COINS, WALLET_TEST_PASS_THRESHOLD, testAwardKey } from '@lantern/shared/utils/walletCoins';
 import { surfaceFromRequest } from '../services/learningEvents';
 import { COURSE_FILTER_INVALID_MESSAGE, courseFilterKey, parseCourseFilter } from '../services/academicCourses';
+import { getTopicMasteryService } from '../services/topicMastery';
 
 async function awardTestPassCoins(userId: string, testId: string, score: number) {
   if (score < WALLET_TEST_PASS_THRESHOLD) {
@@ -583,6 +584,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       await cacheService.delete(`user:stats:${userId}`);
 
       const wallet = await awardTestPassCoins(userId, testId, Number(result.score) || 0);
+
+      // Mastery Graph (Phase 3 · P): a finished test is the single richest
+      // signal we get about topic strength. Fire-and-forget and debounced in
+      // the service — a 40-question submission must not wait on a recompute,
+      // and finishing three tests in a row must not run it three times.
+      getTopicMasteryService(supabaseService).refreshAsync(userId);
 
       res.json({
         success: true,

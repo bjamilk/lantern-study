@@ -48,6 +48,10 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return '/flashcards';
     case AppMode.DECK_DETAIL:
       return params.deckId ? `/flashcards/deck/${encodeURIComponent(params.deckId)}` : '/flashcards';
+    case AppMode.DISCOVER:
+      return '/discover';
+    case AppMode.COMMUNITY_DETAIL:
+      return params.slug ? `/discover/c/${encodeURIComponent(params.slug)}` : '/discover';
     case AppMode.MARKETPLACE:
       return '/marketplace';
     case AppMode.MARKETPLACE_LISTING_DETAIL:
@@ -133,6 +137,11 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/chat') return { mode: AppMode.CHAT, params: {}, clearChat: true };
   if (path === '/groups/new') return { mode: AppMode.CREATE_GROUP, params: {} };
   if (path === '/flashcards') return { mode: AppMode.FLASHCARDS, params: {}, clearDeck: true };
+  if (path === '/discover') return { mode: AppMode.DISCOVER, params: {} };
+  if (path.startsWith('/discover/c/')) {
+    const slug = decodeURIComponent(path.slice('/discover/c/'.length));
+    return slug ? { mode: AppMode.COMMUNITY_DETAIL, params: { slug } } : { mode: AppMode.DISCOVER, params: {} };
+  }
   if (path === '/marketplace') return { mode: AppMode.MARKETPLACE, params: {} };
   if (path === '/marketplace/orders') return { mode: AppMode.MARKETPLACE_ORDERS, params: {} };
   if (path === '/marketplace/cart') return { mode: AppMode.MARKETPLACE_CART, params: {} };

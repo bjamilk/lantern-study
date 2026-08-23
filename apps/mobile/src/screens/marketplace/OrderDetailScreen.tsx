@@ -19,6 +19,11 @@ import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { buildOrderReceiptText } from './orderReceipt';
+import {
+  DISPUTE_CATEGORIES,
+  DISPUTE_CATEGORY_LABELS,
+  DISPUTE_REASON_MAX,
+} from '@lantern/shared/network';
 
 const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
 
@@ -119,10 +124,14 @@ export function OrderDetailScreen({
     await Promise.all([fetchMyListings(user.id), fetchSellerStats()]);
   };
 
-  const runAction = async (action: string) => {
+  const runAction = async (
+    action: string,
+    // Phase 3 N — carried by `open_dispute` only; ignored for other actions.
+    extra: { disputeReason?: string; disputeCategory?: string } = {}
+  ) => {
     setActing(true);
     try {
-      setOrder(await updateMarketplaceOrder(route.params.orderId, { action }));
+      setOrder(await updateMarketplaceOrder(route.params.orderId, { action, ...extra }));
       if (['confirm_received', 'mark_ready', 'mark_paid', 'cancel'].includes(action)) {
         await refreshSellerData();
       }
@@ -131,6 +140,50 @@ export function OrderDetailScreen({
     } finally {
       setActing(false);
     }
+  };
+
+  /**
+   * Open a dispute (Phase 3 · N). Uses the platform category picker + prompt
+   * rather than a bespoke modal so it matches every other destructive-ish flow
+   * on mobile; the warning about the held payout is stated up front, not after.
+   */
+  const openDisputePrompt = () => {
+    const options = [...DISPUTE_CATEGORIES];
+    Alert.alert(
+      'Report a problem',
+      "Our team will review it. The seller's payout is held until it's resolved.",
+      [
+        ...options.map((category) => ({
+          text: DISPUTE_CATEGORY_LABELS[category],
+          onPress: () => {
+            Alert.prompt?.(
+              DISPUTE_CATEGORY_LABELS[category],
+              'What happened, and what would resolve it?',
+              (reason?: string) => {
+                const trimmed = (reason ?? '').trim();
+                if (!trimmed) {
+                  Alert.alert('Add a note', 'Tell us what went wrong so we can help.');
+                  return;
+                }
+                void runAction('open_dispute', {
+                  disputeCategory: category,
+                  disputeReason: trimmed.slice(0, DISPUTE_REASON_MAX),
+                });
+              }
+            );
+            // Alert.prompt is iOS-only. On Android there is no text step, so
+            // send the category alone rather than silently doing nothing.
+            if (!Alert.prompt) {
+              void runAction('open_dispute', {
+                disputeCategory: category,
+                disputeReason: DISPUTE_CATEGORY_LABELS[category],
+              });
+            }
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]
+    );
   };
 
   const continuePaystack = async () => {
@@ -387,6 +440,17 @@ export function OrderDetailScreen({
                 Confirm received
               </Button>
             )}
+            {/*
+              Phase 3 N: `open_dispute` has been supported server-side since
+              Phase 1 with no client able to reach it. Offered only once money
+              has moved — on an unpaid order the honest action is Cancel.
+            */}
+            {(isBuyer || isSeller) &&
+              ['paid', 'ready_for_pickup', 'buyer_confirmed'].includes(order.status) && (
+                <Button variant="secondary" loading={acting} onPress={openDisputePrompt}>
+                  Report a problem
+                </Button>
+              )}
           </View>
         )}
         {order.status === 'completed' && (

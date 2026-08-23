@@ -26,6 +26,7 @@ import {
   verifyUserPassword,
 } from '../services/accountLifecycle';
 import { importAccountArchive } from '../services/accountImport';
+import { getStudyPresenceService } from '../services/studyPresence';
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@lantern/shared/accountLifecycle';
 import { getAcademicCoursesService } from '../services/academicCourses';
 import { PublicError } from '../utils/safeError';
@@ -690,6 +691,15 @@ router.put(
         success: false,
         error: 'User not found',
       });
+    }
+
+    // Phase 3 L: the academic profile IS the community derivation. Recompute
+    // auto memberships only when one of those fields actually changed —
+    // running the RPC on every profile save would fire it on an avatar change.
+    // Best-effort inside the service; a stale membership must not fail a save.
+    if (ACADEMIC_PROFILE_FIELDS.some((field) => updateData[field] !== undefined)) {
+      const { getCommunitiesService } = await import('../services/communities');
+      await getCommunitiesService(supabaseService).refreshAutoMemberships(userId);
     }
 
     // Write-through: a chosen institution also seeds the marketplace campus
@@ -1516,7 +1526,10 @@ router.delete(
   })
 );
 
-// POST /api/v1/users/presence/heartbeat - Update last seen for online status
+// POST /api/v1/users/presence/heartbeat - Update last seen for online status.
+// Phase 3 M: the same beat optionally carries study INTENT ({context, courseId,
+// topic}) so "23 people studying cardiology tonight" needs no second timer.
+// A body-less beat keeps the old behaviour exactly.
 router.post(
   '/presence/heartbeat',
   authMiddleware,
@@ -1525,6 +1538,38 @@ router.post(
     if (!userId) return;
 
     await supabaseService.touchLastSeen(userId);
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    let studySharing: boolean | undefined;
+    if (body.context || body.courseId || body.topic) {
+      // Presence is a nicety; never fail the heartbeat (and therefore the
+      // online indicator) because the study row could not be written.
+      try {
+        const result = await getStudyPresenceService(supabaseService).heartbeat(userId, {
+          context: typeof body.context === 'string' ? body.context : undefined,
+          courseId: typeof body.courseId === 'string' ? body.courseId : null,
+          topic: typeof body.topic === 'string' ? body.topic : null,
+        });
+        studySharing = result.shared;
+      } catch (err) {
+        logger.warn('study presence heartbeat failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    res.json({ success: true, ...(studySharing === undefined ? {} : { studySharing }) });
+  })
+);
+
+// DELETE /api/v1/users/presence/study - stop appearing in "studying now"
+router.delete(
+  '/presence/study',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    await getStudyPresenceService(supabaseService).clear(userId);
     res.json({ success: true });
   })
 );

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type MarketplaceWorkspaceSection =
+  | 'discover'
   | 'browse'
   | 'jobs'
   | 'orders'
@@ -38,6 +39,9 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
+  // Phase 3 L / decision D12: Discover is the hub the marketplace sits inside,
+  // so it leads the bar rather than hiding in the overflow menu.
+  { id: 'discover', label: 'Discover', icon: 'globe-outline', screen: 'Discover' },
   { id: 'browse', label: 'Goods', icon: 'search-outline', screen: 'MarketplaceHome' },
   { id: 'jobs', label: 'Jobs', icon: 'briefcase-outline', screen: 'JobsHome' },
   { id: 'orders', label: 'Orders', icon: 'receipt-outline', screen: 'Orders' },

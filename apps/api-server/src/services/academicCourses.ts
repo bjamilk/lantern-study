@@ -492,6 +492,7 @@ export class AcademicCoursesService {
     const { error: deleteError } = await deleteQuery;
     if (deleteError && !isMissingRelationError(deleteError)) throw deleteError;
 
+    await this.syncCommunities(userId);
     return this.listUserCourses(userId, { status: 'all', academicYear });
   }
 
@@ -571,6 +572,16 @@ export class AcademicCoursesService {
     return mapUserCourseRow(data ?? { ...existing, ...updates });
   }
 
+  /**
+   * Course enrolment changes which course communities a student belongs to
+   * (Phase 3 · L). Best-effort inside CommunitiesService — never let a stale
+   * membership fail the enrolment write that triggered it.
+   */
+  private async syncCommunities(userId: string): Promise<void> {
+    const { getCommunitiesService } = await import('./communities');
+    await getCommunitiesService(this.supabaseService).refreshAutoMemberships(userId);
+  }
+
   async removeUserCourse(userId: string, courseId: string, academicYear?: unknown): Promise<boolean> {
     if (!isUuid(courseId)) throw new PublicError('courseId must be a valid course id');
     const year =
@@ -584,6 +595,7 @@ export class AcademicCoursesService {
       .eq('course_id', courseId)
       .eq('academic_year', existing.academic_year);
     if (error) throw error;
+    await this.syncCommunities(userId);
     return true;
   }
 
@@ -604,6 +616,7 @@ export class AcademicCoursesService {
       if (isMissingRelationError(error)) return { archived: 0 };
       throw error;
     }
+    await this.syncCommunities(userId);
     return { archived: Array.isArray(data) ? data.length : 0 };
   }
 

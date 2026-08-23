@@ -72,6 +72,12 @@ import conceptRoutes, { initializeConceptRoutes } from './routes/concepts';
 import libraryRoutes, { initializeLibraryRoutes } from './routes/library';
 import creatorRoutes, { initializeCreatorRoutes } from './routes/creators';
 import reportRoutes, { initializeReportRoutes } from './routes/reports';
+// Phase 3 — Network (communities/discovery, feed, mastery graph)
+import communityRoutes, {
+  discoverRouter,
+  initializeCommunityRoutes,
+} from './routes/communities';
+import feedRoutes, { masteryRouter, initializeFeedRoutes } from './routes/feed';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -176,6 +182,8 @@ async function initializeServices() {
     initializeLibraryRoutes(supabaseService, cacheService);
     initializeCreatorRoutes(supabaseService);
     initializeReportRoutes(supabaseService, cacheService);
+    initializeCommunityRoutes(supabaseService);
+    initializeFeedRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -379,6 +387,10 @@ async function startServer() {
     app.use('/api/v1/concepts', conceptRoutes);
     app.use('/api/v1/library', libraryRoutes);
     app.use('/api/v1/creators', creatorRoutes);
+    app.use('/api/v1/communities', communityRoutes);
+    app.use('/api/v1/discover', discoverRouter);
+    app.use('/api/v1/feed', feedRoutes);
+    app.use('/api/v1/mastery', masteryRouter);
     app.use('/api/v1/reports', reportRoutes);
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);

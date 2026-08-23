@@ -363,6 +363,22 @@ export class MarketplaceStudyPacksService {
     const { getCreatorsService } = await import('./creators');
     await getCreatorsService(this.supabaseService).refreshStats(userId);
 
+    // Academic feed (Phase 3 · M): announce the publish to the creator's
+    // followers. Best-effort — the listing is already live.
+    const { getActivityFeedService } = await import('./activityFeed');
+    await getActivityFeedService(this.supabaseService).record({
+      actorId: userId,
+      verb: 'published_pack',
+      objectType: 'listing',
+      objectId: listing.id,
+      audienceType: 'followers',
+      courseId: (listing as { course_id?: string | null }).course_id ?? null,
+      payload: {
+        title: (listing as { title?: string }).title ?? null,
+        priceKobo: (listing as { price_kobo?: number }).price_kobo ?? null,
+      },
+    });
+
     return { listing, pack: { listingId: pack.listing_id, packId: pack.id, version: pack.version } };
   }
 
@@ -483,6 +499,17 @@ export class MarketplaceStudyPacksService {
       if (sellerId && sellerId !== userId) {
         const { getCreatorsService } = await import('./creators');
         await getCreatorsService(this.supabaseService).refreshStats(sellerId);
+
+        // North-star metric (Phase 3 · O): a creator's pack reaching a new
+        // student IS the learning connection. Actor = the creator who helped.
+        const { getLearningConnectionsService } = await import('./learningConnections');
+        await getLearningConnectionsService(this.supabaseService).record({
+          actorId: sellerId,
+          beneficiaryId: userId,
+          kind: 'pack_entitled',
+          objectType: 'listing',
+          objectId: listingId,
+        });
       }
     } catch {
       /* counters are best-effort; delivery already succeeded */

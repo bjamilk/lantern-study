@@ -9307,17 +9307,78 @@ export class SupabaseService {
       variant: "thumb",
     });
 
+    // Phase 3 N: trust on the SELLER EMBED, not only on the creator profile.
+    // One batched lookup for the whole page — creator_stats is service-role
+    // only, so this cannot be a PostgREST embed, and a per-card query would be
+    // N+1 on every browse page.
+    const trustBySeller = await this.fetchSellerTrust(
+      listings.map((listing) => listing?.user_id).filter(Boolean),
+    );
+
     return listings.map((listing, index) => {
       const entry = entries[index];
       const cardImage = entry
         ? (signedByIndex.get(index) ?? entry.first)
         : null;
+      const normalized = this.normalizeListingRecord(listing);
+      const trust = trustBySeller.get(listing?.user_id);
       return {
-        ...this.normalizeListingRecord(listing),
+        ...normalized,
         images: cardImage ? [cardImage] : [],
         image_count: entry?.imageCount ?? 0,
+        seller: normalized.seller
+          ? {
+              ...normalized.seller,
+              trustLevel: trust?.trust_level ?? null,
+              verificationLevel: trust?.verification_level ?? 0,
+            }
+          : normalized.seller,
       };
     });
+  }
+
+  /**
+   * Trust level + verification for a set of sellers, batched and de-duplicated.
+   * Never throws: a missing trust chip must not fail a browse page.
+   */
+  private async fetchSellerTrust(
+    sellerIds: string[],
+  ): Promise<Map<string, { trust_level: string; verification_level: number }>> {
+    const out = new Map<string, { trust_level: string; verification_level: number }>();
+    const unique = [...new Set(sellerIds)].filter(Boolean);
+    if (unique.length === 0) return out;
+    try {
+      const [statsResult, profilesResult] = await Promise.all([
+        this.supabase
+          .from("creator_stats")
+          .select("user_id, trust_level")
+          .in("user_id", unique),
+        this.supabase
+          .from("profiles")
+          .select("id, verification_level")
+          .in("id", unique),
+      ]);
+      const verificationById = new Map(
+        (profilesResult.data || []).map((row: any) => [row.id, row.verification_level ?? 0]),
+      );
+      for (const row of statsResult.data || []) {
+        out.set((row as any).user_id, {
+          trust_level: (row as any).trust_level,
+          verification_level: verificationById.get((row as any).user_id) ?? 0,
+        });
+      }
+      // A seller with no creator_stats row yet still has a verification level.
+      for (const id of unique) {
+        if (!out.has(id) && verificationById.has(id)) {
+          out.set(id, { trust_level: "new", verification_level: verificationById.get(id) ?? 0 });
+        }
+      }
+    } catch (err) {
+      logger.warn("seller trust lookup failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return out;
   }
 
   /** Trim a normalized listing row to the fields listing cards actually render. */

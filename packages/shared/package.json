@@ -113,6 +113,12 @@
       "require": "./dist/marketplace/index.js",
       "default": "./src/marketplace/index.ts"
     },
+    "./network": {
+      "types": "./src/network/index.ts",
+      "import": "./src/network/index.ts",
+      "require": "./dist/network/index.js",
+      "default": "./src/network/index.ts"
+    },
     "./academic": {
       "types": "./src/academic/index.ts",
       "import": "./src/academic/index.ts",

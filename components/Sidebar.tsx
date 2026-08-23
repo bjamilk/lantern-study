@@ -6,7 +6,7 @@ import AIUsageBadge from './AIUsageBadge';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
 import { compressImage } from '../utils/imageCompression';
 import { resolveAvatarSrc } from '../utils/avatar';
-import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useUIStore } from '../stores/uiStore';
@@ -25,6 +25,8 @@ interface SidebarProps {
   onNavigateToLibrary?: () => void;
   onNavigateToBudgetTracker: () => void;
   onNavigateToMarketplace: () => void;
+  /** Phase 3 L / D12: Discover replaces Explore; the marketplace nests inside it. */
+  onNavigateToDiscover?: () => void;
   onNavigateToAdmin?: () => void;
   pendingSyncCount: number;
   isOnline: boolean;
@@ -63,6 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNavigateToLibrary,
   onNavigateToBudgetTracker,
   onNavigateToMarketplace,
+  onNavigateToDiscover,
   onNavigateToAdmin,
   pendingSyncCount,
   isOnline,
@@ -327,7 +330,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           <SectionHeader title="Social" />
           <div className="px-2 space-y-1">
             <NavButton navFunc={onOpenNotificationModal} icon={BellAlertIcon} label="Notifications" badgeCount={unreadNotificationCount} />
-            <NavButton navFunc={onNavigateToMarketplace} icon={ShoppingBagIcon} label="Explore" appMode={AppMode.MARKETPLACE} tipId="nav.marketplace" />
+            <NavButton
+              navFunc={onNavigateToDiscover ?? onNavigateToMarketplace}
+              icon={GlobeAltIcon}
+              label="Discover"
+              appMode={onNavigateToDiscover ? AppMode.DISCOVER : AppMode.MARKETPLACE}
+              tipId="nav.marketplace"
+            />
           </div>
 
           <SectionHeader title="Tools" />

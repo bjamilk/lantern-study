@@ -371,6 +371,10 @@ export enum AppMode {
   FLASHCARD_LEARN = 'FLASHCARD_LEARN',
   CREATE_GROUP = 'CREATE_GROUP',
   BUDGET_TRACKER = 'BUDGET_TRACKER',
+  // Phase 3 L (decision D12): Discover is the hub — communities, groups,
+  // people, trending — with the marketplace nested as one of its tabs.
+  DISCOVER = 'DISCOVER',
+  COMMUNITY_DETAIL = 'COMMUNITY_DETAIL',
   MARKETPLACE = 'MARKETPLACE',
   MARKETPLACE_LISTING_DETAIL = 'MARKETPLACE_LISTING_DETAIL',
   CREATE_MARKETPLACE_LISTING = 'CREATE_MARKETPLACE_LISTING',

@@ -107,6 +107,12 @@ export type MarketStackParamList = {
     | { source?: { noteIds?: string[]; folderId?: string | null; courseId?: string | null; title?: string } }
     | undefined;
   CreatorProfile: { userId: string };
+  // Phase 3 L / decision D12 — Discover is the hub; the marketplace is a tab
+  // inside it, which is why these live on the Market stack.
+  Discover: { section?: 'communities' | 'groups' | 'people' | 'marketplace' } | undefined;
+  CommunityDetail: { slug: string };
+  Feed: undefined;
+  Mastery: undefined;
   OrderDetail: {
     orderId: string;
     paymentReturn?: boolean;

@@ -710,6 +710,21 @@ router.post(
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
+    // Discovery lists carry an isMember flag and a member count, both now stale.
+    await cacheService.deletePattern('groups:discover:*');
+
+    // Academic feed (Phase 3 · M): visible to the group, not to followers — a
+    // join is news to the room you joined, not to the internet.
+    const { getActivityFeedService } = await import('../services/activityFeed');
+    await getActivityFeedService(supabaseService).record({
+      actorId: userId,
+      verb: 'joined_group',
+      objectType: 'group',
+      objectId: group.id,
+      audienceType: 'group',
+      audienceId: group.id,
+      payload: { groupName: group.name },
+    });
 
     res.json({
       success: true,

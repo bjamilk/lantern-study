@@ -89,9 +89,26 @@ export async function buildTrustedCompanionContext(
   // tally so the companion reflects current standing, not all-time history.
   // (The old code read `result.tagBreakdown`, which nothing ever produced, so
   // weakTopics was always empty.)
-  const weakTopics = deriveWeakTopics(
-    buildTagBreakdown(testResults.slice(0, WEAK_TOPIC_SESSION_LIMIT).map((result) => result.session))
-  );
+  //
+  // Phase 3 P: prefer the materialised Mastery Graph when it has rows — it
+  // spans every session AND the flashcard side, where the inline tally only
+  // sees the last N sessions' questions. The inline tally stays as the
+  // fallback for users whose graph has not been built yet (it is refreshed on
+  // test completion, so a brand-new account has none), which also means the
+  // companion never regresses to silence if the refresh RPC is failing.
+  let weakTopics: string[] = [];
+  try {
+    const { getTopicMasteryService } = await import('./topicMastery');
+    const masteryWeak = await getTopicMasteryService(supabaseService).weakTopics(userId, 5);
+    weakTopics = masteryWeak.map((row) => row.topic);
+  } catch {
+    /* fall through to the inline tally */
+  }
+  if (weakTopics.length === 0) {
+    weakTopics = deriveWeakTopics(
+      buildTagBreakdown(testResults.slice(0, WEAK_TOPIC_SESSION_LIMIT).map((result) => result.session))
+    );
+  }
 
   const recentTest = testResults[0];
   const recentTestSummary =

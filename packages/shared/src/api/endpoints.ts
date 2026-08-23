@@ -15,6 +15,19 @@ import type {
   StudyPackDraftSummary,
 } from "../marketplace/studyPacks";
 import type {
+  Community,
+  CommunityDetail,
+  DiscoverGroup,
+  DiscoverPerson,
+  ExamReadiness,
+  FeedPage,
+  LearningConnectionSummary,
+  MasteryGraph,
+  MyCommunity,
+  PresenceSnapshot,
+  TopicMastery,
+} from "../network";
+import type {
   Concept,
   ConceptLink,
   ContentReport,
@@ -2852,6 +2865,117 @@ export function createApiEndpoints(client: ApiClient) {
       >(`/creators/discover${q.toString() ? `?${q}` : ''}`, {}, 10000);
     },
 
+    // -----------------------------------------------------------------
+    // Phase 3 — Network (communities, discovery, feed, presence, mastery)
+    // -----------------------------------------------------------------
+
+    /** The caller's own communities (auto-derived + joined). */
+    fetchMyCommunities: () => apiRequest<MyCommunity[]>('/communities', {}, 10000),
+
+    fetchCommunity: (slug: string) =>
+      apiRequest<CommunityDetail>(`/communities/${encodeURIComponent(slug)}`, {}, 10000),
+
+    fetchCommunityMembers: (communityId: string, limit?: number) =>
+      apiRequest<Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>>(
+        `/communities/${communityId}/members${limit ? `?limit=${limit}` : ''}`,
+        {},
+        10000
+      ),
+
+    joinCommunity: (communityId: string) =>
+      apiRequest<{ joined: true }>(`/communities/${communityId}/join`, { method: 'POST' }, 10000),
+
+    leaveCommunity: (communityId: string) =>
+      apiRequest<{ left: true }>(`/communities/${communityId}/join`, { method: 'DELETE' }, 10000),
+
+    discoverCommunities: (
+      params: { q?: string; kind?: string; institutionId?: string; courseId?: string; limit?: number } = {}
+    ) => {
+      const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
+      if (params.kind) qs.set('kind', params.kind);
+      if (params.institutionId) qs.set('institutionId', params.institutionId);
+      if (params.courseId) qs.set('courseId', params.courseId);
+      if (params.limit) qs.set('limit', String(params.limit));
+      return apiRequest<Community[]>(
+        `/discover/communities${qs.toString() ? `?${qs}` : ''}`,
+        {},
+        10000
+      );
+    },
+
+    /**
+     * Discoverable groups. NOT `/groups`, which is memberships-only and cached
+     * per user — mixing the two would put non-member groups in the sidebar.
+     */
+    discoverGroups: (
+      params: { q?: string; communityId?: string; courseId?: string; limit?: number } = {}
+    ) => {
+      const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
+      if (params.communityId) qs.set('communityId', params.communityId);
+      if (params.courseId) qs.set('courseId', params.courseId);
+      if (params.limit) qs.set('limit', String(params.limit));
+      return apiRequest<DiscoverGroup[]>(`/discover/groups${qs.toString() ? `?${qs}` : ''}`, {}, 10000);
+    },
+
+    discoverPeople: (params: { institutionId?: string; courseId?: string; limit?: number } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.institutionId) qs.set('institutionId', params.institutionId);
+      if (params.courseId) qs.set('courseId', params.courseId);
+      if (params.limit) qs.set('limit', String(params.limit));
+      return apiRequest<DiscoverPerson[]>(`/discover/people${qs.toString() ? `?${qs}` : ''}`, {}, 10000);
+    },
+
+    /** "23 people studying cardiology right now" — counts only, never names. */
+    fetchStudyPresence: (params: { courseId?: string; institutionId?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.courseId) qs.set('courseId', params.courseId);
+      if (params.institutionId) qs.set('institutionId', params.institutionId);
+      return apiRequest<PresenceSnapshot>(`/discover/presence${qs.toString() ? `?${qs}` : ''}`, {}, 10000);
+    },
+
+    /**
+     * Study intent rides the EXISTING presence heartbeat rather than a second
+     * timer. A body-less heartbeat keeps the old online-status behaviour.
+     */
+    sendStudyHeartbeat: (body: { context?: string; courseId?: string; topic?: string }) =>
+      apiRequest<{ success: true; studySharing?: boolean }>(
+        '/users/presence/heartbeat',
+        { method: 'POST', body: JSON.stringify(body) },
+        10000
+      ),
+
+    clearStudyPresence: () =>
+      apiRequest<{ success: true }>('/users/presence/study', { method: 'DELETE' }, 10000),
+
+    /** The academic feed. Pull-based and cursor-paged; never a realtime channel. */
+    fetchFeed: (params: { limit?: number; before?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.limit) qs.set('limit', String(params.limit));
+      if (params.before) qs.set('before', params.before);
+      return apiRequest<FeedPage>(`/feed${qs.toString() ? `?${qs}` : ''}`, {}, 10000);
+    },
+
+    fetchLearningConnections: () =>
+      apiRequest<LearningConnectionSummary>('/feed/connections', {}, 10000),
+
+    fetchMasteryGraph: (params: { courseId?: string; limit?: number } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.courseId) qs.set('courseId', params.courseId);
+      if (params.limit) qs.set('limit', String(params.limit));
+      return apiRequest<MasteryGraph>(`/mastery${qs.toString() ? `?${qs}` : ''}`, {}, 15000);
+    },
+
+    refreshMasteryGraph: () =>
+      apiRequest<{ topics: TopicMastery[] }>('/mastery/refresh', { method: 'POST' }, 20000),
+
+    fetchExamReadiness: () => apiRequest<ExamReadiness[]>('/mastery/exam-readiness', {}, 10000),
+
+    /** Population aggregate; the server refuses below a 20-student cohort. */
+    fetchCourseMastery: (courseId: string) =>
+      apiRequest<Record<string, unknown>>(`/mastery/course/${courseId}`, {}, 10000),
+
     followCreator: (userId: string) =>
       apiRequest<{ following: true }>(`/users/${userId}/follow`, { method: 'POST' }, 10000),
 
@@ -3030,6 +3154,9 @@ export function createApiEndpoints(client: ApiClient) {
         meetingLocation?: string;
         sellerNote?: string;
         fulfillmentMode?: string;
+        /** Phase 3 N — carried by `open_dispute` only; ignored otherwise. */
+        disputeReason?: string;
+        disputeCategory?: string;
       },
     ) =>
       apiRequest<import("../types").MarketplaceOrder>(

@@ -6,7 +6,16 @@
 **Production:** https://lanternstudy.com · API https://lantern-study-api.onrender.com (`/health` = deployed short SHA)  
 **Supabase project:** `tiizkjhbrnaibaagmurl`
 
-> **Latest: Knowledge Network Phase 2 is LIVE (commits `af97879` → `00350b3`).**
+> **Latest: Knowledge Network Phase 3 (Network) is BUILT but NOT DEPLOYED.**
+> Communities + Discover hub, the academic feed, presence-as-intent, trust &
+> disputes, the Weekly Active Learning Connections north-star metric, and the
+> server-side Mastery Graph. All gate-green and **uncommitted**; its **five
+> `20260824*` migrations are NOT yet hand-applied** and must be, in order,
+> BEFORE the API deploys. Decision **D12 answered: Discover hub with the
+> marketplace nested inside it.**
+> **[docs/HANDOVER-2026-08-23-phase3-network.md](docs/HANDOVER-2026-08-23-phase3-network.md)**
+>
+> **Knowledge Network Phase 2 is LIVE (commits `af97879` → `00350b3`).**
 > The creator loop shipped: **Study Packs** as a second digital product, the
 > **AI Study Product Factory**, the **fee model** (buyers pay list price on
 > digital; creators pay a 15 % commission out of their payout), and **creator
@@ -63,6 +72,7 @@ Deploy: Cloudflare Pages (web, **git-connected — auto-deploys on push to `main
 
 ### Active detail docs (newest first)
 
+- **[docs/HANDOVER-2026-08-23-phase3-network.md](docs/HANDOVER-2026-08-23-phase3-network.md)** — **Phase 3 BUILT, NOT DEPLOYED**: communities + Discover hub (D12 = Discover with marketplace nested), academic feed + counters + presence, trust score v2 + dispute UI, learning-connections north-star metric, Mastery Graph. Five `20260824*` migrations awaiting hand-application; gates green; no E2E yet. *(HEAD — latest work)*
 - **[docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md](docs/HANDOVER-2026-08-23-phase2-shipped-phases-3-4-remaining.md)** — **Knowledge Network Phase 2 SHIPPED LIVE (`af97879`→`00350b3`)**: study packs, AI study-product factory, fee model, creators; production E2E results; **the unimplemented Phases 3–4 in full**, open decisions (D8/D11/D12), pending user/ops actions, traps, and the known gaps in what shipped. *(HEAD — latest work)*
 - **[docs/HANDOVER-2026-08-22-knowledge-network-phase1.md](docs/HANDOVER-2026-08-22-knowledge-network-phase1.md)** — **Knowledge Network Phase 1 SHIPPED LIVE (`504b32c`)**; what shipped, deploy state, decisions made vs open, pending user/ops actions, traps. *(Its "Phases 2–4 not built" section is superseded — Phase 2 is now live.)*
 - **[docs/PLAN-2026-08-22-knowledge-network.md](docs/PLAN-2026-08-22-knowledge-network.md)** — the knowledge-network plan; Phase 1 server work is specified by `docs/phase1-academic-identity-contract.md`, `docs/phase1-rights-moderation-contract.md`, `docs/phase1-learning-events-contract.md`, `docs/phase1-library-archive-contract.md` (status line at the top of each) and lands as migrations `20260822120000`–`20260822170000` (apply order in `docs/RELEASING.md`; `170000` = post-review hardening: suspensions persist, moderation columns hidden from clients, purchased-pack `course_id` backfill).
@@ -109,6 +119,7 @@ fb6975b Ranked backlog: offline durability, AI credit refunds, companion parity 
 - Two pre-gate junk postings on the live jobs board (Ezeobi "Internship — [team / function]", Benjamin "Tutor needed for [PHM 101]") — need admin removal.
 - Digital study bundles phases 1–2 are live (`20260818120000` applied); phase 3 per memory `lantern-study-question-banks`.
 - **Phase 1 knowledge-network migrations `20260822120000`–`20260822170000` await hand-application** (must precede the API deploy — `docs/RELEASING.md`).
+- **Phase 3 migrations `20260824120000`–`20260824124000` await hand-application** (in order, before the API deploy). The SQL has never been executed — no local Postgres — so treat the first apply as the real syntax check.
 - Collaborative-notes last-write-wins body edits; note search misses content past the 2000-char cap; grade-history chips.
 
 ---

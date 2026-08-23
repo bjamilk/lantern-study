@@ -18,6 +18,7 @@ import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBann
 import { ListingCard } from './marketplace/ListingCard';
 import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
+import DiscoverWorkspaceBar from './discover/DiscoverWorkspaceBar';
 import {
   buildMarketplaceSavedSearchFilters,
   restoreMarketplaceSavedSearchFilters,
@@ -48,6 +49,11 @@ import {
 
 interface MarketplaceScreenProps {
   onNavigate: (screen: string, params?: any) => void;
+  /**
+   * Phase 3 L: return to a Discover tab. Optional so the marketplace still
+   * renders anywhere Discover is not wired (guest/embedded surfaces).
+   */
+  onNavigateToDiscover?: (section: string) => void;
   guestMode?: boolean;
   onSignInRequired?: () => void;
   /** Bump after create/edit so the browse grid reloads without a manual refresh. */
@@ -84,6 +90,7 @@ const writeRecentSearch = (query: string): string[] => {
 
 const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   onNavigate,
+  onNavigateToDiscover,
   guestMode = false,
   onSignInRequired,
   refreshKey = 0,
@@ -905,6 +912,22 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             ) : null}
           </div>
         </div>
+
+        {/*
+          Phase 3 L / decision D12: the marketplace is a TAB INSIDE Discover,
+          not a sibling of it. Rendering Discover's bar above the marketplace's
+          own workspace bar is what makes that nesting visible — without it the
+          marketplace reads as a dead end and users have no way back to the
+          network tabs except the sidebar.
+        */}
+        {onNavigateToDiscover && (
+          <DiscoverWorkspaceBar
+            active="marketplace"
+            onSelect={(sectionId) => {
+              if (sectionId !== 'marketplace') onNavigateToDiscover(sectionId);
+            }}
+          />
+        )}
 
         <MarketplaceWorkspaceBar
           active="browse"

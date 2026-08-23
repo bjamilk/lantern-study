@@ -3145,7 +3145,13 @@ router.patch(
       const order = await ordersService.updateOrderStatus(
         req.params.id,
         req.user.id,
-        action
+        action,
+        // Phase 3 N — the dispute UI's reason. Ignored for every other action.
+        {
+          disputeReason: typeof req.body?.disputeReason === 'string' ? req.body.disputeReason : undefined,
+          disputeCategory:
+            typeof req.body?.disputeCategory === 'string' ? req.body.disputeCategory : undefined,
+        }
       );
       await invalidateSellerAnalyticsCache(order.seller_id);
       res.json({ success: true, data: order });

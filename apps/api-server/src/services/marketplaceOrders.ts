@@ -24,6 +24,19 @@ export const OPEN_ORDER_STATUSES = [
   'disputed',
 ];
 
+/** Dispute taxonomy (Phase 3 · N) — mirrors the marketplace_orders CHECK. */
+export const DISPUTE_CATEGORIES = [
+  'not_received',
+  'not_as_described',
+  'damaged',
+  'wrong_item',
+  'seller_unresponsive',
+  'unauthorised',
+  'other',
+] as const;
+export type DisputeCategory = (typeof DISPUTE_CATEGORIES)[number];
+export const DISPUTE_REASON_MAX = 1000;
+
 export function resolveEffectivePrice(listing: {
   price?: number | null;
   sale_price?: number | null;
@@ -513,7 +526,10 @@ export class MarketplaceOrdersService {
       | 'mark_ready'
       | 'confirm_received'
       | 'cancel'
-      | 'open_dispute'
+      | 'open_dispute',
+    // Phase 3 N: `open_dispute` has existed since Phase 1 with no client able
+    // to send a reason. The dispute UI now supplies one.
+    options: { disputeReason?: string; disputeCategory?: string } = {}
   ): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderById(orderId, userId);
     if (!order) throw new PublicError('Order not found');
@@ -586,9 +602,18 @@ export class MarketplaceOrdersService {
         await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
         break;
       }
-      case 'open_dispute':
+      case 'open_dispute': {
         if (!isBuyer && !isSeller) throw new PublicError('Unauthorized');
         nextStatus = 'disputed';
+        patch.disputed_at = now;
+        patch.dispute_opened_by = userId;
+        if (options.disputeCategory && DISPUTE_CATEGORIES.includes(options.disputeCategory as DisputeCategory)) {
+          patch.dispute_category = options.disputeCategory;
+        }
+        if (typeof options.disputeReason === 'string' && options.disputeReason.trim()) {
+          // The column CHECKs 1000 chars; truncate rather than 500 on a long note.
+          patch.dispute_reason = options.disputeReason.trim().slice(0, DISPUTE_REASON_MAX);
+        }
         if (order.transaction_id) {
           await this.db
             .from('marketplace_transactions')
@@ -596,6 +621,7 @@ export class MarketplaceOrdersService {
             .eq('id', order.transaction_id);
         }
         break;
+      }
       default:
         throw new PublicError('Invalid action');
     }
@@ -775,6 +801,21 @@ export class MarketplaceOrdersService {
         message: `How was your purchase of "${listingTitle}"? Leave a review for the seller.`,
         link: `marketplace:listing:${completed.listing_id}:review`,
         data: { orderId, listingId: completed.listing_id },
+      });
+    }
+
+    // North-star metric (Phase 3 · O): a completed order is one student
+    // getting something from another. Only on the first completion — the
+    // weekly unique index would dedupe a repeat anyway, but re-running it on
+    // every idempotent replay is pointless work.
+    if (!alreadyCompleted) {
+      const { getLearningConnectionsService } = await import('./learningConnections');
+      await getLearningConnectionsService(this.supabaseService).record({
+        actorId: completed.seller_id,
+        beneficiaryId: completed.buyer_id,
+        kind: 'order_completed',
+        objectType: 'order',
+        objectId: orderId,
       });
     }
 
@@ -1354,7 +1395,8 @@ export class MarketplaceOrdersService {
   async resolveDisputeAsAdmin(
     orderId: string,
     resolution: 'release_to_seller' | 'refund_buyer',
-    adminNote?: string
+    adminNote?: string,
+    resolvedBy?: string
   ): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderByIdAdmin(orderId);
     if (!order) throw new PublicError('Order not found');
@@ -1362,10 +1404,42 @@ export class MarketplaceOrdersService {
       throw new PublicError('Only disputed orders can be resolved by admin');
     }
 
-    if (resolution === 'release_to_seller') {
-      return this.completeDisputeForSeller(order, adminNote);
+    // Phase 3 N: record WHO the dispute went against before the status moves.
+    // The trust score counts disputes LOST BY THE SELLER, not disputes merely
+    // opened — without this stamp every resolution is invisible to trust and a
+    // seller who wins a dispute stays punished forever.
+    const outcome = resolution === 'refund_buyer' ? 'buyer' : 'seller';
+    try {
+      await this.db
+        .from('marketplace_orders')
+        .update({
+          dispute_outcome: outcome,
+          dispute_resolved_at: new Date().toISOString(),
+          dispute_resolved_by: resolvedBy ?? null,
+          dispute_resolution_note: adminNote?.trim() ? adminNote.trim().slice(0, 2000) : null,
+        })
+        .eq('id', orderId);
+    } catch (err) {
+      logger.warn('dispute outcome stamp failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-    return this.refundDisputeForBuyer(order, adminNote);
+
+    const resolved =
+      resolution === 'release_to_seller'
+        ? await this.completeDisputeForSeller(order, adminNote)
+        : await this.refundDisputeForBuyer(order, adminNote);
+
+    // Trust reflects the outcome immediately, not at the next unrelated event.
+    try {
+      const { getCreatorsService } = await import('./creators');
+      await getCreatorsService(this.supabaseService).refreshStats(order.seller_id);
+    } catch {
+      /* counters are best-effort */
+    }
+
+    return resolved;
   }
 
   private async completeDisputeForSeller(

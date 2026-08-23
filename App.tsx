@@ -86,6 +86,7 @@ const MyListingsScreen = lazyWithRetry(() => import('./components/MyListingsScre
 const MarketplacePurchasesScreen = lazyWithRetry(() => import('./components/MarketplacePurchasesScreen'));
 const StudyProductDraftsScreen = lazyWithRetry(() => import('./components/StudyProductDraftsScreen'));
 const CreatorProfileScreen = lazyWithRetry(() => import('./components/CreatorProfileScreen'));
+const DiscoverScreen = lazyWithRetry(() => import('./components/DiscoverScreen'));
 const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
@@ -239,6 +240,12 @@ export const App: React.FC = () => {
     const [studyProductSource, setStudyProductSource] = useState<
         { noteIds?: string[]; folderId?: string | null; courseId?: string | null; title?: string } | null
     >(null);
+
+    // Phase 3 L: which Discover tab to land on. Set when leaving the nested
+    // marketplace so the user returns to the tab they clicked, not to the top.
+    const [discoverSection, setDiscoverSection] = useState<
+        'communities' | 'groups' | 'people' | 'marketplace'
+    >('communities');
 
     useEffect(() => {
         if (isCompanionOpen) markChecklist('tryCompanion');
@@ -1125,12 +1132,31 @@ export const App: React.FC = () => {
                     onExplainAnswer={handleAIExplainAnswer} />;
             case AppMode.DASHBOARD:
                 return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser} offlineBundles={offlineBundles}
+                    onNavigateFromFeed={(screen, params) => {
+                        // Feed rows point at objects that already have homes.
+                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(String(params.listingId));
+                            setSelectedMarketplaceListingInitialQuantity(null);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        } else if (screen === 'CreatorProfile' && params?.userId) {
+                            setSelectedSellerId(String(params.userId));
+                            setSellerProfileReturnMode(AppMode.DASHBOARD);
+                            setAppMode(AppMode.CREATOR_PROFILE);
+                        } else if (screen === 'GroupChat' && params?.groupId) {
+                            const target = groups.find((x) => x.id === params.groupId);
+                            if (target) {
+                                handleSelectChat({ ...target, chatType: 'group' });
+                                setAppMode(AppMode.CHAT);
+                            }
+                        }
+                    }}
                     studyActivityDays={studyActivityDays}
                     onNavigateToChat={() => navigateTo(AppMode.CHAT)} allMessages={messages}
                     userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
                     onNavigateToFlashcards={() => { setLibraryTab('flashcards'); navigateTo(AppMode.LIBRARY); }}
                     onOpenCreateDeck={handleOpenCreateDeckModal}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
+                    onNavigateToDiscover={() => navigateTo(AppMode.DISCOVER)}
                     onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
@@ -1484,6 +1510,10 @@ export const App: React.FC = () => {
             case AppMode.MARKETPLACE:
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    onNavigateToDiscover={(section) => {
+                        setDiscoverSection(section as any);
+                        setAppMode(AppMode.DISCOVER);
+                    }}
                     onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
@@ -1595,6 +1625,32 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                         } else if (screen === 'Marketplace') {
                             setAppMode(AppMode.MARKETPLACE);
+                        }
+                    }} />;
+            case AppMode.DISCOVER:
+                // Phase 3 L / decision D12: Discover is the hub and the
+                // marketplace is one of its tabs, so 'Marketplace' here is a
+                // move WITHIN Discover, not a departure from it.
+                return <DiscoverScreen
+                    initialSection={discoverSection === 'marketplace' ? 'communities' : discoverSection}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'Marketplace') {
+                            setAppMode(AppMode.MARKETPLACE);
+                        } else if (screen === 'CreatorProfile' && params?.userId) {
+                            setSelectedSellerId(String(params.userId));
+                            setSellerProfileReturnMode(AppMode.DISCOVER);
+                            setAppMode(AppMode.CREATOR_PROFILE);
+                        } else if (screen === 'GroupChat' && params?.groupId) {
+                            // Discover can surface a group the user has not
+                            // joined yet, so it may not be in `groups`. Only
+                            // open the chat when they are actually a member —
+                            // otherwise leave them in Discover rather than
+                            // dropping them on an empty chat screen.
+                            const target = groups.find((x) => x.id === params.groupId);
+                            if (target) {
+                                handleSelectChat({ ...target, chatType: 'group' });
+                                setAppMode(AppMode.CHAT);
+                            }
                         }
                     }} />;
             case AppMode.CREATOR_PROFILE:
@@ -1744,6 +1800,10 @@ export const App: React.FC = () => {
                 if (!modals.createMarketplaceListing) openModal('createMarketplaceListing');
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    onNavigateToDiscover={(section) => {
+                        setDiscoverSection(section as any);
+                        setAppMode(AppMode.DISCOVER);
+                    }}
                     onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
@@ -1838,6 +1898,7 @@ export const App: React.FC = () => {
         onNavigateToLibrary: () => navigateTo(AppMode.LIBRARY),
         onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
         onNavigateToMarketplace: () => navigateTo(AppMode.MARKETPLACE),
+        onNavigateToDiscover: () => navigateTo(AppMode.DISCOVER),
         onNavigateToAdmin: () => navigateTo(AppMode.ADMIN),
         pendingSyncCount: pendingSyncResults.length + pendingFlashcardReviews.length, isOnline,
         onSyncPendingResults: handleSyncResults,

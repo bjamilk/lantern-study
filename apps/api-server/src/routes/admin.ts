@@ -744,6 +744,22 @@ router.patch('/marketplace/listings/:id', async (req: any, res: any) => {
   }
 });
 
+// GET /api/v1/admin/learning-connections?weeks= — the north-star metric
+// (Phase 3 · O). Weekly Active Learning Connections: distinct (actor,
+// beneficiary, kind) pairs per ISO week, so the number measures NEW helping
+// relationships rather than repeat activity between the same two people.
+router.get('/learning-connections', async (req: any, res: any) => {
+  try {
+    const { getLearningConnectionsService } = await import('../services/learningConnections');
+    const data = await getLearningConnectionsService(supabaseService).weekly(
+      req.query.weeks ? Number(req.query.weeks) : 12
+    );
+    res.json({ success: true, data });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
 router.get('/marketplace/orders', async (req: any, res: any) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -784,7 +800,8 @@ router.patch('/marketplace/orders/:id/dispute', async (req: any, res: any) => {
     const order = await getMarketplaceOrdersService(supabaseService).resolveDisputeAsAdmin(
       id,
       resolution,
-      note
+      note,
+      req.user.id
     );
 
     await logAdminAction(supabaseService, {

@@ -19,6 +19,19 @@ import {
 } from '@lantern/shared'
 import { normalizeTestResultSession, retryUncertainDelivery } from '@lantern/shared/utils'
 import type { StudyPackContentInput, StudyPackCounts, StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/marketplace'
+import type {
+  Community,
+  CommunityDetail,
+  DiscoverGroup,
+  DiscoverPerson,
+  ExamReadiness,
+  FeedPage,
+  LearningConnectionSummary,
+  MasteryGraph,
+  MyCommunity,
+  PresenceSnapshot,
+  TopicMastery,
+} from '@lantern/shared/network'
 import {
   type UserSettings,
   normalizeUserSettings,
@@ -3627,7 +3640,15 @@ export const fetchOrderForInquiry = async (inquiryId: string) => {
 
 export const updateMarketplaceOrder = async (
   orderId: string,
-  payload: { action: string; meetingLocation?: string; sellerNote?: string; fulfillmentMode?: string }
+  payload: {
+    action: string;
+    meetingLocation?: string;
+    sellerNote?: string;
+    fulfillmentMode?: string;
+    /** Phase 3 N — carried by `open_dispute` only; ignored for other actions. */
+    disputeReason?: string;
+    disputeCategory?: string;
+  }
 ) => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/orders/${orderId}`, {
     method: 'PATCH',
@@ -4709,6 +4730,128 @@ export const unfollowCreator = async (userId: string): Promise<void> => {
     throw new Error((err as any).error || 'Could not unfollow this creator');
   }
 };
+
+// ── Phase 3 — Network (communities, discovery, feed, presence, mastery) ──
+//
+// Web hand-writes its own fetch layer (mobile uses the shared api client), so
+// these mirror packages/shared/src/api/endpoints.ts by hand. Types come from
+// @lantern/shared/network so the two clients cannot drift.
+
+const networkGet = async <T>(path: string, timeout = 10000, fallbackError = 'Request failed'): Promise<T> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1${path}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    timeout
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || fallbackError);
+  }
+  return (await response.json()).data as T;
+};
+
+const networkWrite = async <T>(
+  path: string,
+  method: 'POST' | 'DELETE',
+  body?: unknown,
+  fallbackError = 'Request failed'
+): Promise<T> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1${path}`,
+    {
+      method,
+      headers: { ...(await getAuthHeaders()), 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    },
+    10000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || fallbackError);
+  }
+  return (await response.json()).data as T;
+};
+
+const networkQuery = (params: Record<string, string | number | undefined>): string => {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') qs.set(key, String(value));
+  }
+  const str = qs.toString();
+  return str ? `?${str}` : '';
+};
+
+export const fetchMyCommunities = () => networkGet<MyCommunity[]>('/communities');
+
+export const fetchCommunity = (slug: string) =>
+  networkGet<CommunityDetail>(`/communities/${encodeURIComponent(slug)}`, 10000, 'Community not found');
+
+export const fetchCommunityMembers = (communityId: string, limit?: number) =>
+  networkGet<Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>>(
+    `/communities/${encodeURIComponent(communityId)}/members${networkQuery({ limit })}`
+  );
+
+export const joinCommunity = (communityId: string) =>
+  networkWrite<{ joined: true }>(
+    `/communities/${encodeURIComponent(communityId)}/join`,
+    'POST',
+    undefined,
+    'Could not join this community'
+  );
+
+export const leaveCommunity = (communityId: string) =>
+  networkWrite<{ left: true }>(
+    `/communities/${encodeURIComponent(communityId)}/join`,
+    'DELETE',
+    undefined,
+    'Could not leave this community'
+  );
+
+export const discoverCommunities = (params: {
+  q?: string;
+  kind?: string;
+  institutionId?: string;
+  courseId?: string;
+  limit?: number;
+} = {}) => networkGet<Community[]>(`/discover/communities${networkQuery(params)}`);
+
+/** Discoverable groups — NOT /groups, which is memberships-only and cached per user. */
+export const discoverGroups = (params: {
+  q?: string;
+  communityId?: string;
+  courseId?: string;
+  limit?: number;
+} = {}) => networkGet<DiscoverGroup[]>(`/discover/groups${networkQuery(params)}`);
+
+export const discoverPeople = (params: {
+  institutionId?: string;
+  courseId?: string;
+  limit?: number;
+} = {}) => networkGet<DiscoverPerson[]>(`/discover/people${networkQuery(params)}`);
+
+export const fetchStudyPresence = (params: { courseId?: string; institutionId?: string } = {}) =>
+  networkGet<PresenceSnapshot>(`/discover/presence${networkQuery(params)}`);
+
+/** Study intent rides the EXISTING heartbeat rather than a second timer. */
+export const sendStudyHeartbeat = (body: { context?: string; courseId?: string; topic?: string }) =>
+  networkWrite<unknown>('/users/presence/heartbeat', 'POST', body, 'Could not update presence');
+
+export const clearStudyPresence = () =>
+  networkWrite<unknown>('/users/presence/study', 'DELETE', undefined, 'Could not clear presence');
+
+export const fetchFeed = (params: { limit?: number; before?: string } = {}) =>
+  networkGet<FeedPage>(`/feed${networkQuery(params)}`);
+
+export const fetchLearningConnections = () =>
+  networkGet<LearningConnectionSummary>('/feed/connections');
+
+export const fetchMasteryGraph = (params: { courseId?: string; limit?: number } = {}) =>
+  networkGet<MasteryGraph>(`/mastery${networkQuery(params)}`, 15000);
+
+export const refreshMasteryGraph = () =>
+  networkWrite<{ topics: TopicMastery[] }>('/mastery/refresh', 'POST', undefined, 'Could not refresh');
+
+export const fetchExamReadiness = () => networkGet<ExamReadiness[]>('/mastery/exam-readiness');
 
 export interface SellerPaymentRow {
   orderId: string;

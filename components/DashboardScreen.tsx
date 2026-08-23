@@ -61,6 +61,8 @@ import {
   readAcademicSetupDismissed,
   markAcademicSetupDismissed,
 } from '../utils/academicSetup';
+import AcademicFeedPanel from './AcademicFeedPanel';
+import MasteryPanel from './MasteryPanel';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 
@@ -221,6 +223,8 @@ interface DashboardScreenProps {
   onNavigateToCreateGroup?: () => void;
   onNavigateToBudget?: () => void;
   onNavigateToStudyHub?: () => void;
+  /** Phase 3 M: routing target for a feed row (listing, group, note, profile). */
+  onNavigateFromFeed?: (screen: string, params?: Record<string, unknown>) => void;
   onNavigateToLibrary?: () => void;
   onNavigateToOffline?: () => void;
   onToggleCompanion?: () => void;
@@ -374,6 +378,7 @@ export default function DashboardScreen({
   onNavigateToCreateGroup,
   onNavigateToBudget,
   onNavigateToStudyHub,
+  onNavigateFromFeed,
   onNavigateToLibrary,
   onNavigateToOffline,
   onToggleCompanion,
@@ -1493,6 +1498,16 @@ export default function DashboardScreen({
         </div>
 
         {/* ─── Two-Column Layout: Achievements + Analysis ─── */}
+        {/*
+          Phase 3 M + P: the network feed and the server-side mastery graph.
+          Both panels fetch independently and fail independently — neither can
+          blank the dashboard if its endpoint is unavailable.
+        */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <AcademicFeedPanel onNavigate={onNavigateFromFeed} />
+          <MasteryPanel />
+        </div>
+
         <details open className="group">
           <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
             <h2 className="text-lg font-semibold text-lantern-text flex items-center">

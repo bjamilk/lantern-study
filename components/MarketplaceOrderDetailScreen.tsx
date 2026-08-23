@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/authStore';
 import { ArrowLeftIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
 import OrderReceipt from './marketplace/OrderReceipt';
+import OpenDisputeModal from './marketplace/OpenDisputeModal';
 
 interface MarketplaceOrderDetailScreenProps {
   orderId: string;
@@ -151,6 +152,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
     };
   }, [load, loadOtherUnpaidOrders, onOrderUpdated]);
 
+  const [disputeOpen, setDisputeOpen] = useState(false);
   const isSeller = currentUser?.id === order?.seller_id;
   const isBuyer = currentUser?.id === order?.buyer_id;
 
@@ -219,6 +221,20 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
 
   return (
     <div className="flex flex-col h-full bg-lantern-background">
+      <OpenDisputeModal
+        open={disputeOpen}
+        onClose={() => setDisputeOpen(false)}
+        listingTitle={(order as { listing?: { title?: string } }).listing?.title}
+        onSubmit={async ({ disputeCategory, disputeReason }) => {
+          const updated = await updateMarketplaceOrder(orderId, {
+            action: 'open_dispute',
+            disputeCategory,
+            disputeReason,
+          });
+          setOrder(updated);
+          onOrderUpdated?.();
+        }}
+      />
       <div className="flex items-center gap-3 p-4 border-b border-lantern-border bg-lantern-surface dark:bg-lantern-surface">
         <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
           <ArrowLeftIcon className="w-5 h-5" />
@@ -502,6 +518,22 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
                 Cancel order
               </Button>
             )}
+            {/*
+              Phase 3 N: `open_dispute` has been supported server-side since
+              Phase 1 with no client able to reach it. Offered only once money
+              has moved — on an unpaid order the honest action is Cancel.
+            */}
+            {(isBuyer || isSeller) &&
+              ['paid', 'ready_for_pickup', 'buyer_confirmed'].includes(order.status) && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={acting}
+                  onClick={() => setDisputeOpen(true)}
+                >
+                  Report a problem
+                </Button>
+              )}
           </div>
         )}
 

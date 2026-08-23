@@ -1106,6 +1106,20 @@ router.post(
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
 
+    // North-star metric (Phase 3 · O): an upvote is one student telling another
+    // their question helped. A DOWNVOTE is not a learning connection, so only
+    // 'up' counts. Actor = the question's author (they did the helping).
+    if (voteType === 'up' && authorized.sender_id) {
+      const { getLearningConnectionsService } = await import('../services/learningConnections');
+      await getLearningConnectionsService(supabaseService).record({
+        actorId: authorized.sender_id,
+        beneficiaryId: userId,
+        kind: 'question_voted',
+        objectType: 'question',
+        objectId: messageId,
+      });
+    }
+
     res.json({
       success: true,
       data: result,

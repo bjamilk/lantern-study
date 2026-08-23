@@ -213,6 +213,18 @@ export class MarketplaceQuestionBanksService {
     const { getCreatorsService } = await import('./creators');
     await getCreatorsService(this.supabaseService).refreshStats(userId);
 
+    // Academic feed (Phase 3 · M) — best-effort; the listing is already live.
+    const { getActivityFeedService } = await import('./activityFeed');
+    await getActivityFeedService(this.supabaseService).record({
+      actorId: userId,
+      verb: 'published_bank',
+      objectType: 'listing',
+      objectId: listing.id,
+      audienceType: 'followers',
+      courseId: (listing as { course_id?: string | null }).course_id ?? null,
+      payload: { title: (listing as { title?: string }).title ?? null },
+    });
+
     // Advisory content flags (lecturer slides / copyrighted material wording)
     // become an under-review content_report on the listing; never blocks publish.
     if (contentFlags.length > 0) {

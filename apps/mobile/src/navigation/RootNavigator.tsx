@@ -183,6 +183,12 @@ import {
   JobCompanyScreen,
 
 } from '../screens/marketplace';
+import {
+  DiscoverScreen,
+  CommunityDetailScreen,
+  FeedScreen,
+  MasteryScreen,
+} from '../screens/discover';
 
 import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen } from '../screens/settings';
 
@@ -408,6 +414,14 @@ function MarketNavigator() {
       <MarketStack.Screen name="StudyProductDrafts" component={StudyProductDraftsScreen} />
 
       <MarketStack.Screen name="CreatorProfile" component={CreatorProfileScreen} />
+
+      <MarketStack.Screen name="Discover" component={DiscoverScreen} />
+
+      <MarketStack.Screen name="CommunityDetail" component={CommunityDetailScreen} />
+
+      <MarketStack.Screen name="Feed" component={FeedScreen} />
+
+      <MarketStack.Screen name="Mastery" component={MasteryScreen} />
 
       <MarketStack.Screen name="OrderDetail" component={OrderDetailScreen} />
 
