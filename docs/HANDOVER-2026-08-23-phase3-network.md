@@ -13,23 +13,30 @@ Connections), **P** (Mastery Graph). Phases 0–2 are live; see
 
 ---
 
-## 0. STATUS AFTER THE E2E PASS (2026-08-23, later)
+## 0. STATUS — SHIPPED LIVE
 
-**The first five migrations ARE APPLIED in production** — verified by anon
-PostgREST probe: all five new tables and all seven new functions return `42501`
-(permission denied = exists), against a `PGRST205` negative control.
+**Phase 3 is DEPLOYED.** Commits `5b6a119` (the phase) and `85c5dc7` (a defect
+found by the post-deploy E2E). API live on Render, web live on Cloudflare Pages
+(`deploy-web.yml` build for `85c5dc7` succeeded).
 
-**One follow-up migration is NOT yet applied and should be:**
+**The five original migrations are applied.** Verified by anon PostgREST probe:
+5 tables + 7 functions all `42501` (exists) against a `PGRST205` control.
+
+**ONE MIGRATION IS STILL OUTSTANDING — please apply it:**
 
 ```
 20260824125000_communities_select_grant.sql
 ```
 
-It fixes two real defects found during the E2E (§4a). Apply it before deploying.
+It fixes two real defects (§4a). **It is not deploy-blocking** — the API uses the
+service role, which bypasses RLS and already holds `GRANT ALL`, so nothing is
+broken without it. But until it is applied, the two `communities` RLS policies
+remain dead code and any direct client PostgREST read of those tables fails.
+Copiable page: https://claude.ai/code/artifact/d76bc8e5-83ad-424b-9314-b3b178b4bd26
 
-**The API code is still uncommitted, so Phase 3 is NOT deployed** — Render is
-running `36c4b7a` and every Phase 3 route 404s in production. A full
-UI → API → DB E2E is therefore still blocked; what was verified instead is in §4.
+**Still unverified: the authenticated UI flows.** Everything below the UI is
+verified; driving the signed-in screens needs a signed-in browser session, which
+requires credentials. See §4b.
 
 Original five, in dependency order (already applied):
 
@@ -40,23 +47,6 @@ Original five, in dependency order (already applied):
 20260824123000_learning_connections.sql
 20260824124000_user_topic_mastery.sql
 ```
-
-They are ordered by dependency: `121000` references `communities`, `124000`
-references `concepts`/`courses`. Applying a partial set and deploying the API is
-the failure mode that nearly broke all checkout in Phase 2.
-
-**Copiable migration page:** https://claude.ai/code/artifact/d76bc8e5-83ad-424b-9314-b3b178b4bd26
-
-Verify with an anon PostgREST probe before deploying — `42501` = table/column
-EXISTS (permission denied, which is correct for a service-role table),
-`PGRST205` = table missing, `42703` = column missing. Always probe a known-good
-column as a control.
-
-**Superseded:** the SQL has now been executed for real — see §4. It ran against
-PGlite (WASM Postgres 16) with the migration files loaded verbatim, and against
-production, where the first five are applied.
-
----
 
 ## 1. Decisions taken this session
 
@@ -191,21 +181,24 @@ chip leading the marketplace workspace bar; dispute flow on `OrderDetailScreen`.
 
 ## 4. E2E results
 
-A full UI → API → DB pass is **blocked**: the Phase 3 code is uncommitted, so
-Render still serves `36c4b7a` and every Phase 3 route 404s in production. There
-is no `SUPABASE_SERVICE_ROLE_KEY` in any local env file either, so the API
-cannot be booted against real data. What *was* verified:
+Run in two passes: before deploy (SQL + routing), then again against production
+after `5b6a119` and `85c5dc7` shipped.
 
 | Layer | Method | Result |
 |---|---|---|
 | **Migrations applied?** | anon PostgREST probe vs a `PGRST205` negative control | **PASS** — 5 tables + 7 functions all `42501` (exist) |
 | **SQL actually runs** | PGlite (WASM Postgres 16), migration files loaded **verbatim** | **PASS — 41/41 checks** |
-| **API routing** | booted locally with dummy creds; curled all 15 routes | **PASS** — all `401` (mounted + auth-gated); control `404` |
+| **API routing (local)** | booted with dummy creds; curled all 15 routes | **PASS** — all `401`; control `404` |
+| **API routing (PROD)** | all 10 Phase 3 routes after deploy | **PASS** — all `401`, no 404/500 |
+| **No regression** | Phase 2 routes after deploy | **PASS** — `/creators/discover` + `/marketplace/listings` 200 |
+| **Browse latency** | 5 runs of `/marketplace/listings` | **PASS** — 0.26–0.60 s, no regression from the added trust lookup |
+| **Served web bundle** | `LC_ALL=C grep -a` on the live assets | **PASS** — Discover chunk, all 8 Phase 3 endpoint paths, dispute UI strings |
+| **Trust on seller embeds** | live `/marketplace/listings` + `/listings/:id` | **PASS after `85c5dc7`** — was broken, see §4a |
 | **API tsc / jest** | per-workspace | 0 errors · 107 suites / 715 tests |
 | **shared jest** | — | 72 suites / 628 tests |
 | **web build** | turbo | 3/3 |
 | **mobile tsc** | — | 0 errors |
-| **UI E2E** | — | **NOT RUN — blocked on deploy** |
+| **Authenticated UI E2E** | — | **NOT RUN — needs a signed-in session (§4b)** |
 
 The PGlite harness is the substantive part. It proves, among other things:
 - `week_start` trigger agrees exactly with the TS `isoWeekStart()` (`2026-08-17`);
@@ -245,6 +238,31 @@ Both are fixed in the source migration (for fresh environments) **and** in
 `20260824125000_communities_select_grant.sql` (for production, where 120000 is
 already applied). Co-member rosters are served by `GET /communities/:id/members`,
 which runs as the service role and does the membership check in code.
+
+3. **Seller trust never reached listings** (found AFTER deploy, fixed in
+   `85c5dc7`). Trust was attached inside `toListingCardRecords`, which only runs
+   on the `compact` response profile — but the default browse call resolves to
+   the search RPC with profile `full`, which returns RPC rows directly and never
+   reaches the card builder. So every default browse response shipped without
+   trust. **And no client rendered it anyway**, so N's "trust on listing seller
+   embeds and search" gap was still fully open despite being reported closed.
+   Fixed: `attachSellerTrust()` extracted and applied on the full-profile RPC
+   branch and the listing-detail path (idempotent, so compact does not pay
+   twice), plus a trust chip on the listing detail seller row on both clients.
+   Verified live: digital listings now return `trustLevel: 'rising'`.
+
+### 4b. What is still unverified, and why
+
+The **authenticated UI flows** have not been driven: joining a community from
+Discover, the feed populating, the mastery panel rendering, opening a dispute.
+All of these are behind auth, and the browser pane has no signed-in session.
+Signing in requires the account's credentials, which is not something to hand to
+an agent. To finish it: sign in at https://lanternstudy.com in the browser pane
+and the remaining flows can be driven from there.
+
+Everything *below* the UI on those paths is verified — the routes are live and
+auth-gated, the SQL executes correctly, and the endpoints they call are the ones
+covered by the 41/41 PGlite harness.
 
 ## 5. Gates
 

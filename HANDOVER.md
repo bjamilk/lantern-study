@@ -6,13 +6,13 @@
 **Production:** https://lanternstudy.com · API https://lantern-study-api.onrender.com (`/health` = deployed short SHA)  
 **Supabase project:** `tiizkjhbrnaibaagmurl`
 
-> **Latest: Knowledge Network Phase 3 (Network) is BUILT but NOT DEPLOYED.**
-> Communities + Discover hub, the academic feed, presence-as-intent, trust &
-> disputes, the Weekly Active Learning Connections north-star metric, and the
-> server-side Mastery Graph. All gate-green and **uncommitted**; its **five
-> `20260824*` migrations are NOT yet hand-applied** and must be, in order,
-> BEFORE the API deploys. Decision **D12 answered: Discover hub with the
-> marketplace nested inside it.**
+> **Latest: Knowledge Network Phase 3 (Network) is LIVE** — commits `5b6a119`
+> and `85c5dc7`. Communities + a Discover hub (D12: marketplace nested inside
+> it), the academic feed with presence-as-intent, trust v2 with disputes, the
+> Weekly Active Learning Connections north-star metric, and the server-side
+> Mastery Graph. The five `20260824*` migrations are applied; **one follow-up,
+> `20260824125000_communities_select_grant.sql`, is still outstanding** (not
+> deploy-blocking — see the doc). Authenticated UI flows are not yet E2E'd.
 > **[docs/HANDOVER-2026-08-23-phase3-network.md](docs/HANDOVER-2026-08-23-phase3-network.md)**
 >
 > **Knowledge Network Phase 2 is LIVE (commits `af97879` → `00350b3`).**
@@ -119,7 +119,7 @@ fb6975b Ranked backlog: offline durability, AI credit refunds, companion parity 
 - Two pre-gate junk postings on the live jobs board (Ezeobi "Internship — [team / function]", Benjamin "Tutor needed for [PHM 101]") — need admin removal.
 - Digital study bundles phases 1–2 are live (`20260818120000` applied); phase 3 per memory `lantern-study-question-banks`.
 - **Phase 1 knowledge-network migrations `20260822120000`–`20260822170000` await hand-application** (must precede the API deploy — `docs/RELEASING.md`).
-- **Phase 3 migrations `20260824120000`–`20260824124000` await hand-application** (in order, before the API deploy). The SQL has never been executed — no local Postgres — so treat the first apply as the real syntax check.
+- **Phase 3 migration `20260824125000_communities_select_grant.sql` awaits hand-application** (the other five are applied). Not deploy-blocking; until applied, the two `communities` RLS policies are dead code.
 - Collaborative-notes last-write-wins body edits; note search misses content past the 2000-char cap; grade-history chips.
 
 ---
