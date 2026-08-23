@@ -217,7 +217,7 @@ The PGlite harness is the substantive part. It proves, among other things:
 - **trust v2 behaves**: an OPEN dispute costs nothing, a LOST one costs 10, a WON
   one restores the score, and banned/suspended accounts hard-zero.
 
-### 4a. Two real defects found and fixed
+### 4a. Five real defects found and fixed
 
 1. **The communities RLS policies were dead code.** `20260824120000` created
    `communities_select_public` and `community_members_select_own` but never issued
@@ -251,18 +251,59 @@ which runs as the service role and does the membership check in code.
    twice), plus a trust chip on the listing detail seller row on both clients.
    Verified live: digital listings now return `trustLevel: 'rising'`.
 
-### 4b. What is still unverified, and why
+4. **The feed and mastery panels were unreachable on the dashboard**
+   (`b7bd36a`). Both were rendered inside `<DashboardProgress>`, which is
+   collapsed by default AND unmounts its children — so neither appeared without
+   expanding "Progress & analytics". The mastery panel stays there (it IS topic
+   analytics); the **feed now renders above the collapsible**, because a feed
+   nobody sees is not a feed.
+5. **Phase 3 web writes would 403 on CSRF** (`b7bd36a`). The new fetch helpers
+   bypassed `withApiCredentials`, which supplies the
+   `X-Requested-With: LanternStudy` header that `csrfProtectionMiddleware`
+   demands on every mutating cookie-authenticated request. `joinCommunity`,
+   `leaveCommunity`, `refreshMasteryGraph` and `clearStudyPresence` would have
+   failed whenever `getAuthHeaders()` had no bearer token to fall back on.
+   Confirmed live: the same POST returns 403 `CSRF_VALIDATION_FAILED` without
+   the header and 200 with it.
 
-The **authenticated UI flows** have not been driven: joining a community from
-Discover, the feed populating, the mastery panel rendering, opening a dispute.
-All of these are behind auth, and the browser pane has no signed-in session.
-Signing in requires the account's credentials, which is not something to hand to
-an agent. To finish it: sign in at https://lanternstudy.com in the browser pane
-and the remaining flows can be driven from there.
+### 4b. Authenticated production E2E (signed in as Benjamin Amadi)
 
-Everything *below* the UI on those paths is verified — the routes are live and
-auth-gated, the SQL executes correctly, and the endpoints they call are the ones
-covered by the 41/41 PGlite harness.
+Driven through the real signed-in UI at https://lanternstudy.com.
+
+**Passed:**
+- **Discover hub renders** — sidebar shows "Discover"; all four tabs
+  (Communities · Groups · People · Marketplace) present with accessible names.
+- **D12 nesting is live** — the Discover bar renders ON the marketplace screen
+  with Marketplace marked `aria-current="page"`.
+- **All 9 Phase 3 endpoints return 200** with correct shapes against the real DB.
+- **The Mastery Graph works on real study history** — `POST /mastery/refresh`
+  materialised **20 topics** in ~2.1 s: "Introduction to PMOS" 8/19 → 42 %,
+  "Maths" 3/3 → 100 %. **The honesty rule holds in production**: "Asthma"
+  (2 attempts) returns `masteryScore: null`, and 2 of 20 topics are correctly
+  withheld rather than shown as a low score.
+- **Mastery panel renders** the real graph (NEEDS WORK / STRONGEST).
+- **Presence heartbeat with study intent** → `{studySharing: true}`, and
+  `/discover/presence` correctly reports `total: 0` because it excludes the
+  viewer.
+- **Trust chip live** — "Rising" renders beside the seller name on listing detail.
+- **Discover tabs exercised with zero console errors**; each shows its correct
+  empty state.
+
+**Two more defects found and fixed here** (`b7bd36a`) — see §4a items 4 and 5.
+
+**Still not exercised:**
+- **Community derivation.** This account has no academic profile
+  (`institutionId`/`programme`/`studyLevel` all null), which is exactly why
+  Discover is empty — correct cold-start behaviour, and the empty state says so.
+  Setting a university/programme is the account owner's data decision, not one to
+  fabricate. Once set, `refresh_auto_communities` fires on the profile save.
+- **Feed content** — needs a publish/follow/group-join to generate a row.
+- **Dispute flow** — needs a real paid order.
+- **Mobile clients** — not exercised in this pass at all.
+- **Migration `20260824125000`'s effect** is only observable through a direct
+  authenticated PostgREST read, which the app does not currently make for these
+  tables (the API uses the service role). Its correctness rests on the PGlite
+  checks, which covered exactly the grant and the de-recursion.
 
 ## 5. Gates
 
