@@ -89,6 +89,7 @@ const CreatorProfileScreen = lazyWithRetry(() => import('./components/CreatorPro
 const DiscoverScreen = lazyWithRetry(() => import('./components/DiscoverScreen'));
 const InviteFriendsScreen = lazyWithRetry(() => import('./components/InviteFriendsScreen'));
 const CampusScreen = lazyWithRetry(() => import('./components/CampusScreen'));
+const CommunityDetailScreen = lazyWithRetry(() => import('./components/CommunityDetailScreen'));
 const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
@@ -248,6 +249,7 @@ export const App: React.FC = () => {
     const [discoverSection, setDiscoverSection] = useState<
         'communities' | 'groups' | 'people' | 'marketplace'
     >('communities');
+    const [communitySlug, setCommunitySlug] = useState<string | null>(null);
 
     useEffect(() => {
         if (isCompanionOpen) markChecklist('tryCompanion');
@@ -1646,6 +1648,25 @@ export const App: React.FC = () => {
             }
             case AppMode.INVITE_FRIENDS:
                 return <InviteFriendsScreen onBack={() => setAppMode(AppMode.DASHBOARD)} />;
+            case AppMode.COMMUNITY_DETAIL: {
+                // Slug comes from state when arriving from Discover, or straight
+                // from the URL on a cold load of /discover/c/:slug.
+                const slugFromRoute = String(parseAppRoute(window.location.pathname).params?.slug || '');
+                const slug = communitySlug || slugFromRoute;
+                if (!slug) return null;
+                return <CommunityDetailScreen
+                    slug={slug}
+                    onBack={() => setAppMode(AppMode.DISCOVER)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'GroupChat' && params?.groupId) {
+                            const target = groups.find((x) => x.id === params.groupId);
+                            if (target) {
+                                handleSelectChat({ ...target, chatType: 'group' });
+                                setAppMode(AppMode.CHAT);
+                            }
+                        }
+                    }} />;
+            }
             case AppMode.DISCOVER:
                 // Phase 3 L / decision D12: Discover is the hub and the
                 // marketplace is one of its tabs, so 'Marketplace' here is a
@@ -1655,6 +1676,9 @@ export const App: React.FC = () => {
                     onNavigate={(screen, params) => {
                         if (screen === 'Marketplace') {
                             setAppMode(AppMode.MARKETPLACE);
+                        } else if (screen === 'CommunityDetail' && params?.slug) {
+                            setCommunitySlug(String(params.slug));
+                            setAppMode(AppMode.COMMUNITY_DETAIL);
                         } else if (screen === 'CreatorProfile' && params?.userId) {
                             setSelectedSellerId(String(params.userId));
                             setSellerProfileReturnMode(AppMode.DISCOVER);

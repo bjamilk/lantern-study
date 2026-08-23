@@ -27,6 +27,7 @@ import { getCardDisplayText } from '../../utils/flashcardHelpers';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useStatsStore } from '../../stores/statsStore';
 import { useTheme } from '../../theme';
+import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
 function withHaptic(action: () => Promise<void>) {
   if (useSettingsStore.getState().settings.accessibility.hapticFeedback) {
@@ -113,6 +114,13 @@ function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
 }
 
 export function FlashcardReviewScreen({ navigation, route }: Props) {
+  // Phase 3 M — see the web screen: without a caller, study_presence is never
+  // written and the "studying right now" count is permanently zero.
+  useEffect(() => {
+    setStudyIntent({ context: 'reviewing' });
+    return () => setStudyIntent(null);
+  }, []);
+
   const { reduceMotion, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const deckId = route.params?.deckId ?? '';

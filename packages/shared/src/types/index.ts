@@ -63,6 +63,11 @@ export interface Deck {
   isShared?: boolean;
   /** Course this deck belongs to (academic archive). */
   courseId?: string | null;
+  /**
+   * Distinct OTHER people who have studied this deck (Phase 3 · M).
+   * Maintained by record_deck_study; the owner's own study is excluded.
+   */
+  studyCount?: number;
 }
 
 export interface FlashcardSession {

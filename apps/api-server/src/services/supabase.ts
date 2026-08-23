@@ -3194,8 +3194,10 @@ export class SupabaseService {
 
     const selectClause =
       profile === "compact"
-        ? "id, name, user_id, is_shared, course_id, created_at"
-        : "id, name, description, user_id, is_shared, course_id, created_at";
+        ? "id, name, user_id, is_shared, course_id, created_at, study_count"
+        // study_count (Phase 3 M) is selected so "studied by N" can render;
+        // without it the counter is written but never readable by a client.
+        : "id, name, description, user_id, is_shared, course_id, created_at, study_count";
 
     let query = this.supabase
       .from("decks")

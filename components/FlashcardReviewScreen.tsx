@@ -23,6 +23,7 @@ import { useCompanionStore } from '../stores/companionStore';
 import { trackFlashcardReviewCompleted, trackStudyModeCompleted } from '../services/productAnalytics';
 import { useRegisterFeatureTip } from './featureTips/FeatureTip';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
+import { setStudyIntent } from '../services/presenceHeartbeat';
 
 interface FlashcardReviewScreenProps {
   session: FlashcardSession;
@@ -60,6 +61,15 @@ function formatElapsed(ms: number): string {
 }
 
 const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, onUpdateSrs, onEndSession }) => {
+  // Phase 3 M: declare study INTENT so the existing presence heartbeat can
+  // carry it. Without a caller, study_presence is never written at all and
+  // "23 people studying right now" is permanently zero — the plumbing shipped
+  // with no screen ever setting it.
+  useEffect(() => {
+    setStudyIntent({ context: 'reviewing' });
+    return () => setStudyIntent(null);
+  }, []);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnswerShown, setIsAnswerShown] = useState(false);
   const [ratingLocked, setRatingLocked] = useState(false);

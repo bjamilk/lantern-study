@@ -1276,6 +1276,7 @@ export const mapDeckFromApi = (d: any): Deck => ({
   userId: d.user_id || d.userId,
   isShared: d.is_shared ?? d.isShared ?? false,
   courseId: d.courseId !== undefined ? d.courseId : (d.course_id ?? null),
+  studyCount: d.studyCount ?? d.study_count ?? 0,
 });
 
 /** Map raw API deck rows to client Deck objects, dropping malformed rows. */

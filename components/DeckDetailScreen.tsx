@@ -378,6 +378,14 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl md:text-3xl font-bold text-lantern-text truncate">{deck.name}</h1>
+            {/* Phase 3 M: decks.study_count had a writer but no reader, so
+                "studied by N" never appeared anywhere. Hidden at zero — a lonely
+                "studied by 0 people" is worse than saying nothing. */}
+            {(deck.studyCount ?? 0) > 0 && (
+              <p className="text-xs text-lantern-text-secondary">
+                Studied by {deck.studyCount} {deck.studyCount === 1 ? 'person' : 'people'}
+              </p>
+            )}
             <p className="text-sm text-lantern-text-secondary mt-1">
               {deck.description || 'No description.'}
             </p>
