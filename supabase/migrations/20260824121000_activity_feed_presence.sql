@@ -52,8 +52,11 @@ COMMENT ON TABLE public.activity_events IS
 
 ALTER TABLE public.decks
   ADD COLUMN IF NOT EXISTS study_count integer NOT NULL DEFAULT 0;
-ALTER TABLE public.notes
-  ADD COLUMN IF NOT EXISTS view_count integer NOT NULL DEFAULT 0;
+-- notes.view_count was here and has been REMOVED (see
+-- 20260824126000_drop_notes_view_count.sql). `public.notes` is in the
+-- supabase_realtime publication and web subscribes unfiltered, so incrementing
+-- a counter on it broadcasts to every connected client, each of which refetches
+-- — a self-amplifying write on a high-traffic read path.
 ALTER TABLE public.groups
   ADD COLUMN IF NOT EXISTS question_count integer NOT NULL DEFAULT 0;
 

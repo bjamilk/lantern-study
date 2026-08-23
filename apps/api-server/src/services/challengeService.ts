@@ -697,6 +697,32 @@ export class ChallengeService {
 
       await this.recordDuelActivity(challenge.challengerId, challenge.opponentId);
 
+      // North-star metric (Phase 3 · O). A duel is mutual: each player gave the
+      // other someone to practise against, so BOTH directions are recorded.
+      // Writing the pair also makes an actor/beneficiary inversion impossible
+      // here by construction. Only reachable past the `if (!completed)` guard
+      // above, so a replayed request cannot double-write.
+      {
+        const { getLearningConnectionsService } = await import('./learningConnections');
+        const connections = getLearningConnectionsService(this.supabaseService);
+        await Promise.all([
+          connections.record({
+            actorId: challenge.challengerId,
+            beneficiaryId: challenge.opponentId,
+            kind: 'challenge_completed',
+            objectType: 'challenge',
+            objectId: challengeId,
+          }),
+          connections.record({
+            actorId: challenge.opponentId,
+            beneficiaryId: challenge.challengerId,
+            kind: 'challenge_completed',
+            objectType: 'challenge',
+            objectId: challengeId,
+          }),
+        ]);
+      }
+
       const [challengerProfile, opponentProfile] = await Promise.all([
         this.fetchProfileBasics(challenge.challengerId),
         this.fetchProfileBasics(challenge.opponentId),

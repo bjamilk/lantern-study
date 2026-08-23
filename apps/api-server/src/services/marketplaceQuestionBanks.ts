@@ -688,6 +688,31 @@ export class MarketplaceQuestionBanksService {
       surface: options.surface ?? 'api',
     });
 
+    // North-star metric (Phase 3 · O): the bank's CREATOR is the actor — their
+    // questions were practised. The local `userId` is the SCORER and must be
+    // the beneficiary; reusing that name as actorId would invert the metric.
+    try {
+      const { data: listing } = await this.db
+        .from('marketplace_listings')
+        .select('user_id, course_id')
+        .eq('id', listingId)
+        .maybeSingle();
+      const sellerId = (listing as { user_id?: string } | null)?.user_id;
+      if (sellerId) {
+        const { getLearningConnectionsService } = await import('./learningConnections');
+        await getLearningConnectionsService(this.supabaseService).record({
+          actorId: sellerId,
+          beneficiaryId: userId,
+          kind: 'pack_scored',
+          objectType: 'listing',
+          objectId: listingId,
+          courseId: (listing as { course_id?: string | null } | null)?.course_id ?? null,
+        });
+      }
+    } catch {
+      /* metric is best-effort; the score already recorded */
+    }
+
     return result;
   }
 

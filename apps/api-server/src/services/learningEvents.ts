@@ -239,6 +239,38 @@ export async function recordLearningEvent(
 }
 
 /** decks.course_id for course attribution on card events; null on any failure. */
+/**
+ * Deck owner + course in ONE round trip (Phase 3 · M/O).
+ *
+ * reviewFlashcard already spent a query on lookupDeckCourseId; the deck OWNER
+ * is needed there too (for the `deck_collaborated` learning connection and the
+ * decks.study_count counter). Selecting both columns together keeps the hottest
+ * path in the app at the same query count it had before.
+ *
+ * Never throws — a review must never fail on telemetry.
+ */
+export async function lookupDeckOwnerAndCourse(
+  service: Pick<SupabaseService, 'getClient'>,
+  deckId: unknown
+): Promise<{ ownerId: string | null; courseId: string | null }> {
+  if (!isUuidLike(deckId)) return { ownerId: null, courseId: null };
+  try {
+    const { data, error } = await service
+      .getClient()
+      .from('decks')
+      .select('user_id, course_id')
+      .eq('id', deckId)
+      .maybeSingle();
+    if (error || !data) return { ownerId: null, courseId: null };
+    return {
+      ownerId: uuidOrNull((data as { user_id?: unknown }).user_id),
+      courseId: uuidOrNull((data as { course_id?: unknown }).course_id),
+    };
+  } catch {
+    return { ownerId: null, courseId: null };
+  }
+}
+
 export async function lookupDeckCourseId(
   service: Pick<SupabaseService, 'getClient'>,
   deckId: unknown
@@ -395,5 +427,96 @@ export async function recordTestSessionAnswers(
   }
 
   const inserted = await recordLearningEvents(service, events);
+
+  // North-star metric (Phase 3 · O) — `group_question_answered`.
+  //
+  // Direction: the question's AUTHOR is the actor. In this product a group
+  // QUESTION is practice material someone contributed, and answering it is how
+  // a group-mate benefits — the same direction already used for
+  // `question_voted` and `question_verified`. Writing the answerer as actor
+  // would invert all three relative to each other.
+  //
+  // Placed after the once-per-session guard above, so a client calling both
+  // completion paths cannot double-write.
+  void recordGroupQuestionConnections(service, events, params.userId).catch(() => {});
+
   return { inserted, skipped: false };
+}
+
+/**
+ * Credit the authors of the group questions this session answered.
+ *
+ * Best-effort and detached: a session result must never fail on a metric. The
+ * question ids come from the session's own events, and only rows that really
+ * are group QUESTIONs by another member produce a connection (the service drops
+ * self-connections, so answering your own question is naturally ignored).
+ */
+async function recordGroupQuestionConnections(
+  service: Pick<SupabaseService, 'getClient'>,
+  events: LearningEventInput[],
+  userId: string
+): Promise<void> {
+  const groupId = events.find((e) => e.groupId)?.groupId;
+  // config.groupId is a raw client string — mobile historically wrote deckId or
+  // "custom-*" there — so it must be uuid-validated before it reaches a query.
+  if (!isUuidLike(groupId) || !isUuidLike(userId)) return;
+
+  // targetId is `answer.questionId || key` — a RAW CLIENT STRING that is never
+  // uuid-checked upstream (mobile has historically written non-uuid keys). It is
+  // about to be compared against messages.id, a uuid column: a single non-uuid
+  // in the list makes Postgres reject the WHOLE query with 22P02, and because
+  // this function swallows errors the entire session's connections would vanish
+  // silently. Filter, do not trust.
+  const questionIds = [
+    ...new Set(events.map((e) => e.targetId).filter((id): id is string => isUuidLike(id))),
+  ].slice(0, 200);
+  if (questionIds.length === 0) return;
+
+  try {
+    const { data, error } = await service
+      .getClient()
+      .from('messages')
+      .select('id, sender_id')
+      .eq('group_id', groupId)
+      .eq('type', 'QUESTION')
+      .in('id', questionIds);
+    if (error) {
+      // Do not swallow silently: the whole batch is lost here, and the only
+      // symptom would be missing north-star rows with nothing to explain them.
+      logger.warn('learning_connections: group question author lookup failed', {
+        groupId,
+        err: error.message,
+      });
+      return;
+    }
+    if (!data) return;
+
+    const authors = [
+      ...new Set(
+        (data as Array<{ sender_id?: unknown }>)
+          .map((row) => uuidOrNull(row.sender_id))
+          .filter((id): id is string => !!id && id !== userId)
+      ),
+    ];
+    // record() is one HTTP insert per call with no batching, so bound the
+    // fan-out. A session touching more than this many DISTINCT askers is not a
+    // real study session.
+    if (authors.length === 0) return;
+    const bounded = authors.slice(0, 25);
+
+    const { getLearningConnectionsService } = await import('./learningConnections');
+    const connections = getLearningConnectionsService(service as never);
+    await Promise.all(
+      bounded.map((authorId) =>
+        connections.record({
+          actorId: authorId,
+          beneficiaryId: userId,
+          kind: 'group_question_answered',
+          objectType: 'question',
+        })
+      )
+    );
+  } catch {
+    /* best-effort */
+  }
 }

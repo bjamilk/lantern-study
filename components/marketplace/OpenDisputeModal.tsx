@@ -21,6 +21,11 @@ export interface OpenDisputeModalProps {
   onClose: () => void;
   onSubmit: (payload: { disputeCategory: DisputeCategory; disputeReason: string }) => Promise<void>;
   listingTitle?: string;
+  /**
+   * The category labels are buyer-voiced ("I never received it"). A seller
+   * opening a dispute must not be pre-filled with a claim they are not making.
+   */
+  viewerIsSeller?: boolean;
 }
 
 export const OpenDisputeModal: React.FC<OpenDisputeModalProps> = ({
@@ -28,8 +33,11 @@ export const OpenDisputeModal: React.FC<OpenDisputeModalProps> = ({
   onClose,
   onSubmit,
   listingTitle,
+  viewerIsSeller = false,
 }) => {
-  const [category, setCategory] = useState<DisputeCategory>('not_received');
+  const [category, setCategory] = useState<DisputeCategory>(
+    viewerIsSeller ? 'other' : 'not_received'
+  );
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

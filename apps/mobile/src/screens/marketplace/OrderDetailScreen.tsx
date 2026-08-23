@@ -19,11 +19,7 @@ import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { buildOrderReceiptText } from './orderReceipt';
-import {
-  DISPUTE_CATEGORIES,
-  DISPUTE_CATEGORY_LABELS,
-  DISPUTE_REASON_MAX,
-} from '@lantern/shared/network';
+import { OpenDisputeModal } from './OpenDisputeModal';
 
 const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
 
@@ -126,8 +122,12 @@ export function OrderDetailScreen({
 
   const runAction = async (
     action: string,
-    // Phase 3 N — carried by `open_dispute` only; ignored for other actions.
-    extra: { disputeReason?: string; disputeCategory?: string } = {}
+    // Phase 3 N — `extra` is carried by `open_dispute` only; ignored otherwise.
+    // `rethrow` is for callers that render their OWN error state (the dispute
+    // modal): without it this swallows the failure into an Alert and the modal
+    // closes as though the dispute had been filed.
+    extra: { disputeReason?: string; disputeCategory?: string } = {},
+    options: { rethrow?: boolean } = {}
   ) => {
     setActing(true);
     try {
@@ -136,55 +136,17 @@ export function OrderDetailScreen({
         await refreshSellerData();
       }
     } catch (err: unknown) {
+      if (options.rethrow) throw err;
       Alert.alert('Error', err instanceof Error ? err.message : 'Action failed');
     } finally {
       setActing(false);
     }
   };
 
-  /**
-   * Open a dispute (Phase 3 · N). Uses the platform category picker + prompt
-   * rather than a bespoke modal so it matches every other destructive-ish flow
-   * on mobile; the warning about the held payout is stated up front, not after.
-   */
-  const openDisputePrompt = () => {
-    const options = [...DISPUTE_CATEGORIES];
-    Alert.alert(
-      'Report a problem',
-      "Our team will review it. The seller's payout is held until it's resolved.",
-      [
-        ...options.map((category) => ({
-          text: DISPUTE_CATEGORY_LABELS[category],
-          onPress: () => {
-            Alert.prompt?.(
-              DISPUTE_CATEGORY_LABELS[category],
-              'What happened, and what would resolve it?',
-              (reason?: string) => {
-                const trimmed = (reason ?? '').trim();
-                if (!trimmed) {
-                  Alert.alert('Add a note', 'Tell us what went wrong so we can help.');
-                  return;
-                }
-                void runAction('open_dispute', {
-                  disputeCategory: category,
-                  disputeReason: trimmed.slice(0, DISPUTE_REASON_MAX),
-                });
-              }
-            );
-            // Alert.prompt is iOS-only. On Android there is no text step, so
-            // send the category alone rather than silently doing nothing.
-            if (!Alert.prompt) {
-              void runAction('open_dispute', {
-                disputeCategory: category,
-                disputeReason: DISPUTE_CATEGORY_LABELS[category],
-              });
-            }
-          },
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ]
-    );
-  };
+  // Phase 3 N: a real modal, not Alert.prompt. Alert.prompt is iOS-only and
+  // Android is the only platform currently shipping a build, so the old flow
+  // meant no shipped user could type a dispute reason.
+  const [disputeOpen, setDisputeOpen] = useState(false);
 
   const continuePaystack = async () => {
     setActing(true);
@@ -267,6 +229,16 @@ export function OrderDetailScreen({
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+      <OpenDisputeModal
+        visible={disputeOpen}
+        onClose={() => setDisputeOpen(false)}
+        listingTitle={order?.listing?.title}
+        viewerIsSeller={isSeller}
+        onSubmit={async ({ disputeCategory, disputeReason }) => {
+          // rethrow so the modal shows the failure inline instead of closing.
+          await runAction('open_dispute', { disputeCategory, disputeReason }, { rethrow: true });
+        }}
+      />
       <View className="px-4 py-3 flex-row items-center">
         <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={22} color="#64748b" />
@@ -447,7 +419,7 @@ export function OrderDetailScreen({
             */}
             {(isBuyer || isSeller) &&
               ['paid', 'ready_for_pickup', 'buyer_confirmed'].includes(order.status) && (
-                <Button variant="secondary" loading={acting} onPress={openDisputePrompt}>
+                <Button variant="secondary" loading={acting} onPress={() => setDisputeOpen(true)}>
                   Report a problem
                 </Button>
               )}

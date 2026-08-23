@@ -225,6 +225,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         open={disputeOpen}
         onClose={() => setDisputeOpen(false)}
         listingTitle={(order as { listing?: { title?: string } }).listing?.title}
+        viewerIsSeller={isSeller}
         onSubmit={async ({ disputeCategory, disputeReason }) => {
           const updated = await updateMarketplaceOrder(orderId, {
             action: 'open_dispute',

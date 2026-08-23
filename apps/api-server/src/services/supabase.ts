@@ -94,6 +94,7 @@ import { VersionConflictError } from "../utils/versionConflict";
 import {
   buildCardReviewedEvent,
   lookupDeckCourseId,
+  lookupDeckOwnerAndCourse,
   recordLearningEvent,
   recordTestSessionAnswers,
 } from "./learningEvents";
@@ -4460,13 +4461,18 @@ export class SupabaseService {
     // after the CAS write landed (a 409 throws above and emits nothing).
     // recordLearningEvent never throws — the review never fails on telemetry.
     if (updated) {
+      // One round trip for BOTH the course id (telemetry, as before) and the
+      // deck owner (needed by the two Phase 3 writes below) — same query count
+      // this path had previously.
+      const deckMeta = await lookupDeckOwnerAndCourse(this, existing.deck_id);
+
       await recordLearningEvent(
         this,
         buildCardReviewedEvent({
           userId,
           flashcardId,
           deckId: existing.deck_id,
-          courseId: await lookupDeckCourseId(this, existing.deck_id),
+          courseId: deckMeta.courseId,
           rating,
           srsBefore: existing.srs_data ?? null,
           srsAfter: updated.srs_data ?? newSrsData,
@@ -4474,6 +4480,50 @@ export class SupabaseService {
           occurredAt: options.occurredAt ?? null,
         }),
       );
+
+      // Phase 3 M + O — "this person studied this deck", at most once per
+      // window per (deck, user).
+      //
+      // This is the hottest path in the app: it fires on EVERY graded card, so
+      // a realistic session is 20-100 calls of which exactly one is useful.
+      // record_deck_study is idempotent (it counts distinct people, not
+      // sessions), so an unguarded call would be correct but would burn a
+      // round trip per card. The cache key is set only AFTER the work resolves,
+      // so a transient failure retries on the next card instead of being
+      // suppressed for the whole window.
+      if (deckMeta.ownerId && deckMeta.ownerId !== userId) {
+        const studyKey = `deck_study:${existing.deck_id}:${userId}`;
+        void (async () => {
+          try {
+            if (await cacheService.get(studyKey)) return;
+            // supabase-js RESOLVES on a PostgREST/Postgres error rather than
+            // rejecting, so the result must be inspected. Without this the
+            // catch below never fires, the key is stamped anyway, and the
+            // "transient failures self-heal on the next card" promise in the
+            // comment above is silently false for a full 6 hours.
+            const { error: studyError } = await this.supabase.rpc("record_deck_study", {
+              p_deck_id: existing.deck_id,
+              p_user_id: userId,
+            });
+            if (studyError) throw studyError;
+            const { getLearningConnectionsService } = await import("./learningConnections");
+            await getLearningConnectionsService(this).record({
+              // The deck's OWNER is the actor — their deck taught someone.
+              // `userId` here is the STUDIER and is the beneficiary; passing it
+              // as actorId would invert the metric.
+              actorId: deckMeta.ownerId as string,
+              beneficiaryId: userId,
+              kind: "deck_collaborated",
+              objectType: "deck",
+              objectId: existing.deck_id,
+              courseId: deckMeta.courseId,
+            });
+            await cacheService.set(studyKey, 1, 6 * 60 * 60);
+          } catch {
+            /* best-effort: a counter must never fail a review */
+          }
+        })();
+      }
     }
     return updated;
   }
@@ -5355,6 +5405,21 @@ export class SupabaseService {
       .update({ status: "open", requested_by: null })
       .eq("id", threadId);
     if (updateError) throw updateError;
+
+    // North-star metric (Phase 3 · O): accepting a request is the accepter
+    // opening a channel for the requester, so the accepter is the actor.
+    // objectType is deliberately NULL: the learning_connections CHECK allows
+    // only challenge|question|deck|note|listing|order|review|profile, and a
+    // 'dm_thread' value would fail it — silently, since record() swallows.
+    if (thread?.requested_by) {
+      const { getLearningConnectionsService } = await import("./learningConnections");
+      await getLearningConnectionsService(this).record({
+        actorId: userId,
+        beneficiaryId: thread.requested_by as string,
+        kind: "dm_accepted",
+        objectId: threadId,
+      });
+    }
 
     if (typeof thread.requested_by === "string") {
       void this.createNotification(thread.requested_by, {
@@ -10277,6 +10342,36 @@ export class SupabaseService {
       .single();
 
     if (error) throw error;
+
+    // North-star metric (Phase 3 · O): the SELLER is the actor — their product
+    // is what helped the buyer, and the review is the evidence. Note this is an
+    // UPSERT, so editing a review re-runs it; the weekly unique index collapses
+    // same-week edits, and an edit months later is a fresh, honest signal.
+    try {
+      const { data: listingRow } = await this.supabase
+        .from("marketplace_listings")
+        .select("user_id, course_id")
+        .eq("id", listingId)
+        .maybeSingle();
+      const sellerId = (listingRow as { user_id?: string } | null)?.user_id;
+      if (sellerId) {
+        const { getLearningConnectionsService } = await import("./learningConnections");
+        await getLearningConnectionsService(this).record({
+          actorId: sellerId,
+          beneficiaryId: reviewerId,
+          kind: "review_left",
+          // object_type must describe object_id. Every other writer pairs them
+          // ('challenge'+challengeId, 'question'+messageId); `listingId` is a
+          // listing id, so 'review' here would mislabel it.
+          objectType: "listing",
+          objectId: listingId,
+          courseId: (listingRow as { course_id?: string | null } | null)?.course_id ?? null,
+        });
+      }
+    } catch {
+      /* metric is best-effort; the review already committed */
+    }
+
     return mapMarketplaceReviewRow(data as any);
   }
 
@@ -12991,7 +13086,24 @@ export class SupabaseService {
         .select("name, username")
         .eq("id", userId)
         .maybeSingle();
+      // NB: this local `actor` is the REDEEMER's DISPLAY NAME for the
+      // notification copy — it is the person being HELPED, i.e. the exact
+      // opposite of a learning-connection actorId. Do not reuse it below.
       const actor = profile?.name || profile?.username || "Someone";
+
+      // North-star metric (Phase 3 · O): the note's author is the actor.
+      void (async () => {
+        const { getLearningConnectionsService } = await import("./learningConnections");
+        await getLearningConnectionsService(this).record({
+          actorId: note.userId,
+          beneficiaryId: userId,
+          kind: "note_redeemed",
+          objectType: "note",
+          objectId: note.id,
+          courseId: (note as { courseId?: string | null }).courseId ?? null,
+        });
+      })();
+
       void this.createNotification(note.userId, {
         type: "note_share_accepted",
         message: `${actor} accepted your invite to "${note.title}"`,

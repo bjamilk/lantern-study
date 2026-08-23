@@ -1,0 +1,31 @@
+-- Phase 3 M follow-up — drop notes.view_count as dead schema.
+--
+-- 20260824121000 added the column alongside decks.study_count, but unlike that
+-- one it shipped with no distinct-viewer table, no RPC, no writer, no reader and
+-- no UI. Dead schema that looks finished is a real cost: the next person sees
+-- `view_count` and assumes it means something.
+--
+-- It should NOT simply be wired up, and this is the important part:
+--
+--   `public.notes` is in the `supabase_realtime` publication
+--   (20260730150000_notes_realtime.sql), and the web client subscribes to it
+--   UNFILTERED — hooks/useAppEffects.ts does
+--   `.on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, …)`
+--   and the handler debounces into loadNotes() + loadNoteFolders().
+--
+-- So every view_count increment would broadcast a change event to every
+-- connected client watching notes, each of which would then refetch — a write
+-- on a high-traffic read path that amplifies itself into a realtime storm. A
+-- raw counter here is not a small feature; it is an outage waiting for a busy
+-- day.
+--
+-- If "read by N of your collaborators" is ever genuinely wanted, re-add it THEN
+-- with the shape decks.study_count uses: a `note_viewers` table plus a
+-- `record_note_view(uuid, uuid)` RPC that counts DISTINCT viewers, gated to
+-- exclude the owner's own opens, and written from a path that fires once per
+-- open rather than once per list render.
+--
+-- Idempotent. 20260824121000 has been corrected too, so a fresh environment
+-- never creates the column in the first place.
+
+ALTER TABLE public.notes DROP COLUMN IF EXISTS view_count;

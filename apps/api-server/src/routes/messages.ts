@@ -1197,6 +1197,24 @@ router.put(
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
 
+    // North-star metric (Phase 3 · O): the question's AUTHOR is the actor —
+    // their question was confirmed useful. `userId` here is the VERIFIER and is
+    // the beneficiary; passing it as actorId would credit admins as helpers and
+    // invert the metric. Only VERIFIED counts; other statuses are not help.
+    // `type` is already selected by getAuthorizedGroupMessage. Without this
+    // clause a TEXT message marked VERIFIED would credit its author with a
+    // question_verified connection.
+    if (questionStatus === 'VERIFIED' && authorized.type === 'QUESTION' && authorized.sender_id) {
+      const { getLearningConnectionsService } = await import('../services/learningConnections');
+      await getLearningConnectionsService(supabaseService).record({
+        actorId: authorized.sender_id,
+        beneficiaryId: userId,
+        kind: 'question_verified',
+        objectType: 'question',
+        objectId: messageId,
+      });
+    }
+
     res.json({
       success: true,
       data: result,
