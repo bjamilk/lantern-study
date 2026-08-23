@@ -12,7 +12,11 @@ import type { StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/mark
 import { summarizeStudyPackCounts, STUDY_PACK_DRAFT_CREDITS } from '@lantern/shared/marketplace';
 import { PublishStudyPackModal } from '../settings/PublishStudyPackModal';
 
-type NavigationProp = { goBack: () => void; navigate: (screen: string, params?: Record<string, unknown>) => void };
+type NavigationProp = {
+  goBack: () => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+  setParams?: (params: Record<string, unknown>) => void;
+};
 type RouteProp = {
   params?: { source?: { noteIds?: string[]; folderId?: string | null; courseId?: string | null; title?: string } };
 };
@@ -47,8 +51,13 @@ export function StudyProductDraftsScreen({
     createdRef.current = true;
     void createStudyPackDraft(source)
       .catch((e: unknown) => Alert.alert('Error', e instanceof Error ? e.message : 'Could not start the study product'))
-      .finally(() => void load());
-  }, [source, load]);
+      .finally(() => {
+        // Retire the route param: returning to this screen must never re-spend
+        // credits regenerating the same draft.
+        navigation.setParams?.({ source: undefined });
+        void load();
+      });
+  }, [source, load, navigation]);
 
   useEffect(() => {
     void load();
@@ -154,7 +163,11 @@ export function StudyProductDraftsScreen({
           <Ionicons name="sparkles-outline" size={40} color="#94a3b8" />
           <Text className="mt-3 text-base font-semibold text-lantern-text">No study products yet</Text>
           <Text className="mt-1 text-sm text-lantern-text-secondary text-center">
-            Open a note or course and choose "Turn into a Study Product".
+            Open a note and tap the shop icon. Lantern drafts the guide, flashcards and questions for
+            you to review before publishing.
+          </Text>
+          <Text className="mt-2 text-xs text-lantern-text-tertiary">
+            Uses {STUDY_PACK_DRAFT_CREDITS} AI credits per draft.
           </Text>
         </View>
       ) : (

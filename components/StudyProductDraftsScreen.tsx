@@ -31,12 +31,23 @@ interface Props {
   onBack: () => void;
   /** When present, a draft is generated from this source on mount. */
   initialSource?: StudyProductDraftSource | null;
+  /**
+   * Called once the source has been turned into a draft. The owner MUST clear
+   * it — otherwise returning to this screen would silently spend credits
+   * generating the same draft again.
+   */
+  onSourceConsumed?: () => void;
   onNavigate?: (screen: string, params?: any) => void;
 }
 
 const POLL_MS = 4000;
 
-export const StudyProductDraftsScreen: React.FC<Props> = ({ onBack, initialSource, onNavigate }) => {
+export const StudyProductDraftsScreen: React.FC<Props> = ({
+  onBack,
+  initialSource,
+  onSourceConsumed,
+  onNavigate,
+}) => {
   const [drafts, setDrafts] = useState<StudyPackDraftSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -66,9 +77,12 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({ onBack, initialSourc
       .catch((e: any) => showToast(e?.message || 'Could not start the study product.', 'error'))
       .finally(() => {
         setCreating(false);
+        // Retire the source immediately: coming back to this screen must never
+        // re-spend credits regenerating the same draft.
+        onSourceConsumed?.();
         void load();
       });
-  }, [initialSource, load, showToast]);
+  }, [initialSource, load, showToast, onSourceConsumed]);
 
   useEffect(() => {
     void load();
@@ -152,7 +166,12 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({ onBack, initialSourc
             <SparklesIcon className="w-10 h-10 mx-auto text-lantern-text-tertiary mb-3" />
             <p className="text-lantern-text font-semibold">No study products yet</p>
             <p className="text-sm text-lantern-text-secondary mt-1">
-              Open a note, folder, or course and choose "Turn into a Study Product" to generate one.
+              Open a note and press <span className="font-semibold">Sell</span>, or pick a course in
+              your Library and choose <span className="font-semibold">Create a study pack</span>.
+              Lantern drafts the guide, flashcards and questions for you to review before publishing.
+            </p>
+            <p className="text-xs text-lantern-text-tertiary mt-2">
+              Uses {STUDY_PACK_DRAFT_CREDITS} AI credits per draft.
             </p>
           </div>
         ) : (

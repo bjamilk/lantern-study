@@ -1498,6 +1498,10 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MY_LISTINGS);
                     } else if (screen === 'MarketplacePurchases') {
                         setAppMode(AppMode.MARKETPLACE_PURCHASES);
+                    } else if (screen === 'StudyProductDrafts') {
+                        // No source: list existing drafts instead of generating a new one.
+                        setStudyProductSource(null);
+                        setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
                     } else if (screen === 'MarketplaceFavorites') {
                         setAppMode(AppMode.MARKETPLACE_FAVORITES);
                     } else if (screen === 'MarketplaceInquiries') {
@@ -1609,6 +1613,7 @@ export const App: React.FC = () => {
             case AppMode.STUDY_PRODUCT_DRAFTS:
                 return <StudyProductDraftsScreen
                     initialSource={studyProductSource}
+                    onSourceConsumed={() => setStudyProductSource(null)}
                     onBack={() => { setStudyProductSource(null); setAppMode(AppMode.LIBRARY); }}
                     onNavigate={(screen, params) => {
                         if (screen === 'MarketplaceListingDetail' && params?.listingId) {

@@ -9,6 +9,7 @@ export type MarketplaceWorkspaceSection =
   | 'orders'
   | 'cart'
   | 'purchases'
+  | 'studyProducts'
   | 'selling'
   | 'offers'
   | 'inquiries'
@@ -42,6 +43,7 @@ const NAV: NavItem[] = [
   { id: 'orders', label: 'Orders', icon: 'receipt-outline', screen: 'Orders' },
   { id: 'cart', label: 'Cart', icon: 'cart-outline', screen: 'Cart' },
   { id: 'purchases', label: 'Library', icon: 'albums-outline', screen: 'Purchases' },
+  { id: 'studyProducts', label: 'Products', icon: 'sparkles-outline', screen: 'StudyProductDrafts' },
   { id: 'selling', label: 'Selling', icon: 'storefront-outline', screen: 'MyListings' },
   // The "Offers" chip must reach OffersScreen; InquiriesScreen has no offers view.
   { id: 'offers', label: 'Offers', icon: 'pricetag-outline', screen: 'Offers' },

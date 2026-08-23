@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { createMarketplaceBundle, fetchMarketplaceCampuses } from '../../../services/api';
 import type { MarketplaceListing } from '@lantern/shared/types';
-import { isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared/marketplace';
+import { isOtherCityCampus, isDigitalListingKind, type MarketplaceCampus } from '@lantern/shared/marketplace';
 import { Button } from '../../../components/ui';
 import { CampusPicker } from '../CampusPicker';
 import { formatPrice } from '../marketplaceHelpers';
@@ -16,7 +16,15 @@ interface Props {
 
 export function CreateBundleModal({ visible, listings, onClose, onCreated }: Props) {
   const activeListings = useMemo(
-    () => listings.filter(l => l.status === 'active' && l.listing_kind !== 'bundle'),
+    () =>
+      listings.filter(
+        l =>
+          l.status === 'active' &&
+          l.listing_kind !== 'bundle' &&
+          // Digital products can't be bundled into a physical meetup sale.
+          !isDigitalListingKind(l.listing_kind) &&
+          (l.category_specific_fields as { digital?: boolean } | undefined)?.digital !== true
+      ),
     [listings]
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());

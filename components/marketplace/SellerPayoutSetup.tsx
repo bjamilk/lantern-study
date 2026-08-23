@@ -78,9 +78,19 @@ export function SellerPayoutSetup({ showToast }: Props) {
       <div>
         <h3 className="text-base font-semibold text-slate-900">Payout bank account</h3>
         <p className="text-sm text-slate-600 mt-1">
-          Buyers pay via Paystack. After they confirm delivery, your listing amount is transferred here.
-          Lantern keeps a 5% service charge.
+          Buyers pay via Paystack and your earnings are transferred here.
         </p>
+        <ul className="text-sm text-slate-600 mt-2 space-y-1 list-disc pl-5">
+          <li>
+            <span className="font-medium text-slate-900">Items you hand over</span> — buyers pay a 5%
+            service charge on top; you receive the full listing amount once they confirm delivery.
+          </li>
+          <li>
+            <span className="font-medium text-slate-900">Study packs &amp; question banks</span> — buyers
+            pay your list price and Lantern keeps a 15% commission, so you receive 85%, paid out
+            automatically on purchase.
+          </li>
+        </ul>
       </div>
 
       {profile?.status === 'active' && (

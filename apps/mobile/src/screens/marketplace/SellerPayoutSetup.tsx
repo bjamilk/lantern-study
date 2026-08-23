@@ -95,8 +95,16 @@ export function SellerPayoutSetup() {
       <View>
         <Text className="text-sm font-semibold text-lantern-text">Payout bank account</Text>
         <Text className="text-xs text-lantern-text-secondary mt-1">
-          Buyers pay via Paystack. After they confirm delivery, your listing amount is transferred
-          here. Lantern keeps a 5% service charge.
+          Buyers pay via Paystack and your earnings are transferred here.
+        </Text>
+        <Text className="text-xs text-lantern-text-secondary mt-1.5">
+          <Text className="font-semibold text-lantern-text">Items you hand over:</Text> buyers pay a
+          5% service charge on top; you receive the full listing amount once they confirm delivery.
+        </Text>
+        <Text className="text-xs text-lantern-text-secondary mt-1">
+          <Text className="font-semibold text-lantern-text">Study packs & question banks:</Text>{' '}
+          buyers pay your list price and Lantern keeps a 15% commission, so you receive 85%, paid out
+          automatically on purchase.
         </Text>
       </View>
 

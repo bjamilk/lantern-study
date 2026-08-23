@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createMarketplaceBundle, fetchMarketplaceCampuses } from '../../services/supabase';
 import { isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared';
+import { isDigitalListingKind } from '@lantern/shared/marketplace';
 import type { MarketplaceListing } from '../../types';
 import Button from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -20,7 +21,17 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
   onCreated,
 }) => {
   const activeListings = useMemo(
-    () => listings.filter((l) => l.status === 'active' && l.listing_kind !== 'bundle'),
+    () =>
+      listings.filter(
+        (l) =>
+          l.status === 'active' &&
+          l.listing_kind !== 'bundle' &&
+          // Digital products are delivered per-buyer and can't be bundled into a
+          // physical meetup sale. Browse rows may omit listing_kind, so fall back
+          // to the digital marker the publish paths always set.
+          !isDigitalListingKind(l.listing_kind) &&
+          (l.category_specific_fields as { digital?: boolean } | undefined)?.digital !== true
+      ),
     [listings]
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());

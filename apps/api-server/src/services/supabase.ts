@@ -9377,6 +9377,41 @@ export class SupabaseService {
     };
   }
 
+  /**
+   * marketplace_search_listings returns a FIXED column set that omits
+   * listing_kind and quantity, so browse rows could not tell a digital listing
+   * (question bank / study pack) from a physical one — which let digital
+   * listings slip into physical-only flows such as bundle building. Backfill
+   * both in one batched query rather than re-creating the RPC signature.
+   */
+  private async attachListingKinds(rows: any[]): Promise<any[]> {
+    if (!Array.isArray(rows) || rows.length === 0) return rows;
+    const needs = rows.filter((r) => r && r.listing_kind === undefined);
+    if (needs.length === 0) return rows;
+    const ids = Array.from(new Set(needs.map((r) => String(r.id)).filter(Boolean)));
+    if (ids.length === 0) return rows;
+    try {
+      const { data } = await this.supabase
+        .from("marketplace_listings")
+        .select("id, listing_kind, quantity")
+        .in("id", ids);
+      const byId = new Map(
+        (data || []).map((l: any) => [String(l.id), l]),
+      );
+      for (const row of rows) {
+        const extra = byId.get(String(row.id));
+        if (!extra) continue;
+        if (row.listing_kind === undefined) row.listing_kind = extra.listing_kind ?? "single";
+        if (row.quantity === undefined) row.quantity = extra.quantity ?? null;
+      }
+    } catch (err) {
+      logger.warn("Could not attach listing_kind to browse rows", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return rows;
+  }
+
   async getMarketplaceListings(
     options: {
       page?: number;
@@ -9457,10 +9492,12 @@ export class SupabaseService {
         const rows = rpcRows as any[];
         const total =
           rows.length > 0 ? Number(rows[0].total_count) || rows.length : 0;
-        const mapped = rows.map((row) => {
-          const { total_count: _totalCount, profiles, ...rest } = row;
-          return { ...rest, seller: profiles || row.seller };
-        });
+        const mapped = await this.attachListingKinds(
+          rows.map((row) => {
+            const { total_count: _totalCount, profiles, ...rest } = row;
+            return { ...rest, seller: profiles || row.seller };
+          }),
+        );
         if (profile === "compact") {
           const cards = await this.toListingCardRecords(mapped);
           return {

@@ -8,6 +8,7 @@ import {
   PlusIcon,
   HeartIcon,
   RectangleStackIcon,
+  SparklesIcon,
   EllipsisHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import { Menu, MenuTrigger, MenuContent, MenuItem } from '../ui';
@@ -17,6 +18,7 @@ export type MarketplaceWorkspaceSection =
   | 'orders'
   | 'cart'
   | 'purchases'
+  | 'studyProducts'
   | 'selling'
   | 'inquiries'
   | 'favorites';
@@ -105,6 +107,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           type="button"
           onClick={() => onNavigate('MarketplaceJobs')}
           className={navBtn(false)}
+          aria-label="Jobs"
         >
           <span>Jobs</span>
         </button>
@@ -113,6 +116,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           onClick={() => onNavigate('MarketplaceOrders')}
           className={navBtn(active === 'orders')}
           aria-current={active === 'orders' ? 'page' : undefined}
+          aria-label="Orders"
         >
           <ReceiptPercentIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Orders</span>
@@ -122,6 +126,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           onClick={() => onNavigate('MarketplaceCart')}
           className={navBtn(active === 'cart')}
           aria-current={active === 'cart' ? 'page' : undefined}
+          aria-label="Cart"
         >
           <ShoppingCartIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Cart</span>
@@ -131,15 +136,27 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           onClick={() => onNavigate('MarketplacePurchases')}
           className={navBtn(active === 'purchases')}
           aria-current={active === 'purchases' ? 'page' : undefined}
+          aria-label="Purchases"
         >
           <RectangleStackIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Purchases</span>
         </button>
         <button
           type="button"
+          onClick={() => onNavigate('StudyProductDrafts')}
+          className={navBtn(active === 'studyProducts')}
+          aria-current={active === 'studyProducts' ? 'page' : undefined}
+          aria-label="Study Products"
+        >
+          <SparklesIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <span>Study Products</span>
+        </button>
+        <button
+          type="button"
           onClick={() => onNavigate('MyListings')}
           className={navBtn(active === 'selling')}
           aria-current={active === 'selling' ? 'page' : undefined}
+          aria-label="Selling"
         >
           <ShoppingBagIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Selling</span>
@@ -149,6 +166,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           onClick={() => onNavigate('MarketplaceInquiries')}
           className={navBtn(active === 'inquiries')}
           aria-current={active === 'inquiries' ? 'page' : undefined}
+          aria-label="Inquiries"
         >
           <ChatBubbleLeftIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Inquiries</span>
