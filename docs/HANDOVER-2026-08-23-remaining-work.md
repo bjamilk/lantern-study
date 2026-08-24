@@ -157,15 +157,29 @@ anything honestly.
 
 ---
 
-## 4. Unfinished discovery you can resume
+## 4. Discovery notes — READ THESE BEFORE BUILDING ANY OF §3
 
-A read-only discovery workflow was mapping F-instrumentation, Q-completion,
-P-difficulty, concepts-UI, and S/U/V when this session ended. Resume it rather
-than re-deriving:
+`docs/NOTES-2026-08-23-remaining-work-discovery.md` has implementation-ready
+detail for every §3 item, and several traps that would each have shipped a real
+bug. The four worth knowing before you start anything:
 
-```
-Workflow({ scriptPath: "/Users/jamin/.claude/projects/-Users-jamin/54b4c7c5-dca6-4720-b845-db95eb816b2d/workflows/scripts/remaining-work-discovery-wf_b3136bf6-386.js" })
-```
+- **P difficulty:** every AI question lands in `learning_events.target_id` as
+  `q-0`, `q-1`… so a plain `GROUP BY target_id` merges thousands of unrelated
+  questions into one bucket that then clears any cohort floor — it would publish
+  a **fabricated statistic**. The defence must be a `REFERENCES messages(id)` FK.
+- **S:** `DEFAULT_AI_DAILY_LIMIT = 20` and a draft costs 5 → **max 4 drafts/day**.
+  "One click turns your semester into products" is false above N=4, and parallel
+  POSTs each pass their own atomic reserve and leave a ragged partial result.
+- **Concepts UI is BLOCKED:** the API is write-only — no GET of a target's links
+  and no unlink — so chips could be added but never shown again or removed.
+- **U:** `RESEND_API_KEY` is absent from `render.yaml` entirely, so email alerts
+  already silently no-op in production; `cron.weeklySummary` will do nothing
+  until it is added to the worker env.
+
+Plus: `featureTips` is rebuilt field-by-field in five places and silently drops
+unlisted keys; a new badge with `threshold: 0` mass-awards itself to every user;
+and the onboarding flag disagrees across clients (`'1'` on web, `'true'` on
+mobile).
 
 ---
 
