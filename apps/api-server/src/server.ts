@@ -82,6 +82,8 @@ import feedRoutes, { masteryRouter, initializeFeedRoutes } from './routes/feed';
 import referralRoutes, { initializeReferralRoutes } from './routes/referrals';
 // Phase 4 R — public campus pages (SEO)
 import campusRoutes, { initializeCampusRoutes } from './routes/campuses';
+// Phase 1 A (deferred, now built) — course topics
+import courseTopicRoutes, { initializeCourseTopicRoutes } from './routes/courseTopics';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -190,6 +192,7 @@ async function initializeServices() {
     initializeFeedRoutes(supabaseService);
     initializeReferralRoutes(supabaseService);
     initializeCampusRoutes(supabaseService, cacheService);
+    initializeCourseTopicRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -391,6 +394,9 @@ async function startServer() {
     // never captured by /users/:userId/* (Express matches in registration order).
     app.use('/api/v1/users/me/courses', userCourseRoutes);
     app.use('/api/v1/users', userRoutes);
+    // Nested topics mount before /courses so the parent router does not
+    // swallow /:courseId/topics.
+    app.use('/api/v1/courses/:courseId/topics', courseTopicRoutes);
     app.use('/api/v1/courses', courseRoutes);
     app.use('/api/v1/concepts', conceptRoutes);
     app.use('/api/v1/library', libraryRoutes);
