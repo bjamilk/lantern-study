@@ -80,7 +80,7 @@ Deploy: Cloudflare Pages (web, **git-connected — auto-deploys on push to `main
 
 ### Active detail docs (newest first)
 
-- **[docs/HANDOVER-2026-08-23-remaining-work.md](docs/HANDOVER-2026-08-23-remaining-work.md)** — **START HERE.** The two unapplied migrations, the in-flight `course_topics` client half, and every remaining item (F instrumentation, Q completion, concepts UI, Phase 4 S/U/V, and why T/W stay gated) written so a fresh session can pick any of them up. *(HEAD)*
+- **[docs/HANDOVER-2026-08-23-remaining-work.md](docs/HANDOVER-2026-08-23-remaining-work.md)** — **START HERE.** All migrations now applied; `course_topics` (Phase 1 A) shipped and E2E-verified in `72c0db8`. Every remaining item (F instrumentation, `authored_difficulty` decision, question difficulty, Q completion, concepts UI, Phase 4 S/U/V, and why T/W stay gated) written so a fresh session can pick any of them up. *(HEAD)*
 
 - **[docs/AUDIT-2026-08-23-phases-1-4.md](docs/AUDIT-2026-08-23-phases-1-4.md)** — **adversarial audit of every Phase 1–4 workstream** against the plan: what is genuinely implemented, every remaining gap ranked, where the handovers overclaimed, and the three shipped-but-never-working defects fixed in `7584c87`. *(read this before trusting any "shipped" claim)*
 

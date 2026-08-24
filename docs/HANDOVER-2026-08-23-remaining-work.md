@@ -1,6 +1,6 @@
 # Handover — resume here
 
-**Date:** 2026-08-23 · **Branch:** `main` · **HEAD:** `0f75fcb` (clean, pushed)
+**Date:** 2026-08-24 · **Branch:** `main` · **HEAD:** `72c0db8` (clean, pushed, deployed)
 **API:** live · **Web:** live · **Supabase:** `tiizkjhbrnaibaagmurl`
 
 Phases 1–4 of the Knowledge Network are built and deployed, audited adversarially,
@@ -9,26 +9,27 @@ written so a fresh session can pick up any item without re-deriving it.
 
 ---
 
-## 0. Migrations — apply these two
+## 0. Migrations — ALL APPLIED
 
-Everything else is applied. Copiable runbook:
-https://claude.ai/code/artifact/d76bc8e5-83ad-424b-9314-b3b178b4bd26
+Nothing is pending. Both migrations the previous handover listed are applied and
+verified in production on 2026-08-24:
 
-| Migration | What | Blocking? |
+| Migration | What | State |
 |---|---|---|
-| `20260824126000_drop_notes_view_count.sql` | Drops dead `notes.view_count` | No |
-| `20260826120000_course_topics.sql` | **NEW this session** — `course_topics` + `topic_id` | No — routes fail closed until applied |
+| `20260824126000_drop_notes_view_count.sql` | Drops dead `notes.view_count` | **Was already applied** — the previous handover listed it as pending; it was not. Probe: `notes.view_count` → `42703`. |
+| `20260826120000_course_topics.sql` | `course_topics` + `topic_id` on 5 artefact tables | **Applied 2026-08-24.** Probe: `course_topics` → `42501` (exists, anon denied), `notes.topic_id` → `42501`. |
 
-`20260826120000` is one statement short of trivial to verify:
-`SELECT count(*) FROM course_topics;` after applying.
+**Probe technique that actually proves a column exists:** an unknown column errors
+at *parse* time (`42703`) before the permission check (`42501`). So a column probe
+that stops saying `42703` and starts saying `42501` has gained the column. A bare
+`42501` in isolation still proves nothing — you need the before/after transition.
 
-**Why `notes.view_count` must be DROPPED, not wired:** `public.notes` is in the
+**Why `notes.view_count` was DROPPED, not wired:** `public.notes` is in the
 `supabase_realtime` publication and web subscribes **unfiltered**, so every
 increment broadcasts to every connected client, each debouncing into
 `loadNotes()`. A counter there is a self-amplifying write on a high-traffic read
-path.
-
----
+path. (This is also why the Notes screen legitimately re-fetches `/notes` at
+~20/min with a tab open — that is the realtime subscription, not a render loop.)
 
 ## 1. State of play
 
@@ -52,31 +53,37 @@ worth repeating:
 
 ---
 
-## 2. In flight — `course_topics` (Phase 1 A)
+## 2. DONE — `course_topics` (Phase 1 A) shipped `72c0db8`
 
-**Server half is DONE and committed** (`0f75fcb`): migration, service
-(`apps/api-server/src/services/courseTopics.ts`), routes mounted at
-`/api/v1/courses/:courseId/topics`. Verified 14/14 against Postgres 16.
+Both halves are live and E2E-verified against production, not just gate-green.
 
-**Not done — the client half:**
-1. **Artefact write-through.** `topic_id` exists on `notes`, `note_folders`,
-   `decks`, `test_sessions`, `marketplace_listings`, and
-   `CourseTopicsService.resolveForArtefact(topicId, courseId)` is written and
-   ready — but **no create/patch path calls it yet**. Wire it wherever `courseId`
-   is already accepted (search `courseId` in `apps/api-server/src/routes/`).
-2. **Topic picker on both clients**, beside the existing `CoursePicker`
-   (web `components/CoursePicker.tsx`, mobile `apps/mobile/src/components/CoursePicker.tsx`).
-   A topic is only selectable once a course is chosen — `resolveForArtefact`
-   rejects a topic without a course, and a topic from a *different* course.
-3. **Library third level.** The Library tree is currently academicYear → course.
-   Topic is the natural third level and the whole reason the entity exists.
-4. **Shared types** — `CourseTopic` in `packages/shared/src/types`, `topicId?` on
-   `StudyNote`, `Deck`, `NoteFolder`, `MarketplaceListing`.
+**Server half** (`0f75fcb`): migration, `services/courseTopics.ts`, routes at
+`/api/v1/courses/:courseId/topics`.
 
-**Do not merge topics into `concepts`.** They coexist deliberately — see the
-migration header for the reasoning.
+**Client half** (`72c0db8`, 71 files): `resolveArtefactTopic` wired into every
+create/patch that already took a `courseId`; `TopicPicker` + `useTopicSearch` on
+both clients wired into every artefact surface; Library third level
+(year → course → topic) with `?topicId=` filters reaching the network on both
+clients; `CourseTopic` + `topicId?` in `packages/shared`.
 
----
+**Verified in production 2026-08-24** (signed-in session, test data cleaned up):
+create → 201 pos 10; find-or-create returns the same id for the same title *and*
+for a different case; note created with `courseId`+`topicId` round-trips
+`topicId`; overview shows the topic node with `notes: 1` and
+`topics[] + untopiced === course total` per kind; `?topicId=<id>` → 1 note,
+`?topicId=null` → 0; a topic with no course → `400 "A topic needs a course"`;
+web note editor renders `note-topic` **disabled → "Pick a course first"**, and
+**enabled → "No topic"** once a course is chosen.
+
+**Deliberately NOT wired: `note_folders.topic_id`.** A folder is not a filed
+artefact; nothing reads the column. The whole surface (validation, routes,
+service writes, mapper, `NoteFolder.topicId`) was **removed** rather than given a
+picker to justify it. The column still exists and is unwritten — dropping it is a
+separate decision, and unlike `view_count` it is not a write-amplifying counter,
+so it is harmless where it is.
+
+**Do not merge topics into `concepts`.** They coexist by design — see the
+migration header.
 
 ## 3. Remaining work, in the order I would do it
 
@@ -195,18 +202,30 @@ mobile).
 5. **Never add a counter to a `supabase_realtime`-published table.**
 6. **Every web write must go through `withApiCredentials`** — it supplies the
    `X-Requested-With` header that CSRF requires.
-7. **Root `tsc` is a FALSE gate.** Real gates: `npm run build` (turbo/web),
+7. **`npm run build` alone is a FALSE gate — it full-cache-hits.** On a 71-file
+   diff turbo reported "3 cached, 3 total, FULL TURBO" in 275ms. Always run
+   `npm run build -- --force` and confirm `Cached: 0 cached` before believing it.
+8. **The "~55-error mobile tsc baseline" is STALE — it is 0.** Measured
+   2026-08-24: `apps/mobile` `tsc --noEmit` exits 0 with zero error lines, and
+   `--listFiles` confirms it really checks 326 files under `strict`. Do not
+   subtract a phantom baseline; any mobile error is yours.
+9. **`apps/web` vitest does NOT cover root `stores/`, `services/` or `hooks/`.**
+   Its config scopes to `apps/web/src/**`, `components/**`, `utils/**`. Changes to
+   `stores/notesStore.ts`, `services/academic.ts` etc. have types and build only —
+   which by trap #1 is not evidence they work.
+10. **Root `tsc` is a FALSE gate.** Real gates: `npm run build` (turbo/web),
    per-workspace `tsc`, jest from *inside* `apps/api-server`, vitest from
    `apps/web`.
-8. **Shared types resolve to `dist/` for the API**, so `packages/shared` must be
+11. **Shared types resolve to `dist/` for the API**, so `packages/shared` must be
    rebuilt (`npm run build`) before api-server tsc sees a change. The API also
    has its **own** `Group`/`User` types in `apps/api-server/src/types`.
-9. **Two client trees** — web in root `components/` + `services/`, mobile in
+12. **Two client trees** — web in root `components/` + `services/`, mobile in
    `apps/mobile`. Every screen change lands twice or parity drifts.
-10. **PGlite is the way to test SQL** — no local Postgres exists. See the
+13. **PGlite is the way to test SQL** — no local Postgres exists. See the
     scratchpad harnesses; load `pg_trgm` from `@electric-sql/pglite/contrib`.
-11. `UNFILED_COURSE_ID` is the **string** `'null'` (truthy).
-12. Repo is `~/Desktop/lantern-study` (lowercase); `~/Desktop/Lanternstudy` is a
+14. `UNFILED_COURSE_ID` is the **string** `'null'` (truthy), and so is the
+    topic filter's "in this course, under no topic" value.
+15. Repo is `~/Desktop/lantern-study` (lowercase); `~/Desktop/Lanternstudy` is a
     stale clone that hijacks cwd.
 
 ---
