@@ -11,8 +11,22 @@ import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAcces
 import { getWalletService } from '../services/walletService';
 import { WALLET_COINS, WALLET_TEST_PASS_THRESHOLD, testAwardKey } from '@lantern/shared/utils/walletCoins';
 import { surfaceFromRequest } from '../services/learningEvents';
-import { COURSE_FILTER_INVALID_MESSAGE, courseFilterKey, parseCourseFilter } from '../services/academicCourses';
+import {
+  COURSE_FILTER_INVALID_MESSAGE,
+  TOPIC_FILTER_INVALID_MESSAGE,
+  courseFilterKey,
+  parseCourseFilter,
+  parseTopicFilter,
+} from '../services/academicCourses';
 import { getTopicMasteryService } from '../services/topicMastery';
+import { PublicError } from '../utils/safeError';
+
+/** A rejected topic (wrong course, no course, unusable id) is the caller's mistake — 400, not 500. */
+const respondPublicError = (err: unknown, res: any): boolean => {
+  if (!(err instanceof PublicError)) return false;
+  res.status(400).json({ success: false, error: err.message });
+  return true;
+};
 
 async function awardTestPassCoins(userId: string, testId: string, score: number) {
   if (score < WALLET_TEST_PASS_THRESHOLD) {
@@ -62,7 +76,13 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       if (courseFilter.kind === 'invalid') {
         return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
       }
+      // ?topicId= — same grammar one level down; "null" is "in this course, under no topic".
+      const topicFilter = parseTopicFilter(req.query.topicId);
+      if (topicFilter.kind === 'invalid') {
+        return res.status(400).json({ success: false, error: TOPIC_FILTER_INVALID_MESSAGE });
+      }
       const courseId = courseFilterKey(courseFilter) || undefined;
+      const topicId = courseFilterKey(topicFilter) || undefined;
       const lean =
         req.query.lean === '1' ||
         req.query.lean === 'true' ||
@@ -73,7 +93,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : undefined;
       const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : undefined;
 
-      logger.debug('Fetching tests', { page, limit, status, courseId, lean, sort, from, to, userId });
+      logger.debug('Fetching tests', { page, limit, status, courseId, topicId, lean, sort, from, to, userId });
 
       try {
         if (!supabaseService) {
@@ -90,6 +110,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           limit,
           status,
           courseFilter,
+          topicFilter,
           lean,
           sort,
           from,
@@ -255,25 +276,37 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       }
       const courseId = typeof rawCourseId === 'string' && rawCourseId ? rawCourseId : null;
       const config = courseId ? { ...body.config, courseId } : body.config;
+      // The topic rides in the column only — unlike courseId there are no older
+      // sessions carrying it in config, and createTestDraft validates it against
+      // the course before it gets there. Left absent (not null) when the client
+      // sends none, so the insert never names topic_id before the migration adds it.
+      const topicId = body.topicId ?? body.config?.topicId;
 
-      const draft = await supabaseService.createTestDraft(
-        {
-          config,
-          courseId,
-          questions,
-          user_answers: body.user_answers || body.userAnswers || {},
-          start_time: body.start_time || body.startTime,
-          session_kind: body.session_kind || body.sessionKind || 'test',
-          title: body.title,
-          current_question_index:
-            body.current_question_index ?? body.currentQuestionIndex ?? 0,
-          remaining_time_seconds:
-            body.remaining_time_seconds ?? body.remainingTime ?? null,
-          is_offline: body.is_offline || body.isOffline || false,
-          client_id: body.client_id || body.clientId,
-        },
-        userId,
-      );
+      let draft;
+      try {
+        draft = await supabaseService.createTestDraft(
+          {
+            config,
+            courseId,
+            topicId,
+            questions,
+            user_answers: body.user_answers || body.userAnswers || {},
+            start_time: body.start_time || body.startTime,
+            session_kind: body.session_kind || body.sessionKind || 'test',
+            title: body.title,
+            current_question_index:
+              body.current_question_index ?? body.currentQuestionIndex ?? 0,
+            remaining_time_seconds:
+              body.remaining_time_seconds ?? body.remainingTime ?? null,
+            is_offline: body.is_offline || body.isOffline || false,
+            client_id: body.client_id || body.clientId,
+          },
+          userId,
+        );
+      } catch (err) {
+        if (respondPublicError(err, res)) return;
+        throw err;
+      }
 
       await cacheService.deletePattern(`tests:${userId}:*`);
       res.status(201).json({ success: true, data: draft });
@@ -483,7 +516,13 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Creating test', { testConfig, userId });
 
-      const test = await supabaseService.createTest(testConfig, userId);
+      let test;
+      try {
+        test = await supabaseService.createTest(testConfig, userId);
+      } catch (err) {
+        if (respondPublicError(err, res)) return;
+        throw err;
+      }
 
       // Invalidate user's tests cache
       await cacheService.deletePattern(`tests:${userId}:*`);

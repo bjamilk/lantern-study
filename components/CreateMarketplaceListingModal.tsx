@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
 import { CoursePicker } from './academic/CoursePicker';
+import { TopicPicker } from './academic/TopicPicker';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
 import usePaystackEnabled from './marketplace/usePaystackEnabled';
 import { RightsAttestationCheckbox } from './moderation/RightsAttestationCheckbox';
@@ -72,6 +73,8 @@ interface CreateListingFormData {
   courseCode: string;
   /** Academic course (marketplace_listings.course_id). */
   courseId: string | null;
+  /** Syllabus topic inside `courseId` (marketplace_listings.topic_id). */
+  topicId: string | null;
   year: string;
   semester: '' | '1st' | '2nd';
   edition: string;
@@ -105,6 +108,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     condition: '' as '' | 'new' | 'like-new' | 'good' | 'fair',
     courseCode: '',
     courseId: null,
+    topicId: null,
     year: '',
     semester: '' as '' | '1st' | '2nd',
     edition: '',
@@ -520,6 +524,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         images: [],
         categorySpecificFields,
         courseId: formData.courseId,
+        // A topic without its course is what the server rejects — never send one.
+        topicId: formData.courseId ? formData.topicId : null,
         // Sent whenever the seller ticked it; required by the API for academic categories.
         ...(attested ? { attestation: true } : {}),
       };
@@ -601,6 +607,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         condition: '',
         courseCode: '',
         courseId: null,
+        topicId: null,
         year: '',
         semester: '',
         edition: '',
@@ -823,15 +830,29 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                   </div>
                 )}
                 {getCategoryFields(formData.subcategory).includes('courseCode') && (
-                  <div>
+                  <div className="space-y-2">
                     <CoursePicker
                       id="listing-course"
                       label={<span className="text-xs font-medium text-lantern-text-secondary">Course</span>}
                       value={formData.courseId}
                       onChange={(course) =>
-                        setFormData(prev => ({ ...prev, courseId: course?.id ?? null, courseCode: course?.code ?? '' }))
+                        setFormData(prev => ({
+                          ...prev,
+                          courseId: course?.id ?? null,
+                          courseCode: course?.code ?? '',
+                          topicId: null,
+                        }))
                       }
                       placeholder="e.g. CSC 201"
+                      compact
+                    />
+                    <TopicPicker
+                      id="listing-topic"
+                      label={<span className="text-xs font-medium text-lantern-text-secondary">Topic</span>}
+                      courseId={formData.courseId}
+                      value={formData.topicId}
+                      onChange={(topic) => setFormData(prev => ({ ...prev, topicId: topic?.id ?? null }))}
+                      placeholder="e.g. Recursion"
                       compact
                     />
                   </div>

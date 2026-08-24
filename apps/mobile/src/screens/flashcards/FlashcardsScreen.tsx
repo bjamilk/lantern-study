@@ -16,8 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
 import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
 import { useUIStore } from '../../stores/uiStore';
-import { matchesCourseFilter, UNFILED_COURSE_ID } from '../../utils/libraryArchive';
-import type { Course } from '@lantern/shared/types';
+import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
+import type { Course, CourseTopic } from '@lantern/shared/types';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
@@ -28,6 +28,9 @@ import { FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
+import { courseHasTopics } from '../../services/academic';
+import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -211,6 +214,7 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const [importOpen, setImportOpen] = useState(false);
   const [deckName, setDeckName] = useState('');
   const [deckCourseId, setDeckCourseId] = useState<string | null>(null);
+  const [deckTopicId, setDeckTopicId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [aiDeckId, setAiDeckId] = useState<string | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -218,6 +222,12 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const [deckActions, setDeckActions] = useState<Deck | null>(null);
   /** Deck being moved via "Move to course…". */
   const [courseMoveDeck, setCourseMoveDeck] = useState<Deck | null>(null);
+  /**
+   * Deck being filed via "Move to topic…". A topic needs its course, so this
+   * opens either from a deck that already has one or as the second step of a
+   * course move.
+   */
+  const [topicMoveDeck, setTopicMoveDeck] = useState<{ deck: Deck; courseId: string } | null>(null);
 
   // Library archive: course filter picked in the Library tree. The shared
   // GET /decks client has no courseId param yet, so decks filter client-side
@@ -225,8 +235,13 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const courseFilter = useUIStore(s => s.libraryCourseFilter);
   const setCourseFilter = useUIStore(s => s.setLibraryCourseFilter);
   const courseFilterId = courseFilter?.id ?? null;
+  /** Topic inside that course (Phase 1 · A); only meaningful with a real course. */
+  const topicFilterId = courseFilter?.topicId ?? null;
   const defaultCourseId =
     courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : null;
+  /** UNTOPICED_TOPIC_ID is the string 'null' (truthy) — a filter, never a real topic to file under. */
+  const defaultTopicId =
+    defaultCourseId && topicFilterId && topicFilterId !== UNTOPICED_TOPIC_ID ? topicFilterId : null;
   const { updateDeck } = useFlashcardStore();
 
   const loadDecks = useCallback(async () => {
@@ -238,25 +253,52 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
     loadDecks();
   }, [loadDecks]);
 
-  // New decks default to the course the Library is filtered to.
+  // New decks default to the course — and the topic — the Library is filtered to.
   useEffect(() => {
-    if (createOpen) setDeckCourseId(defaultCourseId);
-  }, [createOpen, defaultCourseId]);
+    if (createOpen) {
+      setDeckCourseId(defaultCourseId);
+      setDeckTopicId(defaultTopicId);
+    }
+  }, [createOpen, defaultCourseId, defaultTopicId]);
 
-  const visibleDecks = useMemo(
-    () => (courseFilterId ? decks.filter(d => matchesCourseFilter(d.course_id, courseFilterId)) : decks),
-    [decks, courseFilterId]
-  );
+  const visibleDecks = useMemo(() => {
+    if (!courseFilterId) return decks;
+    const inCourse = decks.filter(d => matchesCourseFilter(d.course_id, courseFilterId));
+    return topicFilterId ? inCourse.filter(d => matchesTopicFilter(d.topic_id, topicFilterId)) : inCourse;
+  }, [decks, courseFilterId, topicFilterId]);
 
   const handleMoveDeckToCourse = async (course: Course | null) => {
     const deck = courseMoveDeck;
     if (!deck || !user?.id) return;
+    const nextCourseId = course?.id ?? null;
     try {
-      await updateDeck(deck.id, { courseId: course?.id ?? null }, user.id);
+      // The topic always goes with the course: a deck landing in a new course
+      // cannot keep a topic from the old one.
+      await updateDeck(deck.id, { courseId: nextCourseId, topicId: null }, user.id);
+      // Second step: now the course is known, offer its syllabus outline — but
+      // only when there is one, so filing a deck under a course with no outline
+      // costs no extra dismissal.
+      if (nextCourseId) {
+        void courseHasTopics(nextCourseId).then(hasTopics => {
+          if (hasTopics) setTimeout(() => setTopicMoveDeck({ deck, courseId: nextCourseId }), 50);
+        });
+      }
     } catch (e) {
       Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setCourseMoveDeck(null);
+    }
+  };
+
+  const handleMoveDeckToTopic = async (topic: CourseTopic | null) => {
+    const target = topicMoveDeck;
+    if (!target || !user?.id) return;
+    try {
+      await updateDeck(target.deck.id, { topicId: topic?.id ?? null }, user.id);
+    } catch (e) {
+      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setTopicMoveDeck(null);
     }
   };
 
@@ -271,10 +313,14 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
     if (!name || !user?.id) return;
     setCreating(true);
     try {
-      const deck = await createDeck(name, undefined, user.id, { courseId: deckCourseId });
+      const deck = await createDeck(name, undefined, user.id, {
+        courseId: deckCourseId,
+        topicId: deckTopicId,
+      });
       setCreateOpen(false);
       setDeckName('');
       setDeckCourseId(null);
+      setDeckTopicId(null);
       navigation.navigate('DeckDetail', { deckId: deck.id, deckName: deck.name });
     } finally {
       setCreating(false);
@@ -354,6 +400,27 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
           // Let the sheet dismiss before the course picker mounts.
           onPress: () => setTimeout(() => setCourseMoveDeck(deckActions), 50),
         },
+        // Only offered once the deck has a course: a topic without its course
+        // is rejected server-side.
+        ...(deckActions.course_id
+          ? [
+              {
+                section: 'Organise',
+                label: 'Move to topic…',
+                icon: 'list-outline' as ActionSheetItem['icon'],
+                hint: 'Where this sits in the course outline',
+                onPress: () =>
+                  setTimeout(
+                    () =>
+                      setTopicMoveDeck({
+                        deck: deckActions,
+                        courseId: deckActions.course_id as string,
+                      }),
+                    50,
+                  ),
+              },
+            ]
+          : []),
         {
           section: 'Organise',
           label: offlineDeckIds.includes(deckActions.id) ? 'Remove from offline' : 'Save for offline',
@@ -439,7 +506,7 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
       ) : null}
 
       {courseFilter && !embedded ? (
-        <View className="mx-4 mb-2 flex-row items-center gap-2">
+        <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2">
           <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
             <Ionicons name="school-outline" size={14} color={colors.primary} />
             <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
@@ -454,6 +521,25 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
               <Ionicons name="close-circle" size={16} color={colors.primary} />
             </Pressable>
           </View>
+          {/* The topic narrows the list further, so it gets its own chip:
+              the course chip alone makes a shorter list look like missing decks. */}
+          {courseFilter.topicId ? (
+            <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
+              <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+              <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
+                {courseFilter.topicId === UNTOPICED_TOPIC_ID ? 'No topic' : courseFilter.topicLabel || 'Topic'}
+              </Text>
+              <Pressable
+                // Clear the topic, keep the course.
+                onPress={() => setCourseFilter({ id: courseFilter.id, label: courseFilter.label })}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear topic filter"
+              >
+                <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -515,6 +601,16 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
         placeholder="Choose a course"
       />
 
+      <TopicPicker
+        visible={!!topicMoveDeck}
+        onClose={() => setTopicMoveDeck(null)}
+        courseId={topicMoveDeck?.courseId ?? null}
+        value={topicMoveDeck?.deck.topic_id ?? null}
+        onChange={topic => void handleMoveDeckToTopic(topic)}
+        title="Move to topic"
+        placeholder="Choose a topic"
+      />
+
       <ImportAndStudyModal
         visible={importOpen}
         onClose={() => setImportOpen(false)}
@@ -535,12 +631,26 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
                 placeholderTextColor={colors.inputPlaceholder}
               />
               <Text className="text-xs font-semibold text-lantern-text-secondary mb-1">Course (optional)</Text>
-              <View className="mb-4">
+              <View className="mb-3">
                 <CoursePicker
                   value={deckCourseId}
-                  onChange={course => setDeckCourseId(course?.id ?? null)}
+                  onChange={course => {
+                    const nextCourseId = course?.id ?? null;
+                    setDeckTopicId(topicIdAfterCourseChange(deckTopicId, deckCourseId, nextCourseId));
+                    setDeckCourseId(nextCourseId);
+                  }}
                   placeholder="File this deck under a course"
                   title="Course for this deck"
+                />
+              </View>
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-1">Topic (optional)</Text>
+              <View className="mb-4">
+                <TopicPicker
+                  courseId={deckCourseId}
+                  value={deckTopicId}
+                  onChange={topic => setDeckTopicId(topic?.id ?? null)}
+                  placeholder="Which part of the syllabus?"
+                  title="Topic for this deck"
                 />
               </View>
               <View className="flex-row gap-2">

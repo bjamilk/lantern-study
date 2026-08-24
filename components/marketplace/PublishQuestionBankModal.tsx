@@ -17,6 +17,7 @@ import {
 } from '@lantern/shared';
 import { BuildingStorefrontIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { CoursePicker } from '../academic/CoursePicker';
+import { TopicPicker } from '../academic/TopicPicker';
 import { RightsAttestationCheckbox } from '../moderation/RightsAttestationCheckbox';
 import { isInlineSubmitError, parseSourcesCited } from '../../utils/moderationForms';
 
@@ -45,6 +46,10 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
   const [campusId, setCampusId] = useState('');
   const [courseId, setCourseId] = useState<string | null>(
     bundle.courseId ?? (bundle.config as { courseId?: string | null })?.courseId ?? null
+  );
+  // The bundle's config carries the topic the session was built from, if any.
+  const [topicId, setTopicId] = useState<string | null>(
+    (bundle.config as { topicId?: string | null })?.topicId ?? null
   );
   const [otherCity, setOtherCity] = useState('');
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
@@ -133,7 +138,7 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
         onClose();
         return;
       }
-      const result = await publishQuestionBank({
+      const body = {
         title: title.trim(),
         description: description.trim() || undefined,
         price: priceValue && priceValue > 0 ? priceValue : null,
@@ -141,12 +146,15 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
         location: otherCity.trim() || undefined,
         groupId: (bundle.config as { groupId?: string })?.groupId || null,
         courseId,
+        // A topic without its course is what the server rejects — never send one.
+        topicId: courseId ? topicId : null,
         content: {
           config: bundle.config as unknown as Record<string, unknown>,
           questions: bundle.questions,
         },
         ...provenance,
-      });
+      };
+      const result = await publishQuestionBank(body);
       useToastStore
         .getState()
         .showToast(
@@ -284,8 +292,20 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
             id="publish-qbank-course"
             label={<span className="text-sm font-semibold text-lantern-text">Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></span>}
             value={courseId}
-            onChange={(course) => setCourseId(course?.id ?? null)}
+            onChange={(course) => {
+              setCourseId(course?.id ?? null);
+              setTopicId(null);
+            }}
             placeholder="Which course is this bank for?"
+          />
+
+          <TopicPicker
+            id="publish-qbank-topic"
+            label={<span className="text-sm font-semibold text-lantern-text">Topic <span className="text-lantern-text-tertiary font-normal">(optional)</span></span>}
+            courseId={courseId}
+            value={topicId}
+            onChange={(topic) => setTopicId(topic?.id ?? null)}
+            placeholder="Which part of the syllabus?"
           />
 
           <div className="text-sm">

@@ -6,7 +6,7 @@
  */
 import type { LibraryOverview, LibrarySearchResult, LibrarySearchType } from '../types';
 import { academicRequest } from './academic';
-import { LIBRARY_SEARCH_MIN_CHARS } from '../utils/libraryArchive';
+import { LIBRARY_SEARCH_MIN_CHARS, UNFILED_COURSE_ID } from '../utils/libraryArchive';
 
 const EMPTY_OVERVIEW: LibraryOverview = { years: [], unfiled: { notes: 0, decks: 0, tests: 0, bundles: 0 } };
 
@@ -24,6 +24,12 @@ export interface LibrarySearchParams {
   q: string;
   /** Course uuid, the literal `'null'` for unfiled items, or null/undefined for everything. */
   courseId?: string | null;
+  /**
+   * Topic uuid within `courseId`, the literal `'null'` for items in the course
+   * but under no topic, or null/undefined for the whole course. Only sent with
+   * a real course; an API that predates course_topics ignores the param.
+   */
+  topicId?: string | null;
   types?: LibrarySearchType[];
   /** Capped at 50 server-side. */
   limit?: number;
@@ -40,6 +46,8 @@ export const searchLibrary = async (params: LibrarySearchParams): Promise<Librar
   const search = new URLSearchParams();
   search.set('q', q);
   if (params.courseId) search.set('courseId', params.courseId);
+  // A topic without its course would be meaningless server-side, so it never travels alone.
+  if (params.courseId && params.courseId !== UNFILED_COURSE_ID && params.topicId) search.set('topicId', params.topicId);
   if (params.types && params.types.length > 0) search.set('types', params.types.join(','));
   if (params.limit) search.set('limit', String(Math.min(50, Math.max(1, params.limit))));
   const rows = await academicRequest<LibrarySearchResult[] | null>(`/library/search?${search.toString()}`, {}, 10000);

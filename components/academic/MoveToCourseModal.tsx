@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import type { Course } from '../../types';
+import type { Course, CourseTopic } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { CoursePicker } from './CoursePicker';
+import { TopicPicker } from './TopicPicker';
 import { useAcademicStore } from '../../stores/academicStore';
 import { courseLabel } from '../../utils/academicSetup';
 
@@ -11,10 +12,17 @@ export interface MoveToCourseModalProps {
   onClose: () => void;
   /** Course the item is currently filed under (null/undefined = unfiled). */
   currentCourseId?: string | null;
+  /** Topic within `currentCourseId` (null/undefined = filed under no topic). */
+  currentTopicId?: string | null;
   title?: string;
   description?: React.ReactNode;
-  /** Fires with the chosen course id, or null to unfile. Resolves when the move has been persisted. */
-  onSubmit: (courseId: string | null) => void | Promise<void>;
+  /**
+   * Fires with the chosen course id (null to unfile) and the topic within it.
+   * `topicId` is a second argument rather than part of an object so callers
+   * that only file by course keep working unchanged. Resolves when the move has
+   * been persisted.
+   */
+  onSubmit: (courseId: string | null, topicId: string | null) => void | Promise<void>;
   /** Stack above other dialogs (e.g. a deck's Manage menu). */
   zIndexClass?: string;
 }
@@ -28,12 +36,14 @@ export const MoveToCourseModal: React.FC<MoveToCourseModalProps> = ({
   isOpen,
   onClose,
   currentCourseId,
+  currentTopicId,
   title = 'Move to course',
   description,
   onSubmit,
   zIndexClass,
 }) => {
   const [course, setCourse] = useState<Course | string | null>(currentCourseId ?? null);
+  const [topic, setTopic] = useState<CourseTopic | string | null>(currentTopicId ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
@@ -43,20 +53,24 @@ export const MoveToCourseModal: React.FC<MoveToCourseModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setCourse(currentCourseId ?? null);
+    setTopic(currentTopicId ?? null);
     setBusy(false);
     setError(null);
     if (!loaded) void loadMyCourses();
-  }, [isOpen, currentCourseId, loaded, loadMyCourses]);
+  }, [isOpen, currentCourseId, currentTopicId, loaded, loadMyCourses]);
 
   const selectedId = typeof course === 'string' ? course : course?.id ?? null;
-  const unchanged = (selectedId || null) === (currentCourseId || null);
+  const selectedTopicId = typeof topic === 'string' ? topic : topic?.id ?? null;
+  const unchanged =
+    (selectedId || null) === (currentCourseId || null) &&
+    (selectedTopicId || null) === (currentTopicId || null);
   const current = currentCourseId ? resolveCourse(currentCourseId) : null;
 
-  const submit = async (courseId: string | null) => {
+  const submit = async (courseId: string | null, topicId: string | null) => {
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(courseId);
+      await onSubmit(courseId, topicId);
       onClose();
     } catch (e: any) {
       setError(e?.message || 'Could not move. Please try again.');
@@ -84,7 +98,23 @@ export const MoveToCourseModal: React.FC<MoveToCourseModalProps> = ({
             ? `Currently filed under ${courseLabel(current)}.`
             : 'Not filed under a course yet. Pick one from your courses or the catalogue.')}
       </p>
-      <CoursePicker value={course} onChange={(c) => setCourse(c)} label="Course" placeholder="Choose a course" />
+      <CoursePicker
+        value={course}
+        onChange={(c) => {
+          setCourse(c);
+          setTopic(null);
+        }}
+        label="Course"
+        placeholder="Choose a course"
+      />
+      <TopicPicker
+        className="mt-3"
+        courseId={selectedId}
+        value={topic}
+        onChange={(t) => setTopic(t)}
+        label={<>Topic <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+        placeholder="Where it sits in the syllabus"
+      />
       {error ? (
         <p className="mt-2 text-xs text-red-600 dark:text-red-400" role="alert">
           {error}
@@ -96,7 +126,7 @@ export const MoveToCourseModal: React.FC<MoveToCourseModalProps> = ({
             type="button"
             variant="ghost"
             disabled={busy}
-            onClick={() => void submit(null)}
+            onClick={() => void submit(null, null)}
             className="min-h-[44px] mr-auto"
           >
             Remove from course
@@ -108,7 +138,7 @@ export const MoveToCourseModal: React.FC<MoveToCourseModalProps> = ({
         <Button
           type="button"
           disabled={busy || unchanged || !selectedId}
-          onClick={() => void submit(selectedId)}
+          onClick={() => void submit(selectedId, selectedId ? selectedTopicId : null)}
           className="min-h-[44px]"
         >
           {busy ? 'Moving…' : 'Move'}

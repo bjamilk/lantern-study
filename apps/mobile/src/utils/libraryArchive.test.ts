@@ -9,12 +9,15 @@ import {
   buildLibraryTree,
   courseNodeLabel,
   courseNodeTotal,
+  courseTopicRows,
   formatTagsInput,
   groupLibrarySearchResults,
   isLibrarySearchable,
   matchesCourseFilter,
+  matchesTopicFilter,
   parseTagsInput,
   UNFILED_COURSE_ID,
+  UNTOPICED_TOPIC_ID,
 } from './libraryArchive';
 
 const course = (id: string, code: string, title = `${code} title`): Course => ({
@@ -99,6 +102,72 @@ describe('matchesCourseFilter', () => {
     expect(matchesCourseFilter('c-1', 'c-1')).toBe(true);
     expect(matchesCourseFilter('c-2', 'c-1')).toBe(false);
     expect(matchesCourseFilter(null, 'c-1')).toBe(false);
+  });
+});
+
+describe('courseTopicRows', () => {
+  const bio = course('c-bio', 'BIO 201');
+  const counts = (partial: Partial<LibraryCourseNode['counts']> = {}): LibraryCourseNode['counts'] => ({
+    notes: 0,
+    decks: 0,
+    tests: 0,
+    bundles: 0,
+    purchasedPacks: 0,
+    ...partial,
+  });
+  const topic = (id: string, title: string, position: number, c: Partial<LibraryCourseNode['counts']> = {}) => ({
+    topic: { id, courseId: bio.id, title, position },
+    counts: counts(c),
+  });
+  const outlined = (
+    topics: LibraryCourseNode['topics'],
+    untopiced: LibraryCourseNode['untopiced']
+  ): LibraryCourseNode => ({ ...node(bio, 'active', '2026/2027'), topics, untopiced });
+
+  it('has no rows while the migration is unapplied, so the course renders flat', () => {
+    expect(courseTopicRows(node(bio, 'active', '2026/2027'))).toEqual([]);
+    expect(courseTopicRows(null)).toEqual([]);
+  });
+
+  it('orders by position and appends "No topic" only when something sits there', () => {
+    const rows = courseTopicRows(
+      outlined([topic('t-2', 'Week 2', 20, { decks: 1 }), topic('t-1', 'Week 1', 10, { notes: 3 })], counts({ notes: 2 }))
+    );
+    expect(rows.map(r => r.title)).toEqual(['Week 1', 'Week 2', 'No topic']);
+    expect(rows[2].id).toBe(UNTOPICED_TOPIC_ID);
+    expect(rows[2].untopiced).toBe(true);
+    expect(rows[0].counts.notes).toBe(3);
+  });
+
+  it('drops the "No topic" row when the course has nothing outside its topics', () => {
+    const rows = courseTopicRows(outlined([topic('t-1', 'Week 1', 10, { notes: 1 })], counts()));
+    expect(rows.map(r => r.id)).toEqual(['t-1']);
+  });
+
+  it('keeps an empty topic — the outline is curated, not derived from what is filed', () => {
+    const rows = courseTopicRows(outlined([topic('t-1', 'Week 1', 10)], counts()));
+    expect(rows.map(r => r.id)).toEqual(['t-1']);
+    expect(rows[0].counts).toEqual(counts());
+  });
+});
+
+describe('matchesTopicFilter', () => {
+  it('passes everything with no filter', () => {
+    expect(matchesTopicFilter('t-1', null)).toBe(true);
+    expect(matchesTopicFilter(undefined, undefined)).toBe(true);
+  });
+  it('treats the literal "null" as untopiced-only', () => {
+    expect(matchesTopicFilter(null, UNTOPICED_TOPIC_ID)).toBe(true);
+    expect(matchesTopicFilter('t-1', UNTOPICED_TOPIC_ID)).toBe(false);
+  });
+  it('matches a topic id exactly', () => {
+    expect(matchesTopicFilter('t-1', 't-1')).toBe(true);
+    expect(matchesTopicFilter('t-2', 't-1')).toBe(false);
+    expect(matchesTopicFilter(null, 't-1')).toBe(false);
+  });
+  it('keeps rows whose topicId the API did not send (column missing)', () => {
+    expect(matchesTopicFilter(undefined, 't-1')).toBe(true);
+    expect(matchesTopicFilter(undefined, UNTOPICED_TOPIC_ID)).toBe(true);
   });
 });
 

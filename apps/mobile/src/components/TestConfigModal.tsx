@@ -26,6 +26,8 @@ import {
 } from '@lantern/shared/utils';
 import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
 import { CoursePicker } from './CoursePicker';
+import { TopicPicker } from './TopicPicker';
+import { topicIdAfterCourseChange } from '../utils/topicSelection';
 
 // Timer presets in seconds
 const TIMER_PRESETS = [
@@ -61,6 +63,11 @@ export interface TestConfigOptions {
   lockAnswered?: boolean;
   /** Academic archive: course this session is for (defaults from the group). */
   courseId?: string | null;
+  /**
+   * Topic within `courseId`. Rides the same config-like payload as `courseId`
+   * (the server reads both off the config), so it is never sent without one.
+   */
+  topicId?: string | null;
 }
 
 export interface TestConfigAvailableFilter {
@@ -97,6 +104,7 @@ interface TestConfigModalProps {
    * the group's course; the student can change or clear it per session.
    */
   defaultCourseId?: string | null;
+  defaultTopicId?: string | null;
 }
 
 export default function TestConfigModal({
@@ -115,6 +123,7 @@ export default function TestConfigModal({
   onDownload,
   isDownloading = false,
   defaultCourseId = null,
+  defaultTopicId = null,
 }: TestConfigModalProps) {
   const [numberOfQuestions, setNumberOfQuestions] = useState(Math.min(10, maxQuestions));
   const [timerDuration, setTimerDuration] = useState(0);
@@ -128,10 +137,14 @@ export default function TestConfigModal({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lockAnswered, setLockAnswered] = useState(false);
   const [courseId, setCourseId] = useState<string | null>(defaultCourseId ?? null);
+  const [topicId, setTopicId] = useState<string | null>(defaultTopicId ?? null);
   // Re-seed from the group whenever the modal (re)opens for a different default.
   useEffect(() => {
-    if (visible) setCourseId(defaultCourseId ?? null);
-  }, [visible, defaultCourseId]);
+    if (visible) {
+      setCourseId(defaultCourseId ?? null);
+      setTopicId(defaultTopicId ?? null);
+    }
+  }, [visible, defaultCourseId, defaultTopicId]);
   const { colors } = useTheme();
   // The stylesheet used to hardcode slate-900/800 values, so this modal stayed
   // dark in light mode. Rebuild it whenever the theme changes.
@@ -348,6 +361,7 @@ export default function TestConfigModal({
         visibilityMode: questionVisibilityMode,
         lockAnswered: isStudyMode ? false : lockAnswered,
         courseId,
+        topicId,
       },
       effectiveSessionMode
     );
@@ -362,6 +376,7 @@ export default function TestConfigModal({
     selectedSubgroupIds,
     lockAnswered,
     courseId,
+    topicId,
     mode,
     questionVisibilityMode,
     forcesStudyFromVisibility,
@@ -395,6 +410,7 @@ export default function TestConfigModal({
       // the bundle fall back to the global setting, matching web bundles.
       lockAnswered: isStudyMode ? undefined : lockAnswered,
       courseId,
+      topicId,
     });
   }, [
     onDownload,
@@ -410,6 +426,7 @@ export default function TestConfigModal({
     isStudyMode,
     lockAnswered,
     courseId,
+    topicId,
   ]);
 
   const formatTime = (seconds: number): string => {
@@ -812,10 +829,23 @@ export default function TestConfigModal({
               </View>
               <CoursePicker
                 value={courseId}
-                onChange={course => setCourseId(course?.id ?? null)}
+                onChange={course => {
+                  const nextCourseId = course?.id ?? null;
+                  setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
+                  setCourseId(nextCourseId);
+                }}
                 placeholder="File this session under a course (optional)"
                 title="Course for this session"
               />
+              <View style={{ marginTop: 8 }}>
+                <TopicPicker
+                  courseId={courseId}
+                  value={topicId}
+                  onChange={topic => setTopicId(topic?.id ?? null)}
+                  placeholder="Which part of the syllabus? (optional)"
+                  title="Topic for this session"
+                />
+              </View>
             </View>
 
             {/* Advanced Options */}

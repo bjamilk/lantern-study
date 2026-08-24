@@ -79,6 +79,17 @@ export const validateUpdateUser = [
 export const courseIdBodyRule = () =>
   body('courseId').optional({ values: 'null' }).isUUID().withMessage('courseId must be a valid UUID');
 
+/**
+ * Shared rule: nullable topic reference, one level under the course. Whether
+ * the topic actually belongs to that course is settled by
+ * CourseTopicsService.resolveForArtefact — this only fails a malformed id fast,
+ * with the same message shape as courseId. Not applied to groups: `groups` has
+ * no topic_id column, so accepting one there would advertise a field that can
+ * never be stored.
+ */
+export const topicIdBodyRule = () =>
+  body('topicId').optional({ values: 'null' }).isUUID().withMessage('topicId must be a valid UUID');
+
 // Group validation rules
 export const validateGroupId = [
   param('groupId').isUUID().withMessage('Group ID must be a valid UUID'),
@@ -149,6 +160,7 @@ export const validateTestConfig = [
   body('is_offline').optional().isBoolean().withMessage('Is offline must be a boolean'),
   body('userId').optional().isUUID().withMessage('User ID must be a valid UUID'),
   courseIdBodyRule(),
+  topicIdBodyRule(),
   body('config.courseId').optional({ values: 'null' }).isUUID().withMessage('config.courseId must be a valid UUID'),
 ];
 
@@ -244,6 +256,7 @@ export const validateNoteCreate = [
   body('groupId').optional().isUUID().withMessage('groupId must be a valid UUID'),
   body('sourceType').optional().isIn(['typed', 'youtube', 'pdf', 'audio', 'import', 'presentation', 'photos']).withMessage('Invalid sourceType'),
   courseIdBodyRule(),
+  topicIdBodyRule(),
 ];
 
 export const validateNoteUpdate = [
@@ -258,8 +271,13 @@ export const validateNoteUpdate = [
   body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
   body('isPinned').optional().isBoolean().withMessage('isPinned must be a boolean'),
   courseIdBodyRule(),
+  topicIdBodyRule(),
 ];
 
+// No topicIdBodyRule here: a folder is not a filed artefact. Notes, decks and
+// test sessions carry the topic; nothing reads note_folders.topic_id and no
+// folder UI on either client can send one, so accepting it would advertise a
+// field that stays null forever.
 export const validateFolderCreate = [
   body('name').trim().isLength({ min: 1, max: 200 }).withMessage('Folder name must be 1-200 characters'),
   body('color').optional().isString().isLength({ max: 32 }),
@@ -342,6 +360,7 @@ export const validateMarketplaceListingWrite = [
   body('location').optional().isString().isLength({ max: 200 }),
   body('promo_label').optional({ values: 'null' }).isString().isLength({ max: 100 }),
   courseIdBodyRule(),
+  topicIdBodyRule(),
 ];
 
 export const validateMarketplaceListingUpdate = [
@@ -359,18 +378,21 @@ export const validateMarketplaceListingUpdate = [
     .withMessage('campusId must be a valid campus identifier'),
   body('status').optional().isIn(['active', 'sold', 'inactive', 'archived', 'draft']),
   courseIdBodyRule(),
+  topicIdBodyRule(),
 ];
 
 export const validateDeckCreate = [
   body('name').trim().isLength({ min: 1, max: 200 }).withMessage('Deck name must be 1-200 characters'),
   body('description').optional().isString().isLength({ max: 2000 }),
   courseIdBodyRule(),
+  topicIdBodyRule(),
 ];
 
 export const validateDeckUpdate = [
   body('name').optional().trim().isLength({ min: 1, max: 200 }),
   body('description').optional().isString().isLength({ max: 2000 }),
   courseIdBodyRule(),
+  topicIdBodyRule(),
 ];
 
 export const validateFlashcardCreate = [

@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
-import { matchesCourseFilter } from '../../utils/libraryArchive';
+import { matchesCourseFilter, matchesTopicFilter, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
@@ -27,23 +27,53 @@ import { trackTestStarted } from '../../services/productAnalytics';
 
 type TabType = 'tests' | 'history';
 
+/** The Library scope History is pinned to. A topic only ever narrows its own course. */
+type HistoryFilter = {
+  id: string;
+  label: string;
+  /** uuid, the literal 'null' (no topic in this course), or null (whole course). */
+  topicId?: string | null;
+  topicLabel?: string;
+};
+
+const historyTopicLabel = (filter: HistoryFilter) =>
+  filter.topicId === UNTOPICED_TOPIC_ID ? 'No topic' : filter.topicLabel || 'Topic';
+
 export default function TestScreen() {
   const navigation = useNavigation<any>();
-  // Library tree deep link: { tab: 'history', courseId, courseLabel } —
-  // courseId is a uuid or the literal 'null' (unfiled sessions).
+  // Library tree deep link: { tab: 'history', courseId, courseLabel, topicId,
+  // topicLabel } — courseId is a uuid or the literal 'null' (unfiled sessions),
+  // topicId a uuid or 'null' (in the course, under no topic). The topic rides on
+  // the course object so the pair can never drift.
   const route = useRoute<any>();
   const routeTab: TabType | undefined = route.params?.tab;
   const routeCourseId: string | null | undefined = route.params?.courseId;
   const routeCourseLabel: string | undefined = route.params?.courseLabel;
+  const routeTopicId: string | null | undefined = route.params?.topicId;
+  const routeTopicLabel: string | undefined = route.params?.topicLabel;
   const [activeTab, setActiveTab] = useState<TabType>(routeTab === 'history' ? 'history' : 'tests');
-  const [historyCourse, setHistoryCourse] = useState<{ id: string; label: string } | null>(
-    routeCourseId ? { id: routeCourseId, label: routeCourseLabel || 'Course' } : null
+  const [historyCourse, setHistoryCourse] = useState<HistoryFilter | null>(
+    routeCourseId
+      ? {
+          id: routeCourseId,
+          label: routeCourseLabel || 'Course',
+          topicId: routeTopicId || null,
+          topicLabel: routeTopicLabel,
+        }
+      : null
   );
 
   useEffect(() => {
     if (routeTab === 'history' || routeTab === 'tests') setActiveTab(routeTab);
-    if (routeCourseId) setHistoryCourse({ id: routeCourseId, label: routeCourseLabel || 'Course' });
-  }, [routeTab, routeCourseId, routeCourseLabel]);
+    if (routeCourseId) {
+      setHistoryCourse({
+        id: routeCourseId,
+        label: routeCourseLabel || 'Course',
+        topicId: routeTopicId || null,
+        topicLabel: routeTopicLabel,
+      });
+    }
+  }, [routeTab, routeCourseId, routeCourseLabel, routeTopicId, routeTopicLabel]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const [configTest, setConfigTest] = useState<Test | null>(null);
@@ -55,10 +85,14 @@ export default function TestScreen() {
   const { colors } = useTheme();
   const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, deleteAttempt, clearTestHistory } = useTestStore();
 
-  const visibleAttempts = useMemo(
-    () => (historyCourse ? attempts.filter(a => matchesCourseFilter(a.courseId, historyCourse.id)) : attempts),
-    [attempts, historyCourse]
-  );
+  const visibleAttempts = useMemo(() => {
+    if (!historyCourse) return attempts;
+    return attempts.filter(
+      a =>
+        matchesCourseFilter(a.courseId, historyCourse.id) &&
+        matchesTopicFilter(a.topicId, historyCourse.topicId)
+    );
+  }, [attempts, historyCourse]);
 
   useEffect(() => {
     setSelectedMode(defaultTestMode === 'exam' ? 'test' : 'study');
@@ -112,6 +146,7 @@ export default function TestScreen() {
       focusOnNew: config.focusOnNew,
       lockAnswered: config.lockAnswered,
       courseId: config.courseId ?? null,
+      topicId: config.topicId ?? null,
     }).then(() => {
       trackTestStarted({
         mode: mode === 'test' ? 'test' : 'study',
@@ -366,7 +401,9 @@ export default function TestScreen() {
         {activeTab === 'tests'
           ? 'Saved deck quizzes you can launch appear here. Group chat tests show up in History after you finish them.'
           : historyCourse
-            ? `No completed tests filed under ${historyCourse.label} yet. Pick the course when you start a test and it will show up here.`
+            ? historyCourse.topicId
+              ? `No completed tests under ${historyTopicLabel(historyCourse)} in ${historyCourse.label} yet. Pick the topic when you start a test and it will show up here.`
+              : `No completed tests filed under ${historyCourse.label} yet. Pick the course when you start a test and it will show up here.`
             : 'Your completed tests and scores appear here. Tap a result to review answers or retake.'
         }
       </Text>
@@ -412,7 +449,16 @@ export default function TestScreen() {
 
       {/* Library course filter (deep link from the Library tree) */}
       {activeTab === 'history' && historyCourse ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 8,
+            paddingHorizontal: 16,
+            paddingBottom: 8,
+          }}
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -422,7 +468,7 @@ export default function TestScreen() {
               paddingVertical: 6,
               borderRadius: 999,
               backgroundColor: colors.primary + '20',
-              maxWidth: '70%',
+              maxWidth: historyCourse.topicId ? '50%' : '70%',
             }}
           >
             <Ionicons name="school-outline" size={14} color={colors.primary} />
@@ -438,6 +484,36 @@ export default function TestScreen() {
               <Ionicons name="close-circle" size={16} color={colors.primary} />
             </TouchableOpacity>
           </View>
+          {/* The topic narrows the list further, so it gets its own chip: a
+              scope the student cannot see reads as missing results. */}
+          {historyCourse.topicId ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 999,
+                backgroundColor: colors.backgroundSecondary,
+                maxWidth: '40%',
+              }}
+            >
+              <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+              <Text style={{ fontSize: 12, color: colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>
+                {historyTopicLabel(historyCourse)}
+              </Text>
+              <TouchableOpacity
+                // Clear the topic, keep the course.
+                onPress={() => setHistoryCourse({ id: historyCourse.id, label: historyCourse.label })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Clear topic filter ${historyTopicLabel(historyCourse)}`}
+              >
+                <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
           <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
             {visibleAttempts.length} of {attempts.length} results
           </Text>

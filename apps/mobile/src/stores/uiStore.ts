@@ -12,6 +12,13 @@ export type LibraryTab = 'notes' | 'flashcards';
 export interface LibraryCourseFilter {
   id: string;
   label: string;
+  /**
+   * Syllabus topic inside `id` (Phase 1 · A), or the literal 'null' for "in
+   * this course, under no topic". Carried on the same object as the course so
+   * the pair can never drift: replacing the course replaces the topic with it.
+   */
+  topicId?: string | null;
+  topicLabel?: string;
 }
 
 interface UIState {

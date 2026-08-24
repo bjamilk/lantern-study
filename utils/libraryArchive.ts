@@ -33,6 +33,33 @@ export function matchesCourseFilter(itemCourseId: string | null | undefined, fil
   return itemCourseId === filter;
 }
 
+/**
+ * The topic-level twin of UNFILED_COURSE_ID (Phase 1 · A): "filed under this
+ * course but under no topic" on `?topicId=`. A topic filter only ever means
+ * something *inside* a course, so it always travels with its `courseId`.
+ */
+export const UNTOPICED_TOPIC_ID = 'null';
+
+export type TopicFilterId = string | null;
+
+export function isUntopicedFilter(filter: TopicFilterId | undefined): boolean {
+  return filter === UNTOPICED_TOPIC_ID;
+}
+
+/**
+ * Whether an item with `itemTopicId` belongs under the current topic filter.
+ * `undefined` means the API never sent the field (the column is missing while
+ * the migration is unapplied), so the row passes — a column we cannot read must
+ * never hide items that are really there. Kept identical to the mobile twin in
+ * apps/mobile/src/utils/libraryArchive.ts.
+ */
+export function matchesTopicFilter(itemTopicId: string | null | undefined, filter: TopicFilterId | undefined): boolean {
+  if (!filter) return true;
+  if (itemTopicId === undefined) return true;
+  if (filter === UNTOPICED_TOPIC_ID) return !itemTopicId;
+  return itemTopicId === filter;
+}
+
 // ---------- Overview → tree ----------
 
 export interface LibraryPastYear {
@@ -106,6 +133,60 @@ export function findTreeCourse(tree: LibraryTree, courseId: string | null | unde
     if (past) return past;
   }
   return null;
+}
+
+// ---------- Course → topics (the third level) ----------
+
+export interface LibraryTopicRow {
+  /** A topic uuid, or UNTOPICED_TOPIC_ID for the "No topic" row. */
+  id: string;
+  title: string;
+  counts: LibraryCourseCounts;
+  /** True for the synthetic "No topic" row, which has no topic record behind it. */
+  untopiced: boolean;
+}
+
+const EMPTY_COUNTS: LibraryCourseCounts = { notes: 0, decks: 0, tests: 0, bundles: 0, purchasedPacks: 0 };
+
+/**
+ * The rows to render under a course: its topics in position order, then a
+ * "No topic" row when anything sits in the course but outside every topic.
+ *
+ * Returns `[]` whenever the overview omitted `topics` — which is the state
+ * every user is in until the course_topics migration is applied — so the caller
+ * renders the course exactly as it did before this level existed. Whatever the
+ * server does send is rendered, zero counts included: the outline is curated,
+ * so which topics belong on it is the server's call, not a count threshold here.
+ */
+export function courseTopicRows(node: LibraryCourseNode | null | undefined): LibraryTopicRow[] {
+  const topics = node?.topics;
+  if (!topics || topics.length === 0) return [];
+  const rows: LibraryTopicRow[] = topics
+    .filter((t) => t?.topic?.id)
+    // The API orders by position, but a type can only document that — sort anyway.
+    .sort((a, b) => (a.topic.position || 0) - (b.topic.position || 0))
+    .map((t) => ({
+      id: t.topic.id,
+      title: t.topic.title || 'Untitled topic',
+      counts: { ...EMPTY_COUNTS, ...(t.counts || {}) },
+      untopiced: false,
+    }));
+  const untopiced = node?.untopiced;
+  if (untopiced && countsTotal(untopiced) > 0) {
+    rows.push({ id: UNTOPICED_TOPIC_ID, title: 'No topic', counts: { ...EMPTY_COUNTS, ...untopiced }, untopiced: true });
+  }
+  return rows;
+}
+
+/** The selected topic row inside a course, for labelling the active filter. */
+export function findTreeTopic(
+  tree: LibraryTree,
+  courseId: string | null | undefined,
+  topicId: TopicFilterId | undefined
+): LibraryTopicRow | null {
+  if (!topicId) return null;
+  const rows = courseTopicRows(findTreeCourse(tree, courseId));
+  return rows.find((r) => r.id === topicId) || null;
 }
 
 // ---------- Search results → groups ----------

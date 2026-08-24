@@ -55,7 +55,7 @@ interface DeckDetailScreenProps {
   onDeleteFlashcard: (flashcardId: string) => void;
   onOpenEditDeck: (deck: Deck) => void;
   /** "Move to course…" (PUT /decks/:id { courseId }); rejections surface in the dialog. */
-  onMoveDeckToCourse?: (deck: Deck, courseId: string | null) => void | Promise<void>;
+  onMoveDeckToCourse?: (deck: Deck, courseId: string | null, topicId: string | null) => void | Promise<void>;
   onDeleteDeck: (deckId: string) => void;
   onGenerateFlashcards: (deckId: string, notes: string, count: number) => void;
   isGenerating: boolean;
@@ -690,8 +690,9 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           isOpen={isMoveCourseOpen}
           onClose={() => setIsMoveCourseOpen(false)}
           currentCourseId={deck.courseId ?? null}
+          currentTopicId={deck.topicId ?? null}
           title={`Move “${deck.name}” to course`}
-          onSubmit={(courseId) => onMoveDeckToCourse(deck, courseId)}
+          onSubmit={(courseId, topicId) => onMoveDeckToCourse(deck, courseId, courseId ? topicId : null)}
         />
       ) : null}
       {isSellOpen ? (

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
 import { CoursePicker } from './academic/CoursePicker';
+import { TopicPicker } from './academic/TopicPicker';
 import { ATTESTATION_REQUIRED_MESSAGE, isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
 import { RightsAttestationCheckbox } from './moderation/RightsAttestationCheckbox';
@@ -61,6 +62,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     images: [] as ImageFile[]
   });
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [topicId, setTopicId] = useState<string | null>(null);
   const [courseCode, setCourseCode] = useState<string>('');
   // Rights attestation: shown for academic categories, required only when the
   // listing is not already attested/cleared. 400s the seller can fix go inline.
@@ -126,6 +128,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
       });
       setCustomCategory(isCustom ? listing.category.replace('custom:', '') : '');
       setCourseId(listing.courseId ?? listing.course_id ?? null);
+      setTopicId(listing.topicId ?? listing.topic_id ?? null);
       setCourseCode(typeof categoryFields.courseCode === 'string' ? categoryFields.courseCode : '');
     }
   }, [listing]);
@@ -354,6 +357,8 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         category: resolvedCategory,
         categorySpecificFields,
         courseId,
+        // A topic without its course is what the server rejects — never send one.
+        topicId: courseId ? topicId : null,
         images: imageUrls,
         // Re-sending it on an already-attested listing just refreshes rights_attested_at.
         ...(attested ? { attestation: true } : {}),
@@ -414,7 +419,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Course (academic archive) */}
+          {/* Course + topic (academic archive) */}
           <CoursePicker
             id="edit-listing-course"
             label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
@@ -422,8 +427,17 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             onChange={(course) => {
               setCourseId(course?.id ?? null);
               setCourseCode(course?.code ?? '');
+              setTopicId(null);
             }}
             placeholder="File this listing under a course"
+          />
+          <TopicPicker
+            id="edit-listing-topic"
+            label={<>Topic <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+            courseId={courseId}
+            value={topicId}
+            onChange={(topic) => setTopicId(topic?.id ?? null)}
+            placeholder="Where it sits in the syllabus"
           />
 
           {/* Category */}

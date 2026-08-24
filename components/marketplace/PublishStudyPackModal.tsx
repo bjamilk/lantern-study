@@ -11,6 +11,7 @@ import {
 import { summarizeStudyPackCounts, type StudyPackContentInput } from '@lantern/shared/marketplace';
 import { BuildingStorefrontIcon } from '@heroicons/react/24/outline';
 import { CoursePicker } from '../academic/CoursePicker';
+import { TopicPicker } from '../academic/TopicPicker';
 import { RightsAttestationCheckbox } from '../moderation/RightsAttestationCheckbox';
 import { isInlineSubmitError, parseSourcesCited } from '../../utils/moderationForms';
 
@@ -67,6 +68,7 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
   const [price, setPrice] = useState(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
   const [campusId, setCampusId] = useState('');
   const [courseId, setCourseId] = useState<string | null>(defaultCourseId ?? null);
+  const [topicId, setTopicId] = useState<string | null>(null);
   const [otherCity, setOtherCity] = useState('');
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [attested, setAttested] = useState(false);
@@ -119,20 +121,23 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
     setSubmitError(null);
     setBusy(true);
     try {
-      const result = await publishStudyPack({
+      const body = {
         title: title.trim(),
         description: description.trim() || undefined,
         price: priceValue && priceValue > 0 ? priceValue : null,
         campusId,
         location: otherCity.trim() || undefined,
         courseId,
+        // A topic without its course is what the server rejects — never send one.
+        topicId: courseId ? topicId : null,
         // A ready AI draft is authoritative server-side; otherwise send the
         // client-built content (deck/note).
         ...(draftId ? { draftId } : { content }),
-        attestation: true,
+        attestation: true as const,
         aiAssisted,
         sourcesCited: parsedSources.value,
-      });
+      };
+      const result = await publishStudyPack(body);
       useToastStore
         .getState()
         .showToast(
@@ -241,8 +246,24 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
               </span>
             }
             value={courseId}
-            onChange={(course) => setCourseId(course?.id ?? null)}
+            onChange={(course) => {
+              setCourseId(course?.id ?? null);
+              setTopicId(null);
+            }}
             placeholder="Which course is this pack for?"
+          />
+
+          <TopicPicker
+            id="publish-studypack-topic"
+            label={
+              <span className="text-sm font-semibold text-lantern-text">
+                Topic <span className="text-lantern-text-tertiary font-normal">(optional)</span>
+              </span>
+            }
+            courseId={courseId}
+            value={topicId}
+            onChange={(topic) => setTopicId(topic?.id ?? null)}
+            placeholder="Which part of the syllabus?"
           />
 
           <div className="text-sm">

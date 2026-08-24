@@ -5,7 +5,7 @@
  * auth-header / session-expiry plumbing like services/gamificationStreak.ts.
  */
 import { getApiBaseUrl } from '@lantern/shared';
-import type { Course, User, UserCourse } from '@lantern/shared';
+import type { Course, CourseTopic, User, UserCourse } from '@lantern/shared';
 import { mapUserFromApi } from '@lantern/shared/utils/apiMappers';
 import { getAuthHeaders, fetchMarketplaceCampuses } from './supabase';
 import { handleApiAuthFailure } from './sessionHandler';
@@ -78,6 +78,26 @@ export const createCourse = (input: {
   semester?: 1 | 2 | null;
 }): Promise<Course> =>
   academicRequest<Course>('/courses', { method: 'POST', body: JSON.stringify(input) });
+
+// ---------- Course topics (the syllabus outline inside a course) ----------
+
+/**
+ * A course's outline, ordered by position. Shared course data like the course
+ * itself — every enrolled student sees the same list.
+ *
+ * The `course_topics` migration is not applied everywhere yet, so this can
+ * reject with a plain server error. Callers must read that as "this course has
+ * no outline" and carry on; a missing outline never blocks filing an artefact.
+ */
+export const fetchCourseTopics = (courseId: string): Promise<CourseTopic[]> =>
+  academicRequest<CourseTopic[]>(`/courses/${encodeURIComponent(courseId)}/topics`).then((rows) => rows || []);
+
+/** Find-or-create a topic by title (the API returns the row either way, case-insensitively). */
+export const createCourseTopic = (courseId: string, title: string): Promise<CourseTopic> =>
+  academicRequest<CourseTopic>(`/courses/${encodeURIComponent(courseId)}/topics`, {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
 
 // ---------- My courses (enrolments) ----------
 

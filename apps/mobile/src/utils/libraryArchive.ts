@@ -6,6 +6,7 @@
  * shapes can be unit-tested.
  */
 import type {
+  LibraryCourseCounts,
   LibraryCourseNode,
   LibraryOverview,
   LibrarySearchResult,
@@ -14,6 +15,9 @@ import { formatCourseLabel } from './courseSelection';
 
 /** The API's literal for "items whose course_id is null". */
 export const UNFILED_COURSE_ID = 'null';
+
+/** Same convention one level down: "filed under this course, under no topic". */
+export const UNTOPICED_TOPIC_ID = 'null';
 
 export interface LibraryPastSemester {
   academicYear: string;
@@ -57,11 +61,15 @@ export function buildLibraryTree(overview: LibraryOverview | null | undefined): 
   return { thisSemester, pastSemesters, unfiled, totals };
 }
 
+/** Everything in one counts block (purchasedPacks is a subset of bundles, so it is not added). */
+export function countsTotal(counts: Partial<LibraryCourseCounts> | null | undefined): number {
+  if (!counts) return 0;
+  return (counts.notes ?? 0) + (counts.decks ?? 0) + (counts.tests ?? 0) + (counts.bundles ?? 0);
+}
+
 /** Everything filed under a course node (the number shown next to its name). */
 export function courseNodeTotal(node: Pick<LibraryCourseNode, 'counts'>): number {
-  const c = node.counts;
-  if (!c) return 0;
-  return (c.notes ?? 0) + (c.decks ?? 0) + (c.tests ?? 0) + (c.bundles ?? 0);
+  return countsTotal(node.counts);
 }
 
 /** Label for the course chip / filter from a tree node. */
@@ -80,6 +88,66 @@ export function matchesCourseFilter(
   if (!filter) return true;
   if (filter === UNFILED_COURSE_ID) return !itemCourseId;
   return itemCourseId === filter;
+}
+
+/** One row of the third level under a course: a syllabus topic, or "No topic". */
+export interface LibraryTopicRow {
+  /** Topic uuid, or UNTOPICED_TOPIC_ID for the "No topic" row. */
+  id: string;
+  title: string;
+  counts: LibraryCourseCounts;
+  /** True for the synthetic "No topic" row, which has no topic record behind it. */
+  untopiced: boolean;
+}
+
+const EMPTY_COUNTS: LibraryCourseCounts = { notes: 0, decks: 0, tests: 0, bundles: 0, purchasedPacks: 0 };
+
+/**
+ * The rows to render under a course: its topics in position order, then a
+ * "No topic" row when anything sits in the course but outside every topic.
+ *
+ * Empty whenever the overview omitted `topics` — the state every user is in
+ * until the course_topics migration is applied — so the caller renders the
+ * course exactly as it did before this level existed. An empty topic is still
+ * listed: the outline is curated, not derived from what happens to be filed.
+ */
+export function courseTopicRows(
+  node: Pick<LibraryCourseNode, 'topics' | 'untopiced'> | null | undefined
+): LibraryTopicRow[] {
+  const topics = node?.topics;
+  if (!topics || topics.length === 0) return [];
+  const rows: LibraryTopicRow[] = topics
+    .filter(entry => entry?.topic?.id)
+    // The API orders by position, but the type can only document that — sort defensively.
+    .sort((a, b) => a.topic.position - b.topic.position || (a.topic.title || '').localeCompare(b.topic.title || ''))
+    .map(entry => ({
+      id: entry.topic.id,
+      title: entry.topic.title || 'Untitled topic',
+      counts: { ...EMPTY_COUNTS, ...(entry.counts ?? {}) },
+      untopiced: false,
+    }));
+  const untopiced = node?.untopiced;
+  if (untopiced && countsTotal(untopiced) > 0) {
+    rows.push({ id: UNTOPICED_TOPIC_ID, title: 'No topic', counts: { ...EMPTY_COUNTS, ...untopiced }, untopiced: true });
+  }
+  return rows;
+}
+
+/**
+ * Does an item with `itemTopicId` pass the Library topic filter?
+ * `filter` null = no filter; `'null'` = untopiced only; otherwise exact match.
+ * `undefined` means the API did not send the field (the column is missing while
+ * the migration is unapplied), so the row passes — a column we cannot read must
+ * never hide items that are really there.
+ */
+export function matchesTopicFilter(
+  itemTopicId: string | null | undefined,
+  filter: string | null | undefined
+): boolean {
+  if (!filter) return true;
+  if (itemTopicId === undefined) return true;
+  if (filter === UNTOPICED_TOPIC_ID) return !itemTopicId;
+  return itemTopicId === filter;
 }
 
 export interface LibraryDeckGroup {

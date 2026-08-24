@@ -26,6 +26,10 @@ import {
 } from '../../services/api';
 import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
+import { courseHasTopics } from '../../services/academic';
+import { topicIdAfterCourseChange } from '../../utils/topicSelection';
+import type { CourseTopic } from '@lantern/shared/types';
 import { confirmSheet } from '../../stores/confirmStore';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import CollaboratorsModal from '../../components/CollaboratorsModal';
@@ -149,9 +153,12 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const [deckDraftName, setDeckDraftName] = useState('');
   const [deckDraftDescription, setDeckDraftDescription] = useState('');
   const [deckDraftCourseId, setDeckDraftCourseId] = useState<string | null>(null);
+  const [deckDraftTopicId, setDeckDraftTopicId] = useState<string | null>(null);
   const [savingDeck, setSavingDeck] = useState(false);
   /** "Move to course…" from the manage sheet (CoursePicker in controlled mode). */
   const [courseMoveOpen, setCourseMoveOpen] = useState(false);
+  /** "Move to topic…" — same sheet pattern, but needs the deck's course. */
+  const [topicMoveOpen, setTopicMoveOpen] = useState(false);
 
   const deck = useMemo(() => decks.find((d) => d.id === deckId), [decks, deckId]);
   const cards = flashcards[deckId] ?? [];
@@ -253,12 +260,34 @@ export function DeckDetailScreen({ navigation, route }: Props) {
 
   const handleMoveToCourse = async (course: { id: string } | null) => {
     if (!user?.id || !deckId) return;
+    const nextCourseId = course?.id ?? null;
     try {
-      await updateDeck(deckId, { courseId: course?.id ?? null }, user.id);
+      // The topic always goes with the course: a deck landing in a new course
+      // cannot keep a topic from the old one.
+      await updateDeck(deckId, { courseId: nextCourseId, topicId: null }, user.id);
+      // Second step: now the course is known, offer its syllabus outline — but
+      // only when there is one, so filing a deck under a course with no outline
+      // costs no extra dismissal.
+      if (nextCourseId) {
+        void courseHasTopics(nextCourseId).then(hasTopics => {
+          if (hasTopics) setTimeout(() => setTopicMoveOpen(true), 50);
+        });
+      }
     } catch (e) {
       Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setCourseMoveOpen(false);
+    }
+  };
+
+  const handleMoveToTopic = async (topic: CourseTopic | null) => {
+    if (!user?.id || !deckId) return;
+    try {
+      await updateDeck(deckId, { topicId: topic?.id ?? null }, user.id);
+    } catch (e) {
+      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setTopicMoveOpen(false);
     }
   };
 
@@ -363,6 +392,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     setDeckDraftName(deck?.name ?? deckName);
     setDeckDraftDescription(deck?.description ?? '');
     setDeckDraftCourseId(deck?.course_id ?? null);
+    setDeckDraftTopicId(deck?.topic_id ?? null);
     setEditDeckOpen(true);
   };
 
@@ -373,12 +403,16 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     setSavingDeck(true);
     try {
       const courseChanged = (deck?.course_id ?? null) !== deckDraftCourseId;
+      const topicChanged = (deck?.topic_id ?? null) !== deckDraftTopicId;
       await updateDeck(
         deckId,
         {
           name,
           description: deckDraftDescription.trim(),
           ...(courseChanged ? { courseId: deckDraftCourseId } : {}),
+          // Sent whenever it moved, and always when the course moved — the
+          // server rejects a topic that belongs to a different course.
+          ...(topicChanged || courseChanged ? { topicId: deckDraftTopicId } : {}),
         },
         user.id
       );
@@ -528,6 +562,19 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       // Let the sheet dismiss before the course picker mounts.
       onPress: () => setTimeout(() => setCourseMoveOpen(true), 50),
     },
+    // Only offered once the deck has a course: a topic without its course is
+    // rejected server-side.
+    ...(deck?.course_id
+      ? [
+          {
+            section: 'Deck',
+            label: 'Move to topic…',
+            icon: 'list-outline' as ActionSheetItem['icon'],
+            hint: 'Where this sits in the course outline',
+            onPress: () => setTimeout(() => setTopicMoveOpen(true), 50),
+          } as ActionSheetItem,
+        ]
+      : []),
     {
       section: 'Deck',
       label: 'Reset progress',
@@ -745,6 +792,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         onClose={() => setSellOpen(false)}
         defaultTitle={deck?.name}
         defaultCourseId={deck?.course_id ?? null}
+        defaultTopicId={deck?.topic_id ?? null}
         content={{
           flashcards: cards
             .map((c) => {
@@ -766,6 +814,16 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         onChange={(course) => void handleMoveToCourse(course)}
         title="Move to course"
         placeholder="Choose a course"
+      />
+
+      <TopicPicker
+        visible={topicMoveOpen}
+        onClose={() => setTopicMoveOpen(false)}
+        courseId={deck?.course_id ?? null}
+        value={deck?.topic_id ?? null}
+        onChange={(topic) => void handleMoveToTopic(topic)}
+        title="Move to topic"
+        placeholder="Choose a topic"
       />
 
       <Modal transparent visible={editDeckOpen} animationType="fade" onRequestClose={() => setEditDeckOpen(false)}>
@@ -791,12 +849,28 @@ export function DeckDetailScreen({ navigation, route }: Props) {
                 className="border border-lantern-border rounded-xl px-3 py-2 mb-3 text-lantern-text"
               />
               <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Course (optional)</Text>
-              <View className="mb-4">
+              <View className="mb-3">
                 <CoursePicker
                   value={deckDraftCourseId}
-                  onChange={course => setDeckDraftCourseId(course?.id ?? null)}
+                  onChange={course => {
+                    const nextCourseId = course?.id ?? null;
+                    setDeckDraftTopicId(
+                      topicIdAfterCourseChange(deckDraftTopicId, deckDraftCourseId, nextCourseId)
+                    );
+                    setDeckDraftCourseId(nextCourseId);
+                  }}
                   placeholder="File this deck under a course"
                   title="Course for this deck"
+                />
+              </View>
+              <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Topic (optional)</Text>
+              <View className="mb-4">
+                <TopicPicker
+                  courseId={deckDraftCourseId}
+                  value={deckDraftTopicId}
+                  onChange={topic => setDeckDraftTopicId(topic?.id ?? null)}
+                  placeholder="Which part of the syllabus?"
+                  title="Topic for this deck"
                 />
               </View>
               <View className="flex-row gap-2">

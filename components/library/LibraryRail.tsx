@@ -15,16 +15,30 @@ import {
 import type { LibraryCourseCounts, LibraryCourseNode } from '../../types';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useAcademicStore } from '../../stores/academicStore';
-import { UNFILED_COURSE_ID, buildLibraryTree, countsTotal } from '../../utils/libraryArchive';
+import {
+  UNFILED_COURSE_ID,
+  buildLibraryTree,
+  countsTotal,
+  courseTopicRows,
+  type LibraryTopicRow,
+} from '../../utils/libraryArchive';
 import type { LibraryTab } from '../LibraryScreen';
 
 export interface LibraryRailProps {
   /** Current course filter: uuid | 'null' (unfiled) | null (all). */
   selectedCourseId: string | null;
   onSelectCourse: (courseId: string | null) => void;
+  /** Current topic filter inside `selectedCourseId`: uuid | 'null' (no topic) | null (whole course). */
+  selectedTopicId: string | null;
+  /**
+   * Selecting a topic sets both halves; `null` means the whole course again.
+   * The title travels with the id so the chips can label the selection without
+   * looking it back up in a tree that may no longer hold the row.
+   */
+  onSelectTopic: (courseId: string, topicId: string | null, topicLabel?: string | null) => void;
   /** Switch the Library tabs (Notes / Flashcards) — used by the per-course count badges. */
   onOpenTab: (tab: LibraryTab) => void;
-  /** Opens recent tests; the web has no per-course test history yet, so this is unfiltered. */
+  /** Opens the Dashboard's recent-tests list, which follows the Library course/topic filter. */
   onOpenTests: () => void;
   /** Opens Offline Mode, which follows the Library course filter. */
   onOpenOffline: () => void;
@@ -47,10 +61,16 @@ const COUNT_META: Array<{ key: CountKey; label: string; icon: React.ElementType 
  * with note/deck/test/bundle counts), "Past semesters" (archived enrolments,
  * collapsed) and "Unfiled". Selecting a row filters the Notes / Flashcards
  * tabs; the count badges jump straight to that artefact type.
+ *
+ * A course that carries a syllabus outline gets a third level (Phase 1 · A):
+ * its topics, collapsed. Courses without one — everyone, until the
+ * course_topics migration is applied — render exactly as they always have.
  */
 export const LibraryRail: React.FC<LibraryRailProps> = ({
   selectedCourseId,
   onSelectCourse,
+  selectedTopicId,
+  onSelectTopic,
   onOpenTab,
   onOpenTests,
   onOpenOffline,
@@ -64,6 +84,9 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
   const loadOverview = useLibraryStore((s) => s.loadOverview);
   const rememberCourses = useAcademicStore((s) => s.rememberCourses);
   const [pastOpen, setPastOpen] = useState(false);
+  // Topic levels are collapsed by default; keyed per row because one course can
+  // appear under several academic years.
+  const [openTopicRows, setOpenTopicRows] = useState<ReadonlySet<string>>(() => new Set<string>());
 
   // Fresh counts every time the Library opens; cached data paints immediately.
   useEffect(() => {
@@ -88,19 +111,46 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
     }
   }, [selectedCourseId, tree]);
 
-  const openCount = (courseId: string | null, key: CountKey) => {
-    onSelectCourse(courseId);
+  // A topic selected elsewhere (a count badge, a restored filter) must be visible.
+  useEffect(() => {
+    if (!selectedCourseId || !selectedTopicId) return;
+    const keys = [...tree.current, ...tree.past.flatMap((y) => y.courses)]
+      .filter((n) => n.course.id === selectedCourseId)
+      .map((n) => `${n.enrolment.academicYear}-${n.course.id}`);
+    if (keys.length === 0) return;
+    setOpenTopicRows((open) => (keys.every((k) => open.has(k)) ? open : new Set([...open, ...keys])));
+  }, [selectedCourseId, selectedTopicId, tree]);
+
+  const openArtefactTab = (key: CountKey) => {
     if (key === 'notes') onOpenTab('notes');
     else if (key === 'decks') onOpenTab('flashcards');
     else if (key === 'tests') onOpenTests();
     else onOpenOffline();
   };
 
+  const openCount = (courseId: string | null, key: CountKey) => {
+    onSelectCourse(courseId);
+    openArtefactTab(key);
+  };
+
+  const openTopicCount = (courseId: string, row: LibraryTopicRow, key: CountKey) => {
+    onSelectTopic(courseId, row.id, row.title);
+    openArtefactTab(key);
+  };
+
+  const toggleTopics = (rowKey: string) => {
+    setOpenTopicRows((open) => {
+      const next = new Set(open);
+      if (!next.delete(rowKey)) next.add(rowKey);
+      return next;
+    });
+  };
+
   const rowPad = compact ? 'px-2 py-1.5' : 'px-2.5 py-2';
 
   const renderCounts = (
     counts: Pick<LibraryCourseCounts, 'notes' | 'decks' | 'tests' | 'bundles'> & { purchasedPacks?: number },
-    courseId: string | null,
+    onOpen: (key: CountKey) => void,
     selected: boolean
   ) => (
     <div className="mt-1 flex flex-wrap items-center gap-1" aria-label="Item counts">
@@ -118,7 +168,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              openCount(courseId, key);
+              onOpen(key);
             }}
             title={title}
             aria-label={title}
@@ -143,46 +193,136 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
     </div>
   );
 
-  const renderCourseRow = (node: LibraryCourseNode) => {
-    const selected = selectedCourseId === node.course.id;
-    const total = countsTotal(node.counts);
+  const renderTopicRow = (courseId: string, row: LibraryTopicRow) => {
+    const selected = selectedCourseId === courseId && selectedTopicId === row.id;
+    const total = countsTotal(row.counts);
+    // Re-clicking the selected topic goes back to the whole course, mirroring the course row.
+    const toggle = () => onSelectTopic(courseId, selected ? null : row.id, row.title);
     return (
-      <li key={`${node.enrolment.academicYear}-${node.course.id}`}>
+      <li key={row.id}>
         <div
           role="button"
           tabIndex={0}
           aria-pressed={selected}
-          onClick={() => onSelectCourse(selected ? null : node.course.id)}
+          onClick={toggle}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onSelectCourse(selected ? null : node.course.id);
+              toggle();
             }
           }}
+          title={row.untopiced ? 'Items in this course that are not under any topic' : row.title}
           className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-            selected
-              ? 'bg-lantern-primary text-white'
-              : 'text-lantern-text hover:bg-lantern-background-secondary'
+            selected ? 'bg-lantern-primary text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
           }`}
         >
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-sm font-semibold shrink-0">{node.course.code}</span>
-            {node.course.title && node.course.title !== node.course.code ? (
-              <span
-                className={`text-xs truncate ${selected ? 'text-white/80' : 'text-lantern-text-secondary'}`}
-                title={node.course.title}
-              >
-                — {node.course.title}
-              </span>
-            ) : null}
+            <span
+              className={`text-xs truncate ${
+                row.untopiced && !selected ? 'italic text-lantern-text-secondary' : 'font-medium'
+              }`}
+            >
+              {row.title}
+            </span>
             {total === 0 ? (
               <span className={`ml-auto text-[10px] shrink-0 ${selected ? 'text-white/70' : 'text-lantern-text-tertiary'}`}>
                 empty
               </span>
             ) : null}
           </div>
-          {renderCounts(node.counts, node.course.id, selected)}
+          {renderCounts(row.counts, (key) => openTopicCount(courseId, row, key), selected)}
         </div>
+      </li>
+    );
+  };
+
+  const renderCourseRow = (node: LibraryCourseNode) => {
+    const courseSelected = selectedCourseId === node.course.id;
+    const total = countsTotal(node.counts);
+    const topics = courseTopicRows(node);
+    const rowKey = `${node.enrolment.academicYear}-${node.course.id}`;
+    const topicsOpen = topics.length > 0 && openTopicRows.has(rowKey);
+    // Academic years carry a slash, which has no business in a DOM id.
+    const topicsId = `library-rail-topics-${rowKey.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    // With a topic selected, the course row is the way back to the whole course;
+    // only a plain course selection toggles off to "all items".
+    const select = () => {
+      if (courseSelected && selectedTopicId) onSelectTopic(node.course.id, null);
+      else onSelectCourse(courseSelected ? null : node.course.id);
+    };
+    return (
+      <li key={rowKey}>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-pressed={courseSelected && !selectedTopicId}
+          onClick={select}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              select();
+            }
+          }}
+          className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
+            courseSelected && !selectedTopicId
+              ? 'bg-lantern-primary text-white'
+              : 'text-lantern-text hover:bg-lantern-background-secondary'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            {topics.length > 0 ? (
+              <button
+                type="button"
+                aria-expanded={topicsOpen}
+                aria-controls={topicsId}
+                aria-label={`${topicsOpen ? 'Hide' : 'Show'} topics in ${node.course.code}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleTopics(rowKey);
+                }}
+                className={`shrink-0 -ml-1 rounded p-0.5 ${
+                  courseSelected && !selectedTopicId ? 'hover:bg-white/20' : 'hover:bg-lantern-border/60'
+                }`}
+              >
+                {topicsOpen ? (
+                  <ChevronDownIcon className="h-3.5 w-3.5" aria-hidden />
+                ) : (
+                  <ChevronRightIcon className="h-3.5 w-3.5" aria-hidden />
+                )}
+              </button>
+            ) : null}
+            <span className="text-sm font-semibold shrink-0">{node.course.code}</span>
+            {node.course.title && node.course.title !== node.course.code ? (
+              <span
+                className={`text-xs truncate ${
+                  courseSelected && !selectedTopicId ? 'text-white/80' : 'text-lantern-text-secondary'
+                }`}
+                title={node.course.title}
+              >
+                — {node.course.title}
+              </span>
+            ) : null}
+            {total === 0 ? (
+              <span
+                className={`ml-auto text-[10px] shrink-0 ${
+                  courseSelected && !selectedTopicId ? 'text-white/70' : 'text-lantern-text-tertiary'
+                }`}
+              >
+                empty
+              </span>
+            ) : null}
+          </div>
+          {renderCounts(node.counts, (key) => openCount(node.course.id, key), courseSelected && !selectedTopicId)}
+        </div>
+        {topicsOpen ? (
+          <ul
+            id={topicsId}
+            className="ml-3 mt-0.5 space-y-0.5 border-l border-lantern-border pl-1.5"
+            aria-label={`Topics in ${node.course.code}`}
+          >
+            {topics.map((row) => renderTopicRow(node.course.id, row))}
+          </ul>
+        ) : null}
       </li>
     );
   };
@@ -215,7 +355,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               <AcademicCapIcon className="h-4 w-4 shrink-0" aria-hidden />
               <span className="font-semibold">All items</span>
             </span>
-            {overview ? renderCounts(tree.totals, null, allSelected) : null}
+            {overview ? renderCounts(tree.totals, (key) => openCount(null, key), allSelected) : null}
           </div>
         </li>
       </ul>
@@ -316,7 +456,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 <InboxIcon className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="font-semibold">Unfiled</span>
               </span>
-              {renderCounts(tree.unfiled, UNFILED_COURSE_ID, unfiledSelected)}
+              {renderCounts(tree.unfiled, (key) => openCount(UNFILED_COURSE_ID, key), unfiledSelected)}
             </div>
           </section>
         </>

@@ -949,8 +949,8 @@ export const App: React.FC = () => {
                     showToast(e?.message || 'Failed to create folder', 'error');
                 });
             }}
-            onMoveNoteToCourse={(noteId, courseId) =>
-                noteHandlers.handleMoveNoteToCourse(noteId, courseId).catch((e: any) => {
+            onMoveNoteToCourse={(noteId, courseId, topicId) =>
+                noteHandlers.handleMoveNoteToCourse(noteId, courseId, topicId ?? null).catch((e: any) => {
                     showToast(e?.message || 'Failed to move note', 'error');
                     throw e;
                 })

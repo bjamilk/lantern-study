@@ -3,6 +3,8 @@ import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } fr
 import { Ionicons } from '@expo/vector-icons';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
+import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { fetchMarketplaceCampuses, publishStudyPack } from '../../services/api';
 import { useTheme } from '../../theme';
 import {
@@ -27,6 +29,7 @@ interface Props {
   onClose: () => void;
   defaultTitle?: string;
   defaultCourseId?: string | null;
+  defaultTopicId?: string | null;
   defaultDescription?: string;
   defaultPrice?: number | null;
   /** When set, publish consumes this ready AI draft server-side and marks it published. */
@@ -57,6 +60,7 @@ export function PublishStudyPackModal({
   onClose,
   defaultTitle,
   defaultCourseId,
+  defaultTopicId,
   defaultDescription,
   defaultPrice,
   draftId,
@@ -68,6 +72,7 @@ export function PublishStudyPackModal({
   const [price, setPrice] = useState(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
   const [campusId, setCampusId] = useState('');
   const [courseId, setCourseId] = useState<string | null>(defaultCourseId ?? null);
+  const [topicId, setTopicId] = useState<string | null>(defaultTopicId ?? null);
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [attested, setAttested] = useState(false);
   const [aiAssisted, setAiAssisted] = useState(!!draftId);
@@ -81,13 +86,14 @@ export function PublishStudyPackModal({
     setPrice(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
     setCampusId('');
     setCourseId(defaultCourseId ?? null);
+    setTopicId(defaultTopicId ?? null);
     setAttested(false);
     setAiAssisted(!!draftId);
     setSourcesText('');
     void fetchMarketplaceCampuses('NG')
       .then((rows) => setCampuses(rows || []))
       .catch(() => setCampuses([]));
-  }, [visible, defaultTitle, defaultCourseId, defaultDescription, defaultPrice, draftId]);
+  }, [visible, defaultTitle, defaultCourseId, defaultTopicId, defaultDescription, defaultPrice, draftId]);
 
   const counts = useMemo(() => countContent(content), [content]);
   const hasContent =
@@ -111,6 +117,8 @@ export function PublishStudyPackModal({
         price: priceValue && priceValue > 0 ? priceValue : null,
         campusId,
         courseId: courseId ?? null,
+        // Never sent without its course — the server rejects a bare topic.
+        topicId: courseId ? topicId : null,
         ...(draftId ? { draftId } : { content }),
         attestation: true,
         aiAssisted,
@@ -247,9 +255,26 @@ export function PublishStudyPackModal({
               </Text>
               <CoursePicker
                 value={courseId}
-                onChange={(course) => setCourseId(course?.id ?? null)}
+                onChange={(course) => {
+                  const nextCourseId = course?.id ?? null;
+                  setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
+                  setCourseId(nextCourseId);
+                }}
                 placeholder="Which course is this pack for?"
                 title="Course for this study pack"
+              />
+            </View>
+
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                Topic (optional)
+              </Text>
+              <TopicPicker
+                courseId={courseId}
+                value={topicId}
+                onChange={(topic) => setTopicId(topic?.id ?? null)}
+                placeholder="Which part of the syllabus?"
+                title="Topic for this study pack"
               />
             </View>
 

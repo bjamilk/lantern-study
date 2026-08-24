@@ -4,11 +4,20 @@ import { RectangleStackIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Course, Deck } from '../types';
 import Modal from './ui/Modal';
 import { CoursePicker } from './academic/CoursePicker';
+import { TopicPicker } from './academic/TopicPicker';
 
 interface CreateDeckModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: { id?: string; name: string; description?: string; isShared?: boolean; courseId?: string | null }) => void;
+  onSubmit: (data: {
+    id?: string;
+    name: string;
+    description?: string;
+    isShared?: boolean;
+    courseId?: string | null;
+    /** Syllabus topic inside `courseId`; always null when there is no course. */
+    topicId?: string | null;
+  }) => void;
   editingDeck?: Deck | null;
 }
 
@@ -17,6 +26,7 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
   const [description, setDescription] = useState('');
   const [isShared, setIsShared] = useState(false);
   const [course, setCourse] = useState<Course | string | null>(null);
+  const [topicId, setTopicId] = useState<string | null>(null);
   const isEditing = !!editingDeck;
 
   useEffect(() => {
@@ -26,11 +36,13 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
         setDescription(editingDeck.description || '');
         setIsShared(!!editingDeck.isShared);
         setCourse(editingDeck.courseId || null);
+        setTopicId(editingDeck.topicId || null);
       } else {
         setName('');
         setDescription('');
         setIsShared(false);
         setCourse(null);
+        setTopicId(null);
       }
     }
   }, [isOpen, editingDeck, isEditing]);
@@ -48,6 +60,8 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
       description: description.trim() || undefined,
       isShared,
       courseId,
+      // A topic without its course is what the server rejects — never send one.
+      topicId: courseId ? topicId : null,
     });
   };
 
@@ -100,8 +114,19 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
           id="deckCourse"
           label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
           value={course}
-          onChange={(next) => setCourse(next)}
+          onChange={(next) => {
+            setCourse(next);
+            setTopicId(null);
+          }}
           placeholder="File this deck under a course"
+        />
+        <TopicPicker
+          id="deckTopic"
+          label={<>Topic <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+          courseId={typeof course === 'string' ? course : course?.id ?? null}
+          value={topicId}
+          onChange={(topic) => setTopicId(topic?.id ?? null)}
+          placeholder="Where it sits in the syllabus"
         />
         <div className="flex items-center gap-2 min-h-[44px]">
           <input

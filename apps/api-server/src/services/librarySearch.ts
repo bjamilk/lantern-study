@@ -6,18 +6,21 @@
  * mobile are built against them, so keep the wire names stable:
  *
  *   GET /library/overview → { years: [{ academicYear, courses: [{ course,
- *     enrolment, counts: { notes, decks, tests, bundles, purchasedPacks } }] }],
+ *     enrolment, counts: { notes, decks, tests, bundles, purchasedPacks },
+ *     topics?: [{ topic, counts }], untopiced? }] }],
  *     unfiled: { notes, decks, tests, bundles } }
- *   GET /library/search  → [{ type, id, title, snippet, courseId, deckId?, updatedAt }]
+ *   GET /library/search  → [{ type, id, title, snippet, courseId, topicId?, deckId?, updatedAt }]
  *
  * Query strategy (PostgREST through supabase-js; there is no raw SQL client in
  * this server):
  *   - overview: ONE service call = the caller's enrolments + one owner-scoped
- *     `course_id` projection per artefact table (paged in 1000-row chunks only
- *     when a user has more rows than PostgREST returns at once), aggregated in
- *     TS. Purchased packs (`offline_bundles.bundle_id` = 'qbank-<listingId>')
- *     are filed under the listing's `course_id` with one extra lookup — never
- *     N+1 per course.
+ *     `course_id, topic_id` projection per artefact table (paged in 1000-row
+ *     chunks only when a user has more rows than PostgREST returns at once),
+ *     aggregated in TS. Purchased packs (`offline_bundles.bundle_id` =
+ *     'qbank-<listingId>') are filed under the listing's `course_id` with one
+ *     extra lookup — never N+1 per course. The topics seen are resolved with
+ *     one more chunked lookup, so the third level costs one query, not one per
+ *     course.
  *   - search: one ILIKE query per REQUESTED type (notes + their attachments,
  *     decks, flashcards, bundles), owner-scoped (own rows + notes/decks the
  *     caller collaborates on), then ranked in TS: exact prefix on the title
@@ -30,6 +33,7 @@ import { logger } from '../utils/logger';
 import {
   AcademicCoursesService,
   applyCourseFilter,
+  isMissingColumnError,
   isMissingRelationError,
   isUuid,
   parseCourseFilter,
@@ -37,6 +41,7 @@ import {
   type CourseRecord,
   type UserCourseRecord,
 } from './academicCourses';
+import type { CourseTopic } from '@lantern/shared/types';
 
 // ---------- Constants ----------
 
@@ -64,6 +69,15 @@ const OVERVIEW_MAX_PAGES = 20;
 const SHARED_ID_CAP = 200;
 /** Listing ids are batched into `in()` filters. */
 const LISTING_LOOKUP_CHUNK = 200;
+/** Topic ids are batched the same way. */
+const TOPIC_LOOKUP_CHUNK = 200;
+/**
+ * The course_topics migration is applied by hand, so a running server outlives
+ * "topic_id does not exist". Remember that for a few minutes instead of
+ * re-probing (and re-warning) on every request, but re-probe eventually so the
+ * archive grows its third level without a redeploy.
+ */
+const TOPIC_COLUMN_RECHECK_MS = 5 * 60 * 1000;
 
 const SNIPPET_RADIUS = 80;
 const SNIPPET_MAX_LENGTH = 200;
@@ -88,10 +102,30 @@ export interface LibraryUnfiledCounts {
   bundles: number;
 }
 
+/** Wire shape of a topic — the shared `CourseTopic`, under this module's `…Record` naming. */
+export type CourseTopicRecord = CourseTopic;
+
+/** The third level of the archive: year → course → topic (Phase 1 · A). */
+export interface LibraryTopicNode {
+  topic: CourseTopicRecord;
+  /** offline_bundles has no topic_id, so `bundles`/`purchasedPacks` are always 0 here. */
+  counts: LibraryCourseCounts;
+}
+
 export interface LibraryCourseNode {
   course: CourseRecord;
   enrolment: UserCourseRecord;
+  /** The TOTAL for the course — `topics` partitions it and `untopiced` is the remainder. */
   counts: LibraryCourseCounts;
+  /**
+   * The course's topics that hold at least one artefact, by position then
+   * title. Omitted entirely — never [] — when there are none or while the
+   * course_topics migration is unapplied, so "no topics" and "topics not
+   * available yet" look identical to a client: render the flat course.
+   */
+  topics?: LibraryTopicNode[];
+  /** Artefacts under the course but under no topic. Present exactly with `topics`. */
+  untopiced?: LibraryCourseCounts;
 }
 
 export interface LibraryYearNode {
@@ -125,6 +159,8 @@ export interface LibrarySearchResultRecord {
   title: string;
   snippet: string;
   courseId: string | null;
+  /** Topic within `courseId`. Absent — not null — while the course_topics migration is unapplied. */
+  topicId?: string | null;
   /** Flashcards only — the deck they belong to (results are grouped by it). */
   deckId?: string;
   /** Flashcards only — the deck's name, so clients can render group headers. */
@@ -138,6 +174,11 @@ export interface LibrarySearchOptions {
   q: string;
   /** A course id, or the literal 'null' for unfiled items. */
   courseId?: string | null;
+  /**
+   * A topic id, or the literal 'null' for items under no topic. Same grammar as
+   * `courseId`, and legal on its own — a topic already implies its course.
+   */
+  topicId?: string | null;
   types?: LibrarySearchType[];
   limit?: number;
 }
@@ -234,19 +275,64 @@ const toIso = (value: unknown): string => {
   return time ? new Date(time).toISOString() : new Date(0).toISOString();
 };
 
+/**
+ * `undefined` when topic_id was not projected (migration unapplied — the field
+ * is then omitted from the wire row), `null` when it was projected and empty.
+ */
+const topicIdOf = (row: Record<string, any> | null | undefined): string | null | undefined => {
+  if (!row || row.topic_id === undefined) return undefined;
+  return row.topic_id ? String(row.topic_id) : null;
+};
+
 type CountMap = Map<string | null, number>;
 
 const bump = (map: CountMap, key: string | null) => map.set(key, (map.get(key) ?? 0) + 1);
 const countOf = (map: CountMap, key: string | null) => map.get(key) ?? 0;
 
+/** One artefact table counted three ways: by course, by topic, and the no-topic remainder per course. */
+interface ArtefactTally {
+  byCourse: CountMap;
+  byTopic: CountMap;
+  untopiced: CountMap;
+}
+
+/**
+ * Count rows by course and, when the topic lookup is available, split each
+ * course's total into its topics plus a remainder. A topic id that did not
+ * resolve — or that belongs to a *different* course than the row — counts as
+ * untopiced rather than being dropped, so the split always adds back up to the
+ * course total.
+ */
+function tallyByCourseAndTopic(
+  rows: Array<{ course_id?: string | null; topic_id?: string | null }>,
+  topics: Map<string, CourseTopicRecord> | undefined
+): ArtefactTally {
+  const tally: ArtefactTally = { byCourse: new Map(), byTopic: new Map(), untopiced: new Map() };
+  for (const row of rows) {
+    const courseId = row.course_id ? String(row.course_id) : null;
+    bump(tally.byCourse, courseId);
+    if (!topics || !courseId) continue;
+    const topic = row.topic_id ? topics.get(String(row.topic_id)) : undefined;
+    if (topic && topic.courseId === courseId) bump(tally.byTopic, topic.id);
+    else bump(tally.untopiced, courseId);
+  }
+  return tally;
+}
+
 export interface OverviewFixture {
   enrolments: UserCourseRecord[];
-  notes: Array<{ course_id?: string | null }>;
-  decks: Array<{ course_id?: string | null }>;
-  tests: Array<{ course_id?: string | null }>;
+  notes: Array<{ course_id?: string | null; topic_id?: string | null }>;
+  decks: Array<{ course_id?: string | null; topic_id?: string | null }>;
+  tests: Array<{ course_id?: string | null; topic_id?: string | null }>;
   bundles: Array<{ course_id?: string | null; bundle_id?: string | null }>;
   /** listing id → listing course_id, for purchased packs. */
   listingCourses?: Map<string, string | null>;
+  /**
+   * topic id → topic, for exactly the topic ids seen above. Omitted while the
+   * course_topics migration is unapplied — which is what keeps `topics` and
+   * `untopiced` off every course node.
+   */
+  topics?: Map<string, CourseTopicRecord>;
 }
 
 /** Fold the projected rows into the overview tree (pure; unit-tested on fixtures). */
@@ -254,15 +340,15 @@ export function aggregateLibraryOverview(input: OverviewFixture): LibraryOvervie
   const courseKey = (row: { course_id?: string | null }): string | null =>
     row.course_id ? String(row.course_id) : null;
 
-  const notesBy: CountMap = new Map();
-  const decksBy: CountMap = new Map();
-  const testsBy: CountMap = new Map();
+  const notes = tallyByCourseAndTopic(input.notes, input.topics);
+  const decks = tallyByCourseAndTopic(input.decks, input.topics);
+  const tests = tallyByCourseAndTopic(input.tests, input.topics);
+  const notesBy = notes.byCourse;
+  const decksBy = decks.byCourse;
+  const testsBy = tests.byCourse;
   const bundlesBy: CountMap = new Map();
   const packsBy: CountMap = new Map();
 
-  for (const row of input.notes) bump(notesBy, courseKey(row));
-  for (const row of input.decks) bump(decksBy, courseKey(row));
-  for (const row of input.tests) bump(testsBy, courseKey(row));
   for (const row of input.bundles) {
     let key = courseKey(row);
     const isPack = isPurchasedPackBundleId(row.bundle_id);
@@ -275,6 +361,21 @@ export function aggregateLibraryOverview(input: OverviewFixture): LibraryOvervie
     }
     bump(bundlesBy, key);
     if (isPack) bump(packsBy, key);
+  }
+
+  // Only topics something is actually filed under reach the tree — an empty
+  // outline level would be noise the client has to filter out again.
+  const topicsByCourse = new Map<string, CourseTopicRecord[]>();
+  for (const topic of input.topics ? Array.from(input.topics.values()) : []) {
+    const filed =
+      countOf(notes.byTopic, topic.id) + countOf(decks.byTopic, topic.id) + countOf(tests.byTopic, topic.id);
+    if (filed === 0) continue;
+    const list = topicsByCourse.get(topic.courseId) ?? [];
+    list.push(topic);
+    topicsByCourse.set(topic.courseId, list);
+  }
+  for (const list of topicsByCourse.values()) {
+    list.sort((a, b) => (a.position !== b.position ? a.position - b.position : a.title.localeCompare(b.title)));
   }
 
   const byYear = new Map<string, LibraryCourseNode[]>();
@@ -291,6 +392,27 @@ export function aggregateLibraryOverview(input: OverviewFixture): LibraryOvervie
         purchasedPacks: countOf(packsBy, courseId),
       },
     };
+    const courseTopics = topicsByCourse.get(courseId);
+    if (courseTopics) {
+      node.topics = courseTopics.map((topic) => ({
+        topic,
+        counts: {
+          notes: countOf(notes.byTopic, topic.id),
+          decks: countOf(decks.byTopic, topic.id),
+          tests: countOf(tests.byTopic, topic.id),
+          // Bundles carry no topic_id, so they stay whole on the course node.
+          bundles: 0,
+          purchasedPacks: 0,
+        },
+      }));
+      node.untopiced = {
+        notes: countOf(notes.untopiced, courseId),
+        decks: countOf(decks.untopiced, courseId),
+        tests: countOf(tests.untopiced, courseId),
+        bundles: countOf(bundlesBy, courseId),
+        purchasedPacks: countOf(packsBy, courseId),
+      };
+    }
     const list = byYear.get(enrolment.academicYear) ?? [];
     list.push(node);
     byYear.set(enrolment.academicYear, list);
@@ -359,10 +481,6 @@ export function orderSearchResults(items: RankedResult[], limit: number): Librar
     .map((item) => item.result);
 }
 
-/** Postgres "column does not exist" (42703) — e.g. course_id before the migration is applied. */
-const isMissingColumnError = (error: { code?: string; message?: string } | null | undefined): boolean =>
-  Boolean(error && (error.code === '42703' || /column .* does not exist/i.test(error.message || '')));
-
 const unique = (values: unknown[]): string[] => Array.from(new Set(values.filter(isUuid)));
 
 /**
@@ -373,10 +491,25 @@ const unique = (values: unknown[]): string[] => Array.from(new Set(values.filter
 const isMissingModerationColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
   isMissingColumnError(error) && /removed_by_admin_at/i.test(error?.message || '');
 
+/** The parsed ?courseId/?topicId filters one search runs under. */
+interface SearchScope {
+  course: CourseFilter;
+  topic: CourseFilter;
+  /** Project (and filter on) topic_id — false while the course_topics migration is unapplied. */
+  withTopic: boolean;
+  /** ONE topic was named, so a table without topic_id must match nothing rather than everything. */
+  topicFiltered: boolean;
+}
+
+/** A scope narrowed to the columns a single attempt will actually touch. */
+type SearchAttempt = SearchScope & { excludeRemoved: boolean };
+
 // ---------- Service ----------
 
 export class LibrarySearchService {
   private readonly courses: AcademicCoursesService;
+  /** When we last found `topic_id` missing; null = never, or due for a re-probe. */
+  private topicColumnMissingSince: number | null = null;
 
   constructor(
     private supabaseService: SupabaseService,
@@ -389,38 +522,69 @@ export class LibrarySearchService {
     return this.supabaseService.getClient();
   }
 
+  /** True while we still believe the course_topics migration is unapplied. */
+  private get skipTopicProjection(): boolean {
+    return (
+      this.topicColumnMissingSince !== null &&
+      Date.now() - this.topicColumnMissingSince < TOPIC_COLUMN_RECHECK_MS
+    );
+  }
+
+  private noteTopicColumnMissing(label: string): void {
+    // Warn on the discovery, not on every request that inherits it.
+    if (this.topicColumnMissingSince === null) {
+      logger.warn(`library: topic_id unavailable on ${label} — course_topics migration not applied; topics omitted`);
+    }
+    this.topicColumnMissingSince = Date.now();
+  }
+
+  private noteTopicColumnPresent(): void {
+    this.topicColumnMissingSince = null;
+  }
+
   // ----- Overview -----
 
   async getOverview(userId: string): Promise<LibraryOverviewRecord> {
+    const withTopic = !this.skipTopicProjection;
     const [enrolments, notes, decks, tests, bundles] = await Promise.all([
       this.courses.listUserCourses(userId, { status: 'all' }),
       // Notes/decks moderation removed are gone for everyone but admins.
-      this.fetchOwnedRows('notes', 'course_id', userId, undefined, { excludeRemoved: true }),
-      this.fetchOwnedRows('decks', 'course_id', userId, undefined, { excludeRemoved: true }),
+      this.fetchOwnedRows('notes', 'course_id', userId, undefined, { excludeRemoved: true, withTopic }),
+      this.fetchOwnedRows('decks', 'course_id', userId, undefined, { excludeRemoved: true, withTopic }),
       // Abandoned sessions are trash, not archive material.
-      this.fetchOwnedRows('test_sessions', 'course_id', userId, (query) => query.neq('status', 'abandoned')),
+      this.fetchOwnedRows('test_sessions', 'course_id', userId, (query) => query.neq('status', 'abandoned'), {
+        withTopic,
+      }),
       this.fetchOwnedRows('offline_bundles', 'course_id, bundle_id', userId),
     ]);
-    const listingCourses = await this.resolveListingCourses(bundles);
-    return aggregateLibraryOverview({ enrolments, notes, decks, tests, bundles, listingCourses });
+    const [listingCourses, topics] = await Promise.all([
+      this.resolveListingCourses(bundles),
+      this.resolveTopics([notes, decks, tests]),
+    ]);
+    return aggregateLibraryOverview({ enrolments, notes, decks, tests, bundles, listingCourses, topics });
   }
 
   /**
    * Owner-scoped projection of `columns`, paged past PostgREST's 1000-row cap.
-   * `excludeRemoved` adds `removed_by_admin_at IS NULL` (retried without it
-   * when the column does not exist yet).
+   * `excludeRemoved` adds `removed_by_admin_at IS NULL` and `withTopic` adds the
+   * `topic_id` column — each retried without when it does not exist yet, so an
+   * unapplied migration costs a level of detail and never the rows themselves.
    */
   private async fetchOwnedRows(
     table: string,
     columns: string,
     userId: string,
     refine?: (query: any) => any,
-    options: { excludeRemoved?: boolean } = {}
+    options: { excludeRemoved?: boolean; withTopic?: boolean } = {}
   ): Promise<Record<string, any>[]> {
     const rows: Record<string, any>[] = [];
     let excludeRemoved = Boolean(options.excludeRemoved);
+    let withTopic = Boolean(options.withTopic);
     for (let page = 0; page < OVERVIEW_MAX_PAGES; page++) {
-      let query = this.db.from(table).select(columns).eq('user_id', userId);
+      let query = this.db
+        .from(table)
+        .select(withTopic ? `${columns}, topic_id` : columns)
+        .eq('user_id', userId);
       if (refine) query = refine(query);
       if (excludeRemoved) query = query.is('removed_by_admin_at', null);
       const from = page * OVERVIEW_PAGE_SIZE;
@@ -434,6 +598,14 @@ export class LibrarySearchService {
           page -= 1; // retry this page without the filter
           continue;
         }
+        // Dropping topic_id must come before the generic bail-out: returning
+        // early here would report zero notes/decks/tests for every course.
+        if (withTopic && isMissingColumnError(error)) {
+          this.noteTopicColumnMissing(table);
+          withTopic = false;
+          page -= 1; // retry this page without the topic split
+          continue;
+        }
         if (isMissingRelationError(error) || isMissingColumnError(error)) {
           logger.warn(`library overview: ${table} projection unavailable (${error.message || error.code})`);
           return rows;
@@ -444,6 +616,7 @@ export class LibrarySearchService {
       rows.push(...batch);
       if (batch.length < OVERVIEW_PAGE_SIZE) break;
     }
+    if (withTopic) this.noteTopicColumnPresent();
     return rows;
   }
 
@@ -474,6 +647,44 @@ export class LibrarySearchService {
     return map;
   }
 
+  /**
+   * Titles and positions for exactly the topic ids the artefact rows referenced
+   * (one lookup, chunked) — never a scan per course. `undefined` means there is
+   * no topic dimension at all: nothing referenced a topic, or course_topics does
+   * not exist yet, and the overview then carries no `topics` anywhere.
+   */
+  private async resolveTopics(
+    rowSets: Array<Array<{ topic_id?: string | null }>>
+  ): Promise<Map<string, CourseTopicRecord> | undefined> {
+    const topicIds = unique(rowSets.flat().map((row) => row.topic_id));
+    if (topicIds.length === 0) return undefined;
+    const map = new Map<string, CourseTopicRecord>();
+    for (let i = 0; i < topicIds.length; i += TOPIC_LOOKUP_CHUNK) {
+      const chunk = topicIds.slice(i, i + TOPIC_LOOKUP_CHUNK);
+      const { data, error } = await this.db
+        .from('course_topics')
+        .select('id, course_id, title, position')
+        .in('id', chunk);
+      if (error) {
+        if (isMissingRelationError(error) || isMissingColumnError(error)) {
+          logger.warn(`library overview: topic lookup unavailable (${error.message || error.code})`);
+          return undefined;
+        }
+        throw error;
+      }
+      for (const row of (data || []) as Record<string, any>[]) {
+        if (!row.id || !row.course_id) continue; // a topic without its course cannot be placed
+        map.set(String(row.id), {
+          id: String(row.id),
+          courseId: String(row.course_id),
+          title: String(row.title ?? ''),
+          position: Number(row.position ?? 0),
+        });
+      }
+    }
+    return map;
+  }
+
   // ----- Search -----
 
   async search(userId: string, options: LibrarySearchOptions): Promise<LibrarySearchResultRecord[]> {
@@ -486,7 +697,15 @@ export class LibrarySearchService {
       LIBRARY_SEARCH_MAX_LIMIT,
       Math.max(1, Number(options.limit) || LIBRARY_SEARCH_DEFAULT_LIMIT)
     );
-    const courseFilter = this.toCourseFilter(options.courseId);
+    const topicFilter = this.toTopicFilter(options.topicId);
+    const scope: SearchScope = {
+      course: this.toCourseFilter(options.courseId),
+      topic: topicFilter,
+      topicFiltered: topicFilter.kind === 'course',
+      // A named topic is probed even when we believe topic_id is missing:
+      // silently dropping that filter would look like it had been ignored.
+      withTopic: topicFilter.kind === 'course' || !this.skipTopicProjection,
+    };
     const pattern = `%${escapeLikePattern(q)}%`;
 
     const wantsDecks = types.includes('decks');
@@ -495,12 +714,16 @@ export class LibrarySearchService {
       wantsDecks || wantsFlashcards ? await this.collaboratorIds('deck_collaborators', 'deck_id', userId) : [];
 
     const batches = await Promise.all([
-      types.includes('notes') ? this.searchNotes(userId, q, pattern, courseFilter, limit) : Promise.resolve([]),
-      wantsDecks ? this.searchDecks(userId, q, pattern, courseFilter, limit, sharedDeckIds) : Promise.resolve([]),
+      types.includes('notes') ? this.searchNotes(userId, q, pattern, scope, limit) : Promise.resolve([]),
+      wantsDecks ? this.searchDecks(userId, q, pattern, scope, limit, sharedDeckIds) : Promise.resolve([]),
       wantsFlashcards
-        ? this.searchFlashcards(userId, q, pattern, courseFilter, limit, sharedDeckIds)
+        ? this.searchFlashcards(userId, q, pattern, scope, limit, sharedDeckIds)
         : Promise.resolve([]),
-      types.includes('bundles') ? this.searchBundles(userId, q, pattern, courseFilter, limit) : Promise.resolve([]),
+      // offline_bundles has no topic_id, so a bundle can never sit under a
+      // topic: naming one excludes them, "no topic" keeps them all.
+      types.includes('bundles') && !scope.topicFiltered
+        ? this.searchBundles(userId, q, pattern, scope, limit)
+        : Promise.resolve([]),
     ]);
 
     return orderSearchResults(batches.flat(), limit);
@@ -513,8 +736,21 @@ export class LibrarySearchService {
     return filter;
   }
 
+  /** Same grammar as courseId — a topic id, 'null' for items under no topic, or absent. */
+  private toTopicFilter(raw: string | null | undefined): CourseFilter {
+    const filter = parseCourseFilter(raw);
+    if (filter.kind === 'invalid') throw new PublicError('topicId must be a topic id or null');
+    return filter;
+  }
+
   private applyCourseFilter(query: any, column: string, filter: CourseFilter): any {
     return applyCourseFilter(query, column, filter);
+  }
+
+  /** Course filter always; topic filter only on an attempt that projects topic_id. */
+  private applyScope(query: any, attempt: SearchAttempt, courseColumn: string, topicColumn: string): any {
+    const scoped = applyCourseFilter(query, courseColumn, attempt.course);
+    return attempt.withTopic ? applyCourseFilter(scoped, topicColumn, attempt.topic) : scoped;
   }
 
   /**
@@ -566,19 +802,37 @@ export class LibrarySearchService {
   }
 
   /**
-   * Run a query whose builder adds `removed_by_admin_at IS NULL` when asked
-   * (notes/decks moderation removed never surface in search). A DB without the
-   * column yet retries without the filter; every other error follows `run`.
+   * Run a query whose builder opts into the two columns a DB may not have yet:
+   * `removed_by_admin_at` (moderation removed never surface in search) and
+   * `topic_id`. Either missing retries without it, so an unapplied migration
+   * costs a filter, not the results. The exception is a named topic: nothing
+   * can sit under a topic in a table that has no topics, so that returns empty
+   * rather than quietly widening the search back out.
    */
-  private async runModerated(
+  private async runDegrading(
     label: string,
-    build: (excludeRemoved: boolean) => any
+    scope: SearchScope,
+    build: (attempt: SearchAttempt) => any
   ): Promise<Record<string, any>[]> {
-    const { data, error } = await build(true);
-    if (error) {
-      if (isMissingModerationColumn(error)) {
+    const attempt: SearchAttempt = { ...scope, excludeRemoved: true };
+    // One retry per droppable column, then the generic bail-out below.
+    for (let tries = 0; tries < 3; tries++) {
+      const { data, error } = await build(attempt);
+      if (!error) {
+        if (attempt.withTopic) this.noteTopicColumnPresent();
+        return (data || []) as Record<string, any>[];
+      }
+      // Moderation first: its message is the specific case of a missing column.
+      if (attempt.excludeRemoved && isMissingModerationColumn(error)) {
         logger.warn(`library search: ${label} has no removed_by_admin_at column — moderation filter skipped`);
-        return this.run(label, build(false));
+        attempt.excludeRemoved = false;
+        continue;
+      }
+      if (attempt.withTopic && isMissingColumnError(error)) {
+        this.noteTopicColumnMissing(label);
+        if (attempt.topicFiltered) return [];
+        attempt.withTopic = false;
+        continue;
       }
       if (isMissingRelationError(error) || isMissingColumnError(error)) {
         logger.warn(`library search: ${label} unavailable (${error.message || error.code})`);
@@ -586,42 +840,48 @@ export class LibrarySearchService {
       }
       throw error;
     }
-    return (data || []) as Record<string, any>[];
+    return [];
   }
 
   private async searchNotes(
     userId: string,
     q: string,
     pattern: string,
-    courseFilter: CourseFilter,
+    scope: SearchScope,
     limit: number
   ): Promise<RankedResult[]> {
     const sharedNoteIds = await this.collaboratorIds('note_collaborators', 'note_id', userId);
 
-    const buildNotesQuery = (excludeRemoved: boolean) => {
-      let notesQuery = this.db.from('notes').select('id, title, summary, body, course_id, updated_at');
+    const buildNotesQuery = (attempt: SearchAttempt) => {
+      const topicColumn = attempt.withTopic ? ', topic_id' : '';
+      let notesQuery = this.db
+        .from('notes')
+        .select(`id, title, summary, body, course_id${topicColumn}, updated_at`);
       notesQuery = this.applyOwnerScope(notesQuery, userId, 'user_id', 'id', sharedNoteIds);
       notesQuery = notesQuery.or(`title.ilike.${pattern},summary.ilike.${pattern},body.ilike.${pattern}`);
-      notesQuery = this.applyCourseFilter(notesQuery, 'course_id', courseFilter);
-      if (excludeRemoved) notesQuery = notesQuery.is('removed_by_admin_at', null);
+      notesQuery = this.applyScope(notesQuery, attempt, 'course_id', 'topic_id');
+      if (attempt.excludeRemoved) notesQuery = notesQuery.is('removed_by_admin_at', null);
       return notesQuery.order('updated_at', { ascending: false }).limit(limit);
     };
 
     // Imported notes keep their content in attachments' extracted_text, not the body.
-    const buildAttachmentsQuery = (excludeRemoved: boolean) => {
+    const buildAttachmentsQuery = (attempt: SearchAttempt) => {
+      const topicColumn = attempt.withTopic ? ', topic_id' : '';
       let attachmentsQuery = this.db
         .from('note_attachments')
-        .select('note_id, file_name, extracted_text, notes!inner(id, title, course_id, updated_at)')
+        .select(
+          `note_id, file_name, extracted_text, notes!inner(id, title, course_id${topicColumn}, updated_at)`
+        )
         .ilike('extracted_text', pattern);
       attachmentsQuery = this.applyOwnerScope(attachmentsQuery, userId, 'user_id', 'id', sharedNoteIds, 'notes');
-      attachmentsQuery = this.applyCourseFilter(attachmentsQuery, 'notes.course_id', courseFilter);
-      if (excludeRemoved) attachmentsQuery = attachmentsQuery.is('notes.removed_by_admin_at', null);
+      attachmentsQuery = this.applyScope(attachmentsQuery, attempt, 'notes.course_id', 'notes.topic_id');
+      if (attempt.excludeRemoved) attachmentsQuery = attachmentsQuery.is('notes.removed_by_admin_at', null);
       return attachmentsQuery.limit(limit);
     };
 
     const [noteRows, attachmentRows] = await Promise.all([
-      this.runModerated('notes', buildNotesQuery),
-      this.runModerated('note_attachments', buildAttachmentsQuery),
+      this.runDegrading('notes', scope, buildNotesQuery),
+      this.runDegrading('note_attachments', scope, buildAttachmentsQuery),
     ]);
 
     const byNote = new Map<string, RankedResult>();
@@ -648,6 +908,7 @@ export class LibrarySearchService {
           title,
           snippet,
           courseId: row.course_id ? String(row.course_id) : null,
+          topicId: topicIdOf(row),
           matchedIn,
           updatedAt: toIso(row.updated_at),
         },
@@ -668,6 +929,7 @@ export class LibrarySearchService {
           title,
           snippet: buildSnippet(row.extracted_text, q),
           courseId: note.course_id ? String(note.course_id) : null,
+          topicId: topicIdOf(note),
           matchedIn: 'attachment',
           updatedAt: toIso(note.updated_at),
         },
@@ -680,16 +942,17 @@ export class LibrarySearchService {
     userId: string,
     q: string,
     pattern: string,
-    courseFilter: CourseFilter,
+    scope: SearchScope,
     limit: number,
     sharedDeckIds: string[]
   ): Promise<RankedResult[]> {
-    const rows = await this.runModerated('decks', (excludeRemoved) => {
-      let query = this.db.from('decks').select('id, name, description, course_id, created_at');
+    const rows = await this.runDegrading('decks', scope, (attempt) => {
+      const topicColumn = attempt.withTopic ? ', topic_id' : '';
+      let query = this.db.from('decks').select(`id, name, description, course_id${topicColumn}, created_at`);
       query = this.applyOwnerScope(query, userId, 'user_id', 'id', sharedDeckIds);
       query = query.or(`name.ilike.${pattern},description.ilike.${pattern}`);
-      query = this.applyCourseFilter(query, 'course_id', courseFilter);
-      if (excludeRemoved) query = query.is('removed_by_admin_at', null);
+      query = this.applyScope(query, attempt, 'course_id', 'topic_id');
+      if (attempt.excludeRemoved) query = query.is('removed_by_admin_at', null);
       return query.order('created_at', { ascending: false }).limit(limit);
     });
     return rows.map((row) => ({
@@ -701,6 +964,7 @@ export class LibrarySearchService {
         title: clip(cleanText(row.name) || 'Untitled deck', TITLE_MAX_LENGTH),
         snippet: buildSnippet(row.description, q),
         courseId: row.course_id ? String(row.course_id) : null,
+        topicId: topicIdOf(row),
         matchedIn: includesFold(row.name, q) ? ('name' as const) : ('description' as const),
         updatedAt: toIso(row.created_at),
       },
@@ -711,18 +975,20 @@ export class LibrarySearchService {
     userId: string,
     q: string,
     pattern: string,
-    courseFilter: CourseFilter,
+    scope: SearchScope,
     limit: number,
     sharedDeckIds: string[]
   ): Promise<RankedResult[]> {
-    const rows = await this.runModerated('flashcards', (excludeRemoved) => {
+    // A card inherits its course and its topic from the deck it lives in.
+    const rows = await this.runDegrading('flashcards', scope, (attempt) => {
+      const topicColumn = attempt.withTopic ? ', topic_id' : '';
       let query = this.db
         .from('flashcards')
-        .select('id, front, back, deck_id, created_at, decks!inner(id, name, user_id, course_id)')
+        .select(`id, front, back, deck_id, created_at, decks!inner(id, name, user_id, course_id${topicColumn})`)
         .or(`front.ilike.${pattern},back.ilike.${pattern}`);
       query = this.applyOwnerScope(query, userId, 'user_id', 'id', sharedDeckIds, 'decks');
-      query = this.applyCourseFilter(query, 'decks.course_id', courseFilter);
-      if (excludeRemoved) query = query.is('decks.removed_by_admin_at', null);
+      query = this.applyScope(query, attempt, 'decks.course_id', 'decks.topic_id');
+      if (attempt.excludeRemoved) query = query.is('decks.removed_by_admin_at', null);
       return query.order('created_at', { ascending: false }).limit(limit);
     });
     const results: RankedResult[] = [];
@@ -740,6 +1006,7 @@ export class LibrarySearchService {
           title: clip(cleanText(row.front) || 'Flashcard', TITLE_MAX_LENGTH),
           snippet: buildSnippet(frontMatched && !cleanText(row.back) ? row.front : row.back, q),
           courseId: deck?.course_id ? String(deck.course_id) : null,
+          topicId: topicIdOf(deck),
           deckId,
           deckTitle: cleanText(deck?.name) || undefined,
           matchedIn: frontMatched ? 'front' : 'back',
@@ -750,11 +1017,12 @@ export class LibrarySearchService {
     return results;
   }
 
+  /** Bundles carry no topic_id — the caller already excludes them when a topic is named. */
   private async searchBundles(
     userId: string,
     q: string,
     pattern: string,
-    courseFilter: CourseFilter,
+    scope: SearchScope,
     limit: number
   ): Promise<RankedResult[]> {
     let query = this.db
@@ -762,7 +1030,7 @@ export class LibrarySearchService {
       .select('id, bundle_id, display_name, group_name, course_id, updated_at')
       .eq('user_id', userId)
       .or(`display_name.ilike.${pattern},group_name.ilike.${pattern}`);
-    query = this.applyCourseFilter(query, 'course_id', courseFilter);
+    query = this.applyCourseFilter(query, 'course_id', scope.course);
     query = query.order('updated_at', { ascending: false }).limit(limit);
 
     const rows = await this.run('offline_bundles', query);

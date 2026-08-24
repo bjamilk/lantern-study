@@ -33,8 +33,16 @@ function makeUpdateCapture() {
   return { db: { from: () => api }, updates };
 }
 
-const createCall = (self: unknown, data: Record<string, unknown>) =>
-  SupabaseService.prototype.createMarketplaceListing.call(self as any, data, 'user-1');
+// None of these listings names a topic, so the real resolver short-circuits.
+const createCall = (self: any, data: Record<string, unknown>) =>
+  SupabaseService.prototype.createMarketplaceListing.call(
+    {
+      resolveArtefactTopic: (SupabaseService.prototype as any).resolveArtefactTopic,
+      ...self,
+    } as any,
+    data,
+    'user-1',
+  );
 
 const updateCall = (self: unknown, updates: Record<string, unknown>) =>
   SupabaseService.prototype.updateMarketplaceListing.call(self as any, 'l1', updates);

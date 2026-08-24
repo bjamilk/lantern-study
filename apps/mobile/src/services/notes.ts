@@ -5,6 +5,7 @@ import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
 import { applyAIUsageFromResponse, applyAIUsageFromErrorBody } from './ai';
+import { UNFILED_COURSE_ID } from '../utils/libraryArchive';
 
 async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -61,6 +62,8 @@ export interface NoteFolder {
   createdAt?: string;
   /** Academic archive: a folder can belong to a course. */
   courseId?: string | null;
+  /** Syllabus topic inside `courseId`; absent until 20260826120000 is applied. */
+  topicId?: string | null;
 }
 
 export interface StudyNote {
@@ -71,6 +74,8 @@ export interface StudyNote {
   folderId?: string;
   /** Academic archive: notes.course_id (null clears). */
   courseId?: string | null;
+  /** Syllabus topic inside `courseId` (null clears); never set without a course. */
+  topicId?: string | null;
   sourceType?: string;
   summary?: string;
   youtubeUrl?: string;
@@ -107,12 +112,19 @@ export const deleteNoteFolder = (folderId: string) =>
 
 /**
  * GET /notes. `courseId` narrows to one course; the literal `'null'` returns
- * unfiled notes (API contract, library archive §1).
+ * unfiled notes (API contract, library archive §1). `topicId` narrows one level
+ * further and only travels with a real course, mirroring the web fetcher.
  */
-export const fetchNotes = (folderId?: string, options?: { courseId?: string | null }) => {
+export const fetchNotes = (
+  folderId?: string,
+  options?: { courseId?: string | null; topicId?: string | null }
+) => {
   const params = new URLSearchParams();
   if (folderId) params.set('folderId', folderId);
   if (options?.courseId) params.set('courseId', options.courseId);
+  if (options?.courseId && options.courseId !== UNFILED_COURSE_ID && options?.topicId) {
+    params.set('topicId', options.topicId);
+  }
   const qs = params.toString();
   return notesRequest<StudyNote[]>(qs ? `?${qs}` : '');
 };

@@ -44,6 +44,7 @@ import { useNotesStore } from '../stores/notesStore';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useAcademicStore } from '../stores/academicStore';
 import { CourseChips } from './academic/CourseChips';
+import { TopicFilterChip } from './academic/TopicFilterChip';
 import { MoveToCourseModal } from './academic/MoveToCourseModal';
 import { buildFolderTree, folderParentOptions, folderScopeIds } from '../utils/libraryArchive';
 import { useNoteUploadStore, getVisibleUploadJobs } from '../stores/noteUploadStore';
@@ -60,7 +61,7 @@ interface NotesScreenProps {
   /** `parentId` nests the new folder one level under an existing one (note_folders.parent_id). */
   onCreateFolder: (name: string, parentId?: string | null) => void;
   /** "Move to course…" on a note row (PATCH /notes/:id { courseId }); rejections surface in the dialog. */
-  onMoveNoteToCourse?: (noteId: string, courseId: string | null) => void | Promise<void>;
+  onMoveNoteToCourse?: (noteId: string, courseId: string | null, topicId: string | null) => void | Promise<void>;
   onRenameFolder?: (folderId: string, name: string) => void | Promise<void>;
   onDeleteFolder?: (folderId: string) => void | Promise<void>;
   onTogglePinNote?: (noteId: string, isPinned: boolean) => void | Promise<void>;
@@ -96,16 +97,26 @@ const folderButtonClass = (isActive: boolean, compact = false) =>
 const NotesCourseFilter: React.FC = () => {
   const courseFilterId = useNotesStore((s) => s.courseFilterId);
   const libraryCourseId = useLibraryStore((s) => s.courseFilterId);
+  const libraryTopicId = useLibraryStore((s) => s.topicFilterId);
   const setLibraryCourseFilter = useLibraryStore((s) => s.setCourseFilter);
-  // Mirror the archive-wide filter into the notes list on mount and whenever it changes.
+  // Mirror the archive-wide filter into the notes list on mount and whenever it
+  // changes. Both halves are mirrored in one call: the Library rail can move the
+  // topic while the course stays put, which setCourseFilter alone reads as a no-op.
   useEffect(() => {
-    void useNotesStore.getState().setCourseFilter(libraryCourseId);
-  }, [libraryCourseId]);
+    void useNotesStore.getState().setTopicFilter(libraryCourseId, libraryTopicId);
+  }, [libraryCourseId, libraryTopicId]);
   const onChange = useCallback((courseId: string | null) => { setLibraryCourseFilter(courseId); }, [setLibraryCourseFilter]);
   // Leaving the screen drops the notes-store filter so other surfaces see every
   // note again; the library selection itself stays and is re-applied on return.
-  useEffect(() => () => { void useNotesStore.getState().setCourseFilter(null); }, []);
-  return <CourseChips value={courseFilterId} onChange={onChange} ariaLabel="Filter notes by course" showUnfiled />;
+  useEffect(() => () => { void useNotesStore.getState().setTopicFilter(null, null); }, []);
+  // The chips name the course; the topic gets its own chip, or the list is
+  // shorter than anything on screen explains.
+  return (
+    <div className="flex flex-col gap-1.5">
+      <CourseChips value={courseFilterId} onChange={onChange} ariaLabel="Filter notes by course" showUnfiled />
+      <TopicFilterChip />
+    </div>
+  );
 };
 
 const NotesScreen: React.FC<NotesScreenProps> = ({
@@ -600,8 +611,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           isOpen={Boolean(courseMoveNote)}
           onClose={() => setCourseMoveNote(null)}
           currentCourseId={courseMoveNote?.courseId ?? null}
+          currentTopicId={courseMoveNote?.topicId ?? null}
           title={courseMoveNote ? `Move “${courseMoveNote.title || 'Untitled note'}” to course` : 'Move note to course'}
-          onSubmit={(courseId) => (courseMoveNote ? onMoveNoteToCourse(courseMoveNote.id, courseId) : undefined)}
+          onSubmit={(courseId, topicId) => (courseMoveNote ? onMoveNoteToCourse(courseMoveNote.id, courseId, topicId) : undefined)}
         />
       ) : null}
 

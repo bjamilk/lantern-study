@@ -5,7 +5,7 @@
  * course picker reads it), invalidates on writes, and keeps the auth store's
  * academicProfile in step with PUT /users/:id.
  */
-import type { Course, UserCourse } from '@lantern/shared/types';
+import type { Course, CourseTopic, UserCourse } from '@lantern/shared/types';
 import { currentAcademicYear } from '@lantern/shared/academic';
 import {
   archiveSemester,
@@ -16,6 +16,7 @@ import {
   updateMyCourse,
   updateUserProfile,
 } from './api';
+import { API_BASE_URL, getAuthHeaders } from './supabase';
 import { useAuthStore } from '../stores/authStore';
 import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 import { buildYearCourseSet } from '../utils/courseSelection';
@@ -113,4 +114,140 @@ export async function loadAcademicProfile(userId: string): Promise<AcademicProfi
   const academic = extractAcademicProfile(profile);
   useAuthStore.getState().setAcademicProfile(academic);
   return academic;
+}
+
+/* ── Course topics (Phase 1 · A) ─────────────────────────────────────────── */
+
+/**
+ * The syllabus outline inside one course. Not in @lantern/shared/api yet, so
+ * the endpoint is called the way every other mobile-only route is.
+ *
+ * An outline is capped at 200 rows server-side, so the whole list is fetched
+ * once per course and filtered client-side — no typeahead round-trips.
+ *
+ * `course_topics` does not exist in production until migration
+ * 20260826120000 is applied, so every call here fails today. Callers must
+ * treat a failure as "no outline yet" and must never block saving the
+ * artefact on it.
+ */
+const courseTopicsCache = new Map<string, { fetchedAt: number; topics: CourseTopic[] }>();
+const courseTopicsInflight = new Map<string, Promise<CourseTopic[]>>();
+/**
+ * Failures are cached for the same window as successes. While the migration is
+ * unapplied every call 500s, and a picker mounts on every screen that shows an
+ * artefact's course — without this the app would re-ask on every mount.
+ */
+const courseTopicsFailure = new Map<string, { failedAt: number; message: string }>();
+const COURSE_TOPICS_TTL_MS = 60_000;
+
+async function topicsRequest<T>(
+  courseId: string,
+  path = '',
+  options: RequestInit = {}
+): Promise<T> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/courses/${encodeURIComponent(courseId)}/topics${path}`,
+    {
+      ...options,
+      headers: {
+        ...headers,
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+    }
+  );
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || json.message || `Topics request failed (${response.status})`);
+  }
+  return (json.data ?? json) as T;
+}
+
+/** Syllabus order: position, then id — the same order the API returns. */
+function sortTopics(topics: CourseTopic[]): CourseTopic[] {
+  return [...topics].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+}
+
+export function invalidateCourseTopicsCache(courseId?: string): void {
+  if (courseId) {
+    courseTopicsCache.delete(courseId);
+    courseTopicsFailure.delete(courseId);
+  } else {
+    courseTopicsCache.clear();
+    courseTopicsFailure.clear();
+  }
+}
+
+/** A course's outline, cached for a minute like "my courses". */
+export async function getCourseTopics(
+  courseId: string,
+  options: { force?: boolean } = {}
+): Promise<CourseTopic[]> {
+  const cached = courseTopicsCache.get(courseId);
+  if (!options.force && cached && Date.now() - cached.fetchedAt < COURSE_TOPICS_TTL_MS) {
+    return cached.topics;
+  }
+  const failure = courseTopicsFailure.get(courseId);
+  if (!options.force && failure && Date.now() - failure.failedAt < COURSE_TOPICS_TTL_MS) {
+    throw new Error(failure.message);
+  }
+  let inflight = courseTopicsInflight.get(courseId);
+  if (!inflight) {
+    inflight = topicsRequest<CourseTopic[]>(courseId)
+      .then(rows => {
+        const topics = sortTopics(Array.isArray(rows) ? rows : []);
+        courseTopicsCache.set(courseId, { fetchedAt: Date.now(), topics });
+        courseTopicsFailure.delete(courseId);
+        return topics;
+      })
+      .catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : 'Could not load topics';
+        courseTopicsFailure.set(courseId, { failedAt: Date.now(), message });
+        throw e;
+      })
+      .finally(() => {
+        courseTopicsInflight.delete(courseId);
+      });
+    courseTopicsInflight.set(courseId, inflight);
+  }
+  return inflight;
+}
+
+/**
+ * Find-or-create by title, the same shape courses use: typing a topic that
+ * already exists selects it rather than creating a near-duplicate.
+ */
+export async function createCourseTopic(courseId: string, title: string): Promise<CourseTopic> {
+  const topic = await topicsRequest<CourseTopic>(courseId, '', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+  // The endpoint clearly works, so stop short-circuiting the next read.
+  courseTopicsFailure.delete(courseId);
+  // Keep the cached outline in step so the picker lists the new topic at once
+  // instead of after the TTL. find-or-create can return an existing row, hence
+  // the de-dupe.
+  const cached = courseTopicsCache.get(courseId);
+  if (cached) {
+    courseTopicsCache.set(courseId, {
+      fetchedAt: cached.fetchedAt,
+      topics: sortTopics([...cached.topics.filter(t => t.id !== topic.id), topic]),
+    });
+  }
+  return topic;
+}
+
+/**
+ * Is there an outline worth showing a second "Move to topic" step for? An
+ * unreadable outline (the course_topics migration is not applied everywhere)
+ * counts as none: a sheet whose only possible message is "no topics here" is
+ * one dismissal the student never asked for.
+ */
+export async function courseHasTopics(courseId: string): Promise<boolean> {
+  try {
+    return (await getCourseTopics(courseId)).length > 0;
+  } catch {
+    return false;
+  }
 }

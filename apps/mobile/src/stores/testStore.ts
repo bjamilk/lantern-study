@@ -108,8 +108,10 @@ function buildSessionPayload(
       deckName: activeTest.test.deckName,
       groupName: options?.groupName || activeTest.test.deckName,
       groupId: options?.groupId,
-      // Academic archive: the API lifts config.courseId into test_sessions.course_id.
+      // Academic archive: the API lifts config.courseId/topicId into
+      // test_sessions.course_id/topic_id. The topic never travels without it.
       ...(activeTest.courseId ? { courseId: activeTest.courseId } : {}),
+      ...(activeTest.courseId && activeTest.topicId ? { topicId: activeTest.topicId } : {}),
       passingScore: activeTest.test.passingScore,
       mode: activeTest.mode,
       // Persist timer so retake restores the same conditions (minutes + seconds for web parity).
@@ -142,8 +144,10 @@ function buildDraftPayloadFromActive(activeTest: ActiveTest) {
     config: {
       groupId,
       groupName,
-      // Academic archive: the API lifts config.courseId into test_sessions.course_id.
+      // Academic archive: the API lifts config.courseId/topicId into
+      // test_sessions.course_id/topic_id. The topic never travels without it.
       ...(activeTest.courseId ? { courseId: activeTest.courseId } : {}),
+      ...(activeTest.courseId && activeTest.topicId ? { topicId: activeTest.topicId } : {}),
       numberOfQuestions: activeTest.questions.length,
       questionIds: activeTest.questions.map((q) => q.id),
       timerDuration: (activeTest.test.timeLimit || 0) * 60,
@@ -262,6 +266,8 @@ export interface TestAttempt {
   groupName?: string;
   /** Academic archive: test_sessions.course_id (lifted from config.courseId). Drives the Library's course filter on History. */
   courseId?: string | null;
+  /** Syllabus topic inside `courseId` (test_sessions.topic_id via config.topicId). */
+  topicId?: string | null;
   startedAt: string;
   completedAt?: string;
   score: number;
@@ -314,6 +320,8 @@ export interface ActiveTest {
   groupName?: string;
   /** Academic archive: course this session belongs to (test_sessions.course_id via config.courseId). */
   courseId?: string | null;
+  /** Syllabus topic inside `courseId` (test_sessions.topic_id via config.topicId). */
+  topicId?: string | null;
 }
 
 export interface StartTestConfig {
@@ -330,6 +338,8 @@ export interface StartTestConfig {
   lockAnswered?: boolean;
   /** Academic archive: course picked in TestConfig (defaults from the group). */
   courseId?: string | null;
+  /** Topic picked in TestConfig; ignored without a course. */
+  topicId?: string | null;
 }
 
 /** True when a stored mobile answer counts as answered (non-empty). */
@@ -396,6 +406,8 @@ interface TestState {
       lockAnswered?: boolean;
       /** Academic archive: course this session is filed under. */
       courseId?: string | null;
+      /** Syllabus topic inside `courseId`; ignored without one. */
+      topicId?: string | null;
     }
   ) => Promise<void>;
   /** Bind study-group attribution once route params are known (after draft create). */
@@ -878,6 +890,7 @@ export const useTestStore = create<TestState>((set, get) => ({
           groupId: config.groupId,
           groupName: config.groupName,
           courseId: session.course_id ?? session.courseId ?? config.courseId ?? null,
+          topicId: session.topic_id ?? session.topicId ?? config.topicId ?? null,
           startedAt: startTime ? new Date(startTime).toISOString() : new Date().toISOString(),
           completedAt: endTime ? new Date(endTime).toISOString() : undefined,
           score: correctAnswersCount,
@@ -1011,6 +1024,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       groupId: config?.groupId,
       groupName: config?.groupName,
       courseId: config?.courseId ?? null,
+      topicId: config?.courseId ? config?.topicId ?? null : null,
     };
     set({ activeTest: started });
     const drafted = await ensureMobileDraft(started);
@@ -1036,6 +1050,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       groupName?: string;
       lockAnswered?: boolean;
       courseId?: string | null;
+      topicId?: string | null;
     }
   ) => {
     // Do not invent a timer — use the caller's value, or untimed (0).
@@ -1073,6 +1088,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       groupId: options?.groupId,
       groupName: options?.groupName,
       courseId: options?.courseId ?? null,
+      topicId: options?.courseId ? options?.topicId ?? null : null,
     };
     set({ activeTest: started });
     void ensureMobileDraft(started).then((drafted) => {

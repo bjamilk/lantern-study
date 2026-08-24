@@ -16,6 +16,8 @@ interface Props {
   error: string | null;
   query: string;
   courseLabel?: string | null;
+  /** Topic inside `courseLabel`, when the tree has one selected. */
+  topicLabel?: string | null;
   bottomPadding?: number;
   onOpenNote: (noteId: string) => void;
   onOpenDeck: (deckId: string, deckTitle?: string) => void;
@@ -100,6 +102,7 @@ export function LibrarySearchResults({
   error,
   query,
   courseLabel,
+  topicLabel,
   bottomPadding = 24,
   onOpenNote,
   onOpenDeck,
@@ -107,6 +110,7 @@ export function LibrarySearchResults({
 }: Props) {
   const { colors } = useTheme();
   const grouped = useMemo(() => groupLibrarySearchResults(results), [results]);
+  const scopeLabel = topicLabel ? (courseLabel ? `${courseLabel} · ${topicLabel}` : topicLabel) : courseLabel;
 
   const renderDeckGroup = (group: LibraryDeckGroup) => (
     <View key={group.deckId}>
@@ -144,7 +148,7 @@ export function LibrarySearchResults({
           {searching
             ? `Searching for “${query.trim()}”…`
             : `${grouped.total} ${grouped.total === 1 ? 'result' : 'results'} for “${query.trim()}”`}
-          {courseLabel ? ` in ${courseLabel}` : ''}
+          {scopeLabel ? ` in ${scopeLabel}` : ''}
         </Text>
       </View>
 
@@ -158,7 +162,7 @@ export function LibrarySearchResults({
         <View className="items-center py-10 px-6">
           <Ionicons name="search-outline" size={36} color={colors.textTertiary} />
           <Text className="text-sm text-lantern-text-secondary text-center mt-3">
-            Nothing matched{courseLabel ? ` in ${courseLabel}` : ''}. Notes (including attachment text), decks, flashcards and offline bundles are searched.
+            Nothing matched{scopeLabel ? ` in ${scopeLabel}` : ''}. Notes (including attachment text), decks, flashcards and offline bundles are searched.
           </Text>
         </View>
       ) : null}

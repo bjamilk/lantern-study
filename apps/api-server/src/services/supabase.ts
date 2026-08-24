@@ -52,8 +52,13 @@ import { OPEN_ORDER_STATUSES } from "./marketplaceOrders";
 import {
   applyCourseFilter,
   courseFilterKey,
+  isMissingTopicColumn,
   type CourseFilter,
 } from "./academicCourses";
+// Topic write-through (Phase 1 · A): anything that can be filed under a course
+// can be filed under one of its topics, validated against the course the row
+// ends up with. courseTopics only type-imports supabase, so no cycle either.
+import { getCourseTopicsService } from "./courseTopics";
 // Owner/admin-only moderation columns never ride along on embedded listings.
 import { stripListingModerationFields } from "./moderation";
 import {
@@ -255,6 +260,55 @@ function resolveCourseIdFromConfigLike(
   return typeof candidate === "string" && COURSE_UUID_RE.test(candidate)
     ? candidate
     : null;
+}
+
+/**
+ * Topic reference on the same payloads. Returned RAW, unlike the course above:
+ * a topic id we cannot use must 400 in resolveForArtefact, not quietly vanish
+ * into an artefact the student thinks they filed.
+ */
+function resolveTopicIdFromConfigLike(
+  payload: { topicId?: unknown; config?: { topicId?: unknown } | null } | null | undefined,
+): unknown {
+  if (payload?.topicId !== undefined) return payload.topicId;
+  return payload?.config?.topicId;
+}
+
+/**
+ * `topicId` rides on an artefact only once the column exists: absent means
+ * "topics are not available yet", null means "no topic". Same rule as
+ * LibrarySearchResult.topicId, so a client has one thing to branch on.
+ */
+function topicIdOf(row: any): { topicId?: string | null } {
+  return row && typeof row === "object" && "topic_id" in row
+    ? { topicId: row.topic_id ?? null }
+    : {};
+}
+
+/** A topic filter only narrows a query when it names one; none/invalid do not. */
+const topicFilterApplies = (filter: CourseFilter | undefined): boolean =>
+  filter?.kind === "course" || filter?.kind === "unfiled";
+
+/**
+ * Run a write, retrying it without `topic_id` when that column is not there
+ * yet (20260826120000 unapplied). Nothing can hold a topic before the
+ * migration — resolveForArtefact rejects every id — so the only value that can
+ * reach here is a clear, and clearing a column that does not exist is a no-op.
+ * A missing topic must never fail the note/deck/test/listing it rode in on.
+ */
+async function writeWithTopicFallback(
+  run: (payload: Record<string, any>) => PromiseLike<any>,
+  payload: Record<string, any>,
+): Promise<any> {
+  const result = await run(payload);
+  if (!result?.error || !("topic_id" in payload) || !isMissingTopicColumn(result.error)) {
+    return result;
+  }
+  logger.warn(
+    "topic_id missing — write retried without it (apply 20260826120000_course_topics.sql)",
+  );
+  const { topic_id: _dropped, ...rest } = payload;
+  return run(rest);
 }
 
 // ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
@@ -3148,20 +3202,25 @@ export class SupabaseService {
       description?: string;
       isShared?: boolean;
       courseId?: string | null;
+      topicId?: string | null;
     },
     userId: string,
   ): Promise<any> {
-    const { data, error } = await this.supabase
-      .from("decks")
-      .insert({
+    const topicId = await this.resolveArtefactTopic({
+      topicId: deckData.topicId,
+      courseId: deckData.courseId,
+    });
+    const { data, error } = await writeWithTopicFallback(
+      (row) => this.supabase.from("decks").insert(row).select().single(),
+      {
         name: deckData.name,
         description: deckData.description || "",
         user_id: userId,
         is_shared: deckData.isShared ?? false,
         course_id: deckData.courseId || null,
-      })
-      .select()
-      .single();
+        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+      },
+    );
 
     if (error) {
       logger.error("Error creating deck:", { error, deckData, userId });
@@ -3183,6 +3242,8 @@ export class SupabaseService {
       responseProfile?: "compact" | "full";
       /** Academic archive filter (decks.course_id): unfiled → IS NULL, course → eq. */
       courseFilter?: CourseFilter;
+      /** Same, one level down (decks.topic_id): unfiled → no topic in that course. */
+      topicFilter?: CourseFilter;
     } = {},
   ): Promise<any[]> {
     const page = Math.max(1, options.page || 1);
@@ -3193,7 +3254,7 @@ export class SupabaseService {
     const profile = this.getResponseProfile(options.responseProfile);
     const offset = (page - 1) * limit;
     // v2: includeShared means owned + collaborator decks — never every globally shared deck.
-    const cacheKey = `decks:user:${userId}:scope:${includeShared ? "owned_collab" : "owned"}:p${page}:l${limit}:profile:${profile}:course:${courseFilterKey(options.courseFilter)}:v2`;
+    const cacheKey = `decks:user:${userId}:scope:${includeShared ? "owned_collab" : "owned"}:p${page}:l${limit}:profile:${profile}:course:${courseFilterKey(options.courseFilter)}:topic:${courseFilterKey(options.topicFilter)}:v2`;
     const cached = await cacheService.get<any[]>(cacheKey);
     if (cached !== null) return cached;
 
@@ -3204,28 +3265,44 @@ export class SupabaseService {
         // without it the counter is written but never readable by a client.
         : "id, name, description, user_id, is_shared, course_id, created_at, study_count";
 
-    let query = this.supabase
-      .from("decks")
-      .select(selectClause)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    query = applyCourseFilter(query, "course_id", options.courseFilter);
-
+    let accessibleIds: string[] | null = null;
     if (includeShared) {
       // Owned decks + decks where the user is an explicit collaborator.
       // Do NOT list every is_shared=true deck in the product (that leaked other users' libraries).
-      const accessibleIds = await this.getAccessibleDeckIds(userId);
+      accessibleIds = await this.getAccessibleDeckIds(userId);
       if (accessibleIds.length === 0) {
         await cacheService.set(cacheKey, [], 1800);
         return [];
       }
-      query = query.in("id", accessibleIds);
-    } else {
-      query = query.eq("user_id", userId);
     }
 
-    const { data, error } = await query;
+    // topic_id is projected (and filtered) only while it exists — naming a
+    // column the migration has not added yet 42703s the whole deck list.
+    const runQuery = (withTopic: boolean) => {
+      let query = this.supabase
+        .from("decks")
+        .select(withTopic ? `${selectClause}, topic_id` : selectClause)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+      query = applyCourseFilter(query, "course_id", options.courseFilter);
+      if (withTopic) {
+        query = applyCourseFilter(query, "topic_id", options.topicFilter);
+      }
+      return accessibleIds
+        ? query.in("id", accessibleIds)
+        : query.eq("user_id", userId);
+    };
+
+    let { data, error }: { data: any; error: any } = await runQuery(true);
+    if (error && isMissingTopicColumn(error)) {
+      // No deck can carry a topic before the migration: a named topic matches
+      // nothing, and "no topic" matches every deck.
+      if (options.topicFilter?.kind === "course") {
+        await cacheService.set(cacheKey, [], 1800);
+        return [];
+      }
+      ({ data, error } = await runQuery(false));
+    }
 
     if (error) throw error;
 
@@ -3367,25 +3444,35 @@ export class SupabaseService {
       isPublic?: boolean;
       isShared?: boolean;
       courseId?: string | null;
+      topicId?: string | null;
     },
     userId: string,
   ): Promise<any | null> {
     const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
     if (!canEdit) return null;
 
-    const { data, error } = await this.supabase
-      .from("decks")
-      .update({
+    // Validated against the course the deck ENDS UP with; moving or unfiling
+    // the deck takes its topic with it.
+    const topicId = await this.resolveArtefactTopicPatch("decks", deckId, updates);
+
+    const { data, error } = await writeWithTopicFallback(
+      (payload) =>
+        this.supabase
+          .from("decks")
+          .update(payload)
+          .eq("id", deckId)
+          .select()
+          .single(),
+      {
         name: updates.name,
         description: updates.description,
         is_public: updates.isPublic,
         is_shared: updates.isShared,
         // undefined = untouched (dropped by JSON), null = cleared
         course_id: updates.courseId === undefined ? undefined : updates.courseId || null,
-      })
-      .eq("id", deckId)
-      .select()
-      .single();
+        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+      },
+    );
 
     if (error) {
       if (error.code === "PGRST116") return null;
@@ -5878,6 +5965,8 @@ export class SupabaseService {
       status?: string;
       /** Academic archive filter (test_sessions.course_id; unfiled → IS NULL, course → eq); replaces the dead config->>subject path. */
       courseFilter?: CourseFilter;
+      /** Same, one level down (test_sessions.topic_id): unfiled → no topic in that course. */
+      topicFilter?: CourseFilter;
       lean?: boolean;
       sort?: "newest" | "oldest" | "highestScore";
       from?: string;
@@ -5889,6 +5978,7 @@ export class SupabaseService {
       limit = 20,
       status,
       courseFilter,
+      topicFilter,
       lean = false,
       sort = "newest",
       from,
@@ -5899,7 +5989,7 @@ export class SupabaseService {
     const fromKey = from || "";
     const toKey = to || "";
 
-    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
+    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:topic:${courseFilterKey(topicFilter)}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
 
     return cacheService.cached(
       cacheKey,
@@ -5960,6 +6050,7 @@ export class SupabaseService {
         }
 
         query = applyCourseFilter(query, "course_id", courseFilter);
+        query = applyCourseFilter(query, "topic_id", topicFilter);
 
         if (from) {
           query = query.gte("start_time", from);
@@ -6013,6 +6104,7 @@ export class SupabaseService {
           else if (status === "abandoned")
             fallback = fallback.eq("status", "abandoned");
           fallback = applyCourseFilter(fallback, "course_id", courseFilter);
+          fallback = applyCourseFilter(fallback, "topic_id", topicFilter);
           if (from) fallback = fallback.gte("start_time", from);
           if (to) fallback = fallback.lte("start_time", to);
           const retry = await fallback
@@ -6032,6 +6124,13 @@ export class SupabaseService {
               return (bScore || 0) - (aScore || 0);
             });
           }
+        }
+
+        if (error && topicFilterApplies(topicFilter) && isMissingTopicColumn(error)) {
+          // No session can carry a topic before the migration: a named topic
+          // matches nothing, and "no topic" matches every session.
+          if (topicFilter?.kind === "course") return { tests: [], total: 0 };
+          return this.getUserTests(userId, { ...options, topicFilter: undefined });
         }
 
         if (error) throw error;
@@ -6164,9 +6263,18 @@ export class SupabaseService {
     const isCompletedSession =
       testConfig.questions && testConfig.questions.length > 0;
 
+    const courseId = resolveCourseIdFromConfigLike(testConfig);
+    // Topic is validated against the course this session is filed under, so a
+    // wrong-course topic 400s before anything is written.
+    const topicId = await this.resolveArtefactTopic({
+      topicId: resolveTopicIdFromConfigLike(testConfig),
+      courseId,
+    });
+
     const insertData: any = {
       user_id: userId,
-      course_id: resolveCourseIdFromConfigLike(testConfig),
+      course_id: courseId,
+      ...(topicId !== undefined ? { topic_id: topicId } : {}),
     };
 
     if (isCompletedSession) {
@@ -6195,11 +6303,10 @@ export class SupabaseService {
       insertData.updated_at = new Date().toISOString();
     }
 
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .insert(insertData)
-      .select()
-      .single();
+    const { data, error } = await writeWithTopicFallback(
+      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
+      insertData,
+    );
 
     if (error) throw error;
 
@@ -6221,6 +6328,7 @@ export class SupabaseService {
       id: session.id,
       config: session.config || {},
       courseId: session.course_id ?? session.config?.courseId ?? null,
+      ...topicIdOf(session),
       questions,
       userAnswers: answers,
       currentQuestionIndex: session.current_question_index || 0,
@@ -6245,6 +6353,8 @@ export class SupabaseService {
       config: any;
       /** Academic archive reference; also mirrored into config.courseId by the route. */
       courseId?: string | null;
+      /** Topic within `courseId`; rejected (400) if it belongs to another course. */
+      topicId?: string | null;
       questions: any[];
       user_answers?: Record<string, any>;
       start_time?: string;
@@ -6258,10 +6368,16 @@ export class SupabaseService {
     userId: string,
   ): Promise<any> {
     const now = new Date().toISOString();
+    const courseId = resolveCourseIdFromConfigLike(payload);
+    const topicId = await this.resolveArtefactTopic({
+      topicId: resolveTopicIdFromConfigLike(payload),
+      courseId,
+    });
     const insertData: any = {
       user_id: userId,
       config: payload.config || {},
-      course_id: resolveCourseIdFromConfigLike(payload),
+      course_id: courseId,
+      ...(topicId !== undefined ? { topic_id: topicId } : {}),
       questions: Array.isArray(payload.questions) ? payload.questions : [],
       user_answers: payload.user_answers || {},
       start_time: payload.start_time || now,
@@ -6279,11 +6395,10 @@ export class SupabaseService {
       paused_at: null,
     };
 
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .insert(insertData)
-      .select()
-      .single();
+    const { data, error } = await writeWithTopicFallback(
+      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
+      insertData,
+    );
 
     if (error) throw error;
     await cacheService.deletePattern(`tests:${userId}:*`);
@@ -9979,6 +10094,16 @@ export class SupabaseService {
     assertValidBundleItems(
       listingData.bundle_items ?? listingData.bundleItems,
     );
+    // Academic archive reference, plus the topic inside it — rejected (400)
+    // when the topic belongs to another course, or to no course at all.
+    const courseId = listingData.course_id ?? listingData.courseId ?? null;
+    const topicId = await this.resolveArtefactTopic({
+      topicId:
+        listingData.topic_id !== undefined
+          ? listingData.topic_id
+          : listingData.topicId,
+      courseId,
+    });
     // Transform camelCase to snake_case for database columns
     const dbData = {
       user_id: userId,
@@ -10007,7 +10132,8 @@ export class SupabaseService {
       quantity: listingData.quantity ?? null,
       status: listingData.status || "active",
       // Academic archive reference (validated as UUID by the route).
-      course_id: listingData.course_id ?? listingData.courseId ?? null,
+      course_id: courseId,
+      ...(topicId !== undefined ? { topic_id: topicId } : {}),
       // Rights attestation state — SERVER-SET by the route / publish service
       // (services/moderation.ts listingRightsFields); the route strips any
       // client-supplied rights_* keys before they reach here. Defaults to the
@@ -10017,11 +10143,11 @@ export class SupabaseService {
       rights_attestation_version: listingData.rights_attestation_version ?? null,
     };
 
-    const { data, error } = await this.supabase
-      .from("marketplace_listings")
-      .insert(dbData)
-      .select()
-      .single();
+    const { data, error } = await writeWithTopicFallback(
+      (row) =>
+        this.supabase.from("marketplace_listings").insert(row).select().single(),
+      dbData,
+    );
 
     if (error) {
       logger.error("Failed to create marketplace listing:", error);
@@ -11290,6 +11416,8 @@ export class SupabaseService {
     options: {
       /** Academic archive filter (marketplace_listings.course_id): unfiled → IS NULL, course → eq. */
       courseFilter?: CourseFilter;
+      /** Same, one level down (marketplace_listings.topic_id). */
+      topicFilter?: CourseFilter;
     } = {},
   ): Promise<any[]> {
     let query = this.supabase
@@ -11305,6 +11433,7 @@ export class SupabaseService {
       .order("created_at", { ascending: false });
 
     query = applyCourseFilter(query, "course_id", options.courseFilter);
+    query = applyCourseFilter(query, "topic_id", options.topicFilter);
 
     if (status === "active") {
       // Active shelf includes reserved (sale in progress) for seller inventory.
@@ -11323,6 +11452,15 @@ export class SupabaseService {
     const { data, error } = await query;
 
     if (error) {
+      if (topicFilterApplies(options.topicFilter) && isMissingTopicColumn(error)) {
+        // No listing can carry a topic before the migration: a named topic
+        // matches nothing, and "no topic" matches every listing.
+        if (options.topicFilter?.kind === "course") return [];
+        return this.getListingsBySeller(userId, status, {
+          ...options,
+          topicFilter: undefined,
+        });
+      }
       logger.error("Error fetching seller listings:", error);
       throw error;
     }
@@ -11901,6 +12039,85 @@ export class SupabaseService {
     return data;
   }
 
+  // ─── Course topics (Phase 1 · A) ──────────────────────────────
+
+  /**
+   * The topic to store on an artefact, validated against the course the row
+   * will END UP with — not the one in the request body. Returns undefined for
+   * "leave topic_id alone", so a write before the migration never names the
+   * column at all.
+   */
+  async resolveArtefactTopic(input: {
+    /** undefined = the write does not mention a topic. */
+    topicId?: unknown;
+    /** undefined = the write does not change the course. */
+    courseId?: unknown;
+    /** The row's course before this write; omit on create — nothing to orphan. */
+    currentCourseId?: string | null;
+  }): Promise<string | null | undefined> {
+    const { topicId, courseId, currentCourseId } = input;
+
+    if (topicId === undefined) {
+      // A patch that moves the artefact to another course (or unfiles it) must
+      // take the topic with it: a topic outliving its course is exactly the
+      // orphan the invariant forbids.
+      const movedCourse =
+        courseId !== undefined &&
+        currentCourseId !== undefined &&
+        String(courseId ?? "") !== String(currentCourseId ?? "");
+      return movedCourse ? null : undefined;
+    }
+    if (topicId === null || topicId === "") return null;
+
+    const effectiveCourseId =
+      courseId !== undefined
+        ? typeof courseId === "string" && courseId
+          ? courseId
+          : null
+        : (currentCourseId ?? null);
+    return getCourseTopicsService(this).resolveForArtefact(
+      topicId,
+      effectiveCourseId,
+    );
+  }
+
+  /**
+   * Same, for a PATCH: reads the row's current course (the only way to know
+   * what it ends up with) and only when the answer depends on it.
+   */
+  private async resolveArtefactTopicPatch(
+    table: string,
+    id: string,
+    updates: { topicId?: unknown; courseId?: unknown },
+  ): Promise<string | null | undefined> {
+    if (updates.topicId === undefined && updates.courseId === undefined) {
+      return undefined;
+    }
+    return this.resolveArtefactTopic({
+      topicId: updates.topicId,
+      courseId: updates.courseId,
+      currentCourseId: await this.currentArtefactCourseId(table, id),
+    });
+  }
+
+  /** The artefact's course as stored today; null when it has none (or is gone). */
+  private async currentArtefactCourseId(
+    table: string,
+    id: string,
+  ): Promise<string | null> {
+    // supabase-js RESOLVES on a Postgres error, so an unchecked read here would
+    // report "this artefact has no course" for a transient failure — which both
+    // rejects a valid topic and silently CLEARS an existing one on a patch that
+    // merely re-sends the same course. Fail the write instead of guessing.
+    const { data, error } = await this.supabase
+      .from(table)
+      .select("course_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as { course_id?: string | null } | null)?.course_id ?? null;
+  }
+
   // ─── Notes ───────────────────────────────────────────────────
 
   private mapNote(
@@ -11921,6 +12138,7 @@ export class SupabaseService {
       folderId: row.folder_id || undefined,
       groupId: row.group_id || undefined,
       courseId: row.course_id ?? null,
+      ...topicIdOf(row),
       title: row.title,
       body: row.body || "",
       summary: row.summary || undefined,
@@ -12078,6 +12296,8 @@ export class SupabaseService {
     return (data || []).map((row: any) => this.mapNoteFolder(row));
   }
 
+  // A folder carries no topic: notes/decks/test sessions are what get filed
+  // under a syllabus topic, and nothing reads note_folders.topic_id.
   async createNoteFolder(
     userId: string,
     payload: {
@@ -12107,7 +12327,11 @@ export class SupabaseService {
   async updateNoteFolder(
     userId: string,
     folderId: string,
-    updates: { name?: string; color?: string; courseId?: string | null },
+    updates: {
+      name?: string;
+      color?: string;
+      courseId?: string | null;
+    },
   ) {
     const { courseId, ...rest } = updates;
     const dbUpdates: Record<string, unknown> = {
@@ -12144,28 +12368,49 @@ export class SupabaseService {
       archived?: boolean;
       /** Academic archive filter (notes.course_id): unfiled → IS NULL, course → eq. */
       courseFilter?: CourseFilter;
+      /** Same, one level down (notes.topic_id): unfiled → no topic in that course. */
+      topicFilter?: CourseFilter;
     },
   ) {
-    let ownedQuery = this.supabase
-      .from("notes")
-      .select("*")
-      .eq("user_id", userId)
-      .order("is_pinned", { ascending: false })
-      .order("updated_at", { ascending: false });
+    const buildOwnedQuery = (withTopic: boolean) => {
+      let query = this.supabase
+        .from("notes")
+        .select("*")
+        .eq("user_id", userId)
+        .order("is_pinned", { ascending: false })
+        .order("updated_at", { ascending: false });
 
-    if (options?.folderId)
-      ownedQuery = ownedQuery.eq("folder_id", options.folderId);
-    if (options?.groupId)
-      ownedQuery = ownedQuery.eq("group_id", options.groupId);
-    ownedQuery = applyCourseFilter(ownedQuery, "course_id", options?.courseFilter);
+      if (options?.folderId) query = query.eq("folder_id", options.folderId);
+      if (options?.groupId) query = query.eq("group_id", options.groupId);
+      query = applyCourseFilter(query, "course_id", options?.courseFilter);
+      if (withTopic) {
+        query = applyCourseFilter(query, "topic_id", options?.topicFilter);
+      }
+      if (options?.archived === true) query = query.eq("is_archived", true);
+      else if (options?.archived === false) query = query.eq("is_archived", false);
+      return query;
+    };
+
+    // A topic filter narrows to one course's shelf just like a course filter.
     const courseFiltered =
-      options?.courseFilter?.kind === "course" || options?.courseFilter?.kind === "unfiled";
-    if (options?.archived === true)
-      ownedQuery = ownedQuery.eq("is_archived", true);
-    else if (options?.archived === false)
-      ownedQuery = ownedQuery.eq("is_archived", false);
+      options?.courseFilter?.kind === "course" ||
+      options?.courseFilter?.kind === "unfiled" ||
+      topicFilterApplies(options?.topicFilter);
 
-    const { data: ownedRows, error: ownedError } = await ownedQuery;
+    // Annotated because the two builds project different columns; keep it an
+    // array type so the mapped rows below stay inferable.
+    let { data: ownedRows, error: ownedError }: { data: any[] | null; error: any } =
+      await buildOwnedQuery(true);
+    if (
+      ownedError &&
+      topicFilterApplies(options?.topicFilter) &&
+      isMissingTopicColumn(ownedError)
+    ) {
+      // No note can carry a topic before the migration: a named topic matches
+      // nothing, and "no topic" matches every note.
+      if (options?.topicFilter?.kind === "course") return [];
+      ({ data: ownedRows, error: ownedError } = await buildOwnedQuery(false));
+    }
     if (ownedError) throw ownedError;
 
     // Notes moderation removed (notes.removed_by_admin_at, migration
@@ -12326,29 +12571,34 @@ export class SupabaseService {
       summary?: string;
       copiedFromNoteId?: string;
       courseId?: string | null;
+      topicId?: string | null;
     },
     options: {
       /** 'web' | 'mobile' from x-lantern-surface (learning_events.surface); default 'api'. */
       surface?: LearningSurface;
     } = {},
   ) {
-    const { data, error } = await this.supabase
-      .from("notes")
-      .insert({
+    const topicId = await this.resolveArtefactTopic({
+      topicId: payload.topicId,
+      courseId: payload.courseId,
+    });
+    const { data, error } = await writeWithTopicFallback(
+      (row) => this.supabase.from("notes").insert(row).select().single(),
+      {
         user_id: userId,
         title: payload.title || "Untitled Note",
         body: payload.body || "",
         folder_id: payload.folderId || null,
         group_id: payload.groupId || null,
         course_id: payload.courseId || null,
+        ...(topicId !== undefined ? { topic_id: topicId } : {}),
         source_type: payload.sourceType || "typed",
         youtube_url: payload.youtubeUrl || null,
         youtube_video_id: payload.youtubeVideoId || null,
         summary: payload.summary || null,
         copied_from_note_id: payload.copiedFromNoteId || null,
-      })
-      .select()
-      .single();
+      },
+    );
     if (error) throw error;
     // learning_events: note_created — every creation path (typed, PDF/slides/
     // image/audio/YouTube imports) lands here; only POST /notes knows the
@@ -12403,8 +12653,10 @@ export class SupabaseService {
     if (!access.isOwner) {
       delete (updates as Record<string, unknown>).folderId;
       delete (updates as Record<string, unknown>).groupId;
-      // Course is the owner's archive taxonomy, same as folder placement.
+      // Course is the owner's archive taxonomy, same as folder placement —
+      // and so is the topic inside it.
       delete (updates as Record<string, unknown>).courseId;
+      delete (updates as Record<string, unknown>).topicId;
     }
 
     const dbUpdates: Record<string, unknown> = {};
@@ -12417,6 +12669,10 @@ export class SupabaseService {
       dbUpdates.group_id = updates.groupId || null;
     if (updates.courseId !== undefined)
       dbUpdates.course_id = updates.courseId || null;
+    // Validated against the course the note ENDS UP with, before the first
+    // write attempt, so a wrong-course topic 400s instead of being stored.
+    const topicId = await this.resolveArtefactTopicPatch("notes", noteId, updates);
+    if (topicId !== undefined) dbUpdates.topic_id = topicId;
     if (updates.isShared !== undefined) dbUpdates.is_shared = updates.isShared;
     if (updates.youtubeUrl !== undefined)
       dbUpdates.youtube_url = updates.youtubeUrl;
@@ -12464,17 +12720,20 @@ export class SupabaseService {
           : (current.updated_at as string);
 
       // Trigger bumps version/updated_at; CAS against the values we last read.
-      let query = this.supabase
-        .from("notes")
-        .update(dbUpdates)
-        .eq("id", noteId);
-      if (Number.isFinite(expectedVersion)) {
-        query = query.eq("version", expectedVersion);
-      } else if (expectedUpdatedAt) {
-        query = query.eq("updated_at", expectedUpdatedAt);
-      }
+      const runUpdate = (payload: Record<string, unknown>) => {
+        let query = this.supabase
+          .from("notes")
+          .update(payload)
+          .eq("id", noteId);
+        if (Number.isFinite(expectedVersion)) {
+          query = query.eq("version", expectedVersion);
+        } else if (expectedUpdatedAt) {
+          query = query.eq("updated_at", expectedUpdatedAt);
+        }
+        return query.select().maybeSingle();
+      };
 
-      const { data, error } = await query.select().maybeSingle();
+      const { data, error } = await writeWithTopicFallback(runUpdate, dbUpdates);
       if (error) throw error;
       if (data) return this.mapNote(data);
 

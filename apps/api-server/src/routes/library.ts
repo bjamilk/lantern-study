@@ -2,8 +2,8 @@
  * /api/v1/library — the Library archive tree + cross-artefact search (Phase 1 · B).
  * Contract: docs/phase1-library-archive-contract.md §1.
  *
- *   GET /overview  — years → courses → counts, plus unfiled counts (one round trip)
- *   GET /search    — ?q&courseId&types=notes,decks,flashcards,bundles&limit=30
+ *   GET /overview  — years → courses → topics → counts, plus unfiled counts (one round trip)
+ *   GET /search    — ?q&courseId&topicId&types=notes,decks,flashcards,bundles&limit=30
  *
  * Both are owner-scoped to the caller and uncached (the tree changes with every
  * note/deck/test the user touches; search is debounced client-side).
@@ -50,6 +50,11 @@ export const validateLibrarySearch = [
     .optional({ values: 'falsy' })
     .custom((value) => value === 'null' || isUuid(value))
     .withMessage("courseId must be a valid UUID or 'null' for unfiled items"),
+  // Legal without a courseId — a topic already implies the course it belongs to.
+  query('topicId')
+    .optional({ values: 'falsy' })
+    .custom((value) => value === 'null' || isUuid(value))
+    .withMessage("topicId must be a valid UUID or 'null' for items under no topic"),
   query('types')
     .optional({ values: 'falsy' })
     .custom((value) => parseLibrarySearchTypes(value) !== null)
@@ -93,6 +98,7 @@ router.get(
 
     const q = typeof req.query.q === 'string' ? req.query.q : '';
     const courseId = typeof req.query.courseId === 'string' && req.query.courseId ? req.query.courseId : null;
+    const topicId = typeof req.query.topicId === 'string' && req.query.topicId ? req.query.topicId : null;
     const types = parseLibrarySearchTypes(req.query.types) ?? undefined;
     const limit = Math.min(
       LIBRARY_SEARCH_MAX_LIMIT,
@@ -100,7 +106,13 @@ router.get(
     );
 
     try {
-      const results = await getLibrarySearchService(supabaseService).search(userId, { q, courseId, types, limit });
+      const results = await getLibrarySearchService(supabaseService).search(userId, {
+        q,
+        courseId,
+        topicId,
+        types,
+        limit,
+      });
       res.json({ success: true, data: results });
     } catch (err) {
       if (handlePublicError(err, res)) return;

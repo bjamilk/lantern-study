@@ -4,7 +4,12 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validatePagination, validateListingId, validateMarketplaceListingWrite, validateMarketplaceListingUpdate, validateUserId } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
-import { COURSE_FILTER_INVALID_MESSAGE, parseCourseFilter } from '../services/academicCourses';
+import {
+  COURSE_FILTER_INVALID_MESSAGE,
+  TOPIC_FILTER_INVALID_MESSAGE,
+  parseCourseFilter,
+  parseTopicFilter,
+} from '../services/academicCourses';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -430,6 +435,8 @@ router.post(
 
     try {
       const listing = await req.runIdempotent!(async () => {
+        // courseId/topicId ride on listingData — createMarketplaceListing
+        // resolves the topic against the course before the insert.
         const created = await supabaseService.createMarketplaceListing(listingData, userId);
 
         if (contentFlags.length > 0 && (created as { id?: string })?.id) {
@@ -475,6 +482,9 @@ router.post(
         data: listing.listing,
       });
     } catch (error: any) {
+      if (error instanceof PublicError) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
       const { isMarketplacePricingError } = await import('../utils/marketplacePricing');
       if (isMarketplacePricingError(error)) {
         return res.status(400).json({ success: false, error: error.message });
@@ -567,6 +577,29 @@ router.put(
     delete updates.courseId;
     delete updates.course_id;
 
+    // Topic inside that course, resolved BEFORE the write against the course
+    // the listing ends up with: moving (or unfiling) the listing takes its
+    // topic with it rather than leaving it under another course's syllabus.
+    const topicWasProvided =
+      Object.prototype.hasOwnProperty.call(updates, 'topicId') ||
+      Object.prototype.hasOwnProperty.call(updates, 'topic_id');
+    const rawTopicId = topicWasProvided ? (updates.topicId ?? updates.topic_id ?? null) : undefined;
+    delete updates.topicId;
+    delete updates.topic_id;
+    let nextTopicId: string | null | undefined;
+    try {
+      nextTopicId = await supabaseService.resolveArtefactTopic({
+        topicId: rawTopicId,
+        courseId: courseWasProvided ? nextCourseId : undefined,
+        currentCourseId: listing.course_id ?? null,
+      });
+    } catch (error) {
+      if (error instanceof PublicError) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+      throw error;
+    }
+
     // Rights attestation + content filter (Phase 1 · E). rights_* columns are
     // server-set (never assignable through updateMarketplaceListing); an edit
     // that lands an unattested listing in an academic category must attest,
@@ -617,10 +650,18 @@ router.put(
       await getModerationService(supabaseService).recordListingFlags(id, listing.user_id, contentFlags);
     }
 
-    if (courseWasProvided && updatedListing) {
+    if ((courseWasProvided || nextTopicId !== undefined) && updatedListing) {
       const { getAcademicCoursesService } = await import('../services/academicCourses');
-      await getAcademicCoursesService(supabaseService).setListingCourse(id, nextCourseId);
-      updatedListing = { ...updatedListing, course_id: nextCourseId };
+      await getAcademicCoursesService(supabaseService).setListingCourse(
+        id,
+        courseWasProvided ? nextCourseId : undefined,
+        nextTopicId
+      );
+      updatedListing = {
+        ...updatedListing,
+        ...(courseWasProvided ? { course_id: nextCourseId } : {}),
+        ...(nextTopicId !== undefined ? { topic_id: nextTopicId } : {}),
+      };
     }
 
     const priceFields = ['price', 'sale_price', 'sale_ends_at'] as const;
@@ -869,6 +910,7 @@ router.post(
           location: req.body?.location,
           groupId: req.body?.groupId ?? req.body?.group_id ?? null,
           courseId: req.body?.courseId ?? req.body?.course_id ?? null,
+          topicId: req.body?.topicId ?? req.body?.topic_id ?? null,
           content: req.body?.content,
           // Rights attestation (required) + provenance (Phase 1 · E).
           attestation: req.body?.attestation,
@@ -1083,6 +1125,7 @@ router.post(
         campusId: req.body?.campusId ?? req.body?.campus_id,
         location: req.body?.location,
         courseId: req.body?.courseId ?? req.body?.course_id ?? null,
+        topicId: req.body?.topicId ?? req.body?.topic_id ?? null,
         content: req.body?.content,
         draftId: req.body?.draftId ?? req.body?.draft_id ?? null,
         // Rights attestation (required) + provenance (Phase 1 · E).
@@ -1580,7 +1623,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const userId = req.user?.id;
-    const { status, courseId } = req.query;
+    const { status, courseId, topicId } = req.query;
 
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
@@ -1590,11 +1633,17 @@ router.get(
     if (courseFilter.kind === 'invalid') {
       return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
     }
+    // ?topicId= — same grammar one level down; "null" is "in this course, under no topic".
+    const topicFilter = parseTopicFilter(topicId);
+    if (topicFilter.kind === 'invalid') {
+      return res.status(400).json({ success: false, error: TOPIC_FILTER_INVALID_MESSAGE });
+    }
 
-    logger.debug('Fetching seller listings', { userId, status, courseId });
+    logger.debug('Fetching seller listings', { userId, status, courseId, topicId });
 
     const listings = await supabaseService.getListingsBySeller(userId, status as string | undefined, {
       courseFilter,
+      topicFilter,
     });
 
     res.json({

@@ -1,11 +1,11 @@
 /**
  * Debounced GET /library/search (300 ms, ≥ 2 chars) scoped to the Library's
- * course filter. Stale responses are dropped by request id.
+ * course and topic filters. Stale responses are dropped by request id.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { LibrarySearchResult } from '@lantern/shared/types';
 import { searchLibrary } from '../services/api';
-import { isLibrarySearchable } from '../utils/libraryArchive';
+import { isLibrarySearchable, matchesTopicFilter, UNFILED_COURSE_ID } from '../utils/libraryArchive';
 
 export const LIBRARY_SEARCH_DEBOUNCE_MS = 300;
 
@@ -13,9 +13,11 @@ export function useLibrarySearch(options: {
   query: string;
   /** Course uuid, `'null'` for unfiled, or null/undefined for everything. */
   courseId?: string | null;
+  /** Topic uuid inside `courseId`, `'null'` for untopiced, or null/undefined for the whole course. */
+  topicId?: string | null;
   limit?: number;
 }): { results: LibrarySearchResult[]; searching: boolean; error: string | null; active: boolean } {
-  const { query, courseId, limit = 30 } = options;
+  const { query, courseId, topicId, limit = 30 } = options;
   const [results, setResults] = useState<LibrarySearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,11 +33,18 @@ export function useLibrarySearch(options: {
       return;
     }
     setSearching(true);
+    // A topic is meaningless server-side without its course, so it never travels alone.
+    const scopedTopicId = topicId && courseId && courseId !== UNFILED_COURSE_ID ? topicId : null;
     const timer = setTimeout(() => {
-      searchLibrary({ q: query.trim(), courseId: courseId ?? undefined, limit })
+      // The shared client drops `topicId` until it learns the query param, so
+      // narrow the rows here as well — a no-op once the server filters, and the
+      // rows' own `topicId` is absent (not null) until the migration lands.
+      const params = { q: query.trim(), courseId: courseId ?? undefined, topicId: scopedTopicId ?? undefined, limit };
+      searchLibrary(params)
         .then(rows => {
           if (requestId !== requestRef.current) return;
-          setResults(Array.isArray(rows) ? rows : []);
+          const list = Array.isArray(rows) ? rows : [];
+          setResults(scopedTopicId ? list.filter(row => matchesTopicFilter(row?.topicId, scopedTopicId)) : list);
           setError(null);
         })
         .catch(e => {
@@ -48,7 +57,7 @@ export function useLibrarySearch(options: {
         });
     }, LIBRARY_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [query, courseId, limit, active]);
+  }, [query, courseId, topicId, limit, active]);
 
   return { results, searching, error, active };
 }

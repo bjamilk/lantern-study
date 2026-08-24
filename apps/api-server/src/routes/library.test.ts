@@ -2,8 +2,8 @@
  * /api/v1/library route surface (Phase 1 · B).
  *
  * Pins the query validation the clients rely on — q shorter than 2 chars,
- * a malformed courseId, an unknown type or an out-of-range limit are 400s
- * before the service runs — and that both routes are registered.
+ * a malformed courseId or topicId, an unknown type or an out-of-range limit are
+ * 400s before the service runs — and that both routes are registered.
  */
 import { validationResult } from 'express-validator';
 import router, { validateLibrarySearch } from './library';
@@ -29,6 +29,7 @@ describe('validateLibrarySearch', () => {
     const { result } = await runSearchValidators({
       q: 'genetics',
       courseId: '11111111-1111-4111-8111-111111111111',
+      topicId: '22222222-2222-4222-8222-222222222222',
       types: 'notes,flashcards',
       limit: '50',
     });
@@ -38,6 +39,13 @@ describe('validateLibrarySearch', () => {
   it('accepts courseId=null (unfiled) and omitted optionals', async () => {
     const { result } = await runSearchValidators({ q: 'ab', courseId: 'null' });
     expect(result.isEmpty()).toBe(true);
+  });
+
+  it('accepts topicId on its own (a topic implies its course) and topicId=null', async () => {
+    const alone = await runSearchValidators({ q: 'ab', topicId: '22222222-2222-4222-8222-222222222222' });
+    expect(alone.result.isEmpty()).toBe(true);
+    const untopiced = await runSearchValidators({ q: 'ab', topicId: 'null' });
+    expect(untopiced.result.isEmpty()).toBe(true);
   });
 
   it('rejects q shorter than 2 characters — also after sanitising delimiters/whitespace', async () => {
@@ -59,6 +67,8 @@ describe('validateLibrarySearch', () => {
   it.each([
     ['courseId', 'not-a-uuid'],
     ['courseId', '123'],
+    ['topicId', 'not-a-uuid'],
+    ['topicId', 'none'],
     ['types', 'notes,tests'],
     ['types', 'everything'],
     ['limit', '0'],

@@ -66,6 +66,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
   // (a course uuid or the 'null' literal for unfiled); filtered client-side by
   // bundle.courseId / config.courseId. Purchased packs are bundleId qbank-*.
   const courseFilterId = useLibraryStore((s) => s.courseFilterId);
+  const topicFilterId = useLibraryStore((s) => s.topicFilterId);
   const setCourseFilter = useLibraryStore((s) => s.setCourseFilter);
   const pendingBundleId = useLibraryStore((s) => s.pendingOfflineBundleId);
   const setPendingOfflineBundleId = useLibraryStore((s) => s.setPendingOfflineBundleId);
@@ -282,6 +283,13 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
           <span className="text-xs text-lantern-text-tertiary">
             ({visibleBundles.length} of {offlineBundles.length} bundle{offlineBundles.length === 1 ? '' : 's'})
           </span>
+          {/* offline_bundles has no topic_id, so a topic cannot narrow this list.
+              Say so rather than showing the whole course under a topic chip. */}
+          {topicFilterId ? (
+            <span className="w-full text-xs text-lantern-text-tertiary">
+              Downloads are filed by course, not by topic — showing the whole course.
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={() => setCourseFilter(null)}

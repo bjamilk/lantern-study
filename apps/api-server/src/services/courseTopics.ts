@@ -14,21 +14,20 @@
  * stale the first time a lecturer changes the running order.
  */
 import type { SupabaseService } from './supabase';
+import type { CourseTopic } from '@lantern/shared/types';
+import { isMissingRelationError } from './academicCourses';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
+
+// One definition of the wire shape, from the shared contract. Re-exported so
+// this module still owns the name its callers reach for.
+export type { CourseTopic };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const TOPIC_TITLE_MAX = 120;
 /** An outline longer than this is a symptom, not a syllabus. */
 export const TOPICS_PER_COURSE_MAX = 200;
-
-export interface CourseTopic {
-  id: string;
-  courseId: string;
-  title: string;
-  position: number;
-}
 
 function mapRow(row: any): CourseTopic {
   return {
@@ -223,12 +222,19 @@ export class CourseTopicsService {
     if (!courseId || !UUID_RE.test(String(courseId))) {
       throw new PublicError('A topic needs a course — pick the course first');
     }
-    const { data } = await this.db
+    const { data, error } = await this.db
       .from('course_topics')
       .select('id')
       .eq('id', id)
       .eq('course_id', String(courseId))
       .maybeSingle();
+    // The table itself is missing until 20260826120000 is applied. Still fail
+    // closed — but say why, or the user is told their topic belongs to another
+    // course when in fact topics do not exist yet.
+    if (error && isMissingRelationError(error)) {
+      throw new PublicError('Topics are not available yet');
+    }
+    if (error) throw error;
     if (!data) throw new PublicError('That topic does not belong to the selected course');
     return id;
   }

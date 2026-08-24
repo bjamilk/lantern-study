@@ -10,6 +10,7 @@ import {
   SUPABASE_INVALID_API_KEY_USER_MESSAGE,
 } from '@lantern/shared'
 import { mapUserFromApi, mapFlashcardsFromApi } from '@lantern/shared/utils/apiMappers'
+import { UNFILED_COURSE_ID } from '../utils/libraryArchive'
 import {
   listingsCacheKey,
   marketplaceCategoryAnalyticsCache,
@@ -1239,7 +1240,7 @@ export const updateQuestionStatus = async (messageId: string, questionStatus: st
 
 // --- Flashcard Functions ---
 
-export const createDeck = async (deckData: { name: string; description?: string; isShared?: boolean; courseId?: string | null }, userId: string) => {
+export const createDeck = async (deckData: { name: string; description?: string; isShared?: boolean; courseId?: string | null; topicId?: string | null }, userId: string) => {
   console.log('Creating deck:', deckData.name, 'isShared:', deckData.isShared);
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/decks`, {
@@ -1250,6 +1251,7 @@ export const createDeck = async (deckData: { name: string; description?: string;
         description: deckData.description,
         isShared: deckData.isShared,
         ...(deckData.courseId !== undefined ? { courseId: deckData.courseId } : {}),
+        ...(deckData.topicId !== undefined ? { topicId: deckData.topicId } : {}),
         userId,
       }),
     });
@@ -1280,6 +1282,9 @@ export const mapDeckFromApi = (d: any): Deck => ({
   userId: d.user_id || d.userId,
   isShared: d.is_shared ?? d.isShared ?? false,
   courseId: d.courseId !== undefined ? d.courseId : (d.course_id ?? null),
+  // Absent until 20260826120000 is applied — null then, not undefined, so the
+  // deck simply reads as "no topic" rather than breaking the picker.
+  topicId: d.topicId !== undefined ? d.topicId : (d.topic_id ?? null),
   studyCount: d.studyCount ?? d.study_count ?? 0,
 });
 
@@ -1289,10 +1294,13 @@ export const mapDecksFromApi = (rows: any[]): Deck[] =>
     .filter((d: any) => d && d.id)
     .map(mapDeckFromApi);
 
-export const fetchDecks = async (userId: string, options?: { includeShared?: boolean; courseId?: string | null }) => {
+export const fetchDecks = async (userId: string, options?: { includeShared?: boolean; courseId?: string | null; topicId?: string | null }) => {
   const includeShared = options?.includeShared ?? false;
   const courseId = options?.courseId || undefined;
-  console.log('Fetching decks for user:', userId, 'includeShared:', includeShared, 'courseId:', courseId);
+  // Only alongside a real course: a topic without one is meaningless, and the
+  // server rejects the pair (mirrors services/library.ts).
+  const topicId = courseId && courseId !== UNFILED_COURSE_ID ? options?.topicId || undefined : undefined;
+  console.log('Fetching decks for user:', userId, 'includeShared:', includeShared, 'courseId:', courseId, 'topicId:', topicId);
   try {
     if (!(await hasValidSession())) {
       return [];
@@ -1308,6 +1316,7 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
       params.set('userId', userId);
       if (includeShared) params.set('includeShared', 'true');
       if (courseId) params.set('courseId', courseId);
+      if (topicId) params.set('topicId', topicId);
       params.set('page', String(page));
       params.set('limit', String(DECK_API_PAGE_SIZE));
 
@@ -1340,7 +1349,7 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
   }
 };
 
-export const updateDeck = async (deckId: string, updates: { name?: string; description?: string; isShared?: boolean; courseId?: string | null }) => {
+export const updateDeck = async (deckId: string, updates: { name?: string; description?: string; isShared?: boolean; courseId?: string | null; topicId?: string | null }) => {
   console.log('Updating deck:', deckId, 'updates:', updates);
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}`, {
@@ -2001,6 +2010,10 @@ export type FetchTestResultsOptions = {
   sort?: TestResultsSort;
   from?: string;
   to?: string;
+  /** Narrow to one course: a uuid, or the literal `'null'` for unfiled sessions. */
+  courseId?: string | null;
+  /** Narrow one level further, to a topic inside `courseId` (`'null'` = no topic). */
+  topicId?: string | null;
 };
 
 function mapTestResultItem(item: any) {
@@ -2039,6 +2052,12 @@ export const fetchTestResultsPage = async (
   if (options?.lean !== false) params.set('lean', '1');
   if (options?.from) params.set('from', options.from);
   if (options?.to) params.set('to', options.to);
+  // The Library's course/topic filter (Phase 1 · A/B). A topic only means
+  // something inside a real course, so "unfiled" never carries one.
+  if (options?.courseId) params.set('courseId', options.courseId);
+  if (options?.courseId && options.courseId !== UNFILED_COURSE_ID && options?.topicId) {
+    params.set('topicId', options.topicId);
+  }
 
   const response = await fetch(`${getApiRoot()}/api/v1/tests?${params.toString()}`, {
     method: 'GET',
@@ -2945,6 +2964,8 @@ export const createMarketplaceListing = async (listingData: {
   categorySpecificFields?: any;
   /** Academic course (marketplace_listings.course_id). */
   courseId?: string | null;
+  /** Topic within `courseId` (marketplace_listings.topic_id); rejected if it belongs elsewhere. */
+  topicId?: string | null;
   /**
    * Rights attestation (RIGHTS_ATTESTATION_TEXT). The API requires it (400
    * ATTESTATION_REQUIRED_MESSAGE) when isAcademicListing({ listingKind, category }).
@@ -4271,6 +4292,8 @@ export const publishQuestionBank = async (input: {
   groupId?: string | null;
   /** Academic course written on both the listing and the bank. */
   courseId?: string | null;
+  /** Topic within `courseId`; carried by the listing only, not the bank. */
+  topicId?: string | null;
   content: { config?: Record<string, unknown>; questions: unknown[] };
   /** Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; the API answers 400 without it. */
   attestation: true;
@@ -4507,6 +4530,8 @@ export const publishStudyPack = async (input: {
   campusId: string;
   location?: string;
   courseId?: string | null;
+  /** Topic within `courseId`; carried by the listing only, not the pack. */
+  topicId?: string | null;
   content?: StudyPackContentInput;
   draftId?: string | null;
   /** Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; 400 without it. */

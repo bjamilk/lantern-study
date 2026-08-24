@@ -63,6 +63,8 @@ export interface Deck {
   isShared?: boolean;
   /** Course this deck belongs to (academic archive). */
   courseId?: string | null;
+  /** Topic within `courseId`. Never set without a course, never from another course. */
+  topicId?: string | null;
   /**
    * Distinct OTHER people who have studied this deck (Phase 3 · M).
    * Maintained by record_deck_study; the owner's own study is excluded.
@@ -210,6 +212,21 @@ export interface UserCourse {
   status: 'active' | 'archived';
   /** "YYYY-MM-DD" */
   examDate?: string | null;
+}
+
+/**
+ * The ordered, human-curated syllabus outline inside one course (course_topics).
+ * NOT a `Concept`: concepts are a cross-course many-to-many graph of what an
+ * artefact is *about*; a topic is where it sits in *this* course's running
+ * order. An artefact can carry both. Shared course data — anyone enrolled reads
+ * the outline and may extend it, exactly like `Course` itself.
+ */
+export interface CourseTopic {
+  id: string;
+  courseId: string;
+  title: string;
+  /** Sparse (10, 20, 30…) so a topic can be slotted between two others. */
+  position: number;
 }
 
 /**
@@ -432,6 +449,8 @@ export interface NoteFolder {
   color: string;
   /** A folder can *be* a course (academic archive). */
   courseId?: string | null;
+  // No topicId: a folder is not a filed artefact. Notes, decks and test
+  // sessions carry the topic; note_folders.topic_id has no writer or reader.
   createdAt: string;
   updatedAt: string;
 }
@@ -453,6 +472,8 @@ export interface StudyNote {
   groupId?: string;
   /** Course this note belongs to (academic archive). */
   courseId?: string | null;
+  /** Topic within `courseId`. Never set without a course, never from another course. */
+  topicId?: string | null;
   title: string;
   body: string;
   summary?: string;
@@ -587,6 +608,13 @@ export interface TestConfig {
   bundleId?: string;
   /** Course this session is attributed to (mirrors test_sessions.course_id). */
   courseId?: string | null;
+  /**
+   * Topic within `courseId` (mirrors test_sessions.topic_id). Lives here rather
+   * than on TestSessionData because that is where `courseId` lives — the server
+   * reads the session's course off the config-like payload, and the topic must
+   * travel the same path or it is dropped on save.
+   */
+  topicId?: string | null;
 }
 
 export type UserAnswerRecord = {
@@ -964,6 +992,10 @@ export interface MarketplaceListing {
   courseId?: string | null;
   /** Raw DB alias of `courseId` (listing rows are served snake_case). */
   course_id?: string | null;
+  /** Topic within `courseId`. Never set without a course, never from another course. */
+  topicId?: string | null;
+  /** Raw DB alias of `topicId` (listing rows are served snake_case). */
+  topic_id?: string | null;
   // ── Rights / takedown / appeal state (Phase 1 · E). The API returns these
   // only to the listing owner and platform admins; other viewers never see them.
   rights_status?: ListingRightsStatus;
@@ -1513,11 +1545,25 @@ export interface LibraryCourseCounts {
   purchasedPacks: number;
 }
 
+/** The third level of the archive: year → course → topic (Phase 1 · A). */
+export interface LibraryTopicNode {
+  topic: CourseTopic;
+  counts: LibraryCourseCounts;
+}
+
 export interface LibraryCourseNode {
   course: Course;
   /** Archived enrolments are included with `status: 'archived'` (group under "Past semesters"). */
   enrolment: UserCourse;
   counts: LibraryCourseCounts;
+  /**
+   * Ordered by topic position. Omitted entirely — not empty — while the
+   * course_topics migration is unapplied, so a client must treat "no topics"
+   * and "topics not available yet" as the same thing: show the flat course.
+   */
+  topics?: LibraryTopicNode[];
+  /** Artefacts filed under the course but under no topic. Omitted with `topics`. */
+  untopiced?: LibraryCourseCounts;
 }
 
 export interface LibraryYear {
@@ -1559,6 +1605,8 @@ export interface LibrarySearchResult {
   title: string;
   snippet: string;
   courseId: string | null;
+  /** Topic within `courseId`. Absent while the course_topics migration is unapplied. */
+  topicId?: string | null;
   /** Flashcards only — results stay grouped under their deck. */
   deckId?: string;
   /** Flashcards only — the deck's name for group headers. */

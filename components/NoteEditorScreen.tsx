@@ -40,6 +40,7 @@ import {
 import { useLectureRecordingStore } from '../stores/lectureRecordingStore';
 import { useNotesStore } from '../stores/notesStore';
 import { CoursePicker } from './academic/CoursePicker';
+import { TopicPicker } from './academic/TopicPicker';
 import { useToastStore } from '../stores/toastStore';
 import { navigateToPath } from '../utils/appNavigation';
 import { useNoteCommentsSync } from '../hooks/useNoteCommentsSync';
@@ -816,8 +817,8 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               </>
             )}
             {isSaving && <span className="sm:hidden text-xs text-lantern-text-tertiary self-center">Saving...</span>}
-            {/* Note meta: course (academic archive). Non-content save — no CAS. */}
-            <div className="w-full sm:w-auto sm:min-w-[14rem] sm:ml-auto">
+            {/* Note meta: course + topic (academic archive). Non-content saves — no CAS. */}
+            <div className="w-full sm:w-auto sm:min-w-[14rem] sm:ml-auto space-y-1">
               <CoursePicker
                 id="note-course"
                 hideLabel
@@ -828,9 +829,28 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 onChange={(course) => {
                   void useNotesStore
                     .getState()
-                    .saveNote(note.id, { courseId: course?.id ?? null })
+                    // The topic goes with the old course — clear both in one save
+                    // so the note is never left pointing at a foreign topic.
+                    .saveNote(note.id, { courseId: course?.id ?? null, topicId: null })
                     .catch((err: unknown) =>
                       showToast(err instanceof Error ? err.message : 'Could not update the course.', 'error')
+                    );
+                }}
+              />
+              <TopicPicker
+                id="note-topic"
+                hideLabel
+                compact
+                courseId={note.courseId ?? null}
+                value={note.topicId ?? null}
+                disabled={!canEdit}
+                placeholder="No topic"
+                onChange={(topic) => {
+                  void useNotesStore
+                    .getState()
+                    .saveNote(note.id, { topicId: topic?.id ?? null })
+                    .catch((err: unknown) =>
+                      showToast(err instanceof Error ? err.message : 'Could not update the topic.', 'error')
                     );
                 }}
               />

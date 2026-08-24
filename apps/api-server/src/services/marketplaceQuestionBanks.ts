@@ -47,6 +47,12 @@ export interface PublishQuestionBankInput {
   groupId?: string | null;
   /** Academic archive reference; written on both the listing and the bank. */
   courseId?: string | null;
+  /**
+   * Topic inside `courseId` (Phase 1 · A). Only the listing carries it —
+   * marketplace_question_banks has no topic_id column — and
+   * createMarketplaceListing validates it against the course.
+   */
+  topicId?: string | null;
   content: QuestionBankContent;
   /**
    * Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; publish refuses
@@ -176,6 +182,7 @@ export class MarketplaceQuestionBanksService {
         quantity: null,
         status: 'active',
         courseId: input.courseId || null,
+        topicId: input.topicId ?? null,
         categorySpecificFields: {
           questionCount,
           digital: true,

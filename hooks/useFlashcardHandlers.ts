@@ -95,17 +95,17 @@ export function useFlashcardHandlers() {
         openModal('createDeck');
     }, [setEditingDeck, openModal]);
 
-    const handleCreateOrUpdateDeck = useCallback(async (data: { id?: string; name: string; description?: string; isShared?: boolean; courseId?: string | null }) => {
+    const handleCreateOrUpdateDeck = useCallback(async (data: { id?: string; name: string; description?: string; isShared?: boolean; courseId?: string | null; topicId?: string | null }) => {
         if (!currentUser) return;
         try {
             if (data.id) {
-                await updateDeck(data.id, { name: data.name, description: data.description, isShared: data.isShared, courseId: data.courseId });
+                await updateDeck(data.id, { name: data.name, description: data.description, isShared: data.isShared, courseId: data.courseId, topicId: data.topicId });
                 updateDecks(prev => prev.map(d => d.id === data.id ? { ...d, ...data } : d));
                 if (selectedDeck?.id === data.id) {
                     setSelectedDeck({ ...selectedDeck, ...data } as Deck);
                 }
             } else {
-                const newDeck = await createDeck({ name: data.name, description: data.description, isShared: data.isShared, courseId: data.courseId }, currentUser.id);
+                const newDeck = await createDeck({ name: data.name, description: data.description, isShared: data.isShared, courseId: data.courseId, topicId: data.topicId }, currentUser.id);
                 updateDecks(prev => [...prev, mapDeckFromApi(newDeck)]);
                 trackDeckCreated(newDeck.id);
             }
@@ -117,16 +117,20 @@ export function useFlashcardHandlers() {
     }, [currentUser, selectedDeck, updateDecks, setSelectedDeck, closeModal]);
 
     /**
-     * "Move to course…" (Phase 1 · B): PUT /decks/:id { courseId } and mirror
-     * the new course into the store + the open deck. Throws so the dialog can
+     * "Move to course…" (Phase 1 · B): PUT /decks/:id { courseId, topicId } and
+     * mirror both into the store + the open deck. Throws so the dialog can
      * show the failure; the Library overview counts are marked stale.
+     *
+     * Leaving the course always clears the topic — a topic without its course
+     * is the one state the server refuses.
      */
-    const handleMoveDeckToCourse = useCallback(async (deck: Deck, courseId: string | null) => {
+    const handleMoveDeckToCourse = useCallback(async (deck: Deck, courseId: string | null, topicId: string | null = null) => {
         if (!currentUser) return;
-        await updateDeck(deck.id, { courseId });
-        updateDecks(prev => prev.map(d => d.id === deck.id ? { ...d, courseId } : d));
+        const nextTopicId = courseId ? topicId : null;
+        await updateDeck(deck.id, { courseId, topicId: nextTopicId });
+        updateDecks(prev => prev.map(d => d.id === deck.id ? { ...d, courseId, topicId: nextTopicId } : d));
         if (selectedDeck?.id === deck.id) {
-            setSelectedDeck({ ...selectedDeck, courseId });
+            setSelectedDeck({ ...selectedDeck, courseId, topicId: nextTopicId });
         }
         useLibraryStore.getState().invalidateOverview();
     }, [currentUser, selectedDeck, updateDecks, setSelectedDeck]);

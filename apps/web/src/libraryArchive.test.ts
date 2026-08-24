@@ -1,20 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import {
   UNFILED_COURSE_ID,
+  UNTOPICED_TOPIC_ID,
   buildFolderTree,
   buildLibraryTree,
   countsTotal,
+  courseTopicRows,
   filterBundlesByCourse,
   findTreeCourse,
+  findTreeTopic,
   folderParentOptions,
   folderScopeIds,
   groupLibrarySearchResults,
   isPurchasedBundleId,
   isSearchableQuery,
+  isUntopicedFilter,
   matchesCourseFilter,
+  matchesTopicFilter,
   searchMatchLabel,
 } from '../../../utils/libraryArchive';
-import type { Course, LibraryCourseNode, LibraryOverview, LibrarySearchResult, NoteFolder, UserCourse } from '../../../types';
+import type {
+  Course,
+  LibraryCourseCounts,
+  LibraryCourseNode,
+  LibraryOverview,
+  LibrarySearchResult,
+  LibraryTopicNode,
+  NoteFolder,
+  UserCourse,
+} from '../../../types';
 
 const course = (id: string, code: string, title = code): Course => ({
   id,
@@ -135,6 +149,113 @@ describe('buildLibraryTree', () => {
     expect(findTreeCourse(tree, 'nope')).toBeNull();
     expect(countsTotal(tree.current[0]!.counts)).toBe(7);
     expect(countsTotal(null)).toBe(0);
+  });
+});
+
+describe('matchesTopicFilter', () => {
+  it('null filter matches every item in the course', () => {
+    expect(matchesTopicFilter('t-1', null)).toBe(true);
+    expect(matchesTopicFilter(null, null)).toBe(true);
+    expect(matchesTopicFilter(undefined, undefined)).toBe(true);
+  });
+
+  it("the 'null' literal matches only items under no topic", () => {
+    expect(isUntopicedFilter(UNTOPICED_TOPIC_ID)).toBe(true);
+    expect(isUntopicedFilter('t-1')).toBe(false);
+    expect(matchesTopicFilter(null, UNTOPICED_TOPIC_ID)).toBe(true);
+    expect(matchesTopicFilter(undefined, UNTOPICED_TOPIC_ID)).toBe(true);
+    expect(matchesTopicFilter('t-1', UNTOPICED_TOPIC_ID)).toBe(false);
+  });
+
+  it('a uuid matches only that topic', () => {
+    expect(matchesTopicFilter('t-1', 't-1')).toBe(true);
+    expect(matchesTopicFilter('t-2', 't-1')).toBe(false);
+    expect(matchesTopicFilter(null, 't-1')).toBe(false);
+  });
+
+  it('passes a row whose topic the API never sent (migration unapplied)', () => {
+    expect(matchesTopicFilter(undefined, 't-1')).toBe(true);
+  });
+});
+
+describe('courseTopicRows', () => {
+  const counts = (partial: Partial<LibraryCourseCounts> = {}): LibraryCourseCounts => ({
+    notes: 0,
+    decks: 0,
+    tests: 0,
+    bundles: 0,
+    purchasedPacks: 0,
+    ...partial,
+  });
+  const topic = (id: string, title: string, position: number, c: Partial<LibraryCourseCounts> = {}): LibraryTopicNode => ({
+    topic: { id, courseId: bio.id, title, position },
+    counts: counts(c),
+  });
+  const withTopics = (topics: LibraryTopicNode[], untopiced?: LibraryCourseCounts): LibraryCourseNode => ({
+    ...node(bio, '2026/2027', 'active', { notes: 5 }),
+    topics,
+    ...(untopiced ? { untopiced } : {}),
+  });
+
+  it('is empty while the migration is unapplied, so the course renders flat', () => {
+    expect(courseTopicRows(node(bio, '2026/2027', 'active', { notes: 5 }))).toEqual([]);
+    expect(courseTopicRows(null)).toEqual([]);
+    expect(courseTopicRows(withTopics([]))).toEqual([]);
+    // `untopiced` alone is not a third level — without topics there is nothing to be outside of.
+    expect(courseTopicRows(withTopics([], counts({ notes: 5 })))).toEqual([]);
+  });
+
+  it('orders topics by position and keeps whatever the server sent, zero counts included', () => {
+    const rows = courseTopicRows(
+      withTopics([
+        topic('t-30', 'Genetics', 30, { notes: 1 }),
+        topic('t-10', 'Cell structure', 10, { notes: 2, decks: 1 }),
+        topic('t-20', 'Membranes', 20),
+      ])
+    );
+    expect(rows.map((r) => r.id)).toEqual(['t-10', 't-20', 't-30']);
+    expect(rows.map((r) => r.title)).toEqual(['Cell structure', 'Membranes', 'Genetics']);
+    expect(rows.every((r) => r.untopiced)).toBe(false);
+    expect(countsTotal(rows[1]!.counts)).toBe(0);
+    expect(rows[0]!.counts.purchasedPacks).toBe(0);
+  });
+
+  it('appends a "No topic" row only when something sits outside every topic', () => {
+    const withNone = courseTopicRows(withTopics([topic('t-10', 'Cell structure', 10)], counts({ notes: 3 })));
+    expect(withNone.map((r) => r.id)).toEqual(['t-10', UNTOPICED_TOPIC_ID]);
+    expect(withNone[1]!.untopiced).toBe(true);
+    expect(withNone[1]!.title).toBe('No topic');
+    expect(withNone[1]!.counts.notes).toBe(3);
+
+    const empty = courseTopicRows(withTopics([topic('t-10', 'Cell structure', 10)], counts()));
+    expect(empty.map((r) => r.id)).toEqual(['t-10']);
+  });
+
+  it('drops malformed topics and labels a blank title', () => {
+    const rows = courseTopicRows(
+      withTopics([{ topic: { id: '', courseId: bio.id, title: 'Broken', position: 5 }, counts: counts() }, topic('t-10', '', 10)])
+    );
+    expect(rows.map((r) => r.id)).toEqual(['t-10']);
+    expect(rows[0]!.title).toBe('Untitled topic');
+  });
+
+  it('finds the selected topic inside its course only', () => {
+    const overview: LibraryOverview = {
+      years: [
+        {
+          academicYear: '2026/2027',
+          courses: [withTopics([topic('t-10', 'Cell structure', 10)], counts({ decks: 1 })), node(chm, '2026/2027', 'active')],
+        },
+      ],
+      unfiled: { notes: 0, decks: 0, tests: 0, bundles: 0 },
+    };
+    const tree = buildLibraryTree(overview);
+    expect(findTreeTopic(tree, bio.id, 't-10')?.title).toBe('Cell structure');
+    expect(findTreeTopic(tree, bio.id, UNTOPICED_TOPIC_ID)?.untopiced).toBe(true);
+    // A topic never resolves against a different course, and "no topic" is not a selection.
+    expect(findTreeTopic(tree, chm.id, 't-10')).toBeNull();
+    expect(findTreeTopic(tree, bio.id, null)).toBeNull();
+    expect(findTreeTopic(tree, UNFILED_COURSE_ID, 't-10')).toBeNull();
   });
 });
 

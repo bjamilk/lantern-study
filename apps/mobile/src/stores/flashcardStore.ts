@@ -21,6 +21,8 @@ export interface Deck {
   is_shared?: boolean;
   /** Academic archive: decks.course_id (raw rows come back snake_case). */
   course_id?: string | null;
+  /** Syllabus topic inside `course_id`; absent until 20260826120000 is applied. */
+  topic_id?: string | null;
   created_at?: string;
   updated_at?: string;
   card_count?: number;
@@ -94,6 +96,9 @@ function mapDeckFromApi(data: any): Deck | null {
     user_id: data.user_id,
     is_shared: data.is_shared ?? data.isShared,
     course_id: data.course_id ?? data.courseId ?? null,
+    // Dropping this made a deck's topic vanish from the local row on every
+    // fetchDecks, so the picker read empty after any refresh.
+    topic_id: data.topic_id ?? data.topicId ?? null,
     created_at: data.created_at,
     updated_at: data.updated_at,
     card_count: data.card_count ?? data.cardCount,
@@ -223,7 +228,7 @@ interface FlashcardState {
   offlineDeckIds: string[];
   
   // Actions
-  fetchDecks: (userId: string, options?: { courseId?: string | null }) => Promise<void>;
+  fetchDecks: (userId: string, options?: { courseId?: string | null; topicId?: string | null }) => Promise<void>;
   fetchFlashcards: (deckId: string) => Promise<void>;
   syncAllFlashcards: (userId: string) => Promise<void>;
   setCurrentDeck: (deck: Deck | null) => void;
@@ -231,11 +236,11 @@ interface FlashcardState {
     name: string,
     description: string | undefined,
     userId: string,
-    options?: { courseId?: string | null }
+    options?: { courseId?: string | null; topicId?: string | null }
   ) => Promise<Deck>;
   updateDeck: (
     deckId: string,
-    updates: { name?: string; description?: string; courseId?: string | null },
+    updates: { name?: string; description?: string; courseId?: string | null; topicId?: string | null },
     userId: string
   ) => Promise<void>;
   deleteDeck: (deckId: string, userId: string) => Promise<void>;
@@ -320,7 +325,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
   
-  fetchDecks: async (userId: string, options?: { courseId?: string | null }) => {
+  fetchDecks: async (userId: string, options?: { courseId?: string | null; topicId?: string | null }) => {
     try {
       set({ isLoading: true, error: null });
       // Don't clobber in-memory SRS updates with stale disk cache when decks
@@ -339,6 +344,8 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         const rawDecks = await api.fetchDecks(userId, {
           includeShared: true,
           ...(options?.courseId != null ? { courseId: options.courseId } : {}),
+          // A topic only narrows inside its course, so it never travels alone.
+          ...(options?.courseId != null && options?.topicId != null ? { topicId: options.topicId } : {}),
         });
         const decks = enrichDecksWithStats(
           sanitizeDecks((rawDecks || []).map(mapDeckFromApi).filter((d): d is Deck => d !== null)),
@@ -446,6 +453,8 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   
   createDeck: async (name: string, description: string | undefined, userId: string, options) => {
     const courseId = options?.courseId ?? null;
+    // A topic without its course is the one state the server refuses.
+    const topicId = courseId ? options?.topicId ?? null : null;
     // Optimistic local ID
     const tempId = `temp_deck_${Date.now()}`;
     const tempDeck: Deck = {
@@ -454,6 +463,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       description,
       user_id: userId,
       course_id: courseId,
+      topic_id: topicId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       card_count: 0,
@@ -465,7 +475,11 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }));
     await get().saveToStorage();
 
-    const payload = courseId ? { name, description, courseId } : { name, description };
+    // Carried on the create itself so the online POST and the queued offline
+    // create both file the deck, with no follow-up updateDeck.
+    const payload = courseId
+      ? { name, description, courseId, ...(topicId ? { topicId } : {}) }
+      : { name, description };
     try {
       // Try API call
       const created = await api.createDeck(userId, payload);
@@ -494,10 +508,13 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     // Store previous state for rollback
     const previousDecks = get().decks;
 
-    // Local rows keep the raw column name; the API payload uses courseId.
-    const { courseId, ...rest } = updates;
-    const localPatch: Partial<Deck> =
-      courseId === undefined ? rest : { ...rest, course_id: courseId };
+    // Local rows keep the raw column names; the API payload uses camelCase.
+    const { courseId, topicId, ...rest } = updates;
+    const localPatch: Partial<Deck> = {
+      ...rest,
+      ...(courseId === undefined ? {} : { course_id: courseId }),
+      ...(topicId === undefined ? {} : { topic_id: topicId }),
+    };
     // Optimistic update
     set(state => ({
       decks: state.decks.map(d => d.id === deckId ? { ...d, ...localPatch, updated_at: new Date().toISOString() } : d),

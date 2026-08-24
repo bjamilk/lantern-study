@@ -24,7 +24,7 @@ import {
 } from '../middleware/rateLimit';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
-import { clientErrorMessage } from '../utils/safeError';
+import { clientErrorMessage, PublicError } from '../utils/safeError';
 import {
   handleValidationErrors,
   validateNoteId,
@@ -34,7 +34,12 @@ import {
   validateFolderCreate,
   validateFolderUpdate,
 } from '../middleware/validation';
-import { COURSE_FILTER_INVALID_MESSAGE, parseCourseFilter } from '../services/academicCourses';
+import {
+  COURSE_FILTER_INVALID_MESSAGE,
+  TOPIC_FILTER_INVALID_MESSAGE,
+  parseCourseFilter,
+  parseTopicFilter,
+} from '../services/academicCourses';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import {
@@ -572,6 +577,13 @@ function resolvePreviewErrorMessage(meta: Record<string, unknown>, status: Retur
 
 router.use(authMiddleware);
 
+/** A rejected topic (wrong course, no course, unusable id) is the caller's mistake — 400, not 500. */
+const respondPublicError = (err: unknown, res: Response): boolean => {
+  if (!(err instanceof PublicError)) return false;
+  res.status(400).json({ success: false, error: err.message });
+  return true;
+};
+
 // Folders
 router.get('/folders', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
@@ -588,8 +600,13 @@ router.post('/folders', validateFolderCreate, handleValidationErrors, asyncHandl
     res.status(400).json({ error: 'Folder name is required.' });
     return;
   }
-  const folder = await supabaseService.createNoteFolder(userId, { name: name.trim(), color, groupId, parentId, courseId });
-  res.json({ success: true, data: folder });
+  try {
+    const folder = await supabaseService.createNoteFolder(userId, { name: name.trim(), color, groupId, parentId, courseId });
+    res.json({ success: true, data: folder });
+  } catch (err) {
+    if (respondPublicError(err, res)) return;
+    throw err;
+  }
 }));
 
 router.patch('/folders/:folderId', validateFolderId, validateFolderUpdate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
@@ -601,8 +618,13 @@ router.patch('/folders/:folderId', validateFolderId, validateFolderUpdate, handl
   if (name !== undefined) updates.name = name;
   if (color !== undefined) updates.color = color;
   if (courseId !== undefined) updates.courseId = courseId;
-  const folder = await supabaseService.updateNoteFolder(userId, req.params.folderId, updates);
-  res.json({ success: true, data: folder });
+  try {
+    const folder = await supabaseService.updateNoteFolder(userId, req.params.folderId, updates);
+    res.json({ success: true, data: folder });
+  } catch (err) {
+    if (respondPublicError(err, res)) return;
+    throw err;
+  }
 }));
 
 router.delete('/folders/:folderId', validateFolderId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
@@ -1974,7 +1996,7 @@ router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, as
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { folderId, groupId, archived, courseId } = req.query;
+  const { folderId, groupId, archived, courseId, topicId } = req.query;
   let archivedFilter: boolean | undefined;
   if (archived === 'true' || archived === '1') archivedFilter = true;
   else if (archived === 'false' || archived === '0') archivedFilter = false;
@@ -1984,11 +2006,18 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
     return;
   }
+  // ?topicId= — same grammar one level down; "null" is "in this course, under no topic".
+  const topicFilter = parseTopicFilter(topicId);
+  if (topicFilter.kind === 'invalid') {
+    res.status(400).json({ success: false, error: TOPIC_FILTER_INVALID_MESSAGE });
+    return;
+  }
   const notes = await supabaseService.getNotes(userId, {
     folderId: folderId as string | undefined,
     groupId: groupId as string | undefined,
     archived: archivedFilter,
     courseFilter,
+    topicFilter,
   });
   res.json({ success: true, data: notes });
 }));
@@ -2016,9 +2045,16 @@ router.get('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(asyn
 router.post('/', validateNoteCreate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  // createNote emits learning_events note_created; the surface header only exists here.
-  const note = await supabaseService.createNote(userId, req.body, { surface: surfaceFromRequest(req) });
-  res.json({ success: true, data: note });
+  try {
+    // createNote emits learning_events note_created; the surface header only exists here.
+    // courseId/topicId ride on the body — createNote resolves the topic against
+    // the course before the insert, so a wrong-course topic lands here as a 400.
+    const note = await supabaseService.createNote(userId, req.body, { surface: surfaceFromRequest(req) });
+    res.json({ success: true, data: note });
+  } catch (err) {
+    if (respondPublicError(err, res)) return;
+    throw err;
+  }
 }));
 
 router.patch('/:noteId', requireNoteEdit('noteId'), validateNoteId, validateNoteUpdate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
@@ -2044,6 +2080,7 @@ router.patch('/:noteId', requireNoteEdit('noteId'), validateNoteId, validateNote
         data: (error as { current?: unknown }).current ?? null,
       });
     }
+    if (respondPublicError(error, res)) return;
     throw error;
   }
 }));

@@ -3,6 +3,10 @@
  * Past semesters (collapsed) → Unfiled. Tapping a course row sets the course
  * filter the Notes / Flashcards tabs honour; each row also deep-links to the
  * Tests history and Offline screens filtered to that course.
+ *
+ * A course expands into its syllabus topics (Phase 1 · A) when the overview
+ * carries any. It carries none until the course_topics migration is applied,
+ * and then the course row renders exactly as it always has.
  */
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
@@ -13,10 +17,21 @@ import { useTheme } from '../../theme';
 import type { LibraryCourseFilter } from '../../stores/uiStore';
 import {
   courseNodeLabel,
-  courseNodeTotal,
+  courseTopicRows,
   UNFILED_COURSE_ID,
+  type LibraryTopicRow,
   type LibraryTree,
 } from '../../utils/libraryArchive';
+
+/**
+ * A topic selection. It carries its course because a topic is only ever valid
+ * inside one: the moment the course filter moves, this one is stale.
+ */
+export interface LibraryTopicFilter {
+  id: string;
+  label: string;
+  courseId: string;
+}
 
 interface Counts {
   notes: number;
@@ -32,7 +47,11 @@ interface Props {
   error: string | null;
   /** Course uuid or `'null'` (unfiled); null = no filter. */
   selectedCourseId: string | null;
+  /** Topic uuid or `'null'` (no topic) inside `selectedCourseId`; null = the whole course. */
+  selectedTopicId: string | null;
   onSelectCourse: (filter: LibraryCourseFilter | null) => void;
+  /** Picking a topic sets both filters — a topic never stands on its own. */
+  onSelectTopic: (course: LibraryCourseFilter, topic: LibraryTopicFilter | null) => void;
   onOpenTests: (filter: LibraryCourseFilter) => void;
   onOpenOffline: (filter: LibraryCourseFilter) => void;
   onRetry: () => void;
@@ -71,6 +90,8 @@ function TreeRow({
   counts,
   selected,
   archived,
+  topicsOpen,
+  onToggleTopics,
   onPress,
   onOpenTests,
   onOpenOffline,
@@ -80,6 +101,9 @@ function TreeRow({
   counts: Counts;
   selected: boolean;
   archived?: boolean;
+  /** Only passed when the course actually has an outline to expand. */
+  topicsOpen?: boolean;
+  onToggleTopics?: () => void;
   onPress: () => void;
   onOpenTests: () => void;
   onOpenOffline: () => void;
@@ -91,6 +115,18 @@ function TreeRow({
         selected ? 'bg-lantern-primary-background' : ''
       }`}
     >
+      {onToggleTopics ? (
+        <Pressable
+          onPress={onToggleTopics}
+          hitSlop={6}
+          className="pl-1 pr-0.5 py-2 min-h-[44px] items-center justify-center"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: topicsOpen }}
+          accessibilityLabel={`${topicsOpen ? 'Hide' : 'Show'} topics in ${title}`}
+        >
+          <Ionicons name={topicsOpen ? 'chevron-down' : 'chevron-forward'} size={14} color={colors.textTertiary} />
+        </Pressable>
+      ) : null}
       <Pressable
         onPress={onPress}
         className="flex-1 flex-row items-center gap-2 px-2 py-2 min-h-[44px]"
@@ -140,6 +176,48 @@ function TreeRow({
   );
 }
 
+/** One syllabus topic under its course, or the "No topic" bucket. */
+function TopicRow({
+  row,
+  selected,
+  onPress,
+}: {
+  row: LibraryTopicRow;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  const untopiced = row.untopiced;
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`flex-row items-center gap-2 pl-8 pr-3 py-2 mb-1 rounded-xl min-h-[44px] ${
+        selected ? 'bg-lantern-primary-background' : ''
+      }`}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${selected ? 'Clear topic filter' : 'Filter by topic'} ${row.title}`}
+    >
+      <Ionicons
+        name={selected ? 'checkmark-circle' : untopiced ? 'ellipse-outline' : 'bookmark-outline'}
+        size={15}
+        color={selected ? colors.primary : colors.textTertiary}
+      />
+      <View className="flex-1 min-w-0">
+        <Text
+          className={`text-[13px] ${
+            selected ? 'font-semibold text-lantern-primary' : untopiced ? 'text-lantern-text-secondary' : 'text-lantern-text'
+          }`}
+          numberOfLines={1}
+        >
+          {row.title}
+        </Text>
+        <CountChips counts={row.counts} />
+      </View>
+    </Pressable>
+  );
+}
+
 function SectionHeader({
   label,
   count,
@@ -173,7 +251,9 @@ export function LibraryCourseTree({
   loading,
   error,
   selectedCourseId,
+  selectedTopicId,
   onSelectCourse,
+  onSelectTopic,
   onOpenTests,
   onOpenOffline,
   onRetry,
@@ -183,12 +263,23 @@ export function LibraryCourseTree({
   const [open, setOpen] = useState(true);
   const [thisOpen, setThisOpen] = useState(true);
   const [pastOpen, setPastOpen] = useState(false);
+  // Topic levels are collapsed by default; keyed per row because one course can
+  // appear under several academic years. Only rows the student toggled are here.
+  const [topicsOpen, setTopicsOpen] = useState<Record<string, boolean>>({});
 
   const courseFilter = (node: LibraryCourseNode): LibraryCourseFilter => ({
     id: node.course.id,
     label: courseNodeLabel(node),
   });
   const toggle = (filter: LibraryCourseFilter) => {
+    // With a topic selected, the course row is the way *back* to the whole
+    // course — one tap widens rather than dumping the student out to
+    // everything. Only a plain course selection toggles off. (Web's rail does
+    // the same thing; the two rails must agree.)
+    if (selectedCourseId === filter.id && selectedTopicId) {
+      onSelectTopic(filter, null);
+      return;
+    }
     onSelectCourse(selectedCourseId === filter.id ? null : filter);
   };
 
@@ -197,19 +288,49 @@ export function LibraryCourseTree({
   const hasCourses = activeCount + pastCount > 0;
 
   const renderCourse = (node: LibraryCourseNode, archived: boolean) => {
+    const rowKey = `${node.enrolment.academicYear}:${node.course.id}`;
     const filter = courseFilter(node);
+    const courseSelected = selectedCourseId === node.course.id;
+    // Empty while the course_topics migration is unapplied — the course then
+    // renders exactly as it did before there was a third level.
+    const topics = courseTopicRows(node);
+    // Collapsed until asked for, except when this course holds the live topic
+    // filter: a selection the student cannot see reads as a broken filter.
+    const expanded = topics.length > 0 && (topicsOpen[rowKey] ?? (courseSelected && !!selectedTopicId));
     return (
-      <TreeRow
-        key={`${node.enrolment.academicYear}:${node.course.id}`}
-        title={node.course.code}
-        subtitle={node.course.title && node.course.title.toUpperCase() !== node.course.code ? node.course.title : undefined}
-        counts={node.counts}
-        selected={selectedCourseId === node.course.id}
-        archived={archived}
-        onPress={() => toggle(filter)}
-        onOpenTests={() => onOpenTests(filter)}
-        onOpenOffline={() => onOpenOffline(filter)}
-      />
+      <View key={rowKey}>
+        <TreeRow
+          title={node.course.code}
+          subtitle={node.course.title && node.course.title.toUpperCase() !== node.course.code ? node.course.title : undefined}
+          counts={node.counts}
+          // Only one row reads as selected at a time: with a topic picked, the
+          // topic row carries the selection, not the course above it.
+          selected={courseSelected && !selectedTopicId}
+          archived={archived}
+          topicsOpen={topics.length > 0 ? expanded : undefined}
+          onToggleTopics={
+            topics.length > 0 ? () => setTopicsOpen(o => ({ ...o, [rowKey]: !expanded })) : undefined
+          }
+          onPress={() => toggle(filter)}
+          onOpenTests={() => onOpenTests(filter)}
+          onOpenOffline={() => onOpenOffline(filter)}
+        />
+        {expanded
+          ? topics.map(row => {
+              const selected = courseSelected && selectedTopicId === row.id;
+              return (
+                <TopicRow
+                  key={`${rowKey}:${row.id}`}
+                  row={row}
+                  selected={selected}
+                  onPress={() =>
+                    onSelectTopic(filter, selected ? null : { id: row.id, label: row.title, courseId: node.course.id })
+                  }
+                />
+              );
+            })
+          : null}
+      </View>
     );
   };
 

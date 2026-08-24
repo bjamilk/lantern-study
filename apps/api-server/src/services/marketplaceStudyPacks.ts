@@ -16,6 +16,7 @@
  */
 import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
+import { isMissingTopicColumn } from './academicCourses';
 import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
 import { normalizePublishProvenance, runListingContentFilter, getModerationService, listingRightsFields } from './moderation';
 import { logger } from '../utils/logger';
@@ -89,6 +90,12 @@ export interface PublishStudyPackInput {
   campusId: string;
   location?: string;
   courseId?: string | null;
+  /**
+   * Topic inside `courseId` (Phase 1 · A). Only the listing carries it —
+   * marketplace_study_packs has no topic_id column — and
+   * createMarketplaceListing validates it against the course.
+   */
+  topicId?: string | null;
   content?: StudyPackContent;
   /** When set, content/classification are copied from a ready study_pack_draft (Phase 2 · H). */
   draftId?: string | null;
@@ -304,6 +311,10 @@ export class MarketplaceStudyPacksService {
         quantity: null,
         status: 'active',
         courseId: courseId || null,
+        // Only meaningful when the publisher picked a course; a draft-seeded
+        // course never carries a topic, because the picker had no course to
+        // offer topics from.
+        topicId: (courseId && input.topicId) || null,
         categorySpecificFields: {
           counts,
           digital: true,
@@ -467,7 +478,31 @@ export class MarketplaceStudyPacksService {
     if (reReadError) throw reReadError;
     const prior = (current?.delivered_refs as DeliveredRefs) || {};
 
-    const refs = await this.deliverStudyPack(userId, listingId, pack, prior);
+    let refs: DeliveredRefs;
+    try {
+      refs = await this.deliverStudyPack(userId, listingId, pack, prior);
+    } catch (err) {
+      // A part-way delivery already put real rows in the buyer's library. Record
+      // them before the error escapes so the caller's retry reuses them; the
+      // version is deliberately left alone, since a half-delivered pack is not
+      // the version the buyer holds.
+      const partial = (err as { partialRefs?: DeliveredRefs }).partialRefs;
+      if (partial && (partial.bundleId || partial.deckId || partial.noteId)) {
+        const { error: partialError } = await this.db
+          .from('marketplace_question_bank_entitlements')
+          .update({ delivered_refs: partial })
+          .eq('listing_id', listingId)
+          .eq('user_id', userId);
+        if (partialError) {
+          logger.error('Could not record partial study pack delivery (may duplicate on retry)', {
+            listingId,
+            userId,
+            error: partialError.message,
+          });
+        }
+      }
+      throw err;
+    }
 
     // Persist where each part landed + the version now held. This write is
     // authoritative for idempotency (a lost write would re-duplicate on the
@@ -551,62 +586,99 @@ export class MarketplaceStudyPacksService {
     },
     prior: DeliveredRefs,
   ): Promise<DeliveredRefs> {
-    const { data: listing } = await this.db
-      .from('marketplace_listings')
-      .select('title')
-      .eq('id', listingId)
-      .maybeSingle();
-    const title = listing?.title || 'Study pack';
-    const courseId = pack.course_id || null;
-    const refs: DeliveredRefs = { version: pack.version };
-
-    // 1. Questions -> offline bundle. Always overwrite the deterministic bundle
-    // (upsert) — including with an empty set when a new version drops all
-    // questions — so a buyer never keeps removed questions. The bundle id is
-    // recorded whenever it exists so update-pulls stay honest.
-    const questions = (pack.content?.questions || []) as Array<{ type?: string }>;
-    if (questions.length > 0 || prior.bundleId) {
-      const bundleId = this.bundleIdForListing(listingId);
-      await this.supabaseService.saveOfflineBundle(userId, {
-        bundleId,
-        config: {
-          numberOfQuestions: questions.length,
-          allowedQuestionTypes: Array.from(
-            new Set(questions.map((q) => q?.type).filter(Boolean)),
-          ),
-          groupName: title,
-          source: 'marketplace',
-          courseId,
-        },
-        questions,
-        groupName: title,
-        courseId,
-        downloadedAt: new Date().toISOString(),
-      });
-      refs.bundleId = bundleId;
-    }
-
-    // 2. Flashcards -> a deck (created once, replaced in place thereafter).
-    const flashcards = (pack.content?.flashcards || []) as StudyPackFlashcard[];
-    if (flashcards.length > 0) {
-      refs.deckId = await this.deliverDeck(userId, prior.deckId, title, courseId, flashcards);
-    } else if (prior.deckId) {
-      // A new version dropped its flashcards: clear the delivered deck's cards
-      // (best-effort — the buyer may have deleted the deck).
-      try {
-        await this.supabaseService.replaceDeckCards(prior.deckId, []);
-        refs.deckId = prior.deckId;
-      } catch {
-        // deck gone; nothing to clear
+    // topic_id rides on the listing, not the pack row (marketplace_study_packs
+    // has no such column). Retried without it when the migration is unapplied,
+    // so an undelivered purchase can never be the cost of a missing column.
+    let listing: { title?: string; course_id?: string | null; topic_id?: string | null } | null = null;
+    {
+      const withTopic = await this.db
+        .from('marketplace_listings')
+        .select('title, course_id, topic_id')
+        .eq('id', listingId)
+        .maybeSingle();
+      if (withTopic.error && isMissingTopicColumn(withTopic.error)) {
+        const { data } = await this.db
+          .from('marketplace_listings')
+          .select('title, course_id')
+          .eq('id', listingId)
+          .maybeSingle();
+        listing = data;
+      } else {
+        listing = withTopic.data;
       }
     }
+    const title = listing?.title || 'Study pack';
+    const courseId = pack.course_id || null;
+    // A topic only means something inside its course, and the pack's course is
+    // what the delivered artefacts are filed under. The listing's topic was
+    // validated against the *listing's* course, and only that one: editing a
+    // published listing onto another course moves course_id + topic_id together
+    // and leaves marketplace_study_packs.course_id where it was. Pairing the two
+    // blindly would file the buyer's deck under a topic from a different course
+    // and make createNote reject the delivery outright, so the topic only counts
+    // while the listing still sits in the course being delivered into.
+    const topicId =
+      courseId && (listing?.course_id ?? null) === courseId ? listing?.topic_id ?? null : null;
+    const refs: DeliveredRefs = { version: pack.version };
 
-    // 3. Guide + summaries -> a note (created once, body rewritten thereafter).
-    // A new version that drops the guide clears the delivered note's body rather
-    // than leaving stale content behind.
-    const noteBody = this.assembleGuideNoteBody(pack.content);
-    if (noteBody.trim() || prior.noteId) {
-      refs.noteId = await this.deliverNote(userId, listingId, prior.noteId, title, courseId, noteBody);
+    try {
+      // 1. Questions -> offline bundle. Always overwrite the deterministic bundle
+      // (upsert) — including with an empty set when a new version drops all
+      // questions — so a buyer never keeps removed questions. The bundle id is
+      // recorded whenever it exists so update-pulls stay honest.
+      const questions = (pack.content?.questions || []) as Array<{ type?: string }>;
+      if (questions.length > 0 || prior.bundleId) {
+        const bundleId = this.bundleIdForListing(listingId);
+        await this.supabaseService.saveOfflineBundle(userId, {
+          bundleId,
+          config: {
+            numberOfQuestions: questions.length,
+            allowedQuestionTypes: Array.from(
+              new Set(questions.map((q) => q?.type).filter(Boolean)),
+            ),
+            groupName: title,
+            source: 'marketplace',
+            courseId,
+          },
+          questions,
+          groupName: title,
+          courseId,
+          downloadedAt: new Date().toISOString(),
+        });
+        refs.bundleId = bundleId;
+      }
+
+      // 2. Flashcards -> a deck (created once, replaced in place thereafter).
+      const flashcards = (pack.content?.flashcards || []) as StudyPackFlashcard[];
+      if (flashcards.length > 0) {
+        refs.deckId = await this.deliverDeck(userId, prior.deckId, title, courseId, topicId, flashcards);
+      } else if (prior.deckId) {
+        // A new version dropped its flashcards: clear the delivered deck's cards
+        // (best-effort — the buyer may have deleted the deck).
+        try {
+          await this.supabaseService.replaceDeckCards(prior.deckId, []);
+          refs.deckId = prior.deckId;
+        } catch {
+          // deck gone; nothing to clear
+        }
+      }
+
+      // 3. Guide + summaries -> a note (created once, body rewritten thereafter).
+      // A new version that drops the guide clears the delivered note's body rather
+      // than leaving stale content behind.
+      const noteBody = this.assembleGuideNoteBody(pack.content);
+      if (noteBody.trim() || prior.noteId) {
+        refs.noteId = await this.deliverNote(userId, listingId, prior.noteId, title, courseId, topicId, noteBody);
+      }
+    } catch (err) {
+      // Every step above mints real rows in the buyer’s library and records
+      // where each landed in `refs`. A failure part-way has to carry that record
+      // out with it — the caller persists it before rethrowing — or the next
+      // retry reads prior={} and mints a duplicate deck/note every single time.
+      if (err && typeof err === 'object') {
+        (err as { partialRefs?: DeliveredRefs }).partialRefs = refs;
+      }
+      throw err;
     }
 
     return refs;
@@ -618,6 +690,7 @@ export class MarketplaceStudyPacksService {
     priorDeckId: string | undefined,
     title: string,
     courseId: string | null,
+    topicId: string | null,
     flashcards: StudyPackFlashcard[],
   ): Promise<string | undefined> {
     if (priorDeckId) {
@@ -637,9 +710,16 @@ export class MarketplaceStudyPacksService {
       userId,
     );
     const deckId = created?.deck?.id as string | undefined;
-    // importDeck does not set course_id; file the deck under the pack's course.
+    // importDeck does not set course_id; file the deck under the pack's course
+    // (and its topic). Retried without the topic when that column is missing —
+    // a half-filed deck beats a failed delivery.
     if (deckId && courseId) {
-      await this.db.from('decks').update({ course_id: courseId }).eq('id', deckId);
+      const patch: Record<string, unknown> = { course_id: courseId };
+      if (topicId) patch.topic_id = topicId;
+      const { error } = await this.db.from('decks').update(patch).eq('id', deckId);
+      if (error && isMissingTopicColumn(error)) {
+        await this.db.from('decks').update({ course_id: courseId }).eq('id', deckId);
+      }
     }
     return deckId ?? priorDeckId;
   }
@@ -651,6 +731,7 @@ export class MarketplaceStudyPacksService {
     priorNoteId: string | undefined,
     title: string,
     courseId: string | null,
+    topicId: string | null,
     body: string,
   ): Promise<string | undefined> {
     if (priorNoteId) {
@@ -671,6 +752,9 @@ export class MarketplaceStudyPacksService {
       body,
       sourceType: 'import',
       courseId,
+      // createNote resolves this against courseId and drops it when the
+      // column is missing, so no fallback is needed here.
+      topicId,
     });
     return (note?.id as string | undefined) ?? priorNoteId;
   }

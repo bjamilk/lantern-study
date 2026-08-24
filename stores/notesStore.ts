@@ -19,6 +19,11 @@ interface NotesState {
   /** Course chip filter (Notes list) — threaded into every loadNotes() as `courseId`. */
   courseFilterId: string | null;
   /**
+   * Topic chip filter, one level under `courseFilterId` (Phase 1 · A). Only
+   * meaningful with a real course, and cleared whenever the course changes.
+   */
+  topicFilterId: string | null;
+  /**
    * Increments whenever a save loses an optimistic-concurrency race and the
    * authoritative note is reloaded over the user's superseded edits. The editor
    * watches this to override its local title/body with the reloaded copy.
@@ -29,6 +34,11 @@ interface NotesState {
   setSelectedFolderId: (id: string | null) => void;
   /** Select a course chip (null = All) and reload the list with that filter. */
   setCourseFilter: (courseId: string | null) => Promise<void>;
+  /**
+   * Set course + topic together and reload once. The Library rail can change
+   * only the topic, which `setCourseFilter` alone would treat as a no-op.
+   */
+  setTopicFilter: (courseId: string | null, topicId: string | null) => Promise<void>;
   setNotes: (notes: StudyNote[]) => void;
   setSelectedNote: (note: NotesState['selectedNote']) => void;
   setComments: (comments: NoteComment[]) => void;
@@ -37,7 +47,7 @@ interface NotesState {
   setError: (e: string | null) => void;
 
   loadFolders: () => Promise<void>;
-  loadNotes: (options?: { folderId?: string; courseId?: string | null }) => Promise<void>;
+  loadNotes: (options?: { folderId?: string; courseId?: string | null; topicId?: string | null }) => Promise<void>;
   loadNote: (noteId: string) => Promise<boolean>;
   /** `parentId` nests the new folder one level under an existing one (note_folders.parent_id). */
   createFolder: (name: string, color?: string, parentId?: string | null) => Promise<NoteFolder>;
@@ -68,13 +78,22 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   error: null,
   selectedFolderId: null,
   courseFilterId: null,
+  topicFilterId: null,
   conflictReloadToken: 0,
 
   setFolders: (folders) => set({ folders }),
   setSelectedFolderId: (selectedFolderId) => set({ selectedFolderId }),
   setCourseFilter: async (courseId) => {
     if (get().courseFilterId === (courseId || null)) return;
-    set({ courseFilterId: courseId || null });
+    // A topic belongs to exactly one course, so changing course drops it.
+    set({ courseFilterId: courseId || null, topicFilterId: null });
+    await get().loadNotes();
+  },
+  setTopicFilter: async (courseId, topicId) => {
+    const nextCourse = courseId || null;
+    const nextTopic = nextCourse ? topicId || null : null;
+    if (get().courseFilterId === nextCourse && get().topicFilterId === nextTopic) return;
+    set({ courseFilterId: nextCourse, topicFilterId: nextTopic });
     await get().loadNotes();
   },
   setNotes: (notes) => set({ notes }),
@@ -98,11 +117,18 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     // The course chip is sticky: callers that just say loadNotes() keep the
     // filter the user picked; an explicit courseId (or null) overrides it.
     const courseId = options && 'courseId' in options ? options.courseId : get().courseFilterId;
-    const requestedFilter = get().courseFilterId;
+    const topicId = options && 'topicId' in options ? options.topicId : get().topicFilterId;
+    const requestedCourse = get().courseFilterId;
+    const requestedTopic = get().topicFilterId;
     try {
-      const notes = await notesApi.fetchNotes({ ...options, courseId: courseId || undefined });
-      // A chip change mid-flight wins; drop the stale response.
-      if (get().courseFilterId !== requestedFilter) return;
+      const notes = await notesApi.fetchNotes({
+        ...options,
+        courseId: courseId || undefined,
+        topicId: topicId || undefined,
+      });
+      // A chip change mid-flight wins; drop the stale response. Both halves are
+      // compared — the course often stays put while only the topic moves.
+      if (get().courseFilterId !== requestedCourse || get().topicFilterId !== requestedTopic) return;
       set({ notes, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
@@ -472,6 +498,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       error: null,
       selectedFolderId: null,
       courseFilterId: null,
+      topicFilterId: null,
       conflictReloadToken: 0,
     }),
 }));

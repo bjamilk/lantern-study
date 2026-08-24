@@ -8,7 +8,7 @@ import type { LibraryOverview } from '@lantern/shared/types';
 import { NotesScreen } from '../notes/NotesScreen';
 import { FlashcardsScreen } from '../flashcards/FlashcardsScreen';
 import { FeatureHero } from '../../components/ui';
-import { LibraryCourseTree } from '../../components/library/LibraryCourseTree';
+import { LibraryCourseTree, type LibraryTopicFilter } from '../../components/library/LibraryCourseTree';
 import { LibrarySearchResults } from '../../components/library/LibrarySearchResults';
 import { useUIStore, type LibraryCourseFilter, type LibraryTab } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -78,9 +78,38 @@ export function LibraryScreen({ navigation, route }: Props) {
     }, [loadOverview, overviewAttempt])
   );
 
+  // ---- Topic filter (Phase 1 · A), the level below the course ----
+  // The topic rides on the course filter itself, so the pair cannot drift: the
+  // Notes and Flashcards tabs set the course filter too, and replacing it
+  // replaces the topic with it rather than orphaning one.
+  const activeTopic =
+    courseFilter?.topicId
+      ? { id: courseFilter.topicId, label: courseFilter.topicLabel ?? 'Topic', courseId: courseFilter.id }
+      : null;
+
+  const selectCourse = useCallback(
+    (filter: LibraryCourseFilter | null) => {
+      setCourseFilter(filter);
+    },
+    [setCourseFilter]
+  );
+
+  const selectTopic = useCallback(
+    (course: LibraryCourseFilter, topic: LibraryTopicFilter | null) => {
+      setCourseFilter(
+        topic ? { ...course, topicId: topic.id, topicLabel: topic.label } : { ...course }
+      );
+    },
+    [setCourseFilter]
+  );
+
   // ---- Search (GET /library/search) ----
   const [query, setQuery] = useState('');
-  const search = useLibrarySearch({ query, courseId: courseFilter?.id ?? null });
+  const search = useLibrarySearch({
+    query,
+    courseId: courseFilter?.id ?? null,
+    topicId: activeTopic?.id ?? null,
+  });
 
   /** Label for a course id: selected filter first, then the loaded tree. */
   const labelForCourse = useCallback(
@@ -99,9 +128,20 @@ export function LibraryScreen({ navigation, route }: Props) {
 
   const openTests = useCallback(
     (filter: LibraryCourseFilter) => {
-      navigation.navigate('TestsList', { tab: 'history', courseId: filter.id, courseLabel: filter.label });
+      // The tests link hangs off the course row, so carry the live topic when it
+      // belongs to that course — otherwise History would silently widen back to
+      // the whole course the student had just narrowed.
+      const topic = filter.topicId ?? (courseFilter?.id === filter.id ? courseFilter.topicId : null);
+      const topicLabel = filter.topicLabel ?? (courseFilter?.id === filter.id ? courseFilter.topicLabel : undefined);
+      navigation.navigate('TestsList', {
+        tab: 'history',
+        courseId: filter.id,
+        courseLabel: filter.label,
+        topicId: topic ?? null,
+        topicLabel,
+      });
     },
-    [navigation]
+    [navigation, courseFilter]
   );
 
   const openOffline = useCallback((filter: LibraryCourseFilter | null) => {
@@ -195,7 +235,9 @@ export function LibraryScreen({ navigation, route }: Props) {
           loading={overviewLoading}
           error={overviewError}
           selectedCourseId={courseFilter?.id ?? null}
-          onSelectCourse={setCourseFilter}
+          selectedTopicId={activeTopic?.id ?? null}
+          onSelectCourse={selectCourse}
+          onSelectTopic={selectTopic}
           onOpenTests={openTests}
           onOpenOffline={openOffline}
           onRetry={() => setOverviewAttempt(a => a + 1)}
@@ -207,7 +249,13 @@ export function LibraryScreen({ navigation, route }: Props) {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder={courseFilter ? `Search in ${courseFilter.label}…` : 'Search notes, decks, cards, bundles…'}
+            placeholder={
+              activeTopic
+                ? `Search in ${activeTopic.label}…`
+                : courseFilter
+                  ? `Search in ${courseFilter.label}…`
+                  : 'Search notes, decks, cards, bundles…'
+            }
             placeholderTextColor={colors.inputPlaceholder}
             autoCorrect={false}
             returnKeyType="search"
@@ -227,14 +275,14 @@ export function LibraryScreen({ navigation, route }: Props) {
         </View>
 
         {courseFilter ? (
-          <View className="mb-2 flex-row items-center gap-2">
+          <View className="mb-2 flex-row flex-wrap items-center gap-2">
             <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
               <Ionicons name="school-outline" size={14} color={colors.primary} />
               <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
                 {courseFilter.label}
               </Text>
               <Pressable
-                onPress={() => setCourseFilter(null)}
+                onPress={() => selectCourse(null)}
                 hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={`Clear course filter ${courseFilter.label}`}
@@ -242,6 +290,23 @@ export function LibraryScreen({ navigation, route }: Props) {
                 <Ionicons name="close-circle" size={16} color={colors.primary} />
               </Pressable>
             </View>
+            {activeTopic ? (
+              <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
+                <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+                <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
+                  {activeTopic.label}
+                </Text>
+                <Pressable
+                  // Clear the topic, keep the course.
+                  onPress={() => courseFilter && setCourseFilter({ id: courseFilter.id, label: courseFilter.label })}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Clear topic filter ${activeTopic.label}`}
+                >
+                  <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            ) : null}
             {/* Turn this course's notes into a sellable study pack (Phase 2 · H).
                 UNFILED_COURSE_ID is the string 'null' (truthy!), and there is no
                 course to build from there — so gate on a real course id, which
@@ -330,6 +395,7 @@ export function LibraryScreen({ navigation, route }: Props) {
             error={search.error}
             query={query}
             courseLabel={courseFilter?.label ?? null}
+            topicLabel={activeTopic?.label ?? null}
             bottomPadding={tabBarClearance}
             onOpenNote={noteId => navigation.navigate('NoteEditor', { noteId })}
             onOpenDeck={(deckId, deckName) => navigation.navigate('DeckDetail', { deckId, deckName })}

@@ -36,9 +36,11 @@ import {
 import { trackNoteCreated } from '../../services/productAnalytics';
 import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
+import { courseHasTopics } from '../../services/academic';
 import { useUIStore } from '../../stores/uiStore';
-import { matchesCourseFilter, UNFILED_COURSE_ID } from '../../utils/libraryArchive';
-import type { Course } from '@lantern/shared/types';
+import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
+import type { Course, CourseTopic } from '@lantern/shared/types';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -234,6 +236,8 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const courseFilter = useUIStore((s) => s.libraryCourseFilter);
   const setCourseFilter = useUIStore((s) => s.setLibraryCourseFilter);
   const courseFilterId = courseFilter?.id ?? null;
+  /** Topic inside that course (Phase 1 · A); only meaningful with a real course. */
+  const topicFilterId = courseFilter?.topicId ?? null;
   /** New notes are filed under the active course filter (never under "Unfiled"). */
   const defaultCourseId =
     courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : undefined;
@@ -262,7 +266,18 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     currentCourseId: string | null;
   } | null>(null);
   const [movingCourse, setMovingCourse] = useState(false);
-  const selectionBusy = movingNotes || deletingNotes || movingCourse;
+  /**
+   * "Move to topic…" target. A topic needs its course, so this opens either
+   * straight from the row sheet (note already filed) or as the second step of
+   * a course move.
+   */
+  const [topicMoveTarget, setTopicMoveTarget] = useState<{
+    noteIds: string[];
+    courseId: string;
+    currentTopicId: string | null;
+  } | null>(null);
+  const [movingTopic, setMovingTopic] = useState(false);
+  const selectionBusy = movingNotes || deletingNotes || movingCourse || movingTopic;
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
 
   // Load notes UNFILTERED so every consumer keeps the full list — the AI
@@ -298,6 +313,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     // after a local "Move to course…" before the next reload.
     if (courseFilterId) {
       list = list.filter((note) => matchesCourseFilter(note.courseId, courseFilterId));
+      if (topicFilterId) {
+        list = list.filter((note) => matchesTopicFilter(note.topicId, topicFilterId));
+      }
     }
     if (selectedFolderId) {
       list = list.filter(n => n.folderId === selectedFolderId);
@@ -315,7 +333,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
       return bTime - aTime;
     });
-  }, [notes, selectedFolderId, search, ownershipFilter, listFilter, courseFilterId]);
+  }, [notes, selectedFolderId, search, ownershipFilter, listFilter, courseFilterId, topicFilterId]);
 
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
@@ -397,7 +415,11 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     await handleDeleteNotesByIds(selectedNoteIds);
   };
 
-  /** PATCH /notes/:id { courseId } for every targeted note (null clears). */
+  /**
+   * PATCH /notes/:id { courseId, topicId } for every targeted note (null
+   * clears). The topic always goes with the course: a note landing in a new
+   * course cannot keep a topic from the old one.
+   */
   const handleMoveToCourse = async (course: Course | null) => {
     const target = courseMoveTarget;
     if (!target || target.noteIds.length === 0) return;
@@ -405,7 +427,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     setMovingCourse(true);
     try {
       const results = await Promise.allSettled(
-        target.noteIds.map((noteId) => saveNote(noteId, { courseId: nextCourseId })),
+        target.noteIds.map((noteId) =>
+          saveNote(noteId, { courseId: nextCourseId, topicId: null }),
+        ),
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) {
@@ -415,12 +439,53 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             ? 'Try again.'
             : `${failed} of ${target.noteIds.length} notes could not be moved.`,
         );
-      } else if (selectMode) {
-        exitSelectMode();
+        return;
+      }
+      if (selectMode) exitSelectMode();
+      // Second step: now the course is known, offer its syllabus outline — but
+      // only when there is one. Filing a note under a course is a complete
+      // action on its own, so a course with no outline must not cost an extra
+      // dismissal. Let this sheet dismiss before the next one mounts.
+      if (nextCourseId) {
+        const noteIds = target.noteIds;
+        void courseHasTopics(nextCourseId).then(hasTopics => {
+          if (!hasTopics) return;
+          setTimeout(
+            () => setTopicMoveTarget({ noteIds, courseId: nextCourseId, currentTopicId: null }),
+            50,
+          );
+        });
       }
     } finally {
       setMovingCourse(false);
       setCourseMoveTarget(null);
+    }
+  };
+
+  /** PATCH /notes/:id { topicId } for every targeted note (null clears). */
+  const handleMoveToTopic = async (topic: CourseTopic | null) => {
+    const target = topicMoveTarget;
+    if (!target || target.noteIds.length === 0) return;
+    const nextTopicId = topic?.id ?? null;
+    setMovingTopic(true);
+    try {
+      const results = await Promise.allSettled(
+        target.noteIds.map((noteId) => saveNote(noteId, { topicId: nextTopicId })),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        Alert.alert(
+          'Could not move to topic',
+          failed === target.noteIds.length
+            ? 'Try again.'
+            : `${failed} of ${target.noteIds.length} notes could not be moved.`,
+        );
+      } else if (selectMode) {
+        exitSelectMode();
+      }
+    } finally {
+      setMovingTopic(false);
+      setTopicMoveTarget(null);
     }
   };
 
@@ -458,6 +523,28 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
               50,
             ),
         },
+        // Only offered once the note has a course: a topic without its course
+        // is rejected server-side.
+        ...(noteActions.courseId
+          ? [
+              {
+                section: 'Organise',
+                label: 'Move to topic…',
+                icon: 'list-outline' as ActionSheetItem['icon'],
+                hint: 'Where this sits in the course outline',
+                onPress: () =>
+                  setTimeout(
+                    () =>
+                      setTopicMoveTarget({
+                        noteIds: [noteActions.id],
+                        courseId: noteActions.courseId as string,
+                        currentTopicId: noteActions?.topicId ?? null,
+                      }),
+                    50,
+                  ),
+              },
+            ]
+          : []),
         {
           section: 'Organise',
           label: 'Select',
@@ -857,6 +944,22 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         placeholder="Choose a course"
       />
 
+      <TopicPicker
+        visible={!!topicMoveTarget}
+        onClose={() => {
+          if (!movingTopic) setTopicMoveTarget(null);
+        }}
+        courseId={topicMoveTarget?.courseId ?? null}
+        value={topicMoveTarget?.currentTopicId ?? null}
+        onChange={(topic) => void handleMoveToTopic(topic)}
+        title={
+          topicMoveTarget && topicMoveTarget.noteIds.length > 1
+            ? `Move ${topicMoveTarget.noteIds.length} notes to topic`
+            : 'Move to topic'
+        }
+        placeholder="Choose a topic"
+      />
+
       <Modal
         visible={movePickerOpen}
         transparent
@@ -1044,7 +1147,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       </View>
 
       {courseFilter && !embedded ? (
-        <View className="mx-4 mb-2 flex-row items-center gap-2">
+        <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2">
           <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
             <Ionicons name="school-outline" size={14} color={colors.primary} />
             <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
@@ -1059,6 +1162,25 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
               <Ionicons name="close-circle" size={16} color={colors.primary} />
             </Pressable>
           </View>
+          {/* The topic narrows the list further, so it gets its own chip:
+              the course chip alone makes a shorter list look like missing notes. */}
+          {courseFilter.topicId ? (
+            <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
+              <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+              <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
+                {courseFilter.topicId === UNTOPICED_TOPIC_ID ? 'No topic' : courseFilter.topicLabel || 'Topic'}
+              </Text>
+              <Pressable
+                // Clear the topic, keep the course.
+                onPress={() => setCourseFilter({ id: courseFilter.id, label: courseFilter.label })}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear topic filter"
+              >
+                <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       ) : null}
 

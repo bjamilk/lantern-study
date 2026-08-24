@@ -9,6 +9,7 @@ import type {
   StudyNote,
 } from '../types';
 import { applyAIUsageFromResponse, applyAIUsageFromXhr, applyAIUsageFromErrorBody } from './ai';
+import { UNFILED_COURSE_ID } from '../utils/libraryArchive';
 import { getAuthHeaders, supabase } from './supabase';
 import { pollApiJob } from './jobPoll';
 import { applyJsonXhrHeaders } from '../utils/xhrHeaders';
@@ -309,6 +310,8 @@ export async function fetchNotes(options?: {
   groupId?: string;
   /** Academic archive filter (`GET /notes?courseId`). */
   courseId?: string | null;
+  /** Topic within `courseId`; the literal `'null'` is "in the course, under no topic". */
+  topicId?: string | null;
   /** When set, only active (`false`) or archived (`true`) notes. Omit for both. */
   archived?: boolean;
 }): Promise<StudyNote[]> {
@@ -316,6 +319,10 @@ export async function fetchNotes(options?: {
   if (options?.folderId) params.set('folderId', options.folderId);
   if (options?.groupId) params.set('groupId', options.groupId);
   if (options?.courseId) params.set('courseId', options.courseId);
+  // Never alone: a topic only means something inside its course (services/library.ts).
+  if (options?.courseId && options.courseId !== UNFILED_COURSE_ID && options?.topicId) {
+    params.set('topicId', options.topicId);
+  }
   if (options?.archived === true) params.set('archived', 'true');
   else if (options?.archived === false) params.set('archived', 'false');
   const qs = params.toString();
@@ -337,6 +344,7 @@ export async function createNote(payload: Partial<StudyNote>): Promise<StudyNote
       folderId: payload.folderId,
       groupId: payload.groupId,
       ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
+      ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
       sourceType: payload.sourceType,
       youtubeUrl: payload.youtubeUrl,
       youtubeVideoId: payload.youtubeVideoId,

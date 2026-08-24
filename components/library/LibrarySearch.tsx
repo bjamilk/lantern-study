@@ -107,6 +107,8 @@ export interface LibrarySearchResultsProps {
   query: string;
   /** Course filter: uuid | 'null' (unfiled) | null (everything). */
   courseId: string | null;
+  /** Topic filter inside `courseId`: uuid | 'null' (no topic) | null (whole course). */
+  topicId?: string | null;
   onOpenNote: (noteId: string) => void;
   onOpenDeck: (deckId: string) => void;
   onOpenBundle: (bundle: LibrarySearchResult) => void;
@@ -128,6 +130,7 @@ const formatUpdated = (iso: string): string => {
 export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
   query,
   courseId,
+  topicId = null,
   onOpenNote,
   onOpenDeck,
   onOpenBundle,
@@ -149,7 +152,12 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
       status: 'loading',
       results: prev.status === 'done' || prev.status === 'loading' || prev.status === 'error' ? prev.results : null,
     }));
-    void searchLibrary({ q: debouncedQuery, courseId: courseId || undefined, limit: LIBRARY_SEARCH_LIMIT })
+    void searchLibrary({
+      q: debouncedQuery,
+      courseId: courseId || undefined,
+      topicId: topicId || undefined,
+      limit: LIBRARY_SEARCH_LIMIT,
+    })
       .then((rows) => {
         if (cancelled) return;
         setState({ status: 'done', results: rows });
@@ -165,7 +173,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, courseId]);
+  }, [debouncedQuery, courseId, topicId]);
 
   const groups: LibrarySearchGroups | null = useMemo(() => {
     const rows = state.status === 'idle' ? null : state.results;
@@ -228,7 +236,11 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
           <MagnifyingGlassIcon className="mx-auto mb-2 h-8 w-8 text-lantern-text-tertiary" aria-hidden />
           <p className="text-sm font-medium text-lantern-text">No matches for “{debouncedQuery}”</p>
           <p className="mt-1 text-xs text-lantern-text-secondary">
-            {courseId ? 'Try clearing the course filter to search everything you own.' : 'Try a different word or a shorter phrase.'}
+            {topicId
+              ? 'Try widening the filter to the whole course.'
+              : courseId
+                ? 'Try clearing the course filter to search everything you own.'
+                : 'Try a different word or a shorter phrase.'}
           </p>
         </div>
       ) : null}

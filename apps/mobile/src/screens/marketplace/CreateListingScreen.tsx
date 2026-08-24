@@ -31,6 +31,8 @@ import {
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { Button } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
+import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { CampusPicker } from './CampusPicker';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ATTESTATION_REQUIRED_MESSAGE, isAcademicListing } from '@lantern/shared/moderation';
@@ -56,6 +58,9 @@ interface ListingDraft {
   /** Academic archive: picked course (id + code for the label/legacy field). */
   courseId?: string | null;
   courseCode?: string | null;
+  /** Topic within `courseId`; the title labels the trigger before the outline loads. */
+  topicId?: string | null;
+  topicTitle?: string | null;
   images: string[];
   savedAt: number;
 }
@@ -91,6 +96,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const [campusId, setCampusId] = useState('');
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseCode, setCourseCode] = useState<string | null>(null);
+  const [topicId, setTopicId] = useState<string | null>(null);
+  const [topicTitle, setTopicTitle] = useState<string | null>(null);
   // Rights attestation (Phase 1 · E): required by the API for academic
   // categories (past questions, notes, projects, textbooks). Never drafted.
   const [attested, setAttested] = useState(false);
@@ -138,6 +145,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         setCampusId(draft.campusId || '');
         setCourseId(draft.courseId ?? null);
         setCourseCode(draft.courseCode ?? null);
+        setTopicId(draft.topicId ?? null);
+        setTopicTitle(draft.topicTitle ?? null);
         // Draft image URIs are best-effort (local paths may expire after process death).
         setPendingImages(
           Array.isArray(draft.images)
@@ -179,6 +188,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         campusId,
         courseId,
         courseCode,
+        topicId,
+        topicTitle,
         images: pendingImages.map((img) => img.uri),
         savedAt: Date.now(),
       };
@@ -202,6 +213,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     campusId,
     courseId,
     courseCode,
+    topicId,
+    topicTitle,
     pendingImages,
   ]);
 
@@ -220,6 +233,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     setCampusId('');
     setCourseId(null);
     setCourseCode(null);
+    setTopicId(null);
+    setTopicTitle(null);
     setPendingImages([]);
     setAttested(false);
     setAttestationError(null);
@@ -395,6 +410,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           // in category_specific_fields for web/back-compat readers.
           courseId: courseId ?? null,
           ...(courseCode ? { category_specific_fields: { courseCode } } : {}),
+          // Never sent without its course — the server rejects a bare topic.
+          topicId: courseId ? topicId : null,
           // Rights attestation for academic categories (API: 400 without it).
           ...(attested ? { attestation: true } : {}),
         },
@@ -579,7 +596,11 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           value={courseId}
           fallbackLabel={courseCode}
           onChange={course => {
-            setCourseId(course?.id ?? null);
+            const nextCourseId = course?.id ?? null;
+            const nextTopicId = topicIdAfterCourseChange(topicId, courseId, nextCourseId);
+            setTopicId(nextTopicId);
+            if (!nextTopicId) setTopicTitle(null);
+            setCourseId(nextCourseId);
             setCourseCode(course?.code ?? null);
           }}
           placeholder="Which course is this for? e.g. BIO 201"
@@ -587,6 +608,22 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         />
         <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
           Helps students at your level find it. Textbooks, past questions and notes sell faster with a course.
+        </Text>
+
+        <Text className="text-sm font-semibold text-lantern-text mb-2">Topic (optional)</Text>
+        <TopicPicker
+          courseId={courseId}
+          value={topicId}
+          fallbackLabel={topicTitle}
+          onChange={topic => {
+            setTopicId(topic?.id ?? null);
+            setTopicTitle(topic?.title ?? null);
+          }}
+          placeholder="Which part of the syllabus?"
+          title="Topic for this listing"
+        />
+        <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+          Buyers browsing a course see this under the right week of the outline.
         </Text>
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>

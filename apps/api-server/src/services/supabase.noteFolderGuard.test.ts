@@ -78,6 +78,9 @@ function runUpdate(
       isOwner: access.isOwner,
     })),
     mapNote: (SupabaseService.prototype as any).mapNote,
+    // No update here names a topic or a course, so the real resolver short-circuits.
+    resolveArtefactTopicPatch: (SupabaseService.prototype as any)
+      .resolveArtefactTopicPatch,
   };
   return {
     calls,

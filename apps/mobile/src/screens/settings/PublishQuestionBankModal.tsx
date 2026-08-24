@@ -3,6 +3,8 @@ import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } fr
 import { Ionicons } from '@expo/vector-icons';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
+import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import {
   fetchMarketplaceCampuses,
   fetchMyQuestionBanks,
@@ -40,6 +42,7 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
   const [price, setPrice] = useState('');
   const [campusId, setCampusId] = useState('');
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [topicId, setTopicId] = useState<string | null>(null);
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [attested, setAttested] = useState(false);
   const [aiAssisted, setAiAssisted] = useState(false);
@@ -56,6 +59,7 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
     setPrice('');
     setCampusId('');
     setCourseId(null);
+    setTopicId(null);
     setAttested(false);
     setAiAssisted(false);
     setSourcesText('');
@@ -128,6 +132,8 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
           campusId,
           groupId: test.groupId || null,
           courseId: courseId ?? null,
+          // Never sent without its course — the server rejects a bare topic.
+          topicId: courseId ? topicId : null,
           content,
           ...provenance,
         });
@@ -326,9 +332,24 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Course (optional)</Text>
                   <CoursePicker
                     value={courseId}
-                    onChange={course => setCourseId(course?.id ?? null)}
+                    onChange={course => {
+                      const nextCourseId = course?.id ?? null;
+                      setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
+                      setCourseId(nextCourseId);
+                    }}
                     placeholder="Which course is this bank for? e.g. GST 101"
                     title="Course for this question bank"
+                  />
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Topic (optional)</Text>
+                  <TopicPicker
+                    courseId={courseId}
+                    value={topicId}
+                    onChange={topic => setTopicId(topic?.id ?? null)}
+                    placeholder="Which part of the syllabus?"
+                    title="Topic for this question bank"
                   />
                 </View>
               </>

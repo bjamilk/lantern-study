@@ -3,6 +3,7 @@ import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStats, TestPreset, User, QuestionStatus } from '../types';
 import { CoursePicker } from './academic/CoursePicker';
+import { TopicPicker } from './academic/TopicPicker';
 import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { isQuestionTestable } from '../utils/helpers';
 import { featureAccents } from '@lantern/shared/design';
@@ -73,8 +74,13 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
   // Course the session is filed under — defaults to the group's course (Phase 1).
   const [courseId, setCourseId] = useState<string | null>(group.courseId ?? null);
+  // Topic inside that course. Groups carry no topic, so this always starts empty.
+  const [topicId, setTopicId] = useState<string | null>(null);
   useEffect(() => {
-    if (isOpen) setCourseId(group.courseId ?? null);
+    if (isOpen) {
+      setCourseId(group.courseId ?? null);
+      setTopicId(null);
+    }
   }, [isOpen, group.id, group.courseId]);
 
   /** Unverified pool is study-only; starting Test with that filter becomes Study. */
@@ -250,6 +256,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           timerDuration: mode === 'test' && selectedTimerSeconds > 0 ? selectedTimerSeconds : undefined,
           focusOnNew: focusOnNew,
           courseId: courseId ?? null,
+          topicId: courseId ? topicId : null,
       };
       onSavePreset(presetName, currentConfig);
       setPresetName('');
@@ -309,6 +316,8 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     timerDuration: mode === 'test' ? selectedTimerSeconds : undefined,
     lockAnsweredQuestions: mode === 'test' ? lockAnswered : undefined,
     courseId: courseId ?? null,
+    // A topic without its course is what the server rejects — never send one.
+    topicId: courseId ? topicId : null,
   });
 
   const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
@@ -331,14 +340,28 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   };
 
   const courseControl = (
-    <CoursePicker
-      id={`test-config-course-${mode}`}
-      label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
-      value={courseId}
-      onChange={(course) => setCourseId(course?.id ?? null)}
-      placeholder={group.courseId ? 'Group course' : 'File this session under a course'}
-      compact
-    />
+    <div className="space-y-2">
+      <CoursePicker
+        id={`test-config-course-${mode}`}
+        label={<>Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+        value={courseId}
+        onChange={(course) => {
+          setCourseId(course?.id ?? null);
+          setTopicId(null);
+        }}
+        placeholder={group.courseId ? 'Group course' : 'File this session under a course'}
+        compact
+      />
+      <TopicPicker
+        id={`test-config-topic-${mode}`}
+        label={<>Topic <span className="text-lantern-text-tertiary font-normal">(optional)</span></>}
+        courseId={courseId}
+        value={topicId}
+        onChange={(topic) => setTopicId(topic?.id ?? null)}
+        placeholder="Which part of the syllabus"
+        compact
+      />
+    </div>
   );
 
   const visibilityControl = (
@@ -386,6 +409,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
       timerDuration: mode === 'test' && selectedTimerSeconds > 0 ? selectedTimerSeconds : undefined,
       focusOnNew: focusOnNew,
       courseId: courseId ?? null,
+      topicId: courseId ? topicId : null,
     };
     onDownloadForOffline(config, useSpacedRepetition, selectedSubgroupIDs);
   };

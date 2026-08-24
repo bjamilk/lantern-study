@@ -84,6 +84,33 @@ export function isMissingRelationError(
   );
 }
 
+/**
+ * Postgres/PostgREST "column does not exist": 42703 on a read, PGRST204 on a
+ * write (the schema cache never saw the column). Same meaning as
+ * isMissingRelationError — the migration that adds it is not applied yet.
+ */
+export function isMissingColumnError(
+  error: { code?: string; message?: string } | null | undefined
+): boolean {
+  if (!error) return false;
+  return (
+    error.code === '42703' ||
+    error.code === 'PGRST204' ||
+    /column .* does not exist|could not find the .* column/i.test(error.message || '')
+  );
+}
+
+/**
+ * `topic_id` (course_topics, 20260826120000) missing = that migration is not
+ * applied. Every topic read/write then degrades to "no topics" instead of
+ * failing the note/deck/test/listing it rode in on.
+ */
+export function isMissingTopicColumn(
+  error: { code?: string; message?: string } | null | undefined
+): boolean {
+  return isMissingColumnError(error) && /topic_id/i.test(error?.message || '');
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: unknown): value is string =>
   typeof value === 'string' && UUID_RE.test(value);
@@ -131,6 +158,21 @@ export function courseFilterKey(filter: CourseFilter | undefined): string {
   if (filter.kind === 'course') return filter.id;
   if (filter.kind === 'unfiled') return 'null';
   return '';
+}
+
+/**
+ * `?topicId=` (Phase 1 · A) has the same grammar as `?courseId=` — a uuid, the
+ * literal "null", or absent — so it reuses this parser, applyCourseFilter
+ * (which already takes the column) and courseFilterKey. "null" here means
+ * "filed under the course but under no topic".
+ */
+export type TopicFilter = CourseFilter;
+
+export const TOPIC_FILTER_INVALID_MESSAGE =
+  "topicId must be a valid UUID or 'null' for items with no topic";
+
+export function parseTopicFilter(raw: unknown): TopicFilter {
+  return parseCourseFilter(raw);
 }
 
 const toSemester = (value: unknown): 1 | 2 | null =>
@@ -623,16 +665,41 @@ export class AcademicCoursesService {
   // ---------- Artefact helpers ----------
 
   /**
-   * Set/clear the course on a marketplace listing. Kept outside
-   * updateMarketplaceListing (owned by the listing-lifecycle work) so the
-   * PUT /listings/:id route can write course_id without touching that path.
+   * Set/clear the course — and since Phase 1 · A the topic — on a marketplace
+   * listing. Kept outside updateMarketplaceListing (owned by the
+   * listing-lifecycle work) so the PUT /listings/:id route can write
+   * course_id/topic_id without touching that path. `undefined` leaves a column
+   * alone, so an edit that only moves the topic does not rewrite the course.
    */
-  async setListingCourse(listingId: string, courseId: string | null): Promise<void> {
+  async setListingCourse(
+    listingId: string,
+    courseId: string | null | undefined,
+    topicId?: string | null
+  ): Promise<void> {
+    const updates: Record<string, unknown> = {};
+    if (courseId !== undefined) updates.course_id = courseId;
+    if (topicId !== undefined) updates.topic_id = topicId;
+    if (Object.keys(updates).length === 0) return;
+
     const { error } = await this.db
       .from('marketplace_listings')
-      .update({ course_id: courseId })
+      .update(updates)
       .eq('id', listingId);
-    if (error) throw error;
+    if (error) {
+      // topic_id not there yet: the course still has to land, and there is no
+      // topic to clear on a column that does not exist.
+      if (updates.topic_id !== undefined && isMissingTopicColumn(error)) {
+        delete updates.topic_id;
+        if (Object.keys(updates).length === 0) return;
+        const retry = await this.db
+          .from('marketplace_listings')
+          .update(updates)
+          .eq('id', listingId);
+        if (retry.error) throw retry.error;
+        return;
+      }
+      throw error;
+    }
   }
 }
 

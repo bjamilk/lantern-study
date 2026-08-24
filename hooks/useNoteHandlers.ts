@@ -493,8 +493,10 @@ export function useNoteHandlers(currentUserId?: string) {
    * overview counts are marked stale.
    */
   const handleMoveNoteToCourse = useCallback(
-    async (noteId: string, courseId: string | null) => {
-      await saveNote(noteId, { courseId });
+    async (noteId: string, courseId: string | null, topicId: string | null = null) => {
+      // Leaving the course clears the topic — the server refuses a topic
+      // without one, and a topic from the old course would be wrong anyway.
+      await saveNote(noteId, { courseId, topicId: courseId ? topicId : null });
       useLibraryStore.getState().invalidateOverview();
       if (useNotesStore.getState().courseFilterId) {
         await loadNotes();

@@ -10,13 +10,27 @@ import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
-import { COURSE_FILTER_INVALID_MESSAGE, courseFilterKey, parseCourseFilter } from '../services/academicCourses';
+import {
+  COURSE_FILTER_INVALID_MESSAGE,
+  TOPIC_FILTER_INVALID_MESSAGE,
+  courseFilterKey,
+  parseCourseFilter,
+  parseTopicFilter,
+} from '../services/academicCourses';
+import { PublicError } from '../utils/safeError';
 
 const router = Router();
 const DEFAULT_DECK_PAGE_SIZE = 20;
 const MAX_DECK_PAGE_SIZE = 50;
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
   profile === 'compact' ? 'compact' : 'full';
+
+/** A rejected topic (wrong course, no course, unusable id) is the caller's mistake — 400, not 500. */
+const respondPublicError = (err: unknown, res: any): boolean => {
+  if (!(err instanceof PublicError)) return false;
+  res.status(400).json({ success: false, error: err.message });
+  return true;
+};
 
 let supabaseService: SupabaseService;
 let cacheService: CacheService;
@@ -35,7 +49,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { page = 1, limit, includeShared, responseProfile, courseId } = req.query;
+    const { page = 1, limit, includeShared, responseProfile, courseId, topicId } = req.query;
     const parsedPage = Math.max(1, parseInt(page as string, 10) || 1);
     const requestedLimit = parseInt((limit as string) || `${DEFAULT_DECK_PAGE_SIZE}`, 10);
     const parsedLimit = Math.min(MAX_DECK_PAGE_SIZE, Math.max(1, requestedLimit || DEFAULT_DECK_PAGE_SIZE));
@@ -46,12 +60,18 @@ router.get(
     if (courseFilter.kind === 'invalid') {
       return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
     }
+    // ?topicId= — same grammar one level down; "null" is "in this course, under no topic".
+    const topicFilter = parseTopicFilter(topicId);
+    if (topicFilter.kind === 'invalid') {
+      return res.status(400).json({ success: false, error: TOPIC_FILTER_INVALID_MESSAGE });
+    }
     const courseKey = courseFilterKey(courseFilter);
+    const topicKey = courseFilterKey(topicFilter);
 
-    logger.debug('Fetching decks', { page: parsedPage, limit: parsedLimit, userId, includeShared: includeSharedFlag, profile, courseId: courseKey });
+    logger.debug('Fetching decks', { page: parsedPage, limit: parsedLimit, userId, includeShared: includeSharedFlag, profile, courseId: courseKey, topicId: topicKey });
 
     // v2 busts caches that previously listed every globally shared deck.
-    const cacheKey = `decks:${userId}:scope:${includeSharedFlag ? "owned_collab" : "owned"}:${parsedPage}:${parsedLimit}:profile:${profile}:course:${courseKey}:v2`;
+    const cacheKey = `decks:${userId}:scope:${includeSharedFlag ? "owned_collab" : "owned"}:${parsedPage}:${parsedLimit}:profile:${profile}:course:${courseKey}:topic:${topicKey}:v2`;
     let decks = await cacheService.get(cacheKey) as any[];
 
     if (!decks) {
@@ -60,6 +80,7 @@ router.get(
         limit: parsedLimit,
         responseProfile: profile,
         courseFilter,
+        topicFilter,
       });
       await cacheService.set(cacheKey, decks, 300);
     }
@@ -103,8 +124,14 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { name, description, isShared, courseId } = req.body;
-    const deck = await supabaseService.createDeck({ name, description, isShared, courseId }, userId);
+    const { name, description, isShared, courseId, topicId } = req.body;
+    let deck;
+    try {
+      deck = await supabaseService.createDeck({ name, description, isShared, courseId, topicId }, userId);
+    } catch (err) {
+      if (respondPublicError(err, res)) return;
+      throw err;
+    }
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
@@ -129,8 +156,14 @@ router.put(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const { name, description, isShared, courseId } = req.body;
-    const updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared, courseId }, userId);
+    const { name, description, isShared, courseId, topicId } = req.body;
+    let updatedDeck;
+    try {
+      updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared, courseId, topicId }, userId);
+    } catch (err) {
+      if (respondPublicError(err, res)) return;
+      throw err;
+    }
 
     if (!updatedDeck) {
       return res.status(404).json({ success: false, error: 'Deck not found or access denied' });

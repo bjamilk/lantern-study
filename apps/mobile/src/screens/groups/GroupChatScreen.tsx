@@ -926,6 +926,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
         // Explicit null from the modal means "no course"; only an absent key
         // falls back to the group's course.
         courseId: config.courseId !== undefined ? config.courseId : currentGroup?.courseId ?? null,
+        // Only the modal can supply a topic — the group carries none — and it
+        // is dropped unless that same modal also picked the course it sits in.
+        topicId: config.courseId !== undefined ? config.topicId ?? null : null,
       });
       const parent = navigation.getParent?.();
       if (parent?.navigate) {

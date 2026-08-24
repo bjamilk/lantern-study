@@ -6,9 +6,13 @@
  *     PostgREST or() delimiters; it is owner-scoped (own rows + collaborator
  *     rows) and ranks title-prefix > title-contains > secondary text, then
  *     recency — with flashcards kept together under their deck.
- *  2. /library/overview is one service call: a course_id projection per
- *     artefact table aggregated in TS (never N+1 per course), purchased packs
- *     filed by the listing's course, archived enrolments kept with status.
+ *  2. /library/overview is one service call: a course_id/topic_id projection
+ *     per artefact table aggregated in TS (never N+1 per course), purchased
+ *     packs filed by the listing's course, archived enrolments kept with status.
+ *  3. Topics are the third level: a course's `counts` stays the TOTAL,
+ *     `topics[]` partitions it and `untopiced` is the remainder. Neither
+ *     appears until the course_topics migration is applied — and a missing
+ *     topic_id must cost the split, never the rows.
  *
  * Same PostgREST-double style as academicCourses.test.ts: canned per-table
  * results plus a log of every builder call so the exact filters are asserted.
@@ -73,6 +77,9 @@ const NOTE_SHARED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const DECK_SHARED = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const LISTING_1 = '11111111-1111-4111-8111-111111111111';
 const LISTING_2 = '22222222-2222-4222-8222-222222222222';
+const TOPIC_CELLS = '33333333-3333-4333-8333-333333333333';
+const TOPIC_GENES = '44444444-4444-4444-8444-444444444444';
+const TOPIC_GONE = '55555555-5555-4555-8555-555555555555';
 
 const op = (call: Call | undefined, fn: string) => call?.ops.find((o) => o.fn === fn);
 const ops = (call: Call | undefined, fn: string) => call?.ops.filter((o) => o.fn === fn) ?? [];
@@ -296,6 +303,127 @@ describe('LibrarySearchService.search — ranking, grouping, snippets', () => {
   });
 });
 
+describe('LibrarySearchService.search — the topic filter', () => {
+  const iso = new Date(Date.UTC(2026, 7, 4)).toISOString();
+
+  it('filters by topicId per table, without needing a courseId, and drops bundles', async () => {
+    const db = fakeDb();
+    await service(db).search(USER, { q: 'cell', topicId: TOPIC_CELLS });
+
+    expect(ops(callFor(db, 'notes'), 'eq').map((o) => o.args)).toContainEqual(['topic_id', TOPIC_CELLS]);
+    expect(ops(callFor(db, 'note_attachments'), 'eq').map((o) => o.args)).toContainEqual([
+      'notes.topic_id',
+      TOPIC_CELLS,
+    ]);
+    expect(ops(callFor(db, 'decks'), 'eq').map((o) => o.args)).toContainEqual(['topic_id', TOPIC_CELLS]);
+    // A card inherits the topic of its deck.
+    expect(ops(callFor(db, 'flashcards'), 'eq').map((o) => o.args)).toContainEqual(['decks.topic_id', TOPIC_CELLS]);
+    // A topic implies its course, so nothing constrains course_id.
+    expect(ops(callFor(db, 'notes'), 'eq').map((o) => o.args[0])).not.toContain('course_id');
+    // offline_bundles has no topic_id: a bundle can never sit under a topic.
+    expect(tablesTouched(db)).not.toContain('offline_bundles');
+  });
+
+  it('treats topicId=null as "under no topic", which every bundle qualifies for', async () => {
+    const db = fakeDb();
+    await service(db).search(USER, { q: 'cell', topicId: 'null', types: ['notes', 'flashcards', 'bundles'] });
+    expect(op(callFor(db, 'notes'), 'is')?.args).toEqual(['topic_id', null]);
+    expect(op(callFor(db, 'flashcards'), 'is')?.args).toEqual(['decks.topic_id', null]);
+    expect(tablesTouched(db)).toContain('offline_bundles');
+  });
+
+  it('combines with courseId rather than replacing it', async () => {
+    const db = fakeDb();
+    await service(db).search(USER, { q: 'cell', courseId: COURSE_BIO, topicId: TOPIC_CELLS, types: ['decks'] });
+    const args = ops(callFor(db, 'decks'), 'eq').map((o) => o.args);
+    expect(args).toContainEqual(['course_id', COURSE_BIO]);
+    expect(args).toContainEqual(['topic_id', TOPIC_CELLS]);
+  });
+
+  it("emits topicId per result — a card takes its deck's, a bundle has none", async () => {
+    const db = fakeDb({
+      notes: {
+        data: [
+          {
+            id: 'n1',
+            title: 'Cells',
+            summary: null,
+            body: '',
+            course_id: COURSE_BIO,
+            topic_id: TOPIC_CELLS,
+            updated_at: iso,
+          },
+        ],
+      },
+      decks: {
+        data: [
+          { id: 'd1', name: 'Cells deck', description: null, course_id: COURSE_BIO, topic_id: null, created_at: iso },
+        ],
+      },
+      flashcards: {
+        data: [
+          {
+            id: 'f1',
+            front: 'Cells',
+            back: '',
+            deck_id: 'd2',
+            created_at: iso,
+            decks: { id: 'd2', name: 'Bio', user_id: USER, course_id: COURSE_BIO, topic_id: TOPIC_CELLS },
+          },
+        ],
+      },
+      offline_bundles: {
+        data: [
+          {
+            id: 'row-1',
+            bundle_id: 'local-1',
+            display_name: 'Cells offline',
+            group_name: null,
+            course_id: COURSE_BIO,
+            updated_at: iso,
+          },
+        ],
+      },
+    });
+
+    const byId = Object.fromEntries((await service(db).search(USER, { q: 'cells' })).map((r) => [r.id, r]));
+    expect(byId.n1.topicId).toBe(TOPIC_CELLS);
+    expect(byId.d1.topicId).toBeNull(); // projected, but this deck has no topic
+    expect(byId.f1.topicId).toBe(TOPIC_CELLS);
+    expect('topicId' in byId['local-1']).toBe(false);
+  });
+
+  it('still finds rows when topic_id does not exist yet, with topicId absent from the wire row', async () => {
+    const db = fakeDb({
+      notes: withoutTopicColumn([
+        { id: 'n1', title: 'Cells', summary: null, body: '', course_id: COURSE_BIO, updated_at: iso },
+      ]),
+    });
+    const results = await service(db).search(USER, { q: 'cells', types: ['notes'] });
+    expect(results.map((r) => r.id)).toEqual(['n1']);
+    expect(results[0].topicId).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(results[0]))).not.toHaveProperty('topicId');
+  });
+
+  it('matches nothing for a named topic when topic_id does not exist yet, rather than everything', async () => {
+    const db = fakeDb({
+      notes: withoutTopicColumn([
+        { id: 'n1', title: 'Cells', summary: null, body: '', course_id: COURSE_BIO, updated_at: iso },
+      ]),
+    });
+    const results = await service(db).search(USER, { q: 'cells', topicId: TOPIC_CELLS, types: ['notes'] });
+    expect(results).toEqual([]);
+    // No retry: dropping the filter would silently widen the search back out.
+    expect(db.calls.filter((c) => c.table === 'notes')).toHaveLength(1);
+  });
+
+  it('rejects a malformed topicId before any query runs', async () => {
+    const db = fakeDb();
+    await expect(service(db).search(USER, { q: 'ok', topicId: 'nope' })).rejects.toBeInstanceOf(PublicError);
+    expect(db.calls).toHaveLength(0);
+  });
+});
+
 const courseRow = (id: string, code: string) => ({
   id,
   institution_id: null,
@@ -316,6 +444,39 @@ const enrolmentRow = (courseId: string, code: string, academicYear: string, stat
   exam_date: null,
   courses: courseRow(courseId, code),
 });
+
+/** The mapped enrolment `aggregateLibraryOverview` consumes (what listUserCourses returns). */
+const enrolmentNode = (courseId: string, code: string, academicYear: string, status: 'active' | 'archived') => ({
+  course: {
+    id: courseId,
+    institutionId: null,
+    code,
+    title: `${code} title`,
+    faculty: null,
+    level: 200,
+    semester: 1 as const,
+    isCanonical: false,
+  },
+  academicYear,
+  semester: 1 as const,
+  status,
+  examDate: null,
+});
+
+const topicRecord = (id: string, courseId: string, title: string, position: number) => ({
+  id,
+  courseId,
+  title,
+  position,
+});
+
+/** A table whose topic_id column does not exist yet: the pre-migration production DB. */
+const withoutTopicColumn =
+  (rows: Record<string, unknown>[]) =>
+  (call: Call): Result =>
+    String(op(call, 'select')?.args[0] ?? '').includes('topic_id')
+      ? { data: null, error: { code: '42703', message: `column ${call.table}.topic_id does not exist` } }
+      : { data: rows };
 
 describe('aggregateLibraryOverview — pure aggregation', () => {
   it('builds years → courses → counts, files purchased packs by listing course, and counts unfiled items', () => {
@@ -361,6 +522,94 @@ describe('aggregateLibraryOverview — pure aggregation', () => {
   });
 });
 
+describe('aggregateLibraryOverview — the topic level', () => {
+  it('partitions a course into topics + untopiced, ordered by position, with the total left alone', () => {
+    const overview = aggregateLibraryOverview({
+      enrolments: [enrolmentNode(COURSE_BIO, 'BIO 201', '2026/2027', 'active')],
+      notes: [
+        { course_id: COURSE_BIO, topic_id: TOPIC_GENES },
+        { course_id: COURSE_BIO, topic_id: TOPIC_CELLS },
+        { course_id: COURSE_BIO, topic_id: TOPIC_CELLS },
+        { course_id: COURSE_BIO, topic_id: null },
+        { course_id: null, topic_id: null },
+      ],
+      decks: [{ course_id: COURSE_BIO, topic_id: TOPIC_CELLS }],
+      tests: [
+        { course_id: COURSE_BIO, topic_id: TOPIC_GENES },
+        { course_id: COURSE_BIO, topic_id: null },
+      ],
+      bundles: [{ course_id: COURSE_BIO, bundle_id: `qbank-${LISTING_1}` }],
+      listingCourses: new Map([[LISTING_1, COURSE_BIO]]),
+      // Deliberately inserted out of order: the tree sorts by position.
+      topics: new Map([
+        [TOPIC_GENES, topicRecord(TOPIC_GENES, COURSE_BIO, 'Genetics', 20)],
+        [TOPIC_CELLS, topicRecord(TOPIC_CELLS, COURSE_BIO, 'Cells', 10)],
+      ]),
+    });
+
+    const node = overview.years[0].courses[0];
+    expect(node.counts).toEqual({ notes: 4, decks: 1, tests: 2, bundles: 1, purchasedPacks: 1 });
+    expect(node.topics?.map((t) => t.topic.title)).toEqual(['Cells', 'Genetics']);
+    expect(node.topics?.[0].counts).toEqual({ notes: 2, decks: 1, tests: 0, bundles: 0, purchasedPacks: 0 });
+    expect(node.topics?.[1].counts).toEqual({ notes: 1, decks: 0, tests: 1, bundles: 0, purchasedPacks: 0 });
+    // Bundles have no topic_id, so the whole bundle/pack count is the remainder.
+    expect(node.untopiced).toEqual({ notes: 1, decks: 0, tests: 1, bundles: 1, purchasedPacks: 1 });
+
+    // The invariant every client depends on: `counts` is still the course TOTAL.
+    for (const kind of ['notes', 'decks', 'tests', 'bundles', 'purchasedPacks'] as const) {
+      const fromTopics = (node.topics ?? []).reduce((sum, t) => sum + t.counts[kind], 0);
+      expect(fromTopics + node.untopiced![kind]).toBe(node.counts[kind]);
+    }
+    // The no-course bucket is untouched by any of this.
+    expect(overview.unfiled).toEqual({ notes: 1, decks: 0, tests: 0, bundles: 0 });
+  });
+
+  it('omits topics and untopiced entirely — not as empty values — with no topic lookup', () => {
+    const overview = aggregateLibraryOverview({
+      enrolments: [enrolmentNode(COURSE_BIO, 'BIO 201', '2026/2027', 'active')],
+      notes: [{ course_id: COURSE_BIO }],
+      decks: [],
+      tests: [],
+      bundles: [],
+    });
+    const node = overview.years[0].courses[0];
+    expect(node.counts.notes).toBe(1);
+    expect('topics' in node).toBe(false);
+    expect('untopiced' in node).toBe(false);
+  });
+
+  it('counts an unresolved or wrong-course topic as untopiced, so the split still adds up', () => {
+    const overview = aggregateLibraryOverview({
+      enrolments: [
+        enrolmentNode(COURSE_BIO, 'BIO 201', '2026/2027', 'active'),
+        enrolmentNode(COURSE_CHM, 'CHM 101', '2026/2027', 'active'),
+      ],
+      notes: [
+        { course_id: COURSE_BIO, topic_id: TOPIC_CELLS },
+        { course_id: COURSE_BIO, topic_id: TOPIC_GONE }, // deleted between the two queries
+        { course_id: COURSE_BIO, topic_id: TOPIC_GENES }, // a CHM topic on a BIO note
+      ],
+      decks: [],
+      tests: [],
+      bundles: [],
+      topics: new Map([
+        [TOPIC_CELLS, topicRecord(TOPIC_CELLS, COURSE_BIO, 'Cells', 10)],
+        [TOPIC_GENES, topicRecord(TOPIC_GENES, COURSE_CHM, 'Bonding', 10)],
+      ]),
+    });
+
+    const bio = overview.years[0].courses.find((c) => c.course.code === 'BIO 201')!;
+    expect(bio.counts.notes).toBe(3);
+    expect(bio.topics?.map((t) => t.topic.title)).toEqual(['Cells']);
+    expect(bio.topics?.[0].counts.notes).toBe(1);
+    expect(bio.untopiced?.notes).toBe(2);
+
+    // Nothing is filed under CHM's own topic, so CHM stays a flat course.
+    const chm = overview.years[0].courses.find((c) => c.course.code === 'CHM 101')!;
+    expect('topics' in chm).toBe(false);
+  });
+});
+
 describe('LibrarySearchService.getOverview — one projection per table, aggregated in TS', () => {
   it('issues grouped course_id selects (not one count per course) and resolves pack listings in one lookup', async () => {
     const db = fakeDb({
@@ -394,7 +643,7 @@ describe('LibrarySearchService.getOverview — one projection per table, aggrega
     expect(tables.filter((t) => t === 'user_courses')).toHaveLength(1);
 
     const notes = callFor(db, 'notes');
-    expect(op(notes, 'select')?.args).toEqual(['course_id']);
+    expect(op(notes, 'select')?.args).toEqual(['course_id, topic_id']);
     expect(op(notes, 'eq')?.args).toEqual(['user_id', USER]);
     expect(op(notes, 'range')?.args).toEqual([0, 999]);
     expect(op(callFor(db, 'test_sessions'), 'neq')?.args).toEqual(['status', 'abandoned']);
@@ -438,5 +687,83 @@ describe('LibrarySearchService.getOverview — one projection per table, aggrega
     });
     const overview = await service(db).getOverview(USER);
     expect(overview.years[0].courses[0].counts).toEqual({ notes: 1, decks: 0, tests: 0, bundles: 0, purchasedPacks: 0 });
+  });
+});
+
+describe('LibrarySearchService.getOverview — the topic level', () => {
+  it('projects topic_id, resolves the topics seen in ONE lookup, and hangs them off the course', async () => {
+    const db = fakeDb({
+      user_courses: { data: [enrolmentRow(COURSE_BIO, 'BIO 201', '2026/2027', 'active')] },
+      notes: {
+        data: [
+          { course_id: COURSE_BIO, topic_id: TOPIC_CELLS },
+          { course_id: COURSE_BIO, topic_id: null },
+        ],
+      },
+      decks: { data: [{ course_id: COURSE_BIO, topic_id: TOPIC_CELLS }] },
+      course_topics: { data: [{ id: TOPIC_CELLS, course_id: COURSE_BIO, title: 'Cells', position: 10 }] },
+    });
+
+    const overview = await service(db).getOverview(USER);
+
+    expect(op(callFor(db, 'decks'), 'select')?.args).toEqual(['course_id, topic_id']);
+    expect(op(callFor(db, 'test_sessions'), 'select')?.args).toEqual(['course_id, topic_id']);
+    // offline_bundles has no topic_id — never ask it for one.
+    expect(op(callFor(db, 'offline_bundles'), 'select')?.args).toEqual(['course_id, bundle_id']);
+    expect(tablesTouched(db).filter((t) => t === 'course_topics')).toHaveLength(1);
+    expect(op(callFor(db, 'course_topics'), 'in')?.args).toEqual(['id', [TOPIC_CELLS]]);
+
+    const node = overview.years[0].courses[0];
+    expect(node.counts).toEqual({ notes: 2, decks: 1, tests: 0, bundles: 0, purchasedPacks: 0 });
+    expect(node.topics).toEqual([
+      {
+        topic: { id: TOPIC_CELLS, courseId: COURSE_BIO, title: 'Cells', position: 10 },
+        counts: { notes: 1, decks: 1, tests: 0, bundles: 0, purchasedPacks: 0 },
+      },
+    ]);
+    expect(node.untopiced).toEqual({ notes: 1, decks: 0, tests: 0, bundles: 0, purchasedPacks: 0 });
+  });
+
+  it('keeps every count when topic_id does not exist yet — the projection must not empty the library', async () => {
+    const db = fakeDb({
+      user_courses: { data: [enrolmentRow(COURSE_BIO, 'BIO 201', '2026/2027', 'active')] },
+      notes: withoutTopicColumn([{ course_id: COURSE_BIO }]),
+      decks: withoutTopicColumn([{ course_id: COURSE_BIO }]),
+      test_sessions: withoutTopicColumn([{ course_id: COURSE_BIO }]),
+    });
+
+    const overview = await service(db).getOverview(USER);
+    const node = overview.years[0].courses[0];
+    expect(node.counts).toEqual({ notes: 1, decks: 1, tests: 1, bundles: 0, purchasedPacks: 0 });
+    expect('topics' in node).toBe(false);
+    expect('untopiced' in node).toBe(false);
+    // Nothing referenced a topic, so course_topics is never even asked for.
+    expect(tablesTouched(db)).not.toContain('course_topics');
+
+    // The retry re-runs the SAME page without topic_id, it does not skip ahead.
+    const noteCalls = db.calls.filter((c) => c.table === 'notes');
+    expect(noteCalls).toHaveLength(2);
+    expect(op(noteCalls[1], 'select')?.args).toEqual(['course_id']);
+    expect(op(noteCalls[1], 'range')?.args).toEqual([0, 999]);
+  });
+
+  it('stops asking for topic_id once it is known missing, so it costs one probe, not one per request', async () => {
+    const db = fakeDb({
+      user_courses: { data: [enrolmentRow(COURSE_BIO, 'BIO 201', '2026/2027', 'active')] },
+      notes: withoutTopicColumn([{ course_id: COURSE_BIO }]),
+      decks: withoutTopicColumn([{ course_id: COURSE_BIO }]),
+      test_sessions: withoutTopicColumn([{ course_id: COURSE_BIO }]),
+    });
+
+    const svc = service(db);
+    await svc.getOverview(USER);
+    const second = await svc.getOverview(USER);
+
+    expect(db.calls.filter((c) => c.table === 'notes').map((c) => op(c, 'select')?.args[0])).toEqual([
+      'course_id, topic_id', // probe
+      'course_id', // retry
+      'course_id', // second request: no probe, no warning
+    ]);
+    expect(second.years[0].courses[0].counts.notes).toBe(1);
   });
 });

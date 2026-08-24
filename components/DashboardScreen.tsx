@@ -56,6 +56,9 @@ import {
   type TestResultsSort,
 } from '../services/supabase';
 import { useTestStore } from '../stores/testStore';
+import { useLibraryStore } from '../stores/libraryStore';
+import { useAcademicStore } from '../stores/academicStore';
+import { UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../utils/libraryArchive';
 import {
   needsAcademicSetup,
   readAcademicSetupDismissed,
@@ -494,6 +497,15 @@ export default function DashboardScreen({
   const [selectedGroupChartIds, setSelectedGroupChartIds] = useState<string[]>(() =>
     loadSelectedGroupChartIds()
   );
+  // Recent Tests follows the Library's course/topic filter (Phase 1 · A/B) —
+  // the archive rail's "N tests" badge lands here, so the list has to honour the
+  // scope the student just picked instead of quietly showing everything.
+  const recentCourseId = useLibraryStore((s) => s.courseFilterId);
+  const recentTopicId = useLibraryStore((s) => s.topicFilterId);
+  const recentTopicLabel = useLibraryStore((s) => s.topicFilterLabel);
+  const clearRecentCourse = useLibraryStore((s) => s.setCourseFilter);
+  const clearRecentTopic = useLibraryStore((s) => s.setTopicFilter);
+  const resolveRecentCourse = useAcademicStore((s) => s.resolveCourse);
   const [recentSort, setRecentSort] = useState<TestResultsSort>('newest');
   const [recentPage, setRecentPage] = useState(1);
   const [recentPageData, setRecentPageData] = useState<TestResult[]>([]);
@@ -1039,7 +1051,7 @@ export default function DashboardScreen({
 
   useEffect(() => {
     setRecentPage(1);
-  }, [recentSort, selectedTimePeriod, customStartDate, customEndDate]);
+  }, [recentSort, selectedTimePeriod, customStartDate, customEndDate, recentCourseId, recentTopicId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1053,6 +1065,8 @@ export default function DashboardScreen({
           sort: recentSort,
           from: recentPeriodBounds.from,
           to: recentPeriodBounds.to,
+          courseId: recentCourseId,
+          topicId: recentTopicId,
         });
         if (!cancelled) {
           setRecentPageData(data as TestResult[]);
@@ -1072,7 +1086,15 @@ export default function DashboardScreen({
     return () => {
       cancelled = true;
     };
-  }, [currentUser.id, recentPage, recentSort, recentPeriodBounds.from, recentPeriodBounds.to]);
+  }, [
+    currentUser.id,
+    recentPage,
+    recentSort,
+    recentPeriodBounds.from,
+    recentPeriodBounds.to,
+    recentCourseId,
+    recentTopicId,
+  ]);
 
   const recentTotalPages = Math.max(1, Math.ceil(recentTotal / RECENT_TESTS_PAGE_SIZE));
 
@@ -1860,6 +1882,45 @@ export default function DashboardScreen({
                     : 'No tests in this period'}
                 </p>
               </div>
+              {/* The Library's scope, always visible and always clearable: a
+                  silently narrowed list reads as missing tests. */}
+              {recentCourseId && (
+                <div className="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-lantern-border bg-lantern-background-secondary/20 text-[11px] text-lantern-text-secondary">
+                  <span>
+                    Filtered to{' '}
+                    <span className="font-semibold text-lantern-text">
+                      {recentCourseId === UNFILED_COURSE_ID
+                        ? 'unfiled tests'
+                        : resolveRecentCourse(recentCourseId)?.code || 'one course'}
+                    </span>
+                    {recentTopicId ? (
+                      <>
+                        {' · '}
+                        <span className="font-semibold text-lantern-text">
+                          {recentTopicId === UNTOPICED_TOPIC_ID ? 'No topic' : recentTopicLabel || 'Topic'}
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                  {recentTopicId ? (
+                    <button
+                      type="button"
+                      onClick={() => clearRecentTopic(recentCourseId, null)}
+                      className="rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
+                      title="Show every topic in this course"
+                    >
+                      Whole course
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => clearRecentCourse(null)}
+                    className="inline-flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
+                  >
+                    <XMarkIcon className="w-3 h-3" aria-hidden /> Clear
+                  </button>
+                </div>
+              )}
               <div className="divide-y divide-lantern-border">
                 {recentLoading ? (
                   <div className="p-8 text-center text-sm text-lantern-text-tertiary">Loading tests…</div>

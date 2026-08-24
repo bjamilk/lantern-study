@@ -77,6 +77,8 @@ export type RemoteListing = {
   /** Academic archive: listing rows are served snake_case (`course_id`). */
   course_id?: string | null;
   courseId?: string | null;
+  topic_id?: string | null;
+  topicId?: string | null;
   category_specific_fields?: Record<string, unknown> | null;
   // Rights / takedown / appeal state (Phase 1 · E) — owner + admin views only.
   rights_status?: ListingRightsStatus;
@@ -133,6 +135,7 @@ export function mapRemoteListing(l: RemoteListing): MarketplaceListing {
     // Academic archive: map the raw column onto the camelCase field every
     // screen reads; the raw JSONB keeps courseCode for older listings.
     courseId: l.course_id ?? l.courseId ?? null,
+    topicId: l.topic_id ?? l.topicId ?? null,
     category_specific_fields: l.category_specific_fields ?? undefined,
     // Rights / takedown / appeal: the API only sends these to the owner, so a
     // browse row simply leaves them undefined.
@@ -215,6 +218,8 @@ export interface MarketplaceListing {
   favorites_count?: number;
   /** Academic archive: marketplace_listings.course_id (mapped from the raw column). */
   courseId?: string | null;
+  /** Syllabus topic inside `courseId`; absent until 20260826120000 is applied. */
+  topicId?: string | null;
   /** Free-form JSONB; `courseCode` mirrors the picked course for older clients. */
   category_specific_fields?: Record<string, unknown>;
   // Rights / takedown / appeal state (Phase 1 · E). Present for the seller's
@@ -1038,6 +1043,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         sale_ends_at: listingData.sale_ends_at,
         promo_label: listingData.promo_label,
         ...(listingData.courseId !== undefined ? { courseId: listingData.courseId } : {}),
+        ...(listingData.topicId !== undefined ? { topicId: listingData.topicId } : {}),
         ...(listingData.category_specific_fields
           ? { categorySpecificFields: listingData.category_specific_fields }
           : {}),

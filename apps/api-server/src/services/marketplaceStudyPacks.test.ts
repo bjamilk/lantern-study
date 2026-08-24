@@ -303,6 +303,68 @@ describe('grantEntitlement (delivery)', () => {
     });
     await expect(service.grantEntitlement('listing-1', 'buyer-1', null)).rejects.toThrow('content not found');
   });
+
+  it('files the delivered parts under the listing topic while the listing is still in the pack course', async () => {
+    const { service, createNote, writes } = makeSupabase({
+      tables: {
+        marketplace_study_packs: { data: PACK, error: null },
+        marketplace_question_bank_entitlements: { data: null, error: null },
+        marketplace_listings: { data: { title: 'Pack', course_id: 'course-1', topic_id: 'topic-1' }, error: null },
+      },
+    });
+
+    await service.grantEntitlement('listing-1', 'buyer-1', null);
+
+    expect(createNote).toHaveBeenCalledWith(
+      'buyer-1',
+      expect.objectContaining({ courseId: 'course-1', topicId: 'topic-1' })
+    );
+    const deckUpdate = writes.find((w) => w.table === 'decks' && w.op === 'update');
+    expect(deckUpdate?.payload).toMatchObject({ course_id: 'course-1', topic_id: 'topic-1' });
+  });
+
+  it('drops a topic the seller left behind by moving the listing to another course', async () => {
+    // marketplace_study_packs.course_id is never updated by a listing edit, so
+    // the listing's topic belongs to a course the artefacts are NOT filed under.
+    const { service, createNote, writes } = makeSupabase({
+      tables: {
+        marketplace_study_packs: { data: PACK, error: null },
+        marketplace_question_bank_entitlements: { data: null, error: null },
+        marketplace_listings: { data: { title: 'Pack', course_id: 'course-2', topic_id: 'topic-2' }, error: null },
+      },
+    });
+
+    await service.grantEntitlement('listing-1', 'buyer-1', null);
+
+    expect(createNote).toHaveBeenCalledWith(
+      'buyer-1',
+      expect.objectContaining({ courseId: 'course-1', topicId: null })
+    );
+    const deckUpdate = writes.find((w) => w.table === 'decks' && w.op === 'update');
+    expect(deckUpdate?.payload).toEqual({ course_id: 'course-1' });
+  });
+
+  it('records the parts already delivered when a later step fails, so a retry cannot duplicate them', async () => {
+    const { service, createNote, writes } = makeSupabase({
+      tables: {
+        marketplace_study_packs: { data: PACK, error: null },
+        marketplace_question_bank_entitlements: { data: null, error: null },
+        marketplace_listings: { data: { title: 'Pack' }, error: null },
+      },
+    });
+    createNote.mockRejectedValueOnce(new Error('note write failed'));
+
+    await expect(service.grantEntitlement('listing-1', 'buyer-1', null)).rejects.toThrow('note write failed');
+
+    const refsUpdate = writes.find(
+      (w) => w.table === 'marketplace_question_bank_entitlements' && w.op === 'update'
+    );
+    // The deck that was minted is remembered; the version is not, because the
+    // buyer does not hold a fully delivered copy of it.
+    expect(refsUpdate?.payload).toEqual({
+      delivered_refs: { version: 2, bundleId: 'pack-listing-1', deckId: 'deck-1' },
+    });
+  });
 });
 
 describe('downloadStudyPack', () => {

@@ -53,12 +53,14 @@ import { useAIHandlers } from '../../hooks/useAIHandlers';
 
 import { Button, Card } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
 import AIUsageBadge from '../../components/AIUsageBadge';
 import { getLatestAIUsage, subscribeToAIUsage } from '../../services/ai';
+import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { SMART_NOTES_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
 import { SMART_NOTES_GUIDANCE_MAX_CHARS } from '@lantern/shared/utils/smartNotes';
 import { useAuthStore } from '../../stores/authStore';
@@ -1019,12 +1021,33 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 disabled={!canEdit}
                 onChange={course => {
                   const nextCourseId = course?.id ?? null;
-                  setSelectedNote({ ...selectedNote, courseId: nextCourseId });
-                  saveNote(noteId, { courseId: nextCourseId }).catch(() => {});
+                  // A topic belongs to one course, so moving the note drops it.
+                  const nextTopicId = topicIdAfterCourseChange(
+                    selectedNote.topicId ?? null,
+                    selectedNote.courseId ?? null,
+                    nextCourseId
+                  );
+                  setSelectedNote({ ...selectedNote, courseId: nextCourseId, topicId: nextTopicId });
+                  saveNote(noteId, { courseId: nextCourseId, topicId: nextTopicId }).catch(() => {});
                 }}
                 placeholder="File this note under a course (optional)"
                 title="Course for this note"
               />
+              <View className="mt-2">
+                <Text className="text-xs font-semibold text-lantern-text-secondary mb-1">Topic</Text>
+                <TopicPicker
+                  courseId={selectedNote.courseId ?? null}
+                  value={selectedNote.topicId ?? null}
+                  disabled={!canEdit}
+                  onChange={topic => {
+                    const nextTopicId = topic?.id ?? null;
+                    setSelectedNote({ ...selectedNote, topicId: nextTopicId });
+                    saveNote(noteId, { topicId: nextTopicId }).catch(() => {});
+                  }}
+                  placeholder="Which part of the syllabus? (optional)"
+                  title="Topic for this note"
+                />
+              </View>
             </View>
           ) : null}
 

@@ -30,6 +30,8 @@ import {
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { fetchMarketplaceCampuses } from '../../services/api';
 import { CoursePicker } from '../../components/CoursePicker';
+import { TopicPicker } from '../../components/TopicPicker';
+import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { CampusPicker } from './CampusPicker';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ATTESTATION_REQUIRED_MESSAGE, isAcademicListing } from '@lantern/shared/moderation';
@@ -84,6 +86,7 @@ export function EditListingScreen({
   const [campusId, setCampusId] = useState('');
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseCode, setCourseCode] = useState<string | null>(null);
+  const [topicId, setTopicId] = useState<string | null>(null);
   // Rights attestation (Phase 1 · E): the API demands it when an edit moves
   // an unattested listing into an academic category; already-attested
   // listings just show a confirmation line.
@@ -122,6 +125,7 @@ export function EditListingScreen({
     setQuantity(currentListing.quantity != null ? String(currentListing.quantity) : '');
     setCampusId(currentListing.campus_id || currentListing.campus?.id || '');
     setCourseId(currentListing.courseId ?? null);
+    setTopicId(currentListing?.topicId ?? null);
     const legacyCourseCode = currentListing.category_specific_fields?.courseCode;
     setCourseCode(typeof legacyCourseCode === 'string' && legacyCourseCode.trim() ? legacyCourseCode : null);
   }, [currentListing, listingId]);
@@ -282,6 +286,9 @@ export function EditListingScreen({
           // Academic archive: always send courseId (null clears); mirror the
           // code into category_specific_fields.courseCode for legacy readers.
           courseId: courseId ?? null,
+          // The topic goes with it (null clears) — the server rejects a topic
+          // that belongs to a different course.
+          topicId: courseId ? topicId : null,
           ...(courseCode !== (currentListing?.category_specific_fields?.courseCode ?? null)
             ? { category_specific_fields: { courseCode: courseCode ?? null } }
             : {}),
@@ -418,7 +425,9 @@ export function EditListingScreen({
             value={courseId}
             fallbackLabel={courseCode}
             onChange={course => {
-              setCourseId(course?.id ?? null);
+              const nextCourseId = course?.id ?? null;
+              setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
+              setCourseId(nextCourseId);
               setCourseCode(course?.code ?? null);
             }}
             placeholder="Which course is this for? e.g. BIO 201"
@@ -426,6 +435,18 @@ export function EditListingScreen({
           />
           <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
             Helps students at your level find it.
+          </Text>
+
+          <Text className="text-sm font-semibold text-lantern-text mb-2">Topic (optional)</Text>
+          <TopicPicker
+            courseId={courseId}
+            value={topicId}
+            onChange={topic => setTopicId(topic?.id ?? null)}
+            placeholder="Which part of the syllabus?"
+            title="Topic for this listing"
+          />
+          <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+            Buyers browsing a course see this under the right week of the outline.
           </Text>
 
           <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>

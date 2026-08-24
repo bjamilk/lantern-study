@@ -13,7 +13,7 @@ import { featureAccents } from '@lantern/shared/design';
 import type { LibrarySearchResult } from '../types';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useAcademicStore } from '../stores/academicStore';
-import { UNFILED_COURSE_ID, isSearchableQuery } from '../utils/libraryArchive';
+import { UNFILED_COURSE_ID, buildLibraryTree, findTreeTopic, isSearchableQuery } from '../utils/libraryArchive';
 import { courseLabel } from '../utils/academicSetup';
 import { LibraryRail } from './library/LibraryRail';
 import { LibrarySearchBox, LibrarySearchResults } from './library/LibrarySearch';
@@ -65,6 +65,10 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 }) => {
   const courseFilterId = useLibraryStore((s) => s.courseFilterId);
   const setCourseFilter = useLibraryStore((s) => s.setCourseFilter);
+  const topicFilterId = useLibraryStore((s) => s.topicFilterId);
+  const topicFilterLabel = useLibraryStore((s) => s.topicFilterLabel);
+  const setTopicFilter = useLibraryStore((s) => s.setTopicFilter);
+  const overview = useLibraryStore((s) => s.overview);
   const setPendingOfflineBundleId = useLibraryStore((s) => s.setPendingOfflineBundleId);
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
   const knownCourses = useAcademicStore((s) => s.knownCourses);
@@ -85,11 +89,22 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   }, []);
 
   const selectedCourse = courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? resolveCourse(courseFilterId) : null;
+  // The store carries the title picked in the rail; the tree is only a fallback
+  // for a filter restored without one. Never *only* the tree: a row can leave it
+  // (the "No topic" row disappears once its last item is filed, another device
+  // renames a topic) while the filter is still narrowing the results, and a
+  // label that vanishes takes the "Whole course" button with it.
+  const selectedTopic = useMemo(() => {
+    if (!topicFilterId) return null;
+    const fromTree = findTreeTopic(buildLibraryTree(overview), courseFilterId, topicFilterId);
+    return fromTree || { title: topicFilterLabel || 'Topic' };
+  }, [overview, courseFilterId, topicFilterId, topicFilterLabel]);
   const scopeLabel = useMemo(() => {
     if (!courseFilterId) return null;
     if (courseFilterId === UNFILED_COURSE_ID) return 'Unfiled';
-    return selectedCourse ? selectedCourse.code : 'this course';
-  }, [courseFilterId, selectedCourse]);
+    const course = selectedCourse ? selectedCourse.code : 'this course';
+    return selectedTopic ? `${course} · ${selectedTopic.title}` : course;
+  }, [courseFilterId, selectedCourse, selectedTopic]);
 
   const searching = isSearchableQuery(query) || query.trim().length > 0;
   const clearSearch = useCallback(() => setQuery(''), []);
@@ -100,6 +115,14 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
       setRailOpen(false);
     },
     [setCourseFilter]
+  );
+
+  const handleSelectTopic = useCallback(
+    (courseId: string, topicId: string | null, topicLabel?: string | null) => {
+      setTopicFilter(courseId, topicId, topicLabel);
+      setRailOpen(false);
+    },
+    [setTopicFilter]
   );
 
   const handleOpenBundle = useCallback(
@@ -115,6 +138,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
       compact={compact}
       selectedCourseId={courseFilterId}
       onSelectCourse={handleSelectCourse}
+      selectedTopicId={topicFilterId}
+      onSelectTopic={handleSelectTopic}
       onOpenTab={(next) => {
         clearSearch();
         onTabChange(next);
@@ -175,9 +200,11 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     {courseFilterId
                       ? courseFilterId === UNFILED_COURSE_ID
                         ? 'Unfiled'
-                        : selectedCourse
-                          ? courseLabel(selectedCourse)
-                          : 'Course'
+                        : selectedTopic
+                          ? `${selectedCourse ? selectedCourse.code : 'Course'} · ${selectedTopic.title}`
+                          : selectedCourse
+                            ? courseLabel(selectedCourse)
+                            : 'Course'
                       : 'Browse by course'}
                   </span>
                 </span>
@@ -201,7 +228,23 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                       ? courseLabel(selectedCourse)
                       : 'one course'}
                 </span>
+                {selectedTopic ? (
+                  <>
+                    {' · '}
+                    <span className="font-semibold text-lantern-text">{selectedTopic.title}</span>
+                  </>
+                ) : null}
               </span>
+              {selectedTopic && courseFilterId !== UNFILED_COURSE_ID ? (
+                <button
+                  type="button"
+                  onClick={() => handleSelectTopic(courseFilterId, null)}
+                  className="inline-flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
+                  title="Show every topic in this course"
+                >
+                  Whole course
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => handleSelectCourse(null)}
@@ -270,6 +313,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               <LibrarySearchResults
                 query={query}
                 courseId={courseFilterId}
+                topicId={topicFilterId}
                 onOpenNote={onOpenNote}
                 onOpenDeck={onOpenDeck}
                 onOpenBundle={handleOpenBundle}

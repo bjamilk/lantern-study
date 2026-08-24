@@ -4,6 +4,7 @@ import { Deck, Flashcard } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { fetchDecks } from '../services/supabase';
 import { CourseChips } from './academic/CourseChips';
+import { TopicFilterChip } from './academic/TopicFilterChip';
 import {
   RectangleStackIcon,
   PlusCircleIcon,
@@ -18,7 +19,7 @@ import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
 import { useLibraryStore } from '../stores/libraryStore';
-import { UNFILED_COURSE_ID, matchesCourseFilter } from '../utils/libraryArchive';
+import { UNFILED_COURSE_ID, matchesCourseFilter, matchesTopicFilter } from '../utils/libraryArchive';
 import { MoveToCourseModal } from './academic/MoveToCourseModal';
 import { SkeletonCard, ScreenHeader, Button, EmptyState, Menu, MenuTrigger, MenuContent, MenuItem } from './ui';
 
@@ -34,7 +35,7 @@ interface FlashcardsScreenProps {
   onStudyDeck?: (deck: Deck) => void;
   onOfflineToggle?: (deck: Deck, enable: boolean) => void;
   /** "Move to course…" on a deck card (PUT /decks/:id { courseId }). Rejections surface in the dialog. */
-  onMoveDeckToCourse?: (deck: Deck, courseId: string | null) => void | Promise<void>;
+  onMoveDeckToCourse?: (deck: Deck, courseId: string | null, topicId: string | null) => void | Promise<void>;
   embedded?: boolean;
 }
 
@@ -82,6 +83,8 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   // store keeps the full list for every other surface.
   const currentUserId = useAuthStore((s) => s.currentUser?.id ?? null);
   const courseFilterId = useLibraryStore((s) => s.courseFilterId);
+  // Topic narrows the same list one level further (`GET /decks?courseId&topicId`).
+  const topicFilterId = useLibraryStore((s) => s.topicFilterId);
   const setCourseFilterId = useLibraryStore((s) => s.setCourseFilter);
   const [courseDeckIds, setCourseDeckIds] = useState<Set<string> | null>(null);
   const [courseFilterLoading, setCourseFilterLoading] = useState(false);
@@ -95,7 +98,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
     }
     let cancelled = false;
     setCourseFilterLoading(true);
-    void fetchDecks(currentUserId, { includeShared: true, courseId: courseFilterId })
+    void fetchDecks(currentUserId, { includeShared: true, courseId: courseFilterId, topicId: topicFilterId })
       .then((rows) => {
         if (cancelled) return;
         setCourseDeckIds(new Set((rows || []).map((d: { id: string }) => d.id)));
@@ -103,7 +106,9 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
       .catch(() => {
         if (cancelled) return;
         // Fall back to the deck rows already in the store.
-        setCourseDeckIds(new Set(decks.filter((d) => matchesCourseFilter(d?.courseId, courseFilterId)).map((d) => d.id)));
+        setCourseDeckIds(new Set(decks
+          .filter((d) => matchesCourseFilter(d?.courseId, courseFilterId) && matchesTopicFilter(d?.topicId, topicFilterId))
+          .map((d) => d.id)));
       })
       .finally(() => {
         if (!cancelled) setCourseFilterLoading(false);
@@ -112,7 +117,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseFilterId, currentUserId]);
+  }, [courseFilterId, topicFilterId, currentUserId]);
   const validDecks = decks
     .filter((deck): deck is Deck => Boolean(deck?.id && deck?.name))
     .filter((deck) => {
@@ -120,20 +125,31 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
       if (courseDeckIds) {
         // Server answer wins; a deck the store already files under this course
         // (just created / just moved) shows without waiting for a refetch.
-        return courseDeckIds.has(deck.id) || (courseFilterId !== UNFILED_COURSE_ID && deck.courseId === courseFilterId);
+        // Server answer wins; a deck the store already files here (just
+        // created / just moved) shows without waiting for a refetch — but only
+        // if it also matches the topic, or picking a topic would show it back.
+        if (courseDeckIds.has(deck.id)) return true;
+        return (
+          courseFilterId !== UNFILED_COURSE_ID &&
+          deck.courseId === courseFilterId &&
+          matchesTopicFilter(deck.topicId, topicFilterId)
+        );
       }
       // No server answer yet: nothing while loading (skeleton), best effort after a failure.
-      return courseFilterLoading ? false : matchesCourseFilter(deck.courseId, courseFilterId);
+      return courseFilterLoading
+        ? false
+        : matchesCourseFilter(deck.courseId, courseFilterId) && matchesTopicFilter(deck.topicId, topicFilterId);
     });
 
-  const handleMoveDeck = async (deck: Deck, courseId: string | null) => {
+  const handleMoveDeck = async (deck: Deck, courseId: string | null, topicId: string | null = null) => {
     if (!onMoveDeckToCourse) return;
-    await onMoveDeckToCourse(deck, courseId);
+    const nextTopicId = courseId ? topicId : null;
+    await onMoveDeckToCourse(deck, courseId, nextTopicId);
     // Keep the filtered view honest without a refetch.
     setCourseDeckIds((prev) => {
       if (!prev || !courseFilterId) return prev;
       const next = new Set(prev);
-      if (matchesCourseFilter(courseId, courseFilterId)) next.add(deck.id);
+      if (matchesCourseFilter(courseId, courseFilterId) && matchesTopicFilter(nextTopicId, topicFilterId)) next.add(deck.id);
       else next.delete(deck.id);
       return next;
     });
@@ -212,13 +228,17 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         {embedded && (
           <div className="flex justify-end mb-4">{headerActions}</div>
         )}
-        <CourseChips
-          value={courseFilterId}
-          onChange={setCourseFilterId}
-          className="mb-4"
-          ariaLabel="Filter decks by course"
-          showUnfiled
-        />
+        {/* The chips name the course; the topic gets its own chip, or the list
+            is shorter than anything on screen explains. */}
+        <div className="mb-4 flex flex-col gap-1.5">
+          <CourseChips
+            value={courseFilterId}
+            onChange={setCourseFilterId}
+            ariaLabel="Filter decks by course"
+            showUnfiled
+          />
+          <TopicFilterChip />
+        </div>
 
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -381,8 +401,9 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           isOpen={Boolean(movingDeck)}
           onClose={() => setMovingDeck(null)}
           currentCourseId={movingDeck?.courseId ?? null}
+          currentTopicId={movingDeck?.topicId ?? null}
           title={movingDeck ? `Move “${movingDeck.name}” to course` : 'Move deck to course'}
-          onSubmit={(courseId) => (movingDeck ? handleMoveDeck(movingDeck, courseId) : undefined)}
+          onSubmit={(courseId, topicId) => (movingDeck ? handleMoveDeck(movingDeck, courseId, topicId) : undefined)}
         />
       ) : null}
     </div>

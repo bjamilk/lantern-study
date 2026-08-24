@@ -82,11 +82,14 @@ export function createApiEndpoints(client: ApiClient) {
         includeShared?: boolean;
         /** Course filter; pass the literal 'null' for unfiled decks. */
         courseId?: string | null;
+        /** Topic filter within the course; the literal 'null' is "under no topic". */
+        topicId?: string | null;
       },
     ) => {
       const params = new URLSearchParams({ userId });
       if (options?.includeShared) params.set("includeShared", "true");
       if (options?.courseId != null) params.set("courseId", String(options.courseId));
+      if (options?.topicId != null) params.set("topicId", String(options.topicId));
       params.set("limit", "50");
       return apiRequest<
         Array<{
@@ -96,6 +99,7 @@ export function createApiEndpoints(client: ApiClient) {
           user_id: string;
           is_shared?: boolean;
           course_id?: string | null;
+          topic_id?: string | null;
           created_at: string;
           updated_at: string;
           card_count?: number;
@@ -105,7 +109,12 @@ export function createApiEndpoints(client: ApiClient) {
 
     createDeck: (
       userId: string,
-      data: { name: string; description?: string; courseId?: string | null },
+      data: {
+        name: string;
+        description?: string;
+        courseId?: string | null;
+        topicId?: string | null;
+      },
     ) =>
       apiRequest<{
         id: string;
@@ -113,6 +122,7 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         user_id: string;
         course_id?: string | null;
+        topic_id?: string | null;
         created_at: string;
         updated_at: string;
         card_count?: number;
@@ -123,7 +133,12 @@ export function createApiEndpoints(client: ApiClient) {
 
     updateDeck: (
       deckId: string,
-      updates: { name?: string; description?: string; courseId?: string | null },
+      updates: {
+        name?: string;
+        description?: string;
+        courseId?: string | null;
+        topicId?: string | null;
+      },
     ) =>
       apiRequest<{
         id: string;
@@ -1947,6 +1962,8 @@ export function createApiEndpoints(client: ApiClient) {
         categorySpecificFields?: unknown;
         /** Academic archive: course this listing is for (marketplace_listings.course_id). */
         courseId?: string | null;
+        /** Topic within `courseId` (marketplace_listings.topic_id). */
+        topicId?: string | null;
         /**
          * Rights attestation (RIGHTS_ATTESTATION_TEXT). Required (400 otherwise)
          * when isAcademicListing({ listingKind, category }) — i.e. pq_bank,
@@ -1999,6 +2016,8 @@ export function createApiEndpoints(client: ApiClient) {
         categorySpecificFields?: unknown;
         /** Academic archive: course this listing is for (null clears). */
         courseId?: string | null;
+        /** Topic within `courseId` (null clears). */
+        topicId?: string | null;
         /**
          * Rights attestation. Required (400) when the edit moves an
          * unattested listing into an academic category; re-sending it on an
@@ -2535,6 +2554,8 @@ export function createApiEndpoints(client: ApiClient) {
       groupId?: string | null;
       /** Academic archive: written on both the listing and the bank. */
       courseId?: string | null;
+      /** Topic within `courseId`; only the listing carries it, not the bank. */
+      topicId?: string | null;
       content: { config?: Record<string, unknown>; questions: unknown[] };
       /** Rights attestation (RIGHTS_ATTESTATION_TEXT) — required; 400 without it. */
       attestation: true;
@@ -2692,6 +2713,8 @@ export function createApiEndpoints(client: ApiClient) {
       campusId: string;
       location?: string;
       courseId?: string | null;
+      /** Topic within `courseId`; only the listing carries it, not the pack. */
+      topicId?: string | null;
       content?: StudyPackContentInput;
       /** Consume a ready AI draft instead of inline content (Phase 2 · H). */
       draftId?: string | null;
@@ -3913,12 +3936,15 @@ export function createApiEndpoints(client: ApiClient) {
     searchLibrary: (params: {
       q: string;
       courseId?: string | null;
+      /** Topic within `courseId`; the literal "null" means "in the course, under no topic". */
+      topicId?: string | null;
       types?: LibrarySearchType[];
       limit?: number;
     }) => {
       const search = new URLSearchParams();
       search.set("q", params.q.trim());
       if (params.courseId) search.set("courseId", params.courseId);
+      if (params.topicId) search.set("topicId", params.topicId);
       if (params.types && params.types.length > 0) {
         search.set("types", params.types.join(","));
       }

@@ -14,8 +14,11 @@ interface NotesState {
   error: string | null;
   selectedFolderId: string | null;
   loadFolders: () => Promise<void>;
-  /** `courseId` = uuid for one course, `'null'` for unfiled, undefined for all. */
-  loadNotes: (folderId?: string, courseId?: string | null) => Promise<void>;
+  /**
+   * `courseId` = uuid for one course, `'null'` for unfiled, undefined for all.
+   * `topicId` narrows one level further and is ignored without a course.
+   */
+  loadNotes: (folderId?: string, courseId?: string | null, topicId?: string | null) => Promise<void>;
   loadNote: (noteId: string) => Promise<boolean>;
   createFolder: (name: string) => Promise<NoteFolder>;
   updateFolder: (
@@ -57,12 +60,12 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     }
   },
 
-  loadNotes: async (folderId, courseId) => {
+  loadNotes: async (folderId, courseId, topicId) => {
     set({ isLoading: true, error: null });
     try {
       const notes = await notesApi.fetchNotes(
         folderId || undefined,
-        courseId ? { courseId } : undefined,
+        courseId ? { courseId, topicId: topicId ?? null } : undefined,
       );
       set({ notes, isLoading: false });
     } catch (e: unknown) {
