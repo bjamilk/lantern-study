@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ChevronDownIcon, MagnifyingGlassIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { CheckIcon, ChevronDownIcon, MagnifyingGlassIcon, PlusIcon, SparklesIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { COURSE_TOPIC_COPY, formatAddTopicOffer } from '@lantern/shared';
 import type { CourseTopic } from '../../types';
 import { TOPIC_TITLE_MAX, useTopicSearch } from './useTopicSearch';
 
@@ -37,9 +38,9 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
   courseId,
   value,
   onChange,
-  label = 'Topic',
+  label = COURSE_TOPIC_COPY.label,
   hideLabel = false,
-  placeholder = 'No topic — tap to choose',
+  placeholder = COURSE_TOPIC_COPY.placeholder,
   id,
   className = '',
   disabled = false,
@@ -58,10 +59,24 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
 
   // Fetch while the list is open, and also whenever there is an id to resolve
   // into a title for the closed trigger.
-  const { query, setQuery, topics, options, offer, loading, creating, error, unavailable, create } = useTopicSearch({
-    courseId: effectiveCourseId,
-    enabled: open || !!selectedId,
-  });
+  const { query, setQuery, topics, options, offer, loading, creating, seeding, error, unavailable, create, seed } =
+    useTopicSearch({
+      courseId: effectiveCourseId,
+      enabled: open || !!selectedId,
+    });
+
+  // Whether a seed-from-tags run has come back with nothing to suggest, so the
+  // empty state can say so honestly rather than looking like a dead button.
+  const [seededEmpty, setSeededEmpty] = useState(false);
+  const runSeed = async () => {
+    setSeededEmpty(false);
+    try {
+      const rows = await seed();
+      if (rows.length === 0) setSeededEmpty(true);
+    } catch {
+      /* error surfaced by the hook */
+    }
+  };
 
   const selected: CourseTopic | null =
     typeof value === 'object' && value ? value : topics.find((topic) => topic.id === selectedId) ?? null;
@@ -84,6 +99,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
     if (!courseChanged) return;
     setOpen(false);
     setQuery('');
+    setSeededEmpty(false);
     if (selectedId && !topicChanged) onChange(null);
   }, [effectiveCourseId, selectedId, onChange, setQuery]);
 
@@ -112,7 +128,13 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
   };
 
   const triggerPad = compact ? 'px-2.5 py-1.5 text-xs' : 'p-3 text-sm';
-  const triggerLabel = noCourse ? 'Pick a course first' : selected ? selected.title : selectedId ? 'Topic selected' : placeholder;
+  const triggerLabel = noCourse
+    ? COURSE_TOPIC_COPY.noCourse
+    : selected
+      ? selected.title || COURSE_TOPIC_COPY.untitled
+      : selectedId
+        ? COURSE_TOPIC_COPY.selectedUnknown
+        : placeholder;
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
@@ -143,7 +165,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
           <button
             type="button"
             onClick={() => pick(null)}
-            aria-label="Clear topic"
+            aria-label={COURSE_TOPIC_COPY.clear}
             className={`shrink-0 ${compact ? 'px-2' : 'px-3'} rounded-lg border border-lantern-border text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary`}
           >
             <XMarkIcon className="w-4 h-4" aria-hidden />
@@ -163,14 +185,33 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search or add a topic"
+              placeholder={unavailable ? COURSE_TOPIC_COPY.searchPlaceholderReadOnly : COURSE_TOPIC_COPY.searchPlaceholder}
               maxLength={TOPIC_TITLE_MAX}
               className="w-full pl-9 pr-3 py-2.5 bg-transparent text-lantern-text text-sm focus:outline-none"
-              aria-label="Search topics"
+              aria-label={COURSE_TOPIC_COPY.searchPlaceholderReadOnly}
               autoFocus
             />
           </div>
           <ul role="listbox" aria-label="Topics" className="max-h-56 overflow-y-auto">
+            {clearable && !query.trim() ? (
+              // An explicit in-list way to file under no topic, alongside the X
+              // button — a keyboard user never has to reach for the mouse to clear.
+              // Hidden while searching: "No topic" is a fixed choice, not a match.
+              <li>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={!selectedId}
+                  onClick={() => pick(null)}
+                  className={`w-full text-left px-3 py-2 text-sm border-b border-lantern-border/40 flex items-center gap-2 ${
+                    !selectedId ? 'bg-lantern-primary/10 text-lantern-text font-medium' : 'text-lantern-text-secondary hover:bg-lantern-background'
+                  }`}
+                >
+                  <span className="block truncate italic">{COURSE_TOPIC_COPY.none}</span>
+                  {!selectedId ? <CheckIcon className="w-4 h-4 ml-auto shrink-0" aria-hidden /> : null}
+                </button>
+              </li>
+            ) : null}
             {options.map((topic) => {
               const isSelected = topic.id === selectedId;
               return (
@@ -186,7 +227,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
                         : 'text-lantern-text hover:bg-lantern-background'
                     }`}
                   >
-                    <span className="block truncate">{topic.title}</span>
+                    <span className="block truncate">{topic.title || COURSE_TOPIC_COPY.untitled}</span>
                   </button>
                 </li>
               );
@@ -200,22 +241,42 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
                   className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md text-lantern-primary hover:bg-lantern-primary/10 disabled:opacity-50"
                 >
                   <PlusIcon className="w-4 h-4" aria-hidden />
-                  {creating ? 'Adding…' : `Add ‘${offer.title}’`}
+                  {creating ? COURSE_TOPIC_COPY.adding : formatAddTopicOffer(offer.title)}
                 </button>
+                {/* Creating a topic changes the shared outline — say so once, here. */}
+                <p className="mt-1 px-1 text-[11px] leading-snug text-lantern-text-tertiary">{COURSE_TOPIC_COPY.shared}</p>
               </li>
             ) : null}
           </ul>
+          {/* Seed-from-tags: only in the genuinely-empty outline state (no query,
+              no rows) and only when the outline can actually be written to. */}
+          {!loading && !unavailable && topics.length === 0 && !query.trim() ? (
+            <div className="border-t border-lantern-border p-2">
+              <button
+                type="button"
+                onClick={() => void runSeed()}
+                disabled={seeding}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md text-lantern-primary hover:bg-lantern-primary/10 disabled:opacity-50"
+              >
+                <SparklesIcon className="w-4 h-4" aria-hidden />
+                {COURSE_TOPIC_COPY.seed}
+              </button>
+              <p className="mt-1 px-1 text-[11px] leading-snug text-lantern-text-tertiary">
+                {seededEmpty ? COURSE_TOPIC_COPY.seedEmpty : COURSE_TOPIC_COPY.seedHint}
+              </p>
+            </div>
+          ) : null}
           <p className="px-3 py-1.5 text-xs text-lantern-text-secondary border-t border-lantern-border">
             {error
               ? error
               : unavailable
-                ? 'Topics aren’t set up for this course yet.'
+                ? COURSE_TOPIC_COPY.unavailable
                 : loading
-                  ? 'Loading topics…'
+                  ? COURSE_TOPIC_COPY.loading
                   : options.length === 0
                     ? query.trim()
-                      ? 'No matching topic — add it to the outline.'
-                      : 'No topics yet. Type one to start this course’s outline.'
+                      ? COURSE_TOPIC_COPY.emptyMatch
+                      : COURSE_TOPIC_COPY.empty
                     : `${options.length} topic${options.length === 1 ? '' : 's'}`}
           </p>
         </div>

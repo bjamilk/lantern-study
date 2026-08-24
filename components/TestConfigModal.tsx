@@ -241,6 +241,12 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         setSelectedTagsInModal(preset.config.selectedTags || []);
         setFocusOnNew(preset.config.focusOnNew || false);
         setUseSpacedRepetition(false);
+        // The preset saves where the session is filed too. Restore both — but
+        // never a topic without its course: a topic from no course (or another
+        // course) is exactly the orphan the server rejects on save.
+        const presetCourseId = preset.config.courseId ?? null;
+        setCourseId(presetCourseId);
+        setTopicId(presetCourseId ? preset.config.topicId ?? null : null);
     }
   };
 

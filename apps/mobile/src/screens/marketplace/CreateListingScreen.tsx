@@ -44,6 +44,19 @@ type NavigationProp = {
 
 const MAX_IMAGES = 5;
 
+/**
+ * Categories that carry a course (and therefore a syllabus topic) — the ones
+ * whose web field list includes `courseCode`: past questions, lecture notes and
+ * projects. Everything else (textbooks, accommodation, fashion…) hides both
+ * pickers, matching web. Filing under a course/topic is only meaningful for
+ * academic study material.
+ */
+const CATEGORIES_WITH_COURSE: ReadonlySet<MarketplaceCategory> = new Set([
+  'pq_bank',
+  'lecture_notes',
+  'project_thesis',
+]);
+
 interface ListingDraft {
   title: string;
   category: MarketplaceCategory;
@@ -114,6 +127,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const ALL_CATEGORIES = [...ACADEMIC_CATEGORIES, ...STUDENT_LIFE_CATEGORIES];
   const selectedCategory = ALL_CATEGORIES.find(c => c.id === category);
+  const showCourse = CATEGORIES_WITH_COURSE.has(category);
   const selectedCampus = campuses.find(c => c.id === campusId);
   const isOtherCity = isOtherCityCampus(selectedCampus);
 
@@ -562,6 +576,15 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
                 key={cat.id}
                 onPress={() => {
                   setCategory(cat.id);
+                  // Switching to a non-academic category drops any course/topic
+                  // so a stale filing isn't submitted under a listing that no
+                  // longer shows the pickers.
+                  if (!CATEGORIES_WITH_COURSE.has(cat.id)) {
+                    setCourseId(null);
+                    setCourseCode(null);
+                    setTopicId(null);
+                    setTopicTitle(null);
+                  }
                   setShowCategories(false);
                 }}
                 className={`px-3 py-1.5 rounded-full border ${
@@ -591,40 +614,49 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           Listings are visible across Nigeria; this tells buyers where the item is based.
         </Text>
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Course (optional)</Text>
-        <CoursePicker
-          value={courseId}
-          fallbackLabel={courseCode}
-          onChange={course => {
-            const nextCourseId = course?.id ?? null;
-            const nextTopicId = topicIdAfterCourseChange(topicId, courseId, nextCourseId);
-            setTopicId(nextTopicId);
-            if (!nextTopicId) setTopicTitle(null);
-            setCourseId(nextCourseId);
-            setCourseCode(course?.code ?? null);
-          }}
-          placeholder="Which course is this for? e.g. BIO 201"
-          title="Course for this listing"
-        />
-        <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
-          Helps students at your level find it. Textbooks, past questions and notes sell faster with a course.
-        </Text>
+        {/* Course + Topic only for academic study material (matches web's
+            courseCode field gate). Textbooks, accommodation etc. don't file
+            under a syllabus. */}
+        {showCourse ? (
+          <>
+            <Text className="text-sm font-semibold text-lantern-text mb-2">Course (optional)</Text>
+            <CoursePicker
+              value={courseId}
+              fallbackLabel={courseCode}
+              onChange={course => {
+                const nextCourseId = course?.id ?? null;
+                const nextTopicId = topicIdAfterCourseChange(topicId, courseId, nextCourseId);
+                setTopicId(nextTopicId);
+                if (!nextTopicId) setTopicTitle(null);
+                setCourseId(nextCourseId);
+                setCourseCode(course?.code ?? null);
+              }}
+              placeholder="Which course is this for? e.g. BIO 201"
+              title="Course for this listing"
+            />
+            <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+              Helps students at your level find it. Past questions, notes and projects sell faster with a course.
+            </Text>
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Topic (optional)</Text>
-        <TopicPicker
-          courseId={courseId}
-          value={topicId}
-          fallbackLabel={topicTitle}
-          onChange={topic => {
-            setTopicId(topic?.id ?? null);
-            setTopicTitle(topic?.title ?? null);
-          }}
-          placeholder="Which part of the syllabus?"
-          title="Topic for this listing"
-        />
-        <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
-          Buyers browsing a course see this under the right week of the outline.
-        </Text>
+            <Text className="text-sm font-semibold text-lantern-text mb-2">Topic (optional)</Text>
+            <TopicPicker
+              courseId={courseId}
+              value={topicId}
+              fallbackLabel={topicTitle}
+              onChange={topic => {
+                setTopicId(topic?.id ?? null);
+                setTopicTitle(topic?.title ?? null);
+              }}
+              placeholder="Which part of the syllabus?"
+              title="Topic for this listing"
+            />
+            {/* Filing under a topic just records where in the syllabus it sits —
+                no marketplace view browses by topic, so promise nothing more. */}
+            <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+              Files it under that part of the course's outline.
+            </Text>
+          </>
+        ) : null}
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
         <TextInput

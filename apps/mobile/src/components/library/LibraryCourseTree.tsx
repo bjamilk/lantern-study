@@ -4,15 +4,17 @@
  * filter the Notes / Flashcards tabs honour; each row also deep-links to the
  * Tests history and Offline screens filtered to that course.
  *
- * A course expands into its syllabus topics (Phase 1 · A) when the overview
- * carries any. It carries none until the course_topics migration is applied,
- * and then the course row renders exactly as it always has.
+ * A course expands into its syllabus topics (Phase 1 · A) plus the entry point
+ * to managing them. It expands even when the overview carries no topic rows —
+ * the outline may exist with nothing filed under it yet, and that is precisely
+ * the outline that needs curating.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { LibraryCourseNode } from '@lantern/shared/types';
 import { featureAccents } from '@lantern/shared/design';
+import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { useTheme } from '../../theme';
 import type { LibraryCourseFilter } from '../../stores/uiStore';
 import {
@@ -54,6 +56,8 @@ interface Props {
   onSelectTopic: (course: LibraryCourseFilter, topic: LibraryTopicFilter | null) => void;
   onOpenTests: (filter: LibraryCourseFilter) => void;
   onOpenOffline: (filter: LibraryCourseFilter) => void;
+  /** Open the manage-outline sheet for a course (rename/reorder/delete topics). */
+  onManageTopics: (filter: LibraryCourseFilter) => void;
   onRetry: () => void;
   onManageCourses: () => void;
 }
@@ -101,7 +105,7 @@ function TreeRow({
   counts: Counts;
   selected: boolean;
   archived?: boolean;
-  /** Only passed when the course actually has an outline to expand. */
+  /** Passed for courses (not the Unfiled row), which always expand. */
   topicsOpen?: boolean;
   onToggleTopics?: () => void;
   onPress: () => void;
@@ -256,6 +260,7 @@ export function LibraryCourseTree({
   onSelectTopic,
   onOpenTests,
   onOpenOffline,
+  onManageTopics,
   onRetry,
   onManageCourses,
 }: Props) {
@@ -266,6 +271,30 @@ export function LibraryCourseTree({
   // Topic levels are collapsed by default; keyed per row because one course can
   // appear under several academic years. Only rows the student toggled are here.
   const [topicsOpen, setTopicsOpen] = useState<Record<string, boolean>>({});
+
+  // Every row key (year:courseId) belonging to the selected course.
+  const selectedRowKeys = useMemo(() => {
+    if (!tree || !selectedCourseId) return [] as string[];
+    const nodes = [...tree.thisSemester, ...tree.pastSemesters.flatMap(y => y.courses)];
+    return nodes
+      .filter(n => n.course.id === selectedCourseId)
+      .map(n => `${n.enrolment.academicYear}:${n.course.id}`);
+  }, [tree, selectedCourseId]);
+
+  // A topic selected elsewhere (a count badge, a restored filter) must be
+  // visible. Force the course open — a plain `?? fallback` only fires while the
+  // key is ABSENT, so once a student had collapsed this course the live topic
+  // stayed hidden forever. This mirrors web's rail. Only ADD to the open set, so
+  // the student can still collapse afterwards without it snapping back.
+  useEffect(() => {
+    if (!selectedTopicId || selectedRowKeys.length === 0) return;
+    setTopicsOpen(prev => {
+      if (selectedRowKeys.every(k => prev[k])) return prev;
+      const next = { ...prev };
+      for (const k of selectedRowKeys) next[k] = true;
+      return next;
+    });
+  }, [selectedTopicId, selectedRowKeys]);
 
   const courseFilter = (node: LibraryCourseNode): LibraryCourseFilter => ({
     id: node.course.id,
@@ -291,12 +320,16 @@ export function LibraryCourseTree({
     const rowKey = `${node.enrolment.academicYear}:${node.course.id}`;
     const filter = courseFilter(node);
     const courseSelected = selectedCourseId === node.course.id;
-    // Empty while the course_topics migration is unapplied — the course then
-    // renders exactly as it did before there was a third level.
+    // Only topics something is FILED under reach the overview, so this is empty
+    // both for a course with no outline and for a freshly seeded one.
     const topics = courseTopicRows(node);
     // Collapsed until asked for, except when this course holds the live topic
     // filter: a selection the student cannot see reads as a broken filter.
-    const expanded = topics.length > 0 && (topicsOpen[rowKey] ?? (courseSelected && !!selectedTopicId));
+    //
+    // Every course expands, including one with no rows yet: the section also
+    // holds "Course topics", and gating it on `topics.length > 0` is what left a
+    // seeded-but-unfiled outline with no way to rename or delete anything.
+    const expanded = topicsOpen[rowKey] ?? (courseSelected && !!selectedTopicId);
     return (
       <View key={rowKey}>
         <TreeRow
@@ -307,16 +340,15 @@ export function LibraryCourseTree({
           // topic row carries the selection, not the course above it.
           selected={courseSelected && !selectedTopicId}
           archived={archived}
-          topicsOpen={topics.length > 0 ? expanded : undefined}
-          onToggleTopics={
-            topics.length > 0 ? () => setTopicsOpen(o => ({ ...o, [rowKey]: !expanded })) : undefined
-          }
+          topicsOpen={expanded}
+          onToggleTopics={() => setTopicsOpen(o => ({ ...o, [rowKey]: !expanded }))}
           onPress={() => toggle(filter)}
           onOpenTests={() => onOpenTests(filter)}
           onOpenOffline={() => onOpenOffline(filter)}
         />
-        {expanded
-          ? topics.map(row => {
+        {expanded ? (
+          <>
+            {topics.map(row => {
               const selected = courseSelected && selectedTopicId === row.id;
               return (
                 <TopicRow
@@ -328,8 +360,24 @@ export function LibraryCourseTree({
                   }
                 />
               );
-            })
-          : null}
+            })}
+            {/* Rename/reorder/delete the shared outline. Present whenever a
+                course is expanded, not only when rows are showing: the outline
+                that most needs curating is the one nothing is filed under yet,
+                and it contributes no rows here. */}
+            <Pressable
+              onPress={() => onManageTopics(filter)}
+              className="flex-row items-center gap-2 pl-8 pr-3 py-2 mb-1 min-h-[40px]"
+              accessibilityRole="button"
+              accessibilityLabel={`${COURSE_TOPIC_COPY.manageTitle} in ${node.course.code}`}
+            >
+              <Ionicons name="options-outline" size={15} color={colors.textTertiary} />
+              <Text className="text-[12px] font-medium text-lantern-text-secondary">
+                {COURSE_TOPIC_COPY.manageTitle}
+              </Text>
+            </Pressable>
+          </>
+        ) : null}
       </View>
     );
   };

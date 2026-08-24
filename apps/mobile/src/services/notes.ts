@@ -5,7 +5,6 @@ import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
 import { applyAIUsageFromResponse, applyAIUsageFromErrorBody } from './ai';
-import { UNFILED_COURSE_ID } from '../utils/libraryArchive';
 
 async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -111,23 +110,14 @@ export const deleteNoteFolder = (folderId: string) =>
   notesRequest<void>(`/folders/${folderId}`, { method: 'DELETE' });
 
 /**
- * GET /notes. `courseId` narrows to one course; the literal `'null'` returns
- * unfiled notes (API contract, library archive §1). `topicId` narrows one level
- * further and only travels with a real course, mirroring the web fetcher.
+ * GET /notes — the full list for the signed-in user (optionally within one
+ * folder). There is no course/topic query param: mobile loads the whole list
+ * into a shared store and narrows by the Library course/topic filter
+ * client-side (see NotesScreen `filteredNotes`), so a server-side filter here
+ * would only ever have been a dead second path.
  */
-export const fetchNotes = (
-  folderId?: string,
-  options?: { courseId?: string | null; topicId?: string | null }
-) => {
-  const params = new URLSearchParams();
-  if (folderId) params.set('folderId', folderId);
-  if (options?.courseId) params.set('courseId', options.courseId);
-  if (options?.courseId && options.courseId !== UNFILED_COURSE_ID && options?.topicId) {
-    params.set('topicId', options.topicId);
-  }
-  const qs = params.toString();
-  return notesRequest<StudyNote[]>(qs ? `?${qs}` : '');
-};
+export const fetchNotes = (folderId?: string) =>
+  notesRequest<StudyNote[]>(folderId ? `?folderId=${encodeURIComponent(folderId)}` : '');
 export const fetchNote = (noteId: string) =>
   notesRequest<StudyNote & { attachments?: NoteAttachment[] }>(`/${noteId}`);
 export const createNote = (payload: Partial<StudyNote>) =>

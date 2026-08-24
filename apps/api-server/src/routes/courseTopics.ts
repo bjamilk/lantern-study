@@ -115,7 +115,10 @@ router.patch(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
+      // Both ids travel: the service refuses a topic that is not in THIS course,
+      // so a client holding another course's outline cannot rename it.
       const data = await getCourseTopicsService(supabaseService).rename(
+        String(req.params.courseId),
         String(req.params.topicId),
         String((req.body ?? {}).title ?? '')
       );
@@ -134,7 +137,12 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await getCourseTopicsService(supabaseService).remove(String(req.params.topicId));
+      // Scoped by course for the same reason as PATCH: deleting a topic unfiles
+      // every student's artefacts under it, so it must be a topic of THIS course.
+      await getCourseTopicsService(supabaseService).remove(
+        String(req.params.courseId),
+        String(req.params.topicId)
+      );
       res.json({ success: true });
     } catch (err) {
       handle(err, res);

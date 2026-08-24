@@ -30,6 +30,7 @@ export * from './marketplace';
 export * from './academic';
 
 // Learning events + concepts vocabulary (append-only learning log, concept slugs)
+// and course topics (syllabus outline copy + the one outline comparator)
 export * from './learning';
 
 // Jobs board (campus employment — sibling of marketplace goods)

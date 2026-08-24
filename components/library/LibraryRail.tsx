@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AcademicCapIcon,
+  AdjustmentsHorizontalIcon,
   ArchiveBoxIcon,
   ArrowPathIcon,
   ChevronDownIcon,
@@ -12,6 +13,7 @@ import {
   RectangleStackIcon,
   ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
+import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import type { LibraryCourseCounts, LibraryCourseNode } from '../../types';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useAcademicStore } from '../../stores/academicStore';
@@ -22,6 +24,7 @@ import {
   courseTopicRows,
   type LibraryTopicRow,
 } from '../../utils/libraryArchive';
+import { ManageOutlineModal } from '../academic/ManageOutlineModal';
 import type { LibraryTab } from '../LibraryScreen';
 
 export interface LibraryRailProps {
@@ -87,6 +90,8 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
   // Topic levels are collapsed by default; keyed per row because one course can
   // appear under several academic years.
   const [openTopicRows, setOpenTopicRows] = useState<ReadonlySet<string>>(() => new Set<string>());
+  // The course whose shared outline is being managed (rename/reorder/delete), if any.
+  const [manageCourse, setManageCourse] = useState<{ id: string; label: string } | null>(null);
 
   // Fresh counts every time the Library opens; cached data paints immediately.
   useEffect(() => {
@@ -148,6 +153,23 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
 
   const rowPad = compact ? 'px-2 py-1.5' : 'px-2.5 py-2';
 
+  /**
+   * Enter/Space activation for a `div[role=button]` row.
+   *
+   * Every row nests real `<button>`s — the count badges, the topics chevron, the
+   * manage-topics gear. A keydown on one of those bubbles up to the row, and
+   * `preventDefault()` here cancels the BUTTON's own activation: before this
+   * guard, Enter on the gear toggled the course filter and never opened the
+   * modal, leaving keyboard and screen-reader users no route to rename, reorder
+   * or delete. Only act when the row itself is the focused element.
+   */
+  const rowActivate = (activate: () => void) => (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    activate();
+  };
+
   const renderCounts = (
     counts: Pick<LibraryCourseCounts, 'notes' | 'decks' | 'tests' | 'bundles'> & { purchasedPacks?: number },
     onOpen: (key: CountKey) => void,
@@ -205,12 +227,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
           tabIndex={0}
           aria-pressed={selected}
           onClick={toggle}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggle();
-            }
-          }}
+          onKeyDown={rowActivate(toggle)}
           title={row.untopiced ? 'Items in this course that are not under any topic' : row.title}
           className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
             selected ? 'bg-lantern-primary text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
@@ -239,7 +256,13 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
   const renderCourseRow = (node: LibraryCourseNode) => {
     const courseSelected = selectedCourseId === node.course.id;
     const total = countsTotal(node.counts);
+    // Only topics something is FILED under reach the overview, so this is empty
+    // both for a course with no outline and for a freshly seeded one.
     const topics = courseTopicRows(node);
+    const courseLabel =
+      node.course.title && node.course.title !== node.course.code
+        ? `${node.course.code} — ${node.course.title}`
+        : node.course.code;
     const rowKey = `${node.enrolment.academicYear}-${node.course.id}`;
     const topicsOpen = topics.length > 0 && openTopicRows.has(rowKey);
     // Academic years carry a slash, which has no business in a DOM id.
@@ -257,12 +280,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
           tabIndex={0}
           aria-pressed={courseSelected && !selectedTopicId}
           onClick={select}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              select();
-            }
-          }}
+          onKeyDown={rowActivate(select)}
           className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
             courseSelected && !selectedTopicId
               ? 'bg-lantern-primary text-white'
@@ -302,15 +320,36 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 — {node.course.title}
               </span>
             ) : null}
-            {total === 0 ? (
-              <span
-                className={`ml-auto text-[10px] shrink-0 ${
-                  courseSelected && !selectedTopicId ? 'text-white/70' : 'text-lantern-text-tertiary'
+            <span className="ml-auto flex items-center gap-1 shrink-0">
+              {total === 0 ? (
+                <span
+                  className={`text-[10px] ${
+                    courseSelected && !selectedTopicId ? 'text-white/70' : 'text-lantern-text-tertiary'
+                  }`}
+                >
+                  empty
+                </span>
+              ) : null}
+              {/* On every course, not only ones with topic rows: an outline whose
+                  topics hold nothing yet contributes no rows here, and gating on
+                  them left a freshly seeded outline with no way to be curated. */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setManageCourse({ id: node.course.id, label: courseLabel });
+                }}
+                aria-label={`Manage topics in ${node.course.code}`}
+                title={COURSE_TOPIC_COPY.manageTitle}
+                className={`rounded p-0.5 ${
+                  courseSelected && !selectedTopicId
+                    ? 'text-white/80 hover:bg-white/20'
+                    : 'text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-border/60'
                 }`}
               >
-                empty
-              </span>
-            ) : null}
+                <AdjustmentsHorizontalIcon className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </span>
           </div>
           {renderCounts(node.counts, (key) => openCount(node.course.id, key), courseSelected && !selectedTopicId)}
         </div>
@@ -341,12 +380,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             tabIndex={0}
             aria-pressed={allSelected}
             onClick={() => onSelectCourse(null)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelectCourse(null);
-              }
-            }}
+            onKeyDown={rowActivate(() => onSelectCourse(null))}
             className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
               allSelected ? 'bg-lantern-primary text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
             }`}
@@ -441,12 +475,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               tabIndex={0}
               aria-pressed={unfiledSelected}
               onClick={() => onSelectCourse(unfiledSelected ? null : UNFILED_COURSE_ID)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onSelectCourse(unfiledSelected ? null : UNFILED_COURSE_ID);
-                }
-              }}
+              onKeyDown={rowActivate(() => onSelectCourse(unfiledSelected ? null : UNFILED_COURSE_ID))}
               className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
                 unfiledSelected ? 'bg-lantern-primary text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
               }`}
@@ -460,6 +489,25 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             </div>
           </section>
         </>
+      ) : null}
+
+      {manageCourse ? (
+        <ManageOutlineModal
+          isOpen
+          onClose={() => setManageCourse(null)}
+          courseId={manageCourse.id}
+          courseLabel={manageCourse.label}
+          // Counts on the tree include per-topic totals, so refresh after any
+          // rename/reorder/delete or the outline the user just changed goes stale.
+          onChanged={() => void loadOverview({ force: true })}
+          // Deleting the topic the Library is filtered by would leave the filter
+          // on a dead uuid: Notes, Flashcards and Tests would all read empty
+          // under a chip still naming it. Widen back to the whole course.
+          onTopicDeleted={(topicId) => {
+            if (selectedCourseId !== manageCourse.id || selectedTopicId !== topicId) return;
+            onSelectTopic(manageCourse.id, null);
+          }}
+        />
       ) : null}
     </nav>
   );

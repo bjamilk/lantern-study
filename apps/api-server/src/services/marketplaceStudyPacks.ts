@@ -705,17 +705,42 @@ export class MarketplaceStudyPacksService {
         });
       }
     }
+    // Validate the topic through the ONE resolver every other artefact write
+    // funnels through (SupabaseService.resolveArtefactTopic →
+    // CourseTopicsService.resolveForArtefact). The caller already drops a topic
+    // whose listing has moved courses, but it trusts the listing's stored
+    // topic_id blindly; the resolver additionally proves that id is genuinely a
+    // topic OF this course, so a stale or cross-course id can never be filed
+    // onto the buyer's deck.
+    //
+    // DELIVER UNFILED RATHER THAN FAIL. A rejected topic must NOT abort the
+    // delivery: the buyer has paid, and which row of a syllabus their deck sits
+    // under is cosmetic next to receiving the deck at all. Throwing here is how
+    // the last round's blocker behaved — a seller edit that desynced the pair
+    // permanently broke paid delivery. Same reasoning as the missing-column
+    // retry below: a half-filed deck beats a failed delivery.
+    let resolvedTopicId: string | null | undefined = null;
+    try {
+      resolvedTopicId = await this.supabaseService.resolveArtefactTopic({ topicId, courseId });
+    } catch (err) {
+      logger.warn('Study pack topic rejected; delivering the deck unfiled', {
+        courseId,
+        topicId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      resolvedTopicId = null;
+    }
     const created = await this.supabaseService.importDeck(
       { deck: { name: title, description: `Flashcards from “${title}”` }, flashcards },
       userId,
     );
     const deckId = created?.deck?.id as string | undefined;
     // importDeck does not set course_id; file the deck under the pack's course
-    // (and its topic). Retried without the topic when that column is missing —
-    // a half-filed deck beats a failed delivery.
+    // (and its resolved topic). Retried without the topic when that column is
+    // missing — a half-filed deck beats a failed delivery.
     if (deckId && courseId) {
       const patch: Record<string, unknown> = { course_id: courseId };
-      if (topicId) patch.topic_id = topicId;
+      if (resolvedTopicId) patch.topic_id = resolvedTopicId;
       const { error } = await this.db.from('decks').update(patch).eq('id', deckId);
       if (error && isMissingTopicColumn(error)) {
         await this.db.from('decks').update({ course_id: courseId }).eq('id', deckId);

@@ -1,5 +1,6 @@
 import React from 'react';
 import { BookmarkIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 
@@ -19,7 +20,7 @@ export const TopicFilterChip: React.FC<{ className?: string }> = ({ className = 
   const setTopicFilter = useLibraryStore((s) => s.setTopicFilter);
 
   if (!courseFilterId || courseFilterId === UNFILED_COURSE_ID || !topicFilterId) return null;
-  const label = topicFilterId === UNTOPICED_TOPIC_ID ? 'No topic' : topicFilterLabel || 'Topic';
+  const label = topicFilterId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : topicFilterLabel || COURSE_TOPIC_COPY.filterLabel;
 
   return (
     <span
@@ -30,7 +31,7 @@ export const TopicFilterChip: React.FC<{ className?: string }> = ({ className = 
       <button
         type="button"
         onClick={() => setTopicFilter(courseFilterId, null)}
-        title="Show every topic in this course"
+        title={COURSE_TOPIC_COPY.filterClearHint}
         aria-label={`Clear topic filter ${label}`}
         className="rounded-full p-0.5 hover:bg-lantern-surface"
       >

@@ -15,10 +15,13 @@ interface NotesState {
   selectedFolderId: string | null;
   loadFolders: () => Promise<void>;
   /**
-   * `courseId` = uuid for one course, `'null'` for unfiled, undefined for all.
-   * `topicId` narrows one level further and is ignored without a course.
+   * Loads the full note list into the shared store. There is deliberately no
+   * course/topic filter here: NotesScreen loads UNFILTERED so the AI companion
+   * and every other reader keep the whole list, and narrows by the Library
+   * course/topic filter CLIENT-side in `filteredNotes`. A server-side filter
+   * would leak the Library filter into those other consumers.
    */
-  loadNotes: (folderId?: string, courseId?: string | null, topicId?: string | null) => Promise<void>;
+  loadNotes: (folderId?: string) => Promise<void>;
   loadNote: (noteId: string) => Promise<boolean>;
   createFolder: (name: string) => Promise<NoteFolder>;
   updateFolder: (
@@ -60,13 +63,10 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     }
   },
 
-  loadNotes: async (folderId, courseId, topicId) => {
+  loadNotes: async (folderId) => {
     set({ isLoading: true, error: null });
     try {
-      const notes = await notesApi.fetchNotes(
-        folderId || undefined,
-        courseId ? { courseId, topicId: topicId ?? null } : undefined,
-      );
+      const notes = await notesApi.fetchNotes(folderId || undefined);
       set({ notes, isLoading: false });
     } catch (e: unknown) {
       set({ error: e instanceof Error ? e.message : 'Failed to load notes', isLoading: false });

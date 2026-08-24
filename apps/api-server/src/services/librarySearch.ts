@@ -42,6 +42,7 @@ import {
   type UserCourseRecord,
 } from './academicCourses';
 import type { CourseTopic } from '@lantern/shared/types';
+import { compareCourseTopics } from '@lantern/shared/learning';
 
 // ---------- Constants ----------
 
@@ -375,7 +376,9 @@ export function aggregateLibraryOverview(input: OverviewFixture): LibraryOvervie
     topicsByCourse.set(topic.courseId, list);
   }
   for (const list of topicsByCourse.values()) {
-    list.sort((a, b) => (a.position !== b.position ? a.position - b.position : a.title.localeCompare(b.title)));
+    // THE shared outline order (position → title → id), so the tree the server
+    // sends already agrees with how both clients re-sort it — no reorder flash.
+    list.sort((a, b) => compareCourseTopics(a, b));
   }
 
   const byYear = new Map<string, LibraryCourseNode[]>();

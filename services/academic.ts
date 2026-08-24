@@ -99,6 +99,51 @@ export const createCourseTopic = (courseId: string, title: string): Promise<Cour
     body: JSON.stringify({ title }),
   });
 
+// ---------- Outline management (shared course data — mutations change what every enrolled student sees) ----------
+
+/**
+ * Bootstrap an outline from the flashcard tags already used on this course.
+ * Returns the resulting outline, which may legitimately be EMPTY: a tag has to
+ * be in use enough to clear the server's threshold and "General" is skipped, so
+ * a course with only throwaway tags seeds nothing. Callers must report that
+ * honestly ("nothing to suggest yet") rather than treat `[]` as a silent no-op.
+ */
+export const seedCourseTopics = (courseId: string): Promise<CourseTopic[]> =>
+  academicRequest<CourseTopic[]>(`/courses/${encodeURIComponent(courseId)}/topics/seed`, {
+    method: 'POST',
+  }).then((rows) => rows || []);
+
+/**
+ * Rename a topic for everyone on the course. A 23505 comes back as the shared
+ * duplicate message, so the caller can surface the server's sentence verbatim.
+ */
+export const renameCourseTopic = (courseId: string, topicId: string, title: string): Promise<CourseTopic> =>
+  academicRequest<CourseTopic>(
+    `/courses/${encodeURIComponent(courseId)}/topics/${encodeURIComponent(topicId)}`,
+    { method: 'PATCH', body: JSON.stringify({ title }) }
+  );
+
+/**
+ * Persist a new outline order. Send the FULL ordered id list — the server
+ * rewrites positions from it — and use the returned list as the new truth.
+ */
+export const reorderCourseTopics = (courseId: string, topicIds: string[]): Promise<CourseTopic[]> =>
+  academicRequest<CourseTopic[]>(`/courses/${encodeURIComponent(courseId)}/topics/order`, {
+    method: 'PUT',
+    body: JSON.stringify({ topicIds }),
+  }).then((rows) => rows || []);
+
+/**
+ * Delete a topic. Only UNFILES artefacts (ON DELETE SET NULL) — no note, deck
+ * or test is ever destroyed — but the outline is shared, so it disappears for
+ * every student on the course. The confirm copy says both things out loud.
+ */
+export const deleteCourseTopic = (courseId: string, topicId: string): Promise<void> =>
+  academicRequest<void>(
+    `/courses/${encodeURIComponent(courseId)}/topics/${encodeURIComponent(topicId)}`,
+    { method: 'DELETE' }
+  );
+
 // ---------- My courses (enrolments) ----------
 
 export const fetchMyCourses = (

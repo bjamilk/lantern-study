@@ -4,18 +4,22 @@
  * decision and the course-change rule can be unit-tested.
  */
 import type { CourseTopic } from '@lantern/shared/types';
-
-/** Mirrors TOPIC_TITLE_MAX in apps/api-server/src/services/courseTopics.ts. */
-export const TOPIC_TITLE_MAX = 120;
+// The one definition of the cap lives in @lantern/shared; a second copy of
+// "120" here is how a client starts silently posting titles the server rejects.
+import { COURSE_TOPIC_COPY, TOPIC_TITLE_MAX } from '@lantern/shared/learning';
 
 /** Server-side normalisation, mirrored so the "Add" row shows what will be created. */
 export function normalizeTopicTitle(raw: string): string {
   return String(raw ?? '').trim().replace(/\s+/g, ' ');
 }
 
-/** "Gas exchange" — the one label every topic row and trigger uses. */
+/**
+ * "Gas exchange" — the one label every topic row and trigger uses. Falls back
+ * the way web does: a blank title would otherwise render an invisible, still
+ * tappable row, which reads as a broken list rather than a damaged topic.
+ */
 export function formatTopicLabel(topic: Pick<CourseTopic, 'title'>): string {
-  return normalizeTopicTitle(topic.title);
+  return normalizeTopicTitle(topic.title) || COURSE_TOPIC_COPY.untitled;
 }
 
 /** Filter an outline by the search box, preserving syllabus order. */

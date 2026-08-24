@@ -11413,13 +11413,10 @@ export class SupabaseService {
   async getListingsBySeller(
     userId: string,
     status?: string,
-    options: {
-      /** Academic archive filter (marketplace_listings.course_id): unfiled → IS NULL, course → eq. */
-      courseFilter?: CourseFilter;
-      /** Same, one level down (marketplace_listings.topic_id). */
-      topicFilter?: CourseFilter;
-    } = {},
   ): Promise<any[]> {
+    // No course/topic filter here: the seller dashboard (/marketplace/my-listings)
+    // only ever narrows by status. No client sends courseId/topicId, so the
+    // archive-filter plumbing that once lived here was unreachable and removed.
     let query = this.supabase
       .from("marketplace_listings")
       .select(
@@ -11431,9 +11428,6 @@ export class SupabaseService {
       )
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
-
-    query = applyCourseFilter(query, "course_id", options.courseFilter);
-    query = applyCourseFilter(query, "topic_id", options.topicFilter);
 
     if (status === "active") {
       // Active shelf includes reserved (sale in progress) for seller inventory.
@@ -11452,15 +11446,6 @@ export class SupabaseService {
     const { data, error } = await query;
 
     if (error) {
-      if (topicFilterApplies(options.topicFilter) && isMissingTopicColumn(error)) {
-        // No listing can carry a topic before the migration: a named topic
-        // matches nothing, and "no topic" matches every listing.
-        if (options.topicFilter?.kind === "course") return [];
-        return this.getListingsBySeller(userId, status, {
-          ...options,
-          topicFilter: undefined,
-        });
-      }
       logger.error("Error fetching seller listings:", error);
       throw error;
     }

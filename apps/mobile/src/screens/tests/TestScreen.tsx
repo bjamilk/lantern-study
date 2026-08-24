@@ -18,6 +18,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
 import { matchesCourseFilter, matchesTopicFilter, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
+import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
@@ -37,7 +38,7 @@ type HistoryFilter = {
 };
 
 const historyTopicLabel = (filter: HistoryFilter) =>
-  filter.topicId === UNTOPICED_TOPIC_ID ? 'No topic' : filter.topicLabel || 'Topic';
+  filter.topicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : filter.topicLabel || COURSE_TOPIC_COPY.filterLabel;
 
 export default function TestScreen() {
   const navigation = useNavigation<any>();

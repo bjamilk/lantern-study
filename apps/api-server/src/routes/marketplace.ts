@@ -4,12 +4,6 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validatePagination, validateListingId, validateMarketplaceListingWrite, validateMarketplaceListingUpdate, validateUserId } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
-import {
-  COURSE_FILTER_INVALID_MESSAGE,
-  TOPIC_FILTER_INVALID_MESSAGE,
-  parseCourseFilter,
-  parseTopicFilter,
-} from '../services/academicCourses';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -1623,28 +1617,15 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const userId = req.user?.id;
-    const { status, courseId, topicId } = req.query;
+    const { status } = req.query;
 
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
-    const courseFilter = parseCourseFilter(courseId);
-    if (courseFilter.kind === 'invalid') {
-      return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
-    }
-    // ?topicId= — same grammar one level down; "null" is "in this course, under no topic".
-    const topicFilter = parseTopicFilter(topicId);
-    if (topicFilter.kind === 'invalid') {
-      return res.status(400).json({ success: false, error: TOPIC_FILTER_INVALID_MESSAGE });
-    }
+    logger.debug('Fetching seller listings', { userId, status });
 
-    logger.debug('Fetching seller listings', { userId, status, courseId, topicId });
-
-    const listings = await supabaseService.getListingsBySeller(userId, status as string | undefined, {
-      courseFilter,
-      topicFilter,
-    });
+    const listings = await supabaseService.getListingsBySeller(userId, status as string | undefined);
 
     res.json({
       success: true,

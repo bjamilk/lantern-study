@@ -43,6 +43,16 @@ type NavigationProp = {
 };
 
 const ALL_CATEGORIES = [...ACADEMIC_CATEGORIES, ...STUDENT_LIFE_CATEGORIES];
+/**
+ * Categories that carry a course (and its syllabus topic) — the ones whose web
+ * field list includes `courseCode`: past questions, lecture notes, projects.
+ * Every other category hides both pickers, matching web.
+ */
+const CATEGORIES_WITH_COURSE: ReadonlySet<MarketplaceCategory> = new Set([
+  'pq_bank',
+  'lecture_notes',
+  'project_thesis',
+]);
 const MAX_IMAGES = 5;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -131,6 +141,7 @@ export function EditListingScreen({
   }, [currentListing, listingId]);
 
   const selectedCategory = ALL_CATEGORIES.find(c => c.id === category);
+  const showCourse = CATEGORIES_WITH_COURSE.has(category);
   const isAcademic = isAcademicListing({ listingKind: currentListing?.listing_kind, category });
   const alreadyAttested =
     currentListing?.rights_status === 'attested' || currentListing?.rights_status === 'cleared';
@@ -391,6 +402,13 @@ export function EditListingScreen({
                   key={cat.id}
                   onPress={() => {
                     setCategory(cat.id);
+                    // Drop any course/topic when moving to a category that no
+                    // longer shows the pickers, so a stale filing isn't saved.
+                    if (!CATEGORIES_WITH_COURSE.has(cat.id)) {
+                      setCourseId(null);
+                      setCourseCode(null);
+                      setTopicId(null);
+                    }
                     setShowCategories(false);
                   }}
                   className={`px-3 py-1.5 rounded-full border ${
@@ -420,34 +438,41 @@ export function EditListingScreen({
             Listings stay visible across Nigeria; this only identifies where yours is based.
           </Text>
 
-          <Text className="text-sm font-semibold text-lantern-text mb-2">Course (optional)</Text>
-          <CoursePicker
-            value={courseId}
-            fallbackLabel={courseCode}
-            onChange={course => {
-              const nextCourseId = course?.id ?? null;
-              setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
-              setCourseId(nextCourseId);
-              setCourseCode(course?.code ?? null);
-            }}
-            placeholder="Which course is this for? e.g. BIO 201"
-            title="Course for this listing"
-          />
-          <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
-            Helps students at your level find it.
-          </Text>
+          {/* Course + Topic only for academic study material (matches web's
+              courseCode field gate). */}
+          {showCourse ? (
+            <>
+              <Text className="text-sm font-semibold text-lantern-text mb-2">Course (optional)</Text>
+              <CoursePicker
+                value={courseId}
+                fallbackLabel={courseCode}
+                onChange={course => {
+                  const nextCourseId = course?.id ?? null;
+                  setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
+                  setCourseId(nextCourseId);
+                  setCourseCode(course?.code ?? null);
+                }}
+                placeholder="Which course is this for? e.g. BIO 201"
+                title="Course for this listing"
+              />
+              <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+                Helps students at your level find it.
+              </Text>
 
-          <Text className="text-sm font-semibold text-lantern-text mb-2">Topic (optional)</Text>
-          <TopicPicker
-            courseId={courseId}
-            value={topicId}
-            onChange={topic => setTopicId(topic?.id ?? null)}
-            placeholder="Which part of the syllabus?"
-            title="Topic for this listing"
-          />
-          <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
-            Buyers browsing a course see this under the right week of the outline.
-          </Text>
+              <Text className="text-sm font-semibold text-lantern-text mb-2">Topic (optional)</Text>
+              <TopicPicker
+                courseId={courseId}
+                value={topicId}
+                onChange={topic => setTopicId(topic?.id ?? null)}
+                placeholder="Which part of the syllabus?"
+                title="Topic for this listing"
+              />
+              {/* No marketplace view browses by topic — say only what filing does. */}
+              <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+                Files it under that part of the course's outline.
+              </Text>
+            </>
+          ) : null}
 
           <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
           <TextInput

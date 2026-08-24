@@ -11,6 +11,10 @@ import type {
   LibraryOverview,
   LibrarySearchResult,
 } from '@lantern/shared/types';
+// Pulled from the node-safe learning subpath rather than the bare package root:
+// the root barrel drags in RN/native-coupled modules (stores, storage, api) that
+// can't load under jest's node testEnvironment, whereas ./learning is pure.
+import { COURSE_TOPIC_COPY, compareCourseTopics } from '@lantern/shared/learning';
 import { formatCourseLabel } from './courseSelection';
 
 /** The API's literal for "items whose course_id is null". */
@@ -118,17 +122,19 @@ export function courseTopicRows(
   if (!topics || topics.length === 0) return [];
   const rows: LibraryTopicRow[] = topics
     .filter(entry => entry?.topic?.id)
-    // The API orders by position, but the type can only document that — sort defensively.
-    .sort((a, b) => a.topic.position - b.topic.position || (a.topic.title || '').localeCompare(b.topic.title || ''))
+    // The API orders by position, but the type can only document that — sort
+    // defensively with THE shared comparator so this tree, the pickers and web
+    // all read the syllabus in one order.
+    .sort((a, b) => compareCourseTopics(a.topic, b.topic))
     .map(entry => ({
       id: entry.topic.id,
-      title: entry.topic.title || 'Untitled topic',
+      title: entry.topic.title || COURSE_TOPIC_COPY.untitled,
       counts: { ...EMPTY_COUNTS, ...(entry.counts ?? {}) },
       untopiced: false,
     }));
   const untopiced = node?.untopiced;
   if (untopiced && countsTotal(untopiced) > 0) {
-    rows.push({ id: UNTOPICED_TOPIC_ID, title: 'No topic', counts: { ...EMPTY_COUNTS, ...untopiced }, untopiced: true });
+    rows.push({ id: UNTOPICED_TOPIC_ID, title: COURSE_TOPIC_COPY.none, counts: { ...EMPTY_COUNTS, ...untopiced }, untopiced: true });
   }
   return rows;
 }

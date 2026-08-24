@@ -29,6 +29,12 @@ export interface OfflineTest {
   lockAnswered?: boolean;
   /** Academic archive: offline_bundles.course_id (config.courseId is the fallback). */
   courseId?: string | null;
+  /**
+   * Academic archive: the topic within {@link courseId}. Rides in the bundle
+   * config only — offline_bundles has no topic_id column — the way web reads
+   * bundle.config.topicId. Used to prefill the topic when re-publishing.
+   */
+  topicId?: string | null;
 }
 
 export interface OfflineQuestion {
@@ -152,6 +158,9 @@ const mapApiBundleToOfflineTest = (bundle: ApiOfflineBundle): OfflineTest => {
     courseId:
       (bundle as { course_id?: string | null }).course_id ??
       (typeof config.courseId === 'string' ? config.courseId : null),
+    // No offline_bundles.topic_id column, so config.topicId is the only source
+    // (web writes and reads it the same way).
+    topicId: typeof config.topicId === 'string' ? config.topicId : null,
   };
 };
 
@@ -348,6 +357,9 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         recentlyAddedDays: options?.recentlyAddedDays,
         lockAnswered: options?.lockAnswered,
         courseId: options?.courseId ?? null,
+        // Mobile's download flow files by course only — no topic is chosen here,
+        // so a fresh bundle starts unfiled. A topic can be set later at publish.
+        topicId: null,
       };
       
       const downloadedTests = [...get().downloadedTests, newTest];

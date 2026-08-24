@@ -10,6 +10,7 @@ import { FlashcardsScreen } from '../flashcards/FlashcardsScreen';
 import { FeatureHero } from '../../components/ui';
 import { LibraryCourseTree, type LibraryTopicFilter } from '../../components/library/LibraryCourseTree';
 import { LibrarySearchResults } from '../../components/library/LibrarySearchResults';
+import { ManageOutlineSheet } from '../../components/library/ManageOutlineSheet';
 import { useUIStore, type LibraryCourseFilter, type LibraryTab } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
 import { refreshUserData } from '../../services/dataRefresh';
@@ -54,6 +55,8 @@ export function LibraryScreen({ navigation, route }: Props) {
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewAttempt, setOverviewAttempt] = useState(0);
+  // Course whose shared outline is being managed (rename/reorder/delete topics).
+  const [manageCourse, setManageCourse] = useState<LibraryCourseFilter | null>(null);
   const tree = useMemo(() => (overview ? buildLibraryTree(overview) : null), [overview]);
 
   const loadOverview = useCallback(async () => {
@@ -144,11 +147,25 @@ export function LibraryScreen({ navigation, route }: Props) {
     [navigation, courseFilter]
   );
 
-  const openOffline = useCallback((filter: LibraryCourseFilter | null) => {
-    // Offline is a root-stack modal, so go through the container ref rather
-    // than this (Study-stack) navigator.
-    navigateRootStack('Offline', filter ? { courseId: filter.id, courseLabel: filter.label } : undefined);
-  }, []);
+  const openOffline = useCallback(
+    (filter: LibraryCourseFilter | null) => {
+      // Offline is a root-stack modal, so go through the container ref rather
+      // than this (Study-stack) navigator.
+      if (!filter) {
+        navigateRootStack('Offline');
+        return;
+      }
+      // Downloads can't be narrowed by topic (offline_bundles has no topic_id),
+      // but carry the live topic's label so the Offline screen can SAY the list
+      // is the whole course instead of silently dropping the filter.
+      const topicLabel =
+        courseFilter?.id === filter.id && courseFilter?.topicId
+          ? courseFilter.topicLabel ?? 'Topic'
+          : null;
+      navigateRootStack('Offline', { courseId: filter.id, courseLabel: filter.label, topicLabel });
+    },
+    [courseFilter]
+  );
 
   const openBundle = useCallback(
     (_bundleId: string, bundleCourseId: string | null) => {
@@ -240,6 +257,7 @@ export function LibraryScreen({ navigation, route }: Props) {
           onSelectTopic={selectTopic}
           onOpenTests={openTests}
           onOpenOffline={openOffline}
+          onManageTopics={setManageCourse}
           onRetry={() => setOverviewAttempt(a => a + 1)}
           onManageCourses={() => navigateRootStack('AcademicSettings')}
         />
@@ -407,6 +425,23 @@ export function LibraryScreen({ navigation, route }: Props) {
           <FlashcardsScreen navigation={navigation} embedded />
         )}
       </View>
+
+      <ManageOutlineSheet
+        visible={!!manageCourse}
+        courseId={manageCourse?.id ?? null}
+        courseLabel={manageCourse?.label ?? null}
+        onClose={() => setManageCourse(null)}
+        // Counts and topic rows in the tree follow the outline that just changed.
+        onChanged={() => setOverviewAttempt(a => a + 1)}
+        // A deleted topic takes the filter with it. Left alone, the filter would
+        // still hold a uuid nothing carries any more: Notes, Flashcards and
+        // Tests would all show zero items under a chip naming a topic that no
+        // longer exists. Widen back to the whole course instead.
+        onTopicDeleted={topicId => {
+          if (courseFilter?.topicId !== topicId) return;
+          setCourseFilter({ id: courseFilter.id, label: courseFilter.label });
+        }}
+      />
     </SafeAreaView>
   );
 }

@@ -44,17 +44,26 @@ const QUESTION_TYPES = [
 
 export default function OfflineScreen() {
   const navigation = useNavigation<any>();
-  // Library tree deep link: { courseId, courseLabel } — courseId is a uuid or
-  // the literal 'null' (bundles not filed under any course).
+  // Library tree deep link: { courseId, courseLabel, topicLabel } — courseId is
+  // a uuid or the literal 'null' (bundles not filed under any course). A topic
+  // label may ride along even though offline_bundles has no topic_id: it is
+  // shown only to explain why the list is the whole course, never to filter.
   const route = useRoute<any>();
   const routeCourseId: string | null | undefined = route.params?.courseId;
   const routeCourseLabel: string | undefined = route.params?.courseLabel;
+  const routeTopicLabel: string | null | undefined = route.params?.topicLabel;
   const [courseFilter, setCourseFilter] = useState<{ id: string; label: string } | null>(
     routeCourseId ? { id: routeCourseId, label: routeCourseLabel || 'Course' } : null
   );
+  // Display-only: downloads cannot be narrowed by topic, so this drives the
+  // honesty line, not the filter.
+  const [topicFilterLabel, setTopicFilterLabel] = useState<string | null>(routeTopicLabel ?? null);
   useEffect(() => {
-    if (routeCourseId) setCourseFilter({ id: routeCourseId, label: routeCourseLabel || 'Course' });
-  }, [routeCourseId, routeCourseLabel]);
+    if (routeCourseId) {
+      setCourseFilter({ id: routeCourseId, label: routeCourseLabel || 'Course' });
+      setTopicFilterLabel(routeTopicLabel ?? null);
+    }
+  }, [routeCourseId, routeCourseLabel, routeTopicLabel]);
   const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
   const [restoringBanks, setRestoringBanks] = useState(false);
@@ -491,35 +500,48 @@ export default function OfflineScreen() {
 
         {/* Library course filter (deep link from the Library tree) */}
         {courseFilter ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                borderRadius: 999,
-                backgroundColor: colors.primary + '20',
-                maxWidth: '70%',
-              }}
-            >
-              <Ionicons name="school-outline" size={14} color={colors.primary} />
-              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
-                {courseFilter.label}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setCourseFilter(null)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityRole="button"
-                accessibilityLabel={`Clear course filter ${courseFilter.label}`}
+          <View style={{ marginBottom: 12, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: colors.primary + '20',
+                  maxWidth: '70%',
+                }}
               >
-                <Ionicons name="close-circle" size={16} color={colors.primary} />
-              </TouchableOpacity>
+                <Ionicons name="school-outline" size={14} color={colors.primary} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
+                  {courseFilter.label}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setCourseFilter(null);
+                    setTopicFilterLabel(null);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Clear course filter ${courseFilter.label}`}
+                >
+                  <Ionicons name="close-circle" size={16} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+                {visibleTests.length} of {downloadedTests.length} bundles
+              </Text>
             </View>
-            <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
-              {visibleTests.length} of {downloadedTests.length} bundles
-            </Text>
+            {/* offline_bundles has no topic_id, so a topic cannot narrow this
+                list. Say so rather than silently showing the whole course under
+                a topic the student had selected. Mirrors web. */}
+            {topicFilterLabel ? (
+              <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                Downloads are filed by course, not by topic — showing the whole course.
+              </Text>
+            ) : null}
           </View>
         ) : null}
 

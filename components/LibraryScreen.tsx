@@ -10,6 +10,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { FeatureHero, StatChip, Tabs, TabList, Tab, TabPanel } from './ui';
 import { featureAccents } from '@lantern/shared/design';
+import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import type { LibrarySearchResult } from '../types';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useAcademicStore } from '../stores/academicStore';
@@ -97,7 +98,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   const selectedTopic = useMemo(() => {
     if (!topicFilterId) return null;
     const fromTree = findTreeTopic(buildLibraryTree(overview), courseFilterId, topicFilterId);
-    return fromTree || { title: topicFilterLabel || 'Topic' };
+    return fromTree || { title: topicFilterLabel || COURSE_TOPIC_COPY.filterLabel };
   }, [overview, courseFilterId, topicFilterId, topicFilterLabel]);
   const scopeLabel = useMemo(() => {
     if (!courseFilterId) return null;
@@ -240,7 +241,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                   type="button"
                   onClick={() => handleSelectTopic(courseFilterId, null)}
                   className="inline-flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
-                  title="Show every topic in this course"
+                  title={COURSE_TOPIC_COPY.filterClearHint}
                 >
                   Whole course
                 </button>

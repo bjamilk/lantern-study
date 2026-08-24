@@ -164,6 +164,13 @@ export function LibrarySearchResults({
           <Text className="text-sm text-lantern-text-secondary text-center mt-3">
             Nothing matched{scopeLabel ? ` in ${scopeLabel}` : ''}. Notes (including attachment text), decks, flashcards and offline bundles are searched.
           </Text>
+          {/* A topic is the narrowest filter, so it is the first thing to widen —
+              matches web's "Try widening the filter to the whole course." */}
+          {topicLabel ? (
+            <Text className="text-xs text-lantern-text-tertiary text-center mt-2">
+              Try widening the filter to the whole course.
+            </Text>
+          ) : null}
         </View>
       ) : null}
 

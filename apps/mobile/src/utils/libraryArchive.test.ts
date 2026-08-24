@@ -149,6 +149,13 @@ describe('courseTopicRows', () => {
     expect(rows.map(r => r.id)).toEqual(['t-1']);
     expect(rows[0].counts).toEqual(counts());
   });
+
+  it('breaks equal positions by title case-insensitively — THE shared outline order', () => {
+    // Two topics created in the same race share a position; the tie must resolve
+    // the same way here as in the pickers and on web, or the tree reshuffles.
+    const rows = courseTopicRows(outlined([topic('t-b', 'beta', 10), topic('t-a', 'Alpha', 10)], counts()));
+    expect(rows.map(r => r.title)).toEqual(['Alpha', 'beta']);
+  });
 });
 
 describe('matchesTopicFilter', () => {

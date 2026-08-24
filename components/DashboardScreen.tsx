@@ -34,7 +34,7 @@ import {
   type GroupPerformancePeriod,
 } from '@lantern/shared/utils';
 import { buildDashboardStats, type RawTestResult } from '@lantern/shared/utils/buildDashboardStats';
-import type { StudyActivityDay } from '@lantern/shared';
+import { COURSE_TOPIC_COPY, type StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
@@ -1897,7 +1897,7 @@ export default function DashboardScreen({
                       <>
                         {' · '}
                         <span className="font-semibold text-lantern-text">
-                          {recentTopicId === UNTOPICED_TOPIC_ID ? 'No topic' : recentTopicLabel || 'Topic'}
+                          {recentTopicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : recentTopicLabel || COURSE_TOPIC_COPY.filterLabel}
                         </span>
                       </>
                     ) : null}
@@ -1907,7 +1907,7 @@ export default function DashboardScreen({
                       type="button"
                       onClick={() => clearRecentTopic(recentCourseId, null)}
                       className="rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
-                      title="Show every topic in this course"
+                      title={COURSE_TOPIC_COPY.filterClearHint}
                     >
                       Whole course
                     </button>

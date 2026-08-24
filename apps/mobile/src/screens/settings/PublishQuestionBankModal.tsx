@@ -58,8 +58,13 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
     setDescription('');
     setPrice('');
     setCampusId('');
-    setCourseId(null);
-    setTopicId(null);
+    // Prefill the course (and topic) the bundle was built from, so the seller
+    // does not re-pick what they already chose at download — symmetric with the
+    // web publish modal and with the study-pack modal's defaultCourseId/Topic.
+    // topicId only survives with a course (a topic can't exist without one),
+    // matching the submit guard below.
+    setCourseId(test.courseId ?? null);
+    setTopicId(test.courseId ? test.topicId ?? null : null);
     setAttested(false);
     setAiAssisted(false);
     setSourcesText('');

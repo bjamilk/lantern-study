@@ -91,6 +91,10 @@ function makeSupabase(overrides: {
   const replaceDeckCards = jest.fn(async () => undefined);
   const createNote = jest.fn(async () => overrides.createdNote ?? { id: 'note-1' });
   const updateNote = jest.fn(async () => ({ id: 'note-1' }));
+  // The delivery path funnels the deck's topic through the same resolver every
+  // artefact write uses. Default: a valid topic passes through; a null clears.
+  // Tests override this to make it reject a cross-course topic.
+  const resolveArtefactTopic = jest.fn(async (input: { topicId?: unknown }) => input.topicId ?? null);
   const supabaseService: any = {
     getClient: () => db,
     getMarketplaceListingById: jest.fn(async () => overrides.listing ?? null),
@@ -100,6 +104,7 @@ function makeSupabase(overrides: {
     replaceDeckCards,
     createNote,
     updateNote,
+    resolveArtefactTopic,
   };
   return {
     service: new MarketplaceStudyPacksService(supabaseService),
@@ -110,6 +115,7 @@ function makeSupabase(overrides: {
     replaceDeckCards,
     createNote,
     updateNote,
+    resolveArtefactTopic,
   };
 }
 
@@ -342,6 +348,41 @@ describe('grantEntitlement (delivery)', () => {
     );
     const deckUpdate = writes.find((w) => w.table === 'decks' && w.op === 'update');
     expect(deckUpdate?.payload).toEqual({ course_id: 'course-1' });
+  });
+
+  it('delivers the deck UNFILED when the topic fails the resolver, instead of failing a paid delivery', async () => {
+    // The listing sits in the pack's course, so the caller's course guard passes
+    // its topic through — but the stored topic_id is stale and does not belong to
+    // that course. The shared resolver (resolveForArtefact) is the only thing that
+    // catches this.
+    //
+    // It must NOT abort: the buyer has paid, and which row of a syllabus their
+    // deck sits under is cosmetic next to receiving the deck at all. Aborting is
+    // precisely the blocker this feature already shipped once — a seller edit
+    // desynced the pair and paid delivery broke permanently. So: deck delivered,
+    // topic dropped, no topic_id on the write.
+    const { service, supabaseService, importDeck, writes } = makeSupabase({
+      tables: {
+        marketplace_study_packs: { data: PACK, error: null }, // course_id: 'course-1'
+        marketplace_question_bank_entitlements: { data: null, error: null },
+        marketplace_listings: {
+          data: { title: 'Pack', course_id: 'course-1', topic_id: 'topic-from-another-course' },
+          error: null,
+        },
+      },
+    });
+    supabaseService.resolveArtefactTopic.mockRejectedValue(
+      new PublicError('That topic does not belong to the selected course')
+    );
+
+    await expect(service.grantEntitlement('listing-1', 'buyer-1', null)).resolves.toBeDefined();
+
+    // The deck IS minted and filed under the pack's course, with the stray topic
+    // simply absent — never misfiled onto the buyer's deck.
+    expect(importDeck).toHaveBeenCalled();
+    const deckUpdate = writes.find((w) => w.table === 'decks' && w.op === 'update');
+    expect(deckUpdate?.payload).toEqual({ course_id: 'course-1' });
+    expect(deckUpdate?.payload).not.toHaveProperty('topic_id');
   });
 
   it('records the parts already delivered when a later step fails, so a retry cannot duplicate them', async () => {

@@ -41,6 +41,7 @@ import { courseHasTopics } from '../../services/academic';
 import { useUIStore } from '../../stores/uiStore';
 import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import type { Course, CourseTopic } from '@lantern/shared/types';
+import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -309,8 +310,8 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     list = list.filter((note) =>
       listFilter === 'archived' ? Boolean(note.isArchived) : !note.isArchived,
     );
-    // The API already narrows by course; filtering again keeps the list honest
-    // after a local "Move to course…" before the next reload.
+    // Notes load unfiltered (shared store), so the Library course/topic filter
+    // is applied HERE, client-side — this is the only place narrowing happens.
     if (courseFilterId) {
       list = list.filter((note) => matchesCourseFilter(note.courseId, courseFilterId));
       if (topicFilterId) {
@@ -1168,7 +1169,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
               <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
               <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
-                {courseFilter.topicId === UNTOPICED_TOPIC_ID ? 'No topic' : courseFilter.topicLabel || 'Topic'}
+                {courseFilter.topicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : courseFilter.topicLabel || COURSE_TOPIC_COPY.filterLabel}
               </Text>
               <Pressable
                 // Clear the topic, keep the course.

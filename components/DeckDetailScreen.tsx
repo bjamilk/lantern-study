@@ -701,6 +701,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           onClose={() => setIsSellOpen(false)}
           defaultTitle={deck.name}
           defaultCourseId={deck.courseId ?? null}
+          defaultTopicId={deck.topicId ?? null}
           content={{
             flashcards: cardsInDeck
               .map((c) => ({

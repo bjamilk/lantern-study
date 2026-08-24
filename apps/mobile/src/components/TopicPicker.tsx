@@ -8,7 +8,7 @@
  * find-or-creates via POST /courses/:courseId/topics. StyleSheet + useTheme so
  * it drops into both the NativeWind screens and the legacy StyleSheet modals.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -23,8 +23,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { CourseTopic } from '@lantern/shared/types';
+import { COURSE_TOPIC_COPY, TOPIC_TITLE_MAX, formatAddTopicOffer } from '@lantern/shared';
 import { useTheme } from '../theme';
-import { createCourseTopic } from '../services/academic';
+import { createCourseTopic, seedCourseTopics } from '../services/academic';
 import { useCourseTopics, useTopicSearch } from '../hooks/useTopicSearch';
 import { formatTopicLabel } from '../utils/topicSelection';
 
@@ -55,12 +56,12 @@ export function TopicPicker({
   courseId,
   value,
   onChange,
-  placeholder = 'Choose a topic (optional)',
+  placeholder = COURSE_TOPIC_COPY.placeholder,
   fallbackLabel,
   allowClear = true,
   disabled = false,
-  title = 'Topic',
-  accessibilityLabel = 'Topic',
+  title = COURSE_TOPIC_COPY.label,
+  accessibilityLabel = COURSE_TOPIC_COPY.label,
   visible,
   onClose,
 }: TopicPickerProps) {
@@ -72,11 +73,19 @@ export function TopicPicker({
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  // Show the "nothing to suggest" hint only after a seed that came back empty
+  // (a course whose tags never cleared the server's threshold). Reset on course
+  // change so a new course starts from the neutral seed hint, mirroring web.
+  const [seededEmpty, setSeededEmpty] = useState(false);
+  useEffect(() => {
+    setSeededEmpty(false);
+  }, [courseId]);
 
   const noCourse = !courseId;
   const locked = disabled || noCourse;
   // In controlled mode there is no trigger to label, so only fetch while open.
-  const { topics, loading, unavailable, addTopic } = useCourseTopics(
+  const { topics, loading, unavailable, addTopic, reload } = useCourseTopics(
     courseId,
     controlled ? open : true
   );
@@ -90,11 +99,11 @@ export function TopicPicker({
     [topics, value]
   );
   const triggerLabel = noCourse
-    ? 'Pick a course first'
+    ? COURSE_TOPIC_COPY.noCourse
     : selected
       ? formatTopicLabel(selected)
       : value
-        ? fallbackLabel || 'Topic selected'
+        ? fallbackLabel || COURSE_TOPIC_COPY.selectedUnknown
         : placeholder;
 
   const close = useCallback(() => {
@@ -103,6 +112,7 @@ export function TopicPicker({
     else setSelfOpen(false);
     setQuery('');
     setCreateError(null);
+    setSeededEmpty(false);
   }, [controlled, onClose]);
 
   const select = useCallback(
@@ -122,13 +132,34 @@ export function TopicPicker({
       try {
         select(await createCourseTopic(courseId, rawTitle));
       } catch (e: unknown) {
-        setCreateError(e instanceof Error ? e.message : 'Could not add this topic');
+        setCreateError(e instanceof Error ? e.message : COURSE_TOPIC_COPY.createFailed);
       } finally {
         setCreating(false);
       }
     },
     [courseId, select]
   );
+
+  // Bootstrap an empty outline from the course's flashcard tags, then reload the
+  // list so the seeded topics appear. Offered only from the empty state, where
+  // typing a title is the alternative — this is the "no tags to type" shortcut.
+  const submitSeed = useCallback(async () => {
+    if (!courseId) return;
+    setSeeding(true);
+    setCreateError(null);
+    setSeededEmpty(false);
+    try {
+      // A seed can legitimately suggest nothing; surface that honestly instead
+      // of silently reloading into the same empty outline (parity with web).
+      const rows = await seedCourseTopics(courseId);
+      setSeededEmpty(rows.length === 0);
+      reload();
+    } catch (e: unknown) {
+      setCreateError(e instanceof Error ? e.message : COURSE_TOPIC_COPY.seedFailed);
+    } finally {
+      setSeeding(false);
+    }
+  }, [courseId, reload]);
 
   return (
     <>
@@ -204,12 +235,15 @@ export function TopicPicker({
                   setQuery(text);
                   setCreateError(null);
                 }}
-                placeholder={unavailable ? 'Search topics' : 'Search or type a new topic'}
+                placeholder={unavailable ? COURSE_TOPIC_COPY.searchPlaceholderReadOnly : COURSE_TOPIC_COPY.searchPlaceholder}
                 placeholderTextColor={colors.inputPlaceholder}
                 autoCorrect={false}
                 autoFocus
+                // Past the cap the create offer vanishes and the list reads as
+                // "no match"; stop the input there so the Add row never lies.
+                maxLength={TOPIC_TITLE_MAX}
                 style={[styles.searchInput, { color: colors.inputText }]}
-                accessibilityLabel="Search topics"
+                accessibilityLabel={COURSE_TOPIC_COPY.searchPlaceholderReadOnly}
               />
               {loading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
             </View>
@@ -219,14 +253,37 @@ export function TopicPicker({
               style={styles.list}
               contentContainerStyle={styles.listContent}
             >
-              {value && allowClear ? (
+              {/* The explicit "filed under no topic" choice, on the same terms as
+                  web: always offered when nothing is typed — so the current state
+                  is visible even with no topic selected — and hidden while
+                  searching, because it is a fixed choice, not a match. */}
+              {allowClear && !query.trim() ? (
                 <Pressable
                   onPress={() => select(null)}
                   accessibilityRole="button"
-                  style={[styles.row, { borderBottomColor: colors.border }]}
+                  accessibilityState={{ selected: !value }}
+                  style={[
+                    styles.row,
+                    {
+                      borderBottomColor: colors.border,
+                      backgroundColor: !value ? colors.primaryBackground : 'transparent',
+                    },
+                  ]}
                 >
-                  <Ionicons name="remove-circle-outline" size={18} color={colors.textSecondary} />
-                  <Text style={[styles.rowText, { color: colors.textSecondary }]}>No topic</Text>
+                  <Ionicons
+                    name="remove-circle-outline"
+                    size={18}
+                    color={!value ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.rowText,
+                      { flex: 1, color: !value ? colors.primary : colors.textSecondary },
+                    ]}
+                  >
+                    {COURSE_TOPIC_COPY.none}
+                  </Text>
+                  {!value ? <Ionicons name="checkmark-circle" size={18} color={colors.primary} /> : null}
                 </Pressable>
               ) : null}
 
@@ -240,18 +297,27 @@ export function TopicPicker({
               ))}
 
               {addTitle ? (
-                <Pressable
-                  onPress={() => void submitCreate(addTitle)}
-                  disabled={creating}
-                  accessibilityRole="button"
-                  style={[styles.row, { borderBottomColor: colors.border, opacity: creating ? 0.6 : 1 }]}
-                >
-                  <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-                  <Text style={[styles.rowText, { flex: 1, color: colors.primary, fontWeight: '600' }]}>
-                    Add ‘{addTitle}’
+                <>
+                  <Pressable
+                    onPress={() => void submitCreate(addTitle)}
+                    disabled={creating}
+                    accessibilityRole="button"
+                    style={[styles.row, { borderBottomColor: colors.border, opacity: creating ? 0.6 : 1 }]}
+                  >
+                    <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.rowText, { flex: 1, color: colors.primary, fontWeight: '600' }]}>
+                      {creating ? COURSE_TOPIC_COPY.adding : formatAddTopicOffer(addTitle)}
+                    </Text>
+                    {creating ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+                  </Pressable>
+                  {/* Creating a topic changes the outline for everyone on the
+                      course. Say so before the tap, as web does — without it a
+                      student adds a private-looking abbreviation to a shared
+                      syllabus with nothing on screen to warn them. */}
+                  <Text style={[styles.sharedHint, { color: colors.textTertiary }]}>
+                    {COURSE_TOPIC_COPY.shared}
                   </Text>
-                  {creating ? <ActivityIndicator size="small" color={colors.primary} /> : null}
-                </Pressable>
+                </>
               ) : null}
 
               {createError ? (
@@ -263,11 +329,36 @@ export function TopicPicker({
               {!loading && options.length === 0 && (unavailable || !addTitle) ? (
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                   {unavailable
-                    ? 'Topics aren’t available for this course yet.'
+                    ? COURSE_TOPIC_COPY.unavailable
                     : query.trim()
-                      ? 'No topic matches. Type a full title to add it.'
-                      : 'No topics in this course yet — type a title to add the first one.'}
+                      ? COURSE_TOPIC_COPY.emptyMatch
+                      : COURSE_TOPIC_COPY.empty}
                 </Text>
+              ) : null}
+
+              {/* Empty, readable outline and nothing typed yet: offer to seed it
+                  from the course's flashcard tags so the first student does not
+                  face a blank list. Shared course data, so this fills the outline
+                  for everyone — the hint says so. */}
+              {!unavailable && !loading && topics.length === 0 && !query.trim() ? (
+                <View style={styles.seedBlock}>
+                  <Pressable
+                    onPress={() => void submitSeed()}
+                    disabled={seeding}
+                    accessibilityRole="button"
+                    accessibilityLabel={COURSE_TOPIC_COPY.seed}
+                    style={[styles.row, { borderBottomColor: colors.border, opacity: seeding ? 0.6 : 1 }]}
+                  >
+                    <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.rowText, { flex: 1, color: colors.primary, fontWeight: '600' }]}>
+                      {COURSE_TOPIC_COPY.seed}
+                    </Text>
+                    {seeding ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+                  </Pressable>
+                  <Text style={[styles.seedHint, { color: colors.textTertiary }]}>
+                    {seededEmpty ? COURSE_TOPIC_COPY.seedEmpty : COURSE_TOPIC_COPY.seedHint}
+                  </Text>
+                </View>
               ) : null}
             </ScrollView>
           </View>
@@ -363,7 +454,10 @@ const styles = StyleSheet.create({
   rowText: { fontSize: 15 },
   rowTitle: { fontSize: 15, fontWeight: '500' },
   errorText: { fontSize: 12, paddingTop: 8 },
+  sharedHint: { fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingTop: 6 },
   emptyText: { fontSize: 13, paddingVertical: 16, textAlign: 'center' },
+  seedBlock: { paddingTop: 4 },
+  seedHint: { fontSize: 12, paddingHorizontal: 6, paddingTop: 2 },
 });
 
 export default TopicPicker;

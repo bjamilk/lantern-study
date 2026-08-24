@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  COURSE_TOPIC_COPY,
   aggregatePhotoOcrStatus,
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
@@ -844,7 +845,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 courseId={note.courseId ?? null}
                 value={note.topicId ?? null}
                 disabled={!canEdit}
-                placeholder="No topic"
+                placeholder={COURSE_TOPIC_COPY.none}
                 onChange={(topic) => {
                   void useNotesStore
                     .getState()

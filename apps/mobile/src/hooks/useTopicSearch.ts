@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CourseTopic } from '@lantern/shared/types';
+import { upsertCourseTopic } from '@lantern/shared';
 import { getCourseTopics, invalidateCourseTopicsCache } from '../services/academic';
 import { filterTopics, suggestTopicCreation } from '../utils/topicSelection';
 
@@ -66,13 +67,13 @@ export function useCourseTopics(
     };
   }, [courseId, enabled, attempt]);
 
-  /** Splice a just-created topic in without waiting for the next fetch. */
+  /**
+   * Splice a just-created topic in without waiting for the next fetch. Uses the
+   * shared upsert so the outline stays in THE order (position, title, id) — the
+   * same comparator the picker cache and the Library tree use.
+   */
   const addTopic = useCallback((topic: CourseTopic) => {
-    setTopics(prev =>
-      prev.some(t => t.id === topic.id)
-        ? prev
-        : [...prev, topic].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
-    );
+    setTopics(prev => upsertCourseTopic(prev, topic));
   }, []);
 
   const reload = useCallback(() => {

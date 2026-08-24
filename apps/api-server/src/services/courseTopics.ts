@@ -15,6 +15,7 @@
  */
 import type { SupabaseService } from './supabase';
 import type { CourseTopic } from '@lantern/shared/types';
+import { TOPIC_TITLE_MAX } from '@lantern/shared/learning';
 import { isMissingRelationError } from './academicCourses';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
@@ -25,9 +26,20 @@ export type { CourseTopic };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const TOPIC_TITLE_MAX = 120;
+// The single source of the title cap lives in @lantern/shared so client input
+// caps and this server validation cannot silently diverge (a client that let a
+// 121-char title through would post something the server then rejects).
+// Re-exported so callers that reach for services/courseTopics keep the name.
+export { TOPIC_TITLE_MAX };
 /** An outline longer than this is a symptom, not a syllabus. */
 export const TOPICS_PER_COURSE_MAX = 200;
+
+/**
+ * A (courseId, topicId) pair that matches no row. Either the topic was deleted
+ * by someone else on the course, or the caller is holding an outline belonging
+ * to a different course — both mean "do not touch anything".
+ */
+const TOPIC_NOT_IN_COURSE = 'That topic is not in this course';
 
 function mapRow(row: any): CourseTopic {
   return {
@@ -131,21 +143,31 @@ export class CourseTopicsService {
     return mapRow(data);
   }
 
-  async rename(topicId: string, rawTitle: string): Promise<CourseTopic> {
+  /**
+   * Rename a topic *of this course*. Scoped to `courseId` for the same reason
+   * `reorder` is: this client is service role, so RLS stops nothing, and an id
+   * from another course would otherwise rewrite a syllabus the caller is not
+   * even looking at. A mismatched pair matches no row — say so rather than
+   * reporting a silent success.
+   */
+  async rename(courseId: string, topicId: string, rawTitle: string): Promise<CourseTopic> {
+    this.assertUuid(courseId, 'course id');
     this.assertUuid(topicId, 'topic id');
     const title = this.normalizeTitle(rawTitle);
     const { data, error } = await this.db
       .from('course_topics')
       .update({ title })
       .eq('id', topicId)
+      .eq('course_id', courseId)
       .select('id, course_id, title, position')
-      .single();
+      .maybeSingle();
     if (error) {
       if ((error as { code?: string }).code === '23505') {
         throw new PublicError('That topic already exists in this course');
       }
       throw error;
     }
+    if (!data) throw new PublicError(TOPIC_NOT_IN_COURSE);
     return mapRow(data);
   }
 
@@ -161,7 +183,14 @@ export class CourseTopicsService {
       .slice(0, TOPICS_PER_COURSE_MAX);
     if (ids.length === 0) throw new PublicError('No topics to reorder');
 
-    await Promise.all(
+    // supabase-js RESOLVES on a Postgres error, so discarding these results
+    // would report a HALF-APPLIED reorder as a success: one refused write leaves
+    // its topic on its old position while its neighbours are renumbered, and
+    // nothing constrains (course_id, position) to be unique, so two topics then
+    // share a slot and the tiebreak picks between them arbitrarily. Telling the
+    // student their shared outline was rearranged when it was only partly
+    // rearranged is worse than telling them it failed.
+    const results = await Promise.all(
       ids.map((id, index) =>
         this.db
           .from('course_topics')
@@ -172,14 +201,29 @@ export class CourseTopicsService {
           .eq('course_id', courseId)
       )
     );
+    const failed = results.find((result) => (result as { error?: unknown } | null)?.error);
+    if (failed) throw (failed as { error: unknown }).error;
     return this.list(courseId);
   }
 
-  /** Topics are shared: deleting one only unfiles artefacts (ON DELETE SET NULL). */
-  async remove(topicId: string): Promise<void> {
+  /**
+   * Topics are shared: deleting one only unfiles artefacts (ON DELETE SET NULL).
+   *
+   * Scoped to `courseId` like {@link rename} and {@link reorder} — a delete that
+   * matched by id alone would destroy another course's topic for every student
+   * on it, which is exactly what a client holding a stale outline would ask for.
+   */
+  async remove(courseId: string, topicId: string): Promise<void> {
+    this.assertUuid(courseId, 'course id');
     this.assertUuid(topicId, 'topic id');
-    const { error } = await this.db.from('course_topics').delete().eq('id', topicId);
+    const { data, error } = await this.db
+      .from('course_topics')
+      .delete()
+      .eq('id', topicId)
+      .eq('course_id', courseId)
+      .select('id');
     if (error) throw error;
+    if (!data || data.length === 0) throw new PublicError(TOPIC_NOT_IN_COURSE);
   }
 
   /**

@@ -24,7 +24,7 @@ import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { exportDeck } from '../../services/api';
 import { shareTextFile, toSafeFileName, SharingUnavailableError } from '../../utils/shareFile';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
-import { FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
+import { COURSE_TOPIC_COPY, FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -229,9 +229,9 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
    */
   const [topicMoveDeck, setTopicMoveDeck] = useState<{ deck: Deck; courseId: string } | null>(null);
 
-  // Library archive: course filter picked in the Library tree. The shared
-  // GET /decks client has no courseId param yet, so decks filter client-side
-  // on the course_id every row carries.
+  // Library archive: course filter picked in the Library tree. Decks load whole
+  // into the shared store and narrow client-side here on the course_id/topic_id
+  // every row carries — deliberately, so other readers keep the full list.
   const courseFilter = useUIStore(s => s.libraryCourseFilter);
   const setCourseFilter = useUIStore(s => s.setLibraryCourseFilter);
   const courseFilterId = courseFilter?.id ?? null;
@@ -527,7 +527,7 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
             <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
               <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
               <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
-                {courseFilter.topicId === UNTOPICED_TOPIC_ID ? 'No topic' : courseFilter.topicLabel || 'Topic'}
+                {courseFilter.topicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : courseFilter.topicLabel || COURSE_TOPIC_COPY.filterLabel}
               </Text>
               <Pressable
                 // Clear the topic, keep the course.

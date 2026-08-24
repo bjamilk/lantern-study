@@ -7,6 +7,7 @@
  */
 import type { Course, CourseTopic, UserCourse } from '@lantern/shared/types';
 import { currentAcademicYear } from '@lantern/shared/academic';
+import { sortCourseTopics } from '@lantern/shared';
 import {
   archiveSemester,
   fetchMyCourses,
@@ -164,9 +165,13 @@ async function topicsRequest<T>(
   return (json.data ?? json) as T;
 }
 
-/** Syllabus order: position, then id — the same order the API returns. */
+/**
+ * THE syllabus order, shared with web and the Library trees: position, then
+ * title (case-insensitive), then id. One comparator everywhere or the outline
+ * reorders itself between the picker cache and the tree.
+ */
 function sortTopics(topics: CourseTopic[]): CourseTopic[] {
-  return [...topics].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+  return sortCourseTopics(topics);
 }
 
 export function invalidateCourseTopicsCache(courseId?: string): void {
@@ -236,6 +241,52 @@ export async function createCourseTopic(courseId: string, title: string): Promis
     });
   }
   return topic;
+}
+
+/**
+ * The outline mutations behind ManageOutlineSheet and the picker's seed row.
+ * All are pure round-trips: the CALLER owns the cache, invalidating it after a
+ * mutation (invalidateCourseTopicsCache) so no picker keeps a stale outline.
+ * Every one changes SHARED course data — the outline everyone on the course
+ * sees — which is why the sheet confirms before deleting.
+ */
+
+/** Bootstrap an empty outline from the course's flashcard tags (POST /topics/seed). */
+export async function seedCourseTopics(courseId: string): Promise<CourseTopic[]> {
+  const rows = await topicsRequest<CourseTopic[]>(courseId, '/seed', { method: 'POST' });
+  return sortTopics(Array.isArray(rows) ? rows : []);
+}
+
+/**
+ * Rewrite the outline order (PUT /topics/order): the client sends ids in the
+ * order it wants and the server assigns sparse positions, returning the outline.
+ */
+export async function reorderCourseTopics(courseId: string, orderedIds: string[]): Promise<CourseTopic[]> {
+  const rows = await topicsRequest<CourseTopic[]>(courseId, '/order', {
+    method: 'PUT',
+    body: JSON.stringify({ topicIds: orderedIds }),
+  });
+  return sortTopics(Array.isArray(rows) ? rows : []);
+}
+
+/** Rename one topic (PATCH /topics/:id). */
+export async function renameCourseTopic(
+  courseId: string,
+  topicId: string,
+  title: string
+): Promise<CourseTopic> {
+  return topicsRequest<CourseTopic>(courseId, `/${encodeURIComponent(topicId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  });
+}
+
+/**
+ * Delete one topic (DELETE /topics/:id). Only UNFILES artefacts
+ * (ON DELETE SET NULL) — it never deletes anyone's notes, decks or tests.
+ */
+export async function deleteCourseTopic(courseId: string, topicId: string): Promise<void> {
+  await topicsRequest<void>(courseId, `/${encodeURIComponent(topicId)}`, { method: 'DELETE' });
 }
 
 /**

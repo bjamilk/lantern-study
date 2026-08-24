@@ -37,7 +37,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     >
       <div className="space-y-4">
         <h3 id="confirm-dialog-title" className="text-lg font-semibold text-lantern-text">{title}</h3>
-        <p className="text-sm text-lantern-text-secondary">{message}</p>
+        {/* pre-line so a caller can add a second paragraph (e.g. a failure reason)
+            without it running into the body text; single-line messages are unchanged. */}
+        <p className="text-sm text-lantern-text-secondary whitespace-pre-line">{message}</p>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onCancel} disabled={loading}>
             {cancelLabel}

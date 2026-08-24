@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { COURSE_TOPIC_COPY, TOPIC_TITLE_MAX, sortCourseTopics, upsertCourseTopic } from '@lantern/shared';
 import type { CourseTopic } from '../../types';
-import { createCourseTopic, fetchCourseTopics } from '../../services/academic';
+import { createCourseTopic, fetchCourseTopics, seedCourseTopics } from '../../services/academic';
 
-/** Mirrors TOPIC_TITLE_MAX in apps/api-server/src/services/courseTopics.ts. */
-export const TOPIC_TITLE_MAX = 120;
+// Re-exported so TopicPicker keeps a single import site; the number itself lives
+// in @lantern/shared (a second literal is how a client starts posting titles the
+// server rejects).
+export { TOPIC_TITLE_MAX };
 
 export interface CreateTopicOffer {
   title: string;
@@ -32,6 +35,7 @@ export function useTopicSearch({ courseId, enabled = true }: UseTopicSearchOptio
   const [topics, setTopics] = useState<CourseTopic[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const seq = useRef(0);
@@ -52,7 +56,9 @@ export function useTopicSearch({ courseId, enabled = true }: UseTopicSearchOptio
     fetchCourseTopics(courseId)
       .then((rows) => {
         if (seq.current !== current) return;
-        setTopics(rows);
+        // THE outline order (position, then title, then id), so the picker,
+        // the Library rail and mobile all read the same syllabus.
+        setTopics(sortCourseTopics(rows));
         setUnavailable(false);
       })
       .catch(() => {
@@ -86,16 +92,17 @@ export function useTopicSearch({ courseId, enabled = true }: UseTopicSearchOptio
 
   const create = useCallback(
     async (title: string): Promise<CourseTopic> => {
-      if (!courseId) throw new Error('Pick a course first');
+      if (!courseId) throw new Error(COURSE_TOPIC_COPY.noCourse);
       setCreating(true);
       setError(null);
       try {
         const topic = await createCourseTopic(courseId, title);
-        // New topics land at the end of the outline, so appending keeps position order.
-        setTopics((prev) => (prev.some((t) => t.id === topic.id) ? prev : [...prev, topic]));
+        // Re-sort rather than append: a new topic gets the next position today,
+        // but blind appending is exactly what breaks the moment anyone reorders.
+        setTopics((prev) => upsertCourseTopic(prev, topic));
         return topic;
       } catch (e: any) {
-        setError(e?.message || 'Could not add that topic');
+        setError(e?.message || COURSE_TOPIC_COPY.createFailed);
         throw e;
       } finally {
         setCreating(false);
@@ -104,5 +111,27 @@ export function useTopicSearch({ courseId, enabled = true }: UseTopicSearchOptio
     [courseId]
   );
 
-  return { query, setQuery, topics, options, offer, loading, creating, error, unavailable, create };
+  /**
+   * Build a starting outline from tags already used on this course. Resolves
+   * with the resulting list so the caller can tell "seeded some" from "seeded
+   * nothing" (a course whose tags never cleared the server's threshold), which
+   * must read as an honest empty result, not a silent no-op.
+   */
+  const seed = useCallback(async (): Promise<CourseTopic[]> => {
+    if (!courseId) return [];
+    setSeeding(true);
+    setError(null);
+    try {
+      const rows = sortCourseTopics(await seedCourseTopics(courseId));
+      setTopics(rows);
+      return rows;
+    } catch (e: any) {
+      setError(e?.message || COURSE_TOPIC_COPY.seedFailed);
+      throw e;
+    } finally {
+      setSeeding(false);
+    }
+  }, [courseId]);
+
+  return { query, setQuery, topics, options, offer, loading, creating, seeding, error, unavailable, create, seed };
 }

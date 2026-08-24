@@ -1,0 +1,41 @@
+-- Phase 1 A follow-up — drop note_folders.topic_id as dead schema.
+--
+-- 20260826120000 added topic_id to five tables in one sweep: notes, decks,
+-- test_sessions, marketplace_listings and note_folders. The first four are
+-- live — written through CourseTopicsService.resolveForArtefact, projected,
+-- mapped and rendered. The fifth never was, and on inspection never should be.
+--
+-- A FOLDER IS NOT A FILED ARTEFACT. Notes, decks and test sessions are the
+-- things a student revises, and those are what sit at a point in a syllabus.
+-- A folder is a container the student invented for their own filing; giving it
+-- a topic asks "which week of the syllabus is this folder?", which has no
+-- answer when the folder holds material from four weeks. The Library already
+-- expresses the real hierarchy — year -> course -> topic -> artefact — and it
+-- aggregates notes, decks and test_sessions only. Nothing reads a folder topic
+-- because there is nothing sensible for it to mean.
+--
+-- The whole server surface built on this column has already been removed in
+-- 72c0db8: topicIdBodyRule() is gone from validateFolderCreate and
+-- validateFolderUpdate, the folder routes no longer forward topicId,
+-- createNoteFolder / updateNoteFolder no longer resolve or write it,
+-- mapNoteFolder no longer emits it, and NoteFolder.topicId is gone from
+-- packages/shared. This drops the last remnant, the column itself.
+--
+-- WHY DROP RATHER THAN LEAVE IT. Unlike notes.view_count this column is inert
+-- and harmless where it sits — it is not a counter, `note_folders` is not in
+-- the `supabase_realtime` publication, and nothing amplifies. The reason is the
+-- one that migration also gives: dead schema that looks finished is a real
+-- cost. The next person greps topic_id, finds it on five tables, and wires the
+-- fifth "for consistency" — rebuilding exactly the surface we just deleted.
+--
+-- Dropping the column also drops its FK to course_topics(id) and the partial
+-- index note_folders_topic_id_idx; both go with it, so neither is named here.
+-- No data is lost that anything can read: the column has no writer, so every
+-- row's value is NULL.
+--
+-- Hand-applied via the Supabase SQL editor. Idempotent, and safe to re-run.
+-- 20260826120000 has NOT been edited — it is already applied in production, so
+-- rewriting history there would desync a fresh environment from this one; a
+-- fresh environment creates the column and then drops it here, which is fine.
+
+ALTER TABLE public.note_folders DROP COLUMN IF EXISTS topic_id;

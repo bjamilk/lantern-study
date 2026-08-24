@@ -119,8 +119,7 @@ export const isUuid = (value: unknown): value is string =>
 
 /**
  * Parsed `?courseId=` filter shared by every artefact list endpoint
- * (/decks, /notes, /tests, /offline-bundles, /marketplace/my-listings,
- * /library/search):
+ * (/decks, /notes, /tests, /offline-bundles, /library/search):
  *   absent/empty → none, the literal string "null" → unfiled (course_id IS
  *   NULL), a uuid → that course, anything else → invalid (400 — forwarding
  *   the raw string to `.eq('course_id', …)` is a 22P02 500 in Postgres).

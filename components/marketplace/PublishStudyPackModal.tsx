@@ -22,6 +22,8 @@ interface PublishStudyPackModalProps {
   onClose: () => void;
   defaultTitle?: string;
   defaultCourseId?: string | null;
+  /** Topic within `defaultCourseId` to pre-file under (e.g. the source deck's topic). */
+  defaultTopicId?: string | null;
   defaultDescription?: string;
   defaultPrice?: number | null;
   /**
@@ -58,6 +60,7 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
   onClose,
   defaultTitle,
   defaultCourseId,
+  defaultTopicId,
   defaultDescription,
   defaultPrice,
   draftId,
@@ -68,7 +71,9 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
   const [price, setPrice] = useState(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
   const [campusId, setCampusId] = useState('');
   const [courseId, setCourseId] = useState<string | null>(defaultCourseId ?? null);
-  const [topicId, setTopicId] = useState<string | null>(null);
+  // A topic only means something inside its course — carry it over only when the
+  // course came with it, mirroring the topicId-without-courseId guard on submit.
+  const [topicId, setTopicId] = useState<string | null>(defaultCourseId ? defaultTopicId ?? null : null);
   const [otherCity, setOtherCity] = useState('');
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [attested, setAttested] = useState(false);
@@ -84,6 +89,7 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
     if (!isOpen) return;
     setTitle(defaultTitle || '');
     setCourseId(defaultCourseId ?? null);
+    setTopicId(defaultCourseId ? defaultTopicId ?? null : null);
     setDescription(defaultDescription || '');
     setPrice(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
     setAiAssisted(!!draftId);
@@ -93,7 +99,7 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
     void fetchMarketplacePaymentsConfig()
       .then((c) => setCreatorFeeBps(Number(c?.creatorFeeBps ?? 1500)))
       .catch(() => setCreatorFeeBps(1500));
-  }, [isOpen, defaultTitle, defaultCourseId, defaultDescription, defaultPrice, draftId]);
+  }, [isOpen, defaultTitle, defaultCourseId, defaultTopicId, defaultDescription, defaultPrice, draftId]);
 
   const counts = useMemo(() => countContent(content), [content]);
   const hasContent =

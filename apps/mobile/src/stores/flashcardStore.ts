@@ -228,7 +228,11 @@ interface FlashcardState {
   offlineDeckIds: string[];
   
   // Actions
-  fetchDecks: (userId: string, options?: { courseId?: string | null; topicId?: string | null }) => Promise<void>;
+  // No course/topic filter: decks load whole into a shared store (Dashboard, the
+  // deck detail screen, offline all read it) and FlashcardsScreen narrows by the
+  // Library filter client-side in `filteredDecks`. A server-side filter here
+  // would only have been a dead second path with no caller.
+  fetchDecks: (userId: string) => Promise<void>;
   fetchFlashcards: (deckId: string) => Promise<void>;
   syncAllFlashcards: (userId: string) => Promise<void>;
   setCurrentDeck: (deck: Deck | null) => void;
@@ -325,7 +329,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
   
-  fetchDecks: async (userId: string, options?: { courseId?: string | null; topicId?: string | null }) => {
+  fetchDecks: async (userId: string) => {
     try {
       set({ isLoading: true, error: null });
       // Don't clobber in-memory SRS updates with stale disk cache when decks
@@ -341,12 +345,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       }
 
       try {
-        const rawDecks = await api.fetchDecks(userId, {
-          includeShared: true,
-          ...(options?.courseId != null ? { courseId: options.courseId } : {}),
-          // A topic only narrows inside its course, so it never travels alone.
-          ...(options?.courseId != null && options?.topicId != null ? { topicId: options.topicId } : {}),
-        });
+        const rawDecks = await api.fetchDecks(userId, { includeShared: true });
         const decks = enrichDecksWithStats(
           sanitizeDecks((rawDecks || []).map(mapDeckFromApi).filter((d): d is Deck => d !== null)),
           get().flashcards

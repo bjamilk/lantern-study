@@ -5,6 +5,7 @@
  * filter semantics shared by the Notes / Flashcards / Offline screens.
  * Kept free of React/DOM so apps/web/src/libraryArchive.test.ts can exercise it.
  */
+import { COURSE_TOPIC_COPY, compareCourseTopics } from '@lantern/shared';
 import type {
   LibraryCourseCounts,
   LibraryCourseNode,
@@ -29,7 +30,7 @@ export function isUnfiledFilter(filter: CourseFilterId | undefined): boolean {
 /** Whether an item with `itemCourseId` belongs under the current course filter. */
 export function matchesCourseFilter(itemCourseId: string | null | undefined, filter: CourseFilterId | undefined): boolean {
   if (!filter) return true;
-  if (filter === UNFILED_COURSE_ID) return !itemCourseId;
+  if (isUnfiledFilter(filter)) return !itemCourseId;
   return itemCourseId === filter;
 }
 
@@ -56,7 +57,7 @@ export function isUntopicedFilter(filter: TopicFilterId | undefined): boolean {
 export function matchesTopicFilter(itemTopicId: string | null | undefined, filter: TopicFilterId | undefined): boolean {
   if (!filter) return true;
   if (itemTopicId === undefined) return true;
-  if (filter === UNTOPICED_TOPIC_ID) return !itemTopicId;
+  if (isUntopicedFilter(filter)) return !itemTopicId;
   return itemTopicId === filter;
 }
 
@@ -163,17 +164,19 @@ export function courseTopicRows(node: LibraryCourseNode | null | undefined): Lib
   if (!topics || topics.length === 0) return [];
   const rows: LibraryTopicRow[] = topics
     .filter((t) => t?.topic?.id)
-    // The API orders by position, but a type can only document that — sort anyway.
-    .sort((a, b) => (a.topic.position || 0) - (b.topic.position || 0))
+    // The API orders by position, but a type can only document that — sort with
+    // THE shared comparator (position, then title, then id) so every surface
+    // agrees. `.filter` already returned a fresh array, so this sorts a copy.
+    .sort((a, b) => compareCourseTopics(a.topic, b.topic))
     .map((t) => ({
       id: t.topic.id,
-      title: t.topic.title || 'Untitled topic',
+      title: t.topic.title || COURSE_TOPIC_COPY.untitled,
       counts: { ...EMPTY_COUNTS, ...(t.counts || {}) },
       untopiced: false,
     }));
   const untopiced = node?.untopiced;
   if (untopiced && countsTotal(untopiced) > 0) {
-    rows.push({ id: UNTOPICED_TOPIC_ID, title: 'No topic', counts: { ...EMPTY_COUNTS, ...untopiced }, untopiced: true });
+    rows.push({ id: UNTOPICED_TOPIC_ID, title: COURSE_TOPIC_COPY.none, counts: { ...EMPTY_COUNTS, ...untopiced }, untopiced: true });
   }
   return rows;
 }
