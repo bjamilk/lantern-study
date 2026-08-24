@@ -25,6 +25,7 @@ import {
 } from '@heroicons/react/24/outline';
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
 import { PublishStudyPackModal } from './marketplace/PublishStudyPackModal';
+import UpdateStudyPackModal from './marketplace/UpdateStudyPackModal';
 import CollaboratorsModal from './CollaboratorsModal';
 import Modal from './ui/Modal';
 import { Button } from './ui';
@@ -130,6 +131,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   const [isMoveCourseOpen, setIsMoveCourseOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isSellOpen, setIsSellOpen] = useState(false);
+  const [isUpdatePackOpen, setIsUpdatePackOpen] = useState(false);
   // Course label under the title (Phase 1 · B); courses load lazily on first use.
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
   const knownCourses = useAcademicStore((s) => s.knownCourses);
@@ -465,6 +467,17 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                   </span>
                 </MenuItem>
               )}
+              {/* Phase 2 G: the server has supported republish-as-update since
+                  the pack shipped (version bump + optimistic lock + buyer
+                  update-pull), but NO client ever called it — a seller could
+                  publish a pack and then never fix a typo in it. */}
+              {!isSharedWithMe && cardsInDeck.length > 0 && (
+                <MenuItem onSelect={() => setIsUpdatePackOpen(true)}>
+                  <span className="inline-flex items-center gap-2">
+                    <ArrowPathIcon className="w-4 h-4" /> Push update to my study pack…
+                  </span>
+                </MenuItem>
+              )}
               <MenuItem
                 onSelect={() => {
                   void confirmDialog({
@@ -687,6 +700,21 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           onClose={() => setIsSellOpen(false)}
           defaultTitle={deck.name}
           defaultCourseId={deck.courseId ?? null}
+          content={{
+            flashcards: cardsInDeck
+              .map((c) => ({
+                front: c.front || (c as unknown as { clozeText?: string }).clozeText || '',
+                back: c.back || '',
+                tags: Array.isArray(c.tags) ? c.tags : undefined,
+              }))
+              .filter((c) => c.front.trim().length > 0),
+          }}
+        />
+      ) : null}
+      {isUpdatePackOpen ? (
+        <UpdateStudyPackModal
+          isOpen={isUpdatePackOpen}
+          onClose={() => setIsUpdatePackOpen(false)}
           content={{
             flashcards: cardsInDeck
               .map((c) => ({

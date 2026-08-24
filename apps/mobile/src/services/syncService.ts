@@ -226,7 +226,16 @@ class SyncService {
           // carried the same pre-sync version, so the second (and every later)
           // review 409'd and was dropped — one of N offline reviews survived.
           // Reviews are events; the server applies each on its current state.
-          await api.reviewFlashcard(op.entityId, rating, undefined);
+          // Replay carries the ORIGINAL grade time so learning_events.occurred_at
+          // reflects when the student actually studied, not when they synced.
+          const reviewedAt =
+            typeof op.data.reviewedAt === 'string' ? op.data.reviewedAt : undefined;
+          await api.reviewFlashcard(
+            op.entityId,
+            rating,
+            undefined,
+            reviewedAt ? { reviewedAt } : undefined
+          );
         }
         return true;
       } catch (error: any) {

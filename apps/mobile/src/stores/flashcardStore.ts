@@ -682,7 +682,16 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         'flashcard_review',
         flashcardId,
         'create',
-        { rating, deckId, expectedVersion: card.version },
+        {
+          rating,
+          deckId,
+          expectedVersion: card.version,
+          // Phase 1 C: stamp WHEN the grade was given. Without it the replayed
+          // review lands with occurred_at = SYNC time, so a week of offline
+          // study collapses onto the day the phone came back online. Web
+          // already sends this (services/offlineFlashcardSync.ts).
+          reviewedAt: new Date().toISOString(),
+        },
         userId
       );
       // Keep pending until sync confirms — due count stays correct offline.
@@ -740,7 +749,16 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         'flashcard_review',
         flashcardId,
         'create',
-        { rating, deckId, expectedVersion: card.version },
+        {
+          rating,
+          deckId,
+          expectedVersion: card.version,
+          // Phase 1 C: stamp WHEN the grade was given. Without it the replayed
+          // review lands with occurred_at = SYNC time, so a week of offline
+          // study collapses onto the day the phone came back online. Web
+          // already sends this (services/offlineFlashcardSync.ts).
+          reviewedAt: new Date().toISOString(),
+        },
         userId
       );
       // Keep pendingLocalReviews so refetch/sync cannot resurrect the old due state.

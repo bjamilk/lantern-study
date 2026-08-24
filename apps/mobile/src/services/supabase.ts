@@ -198,6 +198,9 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Phase 1 C: stamps learning_events.surface. Without it every row lands as
+    // 'api' and the privacy policy's "web or mobile" claim is unsupported.
+    'X-Lantern-Surface': 'mobile',
   };
 
   if (session?.access_token) {

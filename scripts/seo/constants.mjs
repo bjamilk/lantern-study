@@ -8,6 +8,9 @@ export const SITEMAP_URLS = [
   `${SITE_URL}/sitemap.xml`,
   `${SITE_URL}/sitemap/marketplace.xml`,
   `${SITE_URL}/sitemap/jobs.xml`,
+  // Phase 4 R — campus landing pages. The sitemap shipped but was never
+  // registered here, so nothing told a crawler it existed.
+  `${SITE_URL}/sitemap/campuses.xml`,
 ];
 
 /** Public URLs to notify after deploy (homepage + key landing pages) */

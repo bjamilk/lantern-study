@@ -240,6 +240,10 @@ export function clearAllClientAuthStorage(): void {
 export function withApiCredentials(init: RequestInit = {}): RequestInit {
   const headers = {
     'X-Requested-With': 'LanternStudy',
+    // Phase 1 C: the server reads this to stamp learning_events.surface. Without
+    // it every row lands as 'api' — and the published privacy policy tells users
+    // we record whether an action happened on web or mobile.
+    'X-Lantern-Surface': 'web',
     ...(init.headers as Record<string, string> | undefined),
   };
   const next = { ...init, headers };

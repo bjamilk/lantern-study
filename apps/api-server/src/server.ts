@@ -251,7 +251,9 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID', 'X-Requested-With', 'Idempotency-Key'],
+  // 'X-Lantern-Surface' (Phase 1 C): without it in this list the browser
+  // strips the header and every learning_event lands as surface='api'.
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID', 'X-Requested-With', 'Idempotency-Key', 'X-Lantern-Surface'],
   // Expose EVERY AI usage header (single source of truth in aiRateLimit.ts).
   // The old three-item list hid X-AI-Global-Usage-* and X-AI-Feature from
   // browsers, so on feature routes the web badge showed feature counts (x/15)
