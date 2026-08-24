@@ -49,41 +49,47 @@ nothing at the near end calling it.
 
 ---
 
-## Gaps that remain, ranked
+## Gaps — status after the fix pass
 
-### Makes a shipped feature not work
-- **`groups.visibility` defaults to `private` with no UI to change it**, so
-  `discoverGroups`' `visibility IN ('public','community')` filter matches nothing
-  — Discover's Groups tab can only ever be empty (L).
-- **No code path creates a horizontal/topic community**, so the join machinery has
-  nothing non-derived to act on (L).
-- **6 of 10 `activity_events` verbs have no writer** — `shared_note`,
-  `joined_community`, `completed_challenge`, `unlocked_badge`,
-  `added_deck_collaborator`, `answered_question` (M).
-- **Feed panel is web-only**; mobile's dashboard has none (M).
-- **Condition-filtered browse returns no trust** — that path bypasses
-  `attachSellerTrust`; and browse *cards* never render trust on either client (N).
-- **Study-pack update/republish and restore have no UI caller** on either
-  platform (G).
-- **`concepts` API has zero callers** outside the server (C).
-- **`learning_events.surface` is always `'api'`** — the privacy policy tells users
-  otherwise (C).
+**Fixed in `4d7e62b` and `eab261c`** (both deployed and verified in production):
 
-### Plan deliverables never built
-- `course_topics` / `topic_id` (A) — deferred by contract, but never landed.
-- F's whole instrumentation half: `profiles.activated_at`, an activation stage in
+| Was | Now |
+|---|---|
+| `GET /communities/:id/members` leaked private profiles to anyone auto-added to the same community | Applies the same rule as `profile_visible_to_viewer`; 'groups' tier needs BOTH sides JOINED |
+| `groups.visibility` unsettable → Discover Groups tab empty by construction | Settable (admin-only) with `communityId` + `tags` |
+| No path created a horizontal community | `POST /communities`, restricted to `kind='topic'` |
+| Trust attached but invisible; fallback browse had none | Fallback path attaches it; both clients render the chip |
+| 6 of 10 `activity_events` verbs had no writer | All 10 wired |
+| Feed panel web-only | Mobile dashboard panel added |
+| Free-digital owners could not review (the defect the plan itself named) | Entitlement now counts as proof of delivery |
+| No test pinned the auto/joined privacy boundary | 12 tests in `communities.test.ts` |
+| `learning_events.surface` always `'api'` — contradicting the live privacy policy | CORS allows the header; both clients send it |
+| Mobile offline study collapsed onto the sync day | Grade time stamped at queue and replayed |
+| `/sitemap/campuses.xml` served the SPA shell to crawlers | Own Pages Function; registered for IndexNow |
+| Sellers could not update a published pack | `UpdateStudyPackModal` from the source deck |
+
+### Still open — deliberately, with reasons
+
+- **Trending tab** (L/M). The plan names a 4th Discover tab. Needs a real
+  trending signal; `product_events` is consent-gated and 90-day, so it cannot be
+  the source, and `learning_events` needs more than two days of data to rank
+  anything honestly. Building it now would ship a ranked list of noise.
+- **`course_topics` / `topic_id`** (A). A whole entity the contract already
+  deferred once; it changes the shape of every artefact table and every picker.
+  Worth its own slice, not a tail-end patch.
+- **F instrumentation** — `profiles.activated_at`, an activation stage in
   `admin_analytics`, server-side onboarding flag, time-to-first-study-action.
-- Trending tab in Discover (L/M) — the 4th tab the plan names.
-- Ambassador badge + leaderboard, invite unfurl `functions/invite/[id].ts`, and
-  the campus playbook seeding (Q).
-- IndexNow, and a seeded UNILAG (R).
-- Entitlement-based review eligibility (G) — a defect the plan explicitly called out.
-- Question difficulty from `user_question_stats` (P).
-
-### Not built at all — plan-gated, confirmed absent
-**S, T, U, V, W.** No code exists for any of them.
-
----
+  Phase 4 Q's `referral_activation_check` now defines activation server-side, so
+  this should be built ON that definition rather than inventing a second one.
+- **Concepts UI callers** (C). The API works; the tagging UI it needs is the
+  Phase 3 P work the contract explicitly deferred.
+- **`authored_difficulty`** (C) — has no writer *and no source for a value*; the
+  AI generation path does not produce one. Needs a product decision first.
+- **Ambassador badge + leaderboard, invite unfurl, campus seeding** (Q). The
+  `is_ambassador` flag and `listAmbassadors` exist; the badge, the leaderboard
+  and `functions/invite/[id].ts` do not. Seeding is a data/ops task.
+- **Question difficulty from `user_question_stats`** (P).
+- **Phase 4 S, T, U, V, W** — not started. T and W remain plan-gated.
 
 ## Where the handovers overclaimed
 
