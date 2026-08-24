@@ -99,6 +99,15 @@ export const validateUpdateGroup = [
   body('description').optional().trim().isLength({ max: 500 }).withMessage('Description must be max 500 characters'),
   body('avatarUrl').optional().isURL().withMessage('Invalid avatar URL'),
   body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
+  // Phase 3 L: without a way to SET this, groups stay 'private' forever and
+  // Discover's Groups tab can never match anything.
+  body('visibility')
+    .optional()
+    .isIn(['private', 'community', 'public'])
+    .withMessage('visibility must be private, community or public'),
+  body('communityId').optional({ nullable: true }).isUUID().withMessage('Invalid communityId'),
+  body('tags').optional().isArray({ max: 10 }).withMessage('tags must be an array of at most 10'),
+  body('tags.*').optional().trim().isLength({ min: 1, max: 30 }).withMessage('Each tag must be 1-30 characters'),
   courseIdBodyRule(),
 ];
 

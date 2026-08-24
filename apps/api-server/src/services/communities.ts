@@ -20,6 +20,7 @@ import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import { cacheService } from './cache';
+import { normalizeUserSettings } from '@lantern/shared/settings';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -204,11 +205,80 @@ export class CommunitiesService {
     return { ...community, isMember };
   }
 
+  /**
+   * Create a horizontal (topic) community — the only kind a person can make.
+   *
+   * Without this there is no code path anywhere that creates a non-derived
+   * community, so the join/leave machinery had nothing to act on and the
+   * Communities tab could only ever show the four auto-derived campus scopes.
+   *
+   * institution/programme/level/course communities stay derived: they are
+   * minted by ensure_scope_community from the academic profile, and letting a
+   * client mint one would fork the canonical row that scope depends on.
+   */
+  async createTopicCommunity(
+    userId: string,
+    input: { name?: string; description?: string; tags?: string[] }
+  ): Promise<CommunityRow> {
+    const name = String(input?.name ?? '').trim();
+    if (name.length < 3 || name.length > 60) {
+      throw new PublicError('Community name must be 3-60 characters');
+    }
+    const description = String(input?.description ?? '').trim().slice(0, 500) || null;
+    const tags = Array.isArray(input?.tags)
+      ? [...new Set(input.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 8)
+      : [];
+
+    const slug =
+      'topic-' +
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48);
+    if (slug.length < 8) throw new PublicError('Please use a more descriptive name');
+
+    const { data, error } = await this.db
+      .from('communities')
+      .insert({
+        kind: 'topic',
+        slug,
+        name,
+        description,
+        tags,
+        visibility: 'public',
+        // Never is_official: that badge is for derived campus scopes.
+        is_official: false,
+        created_by: userId,
+      })
+      .select(COMMUNITY_COLUMNS)
+      .single();
+
+    if (error) {
+      if ((error as { code?: string }).code === '23505') {
+        throw new PublicError('A community with that name already exists');
+      }
+      throw error;
+    }
+
+    const community = data as unknown as CommunityRow;
+    // The creator joins their own community, as a 'joined' member — which is
+    // what makes it count for the profile-visibility widening.
+    await this.db
+      .from('community_members')
+      .upsert(
+        { community_id: community.id, user_id: userId, source: 'joined', role: 'admin', opted_out_at: null },
+        { onConflict: 'community_id,user_id' }
+      );
+    await cacheService.delete(`communities:mine:${userId}`);
+    return community;
+  }
+
   async join(userId: string, communityId: string): Promise<{ joined: true }> {
     this.assertUuid(communityId, 'community id');
     const { data: community, error } = await this.db
       .from('communities')
-      .select('id, visibility')
+      .select('id, visibility, name')
       .eq('id', communityId)
       .maybeSingle();
     if (error) throw error;
@@ -226,6 +296,20 @@ export class CommunitiesService {
     );
     if (upsertError) throw upsertError;
     await cacheService.delete(`communities:mine:${userId}`);
+
+    // Phase 3 M: joined_community had no writer. Addressed to the community
+    // itself — joining is news to the room you joined, not to the internet.
+    const { getActivityFeedService } = await import('./activityFeed');
+    await getActivityFeedService(this.supabaseService).record({
+      actorId: userId,
+      verb: 'joined_community',
+      objectType: 'community',
+      objectId: communityId,
+      audienceType: 'community',
+      audienceId: communityId,
+      payload: { title: (community as { name?: string }).name ?? null },
+    });
+
     return { joined: true };
   }
 
@@ -268,7 +352,7 @@ export class CommunitiesService {
     this.assertUuid(communityId, 'community id');
     const { data: mine } = await this.db
       .from('community_members')
-      .select('user_id')
+      .select('user_id, source')
       .eq('community_id', communityId)
       .eq('user_id', viewerId)
       .is('opted_out_at', null)
@@ -278,10 +362,11 @@ export class CommunitiesService {
         statusCode: 403,
       });
     }
+    const viewerJoined = (mine as { source?: string }).source === 'joined';
 
     const { data, error } = await this.db
       .from('community_members')
-      .select('user_id, profiles!inner(id, name, avatar_url, programme)')
+      .select('user_id, source, profiles!inner(id, name, avatar_url, programme, settings)')
       .eq('community_id', communityId)
       .is('opted_out_at', null)
       .limit(this.clampLimit(limit));
@@ -294,6 +379,24 @@ export class CommunitiesService {
       .map((r: any) => {
         const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
         if (!p || blockedSet.has(p.id)) return null;
+
+        // PRIVACY: the roster must apply the SAME rule as
+        // profile_visible_to_viewer, or this endpoint quietly undoes the
+        // auto-vs-joined split the whole design rests on. Being AUTO-added to
+        // your institution's community is not consent to have your name shown
+        // to everyone else who was auto-added to it.
+        if (p.id !== viewerId) {
+          const visibility =
+            normalizeUserSettings(p.settings).privacy.profileVisibility ?? 'public';
+          if (visibility === 'private') return null;
+          if (visibility === 'groups') {
+            // The 'groups' tier is widened by a shared JOINED community only —
+            // both sides must have chosen to be here.
+            const memberJoined = r.source === 'joined';
+            if (!viewerJoined || !memberJoined) return null;
+          }
+        }
+
         return {
           id: p.id,
           name: p.name,

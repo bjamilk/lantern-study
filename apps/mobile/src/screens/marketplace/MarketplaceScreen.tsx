@@ -41,6 +41,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
+import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -355,6 +356,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
             {item.title}
           </Text>
+          {/* Phase 3 N — see the web card: the server attaches trust to every
+              browse row and nothing rendered it. 'new' shows no chip. */}
+          {shouldShowTrustChip((item.seller as { trustLevel?: string } | undefined)?.trustLevel) ? (
+            <View className="mt-1 self-start rounded-full bg-lantern-primary/15 px-1.5 py-0.5">
+              <Text className="text-[10px] font-semibold text-lantern-primary">
+                {trustLabel((item.seller as { trustLevel?: string } | undefined)?.trustLevel)}
+              </Text>
+            </View>
+          ) : null}
           {item.is_on_sale && item.effective_price != null ? (
             <View className="mt-1">
               <Text className="text-xs text-lantern-text-tertiary line-through">{formatPrice(item.price)}</Text>

@@ -1786,6 +1786,11 @@ export class SupabaseService {
     if (updates.isArchived !== undefined) dbUpdates.is_archived = updates.isArchived;
     if (updates.adminIds !== undefined) dbUpdates.admin_ids = updates.adminIds;
     if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId || null;
+    // Phase 3 L discovery fields. A group is private by default; making it
+    // discoverable is an explicit, admin-only act.
+    if (updates.visibility !== undefined) dbUpdates.visibility = updates.visibility;
+    if (updates.communityId !== undefined) dbUpdates.community_id = updates.communityId || null;
+    if (updates.tags !== undefined) dbUpdates.tags = Array.isArray(updates.tags) ? updates.tags : [];
 
     if (Object.keys(dbUpdates).length === 0) {
       return this.getGroupById(groupId);
@@ -7445,6 +7450,20 @@ export class SupabaseService {
     await cacheService.deletePattern(`gamification:user:badges:${userId}:*`);
     logger.info("Badge granted manually", { userId, badgeId: knownId, actorId });
 
+    // Phase 3 M: unlocked_badge had no writer. Only the FIRST award reaches
+    // here (the already-owned case returns above), so this cannot spam a feed.
+    void (async () => {
+      const { getActivityFeedService } = await import("./activityFeed");
+      await getActivityFeedService(this).record({
+        actorId: userId,
+        verb: "unlocked_badge",
+        objectType: "badge",
+        objectId: badgeId,
+        audienceType: "followers",
+        payload: { title: (badge as { name?: string } | null)?.name ?? null },
+      });
+    })();
+
     return { awarded: true, badge, badges: next };
   }
 
@@ -9771,7 +9790,10 @@ export class SupabaseService {
     const normalized = await Promise.all(
       rows.map((listing: any) => this.normalizeListingRecordAsync(listing)),
     );
-    return { data: normalized, total };
+    // Phase 3 N: the FALLBACK path (condition filters, and any sort the RPC
+    // cannot serve) has to attach trust too. Doing it only on the RPC branch
+    // meant a shipped filter silently returned listings with no trust at all.
+    return { data: await this.attachSellerTrust(normalized), total };
   }
 
   /** Batch fetch of active listings by id (recently-viewed rail). Card-shaped payloads. */
@@ -10284,6 +10306,20 @@ export class SupabaseService {
       .limit(1);
     if (orderError) throw orderError;
     if (orderRows && orderRows.length > 0) return { eligible: true };
+
+    // Phase 2 G defect the plan called out: eligibility was order-only, so
+    // somebody who acquired a FREE digital product owns it, has studied it, and
+    // still could not review it — no order row ever existed. An entitlement is
+    // the same proof of delivery for digital goods that a completed order is
+    // for physical ones.
+    const { data: entitlementRows, error: entitlementError } = await this.supabase
+      .from("marketplace_question_bank_entitlements")
+      .select("listing_id")
+      .eq("listing_id", listingId)
+      .eq("user_id", userId)
+      .limit(1);
+    if (entitlementError) throw entitlementError;
+    if (entitlementRows && entitlementRows.length > 0) return { eligible: true };
 
     const { data: inquiryRows, error: inquiryError } = await this.supabase
       .from("marketplace_inquiries")
@@ -13094,6 +13130,20 @@ export class SupabaseService {
       const actor = profile?.name || profile?.username || "Someone";
 
       // North-star metric (Phase 3 · O): the note's author is the actor.
+      // Phase 3 M: the feed verb that matched this hook had no writer.
+      void (async () => {
+        const { getActivityFeedService } = await import("./activityFeed");
+        await getActivityFeedService(this).record({
+          actorId: note.userId,
+          verb: "shared_note",
+          objectType: "note",
+          objectId: note.id,
+          audienceType: "followers",
+          courseId: (note as { courseId?: string | null }).courseId ?? null,
+          payload: { title: (note as { title?: string }).title ?? null },
+        });
+      })();
+
       void (async () => {
         const { getLearningConnectionsService } = await import("./learningConnections");
         await getLearningConnectionsService(this).record({

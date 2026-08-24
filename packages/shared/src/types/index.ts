@@ -264,6 +264,12 @@ export interface Group {
   invitedPhoneNumbers?: string[];
   /** Course this group studies (academic archive). */
   courseId?: string | null;
+  /** Phase 3 L — discovery. Private by default; only an admin can widen it. */
+  visibility?: 'private' | 'community' | 'public';
+  communityId?: string | null;
+  tags?: string[];
+  memberCount?: number;
+  questionCount?: number;
 }
 
 export enum MessageType {

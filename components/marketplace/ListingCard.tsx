@@ -3,6 +3,7 @@ import { MarketplaceListing } from '../../types';
 import { MapPinIcon, ClockIcon, StarIcon } from '@heroicons/react/24/outline';
 import { HeartIcon } from '@heroicons/react/24/solid';
 import { featureAccents } from '@lantern/shared/design';
+import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 
 export interface ListingCardProps {
   listing: MarketplaceListing;
@@ -161,6 +162,16 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
         <h3 className="font-semibold text-xs sm:text-sm text-lantern-text mb-1 line-clamp-1 group-hover:text-lantern-primary transition-colors duration-150">
           {listing.title}
         </h3>
+
+        {/* Phase 3 N: the server attaches seller trust to every browse row, but
+            no card rendered it — so the signal existed and was invisible.
+            'new' shows nothing on purpose: labelling every newcomer reads as a
+            warning and punishes exactly the people we want publishing. */}
+        {shouldShowTrustChip((listing.seller as { trustLevel?: string } | undefined)?.trustLevel) && (
+          <span className="mb-1 inline-block rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-lantern-primary">
+            {trustLabel((listing.seller as { trustLevel?: string } | undefined)?.trustLevel)}
+          </span>
+        )}
 
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <span className="text-base sm:text-lg font-bold text-lantern-primary truncate">

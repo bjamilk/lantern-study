@@ -697,6 +697,21 @@ export class ChallengeService {
 
       await this.recordDuelActivity(challenge.challengerId, challenge.opponentId);
 
+      // Phase 3 M: completed_challenge had no feed writer. Same guard as the
+      // connections below — past the `if (!completed)` CAS check, so a replay
+      // cannot double-post.
+      {
+        const { getActivityFeedService } = await import('./activityFeed');
+        await getActivityFeedService(this.supabaseService).record({
+          actorId: userId,
+          verb: 'completed_challenge',
+          objectType: 'challenge',
+          objectId: challengeId,
+          audienceType: 'group',
+          audienceId: challenge.groupId,
+        });
+      }
+
       // North-star metric (Phase 3 · O). A duel is mutual: each player gave the
       // other someone to practise against, so BOTH directions are recorded.
       // Writing the pair also makes an actor/beneficiary inversion impossible

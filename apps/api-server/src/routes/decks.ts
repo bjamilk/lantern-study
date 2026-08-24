@@ -204,6 +204,19 @@ router.post(
 
     try {
       const collaborator = await supabaseService.addDeckCollaborator(deckId, collaboratorId, role, userId);
+
+      // Phase 3 M: added_deck_collaborator had no writer. Addressed to the
+      // owner's followers — "X is collaborating on Y" is their news, and the
+      // collaborator themselves already knows.
+      const { getActivityFeedService } = await import('../services/activityFeed');
+      await getActivityFeedService(supabaseService).record({
+        actorId: userId,
+        verb: 'added_deck_collaborator',
+        objectType: 'deck',
+        objectId: deckId,
+        audienceType: 'followers',
+      });
+
       res.status(201).json({ success: true, data: collaborator });
     } catch (error: any) {
       if (error.message === 'Access denied') {

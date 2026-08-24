@@ -83,6 +83,15 @@ export interface Group {
   invitedPhoneNumbers?: string[];
   /** Course this group studies (academic archive). */
   courseId?: string | null;
+  /**
+   * Phase 3 L — discovery. A group is 'private' by default and invisible to
+   * GET /groups/discover; widening it is an explicit, admin-only act.
+   */
+  visibility?: 'private' | 'community' | 'public';
+  communityId?: string | null;
+  tags?: string[];
+  memberCount?: number;
+  questionCount?: number;
 }
 
 export interface Message {

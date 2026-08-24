@@ -1197,6 +1197,20 @@ router.put(
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
 
+    // Phase 3 M: answered_question had no feed writer. Group-scoped, and only
+    // on VERIFIED — an answer being confirmed correct is the newsworthy moment.
+    if (questionStatus === 'VERIFIED' && authorized.type === 'QUESTION') {
+      const { getActivityFeedService } = await import('../services/activityFeed');
+      await getActivityFeedService(supabaseService).record({
+        actorId: userId,
+        verb: 'answered_question',
+        objectType: 'question',
+        objectId: messageId,
+        audienceType: 'group',
+        audienceId: authorized.group_id,
+      });
+    }
+
     // North-star metric (Phase 3 · O): the question's AUTHOR is the actor —
     // their question was confirmed useful. `userId` here is the VERIFIER and is
     // the beneficiary; passing it as actorId would credit admins as helpers and

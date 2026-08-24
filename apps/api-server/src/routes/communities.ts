@@ -48,6 +48,23 @@ router.get(
   })
 );
 
+// POST /api/v1/communities — create a horizontal (topic) community
+router.post(
+  '/',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const body = (req.body ?? {}) as { name?: string; description?: string; tags?: string[] };
+      const data = await getCommunitiesService(supabaseService).createTopicCommunity(userId, body);
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
 // GET /api/v1/communities/:slug
 router.get(
   '/:slug',
