@@ -1,6 +1,6 @@
 # Handover — resume here
 
-**Date:** 2026-08-24 · **Branch:** `main` · **HEAD:** `7cfd717` (clean, pushed, deployed)
+**Date:** 2026-08-24 · **Branch:** `main` · **HEAD:** `3a1e148` (clean, pushed, deployed) · **Mobile:** 1.0.29 released
 **API:** live · **Web:** live · **Supabase:** `tiizkjhbrnaibaagmurl`
 
 Phases 1–4 of the Knowledge Network are built and deployed, audited adversarially,
@@ -90,10 +90,27 @@ disables at first/last; the rename input caps at 120 matching the server. Fixed
 WCAG 2.2 SC 2.5.8 (AA) 24x24 floor — adjacent up/down cannot claim the spacing
 exception. Mobile already complied via `hitSlop`.
 
-**STILL UNVERIFIED BY HAND:** the mobile `ManageOutlineSheet` (needs a simulator
-build), and **seeding has only ever run on the empty path** — it returns cleanly
-but no test account has a flashcard tag used >=2 times on a filed course, so it
-has never produced a real outline.
+**MOBILE 1.0.29 RELEASED 2026-08-25.** Built locally, zero EAS credits, from `3a1e148`:
+Android `versionName 1.0.29 / versionCode 85` (81.4 MB) and an iOS simulator build
+(`LanternStudyDev.app`, `CFBundleShortVersionString 1.0.29`). Published at
+https://github.com/bjamilk/lantern-study-releases/releases/tag/v1.0.29 — asset SHA-256
+verified byte-identical to the local artifact. **The version had to move:** v1.0.28 was
+already released 2026-08-22 from `088e85b`, and a second, different binary under the same
+version name breaks the OTA pairing invariant.
+
+Both installed and launched clean (Android emulator Pixel_8 / API 17, iPhone 17 Pro Max
+simulator) — no crash, no Reanimated SIGABRT, no splash hang. **Both stop at the sign-in
+screen: driving any authed mobile surface needs a human to enter the password.**
+
+Artifacts follow `build-android-<version>-<commit>.apk` / `build-ios-sim-<version>-<commit>.tar.gz`
+— the rename is MANUAL, eas emits `build-<timestamp>`.
+
+**STILL UNVERIFIED BY HAND:** the mobile `ManageOutlineSheet` — the binaries now exist and
+install, but reaching it requires signing in, which only a human can do.
+**Seeding is now VERIFIED** (2026-08-25): with a deck filed under the course and cards
+carrying repeated tags, it produced a real outline — a tag used 3x became position 10, one
+used 2x position 20, a tag used once was excluded by the n>=2 floor, and 'General' was
+excluded by name.
 
 **TESTING KEYBOARD ACTIVATION IN THE BROWSER PANE — read before "fixing" it.**
 Focusing an element from JS and then sending an OS-level key does NOT work here:
