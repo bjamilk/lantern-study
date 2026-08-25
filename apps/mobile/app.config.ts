@@ -129,7 +129,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // connection no longer burns an operation's retries or strands work in a
   // queue nothing drained, reviewing the same flashcard twice offline now
   // counts both reviews, and "Sync Results" reports what actually happened.
-  version: '1.0.28',
+  // 1.0.29: course topics — the syllabus level between a course and your work.
+  // Notes, decks and tests can be filed under a topic as well as a course, the
+  // Library gains topic as a third level under each course, and an outline can
+  // be built from the flashcard tags you already use. Topics are shared with
+  // everyone taking the course, so renaming or deleting one changes it for them
+  // too — deleting only unfiles work, it never deletes anyone's notes or decks.
+  version: '1.0.29',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
