@@ -1,6 +1,6 @@
 # Handover — resume here
 
-**Date:** 2026-08-24 · **Branch:** `main` · **HEAD:** `108d3c6` (clean, pushed, deployed)
+**Date:** 2026-08-24 · **Branch:** `main` · **HEAD:** `7cfd717` (clean, pushed, deployed)
 **API:** live · **Web:** live · **Supabase:** `tiizkjhbrnaibaagmurl`
 
 Phases 1–4 of the Knowledge Network are built and deployed, audited adversarially,
@@ -81,6 +81,27 @@ answer. The server surface was deleted; the column drop is the pending migration
 above.
 
 **Do not merge topics into `concepts`** — see the `20260826120000` header.
+
+**Hands-on UI verification (2026-08-25, web, production).** Rename, reorder and
+delete all work from the real modal, persist server-side and announce through the
+live region ("Moved <topic> to position 2 of 3", "Renamed to <title>"); reorder
+disables at first/last; the rename input caps at 120 matching the server. Fixed
+`7cfd717`: the manage entry was 18x18 and the reorder buttons 20x20, under the
+WCAG 2.2 SC 2.5.8 (AA) 24x24 floor — adjacent up/down cannot claim the spacing
+exception. Mobile already complied via `hitSlop`.
+
+**STILL UNVERIFIED BY HAND:** the mobile `ManageOutlineSheet` (needs a simulator
+build), and **seeding has only ever run on the empty path** — it returns cleanly
+but no test account has a flashcard tag used >=2 times on a filed course, so it
+has never produced a real outline.
+
+**TESTING KEYBOARD ACTIVATION IN THE BROWSER PANE — read before "fixing" it.**
+Focusing an element from JS and then sending an OS-level key does NOT work here:
+focus resets to BODY before the key lands, so Enter appears to do nothing and
+looks exactly like a broken handler. This nearly caused a working accessibility
+guard to be "fixed". Measure the actual question instead — dispatch a keydown
+originating AT the button and assert `defaultPrevented === false` (native
+activation survives), plus `true` on the row (row still operable).
 
 ## 3. Remaining work, in the order I would do it
 
