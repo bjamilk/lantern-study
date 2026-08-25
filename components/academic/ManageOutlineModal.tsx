@@ -277,7 +277,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                         onClick={() => void move(index, -1)}
                         disabled={busy || isFirst}
                         aria-label={`Move ${topic.title} up (currently ${position})`}
-                        className="rounded p-0.5 text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-30 disabled:hover:bg-transparent"
+                        className="grid place-items-center min-w-[24px] min-h-[24px] rounded text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-30 disabled:hover:bg-transparent"
                       >
                         <ArrowUpIcon className="w-4 h-4" aria-hidden />
                       </button>
@@ -286,7 +286,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                         onClick={() => void move(index, 1)}
                         disabled={busy || isLast}
                         aria-label={`Move ${topic.title} down (currently ${position})`}
-                        className="rounded p-0.5 text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-30 disabled:hover:bg-transparent"
+                        className="grid place-items-center min-w-[24px] min-h-[24px] rounded text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-30 disabled:hover:bg-transparent"
                       >
                         <ArrowDownIcon className="w-4 h-4" aria-hidden />
                       </button>

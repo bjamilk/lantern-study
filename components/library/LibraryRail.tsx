@@ -298,7 +298,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                   e.stopPropagation();
                   toggleTopics(rowKey);
                 }}
-                className={`shrink-0 -ml-1 rounded p-0.5 ${
+                className={`shrink-0 -ml-1 grid place-items-center min-w-[24px] min-h-[24px] rounded ${
                   courseSelected && !selectedTopicId ? 'hover:bg-white/20' : 'hover:bg-lantern-border/60'
                 }`}
               >
@@ -341,7 +341,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 }}
                 aria-label={`Manage topics in ${node.course.code}`}
                 title={COURSE_TOPIC_COPY.manageTitle}
-                className={`rounded p-0.5 ${
+                className={`grid place-items-center min-w-[24px] min-h-[24px] rounded ${
                   courseSelected && !selectedTopicId
                     ? 'text-white/80 hover:bg-white/20'
                     : 'text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-border/60'

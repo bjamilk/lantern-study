@@ -1,6 +1,6 @@
 # Handover — resume here
 
-**Date:** 2026-08-24 · **Branch:** `main` · **HEAD:** `72c0db8` (clean, pushed, deployed)
+**Date:** 2026-08-24 · **Branch:** `main` · **HEAD:** `108d3c6` (clean, pushed, deployed)
 **API:** live · **Web:** live · **Supabase:** `tiizkjhbrnaibaagmurl`
 
 Phases 1–4 of the Knowledge Network are built and deployed, audited adversarially,
@@ -9,27 +9,25 @@ written so a fresh session can pick up any item without re-deriving it.
 
 ---
 
-## 0. Migrations — ALL APPLIED
-
-Nothing is pending. Both migrations the previous handover listed are applied and
-verified in production on 2026-08-24:
+## 0. Migrations — ONE PENDING (optional)
 
 | Migration | What | State |
 |---|---|---|
-| `20260824126000_drop_notes_view_count.sql` | Drops dead `notes.view_count` | **Was already applied** — the previous handover listed it as pending; it was not. Probe: `notes.view_count` → `42703`. |
-| `20260826120000_course_topics.sql` | `course_topics` + `topic_id` on 5 artefact tables | **Applied 2026-08-24.** Probe: `course_topics` → `42501` (exists, anon denied), `notes.topic_id` → `42501`. |
+| `20260824126000_drop_notes_view_count.sql` | Drops dead `notes.view_count` | Applied (was already applied before 2026-08-24 — an earlier handover wrongly listed it pending). |
+| `20260826120000_course_topics.sql` | `course_topics` + `topic_id` on 5 tables | **Applied 2026-08-24.** |
+| `20260827120000_drop_note_folders_topic_id.sql` | Drops dead `note_folders.topic_id` | **PENDING — optional, not deploy-blocking.** One statement: `ALTER TABLE public.note_folders DROP COLUMN IF EXISTS topic_id;` The column has no writer and no reader, so every row is NULL and nothing breaks either way. |
 
 **Probe technique that actually proves a column exists:** an unknown column errors
-at *parse* time (`42703`) before the permission check (`42501`). So a column probe
-that stops saying `42703` and starts saying `42501` has gained the column. A bare
-`42501` in isolation still proves nothing — you need the before/after transition.
+at *parse* time (`42703`) before the permission check (`42501`). A column probe
+that flips `42703 → 42501` has gained the column; a bare `42501` in isolation
+proves nothing.
 
 **Why `notes.view_count` was DROPPED, not wired:** `public.notes` is in the
 `supabase_realtime` publication and web subscribes **unfiltered**, so every
 increment broadcasts to every connected client, each debouncing into
 `loadNotes()`. A counter there is a self-amplifying write on a high-traffic read
-path. (This is also why the Notes screen legitimately re-fetches `/notes` at
-~20/min with a tab open — that is the realtime subscription, not a render loop.)
+path. (That subscription is also why the Notes screen legitimately re-fetches
+`/notes` at ~20/min with a tab open — it is not a render loop.)
 
 ## 1. State of play
 
@@ -53,37 +51,36 @@ worth repeating:
 
 ---
 
-## 2. DONE — `course_topics` (Phase 1 A) shipped `72c0db8`
+## 2. DONE — `course_topics` (Phase 1 A), fully closed
 
-Both halves are live and E2E-verified against production, not just gate-green.
+Shipped across `72c0db8` (both halves) and `108d3c6` (outline management +
+minors). E2E-verified against production, not merely gate-green.
 
-**Server half** (`0f75fcb`): migration, `services/courseTopics.ts`, routes at
-`/api/v1/courses/:courseId/topics`.
+**Live:** pickers on both clients wired into every artefact surface;
+`resolveArtefactTopic` on every create/patch that takes a `courseId`; Library
+third level year → course → topic with `?topicId=` filters; **outline management
+(seed / rename / reorder / delete)** in `ManageOutlineModal` (web) and
+`ManageOutlineSheet` (mobile), opened from the Library course row. All six
+`/courses/:courseId/topics` endpoints now have real callers.
 
-**Client half** (`72c0db8`, 71 files): `resolveArtefactTopic` wired into every
-create/patch that already took a `courseId`; `TopicPicker` + `useTopicSearch` on
-both clients wired into every artefact surface; Library third level
-(year → course → topic) with `?topicId=` filters reaching the network on both
-clients; `CourseTopic` + `topicId?` in `packages/shared`.
+**Single source of truth:** `COURSE_TOPIC_COPY` and `compareCourseTopics` in
+`packages/shared/src/learning/courseTopics.ts`. Both clients import them.
+Ordering previously had THREE different tiebreaks plus a web path that appended
+a just-created topic out of order — do not reintroduce a local sort.
 
-**Verified in production 2026-08-24** (signed-in session, test data cleaned up):
-create → 201 pos 10; find-or-create returns the same id for the same title *and*
-for a different case; note created with `courseId`+`topicId` round-trips
-`topicId`; overview shows the topic node with `notes: 1` and
-`topics[] + untopiced === course total` per kind; `?topicId=<id>` → 1 note,
-`?topicId=null` → 0; a topic with no course → `400 "A topic needs a course"`;
-web note editor renders `note-topic` **disabled → "Pick a course first"**, and
-**enabled → "No topic"** once a course is chosen.
+**An outline is SHARED course data.** Rename/reorder/delete change what every
+student on the course sees. Delete confirms, and the copy says what is actually
+lost: artefacts are unfiled (`ON DELETE SET NULL`), nobody's notes or decks are
+deleted. Both `rename()` and `remove()` are scoped to the course in the URL and
+404 a mismatched `(courseId, topicId)` pair — `reorder()` always was, and the
+gap between them was a real cross-course data-loss path.
 
-**Deliberately NOT wired: `note_folders.topic_id`.** A folder is not a filed
-artefact; nothing reads the column. The whole surface (validation, routes,
-service writes, mapper, `NoteFolder.topicId`) was **removed** rather than given a
-picker to justify it. The column still exists and is unwritten — dropping it is a
-separate decision, and unlike `view_count` it is not a write-amplifying counter,
-so it is harmless where it is.
+**`note_folders.topic_id` is deliberately NOT wired** — a folder is a container
+the student invented, so "which week of the syllabus is this folder?" has no
+answer. The server surface was deleted; the column drop is the pending migration
+above.
 
-**Do not merge topics into `concepts`.** They coexist by design — see the
-migration header.
+**Do not merge topics into `concepts`** — see the `20260826120000` header.
 
 ## 3. Remaining work, in the order I would do it
 
