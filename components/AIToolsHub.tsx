@@ -238,6 +238,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                         type="file"
                         accept="image/*"
                         multiple
+                        capture="environment"
                         className="hidden"
                         onChange={(e) => {
                           const files = Array.from(e.target.files || []);

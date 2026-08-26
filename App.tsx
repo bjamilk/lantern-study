@@ -1205,7 +1205,7 @@ export const App: React.FC = () => {
                     hasExploredMarketplace={appMode === AppMode.MARKETPLACE || appMode === AppMode.MARKETPLACE_LISTING_DETAIL}
                     hasTriedOffline={appMode === AppMode.OFFLINE_MODE}
                     onNavigateToNotes={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' })}
-                    onOpenImportAndStudy={() => navigateTo(AppMode.AI_TOOLS)}
+                    onOpenImportAndStudy={() => setShowImportAndStudy(true)}
                     onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
                     onReviewDueCards={handleFlashcardStudy}
                     onViewTestResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}

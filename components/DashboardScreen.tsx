@@ -1237,8 +1237,8 @@ export default function DashboardScreen({
         totalTestsTaken={totalTestsTakenOverall}
         onPrimaryAction={() => {
           if (dueCardsCount > 0 && onReviewDueCards) onReviewDueCards();
-          else if (onNavigateToAITools) onNavigateToAITools();
           else if (onOpenImportAndStudy) onOpenImportAndStudy();
+          else if (onNavigateToAITools) onNavigateToAITools();
         }}
         activeTestSession={activeTestSession}
         activeStudySession={activeStudySession}
