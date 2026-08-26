@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   MagnifyingGlassIcon,
   CheckBadgeIcon,
-  SparklesIcon,
   ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -35,6 +34,9 @@ import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverW
  * marketplace nested as one of its tabs. Communities / Groups / People are
  * served by /discover/*, which is deliberately separate from GET /groups
  * (memberships-only, cached per user).
+ *
+ * Chrome is kept to a single underline tab row plus search so the cards — not
+ * buttons around the cards — are the screen.
  */
 export interface DiscoverScreenProps {
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -44,7 +46,7 @@ export interface DiscoverScreenProps {
 type Status = 'idle' | 'loading' | 'error';
 
 const card =
-  'rounded-xl border border-lantern-border bg-lantern-background p-4 flex flex-col gap-2 transition-colors hover:border-lantern-primary/40';
+  'rounded-xl border border-lantern-border bg-lantern-background p-3 flex flex-col gap-1.5 transition-colors hover:border-lantern-primary/40';
 
 const EmptyState: React.FC<{ title: string; hint: string }> = ({ title, hint }) => (
   <div className="rounded-xl border border-dashed border-lantern-border p-8 text-center">
@@ -148,23 +150,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const presenceLine = presenceLabel(presence);
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 space-y-5">
-      <header className="space-y-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-lantern-text">Discover</h1>
-          <p className="text-sm text-lantern-text-secondary">
-            Your campus, your courses, and the people studying them.
-          </p>
-        </div>
-
-        {presenceLine && (
-          <p className="inline-flex items-center gap-1.5 rounded-lg bg-lantern-background-secondary px-3 py-1.5 text-xs text-lantern-text-secondary">
-            <SparklesIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
-            {presenceLine}
-          </p>
-        )}
-
+    <div className="mx-auto w-full max-w-5xl px-4 py-3 space-y-3">
+      <header className="space-y-2">
+        <h1 className="sr-only">Discover</h1>
         <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
+        {presenceLine ? (
+          <p className="text-[11px] text-lantern-text-tertiary">{presenceLine}</p>
+        ) : null}
 
         {section !== 'people' && (
           <form
@@ -215,7 +207,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       )}
 
       {status !== 'loading' && section === 'communities' && (
-        <section className="grid gap-3 sm:grid-cols-2" aria-label="Communities">
+        <section className="grid gap-2 sm:grid-cols-2" aria-label="Communities">
           {communities.length === 0 && (
             <div className="sm:col-span-2">
               <EmptyState
@@ -228,41 +220,43 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             const isMember = myIds.has(community.id);
             return (
               <article key={community.id} className={card}>
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
                   <button
                     type="button"
                     onClick={() => onNavigate('CommunityDetail', { slug: community.slug })}
-                    className="text-left"
+                    className="min-w-0 flex-1 text-left"
                   >
-                    <h2 className="text-sm font-semibold text-lantern-text">{community.name}</h2>
+                    <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
+                      <span className="truncate">{community.name}</span>
+                      {community.is_official ? (
+                        <CheckBadgeIcon
+                          className="h-4 w-4 shrink-0 text-lantern-primary"
+                          aria-label="Official community"
+                        />
+                      ) : null}
+                    </h2>
                     <p className="text-xs text-lantern-text-secondary">
                       {communityKindLabel(community.kind)} · {memberCountLabel(community.member_count)}
                     </p>
+                    {community.description ? (
+                      <p className="mt-1 text-xs text-lantern-text-secondary line-clamp-2">
+                        {community.description}
+                      </p>
+                    ) : null}
                   </button>
-                  {community.is_official && (
-                    <CheckBadgeIcon
-                      className="h-4 w-4 shrink-0 text-lantern-primary"
-                      aria-label="Official community"
-                    />
-                  )}
+                  <button
+                    type="button"
+                    disabled={pendingId === community.id}
+                    onClick={() => void toggleMembership(community, isMember)}
+                    className={`shrink-0 self-start rounded-md px-2 py-1.5 text-xs font-semibold disabled:opacity-60 ${
+                      isMember
+                        ? 'text-lantern-text-secondary hover:text-lantern-text'
+                        : 'text-lantern-primary hover:bg-lantern-primary/10'
+                    }`}
+                  >
+                    {pendingId === community.id ? '…' : isMember ? 'Leave' : 'Join'}
+                  </button>
                 </div>
-                {community.description && (
-                  <p className="text-xs text-lantern-text-secondary line-clamp-2">
-                    {community.description}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  disabled={pendingId === community.id}
-                  onClick={() => void toggleMembership(community, isMember)}
-                  className={`mt-1 h-9 min-h-[44px] rounded-lg px-3 text-xs font-medium sm:min-h-[36px] ${
-                    isMember
-                      ? 'bg-lantern-background-secondary text-lantern-text-secondary'
-                      : 'bg-lantern-primary text-white'
-                  } disabled:opacity-60`}
-                >
-                  {pendingId === community.id ? 'Working…' : isMember ? 'Leave' : 'Join'}
-                </button>
               </article>
             );
           })}
@@ -270,7 +264,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       )}
 
       {status !== 'loading' && section === 'groups' && (
-        <section className="grid gap-3 sm:grid-cols-2" aria-label="Groups">
+        <section className="grid gap-2 sm:grid-cols-2" aria-label="Groups">
           {groups.length === 0 && (
             <div className="sm:col-span-2">
               <EmptyState
@@ -280,29 +274,28 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </div>
           )}
           {groups.map((group) => (
-            <article key={group.id} className={card}>
+            <button
+              key={group.id}
+              type="button"
+              onClick={() => onNavigate('GroupChat', { groupId: group.id })}
+              className={`${card} w-full text-left`}
+            >
               <h2 className="text-sm font-semibold text-lantern-text">{group.name}</h2>
               <p className="text-xs text-lantern-text-secondary">
                 {memberCountLabel(group.memberCount)}
                 {group.questionCount > 0 ? ` · ${group.questionCount} questions` : ''}
+                {group.isMember ? ' · Member' : ''}
               </p>
-              {group.description && (
+              {group.description ? (
                 <p className="text-xs text-lantern-text-secondary line-clamp-2">{group.description}</p>
-              )}
-              <button
-                type="button"
-                onClick={() => onNavigate('GroupChat', { groupId: group.id })}
-                className="mt-1 h-9 min-h-[44px] rounded-lg bg-lantern-background-secondary px-3 text-xs font-medium text-lantern-text sm:min-h-[36px]"
-              >
-                {group.isMember ? 'Open' : 'View'}
-              </button>
-            </article>
+              ) : null}
+            </button>
           ))}
         </section>
       )}
 
       {status !== 'loading' && section === 'people' && (
-        <section className="grid gap-3 sm:grid-cols-2" aria-label="People">
+        <section className="grid gap-2 sm:grid-cols-2" aria-label="People">
           {people.length === 0 && (
             <div className="sm:col-span-2">
               <EmptyState
@@ -314,27 +307,26 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           {people.map((person) => {
             const chip = shouldShowTrustChip(person.trustLevel) ? trustLabel(person.trustLevel) : null;
             return (
-              <article key={person.id} className={card}>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('CreatorProfile', { userId: person.id })}
-                  className="text-left"
-                >
-                  <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
-                    {person.name}
-                    {chip && (
-                      <span className="rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[10px] font-medium text-lantern-primary">
-                        {chip}
-                      </span>
-                    )}
-                  </h2>
-                  <p className="text-xs text-lantern-text-secondary">
-                    {person.programme ? `${person.programme} · ` : ''}
-                    {person.activePacks} {person.activePacks === 1 ? 'pack' : 'packs'} ·{' '}
-                    {person.learnersHelped} helped
-                  </p>
-                </button>
-              </article>
+              <button
+                key={person.id}
+                type="button"
+                onClick={() => onNavigate('CreatorProfile', { userId: person.id })}
+                className={`${card} w-full text-left`}
+              >
+                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
+                  {person.name}
+                  {chip ? (
+                    <span className="rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[10px] font-medium text-lantern-primary">
+                      {chip}
+                    </span>
+                  ) : null}
+                </h2>
+                <p className="text-xs text-lantern-text-secondary">
+                  {person.programme ? `${person.programme} · ` : ''}
+                  {person.activePacks} {person.activePacks === 1 ? 'pack' : 'packs'} ·{' '}
+                  {person.learnersHelped} helped
+                </p>
+              </button>
             );
           })}
         </section>

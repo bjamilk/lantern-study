@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -24,19 +24,14 @@ import {
   leaveCommunity,
 } from '../../services/api';
 
+import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
+
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
-type Section = 'communities' | 'groups' | 'people' | 'marketplace';
-
-const TABS: Array<{ id: Section; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { id: 'communities', label: 'Communities', icon: 'people-outline' },
-  { id: 'groups', label: 'Groups', icon: 'chatbubbles-outline' },
-  { id: 'people', label: 'People', icon: 'person-outline' },
-  { id: 'marketplace', label: 'Market', icon: 'bag-outline' },
-];
+type Section = DiscoverSection;
 
 /**
  * The Discover hub (Phase 3 · L) — mobile parity with the web hub.
@@ -90,6 +85,12 @@ export function DiscoverScreen({
   }, []);
 
   useEffect(() => {
+    const next = route?.params?.section;
+    if (!next || next === 'marketplace') return;
+    setSection(next);
+  }, [route?.params?.section]);
+
+  useEffect(() => {
     void load(section, query);
     // Search is applied on submit, not per keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,55 +139,55 @@ export function DiscoverScreen({
   const renderCommunity = ({ item }: { item: Community }) => {
     const isMember = myIds.has(item.id);
     return (
-      <View className="mx-4 mb-3 rounded-xl border border-lantern-border bg-lantern-surface p-4">
-        <View className="flex-row items-start justify-between">
+      <View className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3">
+        <View className="flex-row items-start">
           <Pressable
             className="flex-1 pr-2"
             onPress={() => navigation.navigate('CommunityDetail', { slug: item.slug })}
             accessibilityRole="button"
             accessibilityLabel={`Open ${item.name}`}
           >
-            <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
-              {item.name}
-            </Text>
+            <View className="flex-row items-center" style={{ gap: 4 }}>
+              <Text className="flex-1 text-sm font-semibold text-lantern-text" numberOfLines={1}>
+                {item.name}
+              </Text>
+              {item.is_official ? (
+                <Ionicons name="checkmark-circle" size={16} color="#6366f1" />
+              ) : null}
+            </View>
             <Text className="text-xs text-lantern-text-tertiary mt-0.5">
               {communityKindLabel(item.kind)} · {memberCountLabel(item.member_count)}
             </Text>
+            {item.description ? (
+              <Text className="text-xs text-lantern-text-tertiary mt-1" numberOfLines={2}>
+                {item.description}
+              </Text>
+            ) : null}
           </Pressable>
-          {item.is_official ? (
-            <Ionicons name="checkmark-circle" size={16} color="#6366f1" />
-          ) : null}
-        </View>
-        {item.description ? (
-          <Text className="text-xs text-lantern-text-tertiary mt-1.5" numberOfLines={2}>
-            {item.description}
-          </Text>
-        ) : null}
-        <Pressable
-          onPress={() => void toggleMembership(item, isMember)}
-          disabled={pendingId === item.id}
-          className={`mt-3 self-start rounded-lg px-3 py-1.5 ${
-            isMember ? 'bg-lantern-background-secondary' : 'bg-lantern-primary'
-          }`}
-          style={{ opacity: pendingId === item.id ? 0.5 : 1 }}
-          accessibilityRole="button"
-          accessibilityLabel={isMember ? `Leave ${item.name}` : `Join ${item.name}`}
-        >
-          <Text
-            className={`text-xs font-semibold ${
-              isMember ? 'text-lantern-text-secondary' : 'text-white'
-            }`}
+          <Pressable
+            onPress={() => void toggleMembership(item, isMember)}
+            disabled={pendingId === item.id}
+            className="px-2 py-1.5"
+            style={{ opacity: pendingId === item.id ? 0.5 : 1 }}
+            accessibilityRole="button"
+            accessibilityLabel={isMember ? `Leave ${item.name}` : `Join ${item.name}`}
           >
-            {pendingId === item.id ? 'Working…' : isMember ? 'Leave' : 'Join'}
-          </Text>
-        </Pressable>
+            <Text
+              className={`text-xs font-semibold ${
+                isMember ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+              }`}
+            >
+              {pendingId === item.id ? '…' : isMember ? 'Leave' : 'Join'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
     );
   };
 
   const renderGroup = ({ item }: { item: DiscoverGroup }) => (
     <Pressable
-      className="mx-4 mb-3 rounded-xl border border-lantern-border bg-lantern-surface p-4"
+      className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3"
       onPress={() => navigation.navigate('GroupChat', { groupId: item.id })}
       accessibilityRole="button"
       accessibilityLabel={`Open ${item.name}`}
@@ -210,7 +211,7 @@ export function DiscoverScreen({
     const chip = shouldShowTrustChip(item.trustLevel) ? trustLabel(item.trustLevel) : null;
     return (
       <Pressable
-        className="mx-4 mb-3 rounded-xl border border-lantern-border bg-lantern-surface p-4"
+        className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3"
         onPress={() => navigation.navigate('CreatorProfile', { userId: item.id })}
         accessibilityRole="button"
         accessibilityLabel={`Open ${item.name}'s profile`}
@@ -242,51 +243,15 @@ export function DiscoverScreen({
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <View className="px-4 py-3 border-b border-lantern-border">
-        <Text className="text-xl font-bold text-lantern-text">Discover</Text>
+      <View className="border-b border-lantern-border">
+        <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
         {presenceLine ? (
-          <Text className="text-xs text-lantern-primary mt-0.5">{presenceLine}</Text>
-        ) : (
-          <Text className="text-xs text-lantern-text-tertiary mt-0.5">
-            Your campus, your courses, and the people studying them.
+          <Text className="px-4 pt-1.5 pb-0.5 text-[11px] text-lantern-text-tertiary">
+            {presenceLine}
           </Text>
-        )}
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          className="mt-3"
-          contentContainerStyle={{ gap: 6 }}
-        >
-          {TABS.map((tab) => {
-            const active = section === tab.id;
-            return (
-              <Pressable
-                key={tab.id}
-                onPress={() => handleSection(tab.id)}
-                className={`flex-row items-center rounded-lg px-3 py-1.5 ${
-                  active ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
-                }`}
-                style={{ gap: 5 }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={tab.label}
-              >
-                <Ionicons name={tab.icon} size={14} color={active ? '#fff' : '#64748b'} />
-                <Text
-                  className={`text-xs font-semibold ${
-                    active ? 'text-white' : 'text-lantern-text-secondary'
-                  }`}
-                >
-                  {tab.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
+        ) : null}
         {section !== 'people' ? (
-          <View className="mt-3 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
+          <View className="mx-4 mt-2 mb-2 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
             <Ionicons name="search-outline" size={16} color="#64748b" />
             <TextInput
               value={query}

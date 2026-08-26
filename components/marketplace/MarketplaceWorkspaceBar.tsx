@@ -10,8 +10,10 @@ import {
   RectangleStackIcon,
   SparklesIcon,
   EllipsisHorizontalIcon,
+  BriefcaseIcon,
+  ChartBarIcon,
 } from '@heroicons/react/24/outline';
-import { Menu, MenuTrigger, MenuContent, MenuItem } from '../ui';
+import { Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from '../ui';
 
 export type MarketplaceWorkspaceSection =
   | 'browse'
@@ -39,6 +41,16 @@ export interface MarketplaceWorkspaceBarProps {
   primaryLabel?: string;
   className?: string;
   showFavorites?: boolean;
+  /**
+   * `full` — chip row for seller/buyer workspace screens that are not already
+   * sitting under Discover tabs.
+   * `toolbar` — Sell + More only. Used on the Discover marketplace tab so
+   * Orders/Cart/Selling do not compete with the listing grid.
+   */
+  variant?: 'full' | 'toolbar';
+  /** Optional Pulse action shown in the toolbar overflow. */
+  onPulse?: () => void;
+  pulseActive?: boolean;
 }
 
 const navBtn = (active: boolean) =>
@@ -48,9 +60,30 @@ const navBtn = (active: boolean) =>
       : 'bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border/50 hover:text-lantern-text'
   }`;
 
+const iconBtn =
+  'h-9 w-9 min-h-[36px] inline-flex items-center justify-center rounded-lg border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 transition-colors';
+
+type OverflowDest = {
+  id: string;
+  label: string;
+  screen: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const OVERFLOW_DESTINATIONS: OverflowDest[] = [
+  { id: 'jobs', label: 'Jobs', screen: 'MarketplaceJobs', icon: BriefcaseIcon },
+  { id: 'orders', label: 'Orders', screen: 'MarketplaceOrders', icon: ReceiptPercentIcon },
+  { id: 'cart', label: 'Cart', screen: 'MarketplaceCart', icon: ShoppingCartIcon },
+  { id: 'purchases', label: 'Purchases', screen: 'MarketplacePurchases', icon: RectangleStackIcon },
+  { id: 'studyProducts', label: 'Study Products', screen: 'StudyProductDrafts', icon: SparklesIcon },
+  { id: 'selling', label: 'Selling', screen: 'MyListings', icon: ShoppingBagIcon },
+  { id: 'inquiries', label: 'Inquiries', screen: 'MarketplaceInquiries', icon: ChatBubbleLeftIcon },
+];
+
 /**
  * Compact CRM-style workspace nav for marketplace buyer/seller screens.
- * Keeps one primary Sell action; secondary destinations live as compact tabs.
+ * Keeps one primary Sell action; secondary destinations live as compact tabs
+ * or, on the Discover marketplace tab, inside a More menu.
  */
 export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = ({
   active,
@@ -62,27 +95,120 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
   primaryLabel = 'Sell',
   className = '',
   showFavorites = false,
+  variant = 'full',
+  onPulse,
+  pulseActive = false,
 }) => {
+  const overflowItems = guestMode
+    ? OVERFLOW_DESTINATIONS.filter((item) => item.id === 'jobs')
+    : [
+        ...OVERFLOW_DESTINATIONS,
+        ...(showFavorites
+          ? [
+              {
+                id: 'favorites',
+                label: 'Saved',
+                screen: 'MarketplaceFavorites',
+                icon: HeartIcon,
+              },
+            ]
+          : []),
+      ];
+
+  const toolbarMenu = (
+    <Menu>
+      <MenuTrigger aria-label="More marketplace tools" className={iconBtn}>
+        <EllipsisHorizontalIcon className="w-4 h-4" />
+      </MenuTrigger>
+      <MenuContent align="end" className="w-56">
+        {overflowItems.map((item) => (
+          <MenuItem
+            key={item.id}
+            onSelect={() => onNavigate(item.screen)}
+            icon={<item.icon className="w-4 h-4" />}
+          >
+            {item.label}
+          </MenuItem>
+        ))}
+        {onPulse ? (
+          <MenuItem
+            onSelect={onPulse}
+            icon={<ChartBarIcon className="w-4 h-4" />}
+          >
+            {pulseActive ? 'Hide pulse' : 'Marketplace pulse'}
+          </MenuItem>
+        ) : null}
+        {moreItems.length > 0 ? <MenuSeparator /> : null}
+        {moreItems.map((item) => (
+          <MenuItem key={item.id} onSelect={item.onSelect} icon={item.icon}>
+            {item.label}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
+  );
+
+  const sellerToolsMenu =
+    moreItems.length > 0 ? (
+      <Menu>
+        <MenuTrigger aria-label="More marketplace tools" className={iconBtn}>
+          <EllipsisHorizontalIcon className="w-4 h-4" />
+        </MenuTrigger>
+        <MenuContent align="end" className="w-48">
+          {moreItems.map((item) => (
+            <MenuItem key={item.id} onSelect={item.onSelect} icon={item.icon}>
+              {item.label}
+            </MenuItem>
+          ))}
+        </MenuContent>
+      </Menu>
+    ) : null;
+
+  const sellButton = onSell ? (
+    <button
+      type="button"
+      onClick={onSell}
+      className="h-9 min-h-[36px] sm:h-8 px-2.5 sm:px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors inline-flex items-center gap-1"
+      aria-label={primaryLabel}
+    >
+      <PlusIcon className="w-3.5 h-3.5" aria-hidden />
+      <span className="hidden sm:inline">{primaryLabel}</span>
+    </button>
+  ) : null;
+
   if (guestMode) {
     return (
       <div
-        className={`flex items-center justify-between gap-2 ${className}`}
+        className={`flex items-center justify-end gap-1.5 ${className}`}
         role="navigation"
         aria-label="Marketplace workspace"
       >
-        <div className="flex items-center gap-1.5 min-w-0">
+        {variant === 'toolbar' ? toolbarMenu : (
           <span className={navBtn(true)}>
             <MagnifyingGlassIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
             <span className="truncate">Browse</span>
           </span>
-        </div>
+        )}
         <button
           type="button"
           onClick={() => onSignInRequired?.()}
-          className="h-9 min-h-[44px] sm:h-8 sm:min-h-[36px] px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors"
+          className="h-9 min-h-[36px] sm:h-8 px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors"
         >
           Sign in
         </button>
+      </div>
+    );
+  }
+
+  if (variant === 'toolbar') {
+    return (
+      <div
+        className={`flex items-center gap-1.5 shrink-0 ${className}`}
+        role="navigation"
+        aria-label="Marketplace workspace"
+      >
+        {toolbarMenu}
+        {sellButton}
       </div>
     );
   }
@@ -186,35 +312,8 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0">
-        {moreItems.length > 0 ? (
-          <Menu>
-            <MenuTrigger
-              aria-label="More marketplace tools"
-              className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 transition-colors"
-            >
-              <EllipsisHorizontalIcon className="w-4 h-4" />
-            </MenuTrigger>
-            <MenuContent align="end" className="w-48">
-              {moreItems.map(item => (
-                <MenuItem key={item.id} onSelect={item.onSelect} icon={item.icon}>
-                  {item.label}
-                </MenuItem>
-              ))}
-            </MenuContent>
-          </Menu>
-        ) : null}
-        {onSell ? (
-          <button
-            type="button"
-            onClick={onSell}
-            className="h-9 min-h-[44px] sm:h-8 sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors inline-flex items-center gap-1"
-            aria-label={primaryLabel}
-          >
-            <PlusIcon className="w-3.5 h-3.5" aria-hidden />
-            <span className="hidden sm:inline">{primaryLabel}</span>
-            <span className="sm:hidden">Sell</span>
-          </button>
-        ) : null}
+        {sellerToolsMenu}
+        {sellButton}
       </div>
     </div>
   );
