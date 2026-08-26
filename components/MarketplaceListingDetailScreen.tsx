@@ -8,6 +8,8 @@ import {
   addToFavorites,
   removeFromFavorites,
   addRecentlyViewed,
+  getRecentlyViewed,
+  fetchMarketplaceListingsByIds,
   fetchSellerStats,
   boostMarketplaceListing,
   buyMarketplaceListingNow,
@@ -38,6 +40,9 @@ import {
   summarizeStudyPackCounts,
   MARKETPLACE_LISTING_STATUS_LABELS,
   marketplaceListingModerationNotice,
+  listingBreadcrumb,
+  listingSpecRows,
+  listingTypeLabel,
 } from '@lantern/shared/marketplace';
 import {
   generateListingLink,
@@ -52,6 +57,7 @@ import AppealListingModal from './moderation/AppealListingModal';
 import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import SaleCountdown from './marketplace/SaleCountdown';
+import { MarketplaceListingRail } from './marketplace/MarketplaceListingRail';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import { MarketplaceListing, MarketplaceReview, MarketplacePickupNudge } from '../types';
@@ -60,6 +66,7 @@ import Modal from './ui/Modal';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 import {
   ArrowLeftIcon,
+  MagnifyingGlassIcon,
   MapPinIcon,
   ClockIcon,
   StarIcon,
@@ -110,6 +117,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [contactLoading, setContactLoading] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [similarListings, setSimilarListings] = useState<MarketplaceListing[]>([]);
+  const [recentlyViewed, setRecentlyViewed] = useState<MarketplaceListing[]>([]);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [sellerStats, setSellerStats] = useState<{ totalListings: number; soldCount: number } | null>(null);
   const [negotiationHistory, setNegotiationHistory] = useState<any[]>([]);
   const [buyingNow, setBuyingNow] = useState(false);
@@ -215,6 +224,20 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       trackListingView(listingId, guestMode ? 'guest' : 'app');
     });
     return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
+  }, [listingId, guestMode]);
+
+  useEffect(() => {
+    if (guestMode) return;
+    const ids = getRecentlyViewed().filter((id) => id !== listingId).slice(0, 8);
+    if (ids.length === 0) {
+      setRecentlyViewed([]);
+      return;
+    }
+    void fetchMarketplaceListingsByIds(ids)
+      .then((rows) => {
+        setRecentlyViewed(rows.filter((row) => row.id !== listingId && row.status === 'active'));
+      })
+      .catch(() => setRecentlyViewed([]));
   }, [listingId, guestMode]);
 
   useEffect(() => {
@@ -588,6 +611,17 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const digitalOwned = isStudyPack ? !!studyPack?.owned : !!questionBank?.owned;
   // quantity null = unlimited/digital stock (not sold out); only a literal 0 is sold out.
   const isSoldOut = listing.quantity === 0;
+  const taxonomyCrumbs = listing ? listingBreadcrumb(listing) : [];
+  const specRows = listing ? listingSpecRows(listing) : [];
+  const typeLabel = listing ? listingTypeLabel(listing) : '';
+
+  const openBrowseNode = (nodeId: string, department?: string, category?: string) => {
+    onNavigate('Marketplace', {
+      browseNodeId: nodeId,
+      tab: department === 'student-life' ? 'student-life' : 'academic',
+      category,
+    });
+  };
 
   return (
     <div className="flex-1 bg-lantern-background overflow-y-auto">
@@ -651,6 +685,25 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             )}
           </div>
         </div>
+        {taxonomyCrumbs.length > 0 ? (
+          <nav className="mt-2 flex flex-wrap items-center gap-1 text-[11px] sm:text-xs text-lantern-text-secondary" aria-label="Listing type">
+            <button type="button" onClick={onBack} className="hover:text-lantern-primary">
+              Explore
+            </button>
+            {taxonomyCrumbs.map((node) => (
+              <React.Fragment key={node.id}>
+                <span aria-hidden className="text-lantern-text-tertiary">›</span>
+                <button
+                  type="button"
+                  onClick={() => openBrowseNode(node.id, node.department, node.listingCategory)}
+                  className="hover:text-lantern-primary"
+                >
+                  {node.label}
+                </button>
+              </React.Fragment>
+            ))}
+          </nav>
+        ) : null}
       </div>
 
       <div className="max-w-6xl mx-auto p-3 sm:p-4 md:p-6">
@@ -660,12 +713,23 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             <div className="relative bg-lantern-background-secondary dark:bg-lantern-surface-secondary/50 rounded-2xl overflow-hidden ring-1 ring-lantern-border/60">
               {listing.images && listing.images.length > 0 ? (
                 <>
-                  <img
-                    src={listing.images[currentImageIndex]}
-                    alt={listing.title}
-                    className="w-full h-56 sm:h-72 md:h-96 object-cover"
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setLightboxOpen(true)}
+                    className="block w-full relative group"
+                    aria-label="Enlarge photo"
+                  >
+                    <img
+                      src={listing.images[currentImageIndex]}
+                      alt={listing.title}
+                      className="w-full h-56 sm:h-72 md:h-96 object-cover"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                    <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-lantern-surface/90 text-[11px] font-medium text-lantern-text opacity-0 group-hover:opacity-100 transition-opacity">
+                      <MagnifyingGlassIcon className="w-3.5 h-3.5" />
+                      Zoom
+                    </span>
+                  </button>
                   {listing.images.length > 1 && (
                     <>
                       <button
@@ -728,10 +792,15 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             )}
           </div>
 
-          {/* Details Section */}
-          <div className="space-y-4 sm:space-y-5">
+          {/* Details Section — sticky buy column on large screens */}
+          <div className="space-y-4 sm:space-y-5 lg:sticky lg:top-4 lg:self-start">
             {/* Title and Price */}
             <div>
+              {typeLabel ? (
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-1">
+                  {typeLabel}
+                </p>
+              ) : null}
               <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-lantern-text mb-2 sm:mb-3">
                 {listing.title}
               </h1>
@@ -817,65 +886,17 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               </p>
             </div>
 
-            {/* Category-Specific Details */}
-            {listing.category_specific_fields && Object.keys(listing.category_specific_fields).filter(k => k !== 'parentCategory').length > 0 && (
+            {/* Item details */}
+            {specRows.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-lantern-text mb-2 uppercase tracking-wide">Details</h3>
+                <h3 className="text-sm font-semibold text-lantern-text mb-2 uppercase tracking-wide">About this item</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {listing.category_specific_fields.condition && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Condition</span>
-                      <p className="text-sm font-medium text-lantern-text capitalize">{listing.category_specific_fields.condition}</p>
+                  {specRows.map((row) => (
+                    <div key={row.key} className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">{row.label}</span>
+                      <p className="text-sm font-medium text-lantern-text">{row.value}</p>
                     </div>
-                  )}
-                  {listing.category_specific_fields.courseCode && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Course Code</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.courseCode}</p>
-                    </div>
-                  )}
-                  {listing.category_specific_fields.year && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Year</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.year}</p>
-                    </div>
-                  )}
-                  {listing.category_specific_fields.semester && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Semester</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.semester}</p>
-                    </div>
-                  )}
-                  {listing.category_specific_fields.isbn && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">ISBN</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.isbn}</p>
-                    </div>
-                  )}
-                  {listing.category_specific_fields.edition && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Edition</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.edition}</p>
-                    </div>
-                  )}
-                  {listing.category_specific_fields.bedrooms != null && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Bedrooms</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.bedrooms}</p>
-                    </div>
-                  )}
-                  {listing.category_specific_fields.furnished != null && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Furnished</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.furnished ? 'Yes' : 'No'}</p>
-                    </div>
-                  )}
-                  {listing.category_specific_fields.distanceToCampus && (
-                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
-                      <span className="text-xs text-lantern-text-secondary">Distance to Campus</span>
-                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.distanceToCampus}</p>
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
@@ -1040,7 +1061,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             )}
 
             {/* Action Buttons */}
-            <div className="space-y-2 sm:space-y-2.5 pt-2">
+            <div className="space-y-2 sm:space-y-2.5 pt-2 rounded-2xl border border-lantern-border bg-lantern-surface p-3 shadow-sm">
               {listing.status === 'reserved' ? (
                 <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40">
                   <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Sale in progress</p>
@@ -1555,10 +1576,10 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           )}
         </div>
 
-        {/* Similar Listings */}
+        {/* Related listings */}
         {similarListings.length > 0 && (
           <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60">
-            <h2 className="text-base sm:text-lg font-bold text-lantern-text mb-3 sm:mb-4">You Might Also Like</h2>
+            <h2 className="text-base sm:text-lg font-bold text-lantern-text mb-3 sm:mb-4">Related on campus</h2>
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
               {similarListings.map(item => (
                 <button
@@ -1582,6 +1603,16 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {recentlyViewed.length > 0 && (
+          <div className="mt-5 sm:mt-8">
+            <MarketplaceListingRail
+              title="Recently viewed"
+              listings={recentlyViewed}
+              onPress={(item) => onNavigate('MarketplaceListingDetail', { listingId: item.id })}
+            />
           </div>
         )}
       </div>
@@ -1803,6 +1834,30 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           onSuccess={() => showToast('Offer submitted! The seller will be notified.')}
         />
       )}
+
+      {lightboxOpen && listing.images && listing.images.length > 0 ? (
+        <div
+          className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Listing photo"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <img
+            src={listing.images[currentImageIndex]}
+            alt={listing.title}
+            className="max-h-[90vh] max-w-full object-contain rounded-lg"
+            onClick={(event) => event.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 px-3 py-1.5 rounded-lg bg-white/90 text-sm font-semibold"
+          >
+            Close
+          </button>
+        </div>
+      ) : null}
 
       {/* Toast notification */}
       {toast && (

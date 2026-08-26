@@ -3058,6 +3058,10 @@ export const fetchMarketplaceListingsPage = async (filters: {
   country_code?: string;
   /** Filters on category_specific_fields.condition (new/like-new/good/fair). */
   condition?: string;
+  /** Fine-grained campus listing type (taxonomy leaf id). */
+  taxonomyNodeId?: string;
+  /** When set with taxonomyNodeId, also include listings that have no node id. */
+  includeUnclassified?: boolean;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
   /** `compact` returns card-shaped rows (first image only) for the browse grid. */

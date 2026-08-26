@@ -175,6 +175,11 @@ export const App: React.FC = () => {
     const { toast, showToast, dismissToast } = useToastStore();
     const globalConfirm = useConfirmStore();
     const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
+    const [marketplaceBrowseIntent, setMarketplaceBrowseIntent] = useState<{
+        browseNodeId?: string;
+        tab?: 'academic' | 'student-life' | 'shops';
+        category?: string;
+    } | null>(null);
     const [sellerProfileReturnMode, setSellerProfileReturnMode] = useState<AppMode>(AppMode.MARKETPLACE);
     const [startingDailyQuiz, setStartingDailyQuiz] = useState(false);
     const [accountLifecycle, setAccountLifecycle] = useState<{
@@ -1555,6 +1560,9 @@ export const App: React.FC = () => {
             case AppMode.MARKETPLACE:
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
+                    initialTab={marketplaceBrowseIntent?.tab}
+                    initialCategory={marketplaceBrowseIntent?.category}
                     onNavigateToDiscover={(section) => {
                         setDiscoverSection(section as any);
                         setAppMode(AppMode.DISCOVER);
@@ -1620,6 +1628,18 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE_ORDERS);
                         } else if (screen === 'MarketplaceCart') {
                             setAppMode(AppMode.MARKETPLACE_CART);
+                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(String(params.listingId));
+                            setSelectedMarketplaceListingInitialQuantity(
+                              params?.quantity != null ? Number(params.quantity) : null
+                            );
+                        } else if (screen === 'Marketplace') {
+                            setMarketplaceBrowseIntent({
+                                browseNodeId: params?.browseNodeId ? String(params.browseNodeId) : '',
+                                tab: params?.tab,
+                                category: params?.category ? String(params.category) : '',
+                            });
+                            setAppMode(AppMode.MARKETPLACE);
                         } else if (screen === 'MyListings') {
                             setAppMode(AppMode.MY_LISTINGS);
                         } else if (screen === 'EditMarketplaceListing' && params?.listing) {
@@ -1883,6 +1903,9 @@ export const App: React.FC = () => {
                 if (!modals.createMarketplaceListing) openModal('createMarketplaceListing');
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
+                    initialTab={marketplaceBrowseIntent?.tab}
+                    initialCategory={marketplaceBrowseIntent?.category}
                     onNavigateToDiscover={(section) => {
                         setDiscoverSection(section as any);
                         setAppMode(AppMode.DISCOVER);

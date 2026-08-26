@@ -28,6 +28,7 @@ import {
 import {
   fetchMarketplaceCampuses,
   fetchMarketplaceListing,
+  fetchMarketplaceListings,
   checkSavedSearchMatches,
 } from '../../services/api';
 import { categoryIcon, formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
@@ -42,6 +43,7 @@ import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
+import { listingTypeLabel, suggestMarketplaceSearch } from '@lantern/shared/marketplace';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -103,12 +105,25 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   const [savedSearchNewMatches, setSavedSearchNewMatches] = useState(0);
   const [campuses, setCampuses] = useState<MarketplaceCampusOption[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [dealListings, setDealListings] = useState<MarketplaceListing[]>([]);
 
   useEffect(() => {
     void getRecentMarketplaceSearches().then(setRecentSearches);
   }, []);
 
   const categories = activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES;
+  const searchSuggestions = useMemo(
+    () =>
+      searchFocused || searchQuery.trim().length >= 2
+        ? suggestMarketplaceSearch(searchQuery, {
+            department: activeTab === 'shops' ? undefined : activeTab,
+            recents: recentSearches,
+            limit: 6,
+          })
+        : [],
+    [searchFocused, searchQuery, activeTab, recentSearches],
+  );
   const activeCategoryLabel = selectedCategory
     ? getCategoryInfo(selectedCategory).name
     : 'All categories';
@@ -188,6 +203,35 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     sortOrder,
     fetchListings,
   ]);
+
+  useEffect(() => {
+    if (activeTab === 'shops' || searchQuery.trim() || selectedCategory) {
+      setDealListings([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchMarketplaceListings({
+      page: 1,
+      limit: 8,
+      sortBy: 'sale_first',
+      sortOrder: 'desc',
+      categories: categories.map(c => c.id),
+      includeCustom: true,
+      responseProfile: 'compact',
+    })
+      .then(raw => {
+        const rows = Array.isArray(raw) ? raw : ((raw as { data?: RemoteListing[] })?.data ?? []);
+        if (!cancelled) {
+          setDealListings(rows.map(mapRemoteListing).filter(item => item.is_on_sale).slice(0, 8));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDealListings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, searchQuery, selectedCategory]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -356,6 +400,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
             {item.title}
           </Text>
+          <Text className="text-[10px] text-lantern-text-tertiary mt-0.5" numberOfLines={1}>
+            {listingTypeLabel(item, getCategoryInfo(item.category).name)}
+          </Text>
           {/* Phase 3 N — see the web card: the server attaches trust to every
               browse row and nothing rendered it. 'new' shows no chip. */}
           {shouldShowTrustChip((item.seller as { trustLevel?: string } | undefined)?.trustLevel) ? (
@@ -391,6 +438,25 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {recentListings.map(item => (
+              <Pressable
+                key={item.id}
+                onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+                className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
+              >
+                <ListingImage uri={item.images?.[0]} className="w-full h-20" />
+                <Text numberOfLines={2} className="text-[10px] p-1.5 text-lantern-text">
+                  {item.title}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+      {dealListings.length > 0 && !showFavoritesOnly && !searchQuery.trim() ? (
+        <View className="px-2 pt-3">
+          <Text className="text-sm font-semibold text-lantern-text mb-2 px-1">On sale now</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {dealListings.map(item => (
               <Pressable
                 key={item.id}
                 onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
@@ -441,6 +507,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
             placeholder="Search listings…"
             placeholderTextColor="#94a3b8"
             accessibilityLabel="Search listings"
@@ -459,6 +527,30 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             />
           </Pressable>
         </View>
+        {searchSuggestions.length > 0 && searchFocused ? (
+          <View className="rounded-xl border border-lantern-border bg-lantern-surface overflow-hidden">
+            {searchSuggestions.map(suggestion => (
+              <Pressable
+                key={suggestion.id}
+                onPress={() => {
+                  if (suggestion.kind === 'type') {
+                    setActiveTab(suggestion.department);
+                    setSelectedCategory(suggestion.listingCategory as MarketplaceCategory);
+                  } else {
+                    setSearchQuery(suggestion.query);
+                  }
+                  setSearchFocused(false);
+                }}
+                className="px-3 py-2 border-b border-lantern-border last:border-b-0"
+              >
+                <Text className="text-sm text-lantern-text">{suggestion.label}</Text>
+                {suggestion.kind === 'type' ? (
+                  <Text className="text-[11px] text-lantern-text-tertiary">{suggestion.pathLabel}</Text>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
       </View>
 
       <View className="bg-lantern-surface border-b border-lantern-border">

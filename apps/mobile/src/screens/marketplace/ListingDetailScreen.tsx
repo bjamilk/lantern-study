@@ -29,6 +29,9 @@ import {
   isDigitalListingKind,
   summarizeStudyPackCounts,
   MARKETPLACE_LISTING_STATUS_LABELS,
+  listingBreadcrumb,
+  listingSpecRows,
+  listingTypeLabel,
 } from '@lantern/shared/marketplace';
 import {
   fetchPickupNudge,
@@ -465,6 +468,9 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const avgRating =
     reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
+  const crumbs = listingBreadcrumb(listing);
+  const specRows = listingSpecRows(listing);
+  const typeLabel = listingTypeLabel(listing, category?.name || '');
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
@@ -516,9 +522,31 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         </View>
 
         <View className="px-4 pt-4">
-          {category ? (
+          {crumbs.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2">
+              <View className="flex-row items-center">
+                {crumbs.map((node, index) => (
+                  <View key={node.id} className="flex-row items-center">
+                    {index > 0 ? (
+                      <Text className="text-[11px] text-lantern-text-tertiary mx-1">›</Text>
+                    ) : null}
+                    <Pressable
+                      onPress={() => {
+                        if (node.listingCategory) {
+                          navigation.navigate('MarketplaceHome');
+                        }
+                      }}
+                    >
+                      <Text className="text-[11px] text-lantern-text-secondary">{node.label}</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          ) : null}
+          {typeLabel ? (
             <Text className="text-xs font-medium text-lantern-primary mb-1">
-              {category.name}
+              {typeLabel}
             </Text>
           ) : null}
           <Text className="text-2xl font-bold text-lantern-text">{listing.title}</Text>
@@ -640,6 +668,20 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               {listing.description?.trim() || 'No description provided.'}
             </Text>
           </Card>
+
+          {specRows.length > 0 ? (
+            <Card className="mt-4">
+              <Text className="text-sm font-semibold text-lantern-text mb-2">About this item</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {specRows.map(row => (
+                  <View key={row.key} className="w-[47%] bg-lantern-background-secondary rounded-lg px-3 py-2">
+                    <Text className="text-[11px] text-lantern-text-secondary">{row.label}</Text>
+                    <Text className="text-sm font-medium text-lantern-text">{row.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </Card>
+          ) : null}
 
           {bankPreview && bankPreview.questions.length > 0 ? (
             <Card className="mt-4">
@@ -790,7 +832,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           {similarListings.length > 0 ? (
             <View className="mt-4">
               <Text className="text-sm font-semibold text-lantern-text mb-3">
-                You might also like
+                Related on campus
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {similarListings.map(item => (

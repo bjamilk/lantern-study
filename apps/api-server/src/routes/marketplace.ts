@@ -155,6 +155,8 @@ router.get(
       campus_id: campusId,
       country_code: countryCode,
       condition,
+      taxonomyNodeId,
+      includeUnclassified,
       sortBy = 'trending',
       sortOrder = 'desc',
       responseProfile,
@@ -164,10 +166,14 @@ router.get(
       ? categories.split(',').map((c: string) => c.trim()).filter(Boolean).slice(0, 20)
       : undefined;
     const includeCustomCategories = includeCustom === '1' || includeCustom === 'true';
+    const taxonomyId =
+      typeof taxonomyNodeId === 'string' && taxonomyNodeId.trim() ? taxonomyNodeId.trim() : undefined;
+    const includeUnclassifiedNodes =
+      includeUnclassified === '1' || includeUnclassified === 'true';
 
     logger.debug('Fetching marketplace listings', { page, limit, category, search, profile, campusId, countryCode });
 
-    const cacheKey = `marketplace:listings:v2:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${condition || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
+    const cacheKey = `marketplace:listings:v3:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${condition || ''}:${taxonomyId || ''}:${includeUnclassifiedNodes ? 1 : 0}:${sortBy}:${sortOrder}:profile:${profile}`;
     let result = await cacheService.get<{ data: any[]; total: number }>(cacheKey);
 
     if (!result) {
@@ -184,6 +190,8 @@ router.get(
         campusId: campusId as string | undefined,
         countryCode: (countryCode as string) || undefined,
         condition: (condition as string) || undefined,
+        taxonomyNodeId: taxonomyId,
+        includeUnclassified: includeUnclassifiedNodes,
         sortBy,
         sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',
         responseProfile: profile,
@@ -2771,39 +2779,19 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
 
-    const similarCacheKey = `marketplace:similar:v2:${id}`;
+    const similarCacheKey = `marketplace:similar:v3:${id}`;
     const cached = await cacheService.get<any[]>(similarCacheKey);
     if (cached) {
       return res.json({ success: true, data: cached });
     }
 
-    // Get the source listing
     const listing = await supabaseService.getMarketplaceListingById(id);
     if (!listing) {
       return res.status(404).json({ success: false, error: 'Listing not found' });
     }
 
-    // Query similar: same category, ±30% price, active, exclude self
-    let query = supabaseService.getClient()
-      .from('marketplace_listings')
-      .select('id, title, price, images, category, location, created_at, status')
-      .eq('category', listing.category)
-      .eq('status', 'active')
-      .neq('id', id);
-
-    if (listing.price) {
-      const minP = listing.price * 0.7;
-      const maxP = listing.price * 1.3;
-      query = query.gte('price', minP).lte('price', maxP);
-    }
-
-    query = query.order('created_at', { ascending: false }).limit(6);
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    const result = await supabaseService.signSimilarListingCards(data || []);
-    await cacheService.set(similarCacheKey, result, 300); // 5 min cache
+    const result = await supabaseService.getRelatedMarketplaceListings(listing, 6);
+    await cacheService.set(similarCacheKey, result, 300);
     res.json({ success: true, data: result });
   })
 );
@@ -2838,24 +2826,10 @@ router.get(
     }
 
     // --- 2. Similar listings (cached 5 min, shared across all users) ---
-    const similarCacheKey = `marketplace:similar:v2:${id}`;
+    const similarCacheKey = `marketplace:similar:v3:${id}`;
     let similarListings = await cacheService.get<any[]>(similarCacheKey);
     if (!similarListings) {
-      let query = supabaseService.getClient()
-        .from('marketplace_listings')
-        .select('id, title, price, images, category, location, created_at, status')
-        .eq('category', listing.category)
-        .eq('status', 'active')
-        .neq('id', id);
-
-      if (listing.price) {
-        query = query
-          .gte('price', listing.price * 0.7)
-          .lte('price', listing.price * 1.3);
-      }
-      query = query.order('created_at', { ascending: false }).limit(6);
-      const { data } = await query;
-      similarListings = await supabaseService.signSimilarListingCards(data || []);
+      similarListings = await supabaseService.getRelatedMarketplaceListings(listing, 6);
       await cacheService.set(similarCacheKey, similarListings, 300);
     }
 

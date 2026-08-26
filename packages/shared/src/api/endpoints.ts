@@ -1750,6 +1750,9 @@ export function createApiEndpoints(client: ApiClient) {
         country_code?: string;
         sortBy?: string;
         sortOrder?: "asc" | "desc";
+        condition?: string;
+        taxonomyNodeId?: string;
+        includeUnclassified?: boolean;
         /** `compact` returns card-shaped rows (first image only) for grids. */
         responseProfile?: "compact" | "full";
       } = {},

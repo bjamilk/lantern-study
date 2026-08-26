@@ -42,6 +42,8 @@ import {
   isMarketplaceListingEditable,
   isMarketplaceListingStatus,
   sellerListingTransitionError,
+  isKnownTaxonomyNodeId,
+  rankRelatedListings,
 } from "@lantern/shared/marketplace";
 import { PublicError } from "../utils/safeError";
 // Value import (const array) — marketplaceOrders only type-imports supabase, so
@@ -9631,6 +9633,7 @@ export class SupabaseService {
       seller,
       is_boosted,
       category_specific_fields,
+      quantity,
     } = listing;
     return {
       id,
@@ -9654,11 +9657,16 @@ export class SupabaseService {
       views_count,
       seller,
       is_boosted,
-      // Only the condition surfaces from the free-form blob (for the card
-      // chip + condition filter); the rest stays stripped to keep cards compact.
+      quantity: quantity ?? null,
+      // Compact cards need condition + taxonomy node without shipping the
+      // whole free-form blob.
       condition:
         (category_specific_fields &&
           (category_specific_fields.condition as string | undefined)) ||
+        null,
+      taxonomyNodeId:
+        (category_specific_fields &&
+          (category_specific_fields.taxonomyNodeId as string | undefined)) ||
         null,
     };
   }
@@ -9712,6 +9720,8 @@ export class SupabaseService {
       campusId?: string;
       countryCode?: string;
       condition?: string;
+      taxonomyNodeId?: string;
+      includeUnclassified?: boolean;
       sortBy?: string;
       sortOrder?: "asc" | "desc";
       responseProfile?: "compact" | "full";
@@ -9730,6 +9740,8 @@ export class SupabaseService {
       campusId,
       countryCode,
       condition,
+      taxonomyNodeId,
+      includeUnclassified = false,
       sortBy = "trending",
       sortOrder = "desc",
       responseProfile = "full",
@@ -9740,11 +9752,17 @@ export class SupabaseService {
     const categoryList =
       categories && categories.length > 0 ? categories : undefined;
 
-    // Condition lives inside the category_specific_fields JSONB, which the
-    // search RPC can't filter on — route any condition-filtered query through
-    // the fallback path (which can), degrading trending to created_at there.
+    const taxonomyFilter =
+      taxonomyNodeId && isKnownTaxonomyNodeId(taxonomyNodeId)
+        ? taxonomyNodeId
+        : undefined;
+
+    // Condition and taxonomy node live inside category_specific_fields JSONB,
+    // which the search RPC can't filter on — those queries use the fallback
+    // path (degrading trending to created_at).
     const useSearchRpc =
       !condition &&
+      !taxonomyFilter &&
       (Boolean(search) ||
         Boolean(category) ||
         Boolean(categoryList) ||
@@ -9823,6 +9841,7 @@ export class SupabaseService {
         created_at,
         status,
         views_count,
+        quantity,
         category_specific_fields,
         seller:profiles!user_id (
           id,
@@ -9883,6 +9902,17 @@ export class SupabaseService {
       query = query.eq("category_specific_fields->>condition", condition);
     }
 
+    if (taxonomyFilter) {
+      // Node ids contain dots; quote the eq value so PostgREST does not split
+      // `academic.materials.textbooks.course` into extra filter segments.
+      const quoted = `"${taxonomyFilter.replace(/"/g, "")}"`;
+      query = includeUnclassified
+        ? query.or(
+            `category_specific_fields->>taxonomyNodeId.eq.${quoted},category_specific_fields->>taxonomyNodeId.is.null`,
+          )
+        : query.eq("category_specific_fields->>taxonomyNodeId", taxonomyFilter);
+    }
+
     // Fallback path: trending/sale_first require the RPC; degrade to created_at.
     const fallbackSort =
       sortBy === "trending" || sortBy === "sale_first" ? "created_at" : sortBy;
@@ -9934,6 +9964,8 @@ export class SupabaseService {
         created_at,
         status,
         views_count,
+        quantity,
+        category_specific_fields,
         seller:profiles!user_id (
           id,
           name,
@@ -9951,6 +9983,64 @@ export class SupabaseService {
     );
     // Preserve the caller's id order (most recently viewed first).
     return ids.map((id) => byId.get(id)).filter(Boolean);
+  }
+
+  /**
+   * Related listings for a product page: same category plus same course,
+   * ranked by campus / course / taxonomy / price proximity.
+   */
+  async getRelatedMarketplaceListings(
+    listing: {
+      id: string;
+      category?: string;
+      campus_id?: string | null;
+      course_id?: string | null;
+      price?: number | null;
+      category_specific_fields?: Record<string, unknown> | null;
+    },
+    limit = 6,
+  ): Promise<any[]> {
+    const client = this.getClient();
+    const similarSelect =
+      "id, title, price, images, category, location, campus_id, course_id, category_specific_fields, created_at, status";
+
+    let sameCategory: any[] = [];
+    if (listing.category) {
+      const { data, error } = await client
+        .from("marketplace_listings")
+        .select(similarSelect)
+        .eq("category", listing.category)
+        .eq("status", "active")
+        .neq("id", listing.id)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      sameCategory = data || [];
+    }
+
+    let sameCourse: any[] = [];
+    if (listing.course_id) {
+      const { data } = await client
+        .from("marketplace_listings")
+        .select(similarSelect)
+        .eq("course_id", listing.course_id)
+        .eq("status", "active")
+        .neq("id", listing.id)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      sameCourse = data || [];
+    }
+
+    const byId = new Map<string, any>();
+    for (const row of [...sameCategory, ...sameCourse]) {
+      if (row?.id) byId.set(row.id, row);
+    }
+    const ranked = rankRelatedListings(
+      listing,
+      Array.from(byId.values()),
+      limit,
+    );
+    return this.signSimilarListingCards(ranked);
   }
 
   async getMarketplaceCategoryAnalytics(): Promise<

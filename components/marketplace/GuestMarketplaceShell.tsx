@@ -36,11 +36,14 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
           onSignInRequired={promptSignIn}
           onBack={() => navigateToPath('/marketplace')}
           onNavigate={(screen, params) => {
-            if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-              navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
-            } else if (screen === 'SellerProfile' && params?.userId) {
-              navigateToPath(`/marketplace/seller/${encodeURIComponent(params.userId)}`);
-            } else {
+          if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+            navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
+          } else if (screen === 'SellerProfile' && params?.userId) {
+            navigateToPath(`/marketplace/seller/${encodeURIComponent(params.userId)}`);
+          } else if (screen === 'Marketplace') {
+            const node = params?.browseNodeId ? `?node=${encodeURIComponent(String(params.browseNodeId))}` : '';
+            navigateToPath(`/marketplace${node}`);
+          } else {
               promptSignIn();
             }
           }}
@@ -139,6 +142,7 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
       <MarketplaceScreen
         guestMode
         onSignInRequired={promptSignIn}
+        initialBrowseNodeId={new URLSearchParams(location.search).get('node') || ''}
         onNavigate={(screen, params) => {
           if (screen === 'MarketplaceListingDetail' && params?.listingId) {
             navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
@@ -147,6 +151,9 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
           } else if (screen === 'MarketplaceJobs') {
             // Jobs browsing is public — don't bounce guests to sign-in.
             navigateToPath('/marketplace/jobs');
+          } else if (screen === 'Marketplace') {
+            const node = params?.browseNodeId ? `?node=${encodeURIComponent(String(params.browseNodeId))}` : '';
+            navigateToPath(`/marketplace${node}`);
           } else {
             promptSignIn();
           }
