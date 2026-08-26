@@ -4768,6 +4768,44 @@ export const unfollowCreator = async (userId: string): Promise<void> => {
 // these mirror packages/shared/src/api/endpoints.ts by hand. Types come from
 // @lantern/shared/network so the two clients cannot drift.
 
+/** Sentinel for "the body parsed as neither JSON nor a quotable error". */
+const NON_JSON_BODY = Symbol('non-json-body');
+
+/**
+ * Read the `{ success, data }` envelope from a response we already know is 2xx.
+ *
+ * A 200 is not a promise of JSON. When an /api/v1 path does not match, the Pages
+ * SPA fallback answers with index.html — status 200, body `<!DOCTYPE html>` —
+ * and a bare `.json()` throws `SyntaxError: Unexpected token '<'`, which tells
+ * the user nothing and points the stack trace at the parser rather than the
+ * request that lied. `/__lantern_api` behaves the same way in production by
+ * design, so this is reachable without anything being broken.
+ */
+async function readEnvelope<T>(response: Response, fallbackError: string): Promise<T> {
+  const payload = await response.json().catch(() => NON_JSON_BODY);
+  if (payload === NON_JSON_BODY) throw new Error(fallbackError);
+  return (payload as { data?: T }).data as T;
+}
+
+/**
+ * `networkGet` for endpoints that return a list.
+ *
+ * The plain `as T` cast is a promise the network cannot keep: an envelope
+ * without `data`, a shape change, or an HTML body all hand the caller something
+ * that is not an array. The failure then surfaces far away as
+ * `X.filter is not a function` inside a useMemo, blaming the component instead
+ * of the request. An empty list renders as "nothing here", which is honest when
+ * the server told us nothing.
+ */
+const networkGetList = async <T>(
+  path: string,
+  timeout?: number,
+  fallbackError?: string
+): Promise<T[]> => {
+  const data = await networkGet<T[]>(path, timeout, fallbackError);
+  return Array.isArray(data) ? data : [];
+};
+
 const networkGet = async <T>(path: string, timeout = 10000, fallbackError = 'Request failed'): Promise<T> => {
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1${path}`,
@@ -4781,7 +4819,7 @@ const networkGet = async <T>(path: string, timeout = 10000, fallbackError = 'Req
     const err = await response.json().catch(() => ({}));
     throw new Error((err as any).error || fallbackError);
   }
-  return (await response.json()).data as T;
+  return readEnvelope<T>(response, fallbackError);
 };
 
 const networkWrite = async <T>(
@@ -4808,7 +4846,7 @@ const networkWrite = async <T>(
     const err = await response.json().catch(() => ({}));
     throw new Error((err as any).error || fallbackError);
   }
-  return (await response.json()).data as T;
+  return readEnvelope<T>(response, fallbackError);
 };
 
 const networkQuery = (params: Record<string, string | number | undefined>): string => {
@@ -4820,13 +4858,13 @@ const networkQuery = (params: Record<string, string | number | undefined>): stri
   return str ? `?${str}` : '';
 };
 
-export const fetchMyCommunities = () => networkGet<MyCommunity[]>('/communities');
+export const fetchMyCommunities = () => networkGetList<MyCommunity>('/communities');
 
 export const fetchCommunity = (slug: string) =>
   networkGet<CommunityDetail>(`/communities/${encodeURIComponent(slug)}`, 10000, 'Community not found');
 
 export const fetchCommunityMembers = (communityId: string, limit?: number) =>
-  networkGet<Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>>(
+  networkGetList<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>(
     `/communities/${encodeURIComponent(communityId)}/members${networkQuery({ limit })}`
   );
 
@@ -4852,7 +4890,7 @@ export const discoverCommunities = (params: {
   institutionId?: string;
   courseId?: string;
   limit?: number;
-} = {}) => networkGet<Community[]>(`/discover/communities${networkQuery(params)}`);
+} = {}) => networkGetList<Community>(`/discover/communities${networkQuery(params)}`);
 
 /** Discoverable groups — NOT /groups, which is memberships-only and cached per user. */
 export const discoverGroups = (params: {
@@ -4860,13 +4898,13 @@ export const discoverGroups = (params: {
   communityId?: string;
   courseId?: string;
   limit?: number;
-} = {}) => networkGet<DiscoverGroup[]>(`/discover/groups${networkQuery(params)}`);
+} = {}) => networkGetList<DiscoverGroup>(`/discover/groups${networkQuery(params)}`);
 
 export const discoverPeople = (params: {
   institutionId?: string;
   courseId?: string;
   limit?: number;
-} = {}) => networkGet<DiscoverPerson[]>(`/discover/people${networkQuery(params)}`);
+} = {}) => networkGetList<DiscoverPerson>(`/discover/people${networkQuery(params)}`);
 
 export const fetchStudyPresence = (params: { courseId?: string; institutionId?: string } = {}) =>
   networkGet<PresenceSnapshot>(`/discover/presence${networkQuery(params)}`);
@@ -4890,7 +4928,7 @@ export const fetchMasteryGraph = (params: { courseId?: string; limit?: number } 
 export const refreshMasteryGraph = () =>
   networkWrite<{ topics: TopicMastery[] }>('/mastery/refresh', 'POST', undefined, 'Could not refresh');
 
-export const fetchExamReadiness = () => networkGet<ExamReadiness[]>('/mastery/exam-readiness');
+export const fetchExamReadiness = () => networkGetList<ExamReadiness>('/mastery/exam-readiness');
 
 // ── Phase 4 Q — referrals ──
 

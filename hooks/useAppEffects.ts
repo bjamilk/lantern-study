@@ -534,24 +534,47 @@ export function useAppEffects({
                 const hadUser = Boolean(useAuthStore.getState().currentUser);
                 if (
                     hadUser &&
-                    !isCookieAuthEnabled() &&
                     // Never "recover" a logout the user actually asked for.
                     !wasRecentIntentionalSignOut() &&
                     Date.now() - lastSpuriousSignoutRecoveryAt > SPURIOUS_SIGNOUT_RECOVERY_COOLDOWN_MS
                 ) {
                     try {
-                        const { data: { session: liveSession } } = await supabase.auth.getSession();
-                        const stillValid =
-                            !!liveSession?.user &&
-                            !!liveSession.access_token &&
-                            typeof liveSession.expires_at === 'number' &&
-                            liveSession.expires_at * 1000 > Date.now() + 5_000;
-                        if (stillValid && liveSession) {
-                            lastSpuriousSignoutRecoveryAt = Date.now();
-                            setCachedAuthToken(liveSession.access_token, liveSession.user.id);
-                            setAuthTokenReady(true);
-                            // Recovered a live session — do not report or clear the user.
-                            return;
+                        if (isCookieAuthEnabled()) {
+                            // Cookie mode was excluded here until Sentry showed it is
+                            // where this actually happens: 27 of 39 unexpected sign-outs
+                            // came from real Chrome and Edge sessions, each preceded by a
+                            // 400 on supabase.co/auth/v1/token. supabase-js keeps its own
+                            // session and refreshes it even in cookie mode, so it can lose
+                            // that race and emit SIGNED_OUT — while the HttpOnly cookie
+                            // that actually authenticates the API is untouched.
+                            //
+                            // So ask the authority rather than the messenger: if the BFF
+                            // still refreshes, the user is signed in, whatever supabase-js
+                            // concluded.
+                            const cookieSession = await refreshCookieSession();
+                            if (cookieSession?.access_token) {
+                                lastSpuriousSignoutRecoveryAt = Date.now();
+                                setCachedAuthToken(
+                                    cookieSession.access_token,
+                                    cookieSession.user?.id
+                                );
+                                setAuthTokenReady(true);
+                                return;
+                            }
+                        } else {
+                            const { data: { session: liveSession } } = await supabase.auth.getSession();
+                            const stillValid =
+                                !!liveSession?.user &&
+                                !!liveSession.access_token &&
+                                typeof liveSession.expires_at === 'number' &&
+                                liveSession.expires_at * 1000 > Date.now() + 5_000;
+                            if (stillValid && liveSession) {
+                                lastSpuriousSignoutRecoveryAt = Date.now();
+                                setCachedAuthToken(liveSession.access_token, liveSession.user.id);
+                                setAuthTokenReady(true);
+                                // Recovered a live session — do not report or clear the user.
+                                return;
+                            }
                         }
                     } catch {
                         // Fall through to the normal sign-out below.
