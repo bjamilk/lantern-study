@@ -413,10 +413,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         if (!prev || prev.id !== note.id) return;
         setSelectedNote({
           ...prev,
-          attachments:
-            prev.attachments?.map((a) =>
-              a.id === result.attachment.id ? result.attachment : a
-            ) ?? [result.attachment],
+          attachments: result.attachments?.length
+            ? [
+                ...(prev.attachments || []).filter((a) => a.type !== 'image'),
+                ...result.attachments,
+              ]
+            : prev.attachments?.map((a) =>
+                a.id === result.attachment.id ? result.attachment : a
+              ) ?? [result.attachment],
         });
         if (result.status === 'failed') {
           showToast(result.ocrError || 'Local OCR failed', 'error');
@@ -445,10 +449,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       if (prev?.id === note.id) {
         setSelectedNote({
           ...prev,
-          attachments:
-            prev.attachments?.map((a) =>
-              a.id === result.attachment.id ? result.attachment : a
-            ) ?? [result.attachment],
+          attachments: result.attachments?.length
+            ? [
+                ...(prev.attachments || []).filter((a) => a.type !== 'image'),
+                ...result.attachments,
+              ]
+            : prev.attachments?.map((a) =>
+                a.id === result.attachment.id ? result.attachment : a
+              ) ?? [result.attachment],
         });
       }
       if (result.status === 'ready') {

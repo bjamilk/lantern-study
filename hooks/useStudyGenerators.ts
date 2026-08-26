@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import {
+  aggregatePhotoOcrStatus,
   getExtractionStatusMessage,
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
@@ -35,6 +36,35 @@ export interface ImportAndStudyResult {
 
 type NoteWithAttachments = StudyNote & { attachments?: NoteAttachment[] };
 
+async function refreshNoteAfterOcr(note: NoteWithAttachments): Promise<NoteWithAttachments> {
+  const source = note.sourceType;
+  if (source !== 'photos' && source !== 'pdf' && source !== 'presentation') return note;
+  const processing =
+    source === 'photos'
+      ? aggregatePhotoOcrStatus(note.attachments) === 'ocr_processing'
+      : note.attachments?.[0]?.metadata?.extractionStatus === 'ocr_processing';
+  const thin = isThinOrUnusableStudyContent({
+    sourceType: source,
+    body: note.body,
+    summary: note.summary,
+    attachments: note.attachments,
+  });
+  if (!processing && !thin) return note;
+  try {
+    const ocr = await notesApi.waitForNoteOcr(note.id);
+    const refreshed = await notesApi.fetchNote(note.id);
+    return {
+      ...note,
+      ...refreshed,
+      attachments: ocr.attachments?.length
+        ? ocr.attachments
+        : refreshed.attachments ?? note.attachments,
+    };
+  } catch {
+    return note;
+  }
+}
+
 interface UseStudyGeneratorsOptions {
   generateCards: boolean;
   generateQuiz: boolean;
@@ -54,7 +84,8 @@ interface UseStudyGeneratorsOptions {
  */
 export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGeneratorsOptions) {
   const runStudyGenerators = useCallback(
-    async (note: NoteWithAttachments): Promise<ImportAndStudyResult> => {
+    async (incoming: NoteWithAttachments): Promise<ImportAndStudyResult> => {
+      const note = await refreshNoteAfterOcr(incoming);
       const studyInput = {
         sourceType: note.sourceType,
         body: note.body,
