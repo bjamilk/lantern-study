@@ -367,10 +367,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         if (!prev || prev.id !== noteId) return;
         setSelectedNote({
           ...prev,
-          attachments:
-            prev.attachments?.map((a) =>
-              a.id === result.attachment.id ? result.attachment : a
-            ) ?? [result.attachment],
+          attachments: result.attachments?.length
+            ? [
+                ...(prev.attachments || []).filter((a) => a.type !== 'image'),
+                ...result.attachments,
+              ]
+            : prev.attachments?.map((a) =>
+                a.id === result.attachment.id ? result.attachment : a
+              ) ?? [result.attachment],
         });
         if (result.status === 'failed') {
           Alert.alert('OCR failed', result.ocrError || 'Local OCR failed.');
@@ -1183,10 +1187,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                         if (!prev || prev.id !== selectedNote.id) return;
                         setSelectedNote({
                           ...prev,
-                          attachments:
-                            prev.attachments?.map((a) =>
-                              a.id === result.attachment.id ? result.attachment : a
-                            ) ?? [result.attachment],
+                          attachments: result.attachments?.length
+                            ? [
+                                ...(prev.attachments || []).filter((a) => a.type !== 'image'),
+                                ...result.attachments,
+                              ]
+                            : prev.attachments?.map((a) =>
+                                a.id === result.attachment.id ? result.attachment : a
+                              ) ?? [result.attachment],
                         });
                         if (result.status === 'failed') {
                           Alert.alert('OCR failed', result.ocrError || 'Local OCR failed.');

@@ -14,7 +14,43 @@ import {
   mergeExtractionTexts,
 } from './noteFiles';
 import { ocrImageBuffer, ocrPdfPagesFromBuffer } from './pdfPageOcr';
+import {
+  isPerceiveVisionEnabled,
+  perceivePageImage,
+  shouldEscalateToVisionOcr,
+} from './perceiveVision';
 import { logger } from '../utils/logger';
+
+async function readPhotoPageText(
+  buffer: Buffer,
+  timeoutMs: number
+): Promise<{ text: string; provider: string }> {
+  let tesseractText = '';
+  try {
+    tesseractText = await ocrImageBuffer(buffer, timeoutMs);
+  } catch (err) {
+    logger.warn('Tesseract photo OCR failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  if (!shouldEscalateToVisionOcr(tesseractText) || !isPerceiveVisionEnabled()) {
+    return { text: tesseractText, provider: 'tesseract' };
+  }
+
+  try {
+    const perceived = await perceivePageImage(buffer, { timeoutMs });
+    if (perceived?.text) {
+      return { text: perceived.text, provider: perceived.provider };
+    }
+  } catch (err) {
+    logger.warn('Perceive vision OCR failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return { text: tesseractText, provider: 'tesseract' };
+}
 
 export interface NoteOcrJobParams {
   noteId: string;
@@ -142,9 +178,12 @@ export async function runNoteOcrJob(
     let ocrText = '';
     let ocrPageCount = 0;
     let capped = false;
+    let ocrProvider = 'tesseract';
 
     if (sourceKind === 'image') {
-      ocrText = await ocrImageBuffer(buffer, timeoutMs);
+      const photo = await readPhotoPageText(buffer, timeoutMs);
+      ocrText = photo.text;
+      ocrProvider = photo.provider;
       ocrPageCount = 1;
     } else if (sourceKind === 'presentation') {
       // Prefer non-OCR shape text; optional embedded-image OCR is best-effort only.
@@ -196,7 +235,7 @@ export async function runNoteOcrJob(
         metadata: {
           ...sanitizeMetaForOcr(latestMeta),
           extractionStatus: 'ocr_failed',
-          ocrProvider: 'tesseract',
+          ocrProvider,
           ocrPageCount,
           ocrCapped: capped,
           ocrError: message,
@@ -225,7 +264,7 @@ export async function runNoteOcrJob(
       metadata: {
         ...sanitizeMetaForOcr(latestMeta),
         extractionStatus,
-        ocrProvider: 'tesseract',
+        ocrProvider,
         ocrPageCount,
         ocrCapped: capped,
         ocrError: undefined,
@@ -242,6 +281,7 @@ export async function runNoteOcrJob(
       noteId,
       attachmentId,
       sourceKind,
+      ocrProvider,
       ocrPageCount,
       capped,
       contentLength: trimmed.length,

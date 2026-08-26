@@ -225,6 +225,11 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                   <span className="text-sm font-medium text-lantern-text">Photos</span>
                   <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>
+                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <PhotoIcon className="w-8 h-8 text-lantern-accent" aria-hidden />
+                  <span className="text-sm font-medium text-lantern-text">Camera</span>
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
+                </label>
               </div>
 
               <textarea
