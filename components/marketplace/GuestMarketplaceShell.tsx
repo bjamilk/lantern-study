@@ -139,6 +139,7 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
       <MarketplaceScreen
         guestMode
         onSignInRequired={promptSignIn}
+        onNavigateToDiscover={() => promptSignIn()}
         onNavigate={(screen, params) => {
           if (screen === 'MarketplaceListingDetail' && params?.listingId) {
             navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
