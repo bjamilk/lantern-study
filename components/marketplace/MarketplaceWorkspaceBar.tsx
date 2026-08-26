@@ -189,13 +189,15 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
             <span className="truncate">Browse</span>
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => onSignInRequired?.()}
-          className="h-9 min-h-[36px] sm:h-8 px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors"
-        >
-          Sign in
-        </button>
+        {variant === 'full' ? (
+          <button
+            type="button"
+            onClick={() => onSignInRequired?.()}
+            className="h-9 min-h-[36px] sm:h-8 px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors"
+          >
+            Sign in
+          </button>
+        ) : null}
       </div>
     );
   }

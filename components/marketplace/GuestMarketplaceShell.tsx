@@ -165,7 +165,7 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
         Skip to main content
       </a>
       <header className="shrink-0 border-b border-lantern-border bg-lantern-surface/90 dark:bg-lantern-background/90 backdrop-blur sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
           <a href="/" className="flex items-center gap-2 min-w-0">
             <LanternIcon size={28} />
             <span className="font-semibold truncate">Lantern Study</span>
@@ -178,11 +178,6 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
               Get started
             </Button>
           </div>
-        </div>
-        <div className="max-w-6xl mx-auto px-4 pb-2">
-          <p className="text-xs text-lantern-text-secondary">
-            Browse listings across Nigeria. Sign in to buy, contact sellers, or list items.
-          </p>
         </div>
       </header>
       <main id="main-content" tabIndex={-1} className="flex-1 min-h-0 flex flex-col">

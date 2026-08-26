@@ -597,7 +597,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       <div
         role="radiogroup"
         aria-label="Marketplace category"
-        className={`gap-1.5 md:gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x min-w-0 max-w-full ${showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4' : 'hidden'} md:flex md:items-stretch`}
+        className={`gap-1.5 md:gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x min-w-0 max-w-full ${
+          showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4 md:flex md:items-stretch' : 'hidden'
+        }`}
       >
         <button
           type="button"
@@ -1070,7 +1072,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 type="button"
                 onClick={() => setShowCategoryPanel(v => !v)}
                 aria-expanded={showCategoryPanel}
-                className="md:hidden shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
+                aria-label="Marketplace category"
+                className="shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] sm:text-xs font-medium text-lantern-text-secondary"
               >
                 <span className="truncate">{activeCategoryLabel}</span>
                 <ChevronDownIcon className={`w-3.5 h-3.5 shrink-0 transition-transform ${showCategoryPanel ? 'rotate-180' : ''}`} />
