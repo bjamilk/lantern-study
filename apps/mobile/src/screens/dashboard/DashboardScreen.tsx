@@ -60,11 +60,13 @@ import { AcademicFeedPanel } from '../../components/AcademicFeedPanel';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 
 import { DailyQuizWidget } from '../../components/DailyQuizWidget';
+import { CollapsibleSection } from '../../components/CollapsibleSection';
 import { DailyGoalsProgress } from '../../components/DailyGoalsProgress';
 
 import { fetchDailyQuests, recordLoginStreak, purchaseStreakFreeze, type DailyQuest } from '../../services/gamification';
 import { WALLET_COINS } from '@lantern/shared/utils';
 import { isCardDue } from '@lantern/shared/utils/srs';
+import { isQuizzableNote } from '@lantern/shared/utils/noteStudyContent';
 import { useToastStore } from '../../stores/toastStore';
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
@@ -476,7 +478,10 @@ export function DashboardScreen({ navigation }: Props) {
   const quizNoteOptions = useMemo(
     () =>
       notes
-        .filter(n => ((n.body?.length ?? 0) >= 50) || ((n.summary?.length ?? 0) >= 50))
+        // Shared with web: excludes archived notes, and measures the same study
+        // content web does (attachment text included), which the old
+        // body/summary length check missed.
+        .filter(isQuizzableNote)
         .map(n => ({
           id: n.id,
           title: n.title?.trim() || 'Untitled note',
@@ -487,7 +492,9 @@ export function DashboardScreen({ navigation }: Props) {
   const startQuiz = useCallback(
     async (noteId: string) => {
       const note = notes.find(n => n.id === noteId);
-      if (!note) return;
+      // Re-check on start, not just when the list was built: a note can be
+      // archived (or emptied) between render and tap.
+      if (!note || !isQuizzableNote(note)) return;
 
       setQuizLoading(true);
       try {
@@ -906,9 +913,11 @@ export function DashboardScreen({ navigation }: Props) {
 
         {stats?.badges?.some(b => b.level > 0) ? (
 
-          <View className="mb-4">
-
-            <Text className="text-sm font-semibold text-lantern-text mb-2">Badges</Text>
+          <CollapsibleSection
+            id="badges"
+            title="Badges"
+            collapsedSummary={`${stats.badges.filter(b => b.level > 0).length} earned`}
+          >
 
             <View className="flex-row flex-wrap gap-2">
 
@@ -948,15 +957,17 @@ export function DashboardScreen({ navigation }: Props) {
 
             </View>
 
-          </View>
+          </CollapsibleSection>
 
         ) : null}
 
 
 
-        <View className="mb-4">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-sm font-semibold text-lantern-text">Recent tests</Text>
+        <CollapsibleSection
+          id="recentTests"
+          title="Recent tests"
+          collapsedSummary={recentPageItems.length ? `${recentPageItems.length} shown` : undefined}
+          headerRight={
             <View className="flex-row gap-1">
               {([
                 { key: 'newest', label: 'New' },
@@ -966,6 +977,9 @@ export function DashboardScreen({ navigation }: Props) {
                 <Pressable
                   key={opt.key}
                   onPress={() => setRecentSort(opt.key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: recentSort === opt.key }}
+                  accessibilityLabel={`Sort recent tests: ${opt.label}`}
                   className={`px-2 py-1 rounded-full ${
                     recentSort === opt.key ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
                   }`}
@@ -980,7 +994,8 @@ export function DashboardScreen({ navigation }: Props) {
                 </Pressable>
               ))}
             </View>
-          </View>
+          }
+        >
 
           {recentLoading ? (
             <Text className="text-sm text-lantern-text-tertiary py-3">Loading tests…</Text>
@@ -1058,7 +1073,7 @@ export function DashboardScreen({ navigation }: Props) {
               </Pressable>
             </View>
           ) : null}
-        </View>
+        </CollapsibleSection>
 
         <GroupPerformanceChartCard groups={groups} testResults={leanTestResults} />
 
@@ -1155,6 +1170,17 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
+        <CollapsibleSection
+          id="dailyQuiz"
+          title="Daily quiz"
+          collapsedSummary={
+            todayQuiz?.completed
+              ? 'Done today'
+              : todayQuiz
+                ? `${Object.keys(todayQuiz.answers || {}).length}/${todayQuiz.questions.length} answered`
+                : undefined
+          }
+        >
         <DailyQuizWidget
           studyGoal={studyGoal}
           dailyQuiz={todayQuiz}
@@ -1166,8 +1192,7 @@ export function DashboardScreen({ navigation }: Props) {
           onAnswer={answerDailyQuestion}
           onComplete={completeDailyQuiz}
         />
-
-
+        </CollapsibleSection>
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">Quick actions</Text>
 

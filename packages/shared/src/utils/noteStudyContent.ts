@@ -4,6 +4,8 @@ export type NoteStudyContentInput = {
   sourceType?: string;
   body?: string;
   summary?: string;
+  /** Archived notes are excluded from quiz sourcing — see isQuizzableNote. */
+  isArchived?: boolean;
   attachments?: Array<{
     extractedText?: string | null;
     metadata?: Record<string, unknown> | null;
@@ -250,4 +252,25 @@ export function isThinOrUnusableStudyContent(note: NoteStudyContentInput): boole
     return true;
   }
   return false;
+}
+
+/**
+ * Whether a note may be offered as a source for the daily quiz.
+ *
+ * Archiving a note is how a student says "I am done with this" — it is the
+ * closest thing the app has to deleting it without losing it. Quizzing someone
+ * on last semester's archived material is the opposite of what they asked for,
+ * so archived notes are excluded here rather than at each call site.
+ *
+ * Shared because web and mobile were each deciding this independently and had
+ * already drifted: web measured `getNoteStudyContent`, mobile measured
+ * `body.length || summary.length`, so a PDF whose text lives in an attachment
+ * counted on one client and not the other. One predicate, one answer.
+ *
+ * This governs the daily-quiz PICKER only. Generating questions from a note you
+ * deliberately opened stays available whatever its archive state.
+ */
+export function isQuizzableNote(note: NoteStudyContentInput): boolean {
+  if (note.isArchived) return false;
+  return getNoteStudyContent(note).trim().length >= MIN_NOTE_STUDY_CONTENT_CHARS;
 }

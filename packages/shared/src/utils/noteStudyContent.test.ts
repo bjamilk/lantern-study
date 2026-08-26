@@ -10,6 +10,7 @@ import {
   isThinOrUnusableStudyContent,
   MIN_NOTE_STUDY_CONTENT_CHARS,
   PDF_SCAN_MAX_CHARS_PER_PAGE,
+  isQuizzableNote,
 } from './noteStudyContent';
 import { upsertSmartNotesSection } from './smartNotes';
 
@@ -305,5 +306,34 @@ describe('photo note OCR', () => {
     it('is ready only when every photo has been read', () => {
       expect(aggregatePhotoOcrStatus([photo(), photo()])).toBe('ok');
     });
+  });
+});
+
+describe('isQuizzableNote', () => {
+  const long = 'a'.repeat(60);
+
+  it('excludes archived notes however much material they hold', () => {
+    // Archiving is how a student says "I am done with this". Quizzing them on
+    // last semester's material is the opposite of what they asked for.
+    expect(isQuizzableNote({ body: long, isArchived: true })).toBe(false);
+    expect(isQuizzableNote({ body: long, isArchived: false })).toBe(true);
+    expect(isQuizzableNote({ body: long })).toBe(true);
+  });
+
+  it('still requires enough study material', () => {
+    expect(isQuizzableNote({ body: 'too short' })).toBe(false);
+    expect(isQuizzableNote({})).toBe(false);
+  });
+
+  it('counts attachment text, which the old mobile body-length check missed', () => {
+    // A PDF note keeps its text in the attachment, not the body: mobile offered
+    // no such note and web offered all of them. One predicate, one answer.
+    const pdfNote = {
+      sourceType: 'pdf',
+      body: '',
+      attachments: [{ extractedText: long }],
+    };
+    expect(isQuizzableNote(pdfNote)).toBe(true);
+    expect(isQuizzableNote({ ...pdfNote, isArchived: true })).toBe(false);
   });
 });

@@ -11,7 +11,7 @@ import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
 import { useFeatureTipStore } from './stores/featureTipStore';
 import { setSessionExpiredHandler } from './services/sessionHandler';
 import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle } from './services/supabase';
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, isQuizzableNote } from '@lantern/shared';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
@@ -1231,7 +1231,7 @@ export const App: React.FC = () => {
                     })()}
                     dailyQuizProgress={dailyQuizProgress}
                     dailyQuizNoteOptions={notes
-                        .filter((n) => getNoteStudyContent(n).trim().length >= 50)
+                        .filter(isQuizzableNote)
                         .map((n) => ({
                             id: n.id,
                             title: n.title?.trim() || 'Untitled note',
@@ -1239,8 +1239,16 @@ export const App: React.FC = () => {
                     startingDailyQuiz={startingDailyQuiz}
                     onStartDailyQuiz={async (noteId) => {
                         const source = notes.find((n) => n.id === noteId);
-                        if (!source || getNoteStudyContent(source).trim().length < 50) {
-                            showToast('Add or import a note with at least 50 characters to generate a daily quiz.', 'info');
+                        // Re-check on start, not just when the list was built: a note
+                        // can be archived (or emptied) in another tab between render
+                        // and click, and the picker would still be holding its id.
+                        if (!source || !isQuizzableNote(source)) {
+                            showToast(
+                                source?.isArchived
+                                    ? 'That note is archived. Unarchive it to quiz from it.'
+                                    : 'Add or import a note with at least 50 characters to generate a daily quiz.',
+                                'info'
+                            );
                             return;
                         }
                         setStartingDailyQuiz(true);
