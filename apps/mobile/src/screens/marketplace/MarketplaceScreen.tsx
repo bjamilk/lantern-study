@@ -42,6 +42,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
+import { DiscoverWorkspaceBar } from '../discover/DiscoverWorkspaceBar';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 import { listingTypeLabel, suggestMarketplaceSearch } from '@lantern/shared/marketplace';
 
@@ -476,11 +477,40 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <View className="px-4 pt-2 pb-2 gap-2">
-        <View className="flex-row items-center justify-between">
-          <View className="flex-1 min-w-0 pr-2">
-            <Text className="text-xl font-bold text-lantern-text">Explore</Text>
-            <Text className="text-xs text-lantern-text-secondary">Buy and sell across Nigeria</Text>
+      <View className="pt-1 pb-2 gap-2">
+        <DiscoverWorkspaceBar
+          active="marketplace"
+          onSelect={(section) => {
+            if (section === 'marketplace') return;
+            navigation.navigate('Discover', { section });
+          }}
+        />
+
+        <View className="px-4 flex-row items-center gap-1.5">
+          <View className="flex-1 flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern px-3 py-1.5">
+            <Ionicons name="search" size={18} color="#94a3b8" />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+              placeholder="Search listings…"
+              placeholderTextColor="#94a3b8"
+              accessibilityLabel="Search listings"
+              className="flex-1 ml-2 text-sm text-lantern-text"
+            />
+            <Pressable
+              onPress={() => setShowFilters(v => !v)}
+              className="p-2 min-w-[44px] min-h-[44px] items-center justify-center"
+              accessibilityRole="button"
+              accessibilityLabel="Marketplace filters"
+            >
+              <Ionicons
+                name="options-outline"
+                size={18}
+                color={activeFilterCount > 0 ? '#6366f1' : '#64748b'}
+              />
+            </Pressable>
           </View>
           <Pressable
             onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
@@ -492,43 +522,17 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           >
             <Ionicons name="heart" size={18} color={showFavoritesOnly ? '#dc2626' : '#64748b'} />
           </Pressable>
-        </View>
-
-        <MarketplaceWorkspaceBar
-          active="browse"
-          onNavigate={screen => navigation.navigate(screen)}
-          onSell={() => navigation.navigate('CreateListing')}
-          showFavorites
-          primaryLabel="Sell"
-        />
-
-        <View className="flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern px-3 py-1.5">
-          <Ionicons name="search" size={18} color="#94a3b8" />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
-            placeholder="Search listings…"
-            placeholderTextColor="#94a3b8"
-            accessibilityLabel="Search listings"
-            className="flex-1 ml-2 text-sm text-lantern-text"
+          <MarketplaceWorkspaceBar
+            variant="toolbar"
+            active="browse"
+            onNavigate={screen => navigation.navigate(screen)}
+            onSell={() => navigation.navigate('CreateListing')}
+            showFavorites
+            primaryLabel="Sell"
           />
-          <Pressable
-            onPress={() => setShowFilters(v => !v)}
-            className="p-2 min-w-[44px] min-h-[44px] items-center justify-center"
-            accessibilityRole="button"
-            accessibilityLabel="Marketplace filters"
-          >
-            <Ionicons
-              name="options-outline"
-              size={18}
-              color={activeFilterCount > 0 ? '#6366f1' : '#64748b'}
-            />
-          </Pressable>
         </View>
         {searchSuggestions.length > 0 && searchFocused ? (
-          <View className="rounded-xl border border-lantern-border bg-lantern-surface overflow-hidden">
+          <View className="mx-4 rounded-xl border border-lantern-border bg-lantern-surface overflow-hidden">
             {searchSuggestions.map(suggestion => (
               <Pressable
                 key={suggestion.id}

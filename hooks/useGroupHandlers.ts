@@ -898,7 +898,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, updateGroups, handleSelectChat, updateMessages, handleCloseCreateGroupModal]);
 
-    const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; courseId?: string | null }) => {
+    const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null }) => {
         if (!currentUser) return;
 
         try {
@@ -910,6 +910,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 invite_id: uuidv4().substring(0, 8),
                 parent_id: undefined,
                 ...(details.courseId !== undefined ? { courseId: details.courseId } : {}),
+                ...(details.visibility ? { visibility: details.visibility } : {}),
+                ...(details.communityId !== undefined ? { communityId: details.communityId } : {}),
             };
             const newGroup = await createGroup(groupData, currentUser.id, details.memberIds);
 
@@ -957,6 +959,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         parentId: g.parent_id || g.parentId,
                         isArchived: g.is_archived ?? g.isArchived ?? false,
                         inviteId: g.invite_id || g.inviteId,
+                        courseId: g.courseId ?? g.course_id ?? null,
+                        visibility: g.visibility || 'private',
+                        communityId: g.communityId ?? g.community_id ?? null,
                         unreadCount: existing?.unreadCount || 0,
                         pendingMembers: existing?.pendingMembers || [],
                         invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
@@ -979,6 +984,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 parentId: newGroup.parent_id || newGroup.parentId,
                 isArchived: newGroup.is_archived || newGroup.isArchived || false,
                 inviteId: newGroup.invite_id || newGroup.inviteId,
+                courseId: newGroup.courseId ?? newGroup.course_id ?? details.courseId ?? null,
+                visibility: newGroup.visibility || details.visibility || 'private',
+                communityId: newGroup.communityId ?? newGroup.community_id ?? details.communityId ?? null,
                 unreadCount: 0,
                 pendingMembers: [],
                 invitedPhoneNumbers: [],
@@ -1565,17 +1573,47 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         openModal('createGroup');
     }, [setSubgroupParentId, openModal]);
 
-    const handleUpdateGroupDetails = useCallback((groupId: string, name: string, description: string) => {
-        updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, name, description } : g));
-        if (selectedChat?.id === groupId) {
-            setSelectedChat(prev => {
-                if (prev?.chatType === 'group') {
-                    return { ...prev, name, description };
-                }
-                return prev;
+    const handleUpdateGroupDetails = useCallback(async (
+        groupId: string,
+        name: string,
+        description: string,
+        discovery?: { visibility?: 'private' | 'community' | 'public'; communityId?: string | null }
+    ) => {
+        try {
+            await updateGroup(groupId, {
+                name,
+                description,
+                ...(discovery?.visibility ? { visibility: discovery.visibility } : {}),
+                ...(discovery && 'communityId' in discovery ? { communityId: discovery.communityId ?? null } : {}),
             });
+            updateGroups(prev => prev.map(g => g.id === groupId ? {
+                ...g,
+                name,
+                description,
+                ...(discovery?.visibility ? { visibility: discovery.visibility } : {}),
+                ...(discovery && 'communityId' in discovery ? { communityId: discovery.communityId ?? null } : {}),
+            } : g));
+            if (selectedChat?.id === groupId) {
+                setSelectedChat(prev => {
+                    if (prev?.chatType === 'group') {
+                        return {
+                            ...prev,
+                            name,
+                            description,
+                            ...(discovery?.visibility ? { visibility: discovery.visibility } : {}),
+                            ...(discovery && 'communityId' in discovery ? { communityId: discovery.communityId ?? null } : {}),
+                        };
+                    }
+                    return prev;
+                });
+            }
+            useToastStore.getState().showToast('Group details updated.', 'success');
+        } catch (error) {
+            useToastStore.getState().showToast(
+                error instanceof Error ? error.message : 'Could not update group details.',
+                'error'
+            );
         }
-        alert("Group details updated successfully.");
     }, [selectedChat, updateGroups, setSelectedChat]);
 
     const handleUpdateGroupAvatar = useCallback(async (groupId: string, avatarDataUrl: string) => {
@@ -1680,6 +1718,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             parentId: g.parent_id || g.parentId,
             isArchived: g.is_archived ?? g.isArchived ?? false,
             inviteId: g.invite_id || g.inviteId,
+            courseId: g.courseId ?? g.course_id ?? null,
+            visibility: g.visibility || 'private',
+            communityId: g.communityId ?? g.community_id ?? null,
             unreadCount: 0,
             pendingMembers: [],
             invitedPhoneNumbers: [],

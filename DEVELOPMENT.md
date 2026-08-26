@@ -110,6 +110,10 @@ local dev values to production:
 ```bash
 npx wrangler login                    # opens a browser; token stays in your keychain
 npm run build:web
+# Must run from the repo root. Wrangler compiles ./functions (the same-origin
+# /api proxy) relative to cwd, not apps/web/dist. Deploying from apps/web
+# ships static assets only; POST /api/v1/auth/refresh then 405s and sign-in
+# fails with HTML-as-JSON on profile fetch.
 npx wrangler pages deploy apps/web/dist --project-name lantern-study --branch main
 ```
 
@@ -118,6 +122,10 @@ every release:
 
 ```bash
 curl -s https://lanternstudy.com/sw.js | grep -oE 'lantern-[a-z0-9]+-[a-z0-9]+' | head -1
+# Same-origin API proxy: 401 JSON, never 405 / HTML
+curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' \
+  -X POST https://lanternstudy.com/api/v1/auth/refresh \
+  -H 'Content-Type: application/json' -d '{}'
 ```
 
 **API → Render** (`lantern-study-api`, Docker, built from `main`) — canonical

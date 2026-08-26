@@ -676,7 +676,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       <div
         role="radiogroup"
         aria-label="Marketplace category"
-        className={`gap-1.5 md:gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x min-w-0 max-w-full ${showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4' : 'hidden'} md:flex md:items-stretch`}
+        className={`gap-1.5 md:gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x min-w-0 max-w-full ${
+          showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4 md:flex md:items-stretch' : 'hidden'
+        }`}
       >
         <button
           type="button"
@@ -928,81 +930,25 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-lantern-background">
-      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2 space-y-2">
+      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-1 space-y-2">
         <MarketplaceComplianceBanner />
-
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold text-lantern-text truncate">Explore</h1>
-            <p className="text-[11px] sm:text-xs text-lantern-text-secondary truncate">
-              Buy, sell, and find work across Nigeria
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Jobs is a full sibling surface, not a marketplace sub-feature —
-                give it equal billing so job seekers can actually find it. */}
-            <div
-              role="group"
-              aria-label="Explore section"
-              className="inline-flex rounded-lg border border-lantern-border bg-lantern-surface p-0.5"
-            >
-              <span
-                aria-current="page"
-                className="inline-flex items-center gap-1 rounded-md bg-lantern-primary px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-white shadow-sm"
-              >
-                <ShoppingBagIcon className="w-3.5 h-3.5" aria-hidden />
-                Goods
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigate('MarketplaceJobs')}
-                className="inline-flex items-center gap-1 rounded-md px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text transition-colors"
-              >
-                <BriefcaseIcon className="w-3.5 h-3.5" aria-hidden />
-                Jobs
-              </button>
-            </div>
-            {topCategories.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowPulse(v => !v)}
-                aria-expanded={showPulse}
-                className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-[11px] sm:text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 transition-colors"
-              >
-                Pulse
-                <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showPulse ? 'rotate-180' : ''}`} />
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <h1 className="sr-only">Marketplace</h1>
 
         {/*
-          Phase 3 L / decision D12: the marketplace is a TAB INSIDE Discover,
-          not a sibling of it. Rendering Discover's bar above the marketplace's
-          own workspace bar is what makes that nesting visible — without it the
-          marketplace reads as a dead end and users have no way back to the
-          network tabs except the sidebar.
+          Phase 3 L / decision D12: the marketplace is a TAB INSIDE Discover.
+          One underline row is the only section chrome — Goods/Jobs sit next
+          to search, and Orders/Cart/Selling live in More.
         */}
-        {onNavigateToDiscover && (
+        {onNavigateToDiscover ? (
           <DiscoverWorkspaceBar
             active="marketplace"
             onSelect={(sectionId) => {
               if (sectionId !== 'marketplace') onNavigateToDiscover(sectionId);
             }}
           />
-        )}
+        ) : null}
 
-        <MarketplaceWorkspaceBar
-          active="browse"
-          onNavigate={onNavigate}
-          onSell={guestMode ? undefined : handleCreateListing}
-          guestMode={guestMode}
-          onSignInRequired={onSignInRequired}
-          primaryLabel="Sell"
-          showFavorites={!guestMode}
-        />
-
-        <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full">
+        <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full items-center">
           <MarketplaceSearchSuggest
             appliedQuery={searchTerm}
             remountKey={searchInputKey}
@@ -1033,35 +979,63 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               <span className="hidden sm:inline">{campusIdFilter === userCampusId ? 'Your campus' : 'Shop campus'}</span>
             </button>
           ) : null}
+          <div
+            role="group"
+            aria-label="Goods or jobs"
+            className="hidden sm:inline-flex shrink-0 rounded-lg border border-lantern-border bg-lantern-surface p-0.5"
+          >
+            <span
+              aria-current="page"
+              className="inline-flex items-center gap-1 rounded-md bg-lantern-primary px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-white"
+            >
+              Goods
+            </span>
+            <button
+              type="button"
+              onClick={() => onNavigate('MarketplaceJobs')}
+              className="inline-flex items-center gap-1 rounded-md px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text transition-colors"
+            >
+              Jobs
+            </button>
+          </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
             aria-label="Toggle filters"
             aria-expanded={showFilters}
-            className={`shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center gap-1 font-medium text-xs border transition-colors duration-150 ${
+            className={`shrink-0 h-9 w-9 min-w-[36px] rounded-lantern flex items-center justify-center border transition-colors duration-150 ${
               showFilters || activeFilterCount > 0
                 ? 'bg-lantern-primary text-white border-lantern-primary'
                 : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
             }`}
           >
             <FunnelIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Filters</span>
-            {activeFilterCount > 0 && (
-              <span className="ml-1 w-4 h-4 bg-lantern-surface text-lantern-primary text-[10px] items-center justify-center rounded-full hidden sm:flex">
-                {activeFilterCount}
-              </span>
-            )}
+            {activeFilterCount > 0 ? (
+              <span className="sr-only">{activeFilterCount} filters active</span>
+            ) : null}
           </button>
           {!guestMode ? (
             <button
               onClick={handleSaveCurrentSearch}
               disabled={savingSearch}
               aria-label="Save current search"
-              className="shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 disabled:opacity-50 transition-colors"
+              className="shrink-0 h-9 w-9 min-w-[36px] rounded-lantern flex items-center justify-center border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 disabled:opacity-50 transition-colors"
               title="Save current search"
             >
               <BookmarkIcon className="w-4 h-4" />
             </button>
           ) : null}
+          <MarketplaceWorkspaceBar
+            variant="toolbar"
+            active="browse"
+            onNavigate={onNavigate}
+            onSell={guestMode ? undefined : handleCreateListing}
+            guestMode={guestMode}
+            onSignInRequired={onSignInRequired}
+            primaryLabel="Sell"
+            showFavorites={!guestMode}
+            onPulse={topCategories.length > 0 ? () => setShowPulse(v => !v) : undefined}
+            pulseActive={showPulse}
+          />
         </div>
 
         {!searchTerm.trim() && recentSearches.length > 0 ? (
@@ -1155,7 +1129,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   value="academic"
                   index={0}
                   icon={<AcademicCapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
+                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Academic
                 </Tab>
@@ -1163,7 +1137,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   value="student-life"
                   index={1}
                   icon={<BriefcaseIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
+                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Student Life
                 </Tab>
@@ -1171,7 +1145,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   value="shops"
                   index={2}
                   icon={<BuildingStorefrontIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
+                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Shops
                 </Tab>
@@ -1191,7 +1165,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 type="button"
                 onClick={() => setShowCategoryPanel(v => !v)}
                 aria-expanded={showCategoryPanel}
-                className="md:hidden shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
+                aria-label="Marketplace category"
+                className="shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] sm:text-xs font-medium text-lantern-text-secondary"
               >
                 <span className="truncate">{activeCategoryLabel}</span>
                 <ChevronDownIcon className={`w-3.5 h-3.5 shrink-0 transition-transform ${showCategoryPanel ? 'rotate-180' : ''}`} />

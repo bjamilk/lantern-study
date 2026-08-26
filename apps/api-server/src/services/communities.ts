@@ -21,6 +21,10 @@ import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import { cacheService } from './cache';
 import { normalizeUserSettings } from '@lantern/shared/settings';
+import {
+  communityPageGroupVisibilities,
+  resolveGroupDiscovery,
+} from '@lantern/shared/network';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -178,7 +182,10 @@ export class CommunitiesService {
     return (global || []) as unknown as CommunityRow[];
   }
 
-  async getBySlug(viewerId: string, slug: string): Promise<CommunityRow & { isMember: boolean }> {
+  async getBySlug(
+    viewerId: string,
+    slug: string
+  ): Promise<CommunityRow & { isMember: boolean; source: 'auto' | 'joined' | null }> {
     if (!slug || typeof slug !== 'string') throw new PublicError('Invalid community');
     const { data, error } = await this.db
       .from('communities')
@@ -191,18 +198,23 @@ export class CommunitiesService {
     const community = data as unknown as CommunityRow;
     const { data: membership } = await this.db
       .from('community_members')
-      .select('user_id')
+      .select('user_id, source')
       .eq('community_id', community.id)
       .eq('user_id', viewerId)
       .is('opted_out_at', null)
       .maybeSingle();
 
     const isMember = !!membership;
+    const source =
+      membership && ((membership as { source?: string }).source === 'auto' ||
+        (membership as { source?: string }).source === 'joined')
+        ? ((membership as { source: 'auto' | 'joined' }).source)
+        : null;
     if (community.visibility === 'private' && !isMember) {
       // Do not confirm a private community exists to a non-member.
       throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
     }
-    return { ...community, isMember };
+    return { ...community, isMember, source };
   }
 
   /**
@@ -443,7 +455,8 @@ export class CommunitiesService {
       .limit(limit);
 
     if (opts.communityId && UUID_RE.test(opts.communityId)) {
-      query = query.eq('community_id', opts.communityId).in('visibility', ['community', 'public']);
+      const vis = communityPageGroupVisibilities(myCommunityIds.includes(opts.communityId));
+      query = query.eq('community_id', opts.communityId).in('visibility', vis);
     } else if (myCommunityIds.length > 0) {
       query = query.or(
         `visibility.eq.public,and(visibility.eq.community,community_id.in.(${myCommunityIds.join(
@@ -495,7 +508,7 @@ export class CommunitiesService {
    */
   async discoverPeople(
     viewerId: string,
-    opts: { institutionId?: string; courseId?: string; limit?: number } = {}
+    opts: { q?: string; institutionId?: string; courseId?: string; limit?: number } = {}
   ): Promise<
     Array<{
       id: string;
@@ -557,7 +570,78 @@ export class CommunitiesService {
       .filter(Boolean) as Array<any>;
 
     mapped.sort((a, b) => Number(b._sameCampus) - Number(a._sameCampus));
-    return mapped.slice(0, limit).map(({ _sameCampus, ...rest }) => rest);
+    const needle = opts.q?.trim().toLowerCase();
+    const filtered = needle
+      ? mapped.filter((row) => String(row.name || '').toLowerCase().includes(needle))
+      : mapped;
+    return filtered.slice(0, limit).map(({ _sameCampus, ...rest }) => rest);
+  }
+
+  /**
+   * Join a group that Discover already showed this viewer. Private groups stay
+   * invite-link only — this must not become a back door into them.
+   */
+  async joinDiscoverableGroup(
+    userId: string,
+    groupId: string
+  ): Promise<{ joined: true }> {
+    this.assertUuid(groupId, 'group id');
+    const { data: group, error } = await this.db
+      .from('groups')
+      .select('id, name, visibility, community_id, is_archived')
+      .eq('id', groupId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!group || (group as { is_archived?: boolean }).is_archived) {
+      throw Object.assign(new PublicError('Group not found'), { statusCode: 404 });
+    }
+
+    const discovery = resolveGroupDiscovery({
+      visibility: (group as { visibility?: 'private' | 'community' | 'public' }).visibility,
+      communityId: (group as { community_id?: string | null }).community_id,
+    });
+    if (discovery.visibility === 'private') {
+      throw Object.assign(new PublicError('This group is invite only'), { statusCode: 403 });
+    }
+    if (discovery.visibility === 'community') {
+      const mine = await this.listMine(userId);
+      if (!mine.some((c) => c.id === discovery.communityId)) {
+        throw Object.assign(new PublicError('Join this community first'), { statusCode: 403 });
+      }
+    }
+
+    const { error: upsertError } = await this.db.from('group_members').upsert(
+      { group_id: groupId, user_id: userId, pending: false },
+      { onConflict: 'group_id,user_id' }
+    );
+    if (upsertError) throw upsertError;
+
+    await cacheService.deletePattern(`groups:discover:*`);
+    await cacheService.deletePattern(`groups:user:*`);
+    await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern(`group:${groupId}:*`);
+    await cacheService.deletePattern(`user:groups:${userId}:*`);
+
+    try {
+      const { getActivityFeedService } = await import('./activityFeed');
+      await getActivityFeedService(this.supabaseService).record({
+        actorId: userId,
+        verb: 'joined_group',
+        objectType: 'group',
+        objectId: groupId,
+        audienceType: 'group',
+        audienceId: groupId,
+        payload: { groupName: (group as { name?: string }).name ?? null },
+      });
+    } catch (err) {
+      logger.warn('discover group join feed write skipped', {
+        userId,
+        groupId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return { joined: true };
   }
 }
 

@@ -42,6 +42,8 @@ export interface MyCommunity extends Community {
 
 export interface CommunityDetail extends Community {
   isMember: boolean;
+  /** Present when the viewer is a member — drives Hide vs Leave. */
+  source?: MyCommunity['source'] | null;
 }
 
 export interface DiscoverGroup {
@@ -85,6 +87,69 @@ export function communityKindLabel(kind: CommunityKind | string): string {
 export function memberCountLabel(count: number): string {
   const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
   return `${n.toLocaleString()} ${n === 1 ? 'member' : 'members'}`;
+}
+
+/**
+ * One-line explainer under each Discover tab. Kept here so web and mobile
+ * cannot describe the same hub two different ways.
+ */
+export const DISCOVER_SECTION_INTRO: Record<'communities' | 'groups' | 'people', string> = {
+  communities:
+    'Campus and course rooms made from your university, programme and courses. Join one to find study groups inside it.',
+  groups:
+    'Study chats you can find and join. They stay private until an owner lists them here.',
+  people:
+    'Students who published a study pack or question bank — tap a card to open their shop.',
+};
+
+/**
+ * Auto-derived campus rooms come back on the next profile save, so the honest
+ * action is Hide, not Leave. Joined rooms can actually be left.
+ */
+export function communityMembershipAction(
+  isMember: boolean,
+  source?: MyCommunity['source'] | null
+): 'Join' | 'Leave' | 'Hide' {
+  if (!isMember) return 'Join';
+  return source === 'auto' ? 'Hide' : 'Leave';
+}
+
+/**
+ * Groups listed on a community page. Community-scoped rooms stay hidden
+ * until the viewer has joined that community — otherwise the public slug
+ * would leak private study chats.
+ */
+export function communityPageGroupVisibilities(
+  viewerIsMember: boolean
+): Array<'public' | 'community'> {
+  return viewerIsMember ? ['public', 'community'] : ['public'];
+}
+
+const DISCOVERY_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Groups are private by default. Listing one on Discover is an explicit act.
+ * A 'community' listing without a community id would silently leak a private
+ * room, so it collapses back to private.
+ */
+export function resolveGroupDiscovery(input: {
+  visibility?: 'private' | 'community' | 'public' | null;
+  communityId?: string | null;
+}): { visibility: 'private' | 'community' | 'public'; communityId: string | null } {
+  const visibility =
+    input.visibility === 'community' || input.visibility === 'public'
+      ? input.visibility
+      : 'private';
+  const communityId =
+    typeof input.communityId === 'string' && DISCOVERY_UUID_RE.test(input.communityId)
+      ? input.communityId
+      : null;
+  if (visibility === 'private') return { visibility: 'private', communityId: null };
+  if (visibility === 'community' && !communityId) {
+    return { visibility: 'private', communityId: null };
+  }
+  return { visibility, communityId };
 }
 
 // ---------------------------------------------------------------------------

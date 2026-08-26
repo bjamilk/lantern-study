@@ -170,6 +170,24 @@ discoverRouter.get(
   })
 );
 
+discoverRouter.post(
+  '/groups/:groupId/join',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getCommunitiesService(supabaseService).joinDiscoverableGroup(
+        userId,
+        req.params.groupId
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
 discoverRouter.get(
   '/people',
   authMiddleware,
@@ -177,6 +195,7 @@ discoverRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const data = await getCommunitiesService(supabaseService).discoverPeople(userId, {
+      q: str(req.query.q),
       institutionId: str(req.query.institutionId),
       courseId: str(req.query.courseId),
       limit: req.query.limit ? Number(req.query.limit) : undefined,

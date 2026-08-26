@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CheckBadgeIcon } from '@heroicons/react/24/outline';
 import {
   communityKindLabel,
+  communityMembershipAction,
   memberCountLabel,
   type CommunityDetail,
   type DiscoverGroup,
@@ -11,6 +12,7 @@ import {
   fetchCommunity,
   fetchCommunityMembers,
   joinCommunity,
+  joinDiscoverableGroup,
   leaveCommunity,
 } from '../services/supabase';
 
@@ -42,6 +44,7 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
   const [groups, setGroups] = useState<DiscoverGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -87,6 +90,29 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
       setError(err instanceof Error ? err.message : 'Could not update membership');
     } finally {
       setPending(false);
+    }
+  };
+
+  const openOrJoinGroup = async (group: DiscoverGroup) => {
+    if (group.isMember) {
+      onNavigate?.('GroupChat', { groupId: group.id, groupName: group.name });
+      return;
+    }
+    setPendingGroupId(group.id);
+    try {
+      await joinDiscoverableGroup(group.id);
+      setGroups((prev) =>
+        prev.map((item) =>
+          item.id === group.id
+            ? { ...item, isMember: true, memberCount: item.memberCount + 1 }
+            : item
+        )
+      );
+      onNavigate?.('GroupChat', { groupId: group.id, groupName: group.name, joined: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join this group');
+    } finally {
+      setPendingGroupId(null);
     }
   };
 
@@ -144,7 +170,9 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
                   : 'bg-lantern-primary text-white'
               } disabled:opacity-60`}
             >
-              {pending ? 'Working…' : community.isMember ? 'Leave' : 'Join'}
+              {pending
+                ? 'Working…'
+                : communityMembershipAction(community.isMember, community.source)}
             </button>
           </header>
 
@@ -171,19 +199,25 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
               Groups
             </h2>
             {groups.length === 0 ? (
-              <p className="text-xs text-lantern-text-secondary">No groups in this community yet.</p>
+              <p className="text-xs text-lantern-text-secondary">
+                {community.isMember
+                  ? 'No groups in this community yet. Create a study group and list it here from Group info → Discover.'
+                  : 'No public groups here yet. Join the community to see rooms listed just for members.'}
+              </p>
             ) : (
               <ul className="grid gap-3 sm:grid-cols-2">
                 {groups.map((g) => (
                   <li key={g.id}>
                     <button
                       type="button"
-                      onClick={() => onNavigate?.('GroupChat', { groupId: g.id })}
+                      onClick={() => void openOrJoinGroup(g)}
                       className="w-full rounded-xl border border-lantern-border bg-lantern-background p-3 text-left hover:border-lantern-primary/40"
                     >
                       <p className="text-sm font-semibold text-lantern-text">{g.name}</p>
                       <p className="text-xs text-lantern-text-secondary">
                         {memberCountLabel(g.memberCount)}
+                        {g.isMember ? ' · Member · Open' : ' · Join'}
+                        {pendingGroupId === g.id ? '…' : ''}
                       </p>
                     </button>
                   </li>

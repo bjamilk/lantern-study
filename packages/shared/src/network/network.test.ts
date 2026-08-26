@@ -4,12 +4,15 @@
  * calls, not just the string formatting.
  */
 import {
+  communityMembershipAction,
+  communityPageGroupVisibilities,
   describeFeedItem,
   examCountdownLabel,
   learningConnectionLabel,
   masteryBand,
   memberCountLabel,
   presenceLabel,
+  resolveGroupDiscovery,
   shouldShowTrustChip,
   trustLabel,
   type FeedItem,
@@ -109,6 +112,59 @@ describe('masteryBand', () => {
     expect(masteryBand(null)).toBe('unknown');
     expect(masteryBand(undefined)).toBe('unknown');
     expect(masteryBand(Number.NaN)).toBe('unknown');
+  });
+});
+
+describe('communityMembershipAction', () => {
+  it('joins when the viewer is not a member', () => {
+    expect(communityMembershipAction(false, 'auto')).toBe('Join');
+    expect(communityMembershipAction(false, 'joined')).toBe('Join');
+  });
+
+  it('hides an AUTO room instead of pretending Leave will stick', () => {
+    expect(communityMembershipAction(true, 'auto')).toBe('Hide');
+  });
+
+  it('leaves an explicitly joined room', () => {
+    expect(communityMembershipAction(true, 'joined')).toBe('Leave');
+  });
+});
+
+describe('communityPageGroupVisibilities', () => {
+  it('hides community-scoped groups from non-members', () => {
+    expect(communityPageGroupVisibilities(false)).toEqual(['public']);
+  });
+
+  it('shows public and community-scoped groups to members', () => {
+    expect(communityPageGroupVisibilities(true)).toEqual(['public', 'community']);
+  });
+});
+
+describe('resolveGroupDiscovery', () => {
+  it('defaults to private', () => {
+    expect(resolveGroupDiscovery({})).toEqual({ visibility: 'private', communityId: null });
+  });
+
+  it('keeps a public listing', () => {
+    expect(resolveGroupDiscovery({ visibility: 'public' })).toEqual({
+      visibility: 'public',
+      communityId: null,
+    });
+  });
+
+  it('refuses community visibility without a community id', () => {
+    expect(resolveGroupDiscovery({ visibility: 'community' })).toEqual({
+      visibility: 'private',
+      communityId: null,
+    });
+  });
+
+  it('keeps community visibility when a real id is present', () => {
+    const communityId = '33333333-3333-4333-8333-333333333333';
+    expect(resolveGroupDiscovery({ visibility: 'community', communityId })).toEqual({
+      visibility: 'community',
+      communityId,
+    });
   });
 });
 
