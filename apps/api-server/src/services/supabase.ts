@@ -10002,7 +10002,7 @@ export class SupabaseService {
   ): Promise<any[]> {
     const client = this.getClient();
     const similarSelect =
-      "id, title, price, images, category, location, campus_id, course_id, category_specific_fields, created_at, status";
+      "id, title, price, images, category, location, campus_id, category_specific_fields, created_at, status";
 
     let sameCategory: any[] = [];
     if (listing.category) {
@@ -10019,20 +10019,36 @@ export class SupabaseService {
     }
 
     let sameCourse: any[] = [];
-    if (listing.course_id) {
-      const { data } = await client
+    const courseId = listing.course_id;
+    if (courseId) {
+      const { data, error } = await client
         .from("marketplace_listings")
         .select(similarSelect)
-        .eq("course_id", listing.course_id)
+        .eq("course_id", courseId)
         .eq("status", "active")
         .neq("id", listing.id)
         .order("created_at", { ascending: false })
         .limit(12);
-      sameCourse = data || [];
+      if (!error) {
+        sameCourse = data || [];
+      }
+    }
+
+    let sameCampus: any[] = [];
+    if (listing.campus_id) {
+      const { data } = await client
+        .from("marketplace_listings")
+        .select(similarSelect)
+        .eq("campus_id", listing.campus_id)
+        .eq("status", "active")
+        .neq("id", listing.id)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      sameCampus = data || [];
     }
 
     const byId = new Map<string, any>();
-    for (const row of [...sameCategory, ...sameCourse]) {
+    for (const row of [...sameCategory, ...sameCourse, ...sameCampus]) {
       if (row?.id) byId.set(row.id, row);
     }
     const ranked = rankRelatedListings(
