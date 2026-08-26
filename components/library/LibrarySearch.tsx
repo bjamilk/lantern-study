@@ -39,8 +39,8 @@ export interface LibrarySearchBoxProps {
   onChange: (value: string) => void;
   /** Escape / the clear button. */
   onClear: () => void;
-  /** "in BIO 201" style hint shown inside the box when a course filter is active. */
-  scopeLabel?: string | null;
+  /** What typing narrows right now, e.g. "notes in BIO 201" — the placeholder. */
+  filterLabel: string;
   className?: string;
   autoFocus?: boolean;
 }
@@ -49,7 +49,7 @@ export const LibrarySearchBox: React.FC<LibrarySearchBoxProps> = ({
   value,
   onChange,
   onClear,
-  scopeLabel,
+  filterLabel,
   className = '',
   autoFocus = false,
 }) => {
@@ -73,16 +73,17 @@ export const LibrarySearchBox: React.FC<LibrarySearchBoxProps> = ({
             inputRef.current?.blur();
           }
         }}
-        placeholder={scopeLabel ? `Search ${scopeLabel}…` : 'Search notes, decks, cards and bundles…'}
-        aria-label="Search your library"
+        // Names the list this narrows, not "your library": typing filters the
+        // open tab, and reaching the rest of the archive is the separate
+        // "Search everything" step in the scope row below.
+        placeholder={`Search ${filterLabel}…`}
+        aria-label={`Search ${filterLabel}`}
         enterKeyHint="search"
         className="min-w-0 flex-1 bg-transparent text-sm text-lantern-text outline-none placeholder:text-lantern-text-tertiary [&::-webkit-search-cancel-button]:hidden"
       />
-      {scopeLabel && !value ? (
-        <span className="hidden sm:inline shrink-0 rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[11px] font-medium text-lantern-primary">
-          {scopeLabel}
-        </span>
-      ) : null}
+      {/* No scope pill here: the placeholder already names the scope and the
+          scope row below the tabs owns naming and clearing the filter. A third
+          copy only ate the width the query is typed into. */}
       {value ? (
         <button
           type="button"

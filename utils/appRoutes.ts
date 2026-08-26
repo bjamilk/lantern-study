@@ -1,5 +1,21 @@
 import { AppMode } from '../types';
 
+export type LibraryTabParam = 'notes' | 'flashcards';
+
+/**
+ * The only two tabs `/library/:tab` accepts.
+ *
+ * Both the parser and the bare-`/library` rewrite validate through this. They
+ * have to agree: the rewrite reads the PERSISTED tab out of localStorage, which
+ * is user-writable and survives across versions, so a stale or hand-edited value
+ * would otherwise be pasted straight into a path the parser then refuses —
+ * `/library` redirects to `/library/<junk>`, the parser returns no tab, and
+ * hydration redirects to `/library/<junk>` again. An infinite loop, not a bad
+ * screen.
+ */
+export const isLibraryTabParam = (value: unknown): value is LibraryTabParam =>
+  value === 'notes' || value === 'flashcards';
+
 export interface AppRouteParams {
   groupId?: string;
   threadId?: string;
@@ -12,6 +28,11 @@ export interface AppRouteParams {
   shareToken?: string;
   jobId?: string;
   companyId?: string;
+  /** Campus page: `/campus/:slug/:programme`, and community `/discover/c/:slug`. */
+  slug?: string;
+  programme?: string;
+  /** Which Library tab `/library/:libraryTab` names. Absent on bare `/library`. */
+  libraryTab?: LibraryTabParam;
 }
 
 export interface ParsedAppRoute {
@@ -111,10 +132,22 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return params.companyId
         ? `/marketplace/companies/${encodeURIComponent(params.companyId)}`
         : '/marketplace/jobs';
+    // Notes and Flashcards each have two routes on purpose, and they are not
+    // duplicates: `/library/notes` is the Library with its Notes tab open (the
+    // screen renders embedded, inside the Library's course rail and scope row),
+    // while `/notes` is the same screen standalone and full-bleed — App.tsx
+    // feeds both from one `renderNotesScreen(embedded)`. `/library/:tab` is the
+    // canonical destination for navigation; `/notes` and `/flashcards` are kept
+    // for the deep links that already point at them (note editor "back",
+    // deck detail "back", existing bookmarks).
     case AppMode.NOTES:
       return '/notes';
     case AppMode.LIBRARY:
-      return '/library';
+      // The tab sub-paths are canonical: a Library tab is a place you can link
+      // to, bookmark and go Back to. Bare `/library` stays emittable so
+      // `isRoutableAppMode` (which calls this with no params) still says yes,
+      // and so older links keep working — hydration rewrites it to the tab.
+      return params.libraryTab ? `/library/${params.libraryTab}` : '/library';
     case AppMode.STUDY_HUB:
       return '/study';
     case AppMode.AI_TOOLS:
@@ -173,7 +206,18 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/marketplace/applications') return { mode: AppMode.MY_JOB_APPLICATIONS, params: {} };
   if (path === '/marketplace/employer') return { mode: AppMode.JOB_EMPLOYER, params: {} };
   if (path === '/notes') return { mode: AppMode.NOTES, params: {} };
-  if (path === '/library') return { mode: AppMode.LIBRARY, params: {} };
+  // `/library`, `/library/notes`, `/library/flashcards`. An unrecognised tab
+  // segment resolves to the Library with no tab rather than falling through to
+  // the dashboard redirect below — hydration then canonicalises the URL, which
+  // is the same path bare `/library` takes.
+  const libraryMatch = path.match(/^\/library(?:\/([^/]+))?$/);
+  if (libraryMatch) {
+    const tab = libraryMatch[1];
+    if (isLibraryTabParam(tab)) {
+      return { mode: AppMode.LIBRARY, params: { libraryTab: tab } };
+    }
+    return { mode: AppMode.LIBRARY, params: {} };
+  }
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
   if (path === '/ai-tools') return { mode: AppMode.AI_TOOLS, params: {} };
   if (path === '/budget') return { mode: AppMode.BUDGET_TRACKER, params: {} };

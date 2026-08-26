@@ -164,6 +164,32 @@ interface UIState {
   // Library tab (notes | flashcards)
   libraryTab: 'notes' | 'flashcards';
   setLibraryTab: (tab: 'notes' | 'flashcards') => void;
+
+  /**
+   * Small-screen Library course rail. Persisted like the sidebar: as local
+   * screen state it collapsed on every navigation, so a user browsing by course
+   * had to reopen it each time they came back to the Library.
+   */
+  /**
+   * The small-screen course drop-panel. Lives in the store so it survives
+   * navigation within a session, but is deliberately NOT persisted: it is a
+   * transient disclosure, and restoring it open on arrival would re-add up to
+   * 50vh above the list on exactly the screens with the least room. The desktop
+   * preference is `isLibraryRailCollapsed`, which IS persisted.
+   */
+  isLibraryRailOpen: boolean;
+  setLibraryRailOpen: (open: boolean) => void;
+  toggleLibraryRail: () => void;
+
+  /**
+   * Desktop Library course rail, narrowed to an icon strip. A separate flag
+   * from `isLibraryRailOpen` on purpose: that one is the small-screen
+   * disclosure, and every course or topic pick closes it — right for a panel
+   * covering the list, wrong for a rail sitting beside it.
+   */
+  isLibraryRailCollapsed: boolean;
+  setLibraryRailCollapsed: (collapsed: boolean) => void;
+  toggleLibraryRailCollapsed: () => void;
 }
 
 const initialModals = {
@@ -336,6 +362,15 @@ export const useUIStore = create<UIState>()(
 
       libraryTab: 'notes' as const,
       setLibraryTab: (tab) => set({ libraryTab: tab }),
+
+      isLibraryRailOpen: false,
+      setLibraryRailOpen: (open) => set({ isLibraryRailOpen: open }),
+      toggleLibraryRail: () => set((state) => ({ isLibraryRailOpen: !state.isLibraryRailOpen })),
+
+      isLibraryRailCollapsed: false,
+      setLibraryRailCollapsed: (collapsed) => set({ isLibraryRailCollapsed: collapsed }),
+      toggleLibraryRailCollapsed: () =>
+        set((state) => ({ isLibraryRailCollapsed: !state.isLibraryRailCollapsed })),
     }),
     {
       name: 'ui-storage',
@@ -345,6 +380,7 @@ export const useUIStore = create<UIState>()(
         isChatsSectionExpanded: state.isChatsSectionExpanded,
         lowDataMode: state.lowDataMode,
         libraryTab: state.libraryTab,
+        isLibraryRailCollapsed: state.isLibraryRailCollapsed,
       }),
     }
   )

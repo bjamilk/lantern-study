@@ -271,6 +271,33 @@ export const App: React.FC = () => {
         if (appMode === AppMode.OFFLINE_MODE) markChecklist('tryOffline');
     }, [appMode, markChecklist]);
 
+    // The Library tab lives in the URL (`/library/notes`), and route hydration
+    // treats the path as the authority, so switching tabs has to move the URL or
+    // the next reload / Back step would snap the user to the other tab. Push
+    // rather than replace, so Back undoes the last thing the student did: from
+    // Flashcards it returns to Notes rather than throwing them out of the
+    // Library entirely, which is the behaviour that made these tabs worth
+    // addressing. The cost is that repeated toggling stacks entries; that is the
+    // ordinary trade every tabbed page on the web makes, and Back-and-hold skips
+    // the stack.
+    const handleLibraryTabChange = React.useCallback((tab: 'notes' | 'flashcards') => {
+        if (tab === libraryTab) return; // no-op click: never stack a duplicate entry
+        setLibraryTab(tab);
+        navigateToPath(`/library/${tab}`);
+    }, [libraryTab, setLibraryTab, navigateToPath]);
+
+    // /library is auth-gated: it is deliberately absent from PUBLIC_PATH_PREFIXES
+    // and from public/sitemap.xml, so this sets the document title and nothing
+    // else — no canonical link, no og/meta tags, nothing that invites a crawler.
+    // It exists so the two tabs are tellable apart in the browser tab strip and
+    // in the Back/Forward history menu, which is the point of giving them URLs.
+    useEffect(() => {
+        if (appMode !== AppMode.LIBRARY) return;
+        const previousTitle = document.title;
+        document.title = `Library · ${libraryTab === 'flashcards' ? 'Flashcards' : 'Notes'} — Lantern Study`;
+        return () => { document.title = previousTitle; };
+    }, [appMode, libraryTab]);
+
     const {
         users, dataLoaded, setDataLoaded, bootstrapLoad, setBootstrapLoad,
         toggleTheme, handleLogout,
@@ -1157,7 +1184,7 @@ export const App: React.FC = () => {
                     studyActivityDays={studyActivityDays}
                     onNavigateToChat={() => navigateTo(AppMode.CHAT)} allMessages={messages}
                     userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
-                    onNavigateToFlashcards={() => { setLibraryTab('flashcards'); navigateTo(AppMode.LIBRARY); }}
+                    onNavigateToFlashcards={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'flashcards' })}
                     onOpenCreateDeck={handleOpenCreateDeckModal}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
                     onNavigateToDiscover={() => navigateTo(AppMode.DISCOVER)}
@@ -1177,7 +1204,7 @@ export const App: React.FC = () => {
                     )}
                     hasExploredMarketplace={appMode === AppMode.MARKETPLACE || appMode === AppMode.MARKETPLACE_LISTING_DETAIL}
                     hasTriedOffline={appMode === AppMode.OFFLINE_MODE}
-                    onNavigateToNotes={() => { setLibraryTab('notes'); navigateTo(AppMode.LIBRARY); }}
+                    onNavigateToNotes={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' })}
                     onOpenImportAndStudy={() => navigateTo(AppMode.AI_TOOLS)}
                     onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
                     onReviewDueCards={handleFlashcardStudy}
@@ -1238,7 +1265,7 @@ export const App: React.FC = () => {
                 return (
                     <LibraryScreen
                         tab={libraryTab}
-                        onTabChange={setLibraryTab}
+                        onTabChange={handleLibraryTabChange}
                         dueCardsCount={dueCardsCount}
                         noteCount={notes.length}
                         deckCount={decks.length}
@@ -1321,7 +1348,12 @@ export const App: React.FC = () => {
                         groups={groups}
                         currentUserId={currentUser.id}
                         isSaving={notesSaving}
-                        onBack={() => navigateTo(AppMode.NOTES)}
+                        // The Library's Notes tab, not standalone `/notes`: that
+                        // screen has no entry in the sidebar or bottom nav, so
+                        // this button was the only way in — and it is the same
+                        // list, one course rail short. Every other "go to notes"
+                        // in this file already lands on the Library tab.
+                        onBack={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' })}
                         onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
                         onCancelPendingSave={noteHandlers.cancelAutoSave}
                         onSellAsStudyPack={() => {
@@ -1351,7 +1383,7 @@ export const App: React.FC = () => {
                             }
                             noteHandlers.cancelAutoSave();
                             useNotesStore.getState().setSelectedNote(null);
-                            navigateTo(AppMode.NOTES);
+                            navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' });
                             try {
                                 await noteHandlers.handleDeleteNote(noteId);
                             } catch (e: any) {
@@ -1985,7 +2017,7 @@ export const App: React.FC = () => {
                         ? 'hidden md:block'
                         : ''
             }`}>
-            <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, navigateTo, setActiveTestResult })} />
+            <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult })} />
             </div>
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             <AccountSuspendedNotice variant="banner" />

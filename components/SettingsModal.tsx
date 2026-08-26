@@ -13,6 +13,7 @@ import {
 import { AcademicSettingsSection } from './settings/AcademicSettingsSection';
 import { compressImage } from '../utils/imageCompression';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
+import { useIsMdUp } from '../hooks/useMediaQuery';
 import { Avatar, Button, Toggle, Tabs, TabList, Tab, TabPanel } from './ui';
 import { syncCopy } from '@lantern/shared/design';
 import { LEGAL_PATHS, marketplaceComplianceBanner } from '@lantern/shared';
@@ -145,18 +146,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [showNewPass, setShowNewPass] = useState(false);
     const avatarInputRef = useRef<HTMLInputElement>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-    const [settingsTabOrientation, setSettingsTabOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
+    const settingsTabOrientation: 'horizontal' | 'vertical' = useIsMdUp() ? 'vertical' : 'horizontal';
     const [studyDraft, setStudyDraft] = useState<StudyDraft>(() => studyToDraft(userSettings.study));
     const studyDraftRef = useRef<StudyDraft>(studyToDraft(userSettings.study));
     const studySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    useEffect(() => {
-        const mq = window.matchMedia('(min-width: 768px)');
-        const update = () => setSettingsTabOrientation(mq.matches ? 'vertical' : 'horizontal');
-        update();
-        mq.addEventListener('change', update);
-        return () => mq.removeEventListener('change', update);
-    }, []);
 
     // Reset form drafts only when the modal opens. Tab selection lives in uiStore so
     // Suspense remounts / settings saves never bounce the user back to Profile.

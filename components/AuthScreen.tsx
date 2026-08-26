@@ -5,6 +5,7 @@ import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSl
 import type MatterType from 'matter-js';
 import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability, setCachedAuthToken, resendSignupConfirmation, sendPasswordResetEmail, verifySignupOtp, getWebAuthRedirectOrigin } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { takeStashedAuthLinkError } from '../utils/authErrorHash';
 import { LanternIcon } from './ui/LanternIcon';
 import TurnstileWidget, { type TurnstileHandle, getTurnstileSitekey } from './TurnstileWidget';
@@ -65,16 +66,7 @@ const AnimatedBackground = () => {
   const engineRef = useRef<MatterType.Engine | null>(null);
   const runnerRef = useRef<MatterType.Runner | null>(null);
   const { lowDataMode } = useUIStore();
-  const [reduceMotion, setReduceMotion] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = () => setReduceMotion(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
   useEffect(() => {
     if (lowDataMode || reduceMotion) return;

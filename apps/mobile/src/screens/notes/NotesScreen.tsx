@@ -55,6 +55,17 @@ type NavigationProp = {
 interface Props {
   navigation: NavigationProp;
   embedded?: boolean;
+  /**
+   * Embedded only: the Library's search box, which filters this list in place.
+   *
+   * The Library has one box for two jobs. Typing narrows what is on screen —
+   * instantly, from the first character, client-side, and under the folder,
+   * Mine/Shared and Active/Archived choices still showing above the list.
+   * Searching decks, cards and bundles needs the network and two characters and
+   * cannot honour those, so it replaces the panel and is a deliberate step
+   * ("Search everything" in the Library's scope row), not something typing does.
+   */
+  listQuery?: string;
 }
 
 type PendingPhotoAsset = {
@@ -212,7 +223,7 @@ function NoteCard({
   );
 }
 
-export function NotesScreen({ navigation, embedded = false }: Props) {
+export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Props) {
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
   const {
@@ -243,10 +254,14 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const defaultCourseId =
     courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : undefined;
 
-  const [search, setSearch] = useState('');
+  const [ownSearch, setOwnSearch] = useState('');
+  // One box per screen: the Library's when embedded, this screen's otherwise.
+  const search = embedded ? listQuery : ownSearch;
   const [refreshing, setRefreshing] = useState(false);
   const [importingFile, setImportingFile] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  /** The import menu; the four entry points used to sit inline above the list. */
+  const [importOpen, setImportOpen] = useState(false);
   const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [ownershipFilter, setOwnershipFilter] = useState<'mine' | 'shared'>('mine');
@@ -324,7 +339,13 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
-        n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q)
+        n =>
+          n.title.toLowerCase().includes(q) ||
+          n.body.toLowerCase().includes(q) ||
+          // Imported notes (PDF/slides/photos/YouTube) keep their content in
+          // attachment text, surfaced by the list endpoint as `searchText` —
+          // the web list matches on it too.
+          Boolean(n.searchText && n.searchText.toLowerCase().includes(q))
       );
     }
     return [...list].sort((a, b) => {
@@ -801,6 +822,39 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     ]);
   };
 
+  /**
+   * The import entry points, behind the one "Import" button in the header row.
+   * Inline they were four buttons plus a size hint above every list — ~134px
+   * of a 844px screen spent on something most sessions never touch.
+   */
+  const importActionItems: ActionSheetItem[] = [
+    {
+      label: 'Import PDF',
+      icon: 'document-outline',
+      section: `From a file · ${formatMaxNoteUploadLabel()}`,
+      onPress: () => void handlePickFile('pdf'),
+    },
+    {
+      label: 'Import PowerPoint',
+      icon: 'easel-outline',
+      section: `From a file · ${formatMaxNoteUploadLabel()}`,
+      onPress: () => void handlePickFile('presentation'),
+    },
+    {
+      label: 'Import photos',
+      icon: 'images-outline',
+      section: `From a file · ${formatMaxNoteUploadLabel()}`,
+      onPress: handlePickPhotos,
+    },
+    {
+      label: 'From YouTube',
+      icon: 'logo-youtube',
+      section: 'From a link',
+      hint: "We'll fetch the transcript so AI tools can use it",
+      onPress: () => setYoutubeOpen(true),
+    },
+  ];
+
   const handleYoutubeImport = async () => {
     const url = youtubeUrl.trim();
     if (!url || !youtubeUrlValid) return;
@@ -922,6 +976,12 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         items={noteActionItems}
         onClose={() => setNoteActions(null)}
       />
+      <ActionSheet
+        visible={importOpen}
+        title="Import a note"
+        items={importActionItems}
+        onClose={() => setImportOpen(false)}
+      />
       <ReportContentSheet
         visible={!!reportNote}
         targetType="note"
@@ -1028,47 +1088,38 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         </Pressable>
       </Modal>
 
-      {embedded && (
-        <View className="flex-row gap-1.5 justify-end px-4 pt-3">
-          <Button
-            size="sm"
-            variant="secondary"
-            onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
-          >
-            {selectMode ? 'Cancel' : 'Select'}
-          </Button>
-          <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
-            Folder
-          </Button>
-          <Button size="sm" onPress={handleCreateNote}>
-            + Note
-          </Button>
-        </View>
-      )}
       {!embedded && (
-      <ScreenHeader
-        title="Notes"
-        subtitle="Capture lectures and turn notes into study tools"
-        className="pb-2"
-        right={
-          <View className="flex-row gap-1.5">
-            <Button
-              size="sm"
-              variant="secondary"
-              onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
-            >
-              {selectMode ? 'Cancel' : 'Select'}
-            </Button>
-            <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
-              Folder
-            </Button>
-            <Button size="sm" onPress={handleCreateNote}>
-              + Note
-            </Button>
-          </View>
-        }
-      />
+        <ScreenHeader
+          title="Notes"
+          subtitle="Capture lectures and turn notes into study tools"
+          className="pb-1"
+        />
       )}
+      {/* One action row for both modes — the standalone screen used to carry
+          these in the header while the embedded panel had its own copy. */}
+      <View className="flex-row flex-wrap gap-1.5 justify-end px-4 pt-2 pb-1">
+        <Button
+          size="sm"
+          variant="secondary"
+          onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+        >
+          {selectMode ? 'Cancel' : 'Select'}
+        </Button>
+        <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
+          Folder
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={importingFile}
+          onPress={() => setImportOpen(true)}
+        >
+          Import
+        </Button>
+        <Button size="sm" onPress={handleCreateNote}>
+          + Note
+        </Button>
+      </View>
 
       {selectMode ? (
         <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2">
@@ -1185,62 +1236,83 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         </View>
       ) : null}
 
-      <View className="mx-4 mb-2 flex-row rounded-lg border border-lantern-border overflow-hidden">
-        {(['mine', 'shared'] as const).map((filter) => (
-          <Pressable
-            key={filter}
-            onPress={() => setOwnershipFilter(filter)}
-            className={`flex-1 py-2 ${ownershipFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'}`}
-          >
-            <Text className={`text-center text-sm font-semibold ${ownershipFilter === filter ? 'text-white' : 'text-lantern-text'}`}>
-              {filter === 'mine' ? 'Mine' : 'Shared'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View className="mx-4 mb-2 flex-row rounded-lg border border-lantern-border overflow-hidden">
-        {(['active', 'archived'] as const).map((filter) => (
-          <Pressable
-            key={filter}
-            onPress={() => setListFilter(filter)}
-            className={`flex-1 py-2 flex-row items-center justify-center gap-1 ${
-              listFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'
-            }`}
-          >
-            {filter === 'archived' ? (
-              <Ionicons
-                name="archive-outline"
-                size={14}
-                color={listFilter === filter ? '#ffffff' : '#64748b'}
-              />
-            ) : null}
-            <Text
-              className={`text-center text-sm font-semibold ${
-                listFilter === filter ? 'text-white' : 'text-lantern-text'
+      {/* Two binary switches on one row: stacked, they spent 92px of an 844px
+          screen on four words. */}
+      <View className="mx-4 mb-2 flex-row items-center gap-2">
+        <View className="flex-1 flex-row rounded-lg border border-lantern-border overflow-hidden">
+          {(['mine', 'shared'] as const).map((filter) => (
+            <Pressable
+              key={filter}
+              onPress={() => setOwnershipFilter(filter)}
+              className={`flex-1 min-h-[44px] items-center justify-center ${
+                ownershipFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'
               }`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: ownershipFilter === filter }}
+              accessibilityLabel={filter === 'mine' ? 'Show notes I own' : 'Show notes shared with me'}
             >
-              {filter === 'active' ? 'Active' : 'Archived'}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                className={`text-sm font-semibold ${
+                  ownershipFilter === filter ? 'text-white' : 'text-lantern-text'
+                }`}
+              >
+                {filter === 'mine' ? 'Mine' : 'Shared'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <View className="flex-1 flex-row rounded-lg border border-lantern-border overflow-hidden">
+          {(['active', 'archived'] as const).map((filter) => (
+            <Pressable
+              key={filter}
+              onPress={() => setListFilter(filter)}
+              className={`flex-1 min-h-[44px] flex-row items-center justify-center gap-1 ${
+                listFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'
+              }`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: listFilter === filter }}
+              accessibilityLabel={filter === 'active' ? 'Show active notes' : 'Show archived notes'}
+            >
+              {filter === 'archived' ? (
+                <Ionicons
+                  name="archive-outline"
+                  size={14}
+                  color={listFilter === filter ? '#ffffff' : colors.textSecondary}
+                />
+              ) : null}
+              <Text
+                className={`text-sm font-semibold ${
+                  listFilter === filter ? 'text-white' : 'text-lantern-text'
+                }`}
+                numberOfLines={1}
+              >
+                {filter === 'active' ? 'Active' : 'Archived'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
-      <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-lantern-border bg-lantern-surface">
-        <Ionicons name="search" size={16} color="#64748b" />
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search notes..."
-          className="flex-1 text-sm text-lantern-text py-0.5"
-          placeholderTextColor={colors.inputPlaceholder}
-        />
-      </View>
+      {/* Embedded, the Library's box drives this list instead (`listQuery`), so
+          a second input here would be two boxes for one intent. */}
+      {!embedded ? (
+        <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-lantern-border bg-lantern-surface min-h-[44px]">
+          <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+          <TextInput
+            value={ownSearch}
+            onChangeText={setOwnSearch}
+            placeholder="Search notes..."
+            className="flex-1 text-sm text-lantern-text py-0.5"
+            placeholderTextColor={colors.inputPlaceholder}
+            accessibilityLabel="Search notes"
+          />
+        </View>
+      ) : null}
 
+      {/* Only the in-progress import takes space; the menu itself is behind the
+          Import button above. */}
+      {pendingImport || youtubeOpen ? (
       <View className="mx-4 mb-1.5">
-        <Text className="text-xs text-lantern-text-secondary mb-2">
-          {formatMaxNoteUploadLabel()}
-        </Text>
         {pendingImport ? (
           <Card className="border-lantern-primary/30 mb-2">
             <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
@@ -1319,23 +1391,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
               </Button>
             </View>
           </Card>
-        ) : (
-          <View className="flex-row flex-wrap gap-2">
-            <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => void handlePickFile('pdf')}>
-              Import PDF
-            </Button>
-            <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => void handlePickFile('presentation')}>
-              Import PowerPoint
-            </Button>
-            <Button size="sm" variant="secondary" disabled={importingFile} onPress={handlePickPhotos}>
-              Import photos
-            </Button>
-            <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => setYoutubeOpen(true)}>
-              From YouTube
-            </Button>
-          </View>
-        )}
+        ) : null}
       </View>
+      ) : null}
 
       {error ? (
         <Pressable
@@ -1361,20 +1419,30 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           ListEmptyComponent={
             <Card className="items-center py-10 border-lantern-border">
               <Ionicons
-                name={listFilter === 'archived' ? 'archive-outline' : 'document-text-outline'}
+                name={
+                  search.trim()
+                    ? 'search-outline'
+                    : listFilter === 'archived'
+                      ? 'archive-outline'
+                      : 'document-text-outline'
+                }
                 size={40}
                 color="#818cf8"
               />
               <Text className="text-sm text-lantern-text-secondary text-center mt-3 px-4">
-                {listFilter === 'archived'
-                  ? 'No archived notes. Long-press a note to archive it.'
-                  : ownershipFilter === 'shared'
-                    ? 'No shared notes yet.'
-                    : courseFilter
-                      ? `No notes in ${courseFilter.label} yet. Create one here, or use “Move to course…” on an existing note.`
-                      : 'No notes yet. Create one to get started.'}
+                {/* A query that matches nothing is not an empty library:
+                    "No notes yet" there reads as if the notes had gone. */}
+                {search.trim()
+                  ? `Nothing matches “${search.trim()}” in this list. The folder, Mine/Shared and Archived choices above still apply${embedded ? '; “Search everything” also covers your decks, cards and offline bundles' : ''}.`
+                  : listFilter === 'archived'
+                    ? 'No archived notes. Long-press a note to archive it.'
+                    : ownershipFilter === 'shared'
+                      ? 'No shared notes yet.'
+                      : courseFilter
+                        ? `No notes in ${courseFilter.label} yet. Create one here, or use “Move to course…” on an existing note.`
+                        : 'No notes yet. Create one to get started.'}
               </Text>
-              {listFilter === 'archived' ? (
+              {search.trim() ? null : listFilter === 'archived' ? (
                 <Button className="mt-4" size="sm" variant="secondary" onPress={() => setListFilter('active')}>
                   Back to active
                 </Button>

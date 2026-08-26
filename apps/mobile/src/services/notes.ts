@@ -85,6 +85,12 @@ export interface StudyNote {
   pinnedAt?: string;
   updatedAt?: string;
   createdAt?: string;
+  /**
+   * Concatenated attachment text, attached by the list endpoint for notes whose
+   * body is empty — an imported PDF's content is otherwise unsearchable on the
+   * client. (`attachNoteSearchText` in apps/api-server/src/services/supabase.ts.)
+   */
+  searchText?: string;
   accessRole?: 'owner' | 'editor' | 'viewer' | 'group_member';
   owner?: { id: string; name?: string; username?: string; avatarUrl?: string };
   /** Included on note detail and upload responses. */

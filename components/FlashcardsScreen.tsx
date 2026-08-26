@@ -3,8 +3,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Deck, Flashcard } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { fetchDecks } from '../services/supabase';
-import { CourseChips } from './academic/CourseChips';
+import { CourseChips, useCourseFilterShownAbove } from './academic/CourseChips';
 import { TopicFilterChip } from './academic/TopicFilterChip';
+import { useLibraryPanelSearch } from './library/libraryPanelSearch';
 import {
   RectangleStackIcon,
   PlusCircleIcon,
@@ -13,6 +14,7 @@ import {
   CloudArrowUpIcon,
   EllipsisVerticalIcon,
   ExclamationTriangleIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { isCardDue, getDeckListStatsLine, getStudyCtaLabel, getStudyAllDueLabel } from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -72,6 +74,12 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   const retryDeckBootstrap = useFlashcardStore(
     (s) => (s as unknown as { retryDeckBootstrap?: () => void }).retryDeckBootstrap
   );
+  // Inside the Library the rail and the scope row own the course/topic filter.
+  const filterShownAbove = useCourseFilterShownAbove();
+  // …and the Library's search box narrows this list in place. Empty outside the
+  // Library, where this screen has no text search of its own.
+  const panelSearch = useLibraryPanelSearch().trim();
+  const panelQuery = panelSearch.toLowerCase();
   const openWithMessage = useCompanionStore(s => s.openWithMessage);
   const { lowDataMode } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -141,6 +149,24 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         : matchesCourseFilter(deck.courseId, courseFilterId) && matchesTopicFilter(deck.topicId, topicFilterId);
     });
 
+  // Card text as well as the deck's own name: a student searching "enzyme"
+  // means the cards, and those are already on this device — so this keeps
+  // working when the server search cannot run at all.
+  const visibleDecks = panelQuery
+    ? validDecks.filter(
+        (deck) =>
+          deck.name.toLowerCase().includes(panelQuery) ||
+          Boolean(deck.description && deck.description.toLowerCase().includes(panelQuery)) ||
+          flashcards.some(
+            (fc) =>
+              fc.deckId === deck.id &&
+              ((fc.front || '').toLowerCase().includes(panelQuery) ||
+                (fc.back || '').toLowerCase().includes(panelQuery) ||
+                (fc.clozeText || '').toLowerCase().includes(panelQuery))
+          )
+      )
+    : validDecks;
+
   const handleMoveDeck = async (deck: Deck, courseId: string | null, topicId: string | null = null) => {
     if (!onMoveDeckToCourse) return;
     const nextTopicId = courseId ? topicId : null;
@@ -166,6 +192,12 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   };
 
   const totalDueCount = flashcards.filter(fc => isCardDue(fc.srsData)).length;
+
+  // Embedded, the rail takes ~200px off the panel, so the viewport-wide
+  // breakpoints land three crushed columns at 1024px. Step them one up.
+  const deckGridClass = `grid gap-5 grid-cols-1 ${
+    embedded ? 'lg:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-3'
+  }`;
 
   const handleOfflineToggle = (e: React.MouseEvent, deck: Deck) => {
     e.stopPropagation();
@@ -224,13 +256,14 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         </div>
       )}
 
-      <div className="p-4 md:p-6 flex-1">
+      <div className={`flex-1 ${embedded ? 'p-3 md:p-4' : 'p-4 md:p-6'}`}>
         {embedded && (
-          <div className="flex justify-end mb-4">{headerActions}</div>
+          <div className="flex justify-end mb-2">{headerActions}</div>
         )}
         {/* The chips name the course; the topic gets its own chip, or the list
-            is shorter than anything on screen explains. */}
-        <div className="mb-4 flex flex-col gap-1.5">
+            is shorter than anything on screen explains. Both render nothing
+            inside the Library, so the row itself has to take no space there. */}
+        <div className={filterShownAbove ? '' : 'mb-4 flex flex-col gap-1.5'}>
           <CourseChips
             value={courseFilterId}
             onChange={setCourseFilterId}
@@ -241,14 +274,22 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className={deckGridClass}>
             {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
           </div>
         ) : courseFilterId && courseFilterLoading && validDecks.length === 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className={deckGridClass}>
             {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
           </div>
-        ) : courseFilterId && validDecks.length === 0 ? (
+        ) : panelQuery && visibleDecks.length === 0 ? (
+          // Ahead of the course-filter and first-run empty states: with a query
+          // typed, "No decks yet" would read as if the decks had vanished.
+          <EmptyState
+            icon={<MagnifyingGlassIcon className="w-8 h-8" />}
+            title={`No decks match “${panelSearch}”`}
+            description="This searches the deck names and the cards saved on this device. “Search everything” above also covers your notes and offline bundles."
+          />
+        ) : courseFilterId && visibleDecks.length === 0 ? (
           <EmptyState
             icon={<RectangleStackIcon className="w-8 h-8" />}
             title={courseFilterId === UNFILED_COURSE_ID ? 'No unfiled decks' : 'No decks for this course yet'}
@@ -262,7 +303,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
             secondaryActionLabel="Show all decks"
             onSecondaryAction={() => setCourseFilterId(null)}
           />
-        ) : validDecks.length > 0 ? (
+        ) : visibleDecks.length > 0 ? (
           <>
           {deckLoadError && (
             <div
@@ -280,8 +321,8 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
               )}
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {validDecks.map((deck, index) => {
+          <div className={deckGridClass}>
+            {visibleDecks.map((deck, index) => {
               const { dueCards, totalCards } = getDeckStats(deck.id);
               const gradient = ACCENT_GRADIENTS[index % ACCENT_GRADIENTS.length];
               return (

@@ -5,16 +5,25 @@ import { AppRouteParams } from './appRoutes';
 interface BreadcrumbContext {
   appMode: AppMode;
   selectedDeck: Deck | null;
+  /** Which tab `/library/:libraryTab` is showing — the crumb has to name it. */
+  libraryTab: 'notes' | 'flashcards';
   navigateTo: (mode: AppMode, params?: AppRouteParams) => void;
   setActiveTestResult: (result: any) => void;
 }
 
 export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
-  const { appMode, selectedDeck, navigateTo, setActiveTestResult } = ctx;
+  const { appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult } = ctx;
 
   switch (appMode) {
     case AppMode.LIBRARY:
-      return [{ label: 'Library' }];
+      // Same `Library > Notes` shape as the standalone NOTES / FLASHCARDS modes
+      // below, because it is the same screen at a different URL. The parent
+      // crumb is inert here: you are already in the Library, so clicking it
+      // would only re-navigate to the tab you are looking at.
+      return [
+        { label: 'Library' },
+        { label: libraryTab === 'flashcards' ? 'Flashcards' : 'Notes' },
+      ];
     case AppMode.STUDY_HUB:
       return [{ label: 'Study' }];
     case AppMode.AI_TOOLS:

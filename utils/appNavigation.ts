@@ -81,6 +81,11 @@ export function buildParamsFromState(mode: AppMode): AppRouteParams {
       return state.selectedJobId ? { jobId: state.selectedJobId } : {};
     case AppMode.NOTE_EDITOR:
       return state.selectedNote ? { noteId: state.selectedNote.id } : {};
+    case AppMode.LIBRARY:
+      // Sidebar, bottom nav and breadcrumbs all navigate by mode alone. Without
+      // this they would build bare `/library` and drop the tab the user is on,
+      // then bounce through hydration's rewrite to get it back.
+      return { libraryTab: state.libraryTab };
     default:
       return {};
   }
@@ -111,6 +116,11 @@ export function applyPreNavigationEffects(mode: AppMode, params?: AppRouteParams
     params?.jobId
   ) {
     ui.setSelectedJobId(params.jobId);
+  }
+  if (mode === AppMode.LIBRARY && params?.libraryTab) {
+    // A caller that names the tab is asking for that tab, so the store follows
+    // the request. Callers that omit it keep whatever tab is already stored.
+    ui.setLibraryTab(params.libraryTab);
   }
   if (mode === AppMode.CREATE_MARKETPLACE_JOB) {
     // Clear when absent, or a previously viewed job would open the form in

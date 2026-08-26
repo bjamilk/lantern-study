@@ -39,6 +39,12 @@ type NavigationProp = {
 interface Props {
   navigation: NavigationProp;
   embedded?: boolean;
+  /**
+   * Embedded only: the Library's search box, which narrows this list in place.
+   * See the same prop on NotesScreen for why typing filters rather than
+   * handing off to the server search.
+   */
+  listQuery?: string;
 }
 
 const ACCENT_GRADIENTS: [string, string, ...string[]][] = [
@@ -193,7 +199,7 @@ function DeckCard({
   );
 }
 
-export function FlashcardsScreen({ navigation, embedded = false }: Props) {
+export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' }: Props) {
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
   const user = useAuthStore(s => s.user);
@@ -209,6 +215,8 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
     markDeckOffline,
     unmarkDeckOffline,
   } = useFlashcardStore();
+  /** Cards cached per deck; what the in-place search can match without the API. */
+  const cardsByDeck = useFlashcardStore(s => s.flashcards);
   const [refreshing, setRefreshing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -261,11 +269,28 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
     }
   }, [createOpen, defaultCourseId, defaultTopicId]);
 
+  const deckQuery = listQuery.trim().toLowerCase();
   const visibleDecks = useMemo(() => {
-    if (!courseFilterId) return decks;
-    const inCourse = decks.filter(d => matchesCourseFilter(d.course_id, courseFilterId));
-    return topicFilterId ? inCourse.filter(d => matchesTopicFilter(d.topic_id, topicFilterId)) : inCourse;
-  }, [decks, courseFilterId, topicFilterId]);
+    let list = decks;
+    if (courseFilterId) {
+      list = list.filter(d => matchesCourseFilter(d.course_id, courseFilterId));
+      if (topicFilterId) list = list.filter(d => matchesTopicFilter(d.topic_id, topicFilterId));
+    }
+    if (!deckQuery) return list;
+    // Cards as well as the deck's own name: "enzyme" means the cards, and the
+    // ones already cached on this device are searchable with the API down.
+    return list.filter(
+      d =>
+        d.name.toLowerCase().includes(deckQuery) ||
+        Boolean(d.description && d.description.toLowerCase().includes(deckQuery)) ||
+        (cardsByDeck[d.id] || []).some(
+          c =>
+            (c.front || '').toLowerCase().includes(deckQuery) ||
+            (c.back || '').toLowerCase().includes(deckQuery) ||
+            (c.clozeText || '').toLowerCase().includes(deckQuery)
+        )
+    );
+  }, [decks, courseFilterId, topicFilterId, deckQuery, cardsByDeck]);
 
   const handleMoveDeckToCourse = async (course: Course | null) => {
     const deck = courseMoveDeck;
@@ -555,18 +580,30 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
+              {/* With a query typed, "No decks yet" would read as if the decks
+                  had gone; say what did not match instead. */}
               <Text className="text-lg font-semibold text-lantern-text mb-2">
-                {courseFilter && decks.length > 0 ? `No decks in ${courseFilter.label}` : 'No decks yet'}
+                {deckQuery
+                  ? `No decks match “${listQuery.trim()}”`
+                  : courseFilter && decks.length > 0
+                    ? `No decks in ${courseFilter.label}`
+                    : 'No decks yet'}
               </Text>
               <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-                {courseFilter && decks.length > 0
-                  ? 'Create a deck here, or use “Move to course…” on a deck to file it under this course.'
-                  : 'Create your first deck to start studying with spaced repetition.'}
+                {deckQuery
+                  ? 'This searches deck names and the cards saved on this device. “Search everything” above also covers your notes and offline bundles.'
+                  : courseFilter && decks.length > 0
+                    ? 'Create a deck here, or use “Move to course…” on a deck to file it under this course.'
+                    : 'Create your first deck to start studying with spaced repetition.'}
               </Text>
-              <Button onPress={() => setCreateOpen(true)}>Create Deck</Button>
-              <Button className="mt-2" variant="secondary" onPress={() => setImportOpen(true)}>
-                Import deck
-              </Button>
+              {deckQuery ? null : (
+                <>
+                  <Button onPress={() => setCreateOpen(true)}>Create Deck</Button>
+                  <Button className="mt-2" variant="secondary" onPress={() => setImportOpen(true)}>
+                    Import deck
+                  </Button>
+                </>
+              )}
             </View>
           }
           renderItem={({ item, index }) => (

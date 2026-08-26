@@ -82,10 +82,10 @@ export function useRouteSync() {
     }
 
     let cancelled = false;
-    hydratingRef.current = true;
-    setRouteHydrating(true);
+    let settled = false;
 
     void hydrateAppRoute(parsed).then((result) => {
+      settled = true;
       if (cancelled) return;
       hydratingRef.current = false;
       setRouteHydrating(false);
@@ -97,6 +97,20 @@ export function useRouteSync() {
       if (result.mode) {
         useUIStore.getState().setAppModeDirect(result.mode);
       }
+    });
+
+    // The hydrating flag swaps the whole screen for a spinner, which unmounts
+    // whatever the user is looking at. Routes that hydrate synchronously never
+    // need that: the Library rewriting its own path on a tab click is one, and
+    // blanking the note list — losing its scroll position — to confirm a tab
+    // switch is worse than not confirming it. Their `then` above is already
+    // queued, so it runs first and this sees `settled`. Routes that really
+    // fetch still raise the spinner, one microtask later, which is not a delay
+    // a person can see.
+    void Promise.resolve().then(() => {
+      if (cancelled || settled) return;
+      hydratingRef.current = true;
+      setRouteHydrating(true);
     });
 
     return () => {

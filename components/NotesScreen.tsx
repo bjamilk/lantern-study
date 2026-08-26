@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PlusIcon,
   FolderPlusIcon,
@@ -6,11 +6,9 @@ import {
   MagnifyingGlassIcon,
   DocumentTextIcon,
   DocumentArrowUpIcon,
+  PhotoIcon,
+  PresentationChartBarIcon,
   PlayCircleIcon,
-  ArrowPathIcon,
-  ExclamationCircleIcon,
-  CheckCircleIcon,
-  XMarkIcon,
   EllipsisHorizontalIcon,
   BookmarkIcon,
   ArchiveBoxIcon,
@@ -43,11 +41,12 @@ import { useUIStore } from '../stores/uiStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useAcademicStore } from '../stores/academicStore';
-import { CourseChips } from './academic/CourseChips';
+import { CourseChips, useCourseFilterShownAbove } from './academic/CourseChips';
 import { TopicFilterChip } from './academic/TopicFilterChip';
+import { useLibraryPanelSearch } from './library/libraryPanelSearch';
 import { MoveToCourseModal } from './academic/MoveToCourseModal';
+import { useIsMdUp } from '../hooks/useMediaQuery';
 import { buildFolderTree, folderParentOptions, folderScopeIds } from '../utils/libraryArchive';
-import { useNoteUploadStore, getVisibleUploadJobs } from '../stores/noteUploadStore';
 import { confirmDialog } from '../stores/confirmStore';
 
 interface NotesScreenProps {
@@ -95,6 +94,7 @@ const folderButtonClass = (isActive: boolean, compact = false) =>
  * `GET /notes?courseId=` (`'null'` = unfiled); "All" clears both.
  */
 const NotesCourseFilter: React.FC = () => {
+  const shownAbove = useCourseFilterShownAbove();
   const courseFilterId = useNotesStore((s) => s.courseFilterId);
   const libraryCourseId = useLibraryStore((s) => s.courseFilterId);
   const libraryTopicId = useLibraryStore((s) => s.topicFilterId);
@@ -110,9 +110,14 @@ const NotesCourseFilter: React.FC = () => {
   // note again; the library selection itself stays and is re-applied on return.
   useEffect(() => () => { void useNotesStore.getState().setTopicFilter(null, null); }, []);
   // The chips name the course; the topic gets its own chip, or the list is
-  // shorter than anything on screen explains.
+  // shorter than anything on screen explains. Inside the Library both children
+  // render nothing — but `display: contents` rather than an early return,
+  // because a box here still collects the parent's `space-y` gap while
+  // unmounting CourseChips would take its two effects with it: the one that
+  // loads the course list this screen's labels resolve against, and the safety
+  // net that drops a filter pointing at a deleted course.
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={shownAbove ? 'contents' : 'flex flex-col gap-1.5'}>
       <CourseChips value={courseFilterId} onChange={onChange} ariaLabel="Filter notes by course" showUnfiled />
       <TopicFilterChip />
     </div>
@@ -143,7 +148,14 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onSelectFolder,
   embedded = false,
 }) => {
-  const [search, setSearch] = useState('');
+  const [ownSearch, setOwnSearch] = useState('');
+  // Inside the Library there is one search box — the Library's — and it filters
+  // this list rather than replacing the panel, so the folder, Mine/Shared and
+  // Active/Archived selection still on screen keeps applying. It is also the
+  // only text search that works with the API down, which this app treats as a
+  // first-class state (Offline Mode, offline bundles, lowDataMode).
+  const panelSearch = useLibraryPanelSearch();
+  const search = embedded ? panelSearch : ownSearch;
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [renameFolder, setRenameFolder] = useState<NoteFolder | null>(null);
   const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
@@ -193,26 +205,16 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     });
   };
   // Mount only one folder surface: CSS-hidden Menus still portal and duplicate.
-  const [isMdUp, setIsMdUp] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
-  );
+  const isMdUp = useIsMdUp();
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
   const importProgress = useUIStore((s) => s.importProgress);
-  const uploadJobList = useNoteUploadStore((s) => s.jobs);
-  const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
-  const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
   const isDark = theme === 'dark';
 
+  // Crossing the breakpoint swaps which folder buttons exist, so a menu opened
+  // from the old set is orphaned — its portal would outlive its trigger.
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)');
-    const update = () => {
-      setIsMdUp(mq.matches);
-      setFolderMenuId(null);
-    };
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
+    setFolderMenuId(null);
+  }, [isMdUp]);
 
   const openRenameFolderPrompt = (folder: NoteFolder) => {
     // Close the portaled menu first; opening another dialog in the same click
@@ -366,6 +368,13 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const handleDeleteSelected = () => {
     handleDeleteNotesByIds(selectedNoteIds);
   };
+
+  // The three file pickers live behind one "Import" menu, so the inputs can no
+  // longer be the `<label>`s that opened them: a menu item is a button, and the
+  // menu unmounts as it closes. Keep them mounted outside it and click them.
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const presentationInputRef = useRef<HTMLInputElement>(null);
+  const photosInputRef = useRef<HTMLInputElement>(null);
 
   const handlePdf = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -691,7 +700,10 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       )}
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col md:flex-row">
-        {isMdUp ? (
+        {/* Never inside the Library: it already owns a course rail, and a second
+            vertical aside left the note list ~176px of a 768px viewport. Embedded,
+            the folder filter moves to the chip strip below. */}
+        {isMdUp && !embedded ? (
           <aside className="shrink-0 w-44 border-r border-lantern-border p-2 overflow-y-auto bg-lantern-surface">
             {renderFolderButton(null, true)}
             <div className="mt-1 space-y-1">
@@ -718,50 +730,58 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
         ) : null}
 
         <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3 sm:space-y-4">
-          {embedded && (
-            <div className="flex gap-1.5 sm:gap-2 justify-end">
-              {selectionEnabled ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
-                  aria-pressed={selectMode}
-                >
-                  {selectMode ? 'Cancel' : 'Select'}
-                </Button>
-              ) : null}
-              <Button variant="secondary" size="sm" onClick={() => setFolderModalOpen(true)}>
-                <FolderPlusIcon className="w-4 h-4 sm:mr-1" />
-                <span className="hidden sm:inline">Folder</span>
-              </Button>
-              <Button size="sm" onClick={onCreateNote}>
-                <PlusIcon className="w-4 h-4 sm:mr-1" />
-                <span className="hidden sm:inline">New note</span>
-              </Button>
-            </div>
-          )}
-
-          {!isMdUp ? (
-            <div className="-mx-1 px-1 overflow-x-auto overflow-y-visible scrollbar-none">
-              <div className="flex gap-2 pb-1 w-max max-w-none items-center">
-                {renderFolderButton(null)}
-                {folderTree.map((node) => {
-                  const hasChildren = node.children.length > 0;
-                  const expanded = !collapsedFolderIds.has(node.folder.id);
-                  return (
-                    <React.Fragment key={node.folder.id}>
-                      {renderFolderButton(node.folder, false, {
-                        hasChildren,
-                        expanded,
-                        onToggle: () => toggleFolderCollapsed(node.folder.id),
-                      })}
-                      {hasChildren && expanded
-                        ? node.children.map((child) => renderFolderButton(child, false, { isChild: true }))
-                        : null}
-                    </React.Fragment>
-                  );
-                })}
+          {/* Folders and the note actions share one line. The strip scrolls
+              under a fixed set of buttons instead of pushing them onto a row of
+              their own — embedded, that second row was ~50px of a panel that
+              starts a third of the way down the viewport.
+              The strip shows whenever the aside is hidden (small screens, or any
+              width inside the Library), where it is the only route to a folder. */}
+          {!isMdUp || embedded ? (
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1 -mx-1 px-1 overflow-x-auto overflow-y-visible scrollbar-none">
+                <div className="flex gap-2 pb-1 w-max max-w-none items-center">
+                  {renderFolderButton(null)}
+                  {folderTree.map((node) => {
+                    const hasChildren = node.children.length > 0;
+                    const expanded = !collapsedFolderIds.has(node.folder.id);
+                    return (
+                      <React.Fragment key={node.folder.id}>
+                        {renderFolderButton(node.folder, false, {
+                          hasChildren,
+                          expanded,
+                          onToggle: () => toggleFolderCollapsed(node.folder.id),
+                        })}
+                        {hasChildren && expanded
+                          ? node.children.map((child) => renderFolderButton(child, false, { isChild: true }))
+                          : null}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
               </div>
+              {embedded ? (
+                <div className="shrink-0 flex gap-1.5 sm:gap-2">
+                  {selectionEnabled ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                      aria-pressed={selectMode}
+                      aria-label={selectMode ? 'Cancel selection' : 'Select notes'}
+                    >
+                      {selectMode ? 'Cancel' : 'Select'}
+                    </Button>
+                  ) : null}
+                  <Button variant="secondary" size="sm" onClick={() => setFolderModalOpen(true)} aria-label="New folder">
+                    <FolderPlusIcon className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Folder</span>
+                  </Button>
+                  <Button size="sm" onClick={onCreateNote} aria-label="New note">
+                    <PlusIcon className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">New note</span>
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -794,107 +814,108 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-lantern-border min-w-0 w-full sm:flex-1 sm:min-w-[200px] bg-lantern-surface">
-              <MagnifyingGlassIcon className="w-5 h-5 text-lantern-text-secondary shrink-0" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search notes..."
-                className="flex-1 min-w-0 bg-transparent outline-none text-sm text-lantern-text"
-              />
-            </div>
-            <p className="text-xs text-lantern-text-secondary w-full sm:w-auto sm:self-center">
-              {formatMaxNoteUploadLabel()}
-            </p>
-            <label className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto border-lantern-border ${
-              importProgress
-                ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
-                : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
-            }`}>
-              <DocumentArrowUpIcon className="w-5 h-5" />
-              Import PDF
-              <input type="file" accept="application/pdf" className="hidden" onChange={handlePdf} disabled={Boolean(importProgress)} />
-            </label>
-            {onPresentationImport && (
-              <label className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto border-lantern-border ${
-                importProgress
-                  ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
-                  : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
-              }`}>
-                <DocumentArrowUpIcon className="w-5 h-5" />
-                Import PowerPoint
-                <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={handlePresentation} disabled={Boolean(importProgress)} />
-              </label>
-            )}
-            {onPhotosImport && (
-              <label className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto border-lantern-border ${
-                importProgress
-                  ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
-                  : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
-              }`}>
-                <DocumentArrowUpIcon className="w-5 h-5" />
-                Import photos
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotos} disabled={Boolean(importProgress)} />
-              </label>
-            )}
-            {onYoutubeImport && (
-              <button
-                type="button"
-                onClick={() => setYoutubeModalOpen(true)}
+            {/* Embedded, the Library's box drives this list instead (see
+                `panelSearch` above), so a second input here would be two boxes
+                for one intent. Mobile makes the same cut. */}
+            {!embedded ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-lantern-border min-w-0 w-full sm:flex-1 sm:min-w-[200px] bg-lantern-surface">
+                <MagnifyingGlassIcon className="w-5 h-5 text-lantern-text-secondary shrink-0" />
+                <input
+                  value={ownSearch}
+                  onChange={e => setOwnSearch(e.target.value)}
+                  placeholder="Search notes..."
+                  aria-label="Search notes"
+                  className="flex-1 min-w-0 bg-transparent outline-none text-sm text-lantern-text"
+                />
+              </div>
+            ) : null}
+            {/* Four import buttons plus a size hint used to wrap this toolbar
+                onto a second line, for something most sessions never touch.
+                One menu, matching mobile's Import sheet; the hint moves inside
+                it, where it is read at the moment a file is chosen. */}
+            <Menu>
+              <MenuTrigger
                 disabled={Boolean(importProgress)}
-                className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto border-lantern-border ${
+                aria-label="Import a note"
+                className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto sm:ml-auto border-lantern-border ${
                   importProgress
                     ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
                     : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
                 }`}
               >
-                <PlayCircleIcon className="w-5 h-5" />
-                From YouTube
-              </button>
-            )}
-          </div>
-
-          {uploadJobs.length > 0 && (
-            <div className="space-y-2" role="status" aria-live="polite">
-              {uploadJobs.map((job) => (
-                <div
-                  key={job.id}
-                  className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
-                    job.status === 'failed'
-                      ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40'
-                      : job.status === 'complete'
-                        ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
-                        : 'border-lantern-primary/40 bg-lantern-primary-background'
-                  }`}
+                <DocumentArrowUpIcon className="w-5 h-5" aria-hidden />
+                Import
+                <ChevronDownIcon className="w-4 h-4" aria-hidden />
+              </MenuTrigger>
+              <MenuContent align="end">
+                <MenuItem
+                  icon={<DocumentArrowUpIcon className="w-5 h-5" aria-hidden />}
+                  onSelect={() => pdfInputRef.current?.click()}
                 >
-                  {job.status === 'failed' ? (
-                    <ExclamationCircleIcon className="w-5 h-5 text-red-500 shrink-0" />
-                  ) : job.status === 'complete' ? (
-                    <CheckCircleIcon className="w-5 h-5 text-emerald-500 shrink-0" />
-                  ) : (
-                    <ArrowPathIcon className="w-5 h-5 text-lantern-primary shrink-0 animate-spin" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate text-lantern-text">{job.label}</p>
-                    <p className="text-xs truncate text-lantern-text-secondary">
-                      {job.fileName}
-                      {job.error ? ` — ${job.error}` : ''}
-                    </p>
-                  </div>
-                  {(job.status === 'complete' || job.status === 'failed') && (
-                    <button
-                      type="button"
-                      onClick={() => dismissUploadJob(job.id)}
-                      className="shrink-0 p-1 rounded text-lantern-text-secondary hover:text-lantern-text"
-                      aria-label="Dismiss"
-                    >
-                      <XMarkIcon className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                  Import PDF
+                </MenuItem>
+                {onPresentationImport ? (
+                  <MenuItem
+                    icon={<PresentationChartBarIcon className="w-5 h-5" aria-hidden />}
+                    onSelect={() => presentationInputRef.current?.click()}
+                  >
+                    Import PowerPoint
+                  </MenuItem>
+                ) : null}
+                {onPhotosImport ? (
+                  <MenuItem
+                    icon={<PhotoIcon className="w-5 h-5" aria-hidden />}
+                    onSelect={() => photosInputRef.current?.click()}
+                  >
+                    Import photos
+                  </MenuItem>
+                ) : null}
+                {onYoutubeImport ? (
+                  <MenuItem
+                    icon={<PlayCircleIcon className="w-5 h-5" aria-hidden />}
+                    onSelect={() => setYoutubeModalOpen(true)}
+                  >
+                    From YouTube
+                  </MenuItem>
+                ) : null}
+                <p className="px-4 pb-2 pt-1 text-xs text-lantern-text-secondary">
+                  {formatMaxNoteUploadLabel()}
+                </p>
+              </MenuContent>
+            </Menu>
+
+            {/* Outside the menu on purpose — see the refs above. `hidden` is
+                display:none, so these cost the row no width and no gap. */}
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={handlePdf}
+              disabled={Boolean(importProgress)}
+            />
+            {onPresentationImport ? (
+              <input
+                ref={presentationInputRef}
+                type="file"
+                accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint"
+                className="hidden"
+                onChange={handlePresentation}
+                disabled={Boolean(importProgress)}
+              />
+            ) : null}
+            {onPhotosImport ? (
+              <input
+                ref={photosInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handlePhotos}
+                disabled={Boolean(importProgress)}
+              />
+            ) : null}
+          </div>
 
           {error && (
             <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300" role="alert">
@@ -947,7 +968,22 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           {isLoading ? (
             <p className="text-sm text-lantern-text-secondary">Loading notes...</p>
           ) : filteredNotes.length === 0 ? (
-            listFilter === 'archived' ? (
+            // A query that matches nothing is not an empty library: offering
+            // "New note" there reads as if the notes were gone.
+            search.trim() ? (
+              <EmptyState
+                icon={<MagnifyingGlassIcon className="w-8 h-8" />}
+                title={`No notes match “${search.trim()}”`}
+                description={
+                  embedded
+                    ? 'This searches the list below the filters, so the folder, Mine/Shared and Archived choices above still apply. “Search everything” looks across your decks, cards and offline bundles too.'
+                    : 'Nothing here matches. Try a different word, or clear the folder and Archived filters above.'
+                }
+                {...(embedded
+                  ? {}
+                  : { actionLabel: 'Clear search', onAction: () => setOwnSearch('') })}
+              />
+            ) : listFilter === 'archived' ? (
               <EmptyState
                 icon={<ArchiveBoxIcon className="w-8 h-8" />}
                 title="No archived notes"

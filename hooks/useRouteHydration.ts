@@ -6,7 +6,7 @@ import { useNotesStore } from '../stores/notesStore';
 import { useUIStore } from '../stores/uiStore';
 import { fetchDecks, fetchDmThreads, fetchGroups } from '../services/supabase';
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
-import { ParsedAppRoute } from '../utils/appRoutes';
+import { ParsedAppRoute, isLibraryTabParam } from '../utils/appRoutes';
 
 export interface HydrationResult {
   mode: AppMode | null;
@@ -217,6 +217,27 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
       void notesStore.loadFolders();
       void notesStore.loadNotes();
       return { mode: AppMode.NOTES };
+    }
+
+    // The URL is the authority for the Library tab. A deep link, a Back/Forward
+    // step and a reload all name the tab in the path, and that name overwrites
+    // the persisted `libraryTab` — otherwise `/library/flashcards` would open on
+    // Notes for anyone whose last visit ended there. Bare `/library` names no
+    // tab: it adopts the persisted one and rewrites itself to that sub-path, so
+    // the address bar always shows something shareable. The rewrite terminates
+    // because the redirected path does name a tab.
+    case AppMode.LIBRARY: {
+      if (!params.libraryTab) {
+        // Validated, not trusted: `libraryTab` comes back from localStorage, so a
+        // stale or hand-edited value would be pasted into a path the parser then
+        // refuses, and the two would bounce the user between them forever.
+        const tab = isLibraryTabParam(ui.libraryTab) ? ui.libraryTab : 'notes';
+        return { mode: AppMode.LIBRARY, redirect: `/library/${tab}` };
+      }
+      if (ui.libraryTab !== params.libraryTab) {
+        ui.setLibraryTab(params.libraryTab);
+      }
+      return { mode: AppMode.LIBRARY };
     }
 
     case AppMode.ADMIN:

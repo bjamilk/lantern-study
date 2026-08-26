@@ -27,6 +27,14 @@ interface UIState {
   /** Session-only (not persisted): a stale course filter after relaunch would look like missing notes. */
   libraryCourseFilter: LibraryCourseFilter | null;
   setLibraryCourseFilter: (filter: LibraryCourseFilter | null) => void;
+  /**
+   * Whether the Library course tree is expanded. Persisted, unlike the course
+   * filter above: this is chrome, not a filter, so a stale value can only cost
+   * a tap — it can never hide content. Defaults to collapsed because an open
+   * tree costs up to 300px and pushes the notes/decks list off a phone screen.
+   */
+  libraryTreeOpen: boolean;
+  setLibraryTreeOpen: (open: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -36,11 +44,13 @@ export const useUIStore = create<UIState>()(
       setLibraryTab: (tab) => set({ libraryTab: tab }),
       libraryCourseFilter: null,
       setLibraryCourseFilter: (libraryCourseFilter) => set({ libraryCourseFilter }),
+      libraryTreeOpen: false,
+      setLibraryTreeOpen: (libraryTreeOpen) => set({ libraryTreeOpen }),
     }),
     {
       name: 'lantern-mobile-ui',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ libraryTab: state.libraryTab }),
+      partialize: (state) => ({ libraryTab: state.libraryTab, libraryTreeOpen: state.libraryTreeOpen }),
     }
   )
 );

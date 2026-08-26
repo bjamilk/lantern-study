@@ -4,11 +4,13 @@ import {
   AdjustmentsHorizontalIcon,
   ArchiveBoxIcon,
   ArrowPathIcon,
+  BuildingStorefrontIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ClipboardDocumentCheckIcon,
   CloudArrowDownIcon,
   DocumentTextIcon,
+  EllipsisHorizontalIcon,
   InboxIcon,
   RectangleStackIcon,
   ShoppingBagIcon,
@@ -25,6 +27,7 @@ import {
   type LibraryTopicRow,
 } from '../../utils/libraryArchive';
 import { ManageOutlineModal } from '../academic/ManageOutlineModal';
+import { Menu, MenuTrigger, MenuContent, MenuItem } from '../ui';
 import type { LibraryTab } from '../LibraryScreen';
 
 export interface LibraryRailProps {
@@ -45,6 +48,12 @@ export interface LibraryRailProps {
   onOpenTests: () => void;
   /** Opens Offline Mode, which follows the Library course filter. */
   onOpenOffline: () => void;
+  /**
+   * Draft a sellable study pack from one course's notes (Phase 2 · H). Takes
+   * the course explicitly, so a row can offer it without first making that
+   * course the Library's filter.
+   */
+  onCreateStudyPack?: (courseId: string, courseLabel?: string) => void;
   /** Tighter rows for the small-screen top panel. */
   compact?: boolean;
   className?: string;
@@ -77,6 +86,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
   onOpenTab,
   onOpenTests,
   onOpenOffline,
+  onCreateStudyPack,
   compact = false,
   className = '',
 }) => {
@@ -170,50 +180,65 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
     activate();
   };
 
+  /**
+   * Stands in for the four "0" badges an empty row used to carry: they cost the
+   * row a whole second line, and their aria-labels were all a screen reader got,
+   * so the marker has to say the same thing.
+   */
+  const renderEmptyMarker = (selected: boolean, extraClass = '') => (
+    <span
+      className={`text-[10px] shrink-0 ${selected ? 'text-white/70' : 'text-lantern-text-tertiary'} ${extraClass}`}
+    >
+      empty<span className="sr-only"> — no notes, decks, tests or offline packs</span>
+    </span>
+  );
+
   const renderCounts = (
     counts: Pick<LibraryCourseCounts, 'notes' | 'decks' | 'tests' | 'bundles'> & { purchasedPacks?: number },
     onOpen: (key: CountKey) => void,
     selected: boolean
-  ) => (
-    <div className="mt-1 flex flex-wrap items-center gap-1" aria-label="Item counts">
-      {COUNT_META.map(({ key, label, icon: Icon }) => {
-        const n = counts[key] || 0;
-        const title =
-          key === 'tests'
-            ? `${n} ${label.toLowerCase()} — opens recent tests (all courses; a per-course test filter is not available yet)`
-            : key === 'bundles' && counts.purchasedPacks
-              ? `${n} ${label.toLowerCase()} (${counts.purchasedPacks} purchased) — opens Offline Mode for this course`
-              : `${n} ${label.toLowerCase()}`;
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen(key);
-            }}
-            title={title}
-            aria-label={title}
-            className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-none transition-colors ${
-              n > 0
-                ? selected
+  ) => {
+    // `purchasedPacks` is a subset of `bundles`, so a zero bundles count can
+    // never hide a purchased pack.
+    const present = COUNT_META.filter(({ key }) => (counts[key] || 0) > 0);
+    if (present.length === 0) return null;
+    return (
+      <div className="mt-1 flex flex-wrap items-center gap-1" aria-label="Item counts">
+        {present.map(({ key, label, icon: Icon }) => {
+          const n = counts[key] || 0;
+          const title =
+            key === 'tests'
+              ? `${n} ${label.toLowerCase()} — opens recent tests (all courses; a per-course test filter is not available yet)`
+              : key === 'bundles' && counts.purchasedPacks
+                ? `${n} ${label.toLowerCase()} (${counts.purchasedPacks} purchased) — opens Offline Mode for this course`
+                : `${n} ${label.toLowerCase()}`;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(key);
+              }}
+              title={title}
+              aria-label={title}
+              className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-none transition-colors ${
+                selected
                   ? 'bg-white/20 text-white hover:bg-white/30'
                   : 'bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border/60 hover:text-lantern-text'
-                : selected
-                  ? 'text-white/60'
-                  : 'text-lantern-text-tertiary'
-            }`}
-          >
-            <Icon className="h-3 w-3" aria-hidden />
-            {n}
-            {key === 'bundles' && counts.purchasedPacks ? (
-              <ShoppingBagIcon className="h-3 w-3 ml-0.5" aria-hidden />
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
-  );
+              }`}
+            >
+              <Icon className="h-3 w-3" aria-hidden />
+              {n}
+              {key === 'bundles' && counts.purchasedPacks ? (
+                <ShoppingBagIcon className="h-3 w-3 ml-0.5" aria-hidden />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   const renderTopicRow = (courseId: string, row: LibraryTopicRow) => {
     const selected = selectedCourseId === courseId && selectedTopicId === row.id;
@@ -241,11 +266,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             >
               {row.title}
             </span>
-            {total === 0 ? (
-              <span className={`ml-auto text-[10px] shrink-0 ${selected ? 'text-white/70' : 'text-lantern-text-tertiary'}`}>
-                empty
-              </span>
-            ) : null}
+            {total === 0 ? renderEmptyMarker(selected, 'ml-auto') : null}
           </div>
           {renderCounts(row.counts, (key) => openTopicCount(courseId, row, key), selected)}
         </div>
@@ -321,34 +342,44 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               </span>
             ) : null}
             <span className="ml-auto flex items-center gap-1 shrink-0">
-              {total === 0 ? (
-                <span
-                  className={`text-[10px] ${
-                    courseSelected && !selectedTopicId ? 'text-white/70' : 'text-lantern-text-tertiary'
+              {total === 0 ? renderEmptyMarker(courseSelected && !selectedTopicId) : null}
+              {/* One overflow menu per course, in the same 24px the manage-topics
+                  gear used to occupy — and on every course, not only ones with
+                  topic rows: an outline whose topics hold nothing yet
+                  contributes no rows here, and gating on them left a freshly
+                  seeded outline with no way to be curated.
+                  Its actions take the course explicitly, so a student can act on
+                  BIO 201 without first making it the Library's filter. Mobile
+                  puts the same actions in each row's overflow sheet. */}
+              <Menu>
+                <MenuTrigger
+                  aria-label={`Actions for ${node.course.code}`}
+                  title={`Actions for ${node.course.code}`}
+                  className={`grid place-items-center min-w-[24px] min-h-[24px] rounded ${
+                    courseSelected && !selectedTopicId
+                      ? 'text-white/80 hover:bg-white/20'
+                      : 'text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-border/60'
                   }`}
                 >
-                  empty
-                </span>
-              ) : null}
-              {/* On every course, not only ones with topic rows: an outline whose
-                  topics hold nothing yet contributes no rows here, and gating on
-                  them left a freshly seeded outline with no way to be curated. */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setManageCourse({ id: node.course.id, label: courseLabel });
-                }}
-                aria-label={`Manage topics in ${node.course.code}`}
-                title={COURSE_TOPIC_COPY.manageTitle}
-                className={`grid place-items-center min-w-[24px] min-h-[24px] rounded ${
-                  courseSelected && !selectedTopicId
-                    ? 'text-white/80 hover:bg-white/20'
-                    : 'text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-border/60'
-                }`}
-              >
-                <AdjustmentsHorizontalIcon className="h-3.5 w-3.5" aria-hidden />
-              </button>
+                  <EllipsisHorizontalIcon className="h-4 w-4" aria-hidden />
+                </MenuTrigger>
+                <MenuContent align="end">
+                  <MenuItem
+                    icon={<AdjustmentsHorizontalIcon className="h-5 w-5" aria-hidden />}
+                    onSelect={() => setManageCourse({ id: node.course.id, label: courseLabel })}
+                  >
+                    {COURSE_TOPIC_COPY.manageTitle}
+                  </MenuItem>
+                  {onCreateStudyPack ? (
+                    <MenuItem
+                      icon={<BuildingStorefrontIcon className="h-5 w-5" aria-hidden />}
+                      onSelect={() => onCreateStudyPack(node.course.id, courseLabel)}
+                    >
+                      Create a study pack
+                    </MenuItem>
+                  ) : null}
+                </MenuContent>
+              </Menu>
             </span>
           </div>
           {renderCounts(node.counts, (key) => openCount(node.course.id, key), courseSelected && !selectedTopicId)}
@@ -388,6 +419,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             <span className="flex items-center gap-2">
               <AcademicCapIcon className="h-4 w-4 shrink-0" aria-hidden />
               <span className="font-semibold">All items</span>
+              {overview && countsTotal(tree.totals) === 0 ? renderEmptyMarker(allSelected, 'ml-auto') : null}
             </span>
             {overview ? renderCounts(tree.totals, (key) => openCount(null, key), allSelected) : null}
           </div>
@@ -484,6 +516,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               <span className="flex items-center gap-2">
                 <InboxIcon className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="font-semibold">Unfiled</span>
+                {countsTotal(tree.unfiled) === 0 ? renderEmptyMarker(unfiledSelected, 'ml-auto') : null}
               </span>
               {renderCounts(tree.unfiled, (key) => openCount(UNFILED_COURSE_ID, key), unfiledSelected)}
             </div>

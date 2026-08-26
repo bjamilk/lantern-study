@@ -1,13 +1,12 @@
 /**
  * The Library archive tree (Phase 1 · B, contract §3): This semester →
  * Past semesters (collapsed) → Unfiled. Tapping a course row sets the course
- * filter the Notes / Flashcards tabs honour; each row also deep-links to the
- * Tests history and Offline screens filtered to that course.
+ * filter the Notes / Flashcards tabs honour.
  *
- * A course expands into its syllabus topics (Phase 1 · A) plus the entry point
- * to managing them. It expands even when the overview carries no topic rows —
- * the outline may exist with nothing filed under it yet, and that is precisely
- * the outline that needs curating.
+ * A course expands into its syllabus topics (Phase 1 · A). Everything else a
+ * course row can do — test history, offline downloads, curating the outline,
+ * building a study pack — lives behind one overflow control per row: inline
+ * they cost three 44px targets each and crushed the row's own label.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
@@ -16,7 +15,8 @@ import type { LibraryCourseNode } from '@lantern/shared/types';
 import { featureAccents } from '@lantern/shared/design';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { useTheme } from '../../theme';
-import type { LibraryCourseFilter } from '../../stores/uiStore';
+import { ActionSheet, type ActionSheetItem } from '../ui';
+import { useUIStore, type LibraryCourseFilter } from '../../stores/uiStore';
 import {
   courseNodeLabel,
   courseTopicRows,
@@ -47,6 +47,13 @@ interface Props {
   tree: LibraryTree | null;
   loading: boolean;
   error: string | null;
+  /**
+   * Archive-wide totals for the collapsed summary. They used to be chips in a
+   * hero block of their own; here they cost no height at all, and opening the
+   * tree replaces them with the per-course breakdown they add up to.
+   */
+  totalNotes: number;
+  totalDecks: number;
   /** Course uuid or `'null'` (unfiled); null = no filter. */
   selectedCourseId: string | null;
   /** Topic uuid or `'null'` (no topic) inside `selectedCourseId`; null = the whole course. */
@@ -58,6 +65,8 @@ interface Props {
   onOpenOffline: (filter: LibraryCourseFilter) => void;
   /** Open the manage-outline sheet for a course (rename/reorder/delete topics). */
   onManageTopics: (filter: LibraryCourseFilter) => void;
+  /** Draft a sellable study pack from a course (Phase 2 · H). */
+  onCreateStudyPack: (filter: LibraryCourseFilter) => void;
   onRetry: () => void;
   onManageCourses: () => void;
 }
@@ -97,8 +106,7 @@ function TreeRow({
   topicsOpen,
   onToggleTopics,
   onPress,
-  onOpenTests,
-  onOpenOffline,
+  onOpenActions,
 }: {
   title: string;
   subtitle?: string;
@@ -109,16 +117,14 @@ function TreeRow({
   topicsOpen?: boolean;
   onToggleTopics?: () => void;
   onPress: () => void;
-  onOpenTests: () => void;
-  onOpenOffline: () => void;
+  onOpenActions: () => void;
 }) {
   const { colors } = useTheme();
+  // No selected-state fill here: the scope chips above the tabs are the one
+  // place the live filter is announced, and they stay put when the tree is
+  // collapsed. The row keeps its checkmark so the tap has visible feedback.
   return (
-    <View
-      className={`flex-row items-center rounded-xl mb-1 ${
-        selected ? 'bg-lantern-primary-background' : ''
-      }`}
-    >
+    <View className="flex-row items-center rounded-xl mb-1">
       {onToggleTopics ? (
         <Pressable
           onPress={onToggleTopics}
@@ -159,22 +165,13 @@ function TreeRow({
         </View>
       </Pressable>
       <Pressable
-        onPress={onOpenTests}
+        onPress={onOpenActions}
         hitSlop={6}
-        className="px-2 py-2 min-h-[44px] items-center justify-center"
+        className="pl-2 pr-3 py-2 min-h-[44px] min-w-[44px] items-center justify-center"
         accessibilityRole="button"
-        accessibilityLabel={`Open test history for ${title}`}
+        accessibilityLabel={`More actions for ${title}`}
       >
-        <Ionicons name="clipboard-outline" size={18} color={colors.textSecondary} />
-      </Pressable>
-      <Pressable
-        onPress={onOpenOffline}
-        hitSlop={6}
-        className="pl-2 pr-3 py-2 min-h-[44px] items-center justify-center"
-        accessibilityRole="button"
-        accessibilityLabel={`Open offline bundles for ${title}`}
-      >
-        <Ionicons name="cloud-download-outline" size={18} color={colors.textSecondary} />
+        <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
       </Pressable>
     </View>
   );
@@ -195,9 +192,7 @@ function TopicRow({
   return (
     <Pressable
       onPress={onPress}
-      className={`flex-row items-center gap-2 pl-8 pr-3 py-2 mb-1 rounded-xl min-h-[44px] ${
-        selected ? 'bg-lantern-primary-background' : ''
-      }`}
+      className="flex-row items-center gap-2 pl-8 pr-3 py-2 mb-1 rounded-xl min-h-[44px]"
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={`${selected ? 'Clear topic filter' : 'Filter by topic'} ${row.title}`}
@@ -254,6 +249,8 @@ export function LibraryCourseTree({
   tree,
   loading,
   error,
+  totalNotes,
+  totalDecks,
   selectedCourseId,
   selectedTopicId,
   onSelectCourse,
@@ -261,13 +258,20 @@ export function LibraryCourseTree({
   onOpenTests,
   onOpenOffline,
   onManageTopics,
+  onCreateStudyPack,
   onRetry,
   onManageCourses,
 }: Props) {
   const { colors } = useTheme();
-  const [open, setOpen] = useState(true);
+  // Persisted (and collapsed by default): local state re-opened the tree on
+  // every mount, so a 300px scroller sat between the student and their notes
+  // each time the Library tab was visited.
+  const open = useUIStore(s => s.libraryTreeOpen);
+  const setOpen = useUIStore(s => s.setLibraryTreeOpen);
   const [thisOpen, setThisOpen] = useState(true);
   const [pastOpen, setPastOpen] = useState(false);
+  /** Row whose overflow sheet is open, with the flag that gates course-only actions. */
+  const [rowActions, setRowActions] = useState<{ filter: LibraryCourseFilter; isCourse: boolean } | null>(null);
   // Topic levels are collapsed by default; keyed per row because one course can
   // appear under several academic years. Only rows the student toggled are here.
   const [topicsOpen, setTopicsOpen] = useState<Record<string, boolean>>({});
@@ -316,6 +320,39 @@ export function LibraryCourseTree({
   const pastCount = tree?.pastSemesters.reduce((n, y) => n + y.courses.length, 0) ?? 0;
   const hasCourses = activeCount + pastCount > 0;
 
+  /** Everything a row used to spend its own 44px tap target on. */
+  const buildRowActions = (target: { filter: LibraryCourseFilter; isCourse: boolean }): ActionSheetItem[] => {
+    const items: ActionSheetItem[] = [
+      {
+        label: 'Test history',
+        icon: 'clipboard-outline',
+        onPress: () => onOpenTests(target.filter),
+      },
+      {
+        label: 'Offline downloads',
+        icon: 'cloud-download-outline',
+        onPress: () => onOpenOffline(target.filter),
+      },
+    ];
+    if (!target.isCourse) return items;
+    items.push(
+      {
+        label: COURSE_TOPIC_COPY.manageTitle,
+        icon: 'options-outline',
+        hint: 'Rename, reorder or delete this course’s topics',
+        onPress: () => onManageTopics(target.filter),
+      },
+      {
+        label: 'Create a study pack',
+        icon: 'storefront-outline',
+        hint: 'Turn this course’s notes into something you can sell',
+        onPress: () => onCreateStudyPack(target.filter),
+      }
+    );
+    return items;
+  };
+  const rowActionItems = rowActions ? buildRowActions(rowActions) : [];
+
   const renderCourse = (node: LibraryCourseNode, archived: boolean) => {
     const rowKey = `${node.enrolment.academicYear}:${node.course.id}`;
     const filter = courseFilter(node);
@@ -325,10 +362,6 @@ export function LibraryCourseTree({
     const topics = courseTopicRows(node);
     // Collapsed until asked for, except when this course holds the live topic
     // filter: a selection the student cannot see reads as a broken filter.
-    //
-    // Every course expands, including one with no rows yet: the section also
-    // holds "Course topics", and gating it on `topics.length > 0` is what left a
-    // seeded-but-unfiled outline with no way to rename or delete anything.
     const expanded = topicsOpen[rowKey] ?? (courseSelected && !!selectedTopicId);
     return (
       <View key={rowKey}>
@@ -343,12 +376,13 @@ export function LibraryCourseTree({
           topicsOpen={expanded}
           onToggleTopics={() => setTopicsOpen(o => ({ ...o, [rowKey]: !expanded }))}
           onPress={() => toggle(filter)}
-          onOpenTests={() => onOpenTests(filter)}
-          onOpenOffline={() => onOpenOffline(filter)}
+          onOpenActions={() => setRowActions({ filter, isCourse: true })}
         />
-        {expanded ? (
-          <>
-            {topics.map(row => {
+        {/* Managing the outline used to be a row of its own under every
+            expanded course; it is in this row's overflow sheet now, so a course
+            with no topics filed yet still has a way to curate one. */}
+        {expanded
+          ? topics.map(row => {
               const selected = courseSelected && selectedTopicId === row.id;
               return (
                 <TopicRow
@@ -360,24 +394,8 @@ export function LibraryCourseTree({
                   }
                 />
               );
-            })}
-            {/* Rename/reorder/delete the shared outline. Present whenever a
-                course is expanded, not only when rows are showing: the outline
-                that most needs curating is the one nothing is filed under yet,
-                and it contributes no rows here. */}
-            <Pressable
-              onPress={() => onManageTopics(filter)}
-              className="flex-row items-center gap-2 pl-8 pr-3 py-2 mb-1 min-h-[40px]"
-              accessibilityRole="button"
-              accessibilityLabel={`${COURSE_TOPIC_COPY.manageTitle} in ${node.course.code}`}
-            >
-              <Ionicons name="options-outline" size={15} color={colors.textTertiary} />
-              <Text className="text-[12px] font-medium text-lantern-text-secondary">
-                {COURSE_TOPIC_COPY.manageTitle}
-              </Text>
-            </Pressable>
-          </>
-        ) : null}
+            })
+          : null}
       </View>
     );
   };
@@ -385,18 +403,21 @@ export function LibraryCourseTree({
   return (
     <View className="rounded-2xl border border-lantern-border bg-lantern-surface mb-2 overflow-hidden">
       <Pressable
-        onPress={() => setOpen(o => !o)}
+        onPress={() => setOpen(!open)}
         className="flex-row items-center gap-2 px-3 py-2.5 min-h-[44px]"
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel="My courses"
       >
         <Ionicons name="git-branch-outline" size={16} color={featureAccents.library} />
-        <Text className="flex-1 text-sm font-semibold text-lantern-text">My courses</Text>
+        <Text className="flex-1 text-sm font-semibold text-lantern-text" numberOfLines={1}>
+          My courses
+        </Text>
         {loading && !tree ? <ActivityIndicator size="small" color={colors.primary} /> : null}
         {!open && tree ? (
-          <Text className="text-[11px] text-lantern-text-secondary mr-1">
-            {activeCount} active{pastCount > 0 ? ` · ${pastCount} past` : ''}
+          <Text className="text-[11px] text-lantern-text-secondary mr-1" numberOfLines={1}>
+            {activeCount} active · {totalNotes} {totalNotes === 1 ? 'note' : 'notes'} · {totalDecks}{' '}
+            {totalDecks === 1 ? 'deck' : 'decks'}
           </Text>
         ) : null}
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
@@ -468,13 +489,20 @@ export function LibraryCourseTree({
                 counts={tree.unfiled}
                 selected={selectedCourseId === UNFILED_COURSE_ID}
                 onPress={() => toggle(UNFILED_FILTER)}
-                onOpenTests={() => onOpenTests(UNFILED_FILTER)}
-                onOpenOffline={() => onOpenOffline(UNFILED_FILTER)}
+                // No course behind these items, so no outline and no study pack.
+                onOpenActions={() => setRowActions({ filter: UNFILED_FILTER, isCourse: false })}
               />
             </>
           ) : null}
         </ScrollView>
       ) : null}
+
+      <ActionSheet
+        visible={!!rowActions}
+        title={rowActions?.filter.label}
+        items={rowActionItems}
+        onClose={() => setRowActions(null)}
+      />
     </View>
   );
 }

@@ -1,7 +1,31 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import { useAcademicStore } from '../../stores/academicStore';
 import { activeUserCourses } from '../../utils/academicSetup';
 import { UNFILED_COURSE_ID } from '../../utils/libraryArchive';
+
+/**
+ * Marks a subtree whose ancestor already names the active course/topic filter
+ * *and* can clear it. Inside one, `CourseChips` and `TopicFilterChip` render
+ * nothing.
+ *
+ * The Library is the only such ancestor: its scope row ("Showing PHARM 212 ·
+ * Enzymes", Whole course, Clear) sits directly above the tab panels, and its
+ * rail is where the filter is chosen. A second copy of that state inside each
+ * panel costs a row of vertical space on both tabs and says nothing the row
+ * above does not. Everywhere else — the standalone Notes and Flashcards
+ * screens — the chips are the only filter surface and are untouched.
+ *
+ * This is a context rather than a prop because the two chip callers each render
+ * in both places; the ancestor that owns an indicator is the one that knows.
+ */
+const CourseFilterShownAbove = createContext(false);
+
+export const CourseFilterShownAboveProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <CourseFilterShownAbove.Provider value={true}>{children}</CourseFilterShownAbove.Provider>
+);
+
+/** True when an ancestor already shows — and can clear — the course/topic filter. */
+export const useCourseFilterShownAbove = (): boolean => useContext(CourseFilterShownAbove);
 
 interface CourseChipsProps {
   /** Selected course id; null = All; the literal `'null'` = Unfiled. */
@@ -28,6 +52,7 @@ export const CourseChips: React.FC<CourseChipsProps> = ({
   ariaLabel = 'Filter by course',
   showUnfiled = false,
 }) => {
+  const shownAbove = useCourseFilterShownAbove();
   const myCourses = useAcademicStore((s) => s.myCourses);
   const loaded = useAcademicStore((s) => s.loaded);
   const loadMyCourses = useAcademicStore((s) => s.loadMyCourses);
@@ -51,6 +76,10 @@ export const CourseChips: React.FC<CourseChipsProps> = ({
     if (!value || isUnfiled || !loaded || selectedInActive) return;
     if (!resolveCourse(value)) onChange(null);
   }, [value, isUnfiled, loaded, selectedInActive, resolveCourse, onChange, knownCourses]);
+
+  // Rendering nothing, not unmounting: the effect above is the safety net that
+  // drops a filter pointing at a deleted course, and it has to keep running.
+  if (shownAbove) return null;
 
   if (active.length === 0 && !isUnfiled && !extraSelected) return null;
 

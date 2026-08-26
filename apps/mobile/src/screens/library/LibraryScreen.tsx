@@ -7,7 +7,6 @@ import { featureAccents } from '@lantern/shared/design';
 import type { LibraryOverview } from '@lantern/shared/types';
 import { NotesScreen } from '../notes/NotesScreen';
 import { FlashcardsScreen } from '../flashcards/FlashcardsScreen';
-import { FeatureHero } from '../../components/ui';
 import { LibraryCourseTree, type LibraryTopicFilter } from '../../components/library/LibraryCourseTree';
 import { LibrarySearchResults } from '../../components/library/LibrarySearchResults';
 import { ManageOutlineSheet } from '../../components/library/ManageOutlineSheet';
@@ -22,7 +21,13 @@ import { useTheme } from '../../theme';
 import { useLibrarySearch } from '../../hooks/useLibrarySearch';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
-import { buildLibraryTree, courseNodeLabel, UNFILED_COURSE_ID } from '../../utils/libraryArchive';
+import {
+  buildLibraryTree,
+  courseNodeLabel,
+  isLibrarySearchable,
+  LIBRARY_SEARCH_MIN_CHARS,
+  UNFILED_COURSE_ID,
+} from '../../utils/libraryArchive';
 
 type Tab = LibraryTab;
 
@@ -106,13 +111,31 @@ export function LibraryScreen({ navigation, route }: Props) {
     [setCourseFilter]
   );
 
-  // ---- Search (GET /library/search) ----
+  // ---- Search ----
   const [query, setQuery] = useState('');
+  /**
+   * Whether `GET /library/search` has replaced the open tab.
+   *
+   * Typing no longer does this on its own: the server search needs the network
+   * and two characters, and it knows nothing about the panel's folder,
+   * Mine/Shared or Active/Archived selection — so those controls sat on screen
+   * looking applied while the results ignored them. Typing now narrows the
+   * panel in place (`listQuery` below), which is instant, works offline and
+   * honours everything visible; this is the deliberate step out to decks, cards
+   * and offline bundles. Web behaves the same way.
+   */
+  const [searchEverything, setSearchEverything] = useState(false);
   const search = useLibrarySearch({
-    query,
+    // Only the deliberate search hits the network; the panel filter is local.
+    query: searchEverything ? query : '',
     courseId: courseFilter?.id ?? null,
     topicId: activeTopic?.id ?? null,
   });
+  const trimmedQuery = query.trim();
+  const canSearchEverything = isLibrarySearchable(query);
+  useEffect(() => {
+    if (!canSearchEverything) setSearchEverything(false);
+  }, [canSearchEverything]);
 
   /** Label for a course id: selected filter first, then the loaded tree. */
   const labelForCourse = useCallback(
@@ -167,6 +190,29 @@ export function LibraryScreen({ navigation, route }: Props) {
     [courseFilter]
   );
 
+  /**
+   * Draft a sellable study pack from a course (Phase 2 · H). Lives in each
+   * course row's overflow sheet rather than beside the scope chips, so it is
+   * reachable for any course instead of only the filtered one — and the scope
+   * row stays a single line.
+   *
+   * The API validates `courseId` as a uuid, so only real course rows offer
+   * this: UNFILED_COURSE_ID is the string 'null' (truthy!) with no course
+   * behind it.
+   */
+  const openStudyPackDrafts = useCallback((filter: LibraryCourseFilter) => {
+    // The market stack is nested under Main > MarketTab (there is no
+    // root-level Market route), same shape as
+    // navigationRef.navigateToChallengesInbox uses for ChatTab.
+    navigateRootStack('Main', {
+      screen: 'MarketTab',
+      params: {
+        screen: 'StudyProductDrafts',
+        params: { source: { courseId: filter.id, title: filter.label } },
+      },
+    });
+  }, []);
+
   const openBundle = useCallback(
     (_bundleId: string, bundleCourseId: string | null) => {
       const id = bundleCourseId ?? UNFILED_COURSE_ID;
@@ -220,37 +266,49 @@ export function LibraryScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 bg-lantern-background">
-        <FeatureHero
-          title="Library"
-          subtitle="Your archive: notes, decks, tests and offline packs, filed by course"
-          accentColor={featureAccents.library}
-          right={<Ionicons name="library-outline" size={24} color={featureAccents.library} />}
-          className="mb-2"
-        >
-          <View className="flex-row flex-wrap gap-2">
-            <View className="px-2.5 py-1 rounded-full bg-lantern-primary-background">
-              <Text className="text-xs font-medium text-lantern-primary">{heroNotes} {heroNotes === 1 ? 'note' : 'notes'}</Text>
-            </View>
-            <View className="px-2.5 py-1 rounded-full bg-lantern-accent-background">
-              <Text className="text-xs font-medium text-lantern-accent">{heroDecks} {heroDecks === 1 ? 'deck' : 'decks'}</Text>
-            </View>
-            {tree && tree.totals.tests > 0 ? (
-              <View className="px-2.5 py-1 rounded-full bg-lantern-background-secondary">
-                <Text className="text-xs font-medium text-lantern-text-secondary">{tree.totals.tests} {tree.totals.tests === 1 ? 'test' : 'tests'}</Text>
-              </View>
-            ) : null}
-            {dueCardsCount > 0 ? (
-              <View className="px-2.5 py-1 rounded-full bg-lantern-error/10">
-                <Text className="text-xs font-medium text-lantern-error">{dueCardsCount} due</Text>
-              </View>
+        {/* The screen title shares the search row: the bottom tab bar already
+            names this screen and carries its icon and due-card badge, so a hero
+            block of its own bought nothing but height. The archive totals moved
+            into the course tree's collapsed summary. */}
+        <View className="mb-2 flex-row items-center gap-2">
+          <Text className="text-lg font-bold text-lantern-text">Library</Text>
+          <View className="flex-1 flex-row items-center gap-2 px-3 py-1.5 rounded-xl border border-lantern-border bg-lantern-surface min-h-[44px]">
+            <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              // Names the list this narrows: typing filters the open tab, and
+              // reaching the rest of the archive is the "Search everything"
+              // step below. "Search notes, decks, cards, bundles…" promised
+              // something typing no longer does.
+              placeholder={`Search ${tab === 'notes' ? 'notes' : 'flashcards'}${
+                activeTopic ? ` in ${activeTopic.label}` : courseFilter ? ` in ${courseFilter.label}` : ''
+              }…`}
+              placeholderTextColor={colors.inputPlaceholder}
+              autoCorrect={false}
+              returnKeyType="search"
+              className="flex-1 text-sm text-lantern-text py-1"
+              accessibilityLabel={`Search ${tab === 'notes' ? 'notes' : 'flashcards'}`}
+            />
+            {query ? (
+              <Pressable
+                onPress={() => setQuery('')}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+              </Pressable>
             ) : null}
           </View>
-        </FeatureHero>
+        </View>
 
         <LibraryCourseTree
           tree={tree}
           loading={overviewLoading}
           error={overviewError}
+          totalNotes={heroNotes}
+          totalDecks={heroDecks}
           selectedCourseId={courseFilter?.id ?? null}
           selectedTopicId={activeTopic?.id ?? null}
           onSelectCourse={selectCourse}
@@ -258,45 +316,23 @@ export function LibraryScreen({ navigation, route }: Props) {
           onOpenTests={openTests}
           onOpenOffline={openOffline}
           onManageTopics={setManageCourse}
+          onCreateStudyPack={openStudyPackDrafts}
           onRetry={() => setOverviewAttempt(a => a + 1)}
           onManageCourses={() => navigateRootStack('AcademicSettings')}
         />
 
-        <View className="mb-2 flex-row items-center gap-2 px-3 py-1.5 rounded-xl border border-lantern-border bg-lantern-surface min-h-[44px]">
-          <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder={
-              activeTopic
-                ? `Search in ${activeTopic.label}…`
-                : courseFilter
-                  ? `Search in ${courseFilter.label}…`
-                  : 'Search notes, decks, cards, bundles…'
-            }
-            placeholderTextColor={colors.inputPlaceholder}
-            autoCorrect={false}
-            returnKeyType="search"
-            className="flex-1 text-sm text-lantern-text py-1"
-            accessibilityLabel="Search library"
-          />
-          {query ? (
-            <Pressable
-              onPress={() => setQuery('')}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Clear search"
-            >
-              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-            </Pressable>
-          ) : null}
-        </View>
-
+        {/* The one place the live filter is announced. The tree rows no longer
+            highlight the selection, and the tree is collapsed by default, so
+            without this a filtered list reads as missing notes. Kept to a
+            single line — the per-course actions it used to carry moved into
+            each row's overflow sheet. */}
         {courseFilter ? (
-          <View className="mb-2 flex-row flex-wrap items-center gap-2">
-            <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
+          <View className="mb-2 flex-row items-center gap-2">
+            {/* Both chips shrink rather than wrap: two long labels used to push
+                this row onto a second line and cost another 36px. */}
+            <View className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
               <Ionicons name="school-outline" size={14} color={colors.primary} />
-              <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+              <Text className="shrink text-xs font-semibold text-lantern-primary" numberOfLines={1}>
                 {courseFilter.label}
               </Text>
               <Pressable
@@ -309,9 +345,9 @@ export function LibraryScreen({ navigation, route }: Props) {
               </Pressable>
             </View>
             {activeTopic ? (
-              <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
+              <View className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
                 <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
-                <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
+                <Text className="shrink text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
                   {activeTopic.label}
                 </Text>
                 <Pressable
@@ -325,38 +361,41 @@ export function LibraryScreen({ navigation, route }: Props) {
                 </Pressable>
               </View>
             ) : null}
-            {/* Turn this course's notes into a sellable study pack (Phase 2 · H).
-                UNFILED_COURSE_ID is the string 'null' (truthy!), and there is no
-                course to build from there — so gate on a real course id, which
-                the API validates as a uuid. */}
-            {courseFilter.id && courseFilter.id !== UNFILED_COURSE_ID ? (
+          </View>
+        ) : null}
+
+        {/* Only while something is typed: the way out to decks, cards and
+            bundles, and the way back. One line, and only then. */}
+        {trimmedQuery ? (
+          <View className="mb-2 flex-row items-center gap-2">
+            {searchEverything ? (
               <Pressable
-                onPress={() =>
-                  // The market stack is nested under Main > MarketTab (there is
-                  // no root-level Market route), same shape as
-                  // navigationRef.navigateToChallengesInbox uses for ChatTab.
-                  navigateRootStack('Main', {
-                    screen: 'MarketTab',
-                    params: {
-                      screen: 'StudyProductDrafts',
-                      params: {
-                        source: { courseId: courseFilter.id, title: courseFilter.label },
-                      },
-                    },
-                  })
-                }
-                className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-lantern-primary/30 bg-lantern-primary/5 min-h-[36px]"
+                onPress={() => setSearchEverything(false)}
+                className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary min-h-[36px]"
                 accessibilityRole="button"
-                accessibilityLabel={`Create a study pack from ${courseFilter.label}`}
               >
-                <Ionicons name="storefront-outline" size={13} color={colors.primary} />
-                <Text className="text-[11px] font-semibold text-lantern-primary">
-                  Create a study pack
+                <Ionicons name="arrow-back" size={14} color={colors.textSecondary} />
+                <Text className="shrink text-xs font-semibold text-lantern-text-secondary" numberOfLines={1}>
+                  Back to {tab === 'notes' ? 'notes' : 'flashcards'}
+                </Text>
+              </Pressable>
+            ) : canSearchEverything ? (
+              <Pressable
+                onPress={() => setSearchEverything(true)}
+                className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background min-h-[36px]"
+                accessibilityRole="button"
+                accessibilityHint="Searches decks, cards and offline bundles as well; the folder and Archived filters do not apply there"
+              >
+                <Ionicons name="search" size={14} color={colors.primary} />
+                <Text className="shrink text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+                  Search everything
                 </Text>
               </Pressable>
             ) : (
-              <Text className="text-[11px] text-lantern-text-secondary flex-1" numberOfLines={1}>
-                Notes and Flashcards below are filtered
+              // One character filters the list below just fine; only the server
+              // search has a minimum, so say so rather than showing nothing.
+              <Text className="shrink text-xs text-lantern-text-secondary" numberOfLines={1}>
+                Type {LIBRARY_SEARCH_MIN_CHARS} characters to search decks, cards and bundles too.
               </Text>
             )}
           </View>
@@ -420,9 +459,9 @@ export function LibraryScreen({ navigation, route }: Props) {
             onOpenBundle={openBundle}
           />
         ) : tab === 'notes' ? (
-          <NotesScreen navigation={navigation} embedded />
+          <NotesScreen navigation={navigation} embedded listQuery={query} />
         ) : (
-          <FlashcardsScreen navigation={navigation} embedded />
+          <FlashcardsScreen navigation={navigation} embedded listQuery={query} />
         )}
       </View>
 

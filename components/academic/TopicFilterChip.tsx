@@ -2,6 +2,7 @@ import React from 'react';
 import { BookmarkIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useCourseFilterShownAbove } from './CourseChips';
 import { UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 
 /**
@@ -12,13 +13,18 @@ import { UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchiv
  * Library rail quietly shortens those lists with nothing on screen to explain
  * or undo it. Clearing here widens to the whole course — never all the way to
  * "everything", which is what the course chip is for.
+ *
+ * Inside the Library that job belongs to the scope row above the panels, so
+ * this renders nothing there (see `CourseFilterShownAboveProvider`).
  */
 export const TopicFilterChip: React.FC<{ className?: string }> = ({ className = '' }) => {
+  const shownAbove = useCourseFilterShownAbove();
   const courseFilterId = useLibraryStore((s) => s.courseFilterId);
   const topicFilterId = useLibraryStore((s) => s.topicFilterId);
   const topicFilterLabel = useLibraryStore((s) => s.topicFilterLabel);
   const setTopicFilter = useLibraryStore((s) => s.setTopicFilter);
 
+  if (shownAbove) return null;
   if (!courseFilterId || courseFilterId === UNFILED_COURSE_ID || !topicFilterId) return null;
   const label = topicFilterId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : topicFilterLabel || COURSE_TOPIC_COPY.filterLabel;
 
