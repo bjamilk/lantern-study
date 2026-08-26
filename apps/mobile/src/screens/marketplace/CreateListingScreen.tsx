@@ -16,8 +16,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   useMarketplaceStore,
   useAuthStore,
-  ACADEMIC_CATEGORIES,
-  STUDENT_LIFE_CATEGORIES,
   type MarketplaceListing,
   type MarketplaceCategory,
 } from '../../stores';
@@ -25,9 +23,14 @@ import { fetchMarketplaceCampuses } from '../../services/api';
 import { aiGenerateListingDescription } from '../../services/ai';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import {
+  getTaxonomyNode,
   isOtherCityCampus,
+  listingNeedsCoursePicker,
+  taxonomyPathLabel,
   type MarketplaceCampus,
+  type TaxonomyNode,
 } from '@lantern/shared/marketplace';
+import { ListingClassifier } from './ListingClassifier';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { Button } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -43,19 +46,6 @@ type NavigationProp = {
 };
 
 const MAX_IMAGES = 5;
-
-/**
- * Categories that carry a course (and therefore a syllabus topic) — the ones
- * whose web field list includes `courseCode`: past questions, lecture notes and
- * projects. Everything else (textbooks, accommodation, fashion…) hides both
- * pickers, matching web. Filing under a course/topic is only meaningful for
- * academic study material.
- */
-const CATEGORIES_WITH_COURSE: ReadonlySet<MarketplaceCategory> = new Set([
-  'pq_bank',
-  'lecture_notes',
-  'project_thesis',
-]);
 
 interface ListingDraft {
   title: string;
@@ -74,6 +64,7 @@ interface ListingDraft {
   /** Topic within `courseId`; the title labels the trigger before the outline loads. */
   topicId?: string | null;
   topicTitle?: string | null;
+  taxonomyNodeId?: string;
   images: string[];
   savedAt: number;
 }
@@ -90,6 +81,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<MarketplaceCategory>('textbook_exchange');
+  const [taxonomyNodeId, setTaxonomyNodeId] = useState('academic.materials.textbooks.course');
   const [price, setPrice] = useState('');
   const [salePrice, setSalePrice] = useState('');
   const [saleEndsPreset, setSaleEndsPreset] = useState<'none' | '24h' | '7d'>('none');
@@ -102,7 +94,6 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     Array<{ uri: string; mimeType?: string; base64?: string | null }>
   >([]);
   const [uploading, setUploading] = useState(false);
-  const [showCategories, setShowCategories] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
 
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
@@ -125,9 +116,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const draftKey = draftStorageKey(user?.id);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const ALL_CATEGORIES = [...ACADEMIC_CATEGORIES, ...STUDENT_LIFE_CATEGORIES];
-  const selectedCategory = ALL_CATEGORIES.find(c => c.id === category);
-  const showCourse = CATEGORIES_WITH_COURSE.has(category);
+  const selectedNode = getTaxonomyNode(taxonomyNodeId);
+  const showCourse = listingNeedsCoursePicker(category);
   const selectedCampus = campuses.find(c => c.id === campusId);
   const isOtherCity = isOtherCityCampus(selectedCampus);
 
@@ -149,6 +139,9 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         if (!hasContent) return;
         setTitle(draft.title || '');
         setCategory(draft.category || 'textbook_exchange');
+        if (typeof (draft as ListingDraft).taxonomyNodeId === 'string') {
+          setTaxonomyNodeId((draft as ListingDraft).taxonomyNodeId as string);
+        }
         setPrice(draft.price || '');
         setSalePrice(draft.salePrice || '');
         setSaleEndsPreset(draft.saleEndsPreset || 'none');
@@ -204,6 +197,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         courseCode,
         topicId,
         topicTitle,
+        taxonomyNodeId,
         images: pendingImages.map((img) => img.uri),
         savedAt: Date.now(),
       };
@@ -229,6 +223,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     courseCode,
     topicId,
     topicTitle,
+    taxonomyNodeId,
     pendingImages,
   ]);
 
@@ -306,7 +301,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     try {
       const { description: generated } = await aiGenerateListingDescription({
         title: title.trim(),
-        category: selectedCategory?.name ?? category,
+        category: selectedNode?.label ?? category,
         subcategory: category,
         price: price.trim() || undefined,
       });
@@ -423,7 +418,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           // Academic archive: course_id column + legacy free-text courseCode
           // in category_specific_fields for web/back-compat readers.
           courseId: courseId ?? null,
-          ...(courseCode ? { category_specific_fields: { courseCode } } : {}),
+          category_specific_fields: {
+            ...(courseCode ? { courseCode } : {}),
+            ...(taxonomyNodeId
+              ? { taxonomyNodeId, taxonomyPath: taxonomyPathLabel(taxonomyNodeId) }
+              : {}),
+          },
           // Never sent without its course — the server rejects a bare topic.
           topicId: courseId ? topicId : null,
           // Rights attestation for academic categories (API: 400 without it).
@@ -561,45 +561,49 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
         />
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Category *</Text>
-        <Pressable
-          onPress={() => setShowCategories(v => !v)}
-          className="p-3 rounded-xl border border-lantern-border bg-lantern-surface mb-2 flex-row items-center justify-between"
-        >
-          <Text className="text-lantern-text">{selectedCategory?.name ?? 'Select category'}</Text>
-          <Ionicons name={showCategories ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
-        </Pressable>
-        {showCategories ? (
-          <View className="flex-row flex-wrap gap-2 mb-4">
-            {ALL_CATEGORIES.map(cat => (
-              <Pressable
-                key={cat.id}
-                onPress={() => {
-                  setCategory(cat.id);
-                  // Switching to a non-academic category drops any course/topic
-                  // so a stale filing isn't submitted under a listing that no
-                  // longer shows the pickers.
-                  if (!CATEGORIES_WITH_COURSE.has(cat.id)) {
-                    setCourseId(null);
-                    setCourseCode(null);
-                    setTopicId(null);
-                    setTopicTitle(null);
-                  }
-                  setShowCategories(false);
-                }}
-                className={`px-3 py-1.5 rounded-full border ${
-                  category === cat.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
-                }`}
-              >
-                <Text className={`text-xs font-medium ${category === cat.id ? 'text-white' : 'text-lantern-text-secondary'}`}>
-                  {cat.name}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : (
-          <View className="mb-4" />
-        )}
+        <ListingClassifier
+          title={title}
+          selectedNodeId={taxonomyNodeId}
+          onSelect={(node: TaxonomyNode) => {
+            if (node.publishFlow === 'question_bank' || node.publishFlow === 'study_pack') {
+              Alert.alert(
+                'Publish from Study products',
+                node.publishFlow === 'question_bank'
+                  ? 'A Lantern question bank is a takeable test. Publish it from Study products, or list a PDF/printed pack here.'
+                  : 'Study packs are published from a deck or note in your library.',
+                [
+                  node.publishFlow === 'question_bank'
+                    ? {
+                        text: 'List a PDF pack',
+                        onPress: () => {
+                          const printed = getTaxonomyNode('academic.materials.assessments.printed-pq');
+                          if (printed?.listingCategory) {
+                            setTaxonomyNodeId(printed.id);
+                            setCategory(printed.listingCategory as MarketplaceCategory);
+                          }
+                        },
+                      }
+                    : { text: 'OK' },
+                  {
+                    text: 'Open Study products',
+                    onPress: () => navigation.navigate('StudyProductDrafts'),
+                  },
+                ]
+              );
+              return;
+            }
+            const listingCategory = node.listingCategory;
+            if (!listingCategory || listingCategory === 'other') return;
+            setTaxonomyNodeId(node.id);
+            setCategory(listingCategory as MarketplaceCategory);
+            if (!listingNeedsCoursePicker(listingCategory)) {
+              setCourseId(null);
+              setCourseCode(null);
+              setTopicId(null);
+              setTopicTitle(null);
+            }
+          }}
+        />
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">
           Campus or city *

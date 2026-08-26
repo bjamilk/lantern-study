@@ -8,6 +8,7 @@ import {
   fetchMarketplaceShops,
 } from '../services/supabase';
 import { RateLimitError } from '@lantern/shared';
+import { browseListingCategories, customCategoryName, isCustomListingCategory } from '@lantern/shared/marketplace';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import type { MarketplaceCampus } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
@@ -138,24 +139,30 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [primaryListingsLoaded, setPrimaryListingsLoaded] = useState(false);
 
-  const academicCategories = [
-    { id: 'textbook_exchange', name: 'Textbooks', icon: AcademicCapIcon },
-    { id: 'pq_bank', name: 'Past Questions', icon: SparklesIcon },
-    { id: 'study_pack', name: 'Study Packs', icon: RectangleStackIcon },
-    { id: 'lecture_notes', name: 'Lecture Notes', icon: BriefcaseIcon },
-    { id: 'project_thesis', name: 'Projects & Thesis', icon: BriefcaseIcon },
-    { id: 'data_collection', name: 'Data Collection', icon: HomeIcon },
-    { id: 'equipment_rental', name: 'Lab Equipment', icon: ShoppingBagIcon }
-  ];
+  const categoryIcons: Record<string, typeof AcademicCapIcon> = {
+    textbook_exchange: AcademicCapIcon,
+    pq_bank: SparklesIcon,
+    study_pack: RectangleStackIcon,
+    lecture_notes: BriefcaseIcon,
+    project_thesis: BriefcaseIcon,
+    data_collection: HomeIcon,
+    equipment_rental: ShoppingBagIcon,
+    accommodation: HomeIcon,
+    travel_transport: TruckIcon,
+    personal_goods: SparklesIcon,
+    aso_ebi: ShoppingBagIcon,
+    campus_services: BriefcaseIcon,
+    events_social: TicketIcon,
+  };
 
-  const studentLifeCategories = [
-    { id: 'accommodation', name: 'Accommodation', icon: HomeIcon },
-    { id: 'travel_transport', name: 'Transportation', icon: TruckIcon },
-    { id: 'personal_goods', name: 'Personal Goods', icon: SparklesIcon },
-    { id: 'aso_ebi', name: 'Fashion', icon: ShoppingBagIcon },
-    { id: 'campus_services', name: 'Campus Services', icon: BriefcaseIcon },
-    { id: 'events_social', name: 'Events & Social', icon: TicketIcon }
-  ];
+  const academicCategories = browseListingCategories('academic').map((row) => ({
+    ...row,
+    icon: categoryIcons[row.id] || AcademicCapIcon,
+  }));
+  const studentLifeCategories = browseListingCategories('student-life').map((row) => ({
+    ...row,
+    icon: categoryIcons[row.id] || BriefcaseIcon,
+  }));
 
   const userCampusId = useMemo(() => {
     if (!currentUser?.settings) return null;
@@ -573,7 +580,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   };
 
   const getCategoryName = (categoryId: string) => {
-    if (categoryId.startsWith('custom:')) return categoryId.replace('custom:', '');
+    if (isCustomListingCategory(categoryId)) return customCategoryName(categoryId);
     const category = allCategories.find(cat => cat.id === categoryId);
     return category ? category.name : categoryId;
   };

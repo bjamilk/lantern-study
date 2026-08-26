@@ -35,6 +35,10 @@ import {
   isDigitalListingKind,
   isMarketplaceListingModerated,
   marketplaceListingModerationNotice,
+  isAllowedListingCategory,
+  classifyListing,
+  serializeClassifySuggestion,
+  publicTaxonomyPayload,
 } from '@lantern/shared/marketplace';
 
 const router = Router();
@@ -382,6 +386,13 @@ router.post(
       return res.status(400).json({
         success: false,
         error: 'Category and title are required',
+      });
+    }
+
+    if (!isAllowedListingCategory(listingData.category)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Choose a campus listing type, or a custom type as custom:Name',
       });
     }
 
@@ -2667,6 +2678,41 @@ router.get(
     }
 
     res.json({ success: true, data: result });
+  })
+);
+
+// GET /api/v1/marketplace/taxonomy — campus listing type tree
+router.get(
+  '/taxonomy',
+  asyncHandler(async (_req: any, res: any) => {
+    const cacheKey = 'marketplace:taxonomy:v1';
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+    const payload = publicTaxonomyPayload();
+    await cacheService.set(cacheKey, payload, 3600);
+    res.json({ success: true, data: payload });
+  })
+);
+
+// POST /api/v1/marketplace/classify — suggest listing types from a title
+router.post(
+  '/classify',
+  asyncHandler(async (req: any, res: any) => {
+    const title = typeof req.body?.title === 'string' ? req.body.title : '';
+    const description = typeof req.body?.description === 'string' ? req.body.description : '';
+    const department =
+      req.body?.department === 'academic' || req.body?.department === 'student-life'
+        ? req.body.department
+        : undefined;
+    if (!title.trim()) {
+      return res.status(400).json({ success: false, error: 'Title is required to classify a listing' });
+    }
+    const suggestions = classifyListing({ title, description, department, limit: 5 }).map(
+      serializeClassifySuggestion,
+    );
+    res.json({ success: true, data: { suggestions } });
   })
 );
 

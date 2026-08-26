@@ -3797,6 +3797,43 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/marketplace/campuses?country=${encodeURIComponent(country)}`),
 
+    fetchMarketplaceTaxonomy: () =>
+      apiRequest<{
+        leaves: Array<{
+          id: string;
+          listingCategory?: string;
+          label: string;
+          pathLabel: string;
+          department: string;
+          publishFlow: string;
+        }>;
+        browse: {
+          academic: Array<{ id: string; name: string }>;
+          "student-life": Array<{ id: string; name: string }>;
+        };
+      }>("/marketplace/taxonomy"),
+
+    classifyMarketplaceListing: (input: {
+      title: string;
+      description?: string;
+      department?: "academic" | "student-life";
+    }) =>
+      apiRequest<{
+        suggestions: Array<{
+          nodeId: string;
+          listingCategory?: string;
+          publishFlow: string;
+          label: string;
+          summary: string;
+          pathLabel?: string;
+          confidence: number;
+          reasons: Array<{ kind: string; text: string }>;
+        }>;
+      }>("/marketplace/classify", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
     // ========== ACADEMIC: COURSES + MY COURSES (/api/v1/courses, /api/v1/users/me/courses) ==========
     // Shapes pinned by docs/phase1-academic-identity-contract.md §2/§3.
 

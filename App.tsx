@@ -2162,6 +2162,11 @@ export const App: React.FC = () => {
                 duplicateInfo={duplicateInfo} onUpvoteAndClose={handleUpvoteDuplicateAndClose} />}
             <CreateMarketplaceListingModal isOpen={modals.createMarketplaceListing}
                 onClose={() => closeModal('createMarketplaceListing')} category={marketplaceListingCategory}
+                onOpenStudyProducts={() => {
+                    closeModal('createMarketplaceListing');
+                    setStudyProductSource(null);
+                    setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                }}
                 onSuccess={() => {
                     closeModal('createMarketplaceListing');
                     setMyListingsRefreshKey((k) => k + 1);

@@ -4238,6 +4238,25 @@ export const fetchCustomCategories = async () => {
   }
 };
 
+export const classifyMarketplaceListing = async (input: {
+  title: string;
+  description?: string;
+  department?: 'academic' | 'student-life';
+}) => {
+  try {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/classify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) return { suggestions: [] };
+    const result = await response.json();
+    return result.data || { suggestions: [] };
+  } catch {
+    return { suggestions: [] };
+  }
+};
+
 export const createCustomCategory = async (name: string) => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/marketplace/categories/custom`, {
