@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  DISCOVER_SECTION_INTRO,
   communityKindLabel,
+  communityMembershipAction,
   memberCountLabel,
   presenceLabel,
   shouldShowTrustChip,
@@ -15,20 +17,25 @@ import {
   type PresenceSnapshot,
 } from '@lantern/shared/network';
 import {
+  createCommunity,
   discoverCommunities,
   discoverGroups,
   discoverPeople,
   fetchMyCommunities,
   fetchStudyPresence,
   joinCommunity,
+  joinDiscoverableGroup,
   leaveCommunity,
 } from '../../services/api';
+import { useGroupStore } from '../../stores/groupStore';
+import { useAuthStore } from '../../stores';
 
 import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
 
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
+  getParent?: () => { navigate: (screen: string, params?: Record<string, unknown>) => void; getParent?: () => { navigate: (screen: string) => void } } | undefined;
 };
 
 type Section = DiscoverSection;
@@ -57,7 +64,14 @@ export function DiscoverScreen({
   const [people, setPeople] = useState<DiscoverPerson[]>([]);
   const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [creatingCommunity, setCreatingCommunity] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
+  const fetchGroups = useGroupStore((s) => s.fetchGroups);
+  const userId = useAuthStore((s) => s.user?.id);
 
+  const myById = useMemo(() => new Map(mine.map((c) => [c.id, c])), [mine]);
   const myIds = useMemo(() => new Set(mine.map((c) => c.id)), [mine]);
 
   const load = useCallback(async (target: Section, q: string) => {
@@ -75,7 +89,7 @@ export function DiscoverScreen({
       } else if (target === 'groups') {
         setGroups(await discoverGroups({ q: q || undefined }));
       } else {
-        setPeople(await discoverPeople({}));
+        setPeople(await discoverPeople({ q: q || undefined }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load Discover');
@@ -97,23 +111,25 @@ export function DiscoverScreen({
   }, [section, load]);
 
   useEffect(() => {
-    // Presence is a nicety; its failure must not blank the hub.
     void fetchStudyPresence({})
       .then(setPresence)
       .catch(() => setPresence(null));
   }, []);
+
+  const tabNav = navigation.getParent?.();
+  const rootNav = tabNav?.getParent?.();
 
   const handleSection = (next: Section) => {
     if (next === 'marketplace') {
       navigation.navigate('MarketplaceHome');
       return;
     }
+    setQuery('');
     setSection(next);
   };
 
   const toggleMembership = async (community: Community, isMember: boolean) => {
     setPendingId(community.id);
-    // Optimistic, reverted on failure — the tap must never feel swallowed.
     setMine((prev) =>
       isMember
         ? prev.filter((c) => c.id !== community.id)
@@ -134,10 +150,59 @@ export function DiscoverScreen({
     }
   };
 
+  const openOrJoinGroup = async (group: DiscoverGroup) => {
+    if (group.isMember) {
+      tabNav?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId: group.id, groupName: group.name } });
+      return;
+    }
+    setPendingId(group.id);
+    try {
+      await joinDiscoverableGroup(group.id);
+      if (userId) await fetchGroups(userId).catch(() => undefined);
+      setGroups((prev) =>
+        prev.map((item) =>
+          item.id === group.id
+            ? { ...item, isMember: true, memberCount: item.memberCount + 1 }
+            : item
+        )
+      );
+      tabNav?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId: group.id, groupName: group.name } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join this group');
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const submitCommunity = async () => {
+    const name = newName.trim();
+    if (name.length < 3) {
+      Alert.alert('Name needed', 'Use at least 3 characters.');
+      return;
+    }
+    setCreateBusy(true);
+    setError(null);
+    try {
+      const created = await createCommunity({
+        name,
+        description: newDescription.trim() || undefined,
+      });
+      setNewName('');
+      setNewDescription('');
+      setCreatingCommunity(false);
+      navigation.navigate('CommunityDetail', { slug: created.slug });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create this community');
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
   const presenceLine = presenceLabel(presence);
 
   const renderCommunity = ({ item }: { item: Community }) => {
     const isMember = myIds.has(item.id);
+    const action = communityMembershipAction(isMember, myById.get(item.id)?.source);
     return (
       <View className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3">
         <View className="flex-row items-start">
@@ -157,6 +222,7 @@ export function DiscoverScreen({
             </View>
             <Text className="text-xs text-lantern-text-tertiary mt-0.5">
               {communityKindLabel(item.kind)} · {memberCountLabel(item.member_count)}
+              {isMember ? ' · Yours' : ''}
             </Text>
             {item.description ? (
               <Text className="text-xs text-lantern-text-tertiary mt-1" numberOfLines={2}>
@@ -170,14 +236,14 @@ export function DiscoverScreen({
             className="px-2 py-1.5"
             style={{ opacity: pendingId === item.id ? 0.5 : 1 }}
             accessibilityRole="button"
-            accessibilityLabel={isMember ? `Leave ${item.name}` : `Join ${item.name}`}
+            accessibilityLabel={`${action} ${item.name}`}
           >
             <Text
               className={`text-xs font-semibold ${
                 isMember ? 'text-lantern-text-secondary' : 'text-lantern-primary'
               }`}
             >
-              {pendingId === item.id ? '…' : isMember ? 'Leave' : 'Join'}
+              {pendingId === item.id ? '…' : action}
             </Text>
           </Pressable>
         </View>
@@ -186,25 +252,44 @@ export function DiscoverScreen({
   };
 
   const renderGroup = ({ item }: { item: DiscoverGroup }) => (
-    <Pressable
-      className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3"
-      onPress={() => navigation.navigate('GroupChat', { groupId: item.id })}
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${item.name}`}
-    >
-      <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
-        {item.name}
-      </Text>
-      <Text className="text-xs text-lantern-text-tertiary mt-0.5">
-        {memberCountLabel(item.memberCount)}
-        {item.questionCount > 0 ? ` · ${item.questionCount} questions` : ''}
-      </Text>
-      {item.description ? (
-        <Text className="text-xs text-lantern-text-tertiary mt-1.5" numberOfLines={2}>
-          {item.description}
-        </Text>
-      ) : null}
-    </Pressable>
+    <View className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3">
+      <View className="flex-row items-start">
+        <Pressable
+          className="flex-1 pr-2"
+          onPress={() => void openOrJoinGroup(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.isMember ? 'Open' : 'Join'} ${item.name}`}
+        >
+          <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text className="text-xs text-lantern-text-tertiary mt-0.5">
+            {memberCountLabel(item.memberCount)}
+            {item.questionCount > 0 ? ` · ${item.questionCount} questions` : ''}
+            {item.isMember ? ' · Member' : ''}
+          </Text>
+          {item.description ? (
+            <Text className="text-xs text-lantern-text-tertiary mt-1.5" numberOfLines={2}>
+              {item.description}
+            </Text>
+          ) : null}
+        </Pressable>
+        <Pressable
+          onPress={() => void openOrJoinGroup(item)}
+          disabled={pendingId === item.id}
+          className="px-2 py-1.5"
+          style={{ opacity: pendingId === item.id ? 0.5 : 1 }}
+        >
+          <Text
+            className={`text-xs font-semibold ${
+              item.isMember ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+            }`}
+          >
+            {pendingId === item.id ? '…' : item.isMember ? 'Open' : 'Join'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   );
 
   const renderPerson = ({ item }: { item: DiscoverPerson }) => {
@@ -234,37 +319,81 @@ export function DiscoverScreen({
     );
   };
 
-  const emptyText =
-    section === 'communities'
-      ? 'Set your university, programme and courses in your profile — your campus communities come from them.'
+  const emptyActions =
+    section === 'communities' ? (
+      <View className="mx-4 mt-3" style={{ gap: 8 }}>
+        <Pressable
+          onPress={() => rootNav?.navigate('AcademicSettings')}
+          className="rounded-lg bg-lantern-primary px-3 py-2"
+        >
+          <Text className="text-center text-xs font-semibold text-white">Set university & courses</Text>
+        </Pressable>
+        <Pressable onPress={() => setCreatingCommunity(true)} className="px-3 py-2">
+          <Text className="text-center text-xs font-semibold text-lantern-primary">
+            Start an interest community
+          </Text>
+        </Pressable>
+      </View>
+    ) : section === 'groups' ? (
+      <Pressable
+        onPress={() => tabNav?.navigate('ChatTab', { screen: 'CreateGroup' })}
+        className="mx-4 mt-3 rounded-lg bg-lantern-primary px-3 py-2"
+      >
+        <Text className="text-center text-xs font-semibold text-white">Create a study group</Text>
+      </Pressable>
+    ) : (
+      <Pressable
+        onPress={() => navigation.navigate('MarketplaceHome')}
+        className="mx-4 mt-3 rounded-lg bg-lantern-primary px-3 py-2"
+      >
+        <Text className="text-center text-xs font-semibold text-white">Browse marketplace</Text>
+      </Pressable>
+    );
+
+  const emptyText = query.trim()
+    ? section === 'communities'
+      ? 'No communities match that search.'
       : section === 'groups'
-        ? 'Groups are private by default. An owner can make one discoverable to their community.'
+        ? 'No groups match that search.'
+        : 'No people match that search.'
+    : section === 'communities'
+      ? 'Add your university and courses so campus rooms can appear — or start an interest community.'
+      : section === 'groups'
+        ? 'Groups stay private until an owner lists them on Discover. Create one and turn on Show in Discover.'
         : 'People appear here once they publish a study pack or question bank.';
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="border-b border-lantern-border">
         <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
+        {section === 'communities' || section === 'groups' || section === 'people' ? (
+          <Text className="px-4 pt-1.5 text-[11px] text-lantern-text-tertiary">
+            {DISCOVER_SECTION_INTRO[section]}
+          </Text>
+        ) : null}
         {presenceLine ? (
-          <Text className="px-4 pt-1.5 pb-0.5 text-[11px] text-lantern-text-tertiary">
+          <Text className="px-4 pt-1 pb-0.5 text-[11px] text-lantern-text-tertiary">
             {presenceLine}
           </Text>
         ) : null}
-        {section !== 'people' ? (
-          <View className="mx-4 mt-2 mb-2 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
-            <Ionicons name="search-outline" size={16} color="#64748b" />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              onSubmitEditing={() => void load(section, query)}
-              returnKeyType="search"
-              placeholder={section === 'groups' ? 'Search groups' : 'Search communities'}
-              placeholderTextColor="#94a3b8"
-              accessibilityLabel={section === 'groups' ? 'Search groups' : 'Search communities'}
-              className="flex-1 py-2 px-2 text-sm text-lantern-text"
-            />
-          </View>
-        ) : null}
+        <View className="mx-4 mt-2 mb-2 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
+          <Ionicons name="search-outline" size={16} color="#64748b" />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={() => void load(section, query)}
+            returnKeyType="search"
+            placeholder={
+              section === 'groups'
+                ? 'Search groups'
+                : section === 'people'
+                  ? 'Search people'
+                  : 'Search communities'
+            }
+            placeholderTextColor="#94a3b8"
+            className="flex-1 py-2 px-2 text-sm text-lantern-text"
+          />
+        </View>
       </View>
 
       {error ? (
@@ -288,8 +417,47 @@ export function DiscoverScreen({
           keyExtractor={(item) => item.id}
           renderItem={renderCommunity}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
+          ListHeaderComponent={
+            <View className="mx-4 mb-2">
+              <Pressable onPress={() => setCreatingCommunity((open) => !open)}>
+                <Text className="text-xs font-semibold text-lantern-primary">
+                  {creatingCommunity ? 'Cancel' : 'Start an interest community'}
+                </Text>
+              </Pressable>
+              {creatingCommunity ? (
+                <View className="mt-2 rounded-xl border border-lantern-border bg-lantern-surface p-3">
+                  <TextInput
+                    value={newName}
+                    onChangeText={setNewName}
+                    placeholder="Name (e.g. Past questions)"
+                    placeholderTextColor="#94a3b8"
+                    className="text-sm text-lantern-text border-b border-lantern-border py-1"
+                  />
+                  <TextInput
+                    value={newDescription}
+                    onChangeText={setNewDescription}
+                    placeholder="Optional description"
+                    placeholderTextColor="#94a3b8"
+                    className="text-sm text-lantern-text mt-2"
+                  />
+                  <Pressable
+                    onPress={() => void submitCommunity()}
+                    disabled={createBusy}
+                    className="mt-2 self-start rounded-md bg-lantern-primary px-3 py-1.5"
+                  >
+                    <Text className="text-xs font-semibold text-white">
+                      {createBusy ? 'Creating…' : 'Create community'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          }
           ListEmptyComponent={
-            <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+            <View>
+              <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+              {emptyActions}
+            </View>
           }
         />
       ) : section === 'groups' ? (
@@ -299,7 +467,10 @@ export function DiscoverScreen({
           renderItem={renderGroup}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
           ListEmptyComponent={
-            <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+            <View>
+              <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+              {emptyActions}
+            </View>
           }
         />
       ) : (
@@ -309,7 +480,10 @@ export function DiscoverScreen({
           renderItem={renderPerson}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
           ListEmptyComponent={
-            <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+            <View>
+              <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+              {emptyActions}
+            </View>
           }
         />
       )}

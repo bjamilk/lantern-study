@@ -19,6 +19,7 @@ import { useGroupStore, type GroupPermissions } from '../../stores/groupStore';
 import * as api from '../../services/api';
 import { Button, ScreenHeader, Avatar } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
+import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../discover/GroupDiscoverabilityFields';
 import type { ChatStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'CreateGroup'>;
@@ -80,6 +81,10 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>({
+    visibility: 'private',
+    communityId: null,
+  });
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [pickingAvatar, setPickingAvatar] = useState(false);
   const [permissions, setPermissions] = useState<GroupPermissions>(DEFAULT_PERMISSIONS);
@@ -204,6 +209,8 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         permissions,
         parentId,
         courseId,
+        visibility: discovery.visibility,
+        communityId: discovery.communityId,
         memberIds: selectedUserIds,
         memberDetails: selectedUsers.map(u => ({
           id: u.id,
@@ -403,6 +410,12 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             title="Course for this group"
           />
         </View>
+
+        {!isSubGroup ? (
+          <View className="p-4 rounded-2xl bg-lantern-surface border border-lantern-border mb-4">
+            <GroupDiscoverabilityFields value={discovery} onChange={setDiscovery} />
+          </View>
+        ) : null}
 
         <View className="p-4 rounded-2xl bg-lantern-surface border border-lantern-border mb-4">
           <Pressable

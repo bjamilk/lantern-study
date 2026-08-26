@@ -16,6 +16,9 @@ import { normalizeUserSearchQuery } from '@lantern/shared';
 import { searchUsers } from '../services/supabase';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
+import GroupDiscoverabilityFields, {
+  type GroupDiscoveryValue,
+} from './discover/GroupDiscoverabilityFields';
 
 interface SearchResult {
   id: string;
@@ -42,6 +45,8 @@ interface CreateGroupScreenProps {
     memberIds: string[];
     permissions: GroupPermissions;
     courseId?: string | null;
+    visibility?: 'private' | 'community' | 'public';
+    communityId?: string | null;
   }) => Promise<CreatedGroupSummary | void>;
   onEnterGroup: (group: CreatedGroupSummary) => void;
   onBack: () => void;
@@ -92,6 +97,10 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   const [searchError, setSearchError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createdGroup, setCreatedGroup] = useState<CreatedGroupSummary | null>(null);
+  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>({
+    visibility: 'private',
+    communityId: null,
+  });
 
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
@@ -158,6 +167,8 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         memberIds: selectedUserIds,
         permissions,
         courseId: course?.id ?? null,
+        visibility: discovery.visibility,
+        communityId: discovery.communityId,
       });
       if (result?.inviteId) {
         setCreatedGroup(result);
@@ -394,6 +405,10 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             placeholder="Which course does this group study?"
             hint="Tests and questions from this group get filed under the course."
           />
+        </div>
+
+        <div className="max-w-sm mx-auto p-4 bg-lantern-surface rounded-lg shadow-sm">
+          <GroupDiscoverabilityFields value={discovery} onChange={setDiscovery} />
         </div>
 
         <div className="max-w-sm mx-auto p-4 bg-lantern-surface rounded-lg shadow-sm">

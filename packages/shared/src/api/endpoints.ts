@@ -734,6 +734,8 @@ export function createApiEndpoints(client: ApiClient) {
       memberIds: string[];
       /** Academic archive: the course this group studies (null clears). */
       courseId?: string | null;
+      visibility?: 'private' | 'community' | 'public';
+      communityId?: string | null;
     }) =>
       apiRequest<{
         id: string;
@@ -758,6 +760,8 @@ export function createApiEndpoints(client: ApiClient) {
         avatarUrl?: string;
         isArchived?: boolean;
         courseId?: string | null;
+        visibility?: 'private' | 'community' | 'public';
+        communityId?: string | null;
       },
     ) =>
       apiRequest<{
@@ -2912,6 +2916,24 @@ export function createApiEndpoints(client: ApiClient) {
     leaveCommunity: (communityId: string) =>
       apiRequest<{ left: true }>(`/communities/${communityId}/join`, { method: 'DELETE' }, 10000),
 
+    /** Horizontal (topic) communities — the only kind a person can create. */
+    createCommunity: (body: { name: string; description?: string; tags?: string[] }) =>
+      apiRequest<Community>('/communities', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }, 10000),
+
+    /**
+     * Join a group that is already on Discover (public, or community-visible
+     * to a room the viewer belongs to). Private groups stay invite-link only.
+     */
+    joinDiscoverableGroup: (groupId: string) =>
+      apiRequest<{ joined: true }>(
+        `/discover/groups/${encodeURIComponent(groupId)}/join`,
+        { method: 'POST' },
+        10000
+      ),
+
     discoverCommunities: (
       params: { q?: string; kind?: string; institutionId?: string; courseId?: string; limit?: number } = {}
     ) => {
@@ -2943,8 +2965,9 @@ export function createApiEndpoints(client: ApiClient) {
       return apiRequest<DiscoverGroup[]>(`/discover/groups${qs.toString() ? `?${qs}` : ''}`, {}, 10000);
     },
 
-    discoverPeople: (params: { institutionId?: string; courseId?: string; limit?: number } = {}) => {
+    discoverPeople: (params: { q?: string; institutionId?: string; courseId?: string; limit?: number } = {}) => {
       const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
       if (params.institutionId) qs.set('institutionId', params.institutionId);
       if (params.courseId) qs.set('courseId', params.courseId);
       if (params.limit) qs.set('limit', String(params.limit));

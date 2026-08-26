@@ -35,6 +35,7 @@ import {
   getSrsMaxInterval,
   normalizeUserSettings,
 } from "@lantern/shared/settings";
+import { resolveGroupDiscovery } from "@lantern/shared/network";
 import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
@@ -1581,7 +1582,7 @@ export class SupabaseService {
         const selectClause =
           profile === "compact"
             ? "id, name, avatar_url, last_message_time, is_archived"
-            : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at";
+            : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at";
         let query = this.supabase
           .from("groups")
           .select(selectClause)
@@ -1645,6 +1646,8 @@ export class SupabaseService {
           isArchived: item.is_archived,
           inviteId: item.invite_id,
           courseId: item.course_id ?? null,
+          visibility: item.visibility || "private",
+          communityId: item.community_id ?? null,
           createdAt: item.created_at,
           memberCount: memberCounts[item.id] || 0,
         })) as Group[];
@@ -1658,7 +1661,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase
         .from("groups")
         .select(
-          "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at",
+          "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at",
         )
         .eq("id", groupId)
         .maybeSingle();
@@ -1677,6 +1680,8 @@ export class SupabaseService {
         isArchived: data.is_archived,
         inviteId: data.invite_id,
         courseId: data.course_id ?? null,
+        visibility: (data as { visibility?: string }).visibility || "private",
+        communityId: (data as { community_id?: string | null }).community_id ?? null,
         createdAt: data.created_at,
       } as Group;
     }
@@ -1689,7 +1694,7 @@ export class SupabaseService {
         const { data, error } = await this.supabase
           .from("groups")
           .select(
-            "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at",
+            "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at",
           )
           .eq("id", groupId)
           .single();
@@ -1726,6 +1731,8 @@ export class SupabaseService {
           isArchived: data.is_archived,
           inviteId: data.invite_id,
           courseId: data.course_id ?? null,
+          visibility: (data as { visibility?: string }).visibility || "private",
+          communityId: (data as { community_id?: string | null }).community_id ?? null,
           createdAt: data.created_at,
         } as Group;
       },
@@ -1738,6 +1745,10 @@ export class SupabaseService {
     userId: string,
     memberIds: string[] = [],
   ): Promise<Group> {
+    const discovery = resolveGroupDiscovery({
+      visibility: groupData.visibility,
+      communityId: groupData.communityId,
+    });
     const { data, error } = await this.supabase
       .from("groups")
       .insert({
@@ -1749,6 +1760,8 @@ export class SupabaseService {
         invite_id: groupData.inviteId,
         parent_id: groupData.parentId,
         course_id: groupData.courseId || null,
+        visibility: discovery.visibility,
+        community_id: discovery.communityId,
         is_archived: false,
       })
       .select()
@@ -1821,6 +1834,8 @@ export class SupabaseService {
       isArchived: data.is_archived,
       inviteId: data.invite_id,
       courseId: data.course_id ?? null,
+      visibility: discovery.visibility,
+      communityId: discovery.communityId,
       createdAt: data.created_at,
       pendingInviteUserIds: Array.from(explicitInviteSet),
     } as Group & { pendingInviteUserIds?: string[] };
@@ -1842,8 +1857,14 @@ export class SupabaseService {
     if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId || null;
     // Phase 3 L discovery fields. A group is private by default; making it
     // discoverable is an explicit, admin-only act.
-    if (updates.visibility !== undefined) dbUpdates.visibility = updates.visibility;
-    if (updates.communityId !== undefined) dbUpdates.community_id = updates.communityId || null;
+    if (updates.visibility !== undefined || updates.communityId !== undefined) {
+      const discovery = resolveGroupDiscovery({
+        visibility: updates.visibility ?? "private",
+        communityId: updates.communityId,
+      });
+      dbUpdates.visibility = discovery.visibility;
+      dbUpdates.community_id = discovery.communityId;
+    }
     if (updates.tags !== undefined) dbUpdates.tags = Array.isArray(updates.tags) ? updates.tags : [];
 
     if (Object.keys(dbUpdates).length === 0) {
@@ -1880,6 +1901,8 @@ export class SupabaseService {
       isArchived: data.is_archived,
       inviteId: data.invite_id,
       courseId: data.course_id ?? null,
+      visibility: (data as { visibility?: string }).visibility || "private",
+      communityId: (data as { community_id?: string | null }).community_id ?? null,
       createdAt: data.created_at,
     } as Group;
   }

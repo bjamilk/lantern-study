@@ -1848,7 +1848,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onClose={() => setShowGroupInfo(false)}
           group={group}
           currentUserId={user.id}
-          onUpdateDetails={(id, name, description) => void updateGroupDetails(id, name, description)}
+          onUpdateDetails={(id, name, description, discovery) => void updateGroupDetails(id, name, description, discovery)}
           onPromoteToAdmin={(gid, uid) => void promoteToAdmin(gid, uid)}
           onDemoteAdmin={(gid, uid) => void demoteAdmin(gid, uid)}
           onRemoveMember={(gid, uid) => void removeMember(gid, uid)}

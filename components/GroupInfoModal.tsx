@@ -10,6 +10,9 @@ import Modal from './ui/Modal';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
 import ReportContentModal from './moderation/ReportContentModal';
 import { FlagIcon } from '@heroicons/react/24/outline';
+import GroupDiscoverabilityFields, {
+  type GroupDiscoveryValue,
+} from './discover/GroupDiscoverabilityFields';
 
 
 interface GroupInfoModalProps {
@@ -17,7 +20,12 @@ interface GroupInfoModalProps {
   onClose: () => void;
   group: Group;
   currentUser: User; 
-  onUpdateDetails: (groupId: string, name: string, description: string) => void;
+  onUpdateDetails: (
+    groupId: string,
+    name: string,
+    description: string,
+    discovery?: { visibility?: 'private' | 'community' | 'public'; communityId?: string | null }
+  ) => void;
   onUpdateGroupAvatar: (groupId: string, avatarUrl: string) => void | Promise<void>;
   onPromoteToAdmin: (groupId: string, userId: string) => void;
   onDemoteAdmin: (groupId: string, userId: string) => void;
@@ -60,6 +68,10 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   const [reportOpen, setReportOpen] = useState(false);
   const [description, setDescription] = useState(group.description || '');
   const [detailsChanged, setDetailsChanged] = useState(false);
+  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>({
+    visibility: group.visibility || 'private',
+    communityId: group.communityId ?? null,
+  });
 
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
@@ -72,6 +84,10 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
       setName(group.name);
       setDescription(group.description || '');
       setDetailsChanged(false);
+      setDiscovery({
+        visibility: group.visibility || 'private',
+        communityId: group.communityId ?? null,
+      });
       setSelectedAvatarFile(null);
       if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
       setAvatarPreviewUrl(null);
@@ -94,8 +110,8 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
 
   const handleDetailsSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() && (name.trim() !== group.name || description.trim() !== (group.description || ''))) {
-      onUpdateDetails(group.id, name.trim(), description.trim());
+    if (name.trim() && (name.trim() !== group.name || description.trim() !== (group.description || '') || detailsChanged)) {
+      onUpdateDetails(group.id, name.trim(), description.trim(), discovery);
       setDetailsChanged(false); 
     }
   };
@@ -221,6 +237,15 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                         <label htmlFor="groupInfoDescription" className="block text-sm font-medium text-lantern-text mb-1">Description</label>
                         <textarea id="groupInfoDescription" value={description} onChange={handleDescriptionChange} rows={3} className="w-full p-2 border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text rounded-md" />
                     </div>
+                    {isCurrentUserAdmin ? (
+                      <GroupDiscoverabilityFields
+                        value={discovery}
+                        onChange={(next) => {
+                          setDiscovery(next);
+                          setDetailsChanged(true);
+                        }}
+                      />
+                    ) : null}
                     {detailsChanged && <button type="submit" className="w-full px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-md">Save Changes</button>}
                 </form>
             );
