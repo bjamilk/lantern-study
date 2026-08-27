@@ -40,7 +40,7 @@ import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { DashboardProgress } from './dashboard/DashboardProgress';
-import { DashboardQuickLinks } from './dashboard/DashboardQuickLinks';
+import { DashboardQuickLinks, SHOW_DASHBOARD_QUICK_LINKS } from './dashboard/DashboardQuickLinks';
 import { DashboardSummaryRow } from './dashboard/DashboardSummaryRow';
 import { DashboardStatGrid } from './dashboard/DashboardStatGrid';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
@@ -1280,16 +1280,17 @@ export default function DashboardScreen({
         </div>
       </div>
 
-      {/* Secondary quick links */}
-      <div className="px-4 md:px-8 -mt-2 w-full">
-        <DashboardQuickLinks
-          dueCardsCount={dueCardsCount}
-          onNavigateToAITools={onNavigateToAITools}
-          onNavigateToNotes={onNavigateToNotes}
-          onNavigateToFlashcards={onNavigateToFlashcards}
-          onNavigateToMarketplace={onNavigateToMarketplace}
-        />
-      </div>
+      {SHOW_DASHBOARD_QUICK_LINKS && (
+        <div className="px-4 md:px-8 -mt-2 w-full">
+          <DashboardQuickLinks
+            dueCardsCount={dueCardsCount}
+            onNavigateToAITools={onNavigateToAITools}
+            onNavigateToNotes={onNavigateToNotes}
+            onNavigateToFlashcards={onNavigateToFlashcards}
+            onNavigateToMarketplace={onNavigateToMarketplace}
+          />
+        </div>
+      )}
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <div className="px-4 md:px-8 py-6 w-full space-y-6">
