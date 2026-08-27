@@ -12,7 +12,11 @@ import { StudyPresenceService, PRESENCE_TTL_MINUTES } from './studyPresence';
 const USER = '11111111-1111-4111-8111-111111111111';
 const COURSE = '33333333-3333-4333-8333-333333333333';
 
-function makeService(settings: unknown, institutionId: string | null = null) {
+function makeService(
+  settings: unknown,
+  institutionId: string | null = null,
+  presenceRows: unknown[] = [],
+) {
   const ops: Array<{ table: string; op: string; payload?: unknown }> = [];
   const db: any = {
     from: (table: string) => {
@@ -22,7 +26,7 @@ function makeService(settings: unknown, institutionId: string | null = null) {
       api.eq = self;
       api.gt = self;
       api.neq = self;
-      api.limit = () => Promise.resolve({ data: [], error: null });
+      api.limit = self;
       api.maybeSingle = () =>
         Promise.resolve({ data: { settings, institution_id: institutionId }, error: null });
       api.upsert = (payload: unknown) => {
@@ -33,6 +37,11 @@ function makeService(settings: unknown, institutionId: string | null = null) {
         ops.push({ table, op: 'delete' });
         return api;
       };
+      api.then = (resolve: (value: unknown) => unknown, reject: (reason?: unknown) => unknown) =>
+        Promise.resolve({
+          data: table === 'study_presence' ? presenceRows : [],
+          error: null,
+        }).then(resolve, reject);
       return api;
     },
   };
@@ -106,6 +115,26 @@ describe('StudyPresenceService.now', () => {
   it('returns an empty snapshot when there is no course or institution scope', async () => {
     const { service } = makeService({ privacy: {} }, null);
     const snapshot = await service.now(USER);
-    expect(snapshot).toEqual({ total: 0, byContext: {}, topics: [], sharing: true });
+    expect(snapshot).toEqual({
+      total: 0,
+      byContext: {},
+      topics: [],
+      sharing: true,
+      joinCourseId: null,
+      joinTopic: null,
+    });
+  });
+
+  it('points Join room at the busiest course and topic', async () => {
+    const otherCourse = '44444444-4444-4444-8444-444444444444';
+    const { service } = makeService({ privacy: {} }, '55555555-5555-4555-8555-555555555555', [
+      { user_id: 'a', context: 'studying', topic: 'cardiology', course_id: COURSE },
+      { user_id: 'b', context: 'studying', topic: 'cardiology', course_id: COURSE },
+      { user_id: 'c', context: 'reviewing', topic: 'anatomy', course_id: otherCourse },
+    ]);
+    const snapshot = await service.now(USER);
+    expect(snapshot.total).toBe(3);
+    expect(snapshot.joinCourseId).toBe(COURSE);
+    expect(snapshot.joinTopic).toBe('cardiology');
   });
 });
