@@ -157,8 +157,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </p>
         </div>
 
-        {presenceLine && (
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {presenceLine ? (
             <button
               type="button"
               onClick={() =>
@@ -174,15 +174,15 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               {presenceLine}
               {presence?.joinCourseId ? ' · Join room' : ''}
             </button>
-            <button
-              type="button"
-              onClick={() => onNavigate('CreateLab')}
-              className="inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold text-lantern-primary hover:underline"
-            >
-              Start a room
-            </button>
-          </div>
-        )}
+          ) : null}
+          <button
+            type="button"
+            onClick={() => onNavigate('CreateLab')}
+            className="inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold text-lantern-primary hover:underline"
+          >
+            Start a room
+          </button>
+        </div>
 
         <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
 

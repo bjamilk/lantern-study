@@ -450,6 +450,15 @@ export function LibraryCourseTree({
               <Pressable onPress={onManageCourses} accessibilityRole="button" className="self-start mt-2 mb-1">
                 <Text className="text-xs font-semibold text-lantern-primary">Add my courses</Text>
               </Pressable>
+              {onTurnSemesterIntoProducts ? (
+                <Pressable
+                  onPress={onTurnSemesterIntoProducts}
+                  accessibilityRole="button"
+                  className="self-start mt-1"
+                >
+                  <Text className="text-xs font-semibold text-lantern-primary">Turn into products</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 

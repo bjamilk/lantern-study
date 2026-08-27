@@ -264,6 +264,12 @@ export function DiscoverScreen({
             Your campus, your courses, and the people studying them.
           </Text>
         )}
+        <Pressable
+          onPress={() => navigation.navigate('StudyRoom')}
+          className="mt-2 self-start rounded-lg px-3 py-1.5 bg-lantern-background-secondary"
+        >
+          <Text className="text-xs font-semibold text-lantern-primary">Start a room</Text>
+        </Pressable>
 
         <ScrollView
           horizontal

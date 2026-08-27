@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { StudyRoomDetail } from '@lantern/shared/network';
@@ -12,6 +12,7 @@ import {
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import { studyRoomPresenceChannel } from '@lantern/shared/network';
+import { CoursePicker } from '../../components/CoursePicker';
 
 type NavigationProp = {
   goBack: () => void;
@@ -31,6 +32,9 @@ export function StudyRoomScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveCount, setLiveCount] = useState(0);
+  const [pickedCourseId, setPickedCourseId] = useState<string | null>(null);
+  const [topicDraft, setTopicDraft] = useState('');
+  const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,9 +111,44 @@ export function StudyRoomScreen({
             <Text className="text-sm text-lantern-error">{error} · Retry</Text>
           </Pressable>
         ) : !room ? (
-          <Text className="text-sm text-lantern-text-secondary">
-            Open Discover and join from a presence line, or start a room from a course.
-          </Text>
+          <View>
+            <Text className="text-sm text-lantern-text-secondary mb-3">
+              Pick a course. If a room is already open tonight, you land there.
+            </Text>
+            <CoursePicker
+              value={pickedCourseId}
+              onChange={(course) => setPickedCourseId(course?.id ?? null)}
+              label="Course"
+            />
+            <TextInput
+              value={topicDraft}
+              onChangeText={setTopicDraft}
+              placeholder="Topic (optional), e.g. cardiology"
+              maxLength={80}
+              className="mt-3 rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text"
+            />
+            <Pressable
+              disabled={!pickedCourseId || starting}
+              onPress={() => {
+                if (!pickedCourseId || starting) return;
+                setStarting(true);
+                void joinOrCreateStudyRoom({
+                  courseId: pickedCourseId,
+                  topic: topicDraft.trim() || null,
+                })
+                  .then(setRoom)
+                  .catch((e: unknown) =>
+                    setError(e instanceof Error ? e.message : 'Could not open a study room'),
+                  )
+                  .finally(() => setStarting(false));
+              }}
+              className="mt-4 rounded-lg bg-lantern-primary px-4 py-3"
+            >
+              <Text className="text-center text-sm font-semibold text-white">
+                {starting ? 'Opening…' : 'Join or create'}
+              </Text>
+            </Pressable>
+          </View>
         ) : (
           <>
             <Text className="text-sm text-lantern-text-secondary">

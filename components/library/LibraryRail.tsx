@@ -460,7 +460,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               >
                 This semester
               </h3>
-              {onTurnSemesterIntoProducts && tree.current.length > 0 ? (
+              {onTurnSemesterIntoProducts ? (
                 <button
                   type="button"
                   onClick={onTurnSemesterIntoProducts}
