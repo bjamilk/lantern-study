@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { studyRoomPresenceChannel } from '@lantern/shared/network';
+import { HangoutChatPanel } from './HangoutChatPanel';
 
 export interface StudyRoomScreenProps {
   roomId?: string | null;
@@ -18,6 +19,7 @@ export interface StudyRoomScreenProps {
   onBack: () => void;
   onNeedCourse: () => void;
   onRoomReady?: (roomId: string) => void;
+  onNavigate?: (screen: string, params?: Record<string, unknown>) => void;
 }
 
 /**
@@ -30,6 +32,7 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
   onBack,
   onNeedCourse,
   onRoomReady,
+  onNavigate,
 }) => {
   const currentUser = useAuthStore((s) => s.currentUser);
   const showToast = useToastStore((s) => s.showToast);
@@ -167,6 +170,28 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
               {room.topic ? `Studying ${room.topic}` : 'Course study room'}
               {liveCount > 0 ? ` · ${liveCount} live in the room` : ''}
             </p>
+            {room.joined && room.groupId ? (
+              <div className="mt-4">
+                <HangoutChatPanel
+                  groupId={room.groupId}
+                  title="Room chat"
+                  onOpenInChats={
+                    onNavigate
+                      ? () =>
+                          onNavigate('GroupChat', {
+                            groupId: room.groupId,
+                            groupName: room.title,
+                            joined: true,
+                          })
+                      : undefined
+                  }
+                />
+              </div>
+            ) : !room.joined ? (
+              <p className="mt-4 rounded-xl border border-dashed border-lantern-border px-3 py-3 text-sm text-lantern-text-secondary">
+                Join the room to chat in the hangout.
+              </p>
+            ) : null}
             <ul className="mt-4 divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-surface">
               {(room.participants ?? []).length === 0 ? (
                 <li className="px-4 py-3 text-sm text-lantern-text-secondary">Nobody here yet.</li>
