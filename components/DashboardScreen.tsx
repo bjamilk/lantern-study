@@ -1220,31 +1220,55 @@ export default function DashboardScreen({
       {/* ─── Academic profile setup nudge (Phase 1) ─── */}
       <AcademicSetupBanner currentUser={currentUser} />
 
-      {/* ═══════════════ HERO ═══════════════ */}
-      <DashboardHero
-        userName={getDashboardFirstName({
-          firstName: currentUser.firstName,
-          name: currentUser.name,
-          username: currentUser.username,
-        })}
-        streak={displayStreak}
-        points={currentUser.points}
-        xpLevel={xpInfo.level}
-        xpTitle={xpInfo.title}
-        xpProgressPercent={xpInfo.progressPercent}
-        pointsToNextLevel={xpInfo.pointsToNextLevel}
-        dueCardsCount={dueCardsCount}
-        totalTestsTaken={totalTestsTakenOverall}
-        onPrimaryAction={() => {
-          if (dueCardsCount > 0 && onReviewDueCards) onReviewDueCards();
-          else if (onOpenImportAndStudy) onOpenImportAndStudy();
-          else if (onNavigateToAITools) onNavigateToAITools();
-        }}
-        activeTestSession={activeTestSession}
-        activeStudySession={activeStudySession}
-        onResumeSession={onResumeSession}
-        lowDataMode={lowDataMode}
-      />
+      {/* ═══════════════ HERO + DAILY QUESTS ═══════════════ */}
+      <div className="px-4 md:px-8 pt-6 w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-stretch">
+          <DashboardHero
+            userName={getDashboardFirstName({
+              firstName: currentUser.firstName,
+              name: currentUser.name,
+              username: currentUser.username,
+            })}
+            streak={displayStreak}
+            points={currentUser.points}
+            xpLevel={xpInfo.level}
+            xpTitle={xpInfo.title}
+            xpProgressPercent={xpInfo.progressPercent}
+            pointsToNextLevel={xpInfo.pointsToNextLevel}
+            dueCardsCount={dueCardsCount}
+            totalTestsTaken={totalTestsTakenOverall}
+            onPrimaryAction={() => {
+              if (dueCardsCount > 0 && onReviewDueCards) onReviewDueCards();
+              else if (onOpenImportAndStudy) onOpenImportAndStudy();
+              else if (onNavigateToAITools) onNavigateToAITools();
+            }}
+            activeTestSession={activeTestSession}
+            activeStudySession={activeStudySession}
+            onResumeSession={onResumeSession}
+            lowDataMode={lowDataMode}
+          />
+          {(dailyQuests.length > 0 || questsLoaded) ? (
+            <DailyQuestsWidget
+              quests={dailyQuests.map((q) => ({
+                id: q.id,
+                questType: (q as any).questType ?? (q as any).quest_type,
+                targetCount: (q as any).targetCount ?? (q as any).target_count,
+                progressCount: (q as any).progressCount ?? (q as any).progress_count,
+                completed: q.completed,
+                rewardXp: (q as any).rewardXp ?? (q as any).reward_xp,
+              }))}
+              streak={displayStreak}
+              streakFreezes={streakFreezes}
+              onPurchaseStreakFreeze={onPurchaseStreakFreeze}
+              questsLoaded={questsLoaded}
+              onRefresh={onRefreshGamification}
+              theme={theme}
+            />
+          ) : (
+            <SkeletonStatRow />
+          )}
+        </div>
+      </div>
 
       <div className="px-4 md:px-8 mt-4 w-full">
         <div className="w-full">
@@ -1294,28 +1318,6 @@ export default function DashboardScreen({
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <div className="px-4 md:px-8 py-6 w-full space-y-6">
-
-        {!questsLoaded && dailyQuests.length === 0 && <SkeletonStatRow />}
-
-        {(dailyQuests.length > 0 || questsLoaded) && (
-          <DailyQuestsWidget
-            quests={dailyQuests.map((q) => ({
-              id: q.id,
-              questType: (q as any).questType ?? (q as any).quest_type,
-              targetCount: (q as any).targetCount ?? (q as any).target_count,
-              progressCount: (q as any).progressCount ?? (q as any).progress_count,
-              completed: q.completed,
-              rewardXp: (q as any).rewardXp ?? (q as any).reward_xp,
-            }))}
-            streak={displayStreak}
-            streakFreezes={streakFreezes}
-            onPurchaseStreakFreeze={onPurchaseStreakFreeze}
-            questsLoaded={questsLoaded}
-            onRefresh={onRefreshGamification}
-            theme={theme}
-          />
-        )}
-
         {/*
           Phase 3 M: the academic feed is a PRIMARY surface, so it sits above
           "Progress & analytics" rather than inside it — that section is
