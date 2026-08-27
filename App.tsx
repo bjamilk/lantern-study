@@ -1849,6 +1849,11 @@ export const App: React.FC = () => {
                         onBack={() => setAppMode(AppMode.DISCOVER)}
                         onNeedCourse={() => setCreateLabOpen(true)}
                         onRoomReady={(id) => setSelectedStudyRoomId(id)}
+                        onNavigate={(screen, params) => {
+                            if (screen === 'GroupChat' && params?.groupId) {
+                                openDiscoverGroup({ ...params, joined: true });
+                            }
+                        }}
                     />
                 );
             case AppMode.MARKETPLACE_FAVORITES:

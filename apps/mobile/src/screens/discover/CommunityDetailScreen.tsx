@@ -19,6 +19,7 @@ import {
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
+import { HangoutChatPanel } from '../../components/HangoutChatPanel';
 
 type NavigationProp = {
   goBack: () => void;
@@ -152,7 +153,7 @@ export function CommunityDetailScreen({
 
       {community ? (
         <FlatList
-          data={groups}
+          data={groups.filter((g) => g.id !== community.loungeGroupId)}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingBottom: 32 }}
           ListHeaderComponent={
@@ -186,6 +187,29 @@ export function CommunityDetailScreen({
                     : communityMembershipAction(community.isMember, community.source)}
                 </Text>
               </Pressable>
+
+              {community.isMember && community.loungeGroupId ? (
+                <View className="mt-4">
+                  <HangoutChatPanel
+                    groupId={community.loungeGroupId}
+                    title="Lounge"
+                    onOpenInChats={() => {
+                      const tabNav = navigation.getParent?.();
+                      tabNav?.navigate('ChatTab', {
+                        screen: 'GroupChat',
+                        params: {
+                          groupId: community.loungeGroupId,
+                          groupName: `${community.name} Lounge`,
+                        },
+                      });
+                    }}
+                  />
+                </View>
+              ) : !community.isMember ? (
+                <Text className="mt-4 text-xs text-lantern-text-tertiary">
+                  Join this community to chat in the hangout.
+                </Text>
+              ) : null}
 
               {members.length > 0 ? (
                 <View className="mt-5">

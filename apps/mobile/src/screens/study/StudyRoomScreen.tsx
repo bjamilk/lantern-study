@@ -13,6 +13,7 @@ import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import { studyRoomPresenceChannel } from '@lantern/shared/network';
 import { CoursePicker } from '../../components/CoursePicker';
+import { HangoutChatPanel } from '../../components/HangoutChatPanel';
 
 type NavigationProp = {
   goBack: () => void;
@@ -155,6 +156,24 @@ export function StudyRoomScreen({
               {room.topic ? `Studying ${room.topic}` : 'Course study room'}
               {liveCount > 0 ? ` · ${liveCount} live` : ''}
             </Text>
+            {room.joined && room.groupId ? (
+              <View className="mt-4">
+                <HangoutChatPanel
+                  groupId={room.groupId}
+                  title="Room chat"
+                  onOpenInChats={() => {
+                    navigation.navigate('ChatTab', {
+                      screen: 'GroupChat',
+                      params: { groupId: room.groupId, groupName: room.title },
+                    });
+                  }}
+                />
+              </View>
+            ) : !room.joined ? (
+              <Text className="mt-3 text-xs text-lantern-text-tertiary">
+                Join the room to chat in the hangout.
+              </Text>
+            ) : null}
             {room.participants.map((p) => (
               <View key={p.userId} className="mt-2 rounded-lg border border-lantern-border px-3 py-2">
                 <Text className="text-sm text-lantern-text">{p.name}</Text>

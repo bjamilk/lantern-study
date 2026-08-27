@@ -16,6 +16,12 @@ import {
   type StudyRoomDetail,
   type StudyRoomParticipant,
 } from '@lantern/shared/network';
+import {
+  ensureLinkedHangoutGroup,
+  insertHangoutGroup,
+  joinHangoutGroup,
+} from './hangoutGroups';
+import { logger } from '../utils/logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOPIC_MAX = 80;
@@ -50,7 +56,11 @@ type SessionRow = {
   created_by: string | null;
   started_at: string;
   is_active: boolean;
+  group_id?: string | null;
 };
+
+const SESSION_COLUMNS =
+  'id, title, course_id, community_id, topic_id, topic, kind, created_by, started_at, is_active, group_id';
 
 function mapRoom(row: SessionRow, participantCount: number): StudyRoom {
   return {
@@ -88,6 +98,7 @@ export class StudyRoomsService {
     const existing = await this.findReusable(courseId, communityId, topic);
     if (existing) {
       await this.ensureParticipant(existing.id, userId);
+      await this.ensureRoomGroupAndJoin(userId, existing);
       return this.get(userId, existing.id);
     }
 
@@ -109,13 +120,12 @@ export class StudyRoomsService {
         title,
         started_at: new Date().toISOString(),
       })
-      .select(
-        'id, title, course_id, community_id, topic_id, topic, kind, created_by, started_at, is_active',
-      )
+      .select(SESSION_COLUMNS)
       .single();
     if (error || !data) throw error || new PublicError('Could not open a study room');
 
     await this.ensureParticipant(data.id, userId);
+    await this.ensureRoomGroupAndJoin(userId, data as SessionRow);
     return this.get(userId, data.id);
   }
 
@@ -123,19 +133,20 @@ export class StudyRoomsService {
     if (!UUID_RE.test(String(roomId))) notFound();
     const { data, error } = await this.db
       .from('study_sessions')
-      .select(
-        'id, title, course_id, community_id, topic_id, topic, kind, created_by, started_at, is_active',
-      )
+      .select(SESSION_COLUMNS)
       .eq('id', roomId)
       .maybeSingle();
     if (error) throw error;
     if (!data) notFound();
 
+    const row = data as SessionRow;
     const participants = await this.loadRoster(roomId);
+    const joined = participants.some((p) => p.userId === userId);
     return {
-      ...mapRoom(data as SessionRow, participants.length),
+      ...mapRoom(row, participants.length),
       participants,
-      joined: participants.some((p) => p.userId === userId),
+      joined,
+      groupId: joined ? row.group_id ?? null : null,
     };
   }
 
@@ -143,6 +154,7 @@ export class StudyRoomsService {
     const room = await this.get(userId, roomId);
     if (!room.isActive) bad('This study room has closed');
     await this.ensureParticipant(roomId, userId);
+    await this.ensureRoomGroupAndJoin(userId, { id: roomId });
     return this.get(userId, roomId);
   }
 
@@ -192,6 +204,49 @@ export class StudyRoomsService {
       return !row.topic;
     });
     return match ? { id: match.id } : null;
+  }
+
+  private async ensureRoomGroupAndJoin(
+    userId: string,
+    session: { id: string; title?: string | null; course_id?: string | null; group_id?: string | null },
+  ): Promise<string | null> {
+    try {
+      const { data: fresh, error } = await this.db
+        .from('study_sessions')
+        .select('id, title, course_id, group_id')
+        .eq('id', session.id)
+        .maybeSingle();
+      if (error) throw error;
+      const row = (fresh || session) as {
+        id: string;
+        title?: string | null;
+        course_id?: string | null;
+        group_id?: string | null;
+      };
+      const groupId = await ensureLinkedHangoutGroup(this.db, {
+        parentTable: 'study_sessions',
+        parentId: session.id,
+        linkColumn: 'group_id',
+        existingGroupId: row.group_id ?? null,
+        create: () =>
+          insertHangoutGroup(this.db, {
+            name: row.title || 'Study room',
+            visibility: 'private',
+            courseId: row.course_id ?? null,
+            adminUserId: userId,
+            description: 'Study room hangout',
+          }),
+      });
+      await joinHangoutGroup(this.db, groupId, userId);
+      return groupId;
+    } catch (err) {
+      logger.warn('study room hangout join skipped', {
+        roomId: session.id,
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return session.group_id ?? null;
+    }
   }
 
   private async ensureParticipant(roomId: string, userId: string): Promise<void> {

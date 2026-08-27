@@ -15,6 +15,7 @@ import {
   joinDiscoverableGroup,
   leaveCommunity,
 } from '../services/supabase';
+import { HangoutChatPanel } from './HangoutChatPanel';
 
 /**
  * One community (Phase 3 · L) — the web counterpart of the mobile screen.
@@ -176,6 +177,27 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
             </button>
           </header>
 
+          {community.isMember && community.loungeGroupId ? (
+            <HangoutChatPanel
+              groupId={community.loungeGroupId}
+              title="Lounge"
+              onOpenInChats={
+                onNavigate
+                  ? () =>
+                      onNavigate('GroupChat', {
+                        groupId: community.loungeGroupId,
+                        groupName: `${community.name} Lounge`,
+                        joined: true,
+                      })
+                  : undefined
+              }
+            />
+          ) : !community.isMember ? (
+            <p className="rounded-xl border border-dashed border-lantern-border px-3 py-3 text-sm text-lantern-text-secondary">
+              Join this community to chat in the hangout.
+            </p>
+          ) : null}
+
           {members.length > 0 && (
             <section aria-label="Members">
               <h2 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
@@ -198,7 +220,7 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
             <h2 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
               Groups
             </h2>
-            {groups.length === 0 ? (
+            {groups.filter((g) => g.id !== community.loungeGroupId).length === 0 ? (
               <p className="text-xs text-lantern-text-secondary">
                 {community.isMember
                   ? 'No groups in this community yet. Create a study group and list it here from Group info → Discover.'
@@ -206,7 +228,9 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
               </p>
             ) : (
               <ul className="grid gap-3 sm:grid-cols-2">
-                {groups.map((g) => (
+                {groups
+                  .filter((g) => g.id !== community.loungeGroupId)
+                  .map((g) => (
                   <li key={g.id}>
                     <button
                       type="button"

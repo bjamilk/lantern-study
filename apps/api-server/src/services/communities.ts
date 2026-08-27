@@ -25,6 +25,11 @@ import {
   communityPageGroupVisibilities,
   resolveGroupDiscovery,
 } from '@lantern/shared/network';
+import {
+  ensureLinkedHangoutGroup,
+  insertHangoutGroup,
+  joinHangoutGroup,
+} from './hangoutGroups';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -50,6 +55,7 @@ export interface CommunityRow {
   visibility: 'public' | 'private';
   is_official: boolean;
   member_count: number;
+  lounge_group_id?: string | null;
 }
 
 export interface DiscoverGroup {
@@ -96,6 +102,21 @@ export class CommunitiesService {
       const { error } = await this.db.rpc('refresh_auto_communities', { p_user_id: userId });
       if (error) throw error;
       await cacheService.delete(`communities:mine:${userId}`);
+      // Existing lounges only — minting one per auto community on every
+      // profile save would stampede groups. getBySlug / join create lazily.
+      const mine = await this.listMine(userId);
+      for (const community of mine) {
+        if (!community.lounge_group_id) continue;
+        try {
+          await joinHangoutGroup(this.db, community.lounge_group_id, userId);
+        } catch (joinErr) {
+          logger.warn('auto lounge join skipped', {
+            userId,
+            communityId: community.id,
+            error: joinErr instanceof Error ? joinErr.message : String(joinErr),
+          });
+        }
+      }
     } catch (err) {
       logger.warn('auto community refresh failed', {
         userId,
@@ -114,7 +135,7 @@ export class CommunitiesService {
 
     const { data, error } = await this.db
       .from('community_members')
-      .select(`role, source, communities!inner(${COMMUNITY_COLUMNS})`)
+      .select(`role, source, communities!inner(${COMMUNITY_COLUMNS}, lounge_group_id)`)
       .eq('user_id', userId)
       .is('opted_out_at', null)
       .order('joined_at', { ascending: false })
@@ -182,20 +203,74 @@ export class CommunitiesService {
     return (global || []) as unknown as CommunityRow[];
   }
 
+  /**
+   * Persistent lounge for this community. Idempotent: concurrent joiners share
+   * one group. Callers must already have established community membership.
+   */
+  async ensureCommunityLoungeGroup(
+    community: Pick<CommunityRow, 'id' | 'name' | 'kind' | 'course_id'> & {
+      lounge_group_id?: string | null;
+    },
+    adminUserId: string
+  ): Promise<string> {
+    return ensureLinkedHangoutGroup(this.db, {
+      parentTable: 'communities',
+      parentId: community.id,
+      linkColumn: 'lounge_group_id',
+      existingGroupId: community.lounge_group_id ?? null,
+      create: () =>
+        insertHangoutGroup(this.db, {
+          name: `${community.name} Lounge`,
+          visibility: 'community',
+          communityId: community.id,
+          courseId: community.kind === 'course' ? community.course_id ?? null : null,
+          adminUserId,
+          description: 'Community hangout',
+        }),
+    });
+  }
+
+  private async attachMemberToLounge(
+    community: Pick<CommunityRow, 'id' | 'name' | 'kind' | 'course_id'> & {
+      lounge_group_id?: string | null;
+    },
+    userId: string
+  ): Promise<string | null> {
+    try {
+      const groupId = await this.ensureCommunityLoungeGroup(community, userId);
+      await joinHangoutGroup(this.db, groupId, userId);
+      return groupId;
+    } catch (err) {
+      logger.warn('community lounge join skipped', {
+        communityId: community.id,
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return community.lounge_group_id ?? null;
+    }
+  }
+
   async getBySlug(
     viewerId: string,
     slug: string
-  ): Promise<CommunityRow & { isMember: boolean; source: 'auto' | 'joined' | null }> {
+  ): Promise<
+    CommunityRow & {
+      isMember: boolean;
+      source: 'auto' | 'joined' | null;
+      loungeGroupId: string | null;
+    }
+  > {
     if (!slug || typeof slug !== 'string') throw new PublicError('Invalid community');
     const { data, error } = await this.db
       .from('communities')
-      .select(COMMUNITY_COLUMNS)
+      .select(`${COMMUNITY_COLUMNS}, lounge_group_id`)
       .eq('slug', slug)
       .maybeSingle();
     if (error) throw error;
     if (!data) throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
 
-    const community = data as unknown as CommunityRow;
+    const row = data as unknown as CommunityRow & { lounge_group_id?: string | null };
+    const { lounge_group_id: loungeFromRow, ...community } = row;
     const { data: membership } = await this.db
       .from('community_members')
       .select('user_id, source')
@@ -214,7 +289,17 @@ export class CommunitiesService {
       // Do not confirm a private community exists to a non-member.
       throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
     }
-    return { ...community, isMember, source };
+
+    // loungeGroupId is members-only: a non-member must not learn the group id.
+    if (!isMember) {
+      return { ...community, isMember, source, loungeGroupId: null };
+    }
+
+    const loungeGroupId = await this.attachMemberToLounge(
+      { ...community, lounge_group_id: loungeFromRow ?? null },
+      viewerId
+    );
+    return { ...community, isMember, source, loungeGroupId };
   }
 
   /**
@@ -282,6 +367,7 @@ export class CommunitiesService {
         { community_id: community.id, user_id: userId, source: 'joined', role: 'admin', opted_out_at: null },
         { onConflict: 'community_id,user_id' }
       );
+    await this.attachMemberToLounge(community, userId);
     await cacheService.delete(`communities:mine:${userId}`);
     return community;
   }
@@ -290,7 +376,7 @@ export class CommunitiesService {
     this.assertUuid(communityId, 'community id');
     const { data: community, error } = await this.db
       .from('communities')
-      .select('id, visibility, name')
+      .select('id, visibility, name, kind, course_id, lounge_group_id')
       .eq('id', communityId)
       .maybeSingle();
     if (error) throw error;
@@ -307,6 +393,7 @@ export class CommunitiesService {
       { onConflict: 'community_id,user_id' }
     );
     if (upsertError) throw upsertError;
+    await this.attachMemberToLounge(community as unknown as CommunityRow, userId);
     await cacheService.delete(`communities:mine:${userId}`);
 
     // Phase 3 M: joined_community had no writer. Addressed to the community
