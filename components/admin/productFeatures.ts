@@ -656,6 +656,35 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     adminNotes: ['Profiles for confirmation-pending accounts are created at first sign-in, not at signup \u2014 a brief gap in the profiles table is expected.'],
     commits: ['d3c9f0d'],
   },
+  {
+    id: 'mobile-campus-shop-1-0-30',
+    title: 'Mobile — campus shop, study products, and a tidier day-to-day (1.0.30)',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-08-27',
+    summary:
+      'The 1.0.30 binary catches mobile up to the web: marketplace browse/search with a listing classifier, study products from photographed notes, the Study wallet as a Budget tab, and a decluttered Dashboard and Chat.',
+    details: [
+      'Campus shop: category browse, search suggestions as you type, and a listing detail page with related listings underneath.',
+      'Creating or editing a listing runs it through a classifier that picks the category, instead of asking the seller to find it in the taxonomy.',
+      'Photographed notes can be published as a Study Product, and semester study packs are proposed from the courses a student takes — enqueued as drafts, one at a time, for review before publishing.',
+      'The Study wallet moved into Budget as a sibling tab rather than its own destination.',
+      'Dashboard: shortcut tiles for AI Tools/Notes/Flashcards/Explore, the topics-mastery card and the questions-to-review card are hidden; the network feed moved into Notifications; greeting and Daily Quests share one row; Import & Study opens from the dashboard.',
+      'Chat: mute durations collapsed under a single Mute control, question filters nested under All questions, and Summarize group chat removed from the overflow menu.',
+    ],
+    howToUse: [
+      'Explore → Goods (browse, search, listing pages); Notes → a photo note → publish as a Study Product; Budget → Study wallet tab.',
+    ],
+    surfaces: ['mobile'],
+    adminNotes: [
+      'APKs are published to the bjamilk/lantern-study-releases repo; the site\u2019s download link tracks the latest release asset.',
+      'Ship via full builds, never OTA \u2014 OTA from main has crash-looped Android before.',
+      'versionCode 86, built from main @ de6ed33; the web and API were already live on 341b0ef, so this is the mobile binary that reaches parity.',
+      'Discover (cross-university study rooms, presence, ambassador invites) is in the binary but stays behind the platform-admin gate and shows \u201cComing soon\u201d to everyone else. The Marketplace itself is not gated.',
+      'Handwriting OCR is NOT live: /health reports gemini and handwritingOcr off, so the photo-notes OCR path degrades to plain photo notes until those keys are set in Render.',
+    ],
+    commits: ['de6ed33', '341b0ef', '9158230', 'ac974ae', '40208dd', 'ef6b22d'],
+  },
 ];
 
 export function sortProductFeatures(entries: ProductFeatureEntry[]): ProductFeatureEntry[] {
