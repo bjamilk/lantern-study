@@ -4,6 +4,7 @@ export { default as AddIncomeScreen } from './AddIncomeScreen';
 export { default as SetBudgetScreen } from './SetBudgetScreen';
 export { default as SavingsGoalsScreen } from './SavingsGoalsScreen';
 export { default as WalletScreen } from './WalletScreen';
+export { default as StudyWalletPanel } from './StudyWalletPanel';
 export { default as ExpenseSplitScreen } from './ExpenseSplitScreen';
 export { default as RecurringScreen } from './RecurringScreen';
 export { default as SetCategoryBudgetScreen } from './SetCategoryBudgetScreen';

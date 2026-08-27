@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AppMode, ChatItem, Deck, Flashcard, FlashcardSession, TestResult, Message, User, TestSessionData, StudySessionData, GameSession } from '../types';
 import type { NoteImportProgress } from '../services/notes';
-import { isEphemeralAppMode, isRoutableAppMode } from '../utils/appRoutes';
+import { isEphemeralAppMode, isRoutableAppMode, type BudgetTabParam } from '../utils/appRoutes';
 import { navigateForAppMode } from '../utils/appNavigation';
 
 interface UIState {
@@ -168,6 +168,10 @@ interface UIState {
   // Library tab (notes | flashcards)
   libraryTab: 'notes' | 'flashcards';
   setLibraryTab: (tab: 'notes' | 'flashcards') => void;
+
+  /** Budget section tab. `wallet` is URL-addressable at `/budget/wallet`. */
+  budgetTab: BudgetTabParam;
+  setBudgetTab: (tab: BudgetTabParam) => void;
 
   /**
    * Small-screen Library course rail. Persisted like the sidebar: as local
@@ -370,6 +374,9 @@ export const useUIStore = create<UIState>()(
 
       libraryTab: 'notes' as const,
       setLibraryTab: (tab) => set({ libraryTab: tab }),
+
+      budgetTab: 'overview' as const,
+      setBudgetTab: (tab) => set({ budgetTab: tab }),
 
       isLibraryRailOpen: false,
       setLibraryRailOpen: (open) => set({ isLibraryRailOpen: open }),

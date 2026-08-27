@@ -121,6 +121,13 @@ export function applyPreNavigationEffects(mode: AppMode, params?: AppRouteParams
     // the request. Callers that omit it keep whatever tab is already stored.
     ui.setLibraryTab(params.libraryTab);
   }
+  if (mode === AppMode.BUDGET_TRACKER) {
+    if (params?.budgetTab === 'wallet') {
+      ui.setBudgetTab('wallet');
+    } else if (ui.budgetTab === 'wallet') {
+      ui.setBudgetTab('overview');
+    }
+  }
   if (mode === AppMode.CREATE_MARKETPLACE_JOB) {
     // Clear when absent, or a previously viewed job would open the form in
     // edit mode instead of starting a new post.
