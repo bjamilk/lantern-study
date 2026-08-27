@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { FlashcardType, getNoteStudyContent } from '@lantern/shared';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
+import { HANDWRITING_OCR_OFF_MESSAGE } from '@lantern/shared/utils/handwritingOcr';
 import * as notesApi from '../services/notes';
+import { fetchAiHealth } from '../services/api';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useAuthStore } from '../stores/authStore';
@@ -36,6 +38,7 @@ interface ImportAndStudyModalProps {
   onClose: () => void;
   onComplete?: (result: ImportAndStudyResult) => void;
   onOpenNote: (noteId: string) => void;
+  onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -45,6 +48,7 @@ export default function ImportAndStudyModal({
   onClose,
   onComplete,
   onOpenNote,
+  onTurnIntoStudyProduct,
 }: ImportAndStudyModalProps) {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -52,6 +56,14 @@ export default function ImportAndStudyModal({
   const [result, setResult] = useState<ImportAndStudyResult | null>(null);
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
+  const [handwritingOcrOff, setHandwritingOcrOff] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    void fetchAiHealth()
+      .then((h) => setHandwritingOcrOff(h.handwritingOcr === 'off' || h.gemini === 'off'))
+      .catch(() => setHandwritingOcrOff(false));
+  }, [visible]);
 
   const reset = () => {
     setStep('input');
@@ -242,6 +254,11 @@ export default function ImportAndStudyModal({
                 <Text className="text-xs text-lantern-text-secondary mb-3">
                   {formatMaxNoteUploadLabel()}
                 </Text>
+                {handwritingOcrOff ? (
+                  <Text className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 mb-3">
+                    {HANDWRITING_OCR_OFF_MESSAGE}
+                  </Text>
+                ) : null}
 
                 <Pressable
                   onPress={handlePickPhotos}
@@ -320,6 +337,18 @@ export default function ImportAndStudyModal({
                 >
                   Open note
                 </Button>
+                {onTurnIntoStudyProduct ? (
+                  <Button
+                    fullWidth
+                    variant="secondary"
+                    onPress={() => {
+                      onTurnIntoStudyProduct(result);
+                      handleClose();
+                    }}
+                  >
+                    Turn this into a Study Product
+                  </Button>
+                ) : null}
               </View>
             ) : null}
           </View>

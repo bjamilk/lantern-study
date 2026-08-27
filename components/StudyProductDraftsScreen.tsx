@@ -7,6 +7,7 @@ import {
   type StudyPackDraftSummary,
   type StudyPackDraft,
 } from '../services/supabase';
+import * as notesApi from '../services/notes';
 import { PublishStudyPackModal } from './marketplace/PublishStudyPackModal';
 import { useToastStore } from '../stores/toastStore';
 import { summarizeStudyPackCounts, STUDY_PACK_DRAFT_CREDITS } from '@lantern/shared/marketplace';
@@ -72,16 +73,25 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({
     if (!initialSource || createdRef.current) return;
     createdRef.current = true;
     setCreating(true);
-    void createStudyPackDraft(initialSource)
-      .then(() => showToast('Generating your study product… this takes a moment.'))
-      .catch((e: any) => showToast(e?.message || 'Could not start the study product.', 'error'))
-      .finally(() => {
+    void (async () => {
+      try {
+        for (const id of initialSource.noteIds || []) {
+          try {
+            await notesApi.waitForNoteOcr(id);
+          } catch {
+            /* proceed even if OCR is still running — the factory waits too */
+          }
+        }
+        await createStudyPackDraft(initialSource);
+        showToast('Generating your study product… this takes a moment.');
+      } catch (e: any) {
+        showToast(e?.message || 'Could not start the study product.', 'error');
+      } finally {
         setCreating(false);
-        // Retire the source immediately: coming back to this screen must never
-        // re-spend credits regenerating the same draft.
         onSourceConsumed?.();
         void load();
-      });
+      }
+    })();
   }, [initialSource, load, showToast, onSourceConsumed]);
 
   useEffect(() => {

@@ -34,6 +34,11 @@ export interface StudyPackWeakSection {
   reason: string;
 }
 
+export interface StudyPackCover {
+  title: string;
+  subtitle?: string;
+}
+
 /** What a client sends when publishing/updating a pack. */
 export interface StudyPackContentInput {
   guide?: { markdown?: string; toc?: StudyPackTocEntry[] };
@@ -41,6 +46,10 @@ export interface StudyPackContentInput {
   flashcards?: StudyPackFlashcardInput[];
   questions?: unknown[];
   weakSections?: StudyPackWeakSection[];
+  /** Short exam checklist generated with the draft (Phase 4 factory loop). */
+  examChecklist?: string[];
+  /** Suggested cover copy — no image generation in v1. */
+  cover?: StudyPackCover;
 }
 
 export const STUDY_PACK_CATEGORY = 'study_pack';
@@ -75,6 +84,27 @@ export interface StudyPackDraft extends StudyPackDraftSummary {
     institutionId?: string;
   } | null;
   folder_id: string | null;
+}
+
+/** One proposed pack from GET /ai/study-pack/semester-proposals (Phase 4 · S). */
+export interface SemesterPackProposal {
+  courseId: string;
+  courseCode: string;
+  courseTitle: string;
+  noteCount: number;
+  suggestedTitle: string;
+  suggestedPriceKobo: number;
+  creditCost: number;
+}
+
+export interface SemesterPackProposalResponse {
+  academicYear: string;
+  creditCostPerPack: number;
+  creditsUsed: number;
+  creditsLimit: number;
+  creditsRemaining: number;
+  maxSelectable: number;
+  proposals: SemesterPackProposal[];
 }
 
 /** Human labels for the digital counts, for compact "12 cards · 20 Qs" summaries. */

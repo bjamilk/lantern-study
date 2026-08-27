@@ -1243,6 +1243,13 @@ export function DashboardScreen({ navigation }: Props) {
           setImportOpen(false);
           parent?.navigate('StudyTab', { screen: 'NoteEditor', params: { noteId } });
         }}
+        onTurnIntoStudyProduct={(result) => {
+          setImportOpen(false);
+          parent?.navigate('MarketTab', {
+            screen: 'StudyProductDrafts',
+            params: { source: { noteIds: [result.noteId], title: result.noteTitle } },
+          });
+        }}
       />
 
       <Modal visible={groupPickerOpen} transparent animationType="fade" onRequestClose={() => setGroupPickerOpen(false)}>

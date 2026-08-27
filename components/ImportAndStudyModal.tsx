@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   DocumentArrowUpIcon,
   PhotoIcon,
@@ -7,9 +7,11 @@ import {
 } from '@heroicons/react/24/outline';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
+import { HANDWRITING_OCR_OFF_MESSAGE } from '@lantern/shared/utils/handwritingOcr';
 import { Button } from './ui';
 import Modal from './ui/Modal';
 import * as notesApi from '../services/notes';
+import { fetchAiHealth } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudyGenerators, type ImportAndStudyResult } from '../hooks/useStudyGenerators';
@@ -22,6 +24,7 @@ interface ImportAndStudyModalProps {
   onClose: () => void;
   onComplete: (result: ImportAndStudyResult) => void;
   onOpenNote: (noteId: string) => void;
+  onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -31,6 +34,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   onClose,
   onComplete,
   onOpenNote,
+  onTurnIntoStudyProduct,
 }) => {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -38,8 +42,16 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   const [result, setResult] = useState<ImportAndStudyResult | null>(null);
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
+  const [handwritingOcrOff, setHandwritingOcrOff] = useState(false);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
   const loadNote = useNotesStore((s) => s.loadNote);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void fetchAiHealth()
+      .then((h) => setHandwritingOcrOff(h.handwritingOcr === 'off' || h.gemini === 'off'))
+      .catch(() => setHandwritingOcrOff(false));
+  }, [isOpen]);
 
   const reset = () => {
     setStep('input');
@@ -209,6 +221,15 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 {formatMaxNoteUploadLabel()}
               </p>
 
+              {handwritingOcrOff ? (
+                <p
+                  role="status"
+                  className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2"
+                >
+                  {HANDWRITING_OCR_OFF_MESSAGE}
+                </p>
+              ) : null}
+
               <div className="flex flex-wrap gap-3">
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
                   <DocumentArrowUpIcon className="w-8 h-8 text-lantern-primary" aria-hidden />
@@ -299,6 +320,18 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
               <Button onClick={() => { onOpenNote(result.noteId); handleClose(); }} className="w-full">
                 Open note
               </Button>
+              {onTurnIntoStudyProduct ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    onTurnIntoStudyProduct(result);
+                    handleClose();
+                  }}
+                  className="w-full"
+                >
+                  Turn this into a Study Product
+                </Button>
+              ) : null}
             </div>
           )}
         </div>

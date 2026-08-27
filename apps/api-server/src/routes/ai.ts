@@ -66,11 +66,14 @@ async function recordInference(
 router.get('/health', authMiddleware, (_req: Request, res: Response) => {
   const status = getProviderStatus();
   const totalRemaining = status.reduce((sum, p) => sum + p.remainingToday, 0);
+  const gemini = process.env.GEMINI_API_KEY ? 'on' : 'off';
   res.json({
     status: totalRemaining > 0 ? 'operational' : 'exhausted',
     totalRemainingToday: totalRemaining,
     // Boolean only — never leak key material.
     transcriptionConfigured: isTranscriptionConfigured(),
+    gemini,
+    handwritingOcr: gemini,
     providers: status,
   });
 });
@@ -391,6 +394,33 @@ router.post(
     }
   },
 );
+
+// GET /api/v1/ai/study-pack/semester-proposals — Phase 4 · S. Does not charge.
+router.get('/study-pack/semester-proposals', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const academicYear =
+    typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
+  const { academicYear: year, proposals } = await getStudyPackFactoryService(supabaseService).proposeSemester(
+    userId,
+    academicYear,
+  );
+  const usage = await getAIUsage(userId);
+  const creditsRemaining = Math.max(0, usage.limit - usage.used);
+  const maxSelectable = Math.floor(creditsRemaining / STUDY_PACK_DRAFT_CREDIT_COST);
+  res.json({
+    success: true,
+    data: {
+      academicYear: year,
+      creditCostPerPack: STUDY_PACK_DRAFT_CREDIT_COST,
+      creditsUsed: usage.used,
+      creditsLimit: usage.limit,
+      creditsRemaining,
+      maxSelectable,
+      proposals,
+    },
+  });
+});
 
 // GET /api/v1/ai/study-pack/drafts - the caller's drafts (excludes published)
 router.get('/study-pack/drafts', async (req: AuthenticatedRequest, res: Response) => {
