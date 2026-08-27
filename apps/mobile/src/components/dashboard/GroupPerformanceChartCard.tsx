@@ -355,10 +355,6 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
         <Ionicons name="stats-chart" size={16} color="#4f46e5" />
         <Text className="text-sm font-semibold text-lantern-text">Group performance</Text>
       </View>
-      <Text className="text-[11px] text-lantern-text-secondary mb-3">
-        Select one or more groups. Archived groups are included, since their tests still count
-        towards your totals. Metrics follow the period you pick below.
-      </Text>
 
       <View className="flex-row flex-wrap gap-1.5 mb-3">
         {GROUP_PERFORMANCE_PERIOD_OPTIONS.map((opt) => {

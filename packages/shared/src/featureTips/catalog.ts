@@ -37,7 +37,6 @@ export const FEATURE_TIP_SEQUENCE: FeatureTipId[] = [
   'chat.question',
   'chat.test',
   'chat.study',
-  'chat.summarize',
   'chat.aiGenerate',
   'nav.budget',
   'nav.marketplace',

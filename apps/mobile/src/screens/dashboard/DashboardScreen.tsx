@@ -14,6 +14,8 @@ import {
 
   View,
 
+  useWindowDimensions,
+
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -56,8 +58,6 @@ import * as api from '../../services/api';
 import { refreshUserData } from '../../services/dataRefresh';
 
 import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
-import { AcademicFeedPanel } from '../../components/AcademicFeedPanel';
-import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 
 import { DailyQuizWidget } from '../../components/DailyQuizWidget';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
@@ -154,6 +154,8 @@ function ActivityHeatmap({ days, theme }: { days: { date: string; count: number 
 
 export function DashboardScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(24);
+  const { width: windowWidth } = useWindowDimensions();
+  const heroQuestsSideBySide = windowWidth >= 768;
 
   const user = useAuthStore(s => s.user);
   const profileName = useAuthStore(s => s.profileName);
@@ -648,6 +650,8 @@ export function DashboardScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
 
+        <View className={heroQuestsSideBySide ? 'flex-row gap-3 mb-4 items-stretch' : undefined}>
+        <View className={heroQuestsSideBySide ? 'flex-1' : undefined}>
         <DashboardHeroCard
           userName={displayName}
           streak={streak}
@@ -655,6 +659,7 @@ export function DashboardScreen({ navigation }: Props) {
           dueCount={dueCount}
           totalTests={stats?.totalTestsTaken ?? 0}
           level={level}
+          className={heroQuestsSideBySide ? 'mb-0 h-full' : undefined}
           onPrimaryAction={() => {
             if (dueCount > 0) {
               parent?.navigate('StudyTab', { screen: 'FlashcardsList' });
@@ -668,6 +673,18 @@ export function DashboardScreen({ navigation }: Props) {
               : 'Import & study'
           }
         />
+        </View>
+        <View className={heroQuestsSideBySide ? 'flex-1' : undefined}>
+        <DailyQuestsWidget
+          quests={quests}
+          streak={streak}
+          streakFreezes={streakFreezes}
+          onPurchaseFreeze={() => void handlePurchaseFreeze()}
+          purchasingFreeze={purchasingFreeze}
+          className={heroQuestsSideBySide ? 'mb-0 h-full' : undefined}
+        />
+        </View>
+        </View>
 
         <GettingStartedChecklist
           hasDecks={decks.length > 0}
@@ -1136,23 +1153,6 @@ export function DashboardScreen({ navigation }: Props) {
         </Pressable>
 
 
-
-        <DailyQuestsWidget
-          quests={quests}
-          streak={streak}
-          streakFreezes={streakFreezes}
-          onPurchaseFreeze={() => void handlePurchaseFreeze()}
-          purchasingFreeze={purchasingFreeze}
-        />
-
-        {/* Phase 3 M: the plan asked for a feed panel on BOTH dashboards; only
-            web had one, so mobile users never saw network activity unless they
-            found the dedicated Feed screen. */}
-        <AcademicFeedPanel
-          onOpenFeed={() =>
-            navigateRootStack('Main', { screen: 'MarketTab', params: { screen: 'Feed' } })
-          }
-        />
 
         <Pressable
           onPress={() => navigation.navigate('Leaderboard')}

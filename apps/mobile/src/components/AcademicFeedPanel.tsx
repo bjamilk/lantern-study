@@ -22,6 +22,7 @@ import { fetchFeed, fetchLearningConnections } from '../services/api';
 export interface AcademicFeedPanelProps {
   onOpenFeed?: () => void;
   limit?: number;
+  className?: string;
 }
 
 function relativeTime(iso: string): string {
@@ -35,7 +36,7 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-export function AcademicFeedPanel({ onOpenFeed, limit = 4 }: AcademicFeedPanelProps) {
+export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: AcademicFeedPanelProps) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [connections, setConnections] = useState<LearningConnectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +67,7 @@ export function AcademicFeedPanel({ onOpenFeed, limit = 4 }: AcademicFeedPanelPr
   if (!loading && rendered.length === 0 && !connectionLine) return null;
 
   return (
-    <View className="mx-4 mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4">
+    <View className={className ?? 'mx-4 mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4'}>
       <View className="flex-row items-center justify-between mb-2">
         <View className="flex-1">
           <Text className="text-sm font-semibold text-lantern-text">From your network</Text>

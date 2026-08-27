@@ -44,6 +44,7 @@ import {
   navigateToGameResult,
 } from "../../navigation/navigationRef";
 import { NotificationRow } from "../../components/ui";
+import { AcademicFeedPanel } from "../../components/AcademicFeedPanel";
 
 interface AppNotification {
   id: string;
@@ -331,6 +332,23 @@ export default function NotificationsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
           contentContainerClassName="px-4 py-3 pb-8"
+          ListHeaderComponent={
+            <AcademicFeedPanel
+              limit={6}
+              className="mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4"
+              onOpenFeed={() =>
+                navigation.dispatch(
+                  CommonActions.navigate({
+                    name: "Main",
+                    params: {
+                      screen: "MarketTab",
+                      params: { screen: "Feed" },
+                    },
+                  }),
+                )
+              }
+            />
+          }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               <View className="w-14 h-14 rounded-full bg-lantern-primary-background items-center justify-center">

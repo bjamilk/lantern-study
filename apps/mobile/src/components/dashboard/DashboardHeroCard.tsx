@@ -13,6 +13,7 @@ interface DashboardHeroCardProps {
   level?: UserLevel | null;
   onPrimaryAction: () => void;
   primaryActionLabel: string;
+  className?: string;
 }
 
 function getGreeting(): string {
@@ -31,6 +32,7 @@ export function DashboardHeroCard({
   level,
   onPrimaryAction,
   primaryActionLabel,
+  className,
 }: DashboardHeroCardProps) {
   const subtitle =
     dueCount > 0
@@ -40,7 +42,7 @@ export function DashboardHeroCard({
         : 'Import material or review flashcards to get started.';
 
   return (
-    <Card className="mb-4 border-l-4 border-l-lantern-primary border border-lantern-primary/20 bg-lantern-primary-background">
+    <Card className={`border-l-4 border-l-lantern-primary border border-lantern-primary/20 bg-lantern-primary-background ${className ?? 'mb-4'}`}>
       <Text className="font-display text-xl font-semibold text-lantern-text">
         {getGreeting()}, {userName}
       </Text>

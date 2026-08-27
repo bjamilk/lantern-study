@@ -14,7 +14,6 @@ const ALL_TIP_IDS: FeatureTipId[] = [
   'chat.question',
   'chat.test',
   'chat.study',
-  'chat.summarize',
   'chat.aiGenerate',
   'nav.budget',
   'nav.marketplace',
@@ -69,7 +68,7 @@ export const FeatureTipsHost: React.FC<FeatureTipsHostProps> = ({
     setTipReady('chat.question', isGroupChat);
     setTipReady('chat.test', isGroupChat);
     setTipReady('chat.study', isGroupChat);
-    setTipReady('chat.summarize', isGroupChat);
+    setTipReady('chat.summarize', false);
     setTipReady('chat.aiGenerate', isGroupChat);
     setTipAllowed('chat.aiGenerate', isAdmin);
 
@@ -93,7 +92,6 @@ export const FeatureTipsHost: React.FC<FeatureTipsHostProps> = ({
         'chat.question',
         'chat.test',
         'chat.study',
-        'chat.summarize',
         'chat.aiGenerate',
       ];
       for (const id of navIds) {

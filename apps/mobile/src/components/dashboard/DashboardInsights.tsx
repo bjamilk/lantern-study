@@ -11,6 +11,9 @@ import type { DashboardStats } from '../../types/dashboardStats';
 
 const MIN_TOPIC_QUESTIONS = 3;
 
+/** Dashboard “Questions to review” card. Review/study screens stay available. */
+export const SHOW_DASHBOARD_QUESTIONS_TO_REVIEW = false;
+
 function TopicRow({ tag, accuracy, tone }: { tag: string; accuracy: number; tone: 'strong' | 'weak' }) {
   const bg = tone === 'strong' ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-red-50 dark:bg-red-900/20';
   const valueColor = tone === 'strong' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
@@ -34,9 +37,10 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
   const weakest = rankedTopics.length > 3 ? rankedTopics.slice(-3).reverse() : [];
 
   const troublesome = (stats.troublesomeQuestions ?? []).slice(0, 5);
+  const showQuestions = SHOW_DASHBOARD_QUESTIONS_TO_REVIEW && troublesome.length > 0;
 
   const hasTopics = strongest.length > 0 || weakest.length > 0;
-  if (!hasTopics && troublesome.length === 0) return null;
+  if (!hasTopics && !showQuestions) return null;
 
   return (
     <>
@@ -73,7 +77,7 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
         </Card>
       ) : null}
 
-      {troublesome.length > 0 ? (
+      {showQuestions ? (
         <Card className="mb-4">
           <View className="flex-row items-center gap-2 mb-3">
             <Ionicons name="warning" size={16} color="#f59e0b" />

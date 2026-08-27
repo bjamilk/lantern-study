@@ -397,24 +397,6 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     }
   }, [threadId, muteBusy]);
 
-  const openMutePicker = useCallback(() => {
-    if (chatMuted) {
-      void clearMute();
-      return;
-    }
-    Alert.alert(
-      'Mute notifications',
-      'Pause alerts for this direct message.',
-      [
-        ...CHAT_MUTE_DURATIONS.map((opt) => ({
-          text: opt.label,
-          onPress: () => void applyMute(opt.id),
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ]
-    );
-  }, [chatMuted, clearMute, applyMute]);
-
   const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
 
   const handleToggleArchive = useCallback(async () => {
@@ -477,14 +459,22 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   // "Report user" (Phase 1 · E). Actions that open an Alert are deferred so the
   // sheet's Modal is gone first — iOS will not stack an Alert under a Modal.
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [muteSheetOpen, setMuteSheetOpen] = useState(false);
   const [showReportUser, setShowReportUser] = useState(false);
   const openChatMenu = useCallback(() => setChatMenuOpen(true), []);
   const afterSheet = (fn: () => void) => setTimeout(fn, Platform.OS === 'ios' ? 320 : 0);
   const chatMenuItems: ActionSheetItem[] = [
     {
-      label: chatMuted ? 'Unmute notifications' : 'Mute notifications',
+      label: chatMuted ? 'Unmute notifications' : 'Mute',
       icon: chatMuted ? 'notifications-outline' : 'notifications-off-outline',
-      onPress: () => afterSheet(openMutePicker),
+      onPress: () =>
+        afterSheet(() => {
+          if (chatMuted) {
+            void clearMute();
+            return;
+          }
+          setMuteSheetOpen(true);
+        }),
     },
     {
       label: thread?.isArchived ? 'Unarchive conversation' : 'Archive conversation',
@@ -1344,6 +1334,16 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         title="Conversation"
         items={chatMenuItems}
         onClose={() => setChatMenuOpen(false)}
+      />
+      <ActionSheet
+        visible={muteSheetOpen}
+        title="Mute"
+        items={CHAT_MUTE_DURATIONS.map((opt) => ({
+          label: opt.label,
+          icon: 'notifications-off-outline' as const,
+          onPress: () => void applyMute(opt.id),
+        }))}
+        onClose={() => setMuteSheetOpen(false)}
       />
       <ReportContentSheet
         visible={showReportUser}

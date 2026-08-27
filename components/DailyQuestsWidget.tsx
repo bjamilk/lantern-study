@@ -19,6 +19,7 @@ interface DailyQuestsWidgetProps {
   questsLoaded?: boolean;
   onRefresh?: () => void;
   theme?: 'light' | 'dark';
+  className?: string;
 }
 
 const QUEST_LABELS: Record<string, string> = {
@@ -37,12 +38,14 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
   questsLoaded = false,
   onRefresh,
   theme = 'light',
+  className = '',
 }) => {
   const isDark = theme === 'dark';
+  const boxClass = `rounded-xl border p-4 h-full ${className} ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`;
 
   if (!questsLoaded) {
     return (
-      <div className={`rounded-xl border p-4 animate-pulse ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`}>
+      <div className={`animate-pulse ${boxClass}`}>
         <div className="h-5 w-32 bg-lantern-background-secondary rounded mb-3" />
         <div className="space-y-2">
           <div className="h-8 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded" />
@@ -57,7 +60,7 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
 
   if (quests.length === 0) {
     return (
-      <div className={`rounded-xl border p-4 ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`}>
+      <div className={boxClass}>
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-lantern-text">Daily Quests</h3>
           <div className="flex items-center gap-2 text-sm">
@@ -80,7 +83,7 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
   }
 
   return (
-    <div className={`rounded-xl border p-4 ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`}>
+    <div className={boxClass}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-lantern-text">Daily Quests</h3>
         <div className="flex items-center gap-2 text-sm">
