@@ -1427,20 +1427,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
     }
   }, [groupId, muteBusy]);
 
-  const openMutePicker = useCallback(() => {
-    Alert.alert(
-      'Mute notifications',
-      'Pause alerts for this group chat.',
-      [
-        ...CHAT_MUTE_DURATIONS.map((opt) => ({
-          text: opt.label,
-          onPress: () => void applyMute(opt.id),
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ]
-    );
-  }, [applyMute]);
-
   const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
   const isArchived = !!group?.isArchived;
 
@@ -1510,11 +1496,19 @@ export function GroupChatScreen({ navigation, route }: Props) {
           }
         : {
             id: 'mute',
-            label: 'Mute notifications…',
+            label: 'Mute',
             icon: 'notifications-off-outline' as const,
             section: 'Notifications',
-            onPress: openMutePicker,
             disabled: muteBusy,
+            submenu: {
+              title: 'Mute',
+              options: CHAT_MUTE_DURATIONS.map((opt) => ({
+                id: `mute-${opt.id}`,
+                label: opt.label,
+                icon: 'notifications-off-outline' as const,
+                onPress: () => void applyMute(opt.id),
+              })),
+            },
           },
       // Manage.
       {
@@ -1551,7 +1545,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     muteUntilLabel,
     muteBusy,
     clearMute,
-    openMutePicker,
+    applyMute,
   ]);
 
   return (

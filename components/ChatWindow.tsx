@@ -159,6 +159,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [questionFiltersOpen, setQuestionFiltersOpen] = useState(false);
+  const [muteDurationsOpen, setMuteDurationsOpen] = useState(false);
   // "Report…" target: a group message (hover bar) or the DM peer (header menu).
   const [reportTarget, setReportTarget] = useState<{
     type: ContentReportTargetType;
@@ -227,6 +228,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   useEffect(() => {
     if (!isDropdownOpen) {
       setQuestionFiltersOpen(false);
+      setMuteDurationsOpen(false);
       return;
     }
     setQuestionFiltersOpen(questionVisibilityMode !== 'all');
@@ -1250,6 +1252,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setIsDropdownOpen(false);
   };
 
+  const muteOverflowMenu = chatMuted ? (
+    <MenuItem
+      onSelect={() => handleDropdownAction(() => void handleUnmute())}
+      icon={<BellAlertIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+      disabled={muteBusy}
+    >
+      Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
+    </MenuItem>
+  ) : (
+    <MenuSubmenu
+      label="Mute"
+      icon={<BellSlashIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+      open={muteDurationsOpen}
+      onOpenChange={setMuteDurationsOpen}
+    >
+      {CHAT_MUTE_DURATIONS.map((opt) => (
+        <MenuItem
+          key={opt.id}
+          onSelect={() => handleDropdownAction(() => void handleMuteFor(opt.id))}
+          className="pl-8"
+          disabled={muteBusy}
+        >
+          {opt.label}
+        </MenuItem>
+      ))}
+    </MenuSubmenu>
+  );
+
   const questionCount = visibleMessages.filter(m => m.questionType).length;
   // Fold the question count into the header subtitle so we can drop the separate
   // stats strip row (member count already backs `description` when unset).
@@ -1743,26 +1773,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
                     Notifications
                   </div>
-                  {chatMuted ? (
-                    <MenuItem
-                      onSelect={() => handleDropdownAction(() => void handleUnmute())}
-                      icon={<BellAlertIcon className="w-4 h-4 text-lantern-text-tertiary" />}
-                      disabled={muteBusy}
-                    >
-                      Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
-                    </MenuItem>
-                  ) : (
-                    CHAT_MUTE_DURATIONS.map((opt) => (
-                      <MenuItem
-                        key={opt.id}
-                        onSelect={() => handleDropdownAction(() => void handleMuteFor(opt.id))}
-                        icon={<BellSlashIcon className="w-4 h-4 text-lantern-text-tertiary" />}
-                        disabled={muteBusy}
-                      >
-                        Mute for {opt.label}
-                      </MenuItem>
-                    ))
-                  )}
+                  {muteOverflowMenu}
                   <MenuSeparator />
                   {isArchived ? (
                     <MenuItem
@@ -1823,32 +1834,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
                     Notifications
                   </div>
-                  {chatMuted ? (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        void handleUnmute();
-                      }}
-                      icon={<BellAlertIcon className="w-4 h-4 text-lantern-text-tertiary" />}
-                      disabled={muteBusy}
-                    >
-                      Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
-                    </MenuItem>
-                  ) : (
-                    CHAT_MUTE_DURATIONS.map((opt) => (
-                      <MenuItem
-                        key={opt.id}
-                        onSelect={() => {
-                          setIsDropdownOpen(false);
-                          void handleMuteFor(opt.id);
-                        }}
-                        icon={<BellSlashIcon className="w-4 h-4 text-lantern-text-tertiary" />}
-                        disabled={muteBusy}
-                      >
-                        Mute for {opt.label}
-                      </MenuItem>
-                    ))
-                  )}
+                  {muteOverflowMenu}
                   <MenuSeparator />
                   {(chat as any).isArchived ? (
                     <MenuItem
