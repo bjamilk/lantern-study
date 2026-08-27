@@ -9,13 +9,31 @@
 -- room id is not blocked by 42501 — policies never subquery their own table
 -- (42P17 at runtime, not CREATE POLICY time).
 
+-- topic_id is added without a FK first: a single ALTER that referenced
+-- course_topics aborted the whole add on databases that have not applied
+-- 20260826120000 yet (kind/title never landed). Attach the FK only when
+-- that table exists — production already has it.
 ALTER TABLE public.study_sessions
   ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES public.courses(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS community_id UUID REFERENCES public.communities(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS topic_id UUID REFERENCES public.course_topics(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS topic_id UUID,
   ADD COLUMN IF NOT EXISTS topic TEXT,
   ADD COLUMN IF NOT EXISTS title TEXT,
   ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'room';
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'course_topics'
+  ) THEN
+    ALTER TABLE public.study_sessions
+      DROP CONSTRAINT IF EXISTS study_sessions_topic_id_fkey;
+    ALTER TABLE public.study_sessions
+      ADD CONSTRAINT study_sessions_topic_id_fkey
+      FOREIGN KEY (topic_id) REFERENCES public.course_topics(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 ALTER TABLE public.study_sessions
   DROP CONSTRAINT IF EXISTS study_sessions_kind_check;
