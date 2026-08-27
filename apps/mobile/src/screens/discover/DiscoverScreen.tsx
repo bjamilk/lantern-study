@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   DISCOVER_SECTION_INTRO,
+  canAccessDiscoverHub,
   communityKindLabel,
   communityMembershipAction,
   memberCountLabel,
@@ -29,6 +30,8 @@ import {
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
+import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { DiscoverComingSoon } from './DiscoverComingSoon';
 
 import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
 
@@ -46,7 +49,7 @@ type Section = DiscoverSection;
  * Decision D12: the marketplace is a TAB here, not a sibling destination, so
  * selecting it navigates within the same stack rather than leaving Discover.
  */
-export function DiscoverScreen({
+function DiscoverHub({
   navigation,
   route,
 }: {
@@ -508,6 +511,20 @@ export function DiscoverScreen({
       )}
     </SafeAreaView>
   );
+}
+
+export function DiscoverScreen({
+  navigation,
+  route,
+}: {
+  navigation: NavigationProp;
+  route?: { params?: { section?: Section } };
+}) {
+  const isPlatformAdmin = usePlatformAdmin();
+  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+    return <DiscoverComingSoon onBack={() => navigation.goBack()} />;
+  }
+  return <DiscoverHub navigation={navigation} route={route} />;
 }
 
 export default DiscoverScreen;

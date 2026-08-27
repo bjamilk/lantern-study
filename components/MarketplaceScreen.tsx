@@ -9,9 +9,11 @@ import {
 } from '../services/supabase';
 import { RateLimitError } from '@lantern/shared';
 import { browseListingCategories, browseFilterForNode, customCategoryName, getTaxonomyNode, getTaxonomyPath, isCustomListingCategory, listingTypeLabel } from '@lantern/shared/marketplace';
+import { canAccessDiscoverHub } from '@lantern/shared/network';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import type { MarketplaceCampus } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
+import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { MarketplaceListing, MarketplaceShopCard, SavedSearch } from '../types';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { usePageSeo } from '../hooks/usePageSeo';
@@ -108,6 +110,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   initialCategory = '',
 }) => {
   const { currentUser } = useAuthStore();
+  const isPlatformAdmin = usePlatformAdmin();
   const initialNode = initialBrowseNodeId ? getTaxonomyNode(initialBrowseNodeId) : undefined;
   const [activeTab, setActiveTab] = useState<'academic' | 'student-life' | 'shops'>(
     initialTab || (initialNode?.department === 'student-life' ? 'student-life' : 'academic'),
@@ -939,7 +942,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           One underline row is the only section chrome — Goods/Jobs sit next
           to search, and Orders/Cart/Selling live in More.
         */}
-        {onNavigateToDiscover ? (
+        {onNavigateToDiscover && canAccessDiscoverHub(isPlatformAdmin) ? (
           <DiscoverWorkspaceBar
             active="marketplace"
             onSelect={(sectionId) => {

@@ -4,9 +4,12 @@
  * calls, not just the string formatting.
  */
 import {
+  canAccessDiscoverHub,
   communityMembershipAction,
   communityPageGroupVisibilities,
   describeFeedItem,
+  DISCOVER_COMING_SOON_BODY,
+  DISCOVER_COMING_SOON_TITLE,
   examCountdownLabel,
   learningConnectionLabel,
   masteryBand,
@@ -57,6 +60,18 @@ describe('describeFeedItem', () => {
     expect(describeFeedItem(feedItem({ payload: { title: { evil: true } } }))).toBe(
       'Ada published a study pack'
     );
+  });
+});
+
+describe('canAccessDiscoverHub', () => {
+  it('is admin-only until campus rooms ship', () => {
+    expect(canAccessDiscoverHub(true)).toBe(true);
+    expect(canAccessDiscoverHub(false)).toBe(false);
+  });
+
+  it('shares compact coming-soon copy for web and mobile', () => {
+    expect(DISCOVER_COMING_SOON_TITLE).toBe('Discover');
+    expect(DISCOVER_COMING_SOON_BODY).toMatch(/^Coming soon — /);
   });
 });
 

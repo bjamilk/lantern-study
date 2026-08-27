@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  canAccessDiscoverHub,
   communityKindLabel,
   communityMembershipAction,
   memberCountLabel,
@@ -19,6 +20,8 @@ import {
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
+import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { DiscoverComingSoon } from './DiscoverComingSoon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -34,7 +37,7 @@ type Member = { id: string; name: string; avatarUrl: string | null; programme: s
  * The member list is members-only server-side — a non-member sees the
  * community and its groups but not the roster.
  */
-export function CommunityDetailScreen({
+function CommunityDetailHub({
   navigation,
   route,
 }: {
@@ -238,6 +241,20 @@ export function CommunityDetailScreen({
       ) : null}
     </SafeAreaView>
   );
+}
+
+export function CommunityDetailScreen({
+  navigation,
+  route,
+}: {
+  navigation: NavigationProp;
+  route: { params: { slug: string } };
+}) {
+  const isPlatformAdmin = usePlatformAdmin();
+  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+    return <DiscoverComingSoon onBack={() => navigation.goBack()} />;
+  }
+  return <CommunityDetailHub navigation={navigation} route={route} />;
 }
 
 export default CommunityDetailScreen;

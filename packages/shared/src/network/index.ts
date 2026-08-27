@@ -102,6 +102,19 @@ export const DISCOVER_SECTION_INTRO: Record<'communities' | 'groups' | 'people',
     'Students who published a study pack or question bank — tap a card to open their shop.',
 };
 
+export const DISCOVER_COMING_SOON_TITLE = 'Discover';
+export const DISCOVER_COMING_SOON_BODY =
+  'Coming soon — campus rooms and people are still being set up.';
+
+/**
+ * The Discover hub (communities, groups, people, Start a room) is platform-admin
+ * only until campus rooms ship. Marketplace as a standalone destination is not
+ * gated by this.
+ */
+export function canAccessDiscoverHub(isPlatformAdmin: boolean): boolean {
+  return isPlatformAdmin === true;
+}
+
 /**
  * Auto-derived campus rooms come back on the next profile save, so the honest
  * action is Hide, not Leave. Joined rooms can actually be left.

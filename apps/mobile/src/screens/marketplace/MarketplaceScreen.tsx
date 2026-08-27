@@ -43,8 +43,9 @@ import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
 import { DiscoverWorkspaceBar } from '../discover/DiscoverWorkspaceBar';
-import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
+import { shouldShowTrustChip, trustLabel, canAccessDiscoverHub } from '@lantern/shared/network';
 import { listingTypeLabel, suggestMarketplaceSearch } from '@lantern/shared/marketplace';
+import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -53,6 +54,7 @@ type NavigationProp = {
 export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }) {
   const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
+  const isPlatformAdmin = usePlatformAdmin();
   const savedCampusId = useSettingsStore(
     state => state.settings.marketplace?.campus_id || undefined
   );
@@ -478,13 +480,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="pt-1 pb-2 gap-2">
-        <DiscoverWorkspaceBar
-          active="marketplace"
-          onSelect={(section) => {
-            if (section === 'marketplace') return;
-            navigation.navigate('Discover', { section });
-          }}
-        />
+        {canAccessDiscoverHub(isPlatformAdmin) ? (
+          <DiscoverWorkspaceBar
+            active="marketplace"
+            onSelect={(section) => {
+              if (section === 'marketplace') return;
+              navigation.navigate('Discover', { section });
+            }}
+          />
+        ) : null}
 
         <View className="px-4 flex-row items-center gap-1.5">
           <View className="flex-1 flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern px-3 py-1.5">

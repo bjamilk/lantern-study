@@ -1762,15 +1762,17 @@ export const App: React.FC = () => {
                     slug={slug}
                     onBack={() => setAppMode(AppMode.DISCOVER)}
                     onNavigate={(screen, params) => {
-                        if (screen === 'GroupChat' && params?.groupId) {
+                        if (screen === 'Dashboard') {
+                            navigateTo(AppMode.DASHBOARD);
+                        } else if (screen === 'GroupChat' && params?.groupId) {
                             openDiscoverGroup(params);
                         }
                     }} />;
             }
             case AppMode.DISCOVER:
-                // Phase 3 L / decision D12: Discover is the hub and the
-                // marketplace is one of its tabs, so 'Marketplace' here is a
-                // move WITHIN Discover, not a departure from it.
+                // Hub is gated inside DiscoverScreen: admins get the full
+                // communities/groups/people UI; everyone else gets coming soon.
+                // `/discover` and `/discover/c/:slug` stay routable either way.
                 return <DiscoverScreen
                     initialSection={discoverSection === 'marketplace' ? 'communities' : discoverSection}
                     onNavigate={(screen, params) => {
@@ -1803,6 +1805,8 @@ export const App: React.FC = () => {
                             navigateTo(AppMode.CREATE_GROUP);
                         } else if (screen === 'Library') {
                             navigateTo(AppMode.LIBRARY);
+                        } else if (screen === 'Dashboard') {
+                            navigateTo(AppMode.DASHBOARD);
                         }
                     }} />;
             case AppMode.CREATOR_PROFILE:

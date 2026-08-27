@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckBadgeIcon } from '@heroicons/react/24/outline';
 import {
+  canAccessDiscoverHub,
   communityKindLabel,
   communityMembershipAction,
   memberCountLabel,
@@ -15,6 +16,8 @@ import {
   joinDiscoverableGroup,
   leaveCommunity,
 } from '../services/supabase';
+import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import DiscoverComingSoon from './discover/DiscoverComingSoon';
 
 /**
  * One community (Phase 3 · L) — the web counterpart of the mobile screen.
@@ -34,7 +37,7 @@ export interface CommunityDetailScreenProps {
 
 type Member = { id: string; name: string; avatarUrl: string | null; programme: string | null };
 
-export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
+const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({
   slug,
   onBack,
   onNavigate,
@@ -229,6 +232,21 @@ export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = ({
       )}
     </div>
   );
+};
+
+export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = (props) => {
+  const isPlatformAdmin = usePlatformAdmin();
+  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+    return (
+      <DiscoverComingSoon
+        onBack={() => {
+          if (props.onNavigate) props.onNavigate('Dashboard');
+          else props.onBack();
+        }}
+      />
+    );
+  }
+  return <CommunityDetailHub {...props} />;
 };
 
 export default CommunityDetailScreen;

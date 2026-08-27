@@ -7,6 +7,7 @@ import {
 } from '@heroicons/react/24/outline';
 import {
   DISCOVER_SECTION_INTRO,
+  canAccessDiscoverHub,
   communityKindLabel,
   communityMembershipAction,
   memberCountLabel,
@@ -30,7 +31,9 @@ import {
   joinDiscoverableGroup,
   leaveCommunity,
 } from '../services/supabase';
+import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
+import DiscoverComingSoon from './discover/DiscoverComingSoon';
 
 /**
  * The Discover hub (Phase 3 · L).
@@ -39,6 +42,10 @@ import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverW
  * marketplace nested as one of its tabs. Communities / Groups / People are
  * served by /discover/*, which is deliberately separate from GET /groups
  * (memberships-only, cached per user).
+ *
+ * Until campus rooms ship, the hub is platform-admin only. Ordinary users (and
+ * guests after login) still see Discover in the sidebar, but the screen is a
+ * coming-soon empty state and does not load communities, groups, or people.
  *
  * Chrome is kept to a single underline tab row plus search so the cards — not
  * buttons around the cards — are the screen.
@@ -82,7 +89,7 @@ const EmptyState: React.FC<{
   </div>
 );
 
-export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
+const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   onNavigate,
   initialSection = 'communities',
 }) => {
@@ -612,6 +619,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       )}
     </div>
   );
+};
+
+export const DiscoverScreen: React.FC<DiscoverScreenProps> = (props) => {
+  const isPlatformAdmin = usePlatformAdmin();
+  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+    return <DiscoverComingSoon onBack={() => props.onNavigate('Dashboard')} />;
+  }
+  return <DiscoverHub {...props} />;
 };
 
 export default DiscoverScreen;
