@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeftIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import type { StudyRoomDetail } from '@lantern/shared/network';
 import {
@@ -37,15 +37,16 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveCount, setLiveCount] = useState(0);
+  const onRoomReadyRef = useRef(onRoomReady);
+  onRoomReadyRef.current = onRoomReady;
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       if (roomId) {
         const next = await fetchStudyRoom(roomId);
         setRoom(next);
-        onRoomReady?.(next.id);
+        onRoomReadyRef.current?.(next.id);
         return;
       }
       if (join?.courseId) {
@@ -54,7 +55,7 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
           topic: join.topic || null,
         });
         setRoom(next);
-        onRoomReady?.(next.id);
+        onRoomReadyRef.current?.(next.id);
         return;
       }
       setRoom(null);
@@ -63,9 +64,10 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [roomId, join?.courseId, join?.topic, onRoomReady]);
+  }, [roomId, join?.courseId, join?.topic]);
 
   useEffect(() => {
+    setLoading(true);
     void load();
   }, [load]);
 
@@ -139,9 +141,9 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
           </h1>
         </div>
 
-        {loading ? (
+        {loading && !room ? (
           <div className="h-32 rounded-xl bg-lantern-background-secondary animate-pulse" />
-        ) : error ? (
+        ) : error && !room ? (
           <p className="text-sm text-lantern-error" role="alert">
             {error}{' '}
             <button type="button" className="underline font-semibold" onClick={() => void load()}>
@@ -166,10 +168,10 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
               {liveCount > 0 ? ` · ${liveCount} live in the room` : ''}
             </p>
             <ul className="mt-4 divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-surface">
-              {room.participants.length === 0 ? (
+              {(room.participants ?? []).length === 0 ? (
                 <li className="px-4 py-3 text-sm text-lantern-text-secondary">Nobody here yet.</li>
               ) : (
-                room.participants.map((p) => (
+                (room.participants ?? []).map((p) => (
                   <li key={p.userId} className="flex items-center gap-3 px-4 py-3">
                     <UserGroupIcon className="h-4 w-4 text-lantern-text-tertiary" aria-hidden />
                     <span className="text-sm text-lantern-text">{p.name}</span>
