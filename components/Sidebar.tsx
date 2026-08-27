@@ -42,7 +42,6 @@ interface SidebarProps {
   onOpenNewDmModal: () => void;
   unreadNotificationCount: number;
   onOpenNotificationModal: () => void;
-  onOpenWallet?: () => void;
   activeTestSession: TestSessionData | null;
   activeStudySession: StudySessionData | null;
   activeGameSession?: GameSession | null;
@@ -82,7 +81,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenNewDmModal,
   unreadNotificationCount,
   onOpenNotificationModal,
-  onOpenWallet,
   activeTestSession,
   activeStudySession,
   activeGameSession,
@@ -345,9 +343,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           <SectionHeader title="Tools" />
           <div className="px-2 space-y-1">
             <NavButton navFunc={onNavigateToBudgetTracker} icon={BanknotesIcon} label="Budget" appMode={AppMode.BUDGET_TRACKER} tipId="nav.budget" />
-            {onOpenWallet && (
-              <NavButton navFunc={onOpenWallet} icon={SparklesIcon} label="Study wallet" />
-            )}
             {onNavigateToInvite && (
               <NavButton navFunc={onNavigateToInvite} icon={GiftIcon} label="Invite friends" appMode={AppMode.INVITE_FRIENDS} />
             )}

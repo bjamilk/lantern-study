@@ -18,17 +18,21 @@ import {
   CreditCardIcon, ArrowUpIcon, ArrowDownIcon, PlusCircleIcon,
   Cog6ToothIcon, TrashIcon, WalletIcon, BanknotesIcon,
   ChartBarIcon, LightBulbIcon, FunnelIcon, ArrowTrendingUpIcon,
-  TrophyIcon, UserGroupIcon, ArrowPathIcon,
+  TrophyIcon, UserGroupIcon, ArrowPathIcon, SparklesIcon,
 } from '@heroicons/react/24/outline';
 import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import { FeatureHero, StatChip, Tabs, TabList, Tab, TabPanel } from './ui';
 import { BudgetQuickLinks } from './budget/BudgetQuickLinks';
+import StudyWalletPanel from './StudyWalletPanel';
 import { featureAccents } from '@lantern/shared/design';
 import { confirmDialog } from '../stores/confirmStore';
+import { useUIStore } from '../stores/uiStore';
+import { navigateToPath } from '../utils/appNavigation';
+import type { BudgetTabParam } from '../utils/appRoutes';
 
-type BudgetTab = 'overview' | 'transactions' | 'goals';
+type BudgetTab = BudgetTabParam;
 
 interface BudgetTrackerScreenProps {
   currentUser: User;
@@ -133,7 +137,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   onOpenAddExpense, onOpenAddIncome, onOpenSetBudget, onDeleteTransaction,
   onToggleSidebar, onOpenSetMonthlyPlan, onOpenSavingsGoal, onOpenRecurring, onOpenExpenseSplit, onOpenFinancialToolkit,
 }) => {
-  const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
+  const budgetTab = useUIStore(s => s.budgetTab);
+  const setBudgetTab = useUIStore(s => s.setBudgetTab);
+  const [activeTab, setActiveTab] = useState<BudgetTab>(() => useUIStore.getState().budgetTab);
   const [txFilter, setTxFilter] = useState<'all' | 'income' | 'expense'>('all');
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<ChartType | null>(null);
@@ -357,10 +363,24 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   }, [expenseByCategory, activeTab]);
 
   // ─── TAB CONTENT ───
+  useEffect(() => {
+    if (budgetTab !== activeTab) setActiveTab(budgetTab);
+  }, [budgetTab, activeTab]);
+
+  const selectBudgetTab = (tab: BudgetTab) => {
+    setActiveTab(tab);
+    setBudgetTab(tab);
+    const nextPath = tab === 'wallet' ? '/budget/wallet' : '/budget';
+    if (typeof window !== 'undefined' && window.location.pathname !== nextPath) {
+      navigateToPath(nextPath);
+    }
+  };
+
   const tabs: { key: BudgetTab; label: string; icon: React.ReactNode }[] = [
     { key: 'overview', label: 'Overview', icon: <ChartBarIcon className="w-4 h-4" /> },
     { key: 'transactions', label: 'Transactions', icon: <BanknotesIcon className="w-4 h-4" /> },
     { key: 'goals', label: 'Goals', icon: <TrophyIcon className="w-4 h-4" /> },
+    { key: 'wallet', label: 'Study wallet', icon: <SparklesIcon className="w-4 h-4" /> },
   ];
 
   return (
@@ -419,7 +439,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
       </div>
 
       {/* ─── TAB BAR ─── */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as BudgetTab)} aria-label="Budget sections" className="shrink-0 flex flex-col flex-1 min-h-0">
+      <Tabs value={activeTab} onValueChange={(value) => selectBudgetTab(value as BudgetTab)} aria-label="Budget sections" className="shrink-0 flex flex-col flex-1 min-h-0">
       <TabList className="bg-lantern-surface border-b border-lantern-border px-4 gap-1 overflow-x-auto !border-solid">
         {tabs.map((t, index) => (
           <Tab
@@ -589,7 +609,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             <BudgetQuickLinks
               onAddExpense={onOpenAddExpense}
               onAddIncome={onOpenAddIncome}
-              onSavingsGoal={onOpenSavingsGoal || (() => setActiveTab('goals'))}
+              onSavingsGoal={onOpenSavingsGoal || (() => selectBudgetTab('goals'))}
               onExpenseSplit={onOpenExpenseSplit}
             />
 
@@ -638,7 +658,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
               <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="font-semibold text-lantern-text">Savings Goals</h3>
-                  <button onClick={() => setActiveTab('goals')} className="text-xs text-lantern-primary hover:underline">View All</button>
+                  <button onClick={() => selectBudgetTab('goals')} className="text-xs text-lantern-primary hover:underline">View All</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {savingsGoals.slice(0, 2).map(goal => {
@@ -873,6 +893,10 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 </div>
               </div>
             )}
+        </TabPanel>
+
+        <TabPanel value="wallet" className="space-y-4">
+          <StudyWalletPanel />
         </TabPanel>
 
       </div>

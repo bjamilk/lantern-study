@@ -64,7 +64,6 @@ import SetBudgetModal from './components/SetBudgetModal';
 import SetMonthlyPlanModal from './components/SetMonthlyPlanModal';
 import RecurringModal from './components/RecurringModal';
 import SavingsGoalModal from './components/InvestModal';
-import WalletModal from './components/WalletModal';
 import ExpenseSplitModal from './components/ExpenseSplitModal';
 import SimulationControls from './components/SimulationControls';
 import TestAnalysisModal from './components/TestAnalysisModal';
@@ -2074,7 +2073,6 @@ export const App: React.FC = () => {
         onOpenNewDmModal: () => openModal('newDm'),
         unreadNotificationCount: notifications.filter(n => !n.read).length,
         onOpenNotificationModal: () => openModal('notification'),
-        onOpenWallet: () => openModal('wallet'),
         activeTestSession, activeStudySession, activeGameSession,
         onResumeSession: handleResumeAnySession,
         onCancelSession: handleCancelPausedSession,
@@ -2230,7 +2228,6 @@ export const App: React.FC = () => {
             <SetMonthlyPlanModal isOpen={modals.setMonthlyPlan} onClose={() => closeModal('setMonthlyPlan')} currentBudget={budget} onSave={(categoryBudgets) => { if (budget) { handleSetBudget({ ...budget, categoryBudgets }); } }} />
             <RecurringModal isOpen={modals.recurring} onClose={() => closeModal('recurring')} onChanged={() => void materializeRecurring()} />
             <SavingsGoalModal isOpen={modals.savingsGoal} onClose={() => closeModal('savingsGoal')} currentUserId={currentUser?.id || ''} />
-            <WalletModal isOpen={modals.wallet} onClose={() => closeModal('wallet')} />
             <SimulationControls isOpen={modals.financialToolkit} onClose={() => closeModal('financialToolkit')} />
             <ExpenseSplitModal isOpen={modals.expenseSplit} onClose={() => closeModal('expenseSplit')} currentUserId={currentUser?.id || ''} currentUserName={currentUser?.name || ''} />
             {analyzingResult && (

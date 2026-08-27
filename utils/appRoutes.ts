@@ -16,6 +16,11 @@ export type LibraryTabParam = 'notes' | 'flashcards';
 export const isLibraryTabParam = (value: unknown): value is LibraryTabParam =>
   value === 'notes' || value === 'flashcards';
 
+export type BudgetTabParam = 'overview' | 'transactions' | 'goals' | 'wallet';
+
+export const isBudgetTabParam = (value: unknown): value is BudgetTabParam =>
+  value === 'overview' || value === 'transactions' || value === 'goals' || value === 'wallet';
+
 export interface AppRouteParams {
   groupId?: string;
   threadId?: string;
@@ -34,6 +39,8 @@ export interface AppRouteParams {
   roomId?: string;
   /** Which Library tab `/library/:libraryTab` names. Absent on bare `/library`. */
   libraryTab?: LibraryTabParam;
+  /** Budget Wallet tab — `/budget/wallet`. Other budget tabs stay on `/budget`. */
+  budgetTab?: BudgetTabParam;
 }
 
 export interface ParsedAppRoute {
@@ -162,7 +169,7 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
     case AppMode.NOTE_EDITOR:
       return params.noteId ? `/notes/${encodeURIComponent(params.noteId)}` : '/notes';
     case AppMode.BUDGET_TRACKER:
-      return '/budget';
+      return params.budgetTab === 'wallet' ? '/budget/wallet' : '/budget';
     case AppMode.OFFLINE_MODE:
       return '/offline';
     case AppMode.ADMIN:
@@ -233,7 +240,16 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   }
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
   if (path === '/ai-tools') return { mode: AppMode.AI_TOOLS, params: {} };
-  if (path === '/budget') return { mode: AppMode.BUDGET_TRACKER, params: {} };
+  if (path === '/wallet') {
+    return { mode: AppMode.BUDGET_TRACKER, params: { budgetTab: 'wallet' }, redirect: '/budget/wallet' };
+  }
+  const budgetMatch = path.match(/^\/budget(?:\/([^/]+))?$/);
+  if (budgetMatch) {
+    const tab = budgetMatch[1];
+    if (!tab) return { mode: AppMode.BUDGET_TRACKER, params: {} };
+    if (tab === 'wallet') return { mode: AppMode.BUDGET_TRACKER, params: { budgetTab: 'wallet' } };
+    return { mode: AppMode.BUDGET_TRACKER, params: {}, redirect: '/budget' };
+  }
   if (path === '/offline') return { mode: AppMode.OFFLINE_MODE, params: {} };
   if (path === '/admin') return { mode: AppMode.ADMIN, params: {} };
 

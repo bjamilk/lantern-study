@@ -240,6 +240,15 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
       return { mode: AppMode.LIBRARY };
     }
 
+    case AppMode.BUDGET_TRACKER: {
+      if (params.budgetTab === 'wallet') {
+        if (ui.budgetTab !== 'wallet') ui.setBudgetTab('wallet');
+      } else if (ui.budgetTab === 'wallet') {
+        ui.setBudgetTab('overview');
+      }
+      return { mode: AppMode.BUDGET_TRACKER };
+    }
+
     case AppMode.ADMIN:
       return { mode: AppMode.ADMIN };
 

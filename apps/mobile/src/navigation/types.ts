@@ -138,7 +138,7 @@ export type MarketStackParamList = {
 };
 
 export type BudgetStackParamList = {
-  BudgetHome: undefined;
+  BudgetHome: { tab?: 'overview' | 'transactions' | 'goals' | 'insights' | 'wallet' } | undefined;
   AddExpense: undefined;
   AddIncome: undefined;
   SetBudget: undefined;

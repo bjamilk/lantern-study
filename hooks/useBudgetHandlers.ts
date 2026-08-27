@@ -32,12 +32,13 @@ export function useBudgetHandlers() {
       setSavingsGoals,
       setExpenseSplits,
     } = useBudgetStore();
-    const { setAppMode, setSidebarExpanded, closeModal } = useUIStore();
+    const { setAppMode, closeModal } = useUIStore();
 
     const handleNavigateToBudgetTracker = useCallback(() => {
+        // Sidebar expand/collapse is user-controlled. Do not auto-collapse
+        // when opening Budget (it used to force-collapse for full-width content).
         setAppMode(AppMode.BUDGET_TRACKER);
-        setSidebarExpanded(false);
-    }, [setAppMode, setSidebarExpanded]);
+    }, [setAppMode]);
 
     const handleSetBudget = useCallback((input: Budget | number) => {
         if (!currentUser) return;

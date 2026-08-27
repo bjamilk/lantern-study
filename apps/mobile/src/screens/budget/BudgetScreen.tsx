@@ -15,7 +15,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-gifted-charts';
 import {
@@ -43,21 +43,24 @@ import {
 } from '@lantern/shared/utils';
 import * as api from '../../services/api';
 import { featureAccents } from '@lantern/shared/design';
+import StudyWalletPanel from './StudyWalletPanel';
 
 const { width } = Dimensions.get('window');
 
-type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights';
+type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights' | 'wallet';
 type TxFilter = 'all' | 'income' | 'expense';
 
 const TABS: { key: BudgetTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'overview', label: 'Overview', icon: 'pie-chart-outline' },
   { key: 'transactions', label: 'Transactions', icon: 'receipt-outline' },
   { key: 'goals', label: 'Goals', icon: 'trophy-outline' },
+  { key: 'wallet', label: 'Study wallet', icon: 'wallet-outline' },
   { key: 'insights', label: 'Insights', icon: 'bulb-outline' },
 ];
 
 export default function BudgetScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
@@ -89,6 +92,22 @@ export default function BudgetScreen() {
       .then(res => { if (res?.posted > 0) fetchTransactions(userId); })
       .catch(() => { /* table missing / offline — harmless, retried next open */ });
   }, [userId, fetchTransactions, fetchBudget, loadBudgetExtras]);
+
+  const selectTab = useCallback((tab: BudgetTab) => {
+    setActiveTab(tab);
+    if (route.params?.tab !== tab) {
+      navigation.setParams({ tab });
+    }
+  }, [navigation, route.params?.tab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const tab = route.params?.tab as BudgetTab | undefined;
+      if (tab === 'wallet' || tab === 'overview' || tab === 'transactions' || tab === 'goals' || tab === 'insights') {
+        setActiveTab(tab);
+      }
+    }, [route.params?.tab])
+  );
 
   const onRefresh = useCallback(async () => {
     if (!userId) return;
@@ -303,12 +322,19 @@ export default function BudgetScreen() {
         </FeatureHero>
       </View>
 
-      <View style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
+        contentContainerStyle={styles.tabBarContent}
+      >
         {TABS.map(tab => (
           <TouchableOpacity
             key={tab.key}
             style={[styles.tabItem, activeTab === tab.key && { borderBottomColor: featureAccents.budget }]}
-            onPress={() => setActiveTab(tab.key)}
+            onPress={() => selectTab(tab.key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === tab.key }}
           >
             <Ionicons
               name={tab.icon}
@@ -320,12 +346,13 @@ export default function BudgetScreen() {
                 styles.tabLabel,
                 { color: activeTab === tab.key ? featureAccents.budget : colors.textSecondary },
               ]}
+              numberOfLines={1}
             >
               {tab.label}
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       <ScrollView
         style={styles.content}
@@ -591,7 +618,6 @@ export default function BudgetScreen() {
           {[
             { label: 'Savings goals', icon: 'flag-outline', route: 'SavingsGoals' },
             { label: 'Recurring', icon: 'repeat-outline', route: 'Recurring' },
-            { label: 'Study wallet', icon: 'wallet-outline', route: 'Wallet' },
             { label: 'Expense splits', icon: 'people-outline', route: 'ExpenseSplit' },
             { label: 'Category budgets', icon: 'grid-outline', route: 'SetCategoryBudget' },
             { label: 'Financial toolkit', icon: 'analytics-outline', route: 'FinancialToolkit' },
@@ -807,7 +833,7 @@ export default function BudgetScreen() {
             </View>
             <TouchableOpacity
               style={[styles.sectionCard, { backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', gap: 12 }]}
-              onPress={() => navigation.navigate('Wallet')}
+              onPress={() => selectTab('wallet')}
             >
               <Ionicons name="wallet-outline" size={24} color="#6366f1" />
               <View style={{ flex: 1 }}>
@@ -818,6 +844,8 @@ export default function BudgetScreen() {
             </TouchableOpacity>
           </>
         )}
+
+        {activeTab === 'wallet' && <StudyWalletPanel />}
 
         {activeTab === 'insights' && (
           <>
@@ -1248,17 +1276,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   tabBar: {
-    flexDirection: 'row',
+    flexGrow: 0,
     borderBottomWidth: 1,
+  },
+  tabBarContent: {
     paddingHorizontal: 8,
+    minWidth: '100%',
   },
   tabItem: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
     paddingVertical: 12,
+    paddingHorizontal: 12,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
