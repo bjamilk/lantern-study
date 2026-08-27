@@ -2206,7 +2206,7 @@ export const App: React.FC = () => {
                     <ImportAndStudyModal
                         isOpen={showImportAndStudy}
                         onClose={() => setShowImportAndStudy(false)}
-                        onComplete={() => setShowImportAndStudy(false)}
+                        onComplete={() => undefined}
                         onOpenNote={(noteId) => { noteHandlers.openNote(noteId); setShowImportAndStudy(false); }}
                         theme={theme}
                     />
