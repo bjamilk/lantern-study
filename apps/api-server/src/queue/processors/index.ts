@@ -29,6 +29,10 @@ import {
 } from "../../services/marketplaceAlerts";
 import { processJobSavedSearchAlerts } from "../../services/jobAlerts";
 import { processJobDeadlineReminders } from "../../services/jobReminders";
+import {
+  processStudyReminders,
+  processWeeklySummary,
+} from "../../services/retentionReminders";
 import { logAIInference } from "../../services/aiInferenceLog";
 import { normalizeSurface, recordLearningEvent } from "../../services/learningEvents";
 import { buildTrustedCompanionContext } from "../../services/companionContext";
@@ -431,6 +435,12 @@ async function processCronJob(job: Job): Promise<unknown> {
   if (job.name === "cron.jobReminders") {
     return processJobDeadlineReminders(supabaseService);
   }
+  if (job.name === "cron.studyReminders") {
+    return processStudyReminders(supabaseService);
+  }
+  if (job.name === "cron.weeklySummary") {
+    return processWeeklySummary(supabaseService);
+  }
   throw new Error(`Unknown cron job: ${job.name}`);
 }
 
@@ -571,5 +581,15 @@ export async function scheduleRepeatableCronJobs(): Promise<void> {
     "cron.jobReminders",
     {},
     { repeat: { every: 15 * 60 * 1000 }, jobId: "repeat-job-reminders" },
+  );
+  await alertsQueue.add(
+    "cron.studyReminders",
+    {},
+    { repeat: { every: 4 * 60 * 60 * 1000 }, jobId: "repeat-study-reminders" },
+  );
+  await alertsQueue.add(
+    "cron.weeklySummary",
+    {},
+    { repeat: { pattern: "0 8 * * 1" }, jobId: "repeat-weekly-summary" },
   );
 }

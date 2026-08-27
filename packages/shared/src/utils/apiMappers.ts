@@ -115,6 +115,7 @@ export const mapUserStatsFromApi = (data: any): UserStats => {
     listingsSold: data.listings_sold || data.listingsSold || 0,
     fiveStarReviews: data.five_star_reviews || data.fiveStarReviews || 0,
     offersMade: data.offers_made || data.offersMade || 0,
+    campusAmbassador: Number(data.campus_ambassador || data.campusAmbassador || 0),
   };
 };
 

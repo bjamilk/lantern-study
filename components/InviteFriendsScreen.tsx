@@ -9,7 +9,8 @@ import {
   referralStatusLabel,
   type ReferralSummary,
 } from '@lantern/shared/network';
-import { fetchReferralSummary } from '../services/supabase';
+import { fetchReferralSummary, fetchAmbassadors, fetchGamificationLeaderboard } from '../services/supabase';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * Invite friends (Phase 4 · Q).
@@ -25,7 +26,14 @@ export interface InviteFriendsScreenProps {
 }
 
 export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack }) => {
+  const institutionId = useAuthStore((s) => s.currentUser?.institutionId ?? null);
   const [summary, setSummary] = useState<ReferralSummary | null>(null);
+  const [ambassadors, setAmbassadors] = useState<
+    Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>
+  >([]);
+  const [ambassadorBoard, setAmbassadorBoard] = useState<
+    Array<{ rank: number; user: { id: string; name: string; points: number } }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -35,12 +43,20 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
     setError(null);
     try {
       setSummary(await fetchReferralSummary());
+      if (institutionId) {
+        const [list, board] = await Promise.all([
+          fetchAmbassadors(institutionId).catch(() => []),
+          fetchGamificationLeaderboard({ ambassador: true, institutionId, limit: 10 }).catch(() => []),
+        ]);
+        setAmbassadors(list);
+        setAmbassadorBoard(board);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load your invite link');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [institutionId]);
 
   useEffect(() => {
     void load();
@@ -185,6 +201,43 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
             </section>
           )}
         </>
+      )}
+
+      {!loading && (ambassadors.length > 0 || ambassadorBoard.length > 0) && (
+        <section aria-label="Campus ambassadors">
+          <h2 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+            Campus ambassadors
+          </h2>
+          <p className="mb-2 text-xs text-lantern-text-tertiary">
+            People representing your campus. Earnings stay private.
+          </p>
+          {ambassadors.length > 0 ? (
+            <ul className="divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-background">
+              {ambassadors.map((a) => (
+                <li key={a.id} className="flex items-center justify-between px-3 py-2">
+                  <span className="text-sm text-lantern-text">{a.name}</span>
+                  <span className="text-[10px] font-medium text-lantern-text-secondary">
+                    {a.programme || 'Ambassador'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {ambassadorBoard.length > 0 ? (
+            <ol className="mt-3 divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-background">
+              {ambassadorBoard.map((row) => (
+                <li key={row.user.id} className="flex items-center justify-between px-3 py-2">
+                  <span className="text-sm text-lantern-text">
+                    {row.rank}. {row.user.name}
+                  </span>
+                  <span className="text-[11px] tabular-nums text-lantern-text-secondary">
+                    {row.user.points} XP
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </section>
       )}
 
       {!loading && !code && !error && (

@@ -68,10 +68,18 @@ export interface LeaderboardEntry {
   };
 }
 
-export const fetchLeaderboard = (options?: { page?: number; limit?: number }) => {
+export const fetchLeaderboard = (options?: {
+  page?: number;
+  limit?: number;
+  ambassador?: boolean;
+  institutionId?: string;
+}) => {
   const page = options?.page ?? 1;
   const limit = options?.limit ?? 50;
-  return gamificationRequest<LeaderboardEntry[]>(`/leaderboard?page=${page}&limit=${limit}`);
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (options?.ambassador) qs.set('ambassador', '1');
+  if (options?.institutionId) qs.set('institutionId', options.institutionId);
+  return gamificationRequest<LeaderboardEntry[]>(`/leaderboard?${qs}`);
 };
 
 /** Spends wallet coins for a streak freeze. Server enforces balance + cost. */

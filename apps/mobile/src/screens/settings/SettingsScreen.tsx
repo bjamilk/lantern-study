@@ -887,6 +887,14 @@ export default function SettingsScreen() {
               }
               onPress={() => navigation.navigate('AcademicSettings' as never)}
             />
+            <SettingItem
+              colors={colors}
+              icon="gift-outline"
+              iconColor="#f59e0b"
+              title="Invite friends"
+              subtitle="Share Lantern with your campus"
+              onPress={() => navigation.navigate('InviteFriends' as never)}
+            />
           </View>
         </View>
 

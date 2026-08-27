@@ -7120,6 +7120,8 @@ export class SupabaseService {
       limit?: number;
       timeframe?: string;
       metric?: string;
+      institutionId?: string;
+      ambassador?: boolean;
     } = {},
   ): Promise<any[]> {
     const {
@@ -7127,18 +7129,27 @@ export class SupabaseService {
       limit = 50,
       timeframe = "all",
       metric = "points",
+      institutionId,
+      ambassador,
     } = options;
     const offset = (page - 1) * limit;
 
-    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}`;
+    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}:${institutionId || ""}:${ambassador ? "1" : "0"}`;
 
     return cacheService.cached(
       cacheKey,
       async () => {
-        const query = this.supabase
+        let query = this.supabase
           .from("profiles")
-          .select("id, name, avatar_url, points, stats")
+          .select("id, name, avatar_url, points, stats, is_ambassador, institution_id")
           .order("points", { ascending: false });
+
+        if (ambassador) {
+          query = query.eq("is_ambassador", true);
+        }
+        if (institutionId) {
+          query = query.eq("institution_id", institutionId);
+        }
 
         // Apply timeframe filtering if needed (simplified)
         if (timeframe !== "all") {
@@ -7158,6 +7169,7 @@ export class SupabaseService {
             avatarUrl: user.avatar_url,
             points: user.points || 0,
             stats: user.stats || {},
+            campusAmbassador: user.is_ambassador ? 1 : 0,
           },
         }));
       },
@@ -7767,6 +7779,7 @@ export class SupabaseService {
       completedOrders,
       fiveStarReviewCount,
       offerCount,
+      ambassadorFlag,
     ] = await Promise.all(
       [
         this.supabase
@@ -7825,6 +7838,11 @@ export class SupabaseService {
           .from("marketplace_offers")
           .select("id", { count: "exact", head: true })
           .eq("buyer_id", userId),
+        this.supabase
+          .from("profiles")
+          .select("is_ambassador")
+          .eq("id", userId)
+          .maybeSingle(),
       ],
     );
 
@@ -7910,6 +7928,12 @@ export class SupabaseService {
     }
     if (!offerCount.error && typeof offerCount.count === "number") {
       derived.offersMade = offerCount.count;
+    }
+    if (!ambassadorFlag.error) {
+      derived.campusAmbassador =
+        (ambassadorFlag.data as { is_ambassador?: boolean } | null)?.is_ambassador === true
+          ? 1
+          : 0;
     }
 
     return derived;

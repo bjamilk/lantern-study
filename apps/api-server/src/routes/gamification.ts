@@ -46,11 +46,15 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { page = 1, limit = 50, timeframe = 'all', metric = 'points' } = req.query;
+    const { page = 1, limit = 50, timeframe = 'all', metric = 'points', institutionId, ambassador } = req.query;
 
-    logger.debug('Fetching leaderboard', { page, limit, timeframe, metric, userId });
+    logger.debug('Fetching leaderboard', { page, limit, timeframe, metric, institutionId, ambassador, userId });
 
-    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}`;
+    const ambassadorFlag = ambassador === '1' || ambassador === 'true';
+    const institution =
+      typeof institutionId === 'string' && institutionId ? institutionId : undefined;
+
+    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}:${institution || ''}:${ambassadorFlag ? '1' : '0'}`;
     let leaderboard = await cacheService.get(cacheKey) as any[];
 
     if (!leaderboard) {
@@ -59,6 +63,8 @@ router.get(
         limit: parseInt(limit as string),
         timeframe: timeframe as string,
         metric: metric as string,
+        institutionId: institution,
+        ambassador: ambassadorFlag,
       });
 
       // Cache for 5 minutes

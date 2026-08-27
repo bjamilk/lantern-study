@@ -615,6 +615,37 @@ router.post(
   })
 );
 
+// GET /api/v1/groups/invite/:inviteId/preview — public, name + memberCount only.
+// Used by the WhatsApp/OG unfurl. Must never leak member names.
+router.get(
+  '/invite/:inviteId/preview',
+  asyncHandler(async (req: any, res: any) => {
+    const { inviteId } = req.params;
+    if (!inviteId) {
+      return res.status(400).json({ success: false, error: 'inviteId is required' });
+    }
+
+    const group = await supabaseService.getGroupByInviteId(inviteId);
+    if (!group || group.isArchived) {
+      return res.status(404).json({ success: false, error: 'Invalid or expired invite link' });
+    }
+
+    const { count } = await supabaseService.getClient()
+      .from('group_members')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('group_id', group.id)
+      .eq('pending', false);
+
+    res.json({
+      success: true,
+      data: {
+        name: group.name,
+        memberCount: count ?? 0,
+      },
+    });
+  })
+);
+
 // GET /api/v1/groups/invite/:inviteId - Preview group for invite (no join)
 router.get(
   '/invite/:inviteId',

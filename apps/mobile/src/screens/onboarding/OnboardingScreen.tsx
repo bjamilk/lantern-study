@@ -26,7 +26,11 @@ import { useAppTheme } from '../../theme';
 import { formatCourseLabel } from '../../utils/courseSelection';
 import type { AcademicProfile } from '../../utils/academicProfile';
 
-const ONBOARDING_KEY = 'lantern_onboarding_complete';
+import {
+  ONBOARDING_COMPLETE_STORAGE_KEY,
+  ONBOARDING_COMPLETE_VALUE,
+  isOnboardingCompleteFlag,
+} from '@lantern/shared/settings';
 /** Silent defaults the removed goal/streak screens used to write. */
 const DEFAULT_STREAK_TARGET = 7;
 const DEFAULT_STUDY_GOAL = 'retention';
@@ -103,7 +107,7 @@ export function OnboardingScreen({ onComplete }: Props) {
       if (!skipped) {
         await updateSettings('study', { dailyCardGoal: DEFAULT_DAILY_CARD_GOAL });
       }
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+      await AsyncStorage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, ONBOARDING_COMPLETE_VALUE);
       await AsyncStorage.setItem('lantern_onboarding_streak_target', String(DEFAULT_STREAK_TARGET));
       await AsyncStorage.setItem('lantern_onboarding_goal', DEFAULT_STUDY_GOAL);
     } catch {
@@ -276,6 +280,6 @@ export function OnboardingScreen({ onComplete }: Props) {
 }
 
 export async function isOnboardingComplete(): Promise<boolean> {
-  const v = await AsyncStorage.getItem(ONBOARDING_KEY);
-  return v === 'true';
+  const v = await AsyncStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY);
+  return isOnboardingCompleteFlag(v);
 }

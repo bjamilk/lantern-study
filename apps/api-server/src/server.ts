@@ -84,6 +84,7 @@ import referralRoutes, { initializeReferralRoutes } from './routes/referrals';
 import campusRoutes, { initializeCampusRoutes } from './routes/campuses';
 // Phase 1 A (deferred, now built) — course topics
 import courseTopicRoutes, { initializeCourseTopicRoutes } from './routes/courseTopics';
+import studyRoomRoutes, { initializeStudyRoomRoutes } from './routes/studyRooms';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -193,6 +194,7 @@ async function initializeServices() {
     initializeReferralRoutes(supabaseService);
     initializeCampusRoutes(supabaseService, cacheService);
     initializeCourseTopicRoutes(supabaseService);
+    initializeStudyRoomRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -213,6 +215,8 @@ async function initializeServices() {
     const { startMarketplaceAlertJobs } = await import('./services/marketplaceAlerts');
     if (!isBullMqEnabled()) {
       startMarketplaceAlertJobs(supabaseService);
+      const { startRetentionJobs } = await import('./services/retentionReminders');
+      startRetentionJobs(supabaseService);
     } else {
       logger.info('Marketplace alert cron delegated to BullMQ worker');
     }
@@ -402,6 +406,7 @@ async function startServer() {
     app.use('/api/v1/library', libraryRoutes);
     app.use('/api/v1/creators', creatorRoutes);
     app.use('/api/v1/communities', communityRoutes);
+    app.use('/api/v1/study-rooms', studyRoomRoutes);
     app.use('/api/v1/discover', discoverRouter);
     app.use('/api/v1/feed', feedRoutes);
     app.use('/api/v1/mastery', masteryRouter);

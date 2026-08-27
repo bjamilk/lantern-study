@@ -296,4 +296,16 @@ describe('recomputeDerivedUserStats', () => {
     expect(stats.questionsCreated).toBe(0);
     expect(stats.questionUpvotesMax).toBe(0);
   });
+
+  it('sets campusAmbassador from profiles.is_ambassador', async () => {
+    tables.profiles = { data: { is_ambassador: true }, error: null };
+    const stats = await service().recomputeDerivedUserStats('u1');
+    expect(stats.campusAmbassador).toBe(1);
+  });
+
+  it('clears campusAmbassador when the flag is false', async () => {
+    tables.profiles = { data: { is_ambassador: false }, error: null };
+    const stats = await service().recomputeDerivedUserStats('u1');
+    expect(stats.campusAmbassador).toBe(0);
+  });
 });
