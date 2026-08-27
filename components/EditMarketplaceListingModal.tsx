@@ -4,6 +4,13 @@ import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImag
 import { CoursePicker } from './academic/CoursePicker';
 import { TopicPicker } from './academic/TopicPicker';
 import { ATTESTATION_REQUIRED_MESSAGE, isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared';
+import {
+  defaultLeafForListingCategory,
+  getTaxonomyNode,
+  taxonomyPathLabel,
+  type MarketplaceDepartment,
+} from '@lantern/shared/marketplace';
+import ListingClassifier from './marketplace/ListingClassifier';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
 import { RightsAttestationCheckbox } from './moderation/RightsAttestationCheckbox';
 import {
@@ -20,7 +27,6 @@ import {
   MapPinIcon,
   CurrencyDollarIcon,
   DocumentTextIcon,
-  TagIcon,
   PlusIcon,
   TrashIcon
 } from '@heroicons/react/24/outline';
@@ -71,6 +77,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
   const [loading, setLoading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
+  const [taxonomyNodeId, setTaxonomyNodeId] = useState('');
   const [existingCustomCategories, setExistingCustomCategories] = useState<{id: string; name: string; usage_count: number}[]>([]);
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const selectedCampus =
@@ -85,20 +92,10 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     }
   }, [isOpen]);
 
-  const allCategories = [
-    { id: 'textbook_exchange', name: 'Textbooks' },
-    { id: 'pq_bank', name: 'Past Questions' },
-    { id: 'lecture_notes', name: 'Lecture Notes' },
-    { id: 'project_thesis', name: 'Projects & Thesis' },
-    { id: 'data_collection', name: 'Data Collection' },
-    { id: 'equipment_rental', name: 'Lab Equipment' },
-    { id: 'accommodation', name: 'Accommodation' },
-    { id: 'travel_transport', name: 'Transportation' },
-    { id: 'personal_goods', name: 'Personal Goods' },
-    { id: 'aso_ebi', name: 'Fashion' },
-    { id: 'campus_services', name: 'Campus Services' },
-    { id: 'events_social', name: 'Events & Social' }
-  ];
+  const classifierDepartment: MarketplaceDepartment =
+    (listing.category_specific_fields || listing.categorySpecificFields)?.parentCategory === 'student-life'
+      ? 'student-life'
+      : defaultLeafForListingCategory(listing.category || '')?.department || 'academic';
 
   useEffect(() => {
     if (listing) {
@@ -127,6 +124,13 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         }))
       });
       setCustomCategory(isCustom ? listing.category.replace('custom:', '') : '');
+      const savedNodeId =
+        typeof categoryFields.taxonomyNodeId === 'string' ? categoryFields.taxonomyNodeId : '';
+      setTaxonomyNodeId(
+        savedNodeId ||
+          defaultLeafForListingCategory(isCustom ? 'other' : listing.category || '')?.id ||
+          '',
+      );
       setCourseId(listing.courseId ?? listing.course_id ?? null);
       setTopicId(listing.topicId ?? listing.topic_id ?? null);
       setCourseCode(typeof categoryFields.courseCode === 'string' ? categoryFields.courseCode : '');
@@ -344,6 +348,12 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
       // Keep the legacy free-text code in sync with the picked course.
       if (courseCode) categorySpecificFields.courseCode = courseCode;
       else delete categorySpecificFields.courseCode;
+      if (taxonomyNodeId) {
+        categorySpecificFields.taxonomyNodeId = taxonomyNodeId;
+        categorySpecificFields.taxonomyPath = taxonomyPathLabel(taxonomyNodeId);
+        const node = getTaxonomyNode(taxonomyNodeId);
+        if (node?.department) categorySpecificFields.parentCategory = node.department;
+      }
       const updates = {
         title: formData.title,
         description: formData.description || undefined,
@@ -440,62 +450,25 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             placeholder="Where it sits in the syllabus"
           />
 
-          {/* Category */}
-          <div>
-            <label className="block text-sm font-medium text-lantern-text mb-2">
-              <TagIcon className="w-4 h-4 inline mr-2" />
-              Category
-            </label>
-            <select
-              value={formData.category}
-              onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-              className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
-              required
-            >
-              <option value="">Select a category</option>
-              {allCategories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-              <option value="other">Other (Custom)</option>
-            </select>
-            {formData.category === 'other' && (
-              <div className="mt-2 space-y-2">
-                <input
-                  type="text"
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  placeholder="Enter your custom category name"
-                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
-                  required
-                />
-                {existingCustomCategories.length > 0 && (
-                  <div>
-                    <p className="text-xs text-lantern-text-secondary mb-1">Or choose an existing custom category:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {existingCustomCategories
-                        .filter(cat => !customCategory || cat.name.toLowerCase().includes(customCategory.toLowerCase()))
-                        .slice(0, 10)
-                        .map(cat => (
-                          <button
-                            key={cat.id}
-                            type="button"
-                            onClick={() => setCustomCategory(cat.name)}
-                            className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
-                              customCategory === cat.name
-                                ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
-                                : 'border-lantern-border text-lantern-text-secondary hover:border-lantern-primary hover:text-lantern-primary'
-                            }`}
-                          >
-                            {cat.name}
-                          </button>
-                        ))
-                      }
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <ListingClassifier
+            department={classifierDepartment}
+            title={formData.title}
+            description={formData.description}
+            selectedNodeId={taxonomyNodeId}
+            customCategory={customCategory}
+            existingCustomCategories={existingCustomCategories}
+            onCustomCategoryChange={setCustomCategory}
+            onSelectNode={(nodeId) => {
+              const node = getTaxonomyNode(nodeId);
+              const listingCategory = node?.listingCategory || '';
+              setTaxonomyNodeId(nodeId);
+              setFormData((prev) => ({
+                ...prev,
+                category: listingCategory === 'other' ? 'other' : listingCategory,
+              }));
+              if (listingCategory !== 'other') setCustomCategory('');
+            }}
+          />
 
           {/* Title */}
           <div>

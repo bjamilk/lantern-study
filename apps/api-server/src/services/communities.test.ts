@@ -186,3 +186,123 @@ describe('createTopicCommunity', () => {
     expect(join.source).toBe('joined');
   });
 });
+
+const GROUP = '44444444-4444-4444-8444-444444444444';
+
+describe('joinDiscoverableGroup', () => {
+  function makeJoinService(group: Row | null, opts: { inCommunity?: boolean } = {}) {
+    const inCommunity = opts.inCommunity !== false;
+    const writes: Array<{ table: string; op: string; payload: unknown }> = [];
+    const db: any = {
+      from(table: string) {
+        const api: any = {};
+        const self = () => api;
+        api.select = self;
+        api.eq = self;
+        api.is = self;
+        api.in = self;
+        api.or = self;
+        api.order = self;
+        api.gt = self;
+        api.neq = self;
+        api.maybeSingle = () =>
+          Promise.resolve({
+            data: table === 'groups' ? group : null,
+            error: null,
+          });
+        api.limit = () =>
+          Promise.resolve({
+            data:
+              table === 'community_members' && inCommunity
+                ? [
+                    {
+                      role: 'member',
+                      source: 'joined',
+                      communities: {
+                        id: COMMUNITY,
+                        kind: 'topic',
+                        slug: 'topic-x',
+                        name: 'X',
+                        description: null,
+                        institution_id: null,
+                        programme: null,
+                        study_level: null,
+                        course_id: null,
+                        tags: [],
+                        visibility: 'public',
+                        is_official: false,
+                        member_count: 1,
+                      },
+                    },
+                  ]
+                : [],
+            error: null,
+          });
+        api.upsert = (payload: unknown) => {
+          writes.push({ table, op: 'upsert', payload });
+          return Promise.resolve({ error: null });
+        };
+        return api;
+      },
+    };
+    const service = new CommunitiesService({
+      getClient: () => db,
+      listBlockedUserIds: async () => [],
+    } as never);
+    return { service, writes };
+  }
+
+  it('refuses a private group', async () => {
+    const { service, writes } = makeJoinService({
+      id: GROUP,
+      name: 'Secret',
+      visibility: 'private',
+      community_id: null,
+      is_archived: false,
+    });
+    await expect(service.joinDiscoverableGroup(VIEWER, GROUP)).rejects.toThrow(/invite only/);
+    expect(writes.some((w) => w.op === 'upsert')).toBe(false);
+  });
+
+  it('joins a public group', async () => {
+    const { service, writes } = makeJoinService({
+      id: GROUP,
+      name: 'Open study',
+      visibility: 'public',
+      community_id: null,
+      is_archived: false,
+    });
+    await expect(service.joinDiscoverableGroup(VIEWER, GROUP)).resolves.toEqual({ joined: true });
+    const join = writes.find((w) => w.op === 'upsert')?.payload as Row;
+    expect(join.group_id).toBe(GROUP);
+    expect(join.user_id).toBe(VIEWER);
+    expect(join.pending).toBe(false);
+  });
+
+  it('joins a community-visible group when the viewer is in that community', async () => {
+    const { service } = makeJoinService({
+      id: GROUP,
+      name: 'Campus BIO',
+      visibility: 'community',
+      community_id: COMMUNITY,
+      is_archived: false,
+    });
+    await expect(service.joinDiscoverableGroup(VIEWER, GROUP)).resolves.toEqual({ joined: true });
+  });
+
+  it('refuses a community-visible group when the viewer is not in that community', async () => {
+    const outsider = '55555555-5555-4555-8555-555555555555';
+    const { service, writes } = makeJoinService(
+      {
+        id: GROUP,
+        name: 'Campus BIO',
+        visibility: 'community',
+        community_id: COMMUNITY,
+        is_archived: false,
+      },
+      { inCommunity: false }
+    );
+    await expect(service.joinDiscoverableGroup(outsider, GROUP)).rejects.toThrow(/community first/);
+    expect(writes.some((w) => w.op === 'upsert')).toBe(false);
+  });
+});

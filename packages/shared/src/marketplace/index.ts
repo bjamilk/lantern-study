@@ -5,3 +5,6 @@ export * from './trending';
 export * from './lifecycle';
 export * from './studyPacks';
 export * from './semesterEnqueue';
+export * from './taxonomy';
+export * from './classify';
+export * from './shop';

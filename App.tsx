@@ -183,7 +183,13 @@ export const App: React.FC = () => {
     const { toast, showToast, dismissToast } = useToastStore();
     const globalConfirm = useConfirmStore();
     const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
+    const [marketplaceBrowseIntent, setMarketplaceBrowseIntent] = useState<{
+        browseNodeId?: string;
+        tab?: 'academic' | 'student-life' | 'shops';
+        category?: string;
+    } | null>(null);
     const [sellerProfileReturnMode, setSellerProfileReturnMode] = useState<AppMode>(AppMode.MARKETPLACE);
+    const [createGroupReturnMode, setCreateGroupReturnMode] = useState<AppMode>(AppMode.CHAT);
     const [startingDailyQuiz, setStartingDailyQuiz] = useState(false);
     const [accountLifecycle, setAccountLifecycle] = useState<{
         status: 'active' | 'deactivated';
@@ -1099,6 +1105,31 @@ export const App: React.FC = () => {
         }
     };
 
+    const openDiscoverGroup = (params?: Record<string, unknown>) => {
+        const groupId = String(params?.groupId || '');
+        if (!groupId) return;
+        const target = groups.find((x) => x.id === groupId);
+        if (target) {
+            handleSelectChat({ ...target, chatType: 'group' });
+            setAppMode(AppMode.CHAT);
+            return;
+        }
+        if (!params?.joined) return;
+        const stub = {
+            id: groupId,
+            name: String(params.groupName || 'Group'),
+            members: [] as User[],
+            adminIds: [] as string[],
+            unreadCount: 0,
+            description: '',
+        };
+        useGroupStore.getState().updateGroups((prev) =>
+            prev.some((g) => g.id === groupId) ? prev : [...prev, stub]
+        );
+        handleSelectChat({ ...stub, chatType: 'group' });
+        setAppMode(AppMode.CHAT);
+    };
+
     const mainContent = () => {
         switch (appMode) {
             case AppMode.CREATE_GROUP:
@@ -1108,7 +1139,7 @@ export const App: React.FC = () => {
                         allUsers={users}
                         onCreateGroup={handleCreateGroup}
                         onEnterGroup={handleEnterCreatedGroup}
-                        onBack={() => navigateTo(AppMode.CHAT)}
+                        onBack={() => navigateTo(createGroupReturnMode || AppMode.CHAT)}
                     />
                 );
             case AppMode.CHAT:
@@ -1127,7 +1158,10 @@ export const App: React.FC = () => {
                     dmThreads={dmThreads}
                     onSelectChat={handleSelectChat}
                     onBack={handleChatBack}
-                    onCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
+                    onCreateGroup={() => {
+                        setCreateGroupReturnMode(AppMode.CHAT);
+                        navigateTo(AppMode.CREATE_GROUP);
+                    }}
                     onOpenNewDmModal={() => openModal('newDm')}
                     onDeleteDmThread={handleDeleteDmThread}
                     onArchiveDmThread={handleArchiveDmThread}
@@ -1200,7 +1234,10 @@ export const App: React.FC = () => {
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
                     onNavigateToDiscover={() => navigateTo(AppMode.DISCOVER)}
                     onNavigateToInvite={() => navigateTo(AppMode.INVITE_FRIENDS)}
-                    onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
+                    onNavigateToCreateGroup={() => {
+                        setCreateGroupReturnMode(AppMode.CHAT);
+                        navigateTo(AppMode.CREATE_GROUP);
+                    }}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
                     onNavigateToLibrary={() => navigateTo(AppMode.LIBRARY)}
@@ -1567,6 +1604,9 @@ export const App: React.FC = () => {
             case AppMode.MARKETPLACE:
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
+                    initialTab={marketplaceBrowseIntent?.tab}
+                    initialCategory={marketplaceBrowseIntent?.category}
                     onNavigateToDiscover={(section) => {
                         setDiscoverSection(section as any);
                         setAppMode(AppMode.DISCOVER);
@@ -1632,6 +1672,18 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE_ORDERS);
                         } else if (screen === 'MarketplaceCart') {
                             setAppMode(AppMode.MARKETPLACE_CART);
+                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(String(params.listingId));
+                            setSelectedMarketplaceListingInitialQuantity(
+                              params?.quantity != null ? Number(params.quantity) : null
+                            );
+                        } else if (screen === 'Marketplace') {
+                            setMarketplaceBrowseIntent({
+                                browseNodeId: params?.browseNodeId ? String(params.browseNodeId) : '',
+                                tab: params?.tab,
+                                category: params?.category ? String(params.category) : '',
+                            });
+                            setAppMode(AppMode.MARKETPLACE);
                         } else if (screen === 'MyListings') {
                             setAppMode(AppMode.MY_LISTINGS);
                         } else if (screen === 'EditMarketplaceListing' && params?.listing) {
@@ -1711,11 +1763,7 @@ export const App: React.FC = () => {
                     onBack={() => setAppMode(AppMode.DISCOVER)}
                     onNavigate={(screen, params) => {
                         if (screen === 'GroupChat' && params?.groupId) {
-                            const target = groups.find((x) => x.id === params.groupId);
-                            if (target) {
-                                handleSelectChat({ ...target, chatType: 'group' });
-                                setAppMode(AppMode.CHAT);
-                            }
+                            openDiscoverGroup(params);
                         }
                     }} />;
             }
@@ -1736,16 +1784,7 @@ export const App: React.FC = () => {
                             setSellerProfileReturnMode(AppMode.DISCOVER);
                             setAppMode(AppMode.CREATOR_PROFILE);
                         } else if (screen === 'GroupChat' && params?.groupId) {
-                            // Discover can surface a group the user has not
-                            // joined yet, so it may not be in `groups`. Only
-                            // open the chat when they are actually a member —
-                            // otherwise leave them in Discover rather than
-                            // dropping them on an empty chat screen.
-                            const target = groups.find((x) => x.id === params.groupId);
-                            if (target) {
-                                handleSelectChat({ ...target, chatType: 'group' });
-                                setAppMode(AppMode.CHAT);
-                            }
+                            openDiscoverGroup(params);
                         } else if (screen === 'StudyRoom') {
                             setStudyRoomJoin({
                                 courseId: params?.courseId ? String(params.courseId) : null,
@@ -1756,6 +1795,14 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.STUDY_ROOM);
                         } else if (screen === 'CreateLab') {
                             setCreateLabOpen(true);
+                        } else if (screen === 'AcademicSetup') {
+                            useUIStore.getState().setSettingsTab('academic');
+                            openModal('settings');
+                        } else if (screen === 'CreateGroup') {
+                            setCreateGroupReturnMode(AppMode.DISCOVER);
+                            navigateTo(AppMode.CREATE_GROUP);
+                        } else if (screen === 'Library') {
+                            navigateTo(AppMode.LIBRARY);
                         }
                     }} />;
             case AppMode.CREATOR_PROFILE:
@@ -1925,6 +1972,9 @@ export const App: React.FC = () => {
                 if (!modals.createMarketplaceListing) openModal('createMarketplaceListing');
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
+                    initialTab={marketplaceBrowseIntent?.tab}
+                    initialCategory={marketplaceBrowseIntent?.category}
                     onNavigateToDiscover={(section) => {
                         setDiscoverSection(section as any);
                         setAppMode(AppMode.DISCOVER);
@@ -2017,7 +2067,10 @@ export const App: React.FC = () => {
         currentUser, groups, dmThreads,
         selectedChatId: selectedChat?.id,
         onSelectChat: handleSelectChat,
-        onNavigateToCreateGroup: () => navigateTo(AppMode.CREATE_GROUP),
+        onNavigateToCreateGroup: () => {
+            setCreateGroupReturnMode(AppMode.CHAT);
+            navigateTo(AppMode.CREATE_GROUP);
+        },
         onNavigateToDashboard: () => navigateTo(AppMode.DASHBOARD),
         onNavigateToOfflineMode: () => navigateTo(AppMode.OFFLINE_MODE),
         onNavigateToLibrary: () => navigateTo(AppMode.LIBRARY),
@@ -2204,6 +2257,11 @@ export const App: React.FC = () => {
                 duplicateInfo={duplicateInfo} onUpvoteAndClose={handleUpvoteDuplicateAndClose} />}
             <CreateMarketplaceListingModal isOpen={modals.createMarketplaceListing}
                 onClose={() => closeModal('createMarketplaceListing')} category={marketplaceListingCategory}
+                onOpenStudyProducts={() => {
+                    closeModal('createMarketplaceListing');
+                    setStudyProductSource(null);
+                    setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                }}
                 onSuccess={() => {
                     closeModal('createMarketplaceListing');
                     setMyListingsRefreshKey((k) => k + 1);

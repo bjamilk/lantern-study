@@ -711,7 +711,7 @@ export async function ensureNotesUploadSession(): Promise<{ userId: string }> {
 
 // For local development, the keys are default, but in production, set env vars.
 
-export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string; courseId?: string | null }, userId: string, memberIds: string[]) => {
+export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null }, userId: string, memberIds: string[]) => {
   console.log('Creating group with data:', groupData, 'userId:', userId, 'memberIds:', memberIds);
   
   const response = await fetch(`${getApiRoot()}/api/v1/groups`, {
@@ -747,6 +747,8 @@ export function mapGroupListFromApi(
     isArchived: g.is_archived ?? g.isArchived ?? false,
     inviteId: g.invite_id || g.inviteId,
     courseId: g.courseId !== undefined ? g.courseId : (g.course_id ?? null),
+    visibility: g.visibility || 'private',
+    communityId: g.communityId !== undefined ? g.communityId : (g.community_id ?? null),
     unreadCount: unreadCounts[g.id] ?? g.unread_count ?? g.unreadCount ?? 0,
     pendingMembers: [],
     invitedPhoneNumbers: [],
@@ -2861,7 +2863,7 @@ export const deleteGroup = async (groupId: string) => {
   }
 };
 
-export const updateGroup = async (groupId: string, updates: { name?: string; description?: string; isArchived?: boolean; avatarUrl?: string; courseId?: string | null }) => {
+export const updateGroup = async (groupId: string, updates: { name?: string; description?: string; isArchived?: boolean; avatarUrl?: string; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null }) => {
   console.log('Updating group:', groupId, 'updates:', updates);
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}`, {
@@ -2873,6 +2875,8 @@ export const updateGroup = async (groupId: string, updates: { name?: string; des
         isArchived: updates.isArchived,
         avatarUrl: updates.avatarUrl,
         ...(updates.courseId !== undefined ? { courseId: updates.courseId } : {}),
+        ...(updates.visibility !== undefined ? { visibility: updates.visibility } : {}),
+        ...(updates.communityId !== undefined ? { communityId: updates.communityId } : {}),
       }),
     });
 
@@ -3058,6 +3062,10 @@ export const fetchMarketplaceListingsPage = async (filters: {
   country_code?: string;
   /** Filters on category_specific_fields.condition (new/like-new/good/fair). */
   condition?: string;
+  /** Fine-grained campus listing type (taxonomy leaf id). */
+  taxonomyNodeId?: string;
+  /** When set with taxonomyNodeId, also include listings that have no node id. */
+  includeUnclassified?: boolean;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
   /** `compact` returns card-shaped rows (first image only) for the browse grid. */
@@ -4238,6 +4246,25 @@ export const fetchCustomCategories = async () => {
   }
 };
 
+export const classifyMarketplaceListing = async (input: {
+  title: string;
+  description?: string;
+  department?: 'academic' | 'student-life';
+}) => {
+  try {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/classify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) return { suggestions: [] };
+    const result = await response.json();
+    return result.data || { suggestions: [] };
+  } catch {
+    return { suggestions: [] };
+  }
+};
+
 export const createCustomCategory = async (name: string) => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/marketplace/categories/custom`, {
@@ -4884,6 +4911,22 @@ export const leaveCommunity = (communityId: string) =>
     'Could not leave this community'
   );
 
+export const createCommunity = (body: { name: string; description?: string; tags?: string[] }) =>
+  networkWrite<Community>(
+    '/communities',
+    'POST',
+    body,
+    'Could not create this community'
+  );
+
+export const joinDiscoverableGroup = (groupId: string) =>
+  networkWrite<{ joined: true }>(
+    `/discover/groups/${encodeURIComponent(groupId)}/join`,
+    'POST',
+    undefined,
+    'Could not join this group'
+  );
+
 export const discoverCommunities = (params: {
   q?: string;
   kind?: string;
@@ -4901,6 +4944,7 @@ export const discoverGroups = (params: {
 } = {}) => networkGetList<DiscoverGroup>(`/discover/groups${networkQuery(params)}`);
 
 export const discoverPeople = (params: {
+  q?: string;
   institutionId?: string;
   courseId?: string;
   limit?: number;

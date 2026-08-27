@@ -223,6 +223,8 @@ export const {
   fetchCommunityMembers,
   joinCommunity,
   leaveCommunity,
+  createCommunity,
+  joinDiscoverableGroup,
   discoverCommunities,
   discoverGroups,
   discoverPeople,

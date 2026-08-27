@@ -25,6 +25,7 @@ import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
 import { useTheme } from '../theme';
 import type { ThemeColors } from '../theme';
 import { ReportContentSheet } from './moderation/ReportContentSheet';
+import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../screens/discover/GroupDiscoverabilityFields';
 
 type TabType = 'details' | 'members' | 'danger';
 
@@ -33,7 +34,12 @@ interface GroupInfoModalProps {
   onClose: () => void;
   group: Group;
   currentUserId: string;
-  onUpdateDetails: (groupId: string, name: string, description: string) => void;
+  onUpdateDetails: (
+    groupId: string,
+    name: string,
+    description: string,
+    discovery?: { visibility?: 'private' | 'community' | 'public'; communityId?: string | null }
+  ) => void;
   onPromoteToAdmin: (groupId: string, userId: string) => void;
   onDemoteAdmin: (groupId: string, userId: string) => void;
   onRemoveMember: (groupId: string, userId: string) => void;
@@ -67,6 +73,10 @@ export default function GroupInfoModal({
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description || '');
   const [hasChanges, setHasChanges] = useState(false);
+  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>({
+    visibility: group.visibility || 'private',
+    communityId: group.communityId ?? null,
+  });
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const { colors } = useTheme();
@@ -84,6 +94,10 @@ export default function GroupInfoModal({
     setName(group.name);
     setDescription(group.description || '');
     setHasChanges(false);
+    setDiscovery({
+      visibility: group.visibility || 'private',
+      communityId: group.communityId ?? null,
+    });
     setAvatarPreview(null);
     setActiveTab('details');
   }, [visible, group.id]);
@@ -143,7 +157,7 @@ export default function GroupInfoModal({
   };
 
   const handleSaveDetails = () => {
-    onUpdateDetails(group.id, name, description);
+    onUpdateDetails(group.id, name, description, discovery);
     setHasChanges(false);
     Alert.alert('Success', 'Group details updated');
   };
@@ -320,6 +334,18 @@ export default function GroupInfoModal({
           placeholder="Add a description..."
         />
       </View>
+
+      {isAdmin ? (
+        <View style={{ marginBottom: 16 }}>
+          <GroupDiscoverabilityFields
+            value={discovery}
+            onChange={(next) => {
+              setDiscovery(next);
+              setHasChanges(true);
+            }}
+          />
+        </View>
+      ) : null}
 
       {/* Stats */}
       <View style={styles.statsRow}>

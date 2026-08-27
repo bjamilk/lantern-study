@@ -245,7 +245,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds, courseId } = req.body;
+    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds, courseId, visibility, communityId } = req.body;
     const groupData = {
       name,
       description,
@@ -255,6 +255,8 @@ router.post(
       parentId: parent_id,
       // Academic archive reference (uuid-validated by validateCreateGroup; null = none).
       courseId: courseId ?? null,
+      visibility,
+      communityId: communityId ?? null,
     };
 
     logger.debug('Creating group', { groupData, userId, memberIds });
@@ -279,6 +281,7 @@ router.post(
     // Invalidate groups list cache
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern('groups:user:*');
+    await cacheService.deletePattern('groups:discover:*');
 
     res.status(201).json({
       success: true,
@@ -338,8 +341,10 @@ router.put(
 
     // Invalidate group cache
     await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern(`group:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern('groups:user:*');
+    await cacheService.deletePattern('groups:discover:*');
 
     res.json({
       success: true,

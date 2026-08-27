@@ -983,6 +983,10 @@ export interface MarketplaceListing {
   status: 'active' | 'sold' | 'inactive' | 'reserved' | 'archived' | 'suspended_by_admin' | 'removed_by_admin';
   categorySpecificFields?: Record<string, unknown>;
   category_specific_fields?: Record<string, unknown>;
+  /** Compact browse cards flatten condition out of category_specific_fields. */
+  condition?: string | null;
+  /** Compact browse cards flatten taxonomyNodeId out of category_specific_fields. */
+  taxonomyNodeId?: string | null;
   views_count?: number;
   favorites_count?: number;
   inquiries_count?: number;

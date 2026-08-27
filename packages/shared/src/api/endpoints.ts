@@ -735,6 +735,8 @@ export function createApiEndpoints(client: ApiClient) {
       memberIds: string[];
       /** Academic archive: the course this group studies (null clears). */
       courseId?: string | null;
+      visibility?: 'private' | 'community' | 'public';
+      communityId?: string | null;
     }) =>
       apiRequest<{
         id: string;
@@ -759,6 +761,8 @@ export function createApiEndpoints(client: ApiClient) {
         avatarUrl?: string;
         isArchived?: boolean;
         courseId?: string | null;
+        visibility?: 'private' | 'community' | 'public';
+        communityId?: string | null;
       },
     ) =>
       apiRequest<{
@@ -1771,6 +1775,9 @@ export function createApiEndpoints(client: ApiClient) {
         country_code?: string;
         sortBy?: string;
         sortOrder?: "asc" | "desc";
+        condition?: string;
+        taxonomyNodeId?: string;
+        includeUnclassified?: boolean;
         /** `compact` returns card-shaped rows (first image only) for grids. */
         responseProfile?: "compact" | "full";
       } = {},
@@ -2950,6 +2957,24 @@ export function createApiEndpoints(client: ApiClient) {
     leaveCommunity: (communityId: string) =>
       apiRequest<{ left: true }>(`/communities/${communityId}/join`, { method: 'DELETE' }, 10000),
 
+    /** Horizontal (topic) communities — the only kind a person can create. */
+    createCommunity: (body: { name: string; description?: string; tags?: string[] }) =>
+      apiRequest<Community>('/communities', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }, 10000),
+
+    /**
+     * Join a group that is already on Discover (public, or community-visible
+     * to a room the viewer belongs to). Private groups stay invite-link only.
+     */
+    joinDiscoverableGroup: (groupId: string) =>
+      apiRequest<{ joined: true }>(
+        `/discover/groups/${encodeURIComponent(groupId)}/join`,
+        { method: 'POST' },
+        10000
+      ),
+
     discoverCommunities: (
       params: { q?: string; kind?: string; institutionId?: string; courseId?: string; limit?: number } = {}
     ) => {
@@ -2981,8 +3006,9 @@ export function createApiEndpoints(client: ApiClient) {
       return apiRequest<DiscoverGroup[]>(`/discover/groups${qs.toString() ? `?${qs}` : ''}`, {}, 10000);
     },
 
-    discoverPeople: (params: { institutionId?: string; courseId?: string; limit?: number } = {}) => {
+    discoverPeople: (params: { q?: string; institutionId?: string; courseId?: string; limit?: number } = {}) => {
       const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
       if (params.institutionId) qs.set('institutionId', params.institutionId);
       if (params.courseId) qs.set('courseId', params.courseId);
       if (params.limit) qs.set('limit', String(params.limit));
@@ -3868,6 +3894,43 @@ export function createApiEndpoints(client: ApiClient) {
           slug: string;
         }>
       >(`/marketplace/campuses?country=${encodeURIComponent(country)}`),
+
+    fetchMarketplaceTaxonomy: () =>
+      apiRequest<{
+        leaves: Array<{
+          id: string;
+          listingCategory?: string;
+          label: string;
+          pathLabel: string;
+          department: string;
+          publishFlow: string;
+        }>;
+        browse: {
+          academic: Array<{ id: string; name: string }>;
+          "student-life": Array<{ id: string; name: string }>;
+        };
+      }>("/marketplace/taxonomy"),
+
+    classifyMarketplaceListing: (input: {
+      title: string;
+      description?: string;
+      department?: "academic" | "student-life";
+    }) =>
+      apiRequest<{
+        suggestions: Array<{
+          nodeId: string;
+          listingCategory?: string;
+          publishFlow: string;
+          label: string;
+          summary: string;
+          pathLabel?: string;
+          confidence: number;
+          reasons: Array<{ kind: string; text: string }>;
+        }>;
+      }>("/marketplace/classify", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
 
     // ========== ACADEMIC: COURSES + MY COURSES (/api/v1/courses, /api/v1/users/me/courses) ==========
     // Shapes pinned by docs/phase1-academic-identity-contract.md §2/§3.

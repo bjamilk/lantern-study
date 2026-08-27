@@ -14,6 +14,13 @@ import {
   isOtherCityCampus,
   type MarketplaceCampus,
 } from '@lantern/shared';
+import {
+  attributesForNode,
+  getTaxonomyNode,
+  taxonomyPathLabel,
+  type TaxonomyAttributeKey,
+} from '@lantern/shared/marketplace';
+import ListingClassifier from './marketplace/ListingClassifier';
 import { useToastStore } from '../stores/toastStore';
 import { compressImage } from '../utils/imageCompression';
 import { aiGenerateListingDescription } from '../services/ai';
@@ -22,8 +29,6 @@ import {
   PhotoIcon,
   MapPinIcon,
   CurrencyDollarIcon,
-  DocumentTextIcon,
-  TagIcon,
   AcademicCapIcon,
   BriefcaseIcon,
   PlusIcon,
@@ -37,6 +42,7 @@ interface CreateMarketplaceListingModalProps {
   onClose: () => void;
   category: 'academic' | 'student-life';
   onSuccess: () => void;
+  onOpenStudyProducts?: () => void;
 }
 
 interface ImageFile {
@@ -75,6 +81,7 @@ interface CreateListingFormData {
   courseId: string | null;
   /** Syllabus topic inside `courseId` (marketplace_listings.topic_id). */
   topicId: string | null;
+  taxonomyNodeId: string;
   year: string;
   semester: '' | '1st' | '2nd';
   edition: string;
@@ -88,7 +95,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   isOpen,
   onClose,
   category,
-  onSuccess
+  onSuccess,
+  onOpenStudyProducts,
 }) => {
   const paystackEnabled = usePaystackEnabled();
   const [formData, setFormData] = useState<CreateListingFormData>({
@@ -109,6 +117,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     courseCode: '',
     courseId: null,
     topicId: null,
+    taxonomyNodeId: '',
     year: '',
     semester: '' as '' | '1st' | '2nd',
     edition: '',
@@ -203,48 +212,12 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     }
   };
 
-  // Helper to determine which category-specific fields to show
-  const getCategoryFields = (subcategory: string) => {
-    switch (subcategory) {
-      case 'textbook_exchange':
-        return ['condition', 'isbn', 'edition'];
-      case 'pq_bank':
-      case 'lecture_notes':
-        return ['courseCode', 'year', 'semester'];
-      case 'project_thesis':
-        return ['courseCode', 'year'];
-      case 'equipment_rental':
-        return ['condition'];
-      case 'accommodation':
-        return ['bedrooms', 'furnished', 'distanceToCampus'];
-      case 'personal_goods':
-      case 'aso_ebi':
-        return ['condition'];
-      default:
-        return [];
-    }
-  };
-
-  // Map to database category values
-  const academicSubcategories = [
-    { id: 'textbook_exchange', name: 'Textbooks', icon: DocumentTextIcon },
-    { id: 'pq_bank', name: 'Past Questions', icon: AcademicCapIcon },
-    { id: 'lecture_notes', name: 'Lecture Notes', icon: DocumentTextIcon },
-    { id: 'project_thesis', name: 'Projects & Thesis', icon: TagIcon },
-    { id: 'data_collection', name: 'Data Collection', icon: TagIcon },
-    { id: 'equipment_rental', name: 'Lab Equipment', icon: TagIcon }
-  ];
-
-  const studentLifeSubcategories = [
-    { id: 'accommodation', name: 'Accommodation', icon: TagIcon },
-    { id: 'travel_transport', name: 'Transportation', icon: TagIcon },
-    { id: 'personal_goods', name: 'Personal Goods', icon: TagIcon },
-    { id: 'aso_ebi', name: 'Fashion', icon: TagIcon },
-    { id: 'campus_services', name: 'Campus Services', icon: BriefcaseIcon },
-    { id: 'events_social', name: 'Events & Social', icon: TagIcon }
-  ];
-
-  const subcategories = category === 'academic' ? academicSubcategories : studentLifeSubcategories;
+  const selectedTaxonomyNode = getTaxonomyNode(formData.taxonomyNodeId);
+  const categoryAttributes = attributesForNode(selectedTaxonomyNode);
+  const attributeKeys = new Set<TaxonomyAttributeKey>(categoryAttributes.map((attr) => attr.key));
+  const isDigitalPublishFlow =
+    selectedTaxonomyNode?.publishFlow === 'question_bank' ||
+    selectedTaxonomyNode?.publishFlow === 'study_pack';
 
   // Academic content categories (past questions, notes, projects, textbooks)
   // need the rights attestation; the API refuses them without it (400).
@@ -404,8 +377,15 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       console.log('[CreateMarketplaceListingModal] Form submitted');
     }
     
-    if (!formData.subcategory) {
-      useToastStore.getState().showToast('Please select a category');
+    if (!formData.taxonomyNodeId || !formData.subcategory) {
+      useToastStore.getState().showToast('Please choose a listing type');
+      return;
+    }
+
+    if (isDigitalPublishFlow) {
+      useToastStore
+        .getState()
+        .showToast('Publish this from Study products, or pick the printed/PDF type instead.');
       return;
     }
 
@@ -434,6 +414,16 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       return;
     }
 
+    const missingRequired = categoryAttributes.find((attr) => {
+      if (!attr.required) return false;
+      if (attr.key === 'condition') return !formData.condition;
+      return false;
+    });
+    if (missingRequired) {
+      useToastStore.getState().showToast(`Please add ${missingRequired.label.toLowerCase()} for this listing type`);
+      return;
+    }
+
     if (needsAttestation && !attested) {
       setSubmitError(ATTESTATION_REQUIRED_MESSAGE);
       return;
@@ -454,20 +444,21 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
     try {
       // Build category-specific fields
-      const categorySpecificFields: any = {
-        parentCategory: category,
+      const categorySpecificFields: Record<string, unknown> = {
+        parentCategory: selectedTaxonomyNode?.department || category,
+        taxonomyNodeId: formData.taxonomyNodeId,
+        taxonomyPath: formData.taxonomyNodeId ? taxonomyPathLabel(formData.taxonomyNodeId) : undefined,
       };
-      const fields = getCategoryFields(formData.subcategory);
-      if (fields.includes('condition') && formData.condition) categorySpecificFields.condition = formData.condition;
-      if (fields.includes('isbn') && formData.isbn) categorySpecificFields.isbn = formData.isbn;
-      if (fields.includes('edition') && formData.edition) categorySpecificFields.edition = formData.edition;
+      if (attributeKeys.has('condition') && formData.condition) categorySpecificFields.condition = formData.condition;
+      if (attributeKeys.has('isbn') && formData.isbn) categorySpecificFields.isbn = formData.isbn;
+      if (attributeKeys.has('edition') && formData.edition) categorySpecificFields.edition = formData.edition;
       // courseCode stays in category_specific_fields for backwards compat — it is the picked course's code.
-      if (fields.includes('courseCode') && formData.courseCode) categorySpecificFields.courseCode = formData.courseCode;
-      if (fields.includes('year') && formData.year) categorySpecificFields.year = formData.year;
-      if (fields.includes('semester') && formData.semester) categorySpecificFields.semester = formData.semester;
-      if (fields.includes('bedrooms') && formData.bedrooms) categorySpecificFields.bedrooms = parseInt(formData.bedrooms);
-      if (fields.includes('furnished') && formData.furnished) categorySpecificFields.furnished = formData.furnished === 'yes';
-      if (fields.includes('distanceToCampus') && formData.distanceToCampus) categorySpecificFields.distanceToCampus = formData.distanceToCampus;
+      if (attributeKeys.has('courseCode') && formData.courseCode) categorySpecificFields.courseCode = formData.courseCode;
+      if (attributeKeys.has('year') && formData.year) categorySpecificFields.year = formData.year;
+      if (attributeKeys.has('semester') && formData.semester) categorySpecificFields.semester = formData.semester;
+      if (attributeKeys.has('bedrooms') && formData.bedrooms) categorySpecificFields.bedrooms = parseInt(formData.bedrooms);
+      if (attributeKeys.has('furnished') && formData.furnished) categorySpecificFields.furnished = formData.furnished === 'yes';
+      if (attributeKeys.has('distanceToCampus') && formData.distanceToCampus) categorySpecificFields.distanceToCampus = formData.distanceToCampus;
       if (usesOtherCity) categorySpecificFields.otherCity = formData.location.trim();
 
       const parsedPrice = formData.price.trim() ? parseFloat(formData.price) : undefined;
@@ -650,7 +641,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       isOpen={isOpen}
       onClose={onClose}
       ariaLabelledBy="create-listing-title"
-      maxWidthClass="max-w-2xl"
+      maxWidthClass="max-w-3xl"
       loading={loading || uploadingImages}
       closeOnBackdrop={!loading && !uploadingImages}
       panelClassName="!p-0 max-h-[90vh] overflow-y-auto rounded-xl"
@@ -683,7 +674,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           {/* Title */}
           <div>
             <label htmlFor="listing-title" className="block text-sm font-semibold text-lantern-text mb-2">
-              Title *
+              What are you listing? *
             </label>
             <input
               id="listing-title"
@@ -691,102 +682,40 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               value={formData.title}
               onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
               required
-              placeholder="Enter an engaging title for your listing"
+              placeholder="e.g. BIO 201 past questions 2023, or 2 bedroom flat near campus"
               className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
             />
           </div>
 
-          {/* Category */}
-          <div>
-            <p id="listing-category-label" className="block text-sm font-semibold text-lantern-text mb-3">
-              Category *
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3" role="radiogroup" aria-labelledby="listing-category-label">
-              {subcategories.map(subcat => {
-                const IconComponent = subcat.icon;
-                const selected = formData.subcategory === subcat.id;
-                return (
-                  <button
-                    key={subcat.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setFormData(prev => ({ ...prev, subcategory: subcat.id }))}
-                    className={`p-3 border rounded-lg text-left transition-all duration-200 ${
-                      selected
-                        ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
-                        : 'border-lantern-border hover:border-lantern-border dark:hover:border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text'
-                    }`}
-                  >
-                    <IconComponent className="w-5 h-5 mb-2 text-lantern-text-secondary" aria-hidden="true" />
-                    <span className="text-sm font-medium">{subcat.name}</span>
-                  </button>
-                );
-              })}
-              {/* Other / Custom Category */}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={formData.subcategory === 'other'}
-                onClick={() => setFormData(prev => ({ ...prev, subcategory: 'other' }))}
-                className={`p-3 border rounded-lg text-left transition-all duration-200 ${
-                  formData.subcategory === 'other'
-                    ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
-                    : 'border-lantern-border hover:border-lantern-border dark:hover:border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text'
-                }`}
-              >
-                <PlusIcon className="w-5 h-5 mb-2 text-lantern-text-secondary" aria-hidden="true" />
-                <span className="text-sm font-medium">Other</span>
-              </button>
-            </div>
-            {formData.subcategory === 'other' && (
-              <div className="mt-3 space-y-2">
-                <label htmlFor="listing-custom-category" className="sr-only">Custom category name</label>
-                <input
-                  id="listing-custom-category"
-                  type="text"
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  placeholder="Enter your custom category name"
-                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
-                />
-                {existingCustomCategories.length > 0 && (
-                  <div>
-                    <p className="text-xs text-lantern-text-secondary mb-1">Or choose an existing custom category:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {existingCustomCategories
-                        .filter(cat => !customCategory || cat.name.toLowerCase().includes(customCategory.toLowerCase()))
-                        .slice(0, 10)
-                        .map(cat => (
-                          <button
-                            key={cat.id}
-                            type="button"
-                            onClick={() => setCustomCategory(cat.name)}
-                            className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
-                              customCategory === cat.name
-                                ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
-                                : 'border-lantern-border text-lantern-text-secondary hover:border-lantern-primary hover:text-lantern-primary'
-                            }`}
-                          >
-                            {cat.name}
-                          </button>
-                        ))
-                      }
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <ListingClassifier
+            department={category}
+            title={formData.title}
+            description={formData.description}
+            selectedNodeId={formData.taxonomyNodeId}
+            customCategory={customCategory}
+            existingCustomCategories={existingCustomCategories}
+            onOpenStudyProducts={onOpenStudyProducts}
+            onCustomCategoryChange={setCustomCategory}
+            onSelectNode={(nodeId) => {
+              const node = getTaxonomyNode(nodeId);
+              const listingCategory = node?.listingCategory || '';
+              setFormData((prev) => ({
+                ...prev,
+                taxonomyNodeId: nodeId,
+                subcategory: listingCategory === 'other' ? 'other' : listingCategory,
+              }));
+              if (listingCategory !== 'other') setCustomCategory('');
+            }}
+          />
 
           {/* Category-Specific Fields */}
-          {formData.subcategory && getCategoryFields(formData.subcategory).length > 0 && (
+          {formData.taxonomyNodeId && !isDigitalPublishFlow && categoryAttributes.length > 0 && (
             <div className="bg-lantern-background dark:bg-lantern-surface-secondary/30 rounded-lg p-4 space-y-4">
               <h4 className="text-sm font-semibold text-lantern-text">
-                Additional Details
+                Details for this type
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {getCategoryFields(formData.subcategory).includes('condition') && (
+                {attributeKeys.has('condition') && (
                   <div>
                     <label htmlFor="listing-condition" className="block text-xs font-medium text-lantern-text-secondary mb-1">Condition</label>
                     <select
@@ -803,7 +732,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     </select>
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('isbn') && (
+                {attributeKeys.has('isbn') && (
                   <div>
                     <label htmlFor="listing-isbn" className="block text-xs font-medium text-lantern-text-secondary mb-1">ISBN</label>
                     <input
@@ -816,7 +745,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     />
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('edition') && (
+                {attributeKeys.has('edition') && (
                   <div>
                     <label htmlFor="listing-edition" className="block text-xs font-medium text-lantern-text-secondary mb-1">Edition</label>
                     <input
@@ -829,7 +758,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     />
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('courseCode') && (
+                {attributeKeys.has('courseCode') && (
                   <div className="space-y-2">
                     <CoursePicker
                       id="listing-course"
@@ -857,7 +786,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     />
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('year') && (
+                {attributeKeys.has('year') && (
                   <div>
                     <label htmlFor="listing-year" className="block text-xs font-medium text-lantern-text-secondary mb-1">Year</label>
                     <input
@@ -870,7 +799,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     />
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('semester') && (
+                {attributeKeys.has('semester') && (
                   <div>
                     <label htmlFor="listing-semester" className="block text-xs font-medium text-lantern-text-secondary mb-1">Semester</label>
                     <select
@@ -885,7 +814,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     </select>
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('bedrooms') && (
+                {attributeKeys.has('bedrooms') && (
                   <div>
                     <label htmlFor="listing-bedrooms" className="block text-xs font-medium text-lantern-text-secondary mb-1">Bedrooms</label>
                     <input
@@ -899,7 +828,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     />
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('furnished') && (
+                {attributeKeys.has('furnished') && (
                   <div>
                     <label htmlFor="listing-furnished" className="block text-xs font-medium text-lantern-text-secondary mb-1">Furnished</label>
                     <select
@@ -914,7 +843,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     </select>
                   </div>
                 )}
-                {getCategoryFields(formData.subcategory).includes('distanceToCampus') && (
+                {attributeKeys.has('distanceToCampus') && (
                   <div>
                     <label htmlFor="listing-distance" className="block text-xs font-medium text-lantern-text-secondary mb-1">Distance to Campus</label>
                     <input

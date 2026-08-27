@@ -36,11 +36,14 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
           onSignInRequired={promptSignIn}
           onBack={() => navigateToPath('/marketplace')}
           onNavigate={(screen, params) => {
-            if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-              navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
-            } else if (screen === 'SellerProfile' && params?.userId) {
-              navigateToPath(`/marketplace/seller/${encodeURIComponent(params.userId)}`);
-            } else {
+          if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+            navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
+          } else if (screen === 'SellerProfile' && params?.userId) {
+            navigateToPath(`/marketplace/seller/${encodeURIComponent(params.userId)}`);
+          } else if (screen === 'Marketplace') {
+            const node = params?.browseNodeId ? `?node=${encodeURIComponent(String(params.browseNodeId))}` : '';
+            navigateToPath(`/marketplace${node}`);
+          } else {
               promptSignIn();
             }
           }}
@@ -139,6 +142,8 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
       <MarketplaceScreen
         guestMode
         onSignInRequired={promptSignIn}
+        initialBrowseNodeId={new URLSearchParams(location.search).get('node') || ''}
+        onNavigateToDiscover={() => promptSignIn()}
         onNavigate={(screen, params) => {
           if (screen === 'MarketplaceListingDetail' && params?.listingId) {
             navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
@@ -147,6 +152,9 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
           } else if (screen === 'MarketplaceJobs') {
             // Jobs browsing is public — don't bounce guests to sign-in.
             navigateToPath('/marketplace/jobs');
+          } else if (screen === 'Marketplace') {
+            const node = params?.browseNodeId ? `?node=${encodeURIComponent(String(params.browseNodeId))}` : '';
+            navigateToPath(`/marketplace${node}`);
           } else {
             promptSignIn();
           }
@@ -164,7 +172,7 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
         Skip to main content
       </a>
       <header className="shrink-0 border-b border-lantern-border bg-lantern-surface/90 dark:bg-lantern-background/90 backdrop-blur sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
           <a href="/" className="flex items-center gap-2 min-w-0">
             <LanternIcon size={28} />
             <span className="font-semibold truncate">Lantern Study</span>
@@ -177,11 +185,6 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
               Get started
             </Button>
           </div>
-        </div>
-        <div className="max-w-6xl mx-auto px-4 pb-2">
-          <p className="text-xs text-lantern-text-secondary">
-            Browse listings across Nigeria. Sign in to buy, contact sellers, or list items.
-          </p>
         </div>
       </header>
       <main id="main-content" tabIndex={-1} className="flex-1 min-h-0 flex flex-col">
