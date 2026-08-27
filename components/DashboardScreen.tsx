@@ -1688,9 +1688,6 @@ export default function DashboardScreen({
                   <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary" />
                   Group performance
                 </h2>
-                <p className="text-xs text-lantern-text-secondary mt-1">
-                  Select one or more groups or subgroups. Archived groups are included, since their tests still count towards your totals. Metrics follow the period you pick below.
-                </p>
               </div>
               {/* min-w-0 + wrap, not flex-shrink-0: sm: is viewport-based, so
                   with the sidebar docked this row lives in a ~460px column at
