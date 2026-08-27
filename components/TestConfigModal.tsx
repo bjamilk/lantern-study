@@ -719,39 +719,6 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 -mr-1 space-y-4">
-        {/* Test Mode Features - Purple Theme */}
-        {mode === 'test' && (
-          <div className="p-4 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-lantern-primary/30">
-            <h3 className="font-semibold text-purple-800 dark:text-purple-200 mb-3 text-sm">Test Mode Features</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
-                <span className="mr-2">⏱️</span>
-                <span className="font-medium">Timed Test</span>
-              </div>
-              <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
-                <span className="mr-2">📊</span>
-                <span className="font-medium">Results Recorded</span>
-              </div>
-              <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
-                <span className="mr-2">🏆</span>
-                <span className="font-medium">Score & Stats</span>
-              </div>
-              <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
-                <span className="mr-2">📈</span>
-                <span className="font-medium">Dashboard Updates</span>
-              </div>
-              <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
-                <span className="mr-2">❓</span>
-                <span className="font-medium">Answers at End</span>
-              </div>
-              <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
-                <span className="mr-2">🎓</span>
-                <span className="font-medium">Exam Simulation</span>
-              </div>
-            </div>
-          </div>
-        )}
-        
         <form onSubmit={handleSubmit} className="space-y-6">
           {visibilityControl}
           {courseControl}
