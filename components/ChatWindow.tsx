@@ -7,8 +7,6 @@ import ReportContentModal from './moderation/ReportContentModal';
 import type { ContentReportTargetType } from '@lantern/shared';
 import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
 import GroupListItem from './GroupListItem';
-import { summarizeGroupChat } from '../services/ai';
-import { useCompanionStore } from '../stores/companionStore';
 import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSeparator, Tabs, TabList, Tab, TabPanel } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
@@ -175,7 +173,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const typingTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [hasMore, setHasMore] = useState(true);
-  const [isSummarizingChat, setIsSummarizingChat] = useState(false);
   const [awaitingMessages, setAwaitingMessages] = useState(false);
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
@@ -422,36 +419,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         error instanceof Error ? error.message : 'Could not remove message',
         'error'
       );
-    }
-  };
-
-  const handleSummarizeGroup = async () => {
-    if (!chat || chat.chatType !== 'group' || isSummarizingChat) return;
-    const groupName = (chat as Group).name || 'Group';
-    const msgTexts = messages
-      .filter(m => !m.isArchived && (m.text || m.questionStem))
-      .slice(-50)
-      .map(m => m.text || m.questionStem || '');
-    if (msgTexts.length === 0) { useToastStore.getState().showToast('No messages to summarize.', 'info'); return; }
-    setIsSummarizingChat(true);
-    try {
-      const { summary } = await summarizeGroupChat(chat.id, groupName);
-      if (!summary?.trim()) {
-        throw new Error('Summary was empty. Please try again.');
-      }
-      // Inject as assistant message after history loads — do not re-send to the AI
-      // (avoids a race with loadHistory wiping the panel and a second failed AI call).
-      useCompanionStore.getState().openWithAssistantMessage(
-        `Here's a summary of recent activity in #${groupName}:\n\n${summary.trim()}\n\nIs there anything specific from this you'd like help with?`
-      );
-      useToastStore.getState().showToast('Group chat summary ready in Lantern.', 'success');
-    } catch (err: unknown) {
-      const message = err instanceof Error && err.message
-        ? err.message
-        : 'Failed to summarize group chat. Please try again.';
-      useToastStore.getState().showToast(message, 'error');
-    } finally {
-      setIsSummarizingChat(false);
     }
   };
 
@@ -1694,7 +1661,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           <div className="flex items-center gap-1">
             {/* Quick-action toolbar for groups. Only the primary action (Question)
                 stays exposed on small screens; Test/Study fan out at lg+, and
-                everything else (visibility, Summarize) lives in the overflow menu
+                everything else (visibility, mute) lives in the overflow menu
                 so each action sits in exactly one place per breakpoint. */}
             {isGroup && group && !isArchived && (
               <div className="flex items-center gap-1 mr-2">
@@ -1809,14 +1776,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           AI Generate Questions
                         </MenuItem>
                       )}
-                      <MenuItem
-                        onSelect={() => handleDropdownAction(handleSummarizeGroup)}
-                        icon={<SparklesIcon className="w-4 h-4" />}
-                        className="text-lantern-primary"
-                        disabled={isSummarizingChat}
-                      >
-                        {isSummarizingChat ? 'Summarizing…' : 'Summarize Group Chat'}
-                      </MenuItem>
                       <MenuSeparator />
                       <MenuItem
                         onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}

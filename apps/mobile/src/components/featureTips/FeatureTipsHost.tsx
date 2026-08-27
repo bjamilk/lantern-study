@@ -55,7 +55,7 @@ export function FeatureTipsHost({
     setTipReady('chat.question', isGroupChat);
     setTipReady('chat.test', isGroupChat);
     setTipReady('chat.study', isGroupChat);
-    setTipReady('chat.summarize', isGroupChat);
+    setTipReady('chat.summarize', false);
     setTipReady('chat.aiGenerate', isGroupChat);
     setTipAllowed('chat.aiGenerate', isGroupAdmin);
 

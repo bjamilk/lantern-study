@@ -44,7 +44,6 @@ import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode
 import { useTheme } from '../../theme';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
-import { summarizeGroupChat } from '../../services/ai';
 import * as api from '../../services/api';
 import { navigateToTestTaking } from '../../navigation/navigationRef';
 import {
@@ -522,7 +521,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [showQuestionModal, setShowQuestionModal] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [showAIGenerate, setShowAIGenerate] = useState(false);
-  const [summarizing, setSummarizing] = useState(false);
   const [chatMuted, setChatMuted] = useState(false);
   const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
   const [muteBusy, setMuteBusy] = useState(false);
@@ -1257,27 +1255,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
     enabled: !!user?.id,
   });
 
-  const handleSummarize = async () => {
-    if (!user?.id || summarizing) return;
-    setSummarizing(true);
-    try {
-      const result = await summarizeGroupChat(groupId, displayName);
-      const summary = result?.summary?.trim();
-      if (!summary) {
-        throw new Error('Summary was empty. Please try again.');
-      }
-      Alert.alert(`Summary · ${displayName}`, summary);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : 'Failed to summarize chat.';
-      Alert.alert('Summarize failed', message);
-    } finally {
-      setSummarizing(false);
-    }
-  };
-
   const handleQuestionSubmit = async (question: any) => {
     if (!user?.id) throw new Error('You must be signed in to submit a question.');
     await submitQuestion(groupId, mapModalQuestionToPayload(question, user.id, user.user_metadata?.full_name || 'You'));
@@ -1345,14 +1322,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
     setTipReady('chat.question', true);
     setTipReady('chat.test', true);
     setTipReady('chat.study', true);
-    setTipReady('chat.summarize', true);
     setTipReady('chat.aiGenerate', true);
     setTipAllowed('chat.aiGenerate', isAdmin);
     return () => {
       setTipReady('chat.question', false);
       setTipReady('chat.test', false);
       setTipReady('chat.study', false);
-      setTipReady('chat.summarize', false);
       setTipReady('chat.aiGenerate', false);
       setTipAllowed('chat.aiGenerate', false);
     };
@@ -1475,15 +1450,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
           })),
         },
       },
-      {
-        id: 'summarize',
-        label: summarizing ? 'Summarizing…' : 'Summarize chat',
-        icon: 'sparkles-outline',
-        section: 'View',
-        onPress: () => void handleSummarize(),
-        disabled: summarizing,
-        iconColor: '#a855f7',
-      },
       // Notifications.
       chatMuted
         ? {
@@ -1537,7 +1503,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, [
     isAdmin,
     isArchived,
-    summarizing,
     colors.warning,
     questionVisibilityMode,
     setQuestionVisibilityMode,
