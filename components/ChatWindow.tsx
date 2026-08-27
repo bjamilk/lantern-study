@@ -9,7 +9,7 @@ import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
 import GroupListItem from './GroupListItem';
 import { summarizeGroupChat } from '../services/ai';
 import { useCompanionStore } from '../stores/companionStore';
-import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator, Tabs, TabList, Tab, TabPanel } from './ui';
+import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSeparator, Tabs, TabList, Tab, TabPanel } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { useUIStore } from '../stores/uiStore';
@@ -158,6 +158,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [questionFiltersOpen, setQuestionFiltersOpen] = useState(false);
   // "Report…" target: a group message (hover bar) or the DM peer (header menu).
   const [reportTarget, setReportTarget] = useState<{
     type: ContentReportTargetType;
@@ -222,6 +223,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       setAwaitingMessages(false);
     }
   }, [messages.length, chat?.id]);
+
+  useEffect(() => {
+    if (!isDropdownOpen) {
+      setQuestionFiltersOpen(false);
+      return;
+    }
+    setQuestionFiltersOpen(questionVisibilityMode !== 'all');
+  }, [isDropdownOpen, questionVisibilityMode]);
 
   useEffect(() => {
     if (!chat) return;
@@ -1708,25 +1717,28 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     Group Info & Members
                   </MenuItem>
                   <MenuSeparator />
-                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
-                    Questions
-                  </div>
-                  {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
-                    <MenuItem
-                      key={opt.value}
-                      onSelect={() =>
-                        handleDropdownAction(() => setQuestionVisibilityMode(opt.value))
-                      }
-                      className={
-                        questionVisibilityMode === opt.value
-                          ? 'text-lantern-primary font-medium'
-                          : undefined
-                      }
-                    >
-                      {opt.label}
-                      {questionVisibilityMode === opt.value ? ' ✓' : ''}
-                    </MenuItem>
-                  ))}
+                  <MenuSubmenu
+                    label="All questions"
+                    open={questionFiltersOpen}
+                    onOpenChange={setQuestionFiltersOpen}
+                  >
+                    {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
+                      <MenuItem
+                        key={opt.value}
+                        onSelect={() =>
+                          handleDropdownAction(() => setQuestionVisibilityMode(opt.value))
+                        }
+                        className={`pl-8 ${
+                          questionVisibilityMode === opt.value
+                            ? 'text-lantern-primary font-medium'
+                            : ''
+                        }`}
+                      >
+                        {opt.label}
+                        {questionVisibilityMode === opt.value ? ' ✓' : ''}
+                      </MenuItem>
+                    ))}
+                  </MenuSubmenu>
                   <MenuSeparator />
                   <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
                     Notifications

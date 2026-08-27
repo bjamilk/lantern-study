@@ -1443,9 +1443,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
   const isArchived = !!group?.isArchived;
-  const currentFilterLabel =
-    QUESTION_VISIBILITY_MODE_OPTIONS.find((o) => o.value === questionVisibilityMode)?.label ??
-    'All questions';
 
   const headerMenuActions = useMemo((): GroupChatHeaderAction[] => {
     const actions: GroupChatHeaderAction[] = [
@@ -1473,16 +1470,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
           setShowTestConfig(true);
         },
       },
-      // View — display preferences & insights. The 4-way question filter is
-      // collapsed into one row that opens a sub-list carrying each option's
-      // helper text (mobile used to drop the helpers entirely).
+      // View — display preferences & insights. Nested under All questions so
+      // Verified / Unverified / Hide all are not top-level siblings.
       {
         id: 'question-filter',
-        label: `Question filter: ${currentFilterLabel}`,
+        label: 'All questions',
         icon: 'filter-outline',
         section: 'View',
         submenu: {
-          title: 'Question filter',
+          title: 'All questions',
           options: QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => ({
             id: `qvis-${opt.value}`,
             label: opt.label,
@@ -1550,7 +1546,6 @@ export function GroupChatScreen({ navigation, route }: Props) {
     summarizing,
     colors.warning,
     questionVisibilityMode,
-    currentFilterLabel,
     setQuestionVisibilityMode,
     chatMuted,
     muteUntilLabel,

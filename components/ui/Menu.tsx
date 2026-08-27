@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useMenuKeyboard } from '../../hooks/useMenuKeyboard';
 import { useDismissableLayer } from '../../hooks/useDismissableLayer';
 
@@ -227,6 +228,7 @@ export function MenuItem({
   icon,
   destructive,
   disabled,
+  closeOnSelect = true,
   className = '',
   onClick,
   ...rest
@@ -236,6 +238,8 @@ export function MenuItem({
   icon?: React.ReactNode;
   destructive?: boolean;
   disabled?: boolean;
+  /** When false, keep the parent menu open (used by nested submenu triggers). */
+  closeOnSelect?: boolean;
   className?: string;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const ctx = useMenuContext();
@@ -259,12 +263,69 @@ export function MenuItem({
         onClick?.(event);
         if (disabled || event.defaultPrevented) return;
         onSelect?.();
-        ctx.closeMenu();
+        if (closeOnSelect) ctx.closeMenu();
       }}
     >
       {icon}
       {children}
     </button>
+  );
+}
+
+export function MenuSubmenu({
+  label,
+  icon,
+  children,
+  defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
+  className = '',
+}: {
+  label: React.ReactNode;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  className?: string;
+}) {
+  const ctx = useMenuContext();
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
+  const index = ctx.itemIndex();
+  const submenuId = useId();
+
+  return (
+    <div>
+      <button
+        ref={(el) => ctx.registerItem(index, el)}
+        type="button"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={submenuId}
+        className={`w-full text-left px-4 py-2.5 min-h-[44px] text-sm flex items-center gap-2.5 text-lantern-text hover:bg-lantern-background-secondary transition-colors ${className}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(!open);
+        }}
+      >
+        {icon}
+        <span className="flex-1 min-w-0">{label}</span>
+        <ChevronRightIcon
+          className={`w-4 h-4 flex-shrink-0 text-lantern-text-tertiary transition-transform ${
+            open ? 'rotate-90' : ''
+          }`}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <div id={submenuId} role="group" className="pb-0.5">
+          {children}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
