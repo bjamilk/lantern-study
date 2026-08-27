@@ -25,6 +25,9 @@ export interface MasteryPanelProps {
   className?: string;
 }
 
+/** Dashboard “Your topics” card. Mastery screens and library topics stay available. */
+export const SHOW_DASHBOARD_MASTERY_PANEL = false;
+
 const BAND_STYLES: Record<string, string> = {
   unknown: 'bg-lantern-background-secondary text-lantern-text-secondary',
   weak: 'bg-red-500/10 text-red-600 dark:text-red-400',

@@ -64,7 +64,7 @@ import {
   readAcademicSetupDismissed,
   markAcademicSetupDismissed,
 } from '../utils/academicSetup';
-import MasteryPanel from './MasteryPanel';
+import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 
@@ -1525,9 +1525,11 @@ export default function DashboardScreen({
           Achievements & Topic Insights. The FEED does not belong here and is
           rendered above, outside the collapsible.
         */}
-        <div className="mb-6">
-          <MasteryPanel />
-        </div>
+        {SHOW_DASHBOARD_MASTERY_PANEL && (
+          <div className="mb-6">
+            <MasteryPanel />
+          </div>
+        )}
 
         <details open className="group">
           <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
