@@ -44,6 +44,11 @@ export interface CommunityDetail extends Community {
   isMember: boolean;
   /** Present when the viewer is a member — drives Hide vs Leave. */
   source?: MyCommunity['source'] | null;
+  /**
+   * Persistent lounge group id. Members only — non-members get null so the
+   * hangout thread is not addressable until they join the community.
+   */
+  loungeGroupId?: string | null;
 }
 
 export interface DiscoverGroup {

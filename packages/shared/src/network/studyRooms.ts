@@ -43,6 +43,11 @@ export interface StudyRoom {
 export interface StudyRoomDetail extends StudyRoom {
   participants: StudyRoomParticipant[];
   joined: boolean;
+  /**
+   * Private hangout group for this room. Participants only — non-participants
+   * get null and see Join room rather than the thread.
+   */
+  groupId?: string | null;
 }
 
 export interface JoinOrCreateStudyRoomInput {
