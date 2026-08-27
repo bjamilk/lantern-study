@@ -8,6 +8,7 @@ import {
   fetchStudyPackDraft,
   deleteStudyPackDraft,
 } from '../../services/api';
+import { waitForNoteOcr } from '../../services/notes';
 import type { StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/marketplace';
 import { summarizeStudyPackCounts, STUDY_PACK_DRAFT_CREDITS } from '@lantern/shared/marketplace';
 import { PublishStudyPackModal } from '../settings/PublishStudyPackModal';
@@ -49,14 +50,23 @@ export function StudyProductDraftsScreen({
   useEffect(() => {
     if (!source || createdRef.current) return;
     createdRef.current = true;
-    void createStudyPackDraft(source)
-      .catch((e: unknown) => Alert.alert('Error', e instanceof Error ? e.message : 'Could not start the study product'))
-      .finally(() => {
-        // Retire the route param: returning to this screen must never re-spend
-        // credits regenerating the same draft.
+    void (async () => {
+      try {
+        for (const id of source.noteIds || []) {
+          try {
+            await waitForNoteOcr(id);
+          } catch {
+            /* factory also waits */
+          }
+        }
+        await createStudyPackDraft(source);
+      } catch (e: unknown) {
+        Alert.alert('Error', e instanceof Error ? e.message : 'Could not start the study product');
+      } finally {
         navigation.setParams?.({ source: undefined });
         void load();
-      });
+      }
+    })();
   }, [source, load, navigation]);
 
   useEffect(() => {

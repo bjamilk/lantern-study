@@ -103,6 +103,11 @@ export const validateCreateGroup = [
   body('memberIds').optional().isArray().withMessage('Member IDs must be an array'),
   body('memberIds.*').optional().isUUID().withMessage('Each member ID must be a valid UUID'),
   courseIdBodyRule(),
+  body('visibility')
+    .optional()
+    .isIn(['private', 'community', 'public'])
+    .withMessage('visibility must be private, community or public'),
+  body('communityId').optional({ nullable: true }).isUUID().withMessage('Invalid communityId'),
 ];
 
 export const validateUpdateGroup = [

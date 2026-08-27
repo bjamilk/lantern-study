@@ -3,7 +3,7 @@
  * Manages marketplace listings and favorites with local-first pattern
  */
 import { create } from 'zustand';
-import { isMarketplaceListingStatus } from '@lantern/shared/marketplace';
+import { browseListingCategories, isMarketplaceListingStatus } from '@lantern/shared/marketplace';
 import type { MarketplaceListingStatus } from '@lantern/shared/marketplace';
 import type { ListingAppealStatus, ListingRightsStatus } from '@lantern/shared/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -412,24 +412,35 @@ export type MarketplaceCategory =
 
 export type MarketplaceTab = 'academic' | 'student-life' | 'shops';
 
-export const ACADEMIC_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] = [
-  { id: 'textbook_exchange', name: 'Textbooks', icon: 'book' },
-  { id: 'pq_bank', name: 'Past Questions', icon: 'sparkles' },
-  { id: 'study_pack', name: 'Study Packs', icon: 'albums' },
-  { id: 'lecture_notes', name: 'Lecture Notes', icon: 'document-text' },
-  { id: 'project_thesis', name: 'Projects & Thesis', icon: 'briefcase' },
-  { id: 'data_collection', name: 'Data Collection', icon: 'chart-bar' },
-  { id: 'equipment_rental', name: 'Lab Equipment', icon: 'beaker' },
-];
+const BROWSE_ICONS: Record<string, string> = {
+  textbook_exchange: 'book',
+  pq_bank: 'sparkles',
+  study_pack: 'albums',
+  lecture_notes: 'document-text',
+  project_thesis: 'briefcase',
+  data_collection: 'chart-bar',
+  equipment_rental: 'beaker',
+  accommodation: 'home',
+  travel_transport: 'car',
+  personal_goods: 'gift',
+  aso_ebi: 'shirt-outline',
+  campus_services: 'people',
+  events_social: 'ticket',
+};
 
-export const STUDENT_LIFE_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] = [
-  { id: 'accommodation', name: 'Accommodation', icon: 'home' },
-  { id: 'travel_transport', name: 'Transportation', icon: 'car' },
-  { id: 'personal_goods', name: 'Personal Goods', icon: 'gift' },
-  { id: 'aso_ebi', name: 'Fashion', icon: 'shirt-outline' },
-  { id: 'campus_services', name: 'Campus Services', icon: 'people' },
-  { id: 'events_social', name: 'Events & Social', icon: 'ticket' },
-];
+export const ACADEMIC_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] =
+  browseListingCategories('academic').map((row) => ({
+    id: row.id as MarketplaceCategory,
+    name: row.name,
+    icon: BROWSE_ICONS[row.id] || 'book',
+  }));
+
+export const STUDENT_LIFE_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] =
+  browseListingCategories('student-life').map((row) => ({
+    id: row.id as MarketplaceCategory,
+    name: row.name,
+    icon: BROWSE_ICONS[row.id] || 'gift',
+  }));
 
 // Mock data for demo mode
 const DEMO_LISTINGS: MarketplaceListing[] = [

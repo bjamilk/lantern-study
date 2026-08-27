@@ -28,6 +28,7 @@ export const initialUserStats: UserStats = {
     listingsSold: 0,
     fiveStarReviews: 0,
     offersMade: 0,
+    campusAmbassador: 0,
 };
 
 // FIX: Added a trailing comma to the generic type parameter to avoid being parsed as a JSX tag.

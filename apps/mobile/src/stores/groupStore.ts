@@ -90,6 +90,8 @@ export interface CreateGroupInput {
   parentId?: string;
   /** Academic archive: the course this group studies. */
   courseId?: string | null;
+  visibility?: 'private' | 'community' | 'public';
+  communityId?: string | null;
   memberIds?: string[];
   memberDetails?: Array<{
     id: string;
@@ -107,6 +109,8 @@ export interface Group {
   parentId?: string;
   /** Academic archive: groups.course_id. */
   courseId?: string | null;
+  visibility?: 'private' | 'community' | 'public';
+  communityId?: string | null;
   adminIds?: string[];
   /**
    * Server-side invite token. Distinct from `id` — invite links must carry this,
@@ -207,6 +211,8 @@ function mapApiGroup(g: any, unreadCounts: Record<string, number>): Group {
     ownerId: adminIds[0] || '',
     parentId: g.parent_id || g.parentId,
     courseId: g.course_id ?? g.courseId ?? null,
+    visibility: g.visibility || 'private',
+    communityId: g.community_id ?? g.communityId ?? null,
     adminIds,
     inviteId: g.invite_id || g.inviteId,
     members: mappedMembers,
@@ -325,7 +331,12 @@ interface GroupState {
   ) => Promise<Message[] | DirectMessage[]>;
   applyPeerChatRead: (payload: { chatId: string; userId: string; lastReadAt: string }) => void;
 
-  updateGroupDetails: (groupId: string, name: string, description: string) => Promise<void>;
+  updateGroupDetails: (
+    groupId: string,
+    name: string,
+    description: string,
+    discovery?: { visibility?: 'private' | 'community' | 'public'; communityId?: string | null }
+  ) => Promise<void>;
   promoteToAdmin: (groupId: string, userId: string) => Promise<void>;
   demoteAdmin: (groupId: string, userId: string) => Promise<void>;
   promoteGroupAdmin: (groupId: string, userId: string) => Promise<void>;
@@ -1235,6 +1246,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         userId: groupInput.ownerId,
         memberIds: selectedMemberIds,
         ...(groupInput.courseId ? { courseId: groupInput.courseId } : {}),
+        ...(groupInput.visibility ? { visibility: groupInput.visibility } : {}),
+        ...(groupInput.communityId !== undefined ? { communityId: groupInput.communityId } : {}),
       });
 
       let persistedAvatarUrl = apiGroup.avatar_url || (apiGroup as any).avatarUrl || createAvatarUrl;
@@ -1304,17 +1317,43 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   // Admin actions
-  updateGroupDetails: async (groupId: string, name: string, description: string) => {
+  updateGroupDetails: async (
+    groupId: string,
+    name: string,
+    description: string,
+    discovery?: { visibility?: 'private' | 'community' | 'public'; communityId?: string | null }
+  ) => {
     try {
-      await api.updateGroup(groupId, { name, description });
-      const groups = get().groups.map(g => 
-        g.id === groupId ? { ...g, name, description, updatedAt: new Date().toISOString() } : g
+      await api.updateGroup(groupId, {
+        name,
+        description,
+        ...(discovery?.visibility ? { visibility: discovery.visibility } : {}),
+        ...(discovery && 'communityId' in discovery ? { communityId: discovery.communityId ?? null } : {}),
+      });
+      const groups = get().groups.map(g =>
+        g.id === groupId
+          ? {
+              ...g,
+              name,
+              description,
+              updatedAt: new Date().toISOString(),
+              ...(discovery?.visibility ? { visibility: discovery.visibility } : {}),
+              ...(discovery && 'communityId' in discovery ? { communityId: discovery.communityId ?? null } : {}),
+            }
+          : g
       );
       const currentGroup = get().currentGroup;
       set({ 
         groups,
         currentGroup: currentGroup?.id === groupId 
-          ? { ...currentGroup, name, description, updatedAt: new Date().toISOString() }
+          ? {
+              ...currentGroup,
+              name,
+              description,
+              updatedAt: new Date().toISOString(),
+              ...(discovery?.visibility ? { visibility: discovery.visibility } : {}),
+              ...(discovery && 'communityId' in discovery ? { communityId: discovery.communityId ?? null } : {}),
+            }
           : currentGroup
       });
     } catch (error: any) {

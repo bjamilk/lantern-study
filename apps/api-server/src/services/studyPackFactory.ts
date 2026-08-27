@@ -23,21 +23,35 @@ import {
   generateEssayQuestionsFromNotes,
   generateListingDescription,
 } from './aiService';
+import { getLibrarySearchService } from './librarySearch';
+import { currentAcademicYear, isValidAcademicYear } from '@lantern/shared/academic';
+import { STUDY_PACK_DRAFT_CREDITS } from '@lantern/shared/marketplace';
+import type { SemesterPackProposal } from '@lantern/shared/marketplace';
 
 /** One AI credit charge per draft (contract §2). */
-export const STUDY_PACK_DRAFT_CREDIT_COST = 5;
+export const STUDY_PACK_DRAFT_CREDIT_COST = STUDY_PACK_DRAFT_CREDITS;
 
 const MAX_SOURCE_NOTES = 12;
 const MAX_SUMMARY_SOURCES = 8;
 const MAX_FLASHCARDS = 60;
 const MAX_QUESTIONS = 40;
 const PRICE_CAP_NAIRA = 5000;
+const OCR_WAIT_ATTEMPTS = 6;
+const OCR_WAIT_MS = 2000;
 
 export interface CreateStudyPackDraftInput {
   noteIds?: string[];
   folderId?: string | null;
   courseId?: string | null;
   title?: string;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function attachmentIsProcessing(a: { metadata?: { extractionStatus?: string } }): boolean {
+  return a?.metadata?.extractionStatus === 'ocr_processing';
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -189,8 +203,8 @@ export class StudyPackFactoryService {
       .eq('id', draftId);
 
     try {
-      // 1. Resolve note content (+ attachments' extracted text).
       const noteIds = (Array.isArray(draft.source_note_ids) ? draft.source_note_ids : []).map(String);
+      await this.waitForSourceOcr(noteIds, userId);
       const sources: Array<{ title: string; body: string }> = [];
       for (const nid of noteIds) {
         try {
@@ -282,6 +296,14 @@ export class StudyPackFactoryService {
       // 6. Classification from the note's course (best-effort).
       const classification = await this.classify(String(draft.course_id || ''));
 
+      const examChecklist = this.buildExamChecklist(title, summaries, weakSections, classification);
+      const cover = {
+        title: title.slice(0, 120),
+        subtitle: [classification.courseCode, classification.level ? `Level ${classification.level}` : null]
+          .filter(Boolean)
+          .join(' · ') || 'Exam pack',
+      };
+
       // 7. Listing description.
       let description = '';
       try {
@@ -315,6 +337,8 @@ export class StudyPackFactoryService {
         flashcards,
         questions,
         weakSections,
+        examChecklist,
+        cover,
       };
 
       await this.db
@@ -405,6 +429,87 @@ export class StudyPackFactoryService {
     }
 
     return Math.round(byCounts * 100);
+  }
+
+  private buildExamChecklist(
+    title: string,
+    summaries: Array<{ title: string }>,
+    weakSections: Array<{ title: string }>,
+    classification: { courseCode?: string },
+  ): string[] {
+    const items: string[] = [];
+    const heading = classification.courseCode
+      ? `Know the ${classification.courseCode} outline for ${title}`
+      : `Know the outline for ${title}`;
+    items.push(heading);
+    for (const s of summaries.slice(0, 8)) {
+      items.push(`Review: ${s.title}`);
+    }
+    for (const w of weakSections.slice(0, 4)) {
+      items.push(`Fill gaps in: ${w.title}`);
+    }
+    items.push('Work the practice questions without notes');
+    items.push('Recite the flashcards in both directions');
+    return items.slice(0, 16);
+  }
+
+  /** Photo/PDF OCR is async — wait briefly so a just-imported note is readable. */
+  private async waitForSourceOcr(noteIds: string[], userId: string): Promise<void> {
+    for (let attempt = 0; attempt < OCR_WAIT_ATTEMPTS; attempt++) {
+      let stillProcessing = false;
+      for (const nid of noteIds) {
+        try {
+          const attachments = await this.supabaseService.getNoteAttachments(nid);
+          if ((attachments || []).some(attachmentIsProcessing)) stillProcessing = true;
+        } catch {
+          /* ignore a missing note */
+        }
+      }
+      if (!stillProcessing) return;
+      await sleep(OCR_WAIT_MS);
+    }
+    logger.info('Study pack draft: proceeding with OCR still running', { noteIds, userId });
+  }
+
+  /**
+   * Phase 4 · S — propose one pack per enrolled course that has notes.
+   * Does not charge credits; the client shows cost then POSTs /draft sequentially.
+   */
+  async proposeSemester(
+    userId: string,
+    academicYearRaw?: string | null,
+  ): Promise<{ academicYear: string; proposals: SemesterPackProposal[] }> {
+    const academicYear =
+      academicYearRaw && isValidAcademicYear(academicYearRaw)
+        ? academicYearRaw
+        : currentAcademicYear();
+    const overview = await getLibrarySearchService(this.supabaseService).getOverview(userId);
+    const year = (overview.years || []).find((y) => y.academicYear === academicYear) || overview.years?.[0];
+    const resolvedYear = year?.academicYear || academicYear;
+    const proposals: SemesterPackProposal[] = [];
+    for (const node of year?.courses || []) {
+      if (node.enrolment?.status === 'archived') continue;
+      const noteCount = Number(node.counts?.notes || 0);
+      if (noteCount <= 0) continue;
+      const courseId = String(node.course.id);
+      const courseCode = String(node.course.code || 'Course');
+      const courseTitle = String(node.course.title || courseCode);
+      const classification = await this.classify(courseId);
+      const suggestedPriceKobo = await this.suggestPriceKobo(courseId, classification.institutionId, {
+        flashcards: Math.min(20, noteCount * 4),
+        questions: Math.min(15, noteCount * 3),
+      });
+      proposals.push({
+        courseId,
+        courseCode,
+        courseTitle,
+        noteCount,
+        suggestedTitle: `${courseCode} Complete Exam Pack`,
+        suggestedPriceKobo,
+        creditCost: STUDY_PACK_DRAFT_CREDIT_COST,
+      });
+    }
+    return { academicYear: resolvedYear, proposals };
   }
 
   async listDrafts(userId: string) {

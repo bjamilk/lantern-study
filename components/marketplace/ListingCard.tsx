@@ -4,6 +4,7 @@ import { MapPinIcon, ClockIcon, StarIcon } from '@heroicons/react/24/outline';
 import { HeartIcon } from '@heroicons/react/24/solid';
 import { featureAccents } from '@lantern/shared/design';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
+import { listingConditionLabel, listingTypeLabel, lowStockLabel } from '@lantern/shared/marketplace';
 
 export interface ListingCardProps {
   listing: MarketplaceListing;
@@ -13,6 +14,7 @@ export interface ListingCardProps {
   CategoryIcon: React.ComponentType<{ className?: string }>;
   onPress: () => void;
   onToggleFavorite: (e: React.MouseEvent) => void;
+  viewerCampusId?: string | null;
 }
 
 // Off-screen cards skip layout/paint work entirely; the intrinsic size keeps the
@@ -24,26 +26,6 @@ const cardRenderStyle: React.CSSProperties = {
 
 // Values written by the create flow are hyphenated; underscore variants are the
 // API's Joi enum. Accept both so the chip labels correctly whichever is present.
-const CONDITION_LABELS: Record<string, string> = {
-  new: 'New',
-  'like-new': 'Like New',
-  like_new: 'Like New',
-  good: 'Good',
-  fair: 'Fair',
-  poor: 'Poor',
-};
-
-/** Read the item condition from whichever field shape the payload carries. */
-const readListingCondition = (listing: MarketplaceListing): string | null => {
-  const fields = (listing.category_specific_fields ?? listing.categorySpecificFields) as
-    | Record<string, unknown>
-    | undefined;
-  const raw = fields?.condition;
-  if (typeof raw !== 'string' || !raw.trim()) return null;
-  const key = raw.trim();
-  return CONDITION_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
-};
-
 /** Compact "posted X ago" freshness, mirroring Jiji/Vinted tiles. */
 const formatPostedAge = (iso?: string): string => {
   if (!iso) return '';
@@ -70,14 +52,18 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
   CategoryIcon,
   onPress,
   onToggleFavorite,
+  viewerCampusId,
 }) => {
   const avgRating =
     listing.reviews && listing.reviews.length > 0
       ? listing.reviews.reduce((sum, r) => sum + r.rating, 0) / listing.reviews.length
       : 0;
 
-  const conditionLabel = readListingCondition(listing);
+  const typeLabel = listingTypeLabel(listing, categoryName);
+  const conditionLabel = listingConditionLabel(listing);
   const postedAge = formatPostedAge(listing.created_at);
+  const stockLabel = lowStockLabel(listing.quantity);
+  const sameCampus = Boolean(viewerCampusId && listing.campus_id && viewerCampusId === listing.campus_id);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -137,8 +123,14 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           style={{ borderLeft: `2px solid ${featureAccents.marketplace}` }}
         >
           <CategoryIcon className="w-3 h-3 shrink-0" />
-          <span className="truncate">{categoryName}</span>
+          <span className="truncate">{typeLabel}</span>
         </span>
+
+        {listing.is_on_sale && !isOwner ? (
+          <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-lantern-error text-[10px] font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
+            {listing.promo_label || 'Deal'}
+          </span>
+        ) : null}
 
         {listing.status === 'reserved' ? (
           <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-amber-500/95 text-[10px] font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
@@ -209,6 +201,16 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
               {conditionLabel}
             </span>
           ) : null}
+          {sameCampus ? (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">
+              Your campus
+            </span>
+          ) : null}
+          {stockLabel ? (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200 font-medium">
+              {stockLabel}
+            </span>
+          ) : null}
           {listing.location ? (
             <span className="flex items-center gap-0.5 truncate min-w-0">
               <MapPinIcon className="w-3 h-3 shrink-0" />
@@ -239,5 +241,6 @@ export const ListingCard = React.memo(
     prev.isFavorite === next.isFavorite &&
     prev.isOwner === next.isOwner &&
     prev.categoryName === next.categoryName &&
-    prev.CategoryIcon === next.CategoryIcon
+    prev.CategoryIcon === next.CategoryIcon &&
+    prev.viewerCampusId === next.viewerCampusId
 );

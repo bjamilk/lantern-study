@@ -8,6 +8,7 @@ import {
   fetchMarketplaceShops,
 } from '../services/supabase';
 import { RateLimitError } from '@lantern/shared';
+import { browseListingCategories, browseFilterForNode, customCategoryName, getTaxonomyNode, getTaxonomyPath, isCustomListingCategory, listingTypeLabel } from '@lantern/shared/marketplace';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import type { MarketplaceCampus } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
@@ -18,6 +19,9 @@ import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBann
 import { ListingCard } from './marketplace/ListingCard';
 import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
+import MarketplaceSearchSuggest from './marketplace/MarketplaceSearchSuggest';
+import { MarketplaceBrowseTree } from './marketplace/MarketplaceBrowseTree';
+import { MarketplaceListingRail } from './marketplace/MarketplaceListingRail';
 import DiscoverWorkspaceBar from './discover/DiscoverWorkspaceBar';
 import {
   buildMarketplaceSavedSearchFilters,
@@ -26,7 +30,6 @@ import {
 } from './marketplace/marketplaceSearchFilters';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
 import {
-  MagnifyingGlassIcon,
   ClockIcon,
   AcademicCapIcon,
   BriefcaseIcon,
@@ -37,6 +40,8 @@ import {
   SparklesIcon,
   FunnelIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
+  MapPinIcon,
   BookmarkIcon,
   TrashIcon,
   PlusIcon,
@@ -58,6 +63,10 @@ interface MarketplaceScreenProps {
   onSignInRequired?: () => void;
   /** Bump after create/edit so the browse grid reloads without a manual refresh. */
   refreshKey?: number;
+  /** Restore aisle browse when returning from a listing breadcrumb. */
+  initialBrowseNodeId?: string;
+  initialTab?: 'academic' | 'student-life' | 'shops';
+  initialCategory?: string;
 }
 
 const RECENT_SEARCHES_KEY = 'lantern_marketplace_recent_searches';
@@ -94,9 +103,15 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   guestMode = false,
   onSignInRequired,
   refreshKey = 0,
+  initialBrowseNodeId = '',
+  initialTab,
+  initialCategory = '',
 }) => {
   const { currentUser } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'academic' | 'student-life' | 'shops'>('academic');
+  const initialNode = initialBrowseNodeId ? getTaxonomyNode(initialBrowseNodeId) : undefined;
+  const [activeTab, setActiveTab] = useState<'academic' | 'student-life' | 'shops'>(
+    initialTab || (initialNode?.department === 'student-life' ? 'student-life' : 'academic'),
+  );
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [shops, setShops] = useState<MarketplaceShopCard[]>([]);
   const [shopsLoading, setShopsLoading] = useState(false);
@@ -104,11 +119,13 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [recentSearches, setRecentSearches] = useState<string[]>(() => readRecentSearches());
-  // The search input is uncontrolled (defaultValue); bump this to re-mount it
-  // whenever the applied term is set programmatically (recent-search chip,
-  // saved search) — see applySearchTerm.
+  // SearchSuggest is controlled internally; bump this key when the applied
+  // term is set programmatically (recent-search chip, saved search).
   const [searchInputKey, setSearchInputKey] = useState(0);
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
+  const [browseNodeId, setBrowseNodeId] = useState<string>(initialNode ? initialBrowseNodeId : '');
+  const [showBrowseTree, setShowBrowseTree] = useState(Boolean(initialNode));
+  const [dealListings, setDealListings] = useState<MarketplaceListing[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -138,24 +155,30 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [primaryListingsLoaded, setPrimaryListingsLoaded] = useState(false);
 
-  const academicCategories = [
-    { id: 'textbook_exchange', name: 'Textbooks', icon: AcademicCapIcon },
-    { id: 'pq_bank', name: 'Past Questions', icon: SparklesIcon },
-    { id: 'study_pack', name: 'Study Packs', icon: RectangleStackIcon },
-    { id: 'lecture_notes', name: 'Lecture Notes', icon: BriefcaseIcon },
-    { id: 'project_thesis', name: 'Projects & Thesis', icon: BriefcaseIcon },
-    { id: 'data_collection', name: 'Data Collection', icon: HomeIcon },
-    { id: 'equipment_rental', name: 'Lab Equipment', icon: ShoppingBagIcon }
-  ];
+  const categoryIcons: Record<string, typeof AcademicCapIcon> = {
+    textbook_exchange: AcademicCapIcon,
+    pq_bank: SparklesIcon,
+    study_pack: RectangleStackIcon,
+    lecture_notes: BriefcaseIcon,
+    project_thesis: BriefcaseIcon,
+    data_collection: HomeIcon,
+    equipment_rental: ShoppingBagIcon,
+    accommodation: HomeIcon,
+    travel_transport: TruckIcon,
+    personal_goods: SparklesIcon,
+    aso_ebi: ShoppingBagIcon,
+    campus_services: BriefcaseIcon,
+    events_social: TicketIcon,
+  };
 
-  const studentLifeCategories = [
-    { id: 'accommodation', name: 'Accommodation', icon: HomeIcon },
-    { id: 'travel_transport', name: 'Transportation', icon: TruckIcon },
-    { id: 'personal_goods', name: 'Personal Goods', icon: SparklesIcon },
-    { id: 'aso_ebi', name: 'Fashion', icon: ShoppingBagIcon },
-    { id: 'campus_services', name: 'Campus Services', icon: BriefcaseIcon },
-    { id: 'events_social', name: 'Events & Social', icon: TicketIcon }
-  ];
+  const academicCategories = browseListingCategories('academic').map((row) => ({
+    ...row,
+    icon: categoryIcons[row.id] || AcademicCapIcon,
+  }));
+  const studentLifeCategories = browseListingCategories('student-life').map((row) => ({
+    ...row,
+    icon: categoryIcons[row.id] || BriefcaseIcon,
+  }));
 
   const userCampusId = useMemo(() => {
     if (!currentUser?.settings) return null;
@@ -193,7 +216,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     if (!guestMode) {
       loadFavorites();
     }
-  }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter, guestMode, refreshKey]);
+  }, [activeTab, searchTerm, selectedCategory, browseNodeId, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter, guestMode, refreshKey]);
 
   useEffect(() => {
     if (activeTab !== 'shops') return;
@@ -230,6 +253,36 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     if (guestMode || !primaryListingsLoaded) return;
     void loadRecentlyViewed();
   }, [primaryListingsLoaded, guestMode]);
+
+  useEffect(() => {
+    if (activeTab === 'shops' || searchTerm || selectedCategory || browseNodeId) {
+      setDealListings([]);
+      return;
+    }
+    let cancelled = false;
+    const categories = (activeTab === 'academic' ? academicCategories : studentLifeCategories).map((row) => row.id);
+    void fetchMarketplaceListingsPage({
+      page: 1,
+      limit: 8,
+      sortBy: 'sale_first',
+      sortOrder: 'desc',
+      categories,
+      includeCustom: true,
+      country_code: 'NG',
+      campus_id: campusIdFilter || undefined,
+      responseProfile: 'compact',
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setDealListings((data || []).filter((row) => row.is_on_sale).slice(0, 8));
+      })
+      .catch(() => {
+        if (!cancelled) setDealListings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, searchTerm, selectedCategory, browseNodeId, campusIdFilter, refreshKey]);
 
   const loadCategoryAnalytics = async () => {
     try {
@@ -339,6 +392,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setConditionFilter(restored.condition);
     setSortBy(restored.sortBy);
     setSortOrder(restored.sortOrder);
+    setBrowseNodeId('');
     setShowSavedSearches(false);
   };
 
@@ -373,7 +427,18 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       };
 
       if (searchTerm) filters.search = searchTerm;
-      if (selectedCategory) filters.category = selectedCategory;
+      const browseFilter = browseNodeId ? browseFilterForNode(browseNodeId) : null;
+      if (browseFilter?.category) {
+        filters.category = browseFilter.category;
+        if (browseFilter.taxonomyNodeId) {
+          filters.taxonomyNodeId = browseFilter.taxonomyNodeId;
+          if (browseFilter.includeUnclassified) filters.includeUnclassified = true;
+        }
+      } else if (browseFilter?.categories?.length) {
+        filters.categories = browseFilter.categories;
+      } else if (selectedCategory) {
+        filters.category = selectedCategory;
+      }
       if (minPrice) filters.minPrice = parseFloat(minPrice);
       if (maxPrice) filters.maxPrice = parseFloat(maxPrice);
       if (locationFilter) filters.location = locationFilter;
@@ -388,7 +453,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       filters.responseProfile = 'compact';
 
       // Tab filtering happens server-side so pages come back full.
-      if (!selectedCategory) {
+      if (!selectedCategory && !browseFilter) {
         filters.categories = (activeTab === 'academic' ? academicCategories : studentLifeCategories).map(c => c.id);
         filters.includeCustom = true;
       }
@@ -573,14 +638,28 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   };
 
   const getCategoryName = (categoryId: string) => {
-    if (categoryId.startsWith('custom:')) return categoryId.replace('custom:', '');
+    if (isCustomListingCategory(categoryId)) return customCategoryName(categoryId);
     const category = allCategories.find(cat => cat.id === categoryId);
     return category ? category.name : categoryId;
   };
 
   const selectCategory = (categoryId: string) => {
     setSelectedCategory(categoryId);
+    setBrowseNodeId('');
     setShowCategoryPanel(false);
+  };
+
+  const selectBrowseNode = (nodeId: string) => {
+    setBrowseNodeId(nodeId);
+    if (!nodeId) {
+      setSelectedCategory('');
+      return;
+    }
+    const filter = browseFilterForNode(nodeId);
+    setSelectedCategory(filter?.category || '');
+    if (filter?.department && filter.department !== activeTab && activeTab !== 'shops') {
+      setActiveTab(filter.department);
+    }
   };
 
   const categoryChipClass = (isSelected: boolean) =>
@@ -597,7 +676,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       <div
         role="radiogroup"
         aria-label="Marketplace category"
-        className={`gap-1.5 md:gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x min-w-0 max-w-full ${showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4' : 'hidden'} md:flex md:items-stretch`}
+        className={`gap-1.5 md:gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x min-w-0 max-w-full ${
+          showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4 md:flex md:items-stretch' : 'hidden'
+        }`}
       >
         <button
           type="button"
@@ -676,39 +757,22 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         </div>
       )}
 
-      {recentlyViewed.length > 0 && !searchTerm && !selectedCategory && !minPrice && !maxPrice && !locationFilter && !campusIdFilter && (
-        <div className="mb-4">
-          <h3 className="text-xs sm:text-sm font-semibold text-lantern-text mb-2 flex items-center gap-1.5">
-            <ClockIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            Recently Viewed
-          </h3>
-          <div className="max-w-full overflow-x-auto scrollbar-none">
-            <div className="flex gap-3 pb-2 w-max pr-2">
-              {recentlyViewed.map(item => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleListingClick(item)}
-                  className="flex-shrink-0 w-28 sm:w-36 md:w-40 bg-lantern-surface rounded-lg sm:rounded-xl overflow-hidden ring-1 ring-lantern-border hover:ring-lantern-primary/30 transition-all text-left group"
-                >
-                  <div className="aspect-[4/3] bg-lantern-background-secondary overflow-hidden">
-                    {item.images && item.images.length > 0 ? (
-                      <img src={item.images[0]} alt={item.title} className="w-full h-full max-w-full object-cover group-hover:scale-105 transition-transform duration-300" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBagIcon className="w-6 h-6 text-lantern-text-tertiary" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-2">
-                    <p className="text-xs font-semibold text-lantern-text line-clamp-1 group-hover:text-lantern-primary transition-colors">{item.title}</p>
-                    <p className="text-sm font-bold text-lantern-primary">{item.price ? `₦${item.price.toLocaleString()}` : 'Free'}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+      {recentlyViewed.length > 0 && !searchTerm && !selectedCategory && !browseNodeId && !minPrice && !maxPrice && !locationFilter && !campusIdFilter && (
+        <MarketplaceListingRail
+          title="Recently viewed"
+          icon={<ClockIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+          listings={recentlyViewed}
+          onPress={handleListingClick}
+        />
+      )}
+
+      {dealListings.length > 0 && !searchTerm && !selectedCategory && !browseNodeId && (
+        <MarketplaceListingRail
+          title="On sale now"
+          icon={<SparklesIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+          listings={dealListings}
+          onPress={handleListingClick}
+        />
       )}
 
       {rateLimitMessage && (
@@ -822,8 +886,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   !!currentUser?.id &&
                   (listing.user_id === currentUser.id || listing.seller_id === currentUser.id)
                 }
-                categoryName={getCategoryName(listing.category)}
+                categoryName={listingTypeLabel(listing, getCategoryName(listing.category))}
                 CategoryIcon={IconComponent}
+                viewerCampusId={userCampusId}
                 onPress={() => handleListingClick(listing)}
                 onToggleFavorite={e => toggleFavorite(listing.id, e)}
               />
@@ -865,122 +930,112 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-lantern-background">
-      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2 space-y-2">
+      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-1 space-y-2">
         <MarketplaceComplianceBanner />
-
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold text-lantern-text truncate">Explore</h1>
-            <p className="text-[11px] sm:text-xs text-lantern-text-secondary truncate">
-              Buy, sell, and find work across Nigeria
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Jobs is a full sibling surface, not a marketplace sub-feature —
-                give it equal billing so job seekers can actually find it. */}
-            <div
-              role="group"
-              aria-label="Explore section"
-              className="inline-flex rounded-lg border border-lantern-border bg-lantern-surface p-0.5"
-            >
-              <span
-                aria-current="page"
-                className="inline-flex items-center gap-1 rounded-md bg-lantern-primary px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-white shadow-sm"
-              >
-                <ShoppingBagIcon className="w-3.5 h-3.5" aria-hidden />
-                Goods
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigate('MarketplaceJobs')}
-                className="inline-flex items-center gap-1 rounded-md px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text transition-colors"
-              >
-                <BriefcaseIcon className="w-3.5 h-3.5" aria-hidden />
-                Jobs
-              </button>
-            </div>
-            {topCategories.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowPulse(v => !v)}
-                aria-expanded={showPulse}
-                className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-[11px] sm:text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 transition-colors"
-              >
-                Pulse
-                <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showPulse ? 'rotate-180' : ''}`} />
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <h1 className="sr-only">Marketplace</h1>
 
         {/*
-          Phase 3 L / decision D12: the marketplace is a TAB INSIDE Discover,
-          not a sibling of it. Rendering Discover's bar above the marketplace's
-          own workspace bar is what makes that nesting visible — without it the
-          marketplace reads as a dead end and users have no way back to the
-          network tabs except the sidebar.
+          Phase 3 L / decision D12: the marketplace is a TAB INSIDE Discover.
+          One underline row is the only section chrome — Goods/Jobs sit next
+          to search, and Orders/Cart/Selling live in More.
         */}
-        {onNavigateToDiscover && (
+        {onNavigateToDiscover ? (
           <DiscoverWorkspaceBar
             active="marketplace"
             onSelect={(sectionId) => {
               if (sectionId !== 'marketplace') onNavigateToDiscover(sectionId);
             }}
           />
-        )}
+        ) : null}
 
-        <MarketplaceWorkspaceBar
-          active="browse"
-          onNavigate={onNavigate}
-          onSell={guestMode ? undefined : handleCreateListing}
-          guestMode={guestMode}
-          onSignInRequired={onSignInRequired}
-          primaryLabel="Sell"
-          showFavorites={!guestMode}
-        />
-
-        <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full">
-          <div className="flex-1 min-w-0 w-full relative">
-            <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
-            <input
-              key={searchInputKey}
-              type="text"
-              aria-label={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search student essentials'}
-              placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
-              defaultValue={searchTerm}
-              onChange={e => handleSearchChange(e.target.value)}
-              className="w-full min-w-0 max-w-full box-border pl-8 sm:pl-10 pr-3 py-2 rounded-lantern bg-lantern-surface border border-lantern-border text-lantern-text placeholder-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary text-sm shadow-lantern"
-            />
+        <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full items-center">
+          <MarketplaceSearchSuggest
+            appliedQuery={searchTerm}
+            remountKey={searchInputKey}
+            department={activeTab === 'shops' ? undefined : activeTab}
+            recents={recentSearches}
+            placeholder={activeTab === 'academic' ? 'Search textbooks, notes, past questions…' : 'Search housing, fashion, rides…'}
+            ariaLabel={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search student essentials'}
+            onQueryChange={handleSearchChange}
+            onApplyQuery={applySearchTerm}
+            onSelectType={(suggestion) => {
+              setActiveTab(suggestion.department);
+              selectBrowseNode(suggestion.nodeId);
+              setShowBrowseTree(true);
+            }}
+          />
+          {userCampusId ? (
+            <button
+              type="button"
+              onClick={() => setCampusIdFilter((current) => (current === userCampusId ? '' : userCampusId))}
+              aria-pressed={campusIdFilter === userCampusId}
+              className={`shrink-0 h-9 px-2.5 rounded-lantern flex items-center gap-1 text-[11px] font-medium border transition-colors ${
+                campusIdFilter === userCampusId
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
+              }`}
+            >
+              <MapPinIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{campusIdFilter === userCampusId ? 'Your campus' : 'Shop campus'}</span>
+            </button>
+          ) : null}
+          <div
+            role="group"
+            aria-label="Goods or jobs"
+            className="hidden sm:inline-flex shrink-0 rounded-lg border border-lantern-border bg-lantern-surface p-0.5"
+          >
+            <span
+              aria-current="page"
+              className="inline-flex items-center gap-1 rounded-md bg-lantern-primary px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-white"
+            >
+              Goods
+            </span>
+            <button
+              type="button"
+              onClick={() => onNavigate('MarketplaceJobs')}
+              className="inline-flex items-center gap-1 rounded-md px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text transition-colors"
+            >
+              Jobs
+            </button>
           </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
             aria-label="Toggle filters"
             aria-expanded={showFilters}
-            className={`shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center gap-1 font-medium text-xs border transition-colors duration-150 ${
+            className={`shrink-0 h-9 w-9 min-w-[36px] rounded-lantern flex items-center justify-center border transition-colors duration-150 ${
               showFilters || activeFilterCount > 0
                 ? 'bg-lantern-primary text-white border-lantern-primary'
                 : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
             }`}
           >
             <FunnelIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Filters</span>
-            {activeFilterCount > 0 && (
-              <span className="ml-1 w-4 h-4 bg-lantern-surface text-lantern-primary text-[10px] items-center justify-center rounded-full hidden sm:flex">
-                {activeFilterCount}
-              </span>
-            )}
+            {activeFilterCount > 0 ? (
+              <span className="sr-only">{activeFilterCount} filters active</span>
+            ) : null}
           </button>
           {!guestMode ? (
             <button
               onClick={handleSaveCurrentSearch}
               disabled={savingSearch}
               aria-label="Save current search"
-              className="shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 disabled:opacity-50 transition-colors"
+              className="shrink-0 h-9 w-9 min-w-[36px] rounded-lantern flex items-center justify-center border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 disabled:opacity-50 transition-colors"
               title="Save current search"
             >
               <BookmarkIcon className="w-4 h-4" />
             </button>
           ) : null}
+          <MarketplaceWorkspaceBar
+            variant="toolbar"
+            active="browse"
+            onNavigate={onNavigate}
+            onSell={guestMode ? undefined : handleCreateListing}
+            guestMode={guestMode}
+            onSignInRequired={onSignInRequired}
+            primaryLabel="Sell"
+            showFavorites={!guestMode}
+            onPulse={topCategories.length > 0 ? () => setShowPulse(v => !v) : undefined}
+            pulseActive={showPulse}
+          />
         </div>
 
         {!searchTerm.trim() && recentSearches.length > 0 ? (
@@ -1060,6 +1115,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         onValueChange={(value) => {
           setActiveTab(value as 'academic' | 'student-life' | 'shops');
           setSelectedCategory('');
+          setBrowseNodeId('');
           setShowCategoryPanel(false);
         }}
         aria-label="Marketplace categories"
@@ -1073,7 +1129,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   value="academic"
                   index={0}
                   icon={<AcademicCapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
+                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Academic
                 </Tab>
@@ -1081,7 +1137,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   value="student-life"
                   index={1}
                   icon={<BriefcaseIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
+                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Student Life
                 </Tab>
@@ -1089,16 +1145,28 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   value="shops"
                   index={2}
                   icon={<BuildingStorefrontIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
+                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Shops
                 </Tab>
               </TabList>
+              {activeTab !== 'shops' ? (
+                <button
+                  type="button"
+                  onClick={() => setShowBrowseTree((value) => !value)}
+                  aria-expanded={showBrowseTree}
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
+                >
+                  Types
+                  <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showBrowseTree ? 'rotate-180' : ''}`} />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setShowCategoryPanel(v => !v)}
                 aria-expanded={showCategoryPanel}
-                className="md:hidden shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
+                aria-label="Marketplace category"
+                className="shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] sm:text-xs font-medium text-lantern-text-secondary"
               >
                 <span className="truncate">{activeCategoryLabel}</span>
                 <ChevronDownIcon className={`w-3.5 h-3.5 shrink-0 transition-transform ${showCategoryPanel ? 'rotate-180' : ''}`} />
@@ -1109,25 +1177,111 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
         <TabPanel value="academic" className="flex-1 flex flex-col min-h-0 min-w-0">
           {renderCategoryChips(academicCategories)}
+          {showBrowseTree ? (
+            <div className="lg:hidden px-3 pb-2 max-h-56 overflow-y-auto border-b border-lantern-border">
+              <MarketplaceBrowseTree
+                department="academic"
+                selectedNodeId={browseNodeId}
+                onSelectNode={selectBrowseNode}
+              />
+            </div>
+          ) : null}
           <div
             role="region"
             aria-label="Marketplace listings"
             data-testid="marketplace-listings"
             className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border"
           >
-            {marketplaceListingsBody}
+            <div className="flex gap-4 min-w-0">
+              {showBrowseTree ? (
+                <aside className="hidden lg:block w-56 shrink-0 pr-3 border-r border-lantern-border">
+                  <MarketplaceBrowseTree
+                    department="academic"
+                    selectedNodeId={browseNodeId}
+                    onSelectNode={selectBrowseNode}
+                  />
+                </aside>
+              ) : null}
+              <div className="flex-1 min-w-0">
+                {browseNodeId ? (
+                  <nav className="flex flex-wrap items-center gap-1 text-[11px] text-lantern-text-secondary mb-3" aria-label="Listing type">
+                    <button type="button" onClick={() => selectBrowseNode('')} className="hover:text-lantern-primary">
+                      Explore
+                    </button>
+                    {getTaxonomyPath(browseNodeId)
+                      .filter((node) => node.parentId)
+                      .map((node) => (
+                        <React.Fragment key={node.id}>
+                          <ChevronRightIcon className="w-3 h-3" />
+                          <button
+                            type="button"
+                            onClick={() => selectBrowseNode(node.id)}
+                            className={node.id === browseNodeId ? 'font-semibold text-lantern-text' : 'hover:text-lantern-primary'}
+                          >
+                            {node.label}
+                          </button>
+                        </React.Fragment>
+                      ))}
+                  </nav>
+                ) : null}
+                {marketplaceListingsBody}
+              </div>
+            </div>
           </div>
         </TabPanel>
 
         <TabPanel value="student-life" className="flex-1 flex flex-col min-h-0 min-w-0">
           {renderCategoryChips(studentLifeCategories)}
+          {showBrowseTree ? (
+            <div className="lg:hidden px-3 pb-2 max-h-56 overflow-y-auto border-b border-lantern-border">
+              <MarketplaceBrowseTree
+                department="student-life"
+                selectedNodeId={browseNodeId}
+                onSelectNode={selectBrowseNode}
+              />
+            </div>
+          ) : null}
           <div
             role="region"
             aria-label="Marketplace listings"
             data-testid="marketplace-listings"
             className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border"
           >
-            {marketplaceListingsBody}
+            <div className="flex gap-4 min-w-0">
+              {showBrowseTree ? (
+                <aside className="hidden lg:block w-56 shrink-0 pr-3 border-r border-lantern-border">
+                  <MarketplaceBrowseTree
+                    department="student-life"
+                    selectedNodeId={browseNodeId}
+                    onSelectNode={selectBrowseNode}
+                  />
+                </aside>
+              ) : null}
+              <div className="flex-1 min-w-0">
+                {browseNodeId ? (
+                  <nav className="flex flex-wrap items-center gap-1 text-[11px] text-lantern-text-secondary mb-3" aria-label="Listing type">
+                    <button type="button" onClick={() => selectBrowseNode('')} className="hover:text-lantern-primary">
+                      Explore
+                    </button>
+                    {getTaxonomyPath(browseNodeId)
+                      .filter((node) => node.parentId)
+                      .map((node) => (
+                        <React.Fragment key={node.id}>
+                          <ChevronRightIcon className="w-3 h-3" />
+                          <button
+                            type="button"
+                            onClick={() => selectBrowseNode(node.id)}
+                            className={node.id === browseNodeId ? 'font-semibold text-lantern-text' : 'hover:text-lantern-primary'}
+                          >
+                            {node.label}
+                          </button>
+                        </React.Fragment>
+                      ))}
+                  </nav>
+                ) : null}
+                {marketplaceListingsBody}
+              </div>
+            </div>
           </div>
         </TabPanel>
 

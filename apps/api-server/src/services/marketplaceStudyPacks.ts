@@ -66,6 +66,8 @@ export interface StudyPackContent {
   flashcards?: StudyPackFlashcard[];
   questions?: unknown[];
   weakSections?: StudyPackWeakSection[];
+  examChecklist?: string[];
+  cover?: { title: string; subtitle?: string };
 }
 export interface StudyPackCounts {
   guideWords: number;
@@ -177,6 +179,22 @@ export class MarketplaceStudyPacksService {
     const weakSections = Array.isArray(input.weakSections)
       ? input.weakSections.filter((w) => w && typeof w.title === 'string')
       : [];
+    const examChecklist = Array.isArray((input as StudyPackContent).examChecklist)
+      ? (input as StudyPackContent).examChecklist!.filter((s) => typeof s === 'string' && s.trim())
+          .map((s) => s.trim())
+          .slice(0, 20)
+      : [];
+    const coverIn = (input as StudyPackContent).cover;
+    const cover =
+      coverIn && typeof coverIn.title === 'string' && coverIn.title.trim()
+        ? {
+            title: coverIn.title.trim().slice(0, 120),
+            subtitle:
+              typeof coverIn.subtitle === 'string' && coverIn.subtitle.trim()
+                ? coverIn.subtitle.trim().slice(0, 160)
+                : undefined,
+          }
+        : undefined;
 
     const hasGuide = guideMarkdown.trim().length > 0;
     if (!hasGuide && summaries.length === 0 && flashcards.length === 0 && questions.length === 0) {
@@ -197,6 +215,8 @@ export class MarketplaceStudyPacksService {
       flashcards,
       questions,
       weakSections,
+      examChecklist,
+      cover,
     };
 
     let bytes: number;

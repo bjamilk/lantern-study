@@ -8,6 +8,7 @@ const mockFlashcards = jest.fn();
 const mockQuestions = jest.fn();
 const mockEssays = jest.fn();
 const mockDescription = jest.fn();
+const mockGetOverview = jest.fn();
 
 jest.mock('./aiService', () => ({
   summarizeNoteContent: (...a: unknown[]) => mockSummarize(...a),
@@ -15,6 +16,10 @@ jest.mock('./aiService', () => ({
   generateQuestionsFromNotes: (...a: unknown[]) => mockQuestions(...a),
   generateEssayQuestionsFromNotes: (...a: unknown[]) => mockEssays(...a),
   generateListingDescription: (...a: unknown[]) => mockDescription(...a),
+}));
+
+jest.mock('./librarySearch', () => ({
+  getLibrarySearchService: () => ({ getOverview: (...a: unknown[]) => mockGetOverview(...a) }),
 }));
 
 import { StudyPackFactoryService } from './studyPackFactory';
@@ -157,6 +162,8 @@ describe('generate', () => {
     expect(payload.content.questions[0].options[0]).toMatchObject({ text: '2', isCorrect: true });
     expect(payload.content.questions[1]).toMatchObject({ kind: 'essay', rubric: '- light\n- ATP' });
     expect(payload.suggested_price_kobo).toBeGreaterThan(0);
+    expect(payload.content.examChecklist.length).toBeGreaterThan(0);
+    expect(payload.content.cover).toMatchObject({ title: expect.any(String) });
   });
 
   it('fails the draft (and rethrows for refund) when no readable content', async () => {
@@ -169,5 +176,49 @@ describe('generate', () => {
       (w) => w.table === 'study_pack_drafts' && w.op === 'update' && (w.payload as any).status === 'failed'
     );
     expect(failed).toBeTruthy();
+  });
+});
+
+describe('proposeSemester', () => {
+  it('proposes one pack per enrolled course that has notes', async () => {
+    mockGetOverview.mockResolvedValue({
+      years: [
+        {
+          academicYear: '2025/2026',
+          courses: [
+            {
+              course: { id: '0b6f3a3e-2c8e-4c3f-9d1a-7f2e5b1c9a10', code: 'BIO 201', title: 'Cell Biology' },
+              enrolment: { status: 'active' },
+              counts: { notes: 8 },
+            },
+            {
+              course: { id: '1c7f4b4f-3d9f-5d40-ae2b-8f3f6c2d0b21', code: 'CHM 101', title: 'Chem' },
+              enrolment: { status: 'archived' },
+              counts: { notes: 4 },
+            },
+            {
+              course: { id: '2d8f5c50-4e0a-6e51-bf3c-9f407d3e1c32', code: 'PHY 102', title: 'Physics' },
+              enrolment: { status: 'active' },
+              counts: { notes: 0 },
+            },
+          ],
+        },
+      ],
+    });
+    const { service } = makeService({
+      tables: {
+        courses: { data: { code: 'BIO 201', level: 200, institution_id: null }, error: null },
+        marketplace_study_packs: { data: [], error: null },
+      },
+    });
+    const result = await service.proposeSemester('user-1', '2025/2026');
+    expect(result.academicYear).toBe('2025/2026');
+    expect(result.proposals).toHaveLength(1);
+    expect(result.proposals[0]).toMatchObject({
+      courseCode: 'BIO 201',
+      suggestedTitle: 'BIO 201 Complete Exam Pack',
+      creditCost: 5,
+      noteCount: 8,
+    });
   });
 });

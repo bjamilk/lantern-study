@@ -135,7 +135,7 @@ const getEnvVar = (name: string): string | undefined => {
 
 const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])$/i;
 const LOOPBACK_URL_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?/i;
-const VITE_DEV_PORTS = new Set(['5173', '5174', '5175', '5176']);
+const VITE_DEV_PORTS = new Set(['5173', '5174', '5175', '5176', '5177', '5178', '5179', '5180']);
 
 const isLoopbackHost = (host: string): boolean => LOOPBACK_HOST_RE.test(host);
 

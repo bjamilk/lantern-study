@@ -52,6 +52,8 @@ export type CronJobName =
   | "cron.dataRetention"
   | "cron.marketplaceAlerts"
   | "cron.jobAlerts"
-  | "cron.jobReminders";
+  | "cron.jobReminders"
+  | "cron.studyReminders"
+  | "cron.weeklySummary";
 
 export type JobName = AIJobName | FileJobName | ExportJobName | CronJobName;

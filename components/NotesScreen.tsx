@@ -7,6 +7,7 @@ import {
   DocumentTextIcon,
   DocumentArrowUpIcon,
   PhotoIcon,
+  CameraIcon,
   PresentationChartBarIcon,
   PlayCircleIcon,
   EllipsisHorizontalIcon,
@@ -375,6 +376,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const presentationInputRef = useRef<HTMLInputElement>(null);
   const photosInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const handlePdf = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -870,6 +872,14 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                     Import photos
                   </MenuItem>
                 ) : null}
+                {onPhotosImport ? (
+                  <MenuItem
+                    icon={<CameraIcon className="w-5 h-5" aria-hidden />}
+                    onSelect={() => cameraInputRef.current?.click()}
+                  >
+                    Photograph pages
+                  </MenuItem>
+                ) : null}
                 {onYoutubeImport ? (
                   <MenuItem
                     icon={<PlayCircleIcon className="w-5 h-5" aria-hidden />}
@@ -910,6 +920,17 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 type="file"
                 accept="image/*"
                 multiple
+                className="hidden"
+                onChange={handlePhotos}
+                disabled={Boolean(importProgress)}
+              />
+            ) : null}
+            {onPhotosImport ? (
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
                 className="hidden"
                 onChange={handlePhotos}
                 disabled={Boolean(importProgress)}

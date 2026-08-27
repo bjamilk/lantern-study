@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   communityKindLabel,
+  communityMembershipAction,
   memberCountLabel,
   type CommunityDetail,
   type DiscoverGroup,
@@ -13,12 +14,16 @@ import {
   fetchCommunity,
   fetchCommunityMembers,
   joinCommunity,
+  joinDiscoverableGroup,
   leaveCommunity,
 } from '../../services/api';
+import { useGroupStore } from '../../stores/groupStore';
+import { useAuthStore } from '../../stores';
 
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
+  getParent?: () => { navigate: (screen: string, params?: Record<string, unknown>) => void } | undefined;
 };
 
 type Member = { id: string; name: string; avatarUrl: string | null; programme: string | null };
@@ -42,7 +47,10 @@ export function CommunityDetailScreen({
   const [groups, setGroups] = useState<DiscoverGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const fetchGroups = useGroupStore((s) => s.fetchGroups);
+  const userId = useAuthStore((s) => s.user?.id);
 
   const load = useCallback(async () => {
     setError(null);
@@ -88,6 +96,30 @@ export function CommunityDetailScreen({
       setError(err instanceof Error ? err.message : 'Could not update membership');
     } finally {
       setPending(false);
+    }
+  };
+
+  const openOrJoinGroup = async (group: DiscoverGroup) => {
+    const tabNav = navigation.getParent?.();
+    if (group.isMember) {
+      tabNav?.navigate('ChatTab', {
+        screen: 'GroupChat',
+        params: { groupId: group.id, groupName: group.name },
+      });
+      return;
+    }
+    setPendingGroupId(group.id);
+    try {
+      await joinDiscoverableGroup(group.id);
+      if (userId) await fetchGroups(userId).catch(() => undefined);
+      tabNav?.navigate('ChatTab', {
+        screen: 'GroupChat',
+        params: { groupId: group.id, groupName: group.name },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join this group');
+    } finally {
+      setPendingGroupId(null);
     }
   };
 
@@ -142,14 +174,16 @@ export function CommunityDetailScreen({
                 }`}
                 style={{ opacity: pending ? 0.5 : 1 }}
                 accessibilityRole="button"
-                accessibilityLabel={community.isMember ? 'Leave community' : 'Join community'}
+                accessibilityLabel={communityMembershipAction(community.isMember, community.source)}
               >
                 <Text
                   className={`text-xs font-semibold ${
                     community.isMember ? 'text-lantern-text-secondary' : 'text-white'
                   }`}
                 >
-                  {pending ? 'Working…' : community.isMember ? 'Leave' : 'Join'}
+                  {pending
+                    ? 'Working…'
+                    : communityMembershipAction(community.isMember, community.source)}
                 </Text>
               </Pressable>
 
@@ -179,21 +213,25 @@ export function CommunityDetailScreen({
           renderItem={({ item }) => (
             <Pressable
               className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3"
-              onPress={() => navigation.navigate('GroupChat', { groupId: item.id })}
+              onPress={() => void openOrJoinGroup(item)}
               accessibilityRole="button"
-              accessibilityLabel={`Open ${item.name}`}
+              accessibilityLabel={`${item.isMember ? 'Open' : 'Join'} ${item.name}`}
             >
               <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
                 {item.name}
               </Text>
               <Text className="text-xs text-lantern-text-tertiary mt-0.5">
                 {memberCountLabel(item.memberCount)}
+                {item.isMember ? ' · Member · Open' : ' · Join'}
+                {pendingGroupId === item.id ? '…' : ''}
               </Text>
             </Pressable>
           )}
           ListEmptyComponent={
             <Text className="mx-4 text-xs text-lantern-text-tertiary">
-              No groups in this community yet.
+              {community?.isMember
+                ? 'No groups in this community yet. Create a study group and list it from Group info.'
+                : 'No public groups here yet. Join the community to see rooms listed just for members.'}
             </Text>
           }
         />

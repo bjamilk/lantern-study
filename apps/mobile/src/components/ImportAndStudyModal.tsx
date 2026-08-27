@@ -1,6 +1,7 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   Switch,
@@ -9,8 +10,13 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { FlashcardType } from '@lantern/shared';
+import * as ImagePicker from 'expo-image-picker';
+import { FlashcardType, getNoteStudyContent } from '@lantern/shared';
+import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
+import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
+import { HANDWRITING_OCR_OFF_MESSAGE } from '@lantern/shared/utils/handwritingOcr';
 import * as notesApi from '../services/notes';
+import { fetchAiHealth } from '../services/api';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useAuthStore } from '../stores/authStore';
@@ -32,6 +38,7 @@ interface ImportAndStudyModalProps {
   onClose: () => void;
   onComplete?: (result: ImportAndStudyResult) => void;
   onOpenNote: (noteId: string) => void;
+  onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -41,6 +48,7 @@ export default function ImportAndStudyModal({
   onClose,
   onComplete,
   onOpenNote,
+  onTurnIntoStudyProduct,
 }: ImportAndStudyModalProps) {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -48,6 +56,14 @@ export default function ImportAndStudyModal({
   const [result, setResult] = useState<ImportAndStudyResult | null>(null);
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
+  const [handwritingOcrOff, setHandwritingOcrOff] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    void fetchAiHealth()
+      .then((h) => setHandwritingOcrOff(h.handwritingOcr === 'off' || h.gemini === 'off'))
+      .catch(() => setHandwritingOcrOff(false));
+  }, [visible]);
 
   const reset = () => {
     setStep('input');
@@ -62,15 +78,22 @@ export default function ImportAndStudyModal({
   };
 
   const enrichNote = useCallback(
-    async (note: { id: string; title: string; body?: string }) => {
-      const body = note.body || '';
+    async (note: {
+      id: string;
+      title: string;
+      body?: string;
+      sourceType?: string;
+      summary?: string;
+      attachments?: Array<{ extractedText?: string | null; metadata?: Record<string, unknown> | null }>;
+    }) => {
+      const studyText = getNoteStudyContent(note);
       let flashcardCount = 0;
       let quizQuestionCount = 0;
       let deckName: string | undefined;
 
-      if (generateCards && body.length >= 50) {
+      if (generateCards && studyText.length >= 50) {
         try {
-          const { flashcards } = await aiGenerateFlashcards(body.slice(0, 8000), {
+          const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
             count: normalizeFlashcardCount(),
           });
           // Persist into a deck the same way the note editor's flashcard path
@@ -102,14 +125,14 @@ export default function ImportAndStudyModal({
         }
       }
 
-      if (generateQuiz && body.length >= 50) {
+      if (generateQuiz && studyText.length >= 50) {
         try {
           // Same daily-quiz store path as the note editor's Quiz button: the
           // session is kept (and shown on the dashboard) instead of being
           // generated server-side and dropped. Uses the store's real studyGoal.
           await useStudyGoalsStore
             .getState()
-            .startDailyQuizFromContent(body.slice(0, 8000), note.id, note.title);
+            .startDailyQuizFromContent(studyText.slice(0, 8000), note.id, note.title);
           quizQuestionCount =
             useStudyGoalsStore.getState().dailyQuiz?.questions.length ?? 0;
         } catch {
@@ -148,6 +171,66 @@ export default function ImportAndStudyModal({
     }
   };
 
+  const importPhotos = async (assets: ImagePicker.ImagePickerAsset[]) => {
+    if (!assets.length) return;
+    setStep('processing');
+    setError(null);
+    try {
+      const uploaded = await notesApi.uploadNoteImagesViaApi(
+        assets.map((asset, index) => ({
+          uri: asset.uri,
+          fileName: asset.fileName || `photo-${index + 1}.jpg`,
+          mimeType: asset.mimeType,
+          size: asset.fileSize ?? 0,
+        })),
+        undefined,
+        defaultPhotoNoteTitle()
+      );
+      await enrichNote({
+        ...uploaded.note,
+        attachments: uploaded.attachments,
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Photo import failed');
+      setStep('input');
+    }
+  };
+
+  const handlePickPhotosFromLibrary = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      setError('Photo library permission is required.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.85,
+      exif: false,
+    });
+    if (result.canceled || !result.assets.length) return;
+    await importPhotos(result.assets);
+  };
+
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      setError('Camera permission is required.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.85, exif: false });
+    if (result.canceled || !result.assets[0]) return;
+    await importPhotos(result.assets);
+  };
+
+  const handlePickPhotos = () => {
+    Alert.alert('Photograph pages', 'Choose a source', [
+      { text: 'Photo library', onPress: () => void handlePickPhotosFromLibrary() },
+      { text: 'Camera', onPress: () => void handleTakePhoto() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <View className="flex-1 bg-black/50 justify-center px-4">
@@ -166,8 +249,29 @@ export default function ImportAndStudyModal({
             {step === 'input' ? (
               <>
                 <Text className="text-sm text-lantern-text-secondary mb-3">
-                  Paste lecture notes to create study materials.
+                  Photograph handwritten pages, or paste lecture notes, to create study materials.
                 </Text>
+                <Text className="text-xs text-lantern-text-secondary mb-3">
+                  {formatMaxNoteUploadLabel()}
+                </Text>
+                {handwritingOcrOff ? (
+                  <Text className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 mb-3">
+                    {HANDWRITING_OCR_OFF_MESSAGE}
+                  </Text>
+                ) : null}
+
+                <Pressable
+                  onPress={handlePickPhotos}
+                  className="flex-row items-center gap-3 border-2 border-dashed border-lantern-border rounded-xl px-3 py-3 mb-3"
+                >
+                  <Ionicons name="camera-outline" size={22} color="#6366f1" />
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-lantern-text">Photograph pages</Text>
+                    <Text className="text-xs text-lantern-text-secondary">
+                      Camera or library — text is read off the photo
+                    </Text>
+                  </View>
+                </Pressable>
 
                 <TextInput
                   value={textContent}
@@ -233,6 +337,18 @@ export default function ImportAndStudyModal({
                 >
                   Open note
                 </Button>
+                {onTurnIntoStudyProduct ? (
+                  <Button
+                    fullWidth
+                    variant="secondary"
+                    onPress={() => {
+                      onTurnIntoStudyProduct(result);
+                      handleClose();
+                    }}
+                  >
+                    Turn this into a Study Product
+                  </Button>
+                ) : null}
               </View>
             ) : null}
           </View>

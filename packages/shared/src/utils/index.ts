@@ -26,6 +26,7 @@ export * from './smartNotes';
 export * from './youtube';
 export * from './noteUpload';
 export * from './photoNoteTitle';
+export * from './handwritingOcr';
 export * from './displayNames';
 export * from './userSearch';
 export * from './uploadValidation';

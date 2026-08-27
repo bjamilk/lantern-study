@@ -78,6 +78,7 @@ const initialUserStats: UserStats = {
   listingsSold: 0,
   fiveStarReviews: 0,
   offersMade: 0,
+  campusAmbassador: 0,
 };
 
 interface AuthState {

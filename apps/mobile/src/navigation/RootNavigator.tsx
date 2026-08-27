@@ -3,6 +3,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AppState, View } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  ONBOARDING_COMPLETE_STORAGE_KEY,
+  isOnboardingCompleteFlag,
+} from '@lantern/shared/settings';
 
 import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, type NavigationState } from '@react-navigation/native';
 import { navigationRef } from './navigationRef';
@@ -159,6 +163,7 @@ import {
   PurchasesScreen,
 
   StudyProductDraftsScreen,
+  SemesterProductsScreen,
 
   CreatorProfileScreen,
 
@@ -189,8 +194,9 @@ import {
   FeedScreen,
   MasteryScreen,
 } from '../screens/discover';
+import { StudyRoomScreen } from '../screens/study/StudyRoomScreen';
 
-import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen } from '../screens/settings';
+import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen, InviteFriendsScreen } from '../screens/settings';
 
 import { TestScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
@@ -412,6 +418,10 @@ function MarketNavigator() {
       <MarketStack.Screen name="Purchases" component={PurchasesScreen} />
 
       <MarketStack.Screen name="StudyProductDrafts" component={StudyProductDraftsScreen} />
+
+      <MarketStack.Screen name="SemesterProducts" component={SemesterProductsScreen} />
+
+      <MarketStack.Screen name="StudyRoom" component={StudyRoomScreen} />
 
       <MarketStack.Screen name="CreatorProfile" component={CreatorProfileScreen} />
 
@@ -978,9 +988,9 @@ function RootNavigatorInner() {
       setShowOnboarding(onboardingCache.showOnboarding);
       setOnboardingChecked(true);
     } else {
-      void AsyncStorage.getItem('lantern_onboarding_complete').then(v => {
+      void AsyncStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY).then(v => {
         if (cancelled) return;
-        const complete = v === 'true';
+        const complete = isOnboardingCompleteFlag(v);
         onboardingCache = { userId, showOnboarding: !complete };
         setShowOnboarding(!complete);
         setOnboardingChecked(true);
@@ -1154,6 +1164,8 @@ function RootNavigatorInner() {
             <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ presentation: 'modal' }} />
 
             <RootStack.Screen name="AcademicSettings" component={AcademicSettingsScreen} options={{ presentation: 'modal' }} />
+
+            <RootStack.Screen name="InviteFriends" component={InviteFriendsScreen} options={{ presentation: 'modal' }} />
 
             <RootStack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ presentation: 'modal' }} />
 

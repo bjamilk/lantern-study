@@ -29,6 +29,11 @@ export interface MarketplaceWorkspaceBarProps {
   primaryLabel?: string;
   showFavorites?: boolean;
   className?: string;
+  /**
+   * `full` — chip row for seller screens.
+   * `toolbar` — More + Sell only, used when Discover tabs already sit above.
+   */
+  variant?: 'full' | 'toolbar';
 }
 
 type NavItem = {
@@ -39,8 +44,7 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  // Phase 3 L / decision D12: Discover is the hub the marketplace sits inside,
-  // so it leads the bar rather than hiding in the overflow menu.
+  // Phase 3 L / decision D12: Discover is the hub the marketplace sits inside.
   { id: 'discover', label: 'Discover', icon: 'globe-outline', screen: 'Discover' },
   { id: 'browse', label: 'Goods', icon: 'search-outline', screen: 'MarketplaceHome' },
   { id: 'jobs', label: 'Jobs', icon: 'briefcase-outline', screen: 'JobsHome' },
@@ -54,6 +58,8 @@ const NAV: NavItem[] = [
   { id: 'inquiries', label: 'Inquiries', icon: 'chatbubble-ellipses-outline', screen: 'Inquiries' },
 ];
 
+const TOOLBAR_NAV = NAV.filter((item) => item.id !== 'discover' && item.id !== 'browse');
+
 /**
  * Compact CRM-style workspace nav for marketplace buyer/seller screens.
  */
@@ -65,6 +71,7 @@ export function MarketplaceWorkspaceBar({
   primaryLabel = 'Sell',
   showFavorites = false,
   className = '',
+  variant = 'full',
 }: MarketplaceWorkspaceBarProps) {
   const insets = useSafeAreaInsets();
   const [showMore, setShowMore] = useState(false);
@@ -92,8 +99,49 @@ export function MarketplaceWorkspaceBar({
       ]
     : NAV;
 
+  const sheetItems: Array<{
+    id: string;
+    label: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    onSelect: () => void;
+  }> =
+    variant === 'toolbar'
+      ? [
+          ...TOOLBAR_NAV.map((item) => ({
+            id: item.id,
+            label: item.label,
+            icon: item.icon,
+            onSelect: () => onNavigate(item.screen),
+          })),
+          ...(showFavorites
+            ? [
+                {
+                  id: 'favorites',
+                  label: 'Saved',
+                  icon: 'heart-outline' as const,
+                  onSelect: () => onNavigate('Favorites'),
+                },
+              ]
+            : []),
+          ...moreItems.map((item) => ({
+            id: item.id,
+            label: item.label,
+            icon: item.icon || ('ellipse-outline' as const),
+            onSelect: item.onSelect,
+          })),
+        ]
+      : moreItems.map((item) => ({
+          id: item.id,
+          label: item.label,
+          icon: item.icon || ('ellipse-outline' as const),
+          onSelect: item.onSelect,
+        }));
+
+  const showMoreButton = variant === 'toolbar' || sheetItems.length > 0;
+
   return (
     <View className={`flex-row items-center gap-1.5 ${className}`}>
+      {variant === 'full' ? (
       <View className="flex-1 flex-row items-center">
       <ScrollView
         horizontal
@@ -146,8 +194,9 @@ export function MarketplaceWorkspaceBar({
         </View>
       ) : null}
       </View>
+      ) : null}
 
-      {moreItems.length > 0 ? (
+      {showMoreButton ? (
         <Pressable
           onPress={() => setShowMore(true)}
           accessibilityRole="button"
@@ -178,9 +227,11 @@ export function MarketplaceWorkspaceBar({
             className="bg-lantern-surface rounded-t-3xl border-t border-lantern-border max-h-[70%]"
           >
             <View className="w-10 h-1 rounded-full bg-lantern-border self-center mt-3 mb-2" />
-            <Text className="text-lg font-bold text-lantern-text px-5 pb-2">Seller tools</Text>
+            <Text className="text-lg font-bold text-lantern-text px-5 pb-2">
+              {variant === 'toolbar' ? 'Marketplace' : 'Seller tools'}
+            </Text>
             <ScrollView className="px-3">
-              {moreItems.map(item => (
+              {sheetItems.map(item => (
                 <Pressable
                   key={item.id}
                   onPress={() => {

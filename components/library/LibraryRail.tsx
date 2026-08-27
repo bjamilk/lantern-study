@@ -54,6 +54,8 @@ export interface LibraryRailProps {
    * course the Library's filter.
    */
   onCreateStudyPack?: (courseId: string, courseLabel?: string) => void;
+  /** Phase 4 · S — propose one pack per course this year, with credit cost shown first. */
+  onTurnSemesterIntoProducts?: () => void;
   /** Tighter rows for the small-screen top panel. */
   compact?: boolean;
   className?: string;
@@ -87,6 +89,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
   onOpenTests,
   onOpenOffline,
   onCreateStudyPack,
+  onTurnSemesterIntoProducts,
   compact = false,
   className = '',
 }) => {
@@ -450,12 +453,23 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
       {overview ? (
         <>
           <section className="mt-3" aria-labelledby="library-rail-current">
-            <h3
-              id="library-rail-current"
-              className="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary"
-            >
-              This semester
-            </h3>
+            <div className="px-2 mb-1 flex items-center justify-between gap-2">
+              <h3
+                id="library-rail-current"
+                className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary"
+              >
+                This semester
+              </h3>
+              {onTurnSemesterIntoProducts ? (
+                <button
+                  type="button"
+                  onClick={onTurnSemesterIntoProducts}
+                  className="text-[11px] font-semibold text-lantern-primary hover:underline"
+                >
+                  Turn into products
+                </button>
+              ) : null}
+            </div>
             {tree.current.length > 0 ? (
               <ul className="space-y-0.5">{tree.current.map(renderCourseRow)}</ul>
             ) : (

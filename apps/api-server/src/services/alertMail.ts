@@ -96,3 +96,54 @@ export async function sendJobAlertEmail(params: {
   }
   return true;
 }
+
+export async function sendWeeklySummaryEmail(params: {
+  to: string;
+  name?: string | null;
+  streak: number;
+}): Promise<boolean> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return false;
+  const { to, name, streak } = params;
+  const from =
+    process.env.ALERTS_FROM_EMAIL ||
+    process.env.RESEND_FROM_EMAIL ||
+    "Lantern Study <noreply@lanternstudy.com>";
+  const hello = name ? `Hi ${escapeHtml(name.split(" ")[0] || name)},` : "Hi,";
+  const streakLine =
+    streak > 0
+      ? `You are on a ${streak}-day study streak. Keep it going this week.`
+      : "Open Lantern this week and start a streak — even one review counts.";
+  const subject = "Your week on Lantern Study";
+  const html = `
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;color:#0f172a;">
+      <h2 style="font-size:18px;">${hello}</h2>
+      <p style="font-size:15px;line-height:1.5;">${escapeHtml(streakLine)}</p>
+      <p style="margin-top:20px;">
+        <a href="${SITE_BASE}/flashcards"
+           style="display:inline-block;background:#4f46e5;color:#ffffff;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;">
+          Review due cards
+        </a>
+      </p>
+      <p style="font-size:12px;color:#94a3b8;margin-top:24px;">
+        You get this because weekly email is on in Settings. Turn it off there any time.
+      </p>
+    </div>
+  `.trim();
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, to: [to], subject, html }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    logger.warn("Weekly summary email failed", { status: response.status, body });
+    return false;
+  }
+  return true;
+}

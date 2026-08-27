@@ -847,6 +847,13 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       onPress: handlePickPhotos,
     },
     {
+      label: 'Photograph pages',
+      icon: 'camera-outline',
+      section: `From a file · ${formatMaxNoteUploadLabel()}`,
+      hint: 'Camera — text is read off the photo',
+      onPress: () => void handleTakePhoto(),
+    },
+    {
       label: 'From YouTube',
       icon: 'logo-youtube',
       section: 'From a link',

@@ -6,9 +6,11 @@ import {
   ChatBubbleLeftRightIcon,
   RectangleStackIcon,
   AcademicCapIcon,
+  CameraIcon,
 } from '@heroicons/react/24/outline';
 import { ScreenHeader, Button, Card } from './ui';
 import * as notesApi from '../services/notes';
+import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { useUIStore } from '../stores/uiStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useCompanionStore } from '../stores/companionStore';
@@ -116,6 +118,36 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
     }
   };
 
+  const handlePhotos = async (files: File[]) => {
+    if (files.length === 0) return;
+    setStep('processing');
+    setError(null);
+    try {
+      const { note, attachments } = await notesApi.uploadNoteImagesViaApi(
+        files,
+        undefined,
+        setImportProgress,
+        defaultPhotoNoteTitle()
+      );
+      const notesState = useNotesStore.getState();
+      notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
+      await loadNote(note.id);
+      const loaded = useNotesStore.getState().selectedNote;
+      if (loaded?.id === note.id && (!loaded.attachments || loaded.attachments.length === 0)) {
+        notesState.setSelectedNote({ ...loaded, attachments });
+      }
+      useUIStore.getState().clearImportProgress();
+      await runStudyGenerators({
+        ...useNotesStore.getState().selectedNote!,
+        attachments: useNotesStore.getState().selectedNote?.attachments ?? attachments,
+      });
+    } catch (e: unknown) {
+      useUIStore.getState().clearImportProgress();
+      setError(e instanceof Error ? e.message : 'Photo import failed');
+      setStep('hub');
+    }
+  };
+
   const toolCards = [
     {
       id: 'pdf',
@@ -132,6 +164,14 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       description: 'Import lecture slides',
       icon: DocumentArrowUpIcon,
       action: 'file-pptx' as const,
+      disabled: lowDataMode,
+    },
+    {
+      id: 'photos',
+      title: 'Photograph pages',
+      description: 'Read handwritten or printed notes',
+      icon: CameraIcon,
+      action: 'file-photos' as const,
       disabled: lowDataMode,
     },
     {
@@ -187,6 +227,25 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
                       <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
+                    </label>
+                  )}
+                  {tool.action === 'file-photos' && (
+                    <label className={`cursor-pointer block ${tool.disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <tool.icon className="w-7 h-7 text-lantern-primary mb-2" />
+                      <p className="font-semibold text-lantern-text">{tool.title}</p>
+                      <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (files.length) void handlePhotos(files);
+                          e.target.value = '';
+                        }}
+                      />
                     </label>
                   )}
                   {tool.action === 'paste' && (

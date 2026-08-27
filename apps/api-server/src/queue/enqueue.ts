@@ -25,6 +25,8 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   "cron.marketplaceAlerts": "marketplace-alerts",
   "cron.jobAlerts": "marketplace-alerts",
   "cron.jobReminders": "marketplace-alerts",
+  "cron.studyReminders": "marketplace-alerts",
+  "cron.weeklySummary": "marketplace-alerts",
 };
 
 export interface EnqueueResult {

@@ -4,3 +4,4 @@ export { default as OfflineScreen } from './OfflineScreen';
 export { default as NotificationsScreen } from './NotificationsScreen';
 export { default as BlockedUsersScreen } from './BlockedUsersScreen';
 export { default as AcademicSettingsScreen } from './AcademicSettingsScreen';
+export { default as InviteFriendsScreen } from './InviteFriendsScreen';

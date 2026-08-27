@@ -60,6 +60,7 @@ import { AcademicFeedPanel } from '../../components/AcademicFeedPanel';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 
 import { DailyQuizWidget } from '../../components/DailyQuizWidget';
+import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { CollapsibleSection } from '../../components/CollapsibleSection';
 import { DailyGoalsProgress } from '../../components/DailyGoalsProgress';
 
@@ -216,6 +217,7 @@ export function DashboardScreen({ navigation }: Props) {
   const [quizLoading, setQuizLoading] = useState(false);
 
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [analysisLoadingId, setAnalysisLoadingId] = useState<string | null>(null);
   const [recentSort, setRecentSort] = useState<'newest' | 'oldest' | 'highestScore'>('newest');
@@ -657,7 +659,7 @@ export function DashboardScreen({ navigation }: Props) {
             if (dueCount > 0) {
               parent?.navigate('StudyTab', { screen: 'FlashcardsList' });
             } else {
-              parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'notes' } });
+              setImportOpen(true);
             }
           }}
           primaryActionLabel={
@@ -1233,6 +1235,22 @@ export function DashboardScreen({ navigation }: Props) {
       </ScrollView>
 
 
+
+      <ImportAndStudyModal
+        visible={importOpen}
+        onClose={() => setImportOpen(false)}
+        onOpenNote={(noteId) => {
+          setImportOpen(false);
+          parent?.navigate('StudyTab', { screen: 'NoteEditor', params: { noteId } });
+        }}
+        onTurnIntoStudyProduct={(result) => {
+          setImportOpen(false);
+          parent?.navigate('MarketTab', {
+            screen: 'StudyProductDrafts',
+            params: { source: { noteIds: [result.noteId], title: result.noteTitle } },
+          });
+        }}
+      />
 
       <Modal visible={groupPickerOpen} transparent animationType="fade" onRequestClose={() => setGroupPickerOpen(false)}>
 

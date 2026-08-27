@@ -551,6 +551,7 @@ export type NoteOcrStatus = 'ready' | 'processing' | 'failed' | 'none' | 'needs_
 export async function fetchNoteOcrStatus(noteId: string): Promise<{
   status: NoteOcrStatus;
   attachment?: NoteAttachment | null;
+  attachments?: NoteAttachment[];
   extractionStatus?: string;
   ocrProvider?: string;
   ocrPageCount?: number;
@@ -564,21 +565,36 @@ export async function fetchNoteOcrStatus(noteId: string): Promise<{
 const OCR_POLL_DEADLINE_MS = 240_000;
 const ocrPollsInFlight = new Set<string>();
 
+function primaryOcrAttachment(status: {
+  attachment?: NoteAttachment | null;
+  attachments?: NoteAttachment[] | null;
+}): NoteAttachment | undefined {
+  return status.attachment || status.attachments?.[0] || undefined;
+}
+
 async function pollNoteOcrUntilReady(noteId: string): Promise<{
   status: NoteOcrStatus;
   attachment: NoteAttachment;
+  attachments?: NoteAttachment[];
   ocrError?: string;
 }> {
   const deadline = Date.now() + OCR_POLL_DEADLINE_MS;
   while (Date.now() < deadline) {
     const status = await fetchNoteOcrStatus(noteId);
-    if (status.status === 'ready' && status.attachment) {
-      return { status: 'ready', attachment: status.attachment };
+    const attachment = primaryOcrAttachment(status);
+    const attachments = status.attachments?.length
+      ? status.attachments
+      : attachment
+        ? [attachment]
+        : undefined;
+    if (status.status === 'ready' && attachment) {
+      return { status: 'ready', attachment, attachments };
     }
     if (status.status === 'failed') {
       return {
         status: 'failed',
-        attachment: status.attachment!,
+        attachment: attachment!,
+        attachments,
         ocrError:
           status.ocrError ||
           'Local OCR could not read this file. Add notes manually, or try a text-based export.',
@@ -587,9 +603,9 @@ async function pollNoteOcrUntilReady(noteId: string): Promise<{
     if (status.status === 'none') {
       throw new Error('No document attachment found for OCR.');
     }
-    if (status.status === 'needs_ocr' && status.attachment) {
+    if (status.status === 'needs_ocr' && attachment) {
       // Not started / idle — caller should POST /ocr first.
-      return { status: 'needs_ocr', attachment: status.attachment };
+      return { status: 'needs_ocr', attachment, attachments };
     }
     await sleep(3000);
   }
@@ -599,7 +615,12 @@ async function pollNoteOcrUntilReady(noteId: string): Promise<{
 /** Start OCR (if needed) and poll until ready/failed. */
 export async function runNoteOcr(
   noteId: string
-): Promise<{ status: NoteOcrStatus; attachment: NoteAttachment; ocrError?: string }> {
+): Promise<{
+  status: NoteOcrStatus;
+  attachment: NoteAttachment;
+  attachments?: NoteAttachment[];
+  ocrError?: string;
+}> {
   if (ocrPollsInFlight.has(noteId)) {
     return pollNoteOcrUntilReady(noteId);
   }
@@ -618,6 +639,7 @@ export async function runNoteOcr(
       data?: {
         status?: NoteOcrStatus;
         attachment?: NoteAttachment;
+        attachments?: NoteAttachment[];
         ocrError?: string;
       };
       error?: string;
@@ -631,12 +653,17 @@ export async function runNoteOcr(
     }
     const payload = data.data;
     if (payload?.status === 'ready' && payload.attachment) {
-      return { status: 'ready', attachment: payload.attachment };
+      return {
+        status: 'ready',
+        attachment: payload.attachment,
+        attachments: payload.attachments,
+      };
     }
     if (payload?.status === 'failed' && payload.attachment) {
       return {
         status: 'failed',
         attachment: payload.attachment,
+        attachments: payload.attachments,
         ocrError: payload.ocrError,
       };
     }
@@ -649,7 +676,12 @@ export async function runNoteOcr(
 /** Poll only — use when upload already queued OCR. */
 export async function waitForNoteOcr(
   noteId: string
-): Promise<{ status: NoteOcrStatus; attachment: NoteAttachment; ocrError?: string }> {
+): Promise<{
+  status: NoteOcrStatus;
+  attachment: NoteAttachment;
+  attachments?: NoteAttachment[];
+  ocrError?: string;
+}> {
   if (ocrPollsInFlight.has(noteId)) {
     return pollNoteOcrUntilReady(noteId);
   }
@@ -1408,11 +1440,39 @@ export async function uploadNoteImagesViaApi(
   });
 
   const images = await encodeImagesForApiUpload(files, onProgress, label);
-  return notesUploadRequest<{ note: StudyNote; attachments: NoteAttachment[] }>(
-    '/upload-images',
-    { images, folderId, title },
-    { onProgress, processingLabel: 'Saving photos…' }
-  );
+  const result = await notesUploadRequest<{
+    note: StudyNote;
+    attachments: NoteAttachment[];
+    ocrQueued?: boolean;
+  }>('/upload-images', { images, folderId, title }, { onProgress, processingLabel: 'Saving photos…' });
+
+  const needsOcrWait =
+    result.ocrQueued ||
+    result.attachments?.some((a) => a.metadata?.extractionStatus === 'ocr_processing');
+
+  if (needsOcrWait && result.note?.id) {
+    onProgress?.({
+      stage: 'processing',
+      percent: null,
+      label: 'Reading text from your photos…',
+      fileName: label,
+    });
+    try {
+      const ocr = await waitForNoteOcr(result.note.id);
+      const refreshed = await fetchNote(result.note.id);
+      return {
+        note: refreshed,
+        attachments:
+          ocr.attachments?.length
+            ? ocr.attachments
+            : refreshed.attachments ?? result.attachments,
+      };
+    } catch {
+      return { note: result.note, attachments: result.attachments };
+    }
+  }
+
+  return { note: result.note, attachments: result.attachments };
 }
 
 export async function addImagesToPhotoNote(
@@ -1433,11 +1493,29 @@ export async function addImagesToPhotoNote(
   });
 
   const images = await encodeImagesForApiUpload(files, onProgress, label);
-  return notesUploadRequest<{ attachments: NoteAttachment[] }>(
-    `/${noteId}/attachments/upload-images`,
-    { images },
-    { onProgress, processingLabel: 'Saving photos…' }
-  );
+  const result = await notesUploadRequest<{
+    attachments: NoteAttachment[];
+    ocrQueued?: boolean;
+  }>(`/${noteId}/attachments/upload-images`, { images }, { onProgress, processingLabel: 'Saving photos…' });
+
+  const needsOcrWait =
+    result.ocrQueued ||
+    result.attachments?.some((a) => a.metadata?.extractionStatus === 'ocr_processing');
+  if (needsOcrWait) {
+    onProgress?.({
+      stage: 'processing',
+      percent: null,
+      label: 'Reading text from your photos…',
+      fileName: label,
+    });
+    try {
+      const ocr = await waitForNoteOcr(noteId);
+      if (ocr.attachments?.length) return { attachments: ocr.attachments };
+    } catch {
+      // Editor can retry OCR from the note.
+    }
+  }
+  return { attachments: result.attachments };
 }
 
 function fileToBase64(file: File): Promise<string> {

@@ -31,6 +31,7 @@ export interface AppRouteParams {
   /** Campus page: `/campus/:slug/:programme`, and community `/discover/c/:slug`. */
   slug?: string;
   programme?: string;
+  roomId?: string;
   /** Which Library tab `/library/:libraryTab` names. Absent on bare `/library`. */
   libraryTab?: LibraryTabParam;
 }
@@ -75,6 +76,12 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
         : '/campus';
     case AppMode.INVITE_FRIENDS:
       return '/invite';
+    case AppMode.SEMESTER_PRODUCTS:
+      return '/semester-products';
+    case AppMode.STUDY_ROOM:
+      return params.roomId
+        ? `/study-room/${encodeURIComponent(params.roomId)}`
+        : '/study-room';
     case AppMode.DISCOVER:
       return '/discover';
     case AppMode.COMMUNITY_DETAIL:
@@ -187,6 +194,12 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     }
   }
   if (path === '/invite') return { mode: AppMode.INVITE_FRIENDS, params: {} };
+  if (path === '/semester-products') return { mode: AppMode.SEMESTER_PRODUCTS, params: {} };
+  if (path === '/study-room') return { mode: AppMode.STUDY_ROOM, params: {} };
+  if (path.startsWith('/study-room/')) {
+    const roomId = decodeURIComponent(path.slice('/study-room/'.length));
+    return roomId ? { mode: AppMode.STUDY_ROOM, params: { roomId } } : { mode: AppMode.STUDY_ROOM, params: {} };
+  }
   if (path === '/discover') return { mode: AppMode.DISCOVER, params: {} };
   if (path.startsWith('/discover/c/')) {
     const slug = decodeURIComponent(path.slice('/discover/c/'.length));

@@ -115,6 +115,7 @@ export const mapUserStatsFromApi = (data: any): UserStats => {
     listingsSold: data.listings_sold || data.listingsSold || 0,
     fiveStarReviews: data.five_star_reviews || data.fiveStarReviews || 0,
     offersMade: data.offers_made || data.offersMade || 0,
+    campusAmbassador: Number(data.campus_ambassador || data.campusAmbassador || 0),
   };
 };
 
@@ -143,6 +144,8 @@ export const mapGroupFromApi = (data: any): Group => {
     permissions: data.permissions,
     invitedPhoneNumbers: data.invited_phone_numbers || data.invitedPhoneNumbers,
     courseId: data.courseId !== undefined ? data.courseId : (data.course_id ?? undefined),
+    visibility: data.visibility || 'private',
+    communityId: data.communityId !== undefined ? data.communityId : (data.community_id ?? null),
   };
 };
 

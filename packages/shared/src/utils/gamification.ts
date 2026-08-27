@@ -218,6 +218,15 @@ export const BADGE_DEFINITIONS: Record<BadgeId, BadgeDefinition> = {
             { level: 10, threshold: 200, points: 5000 },
         ],
     },
+    CAMPUS_AMBASSADOR: {
+        id: 'CAMPUS_AMBASSADOR',
+        baseName: 'Campus Ambassador',
+        baseDescription: () => 'Represent your campus as a Lantern ambassador.',
+        icon: '🎓',
+        metric: 'campusAmbassador',
+        // threshold 0 would mass-award this to every user on the next sync.
+        levels: [{ level: 1, threshold: 1, points: 100 }],
+    },
 };
 
 /**

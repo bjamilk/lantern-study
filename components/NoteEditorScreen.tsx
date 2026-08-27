@@ -45,6 +45,7 @@ import { TopicPicker } from './academic/TopicPicker';
 import { useToastStore } from '../stores/toastStore';
 import { navigateToPath } from '../utils/appNavigation';
 import { useNoteCommentsSync } from '../hooks/useNoteCommentsSync';
+import { setStudyIntent } from '../services/presenceHeartbeat';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -155,6 +156,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const isViewer = !canEdit;
   const { refresh: refreshComments, isRefreshing: isRefreshingComments } =
     useNoteCommentsSync(note.id, onRefreshComments);
+
+  useEffect(() => {
+    setStudyIntent({
+      context: 'writing',
+      courseId: note.courseId || undefined,
+      topic: note.title,
+    });
+    return () => setStudyIntent(null);
+  }, [note.id, note.courseId, note.title]);
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
   const isYoutubeNote = note.sourceType === 'youtube' || Boolean(note.youtubeVideoId);
@@ -413,10 +423,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         if (!prev || prev.id !== note.id) return;
         setSelectedNote({
           ...prev,
-          attachments:
-            prev.attachments?.map((a) =>
-              a.id === result.attachment.id ? result.attachment : a
-            ) ?? [result.attachment],
+          attachments: result.attachments?.length
+            ? [
+                ...(prev.attachments || []).filter((a) => a.type !== 'image'),
+                ...result.attachments,
+              ]
+            : prev.attachments?.map((a) =>
+                a.id === result.attachment.id ? result.attachment : a
+              ) ?? [result.attachment],
         });
         if (result.status === 'failed') {
           showToast(result.ocrError || 'Local OCR failed', 'error');
@@ -445,10 +459,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       if (prev?.id === note.id) {
         setSelectedNote({
           ...prev,
-          attachments:
-            prev.attachments?.map((a) =>
-              a.id === result.attachment.id ? result.attachment : a
-            ) ?? [result.attachment],
+          attachments: result.attachments?.length
+            ? [
+                ...(prev.attachments || []).filter((a) => a.type !== 'image'),
+                ...result.attachments,
+              ]
+            : prev.attachments?.map((a) =>
+                a.id === result.attachment.id ? result.attachment : a
+              ) ?? [result.attachment],
         });
       }
       if (result.status === 'ready') {

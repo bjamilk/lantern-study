@@ -5,5 +5,6 @@ export * from './dailyGoals';
 export * from './dailyReminders';
 export * from './srsReminders';
 export * from './privacyPolicy';
+export * from './onboardingComplete';
 export * from './appearanceEffects';
 export * from '../featureTips';

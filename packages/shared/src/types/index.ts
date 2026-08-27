@@ -105,7 +105,8 @@ export type BadgeId =
   | 'DUELIST'
   | 'MARKETPLACE_SELLER'
   | 'TRUSTED_SELLER'
-  | 'OFFER_MAKER';
+  | 'OFFER_MAKER'
+  | 'CAMPUS_AMBASSADOR';
 
 export interface Badge {
   id: BadgeId;
@@ -133,6 +134,11 @@ export interface UserStats {
   listingsSold: number;
   fiveStarReviews: number;
   offersMade: number;
+  /**
+   * 1 when profiles.is_ambassador is set, else 0. Drives CAMPUS_AMBASSADOR.
+   * Never a self-serve counter — the admin flag is the source of truth.
+   */
+  campusAmbassador?: number;
 }
 
 export type { UserSettings, NotificationSettings } from '../settings/userSettings';
@@ -404,6 +410,8 @@ export enum AppMode {
   DISCOVER = 'DISCOVER',
   // Phase 4 Q — invite friends / referrals
   INVITE_FRIENDS = 'INVITE_FRIENDS',
+  SEMESTER_PRODUCTS = 'SEMESTER_PRODUCTS',
+  STUDY_ROOM = 'STUDY_ROOM',
   // Phase 4 R — public campus/programme SEO page
   CAMPUS_PAGE = 'CAMPUS_PAGE',
   COMMUNITY_DETAIL = 'COMMUNITY_DETAIL',
@@ -975,6 +983,10 @@ export interface MarketplaceListing {
   status: 'active' | 'sold' | 'inactive' | 'reserved' | 'archived' | 'suspended_by_admin' | 'removed_by_admin';
   categorySpecificFields?: Record<string, unknown>;
   category_specific_fields?: Record<string, unknown>;
+  /** Compact browse cards flatten condition out of category_specific_fields. */
+  condition?: string | null;
+  /** Compact browse cards flatten taxonomyNodeId out of category_specific_fields. */
+  taxonomyNodeId?: string | null;
   views_count?: number;
   favorites_count?: number;
   inquiries_count?: number;

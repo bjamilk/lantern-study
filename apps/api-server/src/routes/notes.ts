@@ -497,21 +497,27 @@ async function startPhotoNoteOcr(params: {
 }
 
 /**
- * Queue OCR for freshly added photographs, charging the batch once. Best-effort:
- * a photo note must still be created when OCR cannot start.
+ * Queue OCR for freshly added photographs, charging the batch once.
+ * Awaits enqueue (not the actual read) so the upload response can tell the
+ * client to poll — previously this was fire-and-forget, so photo OCR status
+ * had no `attachment` and no `ocr_processing` flag when the client first polled.
  */
-function autoOcrPhotoNote(noteId: string, userId: string, attachments: any[]): void {
-  void tryChargeAutoOcrCredits(userId)
-    .then((charged) => {
-      if (!charged) return 0;
-      return startPhotoNoteOcr({ noteId, userId, attachments, skipAlreadyRead: true });
-    })
-    .catch((err) => {
-      logger.warn('Photo note OCR could not be started', {
-        noteId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+async function queuePhotoNoteOcr(
+  noteId: string,
+  userId: string,
+  attachments: any[]
+): Promise<number> {
+  try {
+    const charged = await tryChargeAutoOcrCredits(userId);
+    if (!charged) return 0;
+    return await startPhotoNoteOcr({ noteId, userId, attachments, skipAlreadyRead: true });
+  } catch (err) {
+    logger.warn('Photo note OCR could not be started', {
+      noteId,
+      error: err instanceof Error ? err.message : String(err),
     });
+    return 0;
+  }
 }
 
 const OCR_PROCESSING_STALE_MS = 10 * 60 * 1000;
@@ -1089,15 +1095,21 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
     throw err;
   }
 
-  autoOcrPhotoNote(note.id, userId, attachments);
+  const queued = await queuePhotoNoteOcr(note.id, userId, attachments);
+  const latest =
+    queued > 0 ? await supabaseService.getNoteAttachments(note.id) : attachments;
 
   logger.info('Photo note finalized', {
     userId,
     imageCount: validated.length,
+    ocrQueued: queued > 0,
     durationMs: Date.now() - startedAt,
   });
 
-  res.json({ success: true, data: { note, attachments } });
+  res.json({
+    success: true,
+    data: { note, attachments: latest, ocrQueued: queued > 0 },
+  });
 }));
 
 router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
@@ -1140,15 +1152,21 @@ router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Req
     throw err;
   }
 
-  autoOcrPhotoNote(note.id, userId, attachments);
+  const queued = await queuePhotoNoteOcr(note.id, userId, attachments);
+  const latest =
+    queued > 0 ? await supabaseService.getNoteAttachments(note.id) : attachments;
 
   logger.info('Photo note uploaded via API', {
     userId,
     imageCount: validated.length,
+    ocrQueued: queued > 0,
     durationMs: Date.now() - startedAt,
   });
 
-  res.json({ success: true, data: { note, attachments } });
+  res.json({
+    success: true,
+    data: { note, attachments: latest, ocrQueued: queued > 0 },
+  });
 }));
 
 router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_questions'), asyncHandler(async (req: Request, res: Response) => {
@@ -1790,8 +1808,16 @@ router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), up
     ) + 1;
 
   const attachments = await createPhotoNoteAttachments(req.params.noteId, validated, startOrder);
-  autoOcrPhotoNote(req.params.noteId, userId, attachments);
-  res.json({ success: true, data: { attachments } });
+  const queued = await queuePhotoNoteOcr(req.params.noteId, userId, attachments);
+  const latest =
+    queued > 0 ? await supabaseService.getNoteAttachments(req.params.noteId) : attachments;
+  res.json({
+    success: true,
+    data: {
+      attachments: latest.filter((a) => a.type === 'image'),
+      ocrQueued: queued > 0,
+    },
+  });
 }));
 
 router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
@@ -1830,8 +1856,16 @@ router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), upl
       ) + 1;
 
     const attachments = await createPhotoNoteAttachments(req.params.noteId, validated, startOrder);
-    autoOcrPhotoNote(req.params.noteId, userId, attachments);
-    res.json({ success: true, data: { attachments } });
+    const queued = await queuePhotoNoteOcr(req.params.noteId, userId, attachments);
+    const latest =
+      queued > 0 ? await supabaseService.getNoteAttachments(req.params.noteId) : attachments;
+    res.json({
+      success: true,
+      data: {
+        attachments: latest.filter((a) => a.type === 'image'),
+        ocrQueued: queued > 0,
+      },
+    });
   } catch (err) {
     for (const image of validated) {
       await supabaseService.deleteNoteFile(image.storagePath).catch(() => {});
@@ -2726,6 +2760,7 @@ router.get(
         data: {
           status: aggregated === 'ok' ? 'ready' : aggregated === 'ocr_processing' ? 'processing' : aggregated === 'ocr_failed' ? 'failed' : aggregated ?? 'none',
           imageCount: images.length,
+          attachment: images[0] || null,
           attachments: images,
           ocrError:
             aggregated === 'ocr_failed' && failed

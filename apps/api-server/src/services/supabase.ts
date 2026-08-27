@@ -35,6 +35,7 @@ import {
   getSrsMaxInterval,
   normalizeUserSettings,
 } from "@lantern/shared/settings";
+import { resolveGroupDiscovery } from "@lantern/shared/network";
 import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
@@ -42,6 +43,8 @@ import {
   isMarketplaceListingEditable,
   isMarketplaceListingStatus,
   sellerListingTransitionError,
+  isKnownTaxonomyNodeId,
+  rankRelatedListings,
 } from "@lantern/shared/marketplace";
 import { PublicError } from "../utils/safeError";
 // Value import (const array) — marketplaceOrders only type-imports supabase, so
@@ -1581,7 +1584,7 @@ export class SupabaseService {
         const selectClause =
           profile === "compact"
             ? "id, name, avatar_url, last_message_time, is_archived"
-            : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at";
+            : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at";
         let query = this.supabase
           .from("groups")
           .select(selectClause)
@@ -1645,6 +1648,8 @@ export class SupabaseService {
           isArchived: item.is_archived,
           inviteId: item.invite_id,
           courseId: item.course_id ?? null,
+          visibility: item.visibility || "private",
+          communityId: item.community_id ?? null,
           createdAt: item.created_at,
           memberCount: memberCounts[item.id] || 0,
         })) as Group[];
@@ -1658,7 +1663,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase
         .from("groups")
         .select(
-          "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at",
+          "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at",
         )
         .eq("id", groupId)
         .maybeSingle();
@@ -1677,6 +1682,8 @@ export class SupabaseService {
         isArchived: data.is_archived,
         inviteId: data.invite_id,
         courseId: data.course_id ?? null,
+        visibility: (data as { visibility?: string }).visibility || "private",
+        communityId: (data as { community_id?: string | null }).community_id ?? null,
         createdAt: data.created_at,
       } as Group;
     }
@@ -1689,7 +1696,7 @@ export class SupabaseService {
         const { data, error } = await this.supabase
           .from("groups")
           .select(
-            "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, created_at",
+            "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at",
           )
           .eq("id", groupId)
           .single();
@@ -1726,6 +1733,8 @@ export class SupabaseService {
           isArchived: data.is_archived,
           inviteId: data.invite_id,
           courseId: data.course_id ?? null,
+          visibility: (data as { visibility?: string }).visibility || "private",
+          communityId: (data as { community_id?: string | null }).community_id ?? null,
           createdAt: data.created_at,
         } as Group;
       },
@@ -1738,6 +1747,10 @@ export class SupabaseService {
     userId: string,
     memberIds: string[] = [],
   ): Promise<Group> {
+    const discovery = resolveGroupDiscovery({
+      visibility: groupData.visibility,
+      communityId: groupData.communityId,
+    });
     const { data, error } = await this.supabase
       .from("groups")
       .insert({
@@ -1749,6 +1762,8 @@ export class SupabaseService {
         invite_id: groupData.inviteId,
         parent_id: groupData.parentId,
         course_id: groupData.courseId || null,
+        visibility: discovery.visibility,
+        community_id: discovery.communityId,
         is_archived: false,
       })
       .select()
@@ -1821,6 +1836,8 @@ export class SupabaseService {
       isArchived: data.is_archived,
       inviteId: data.invite_id,
       courseId: data.course_id ?? null,
+      visibility: discovery.visibility,
+      communityId: discovery.communityId,
       createdAt: data.created_at,
       pendingInviteUserIds: Array.from(explicitInviteSet),
     } as Group & { pendingInviteUserIds?: string[] };
@@ -1842,8 +1859,14 @@ export class SupabaseService {
     if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId || null;
     // Phase 3 L discovery fields. A group is private by default; making it
     // discoverable is an explicit, admin-only act.
-    if (updates.visibility !== undefined) dbUpdates.visibility = updates.visibility;
-    if (updates.communityId !== undefined) dbUpdates.community_id = updates.communityId || null;
+    if (updates.visibility !== undefined || updates.communityId !== undefined) {
+      const discovery = resolveGroupDiscovery({
+        visibility: updates.visibility ?? "private",
+        communityId: updates.communityId,
+      });
+      dbUpdates.visibility = discovery.visibility;
+      dbUpdates.community_id = discovery.communityId;
+    }
     if (updates.tags !== undefined) dbUpdates.tags = Array.isArray(updates.tags) ? updates.tags : [];
 
     if (Object.keys(dbUpdates).length === 0) {
@@ -1880,6 +1903,8 @@ export class SupabaseService {
       isArchived: data.is_archived,
       inviteId: data.invite_id,
       courseId: data.course_id ?? null,
+      visibility: (data as { visibility?: string }).visibility || "private",
+      communityId: (data as { community_id?: string | null }).community_id ?? null,
       createdAt: data.created_at,
     } as Group;
   }
@@ -7120,6 +7145,8 @@ export class SupabaseService {
       limit?: number;
       timeframe?: string;
       metric?: string;
+      institutionId?: string;
+      ambassador?: boolean;
     } = {},
   ): Promise<any[]> {
     const {
@@ -7127,18 +7154,27 @@ export class SupabaseService {
       limit = 50,
       timeframe = "all",
       metric = "points",
+      institutionId,
+      ambassador,
     } = options;
     const offset = (page - 1) * limit;
 
-    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}`;
+    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}:${institutionId || ""}:${ambassador ? "1" : "0"}`;
 
     return cacheService.cached(
       cacheKey,
       async () => {
-        const query = this.supabase
+        let query = this.supabase
           .from("profiles")
-          .select("id, name, avatar_url, points, stats")
+          .select("id, name, avatar_url, points, stats, is_ambassador, institution_id")
           .order("points", { ascending: false });
+
+        if (ambassador) {
+          query = query.eq("is_ambassador", true);
+        }
+        if (institutionId) {
+          query = query.eq("institution_id", institutionId);
+        }
 
         // Apply timeframe filtering if needed (simplified)
         if (timeframe !== "all") {
@@ -7158,6 +7194,7 @@ export class SupabaseService {
             avatarUrl: user.avatar_url,
             points: user.points || 0,
             stats: user.stats || {},
+            campusAmbassador: user.is_ambassador ? 1 : 0,
           },
         }));
       },
@@ -7767,6 +7804,7 @@ export class SupabaseService {
       completedOrders,
       fiveStarReviewCount,
       offerCount,
+      ambassadorFlag,
     ] = await Promise.all(
       [
         this.supabase
@@ -7825,6 +7863,11 @@ export class SupabaseService {
           .from("marketplace_offers")
           .select("id", { count: "exact", head: true })
           .eq("buyer_id", userId),
+        this.supabase
+          .from("profiles")
+          .select("is_ambassador")
+          .eq("id", userId)
+          .maybeSingle(),
       ],
     );
 
@@ -7910,6 +7953,12 @@ export class SupabaseService {
     }
     if (!offerCount.error && typeof offerCount.count === "number") {
       derived.offersMade = offerCount.count;
+    }
+    if (!ambassadorFlag.error) {
+      derived.campusAmbassador =
+        (ambassadorFlag.data as { is_ambassador?: boolean } | null)?.is_ambassador === true
+          ? 1
+          : 0;
     }
 
     return derived;
@@ -9631,6 +9680,7 @@ export class SupabaseService {
       seller,
       is_boosted,
       category_specific_fields,
+      quantity,
     } = listing;
     return {
       id,
@@ -9654,11 +9704,16 @@ export class SupabaseService {
       views_count,
       seller,
       is_boosted,
-      // Only the condition surfaces from the free-form blob (for the card
-      // chip + condition filter); the rest stays stripped to keep cards compact.
+      quantity: quantity ?? null,
+      // Compact cards need condition + taxonomy node without shipping the
+      // whole free-form blob.
       condition:
         (category_specific_fields &&
           (category_specific_fields.condition as string | undefined)) ||
+        null,
+      taxonomyNodeId:
+        (category_specific_fields &&
+          (category_specific_fields.taxonomyNodeId as string | undefined)) ||
         null,
     };
   }
@@ -9712,6 +9767,8 @@ export class SupabaseService {
       campusId?: string;
       countryCode?: string;
       condition?: string;
+      taxonomyNodeId?: string;
+      includeUnclassified?: boolean;
       sortBy?: string;
       sortOrder?: "asc" | "desc";
       responseProfile?: "compact" | "full";
@@ -9730,6 +9787,8 @@ export class SupabaseService {
       campusId,
       countryCode,
       condition,
+      taxonomyNodeId,
+      includeUnclassified = false,
       sortBy = "trending",
       sortOrder = "desc",
       responseProfile = "full",
@@ -9740,11 +9799,17 @@ export class SupabaseService {
     const categoryList =
       categories && categories.length > 0 ? categories : undefined;
 
-    // Condition lives inside the category_specific_fields JSONB, which the
-    // search RPC can't filter on — route any condition-filtered query through
-    // the fallback path (which can), degrading trending to created_at there.
+    const taxonomyFilter =
+      taxonomyNodeId && isKnownTaxonomyNodeId(taxonomyNodeId)
+        ? taxonomyNodeId
+        : undefined;
+
+    // Condition and taxonomy node live inside category_specific_fields JSONB,
+    // which the search RPC can't filter on — those queries use the fallback
+    // path (degrading trending to created_at).
     const useSearchRpc =
       !condition &&
+      !taxonomyFilter &&
       (Boolean(search) ||
         Boolean(category) ||
         Boolean(categoryList) ||
@@ -9823,6 +9888,7 @@ export class SupabaseService {
         created_at,
         status,
         views_count,
+        quantity,
         category_specific_fields,
         seller:profiles!user_id (
           id,
@@ -9883,6 +9949,17 @@ export class SupabaseService {
       query = query.eq("category_specific_fields->>condition", condition);
     }
 
+    if (taxonomyFilter) {
+      // Node ids contain dots; quote the eq value so PostgREST does not split
+      // `academic.materials.textbooks.course` into extra filter segments.
+      const quoted = `"${taxonomyFilter.replace(/"/g, "")}"`;
+      query = includeUnclassified
+        ? query.or(
+            `category_specific_fields->>taxonomyNodeId.eq.${quoted},category_specific_fields->>taxonomyNodeId.is.null`,
+          )
+        : query.eq("category_specific_fields->>taxonomyNodeId", taxonomyFilter);
+    }
+
     // Fallback path: trending/sale_first require the RPC; degrade to created_at.
     const fallbackSort =
       sortBy === "trending" || sortBy === "sale_first" ? "created_at" : sortBy;
@@ -9934,6 +10011,8 @@ export class SupabaseService {
         created_at,
         status,
         views_count,
+        quantity,
+        category_specific_fields,
         seller:profiles!user_id (
           id,
           name,
@@ -9951,6 +10030,80 @@ export class SupabaseService {
     );
     // Preserve the caller's id order (most recently viewed first).
     return ids.map((id) => byId.get(id)).filter(Boolean);
+  }
+
+  /**
+   * Related listings for a product page: same category plus same course,
+   * ranked by campus / course / taxonomy / price proximity.
+   */
+  async getRelatedMarketplaceListings(
+    listing: {
+      id: string;
+      category?: string;
+      campus_id?: string | null;
+      course_id?: string | null;
+      price?: number | null;
+      category_specific_fields?: Record<string, unknown> | null;
+    },
+    limit = 6,
+  ): Promise<any[]> {
+    const client = this.getClient();
+    const similarSelect =
+      "id, title, price, images, category, location, campus_id, category_specific_fields, created_at, status";
+
+    let sameCategory: any[] = [];
+    if (listing.category) {
+      const { data, error } = await client
+        .from("marketplace_listings")
+        .select(similarSelect)
+        .eq("category", listing.category)
+        .eq("status", "active")
+        .neq("id", listing.id)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      sameCategory = data || [];
+    }
+
+    let sameCourse: any[] = [];
+    const courseId = listing.course_id;
+    if (courseId) {
+      const { data, error } = await client
+        .from("marketplace_listings")
+        .select(similarSelect)
+        .eq("course_id", courseId)
+        .eq("status", "active")
+        .neq("id", listing.id)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      if (!error) {
+        sameCourse = data || [];
+      }
+    }
+
+    let sameCampus: any[] = [];
+    if (listing.campus_id) {
+      const { data } = await client
+        .from("marketplace_listings")
+        .select(similarSelect)
+        .eq("campus_id", listing.campus_id)
+        .eq("status", "active")
+        .neq("id", listing.id)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      sameCampus = data || [];
+    }
+
+    const byId = new Map<string, any>();
+    for (const row of [...sameCategory, ...sameCourse, ...sameCampus]) {
+      if (row?.id) byId.set(row.id, row);
+    }
+    const ranked = rankRelatedListings(
+      listing,
+      Array.from(byId.values()),
+      limit,
+    );
+    return this.signSimilarListingCards(ranked);
   }
 
   async getMarketplaceCategoryAnalytics(): Promise<

@@ -243,6 +243,12 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
     case AppMode.ADMIN:
       return { mode: AppMode.ADMIN };
 
+    case AppMode.STUDY_ROOM:
+      if (params.roomId) {
+        ui.setSelectedStudyRoomId(params.roomId);
+      }
+      return { mode: AppMode.STUDY_ROOM };
+
     default:
       return { mode };
   }

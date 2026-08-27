@@ -22,6 +22,7 @@ export { OrdersScreen } from './OrdersScreen';
 export { CartScreen } from './CartScreen';
 export { PurchasesScreen } from './PurchasesScreen';
 export { StudyProductDraftsScreen } from './StudyProductDraftsScreen';
+export { SemesterProductsScreen } from './SemesterProductsScreen';
 export { CreatorProfileScreen } from './CreatorProfileScreen';
 
 export { OrderDetailScreen } from './OrderDetailScreen';

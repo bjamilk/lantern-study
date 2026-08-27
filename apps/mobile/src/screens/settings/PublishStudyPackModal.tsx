@@ -184,6 +184,19 @@ export function PublishStudyPackModal({
                 ? `${countSummary}. Buyers get a copy in their Library instantly — on web and mobile.`
                 : 'This has nothing to sell yet — add a guide, flashcards or questions first.'}
             </Text>
+            {content.cover?.title ? (
+              <Text style={{ fontSize: 12, color: colors.text }}>
+                Cover: {content.cover.title}
+                {content.cover.subtitle ? ` — ${content.cover.subtitle}` : ''}
+              </Text>
+            ) : null}
+            {content.examChecklist && content.examChecklist.length > 0
+              ? content.examChecklist.slice(0, 8).map((item) => (
+                  <Text key={item} style={{ fontSize: 12, color: colors.textSecondary }}>
+                    • {item}
+                  </Text>
+                ))
+              : null}
 
             <View style={{ gap: 6 }}>
               <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Title</Text>

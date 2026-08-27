@@ -186,6 +186,19 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
               <>
                 <span className="font-semibold text-lantern-text">{countSummary}</span>. Buyers get a
                 copy in their Library instantly — notes, flashcards and questions, on web and mobile.
+                {content.cover?.title ? (
+                  <p className="mt-1 text-xs">
+                    Cover: <span className="font-medium text-lantern-text">{content.cover.title}</span>
+                    {content.cover.subtitle ? ` — ${content.cover.subtitle}` : ''}
+                  </p>
+                ) : null}
+                {content.examChecklist && content.examChecklist.length > 0 ? (
+                  <ul className="mt-2 list-disc pl-4 text-xs space-y-0.5">
+                    {content.examChecklist.slice(0, 8).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </>
             ) : (
               <span className="text-lantern-error">

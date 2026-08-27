@@ -9,6 +9,7 @@ export type RootStackParamList = {
   EditProfile: undefined;
   /** Academic identity + "My courses" management (Settings → Academic). */
   AcademicSettings: undefined;
+  InviteFriends: undefined;
   BlockedUsers: undefined;
   /** Library tree → Offline filtered to a course (`'null'` = unfiled bundles). */
   Offline: { courseId?: string | null; courseLabel?: string } | undefined;
@@ -114,6 +115,8 @@ export type MarketStackParamList = {
   CommunityDetail: { slug: string };
   Feed: undefined;
   Mastery: undefined;
+  SemesterProducts: undefined;
+  StudyRoom: { roomId?: string; courseId?: string; topic?: string } | undefined;
   OrderDetail: {
     orderId: string;
     paymentReturn?: boolean;

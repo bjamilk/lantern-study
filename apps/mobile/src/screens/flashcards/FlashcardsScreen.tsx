@@ -31,6 +31,7 @@ import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { courseHasTopics } from '../../services/academic';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
+import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -652,6 +653,16 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         visible={importOpen}
         onClose={() => setImportOpen(false)}
         onOpenNote={noteId => navigation.navigate('NoteEditor', { noteId })}
+        onTurnIntoStudyProduct={(result) => {
+          setImportOpen(false);
+          navigateRootStack('Main', {
+            screen: 'MarketTab',
+            params: {
+              screen: 'StudyProductDrafts',
+              params: { source: { noteIds: [result.noteId], title: result.noteTitle } },
+            },
+          });
+        }}
       />
 
       <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>

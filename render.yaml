@@ -55,6 +55,12 @@ services:
         sync: false
       - key: FIREWORKS_API_KEY
         sync: false
+      # Handwritten photo OCR (Perceive vision). Without this, /health.ai.gemini
+      # stays "off" and photo notes fall back to Tesseract only.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
       # Paystack marketplace checkout: all three must be set for real payments
       # (see docs/RELEASING.md and the payments audit). sync:false on the flag
       # too, so a blueprint sync can never switch live checkout on by itself.
@@ -142,6 +148,12 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: FIREWORKS_API_KEY
+        sync: false
+      # Handwritten photo OCR (Perceive vision). Without this, /health.ai.gemini
+      # stays "off" and photo notes fall back to Tesseract only.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
         sync: false
       # Paystack marketplace checkout: all three must be set for real payments
       # (see docs/RELEASING.md and the payments audit). sync:false on the flag

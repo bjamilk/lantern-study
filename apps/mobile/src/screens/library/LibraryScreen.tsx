@@ -317,6 +317,12 @@ export function LibraryScreen({ navigation, route }: Props) {
           onOpenOffline={openOffline}
           onManageTopics={setManageCourse}
           onCreateStudyPack={openStudyPackDrafts}
+          onTurnSemesterIntoProducts={() =>
+            navigateRootStack('Main', {
+              screen: 'MarketTab',
+              params: { screen: 'SemesterProducts' },
+            })
+          }
           onRetry={() => setOverviewAttempt(a => a + 1)}
           onManageCourses={() => navigateRootStack('AcademicSettings')}
         />

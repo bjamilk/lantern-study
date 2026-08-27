@@ -67,6 +67,8 @@ interface Props {
   onManageTopics: (filter: LibraryCourseFilter) => void;
   /** Draft a sellable study pack from a course (Phase 2 · H). */
   onCreateStudyPack: (filter: LibraryCourseFilter) => void;
+  /** Phase 4 · S. */
+  onTurnSemesterIntoProducts?: () => void;
   onRetry: () => void;
   onManageCourses: () => void;
 }
@@ -259,6 +261,7 @@ export function LibraryCourseTree({
   onOpenOffline,
   onManageTopics,
   onCreateStudyPack,
+  onTurnSemesterIntoProducts,
   onRetry,
   onManageCourses,
 }: Props) {
@@ -447,12 +450,35 @@ export function LibraryCourseTree({
               <Pressable onPress={onManageCourses} accessibilityRole="button" className="self-start mt-2 mb-1">
                 <Text className="text-xs font-semibold text-lantern-primary">Add my courses</Text>
               </Pressable>
+              {onTurnSemesterIntoProducts ? (
+                <Pressable
+                  onPress={onTurnSemesterIntoProducts}
+                  accessibilityRole="button"
+                  className="self-start mt-1"
+                >
+                  <Text className="text-xs font-semibold text-lantern-primary">Turn into products</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 
           {tree && activeCount > 0 ? (
             <>
-              <SectionHeader label="This semester" count={activeCount} open={thisOpen} onToggle={() => setThisOpen(o => !o)} />
+              <View className="flex-row items-center">
+                <View className="flex-1">
+                  <SectionHeader label="This semester" count={activeCount} open={thisOpen} onToggle={() => setThisOpen(o => !o)} />
+                </View>
+                {onTurnSemesterIntoProducts ? (
+                  <Pressable
+                    onPress={onTurnSemesterIntoProducts}
+                    accessibilityRole="button"
+                    hitSlop={6}
+                    className="px-2 py-1"
+                  >
+                    <Text className="text-[11px] font-semibold text-lantern-primary">Products</Text>
+                  </Pressable>
+                ) : null}
+              </View>
               {thisOpen ? tree.thisSemester.map(node => renderCourse(node, false)) : null}
             </>
           ) : null}

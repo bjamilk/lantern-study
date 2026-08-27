@@ -11,6 +11,11 @@ import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
 import { useFeatureTipStore } from './stores/featureTipStore';
 import { setSessionExpiredHandler } from './services/sessionHandler';
 import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle } from './services/supabase';
+import {
+    ONBOARDING_COMPLETE_STORAGE_KEY,
+    ONBOARDING_COMPLETE_VALUE,
+    isOnboardingCompleteFlag,
+} from '@lantern/shared/settings';
 import { getNoteStudyContent, isQuizzableNote } from '@lantern/shared';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
@@ -65,6 +70,7 @@ import SimulationControls from './components/SimulationControls';
 import TestAnalysisModal from './components/TestAnalysisModal';
 import CreateMarketplaceListingModal from './components/CreateMarketplaceListingModal';
 import EditMarketplaceListingModal from './components/EditMarketplaceListingModal';
+import CreateLabModal from './components/CreateLabModal';
 // Heavy screens — loaded on demand to reduce initial bundle size
 const FlashcardsScreen = lazyWithRetry(() => import('./components/FlashcardsScreen'));
 const DeckDetailScreen = lazyWithRetry(() => import('./components/DeckDetailScreen'));
@@ -85,6 +91,8 @@ const MarketplaceListingDetailScreen = lazyWithRetry(() => import('./components/
 const MyListingsScreen = lazyWithRetry(() => import('./components/MyListingsScreen'));
 const MarketplacePurchasesScreen = lazyWithRetry(() => import('./components/MarketplacePurchasesScreen'));
 const StudyProductDraftsScreen = lazyWithRetry(() => import('./components/StudyProductDraftsScreen'));
+const SemesterProductsScreen = lazyWithRetry(() => import('./components/SemesterProductsScreen'));
+const StudyRoomScreen = lazyWithRetry(() => import('./components/StudyRoomScreen'));
 const CreatorProfileScreen = lazyWithRetry(() => import('./components/CreatorProfileScreen'));
 const DiscoverScreen = lazyWithRetry(() => import('./components/DiscoverScreen'));
 const InviteFriendsScreen = lazyWithRetry(() => import('./components/InviteFriendsScreen'));
@@ -175,7 +183,13 @@ export const App: React.FC = () => {
     const { toast, showToast, dismissToast } = useToastStore();
     const globalConfirm = useConfirmStore();
     const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
+    const [marketplaceBrowseIntent, setMarketplaceBrowseIntent] = useState<{
+        browseNodeId?: string;
+        tab?: 'academic' | 'student-life' | 'shops';
+        category?: string;
+    } | null>(null);
     const [sellerProfileReturnMode, setSellerProfileReturnMode] = useState<AppMode>(AppMode.MARKETPLACE);
+    const [createGroupReturnMode, setCreateGroupReturnMode] = useState<AppMode>(AppMode.CHAT);
     const [startingDailyQuiz, setStartingDailyQuiz] = useState(false);
     const [accountLifecycle, setAccountLifecycle] = useState<{
         status: 'active' | 'deactivated';
@@ -234,6 +248,8 @@ export const App: React.FC = () => {
         editingMarketplaceListing, setEditingMarketplaceListing,
         selectedSellerId, setSelectedSellerId,
         selectedCompanyId, setSelectedCompanyId,
+        selectedStudyRoomId, setSelectedStudyRoomId,
+        studyRoomJoin, setStudyRoomJoin,
         isOnline,
         libraryTab, setLibraryTab,
     } = useUIStore();
@@ -250,6 +266,7 @@ export const App: React.FC = () => {
         'communities' | 'groups' | 'people' | 'marketplace'
     >('communities');
     const [communitySlug, setCommunitySlug] = useState<string | null>(null);
+    const [createLabOpen, setCreateLabOpen] = useState(false);
 
     useEffect(() => {
         if (isCompanionOpen) markChecklist('tryCompanion');
@@ -440,7 +457,7 @@ export const App: React.FC = () => {
     const location = useLocation();
     const [showOnboarding, setShowOnboarding] = React.useState(() => {
         if (typeof window === 'undefined') return false;
-        return !localStorage.getItem('lantern_onboarding_complete');
+        return !isOnboardingCompleteFlag(localStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY));
     });
     // Starter-deck pre-seed: the first active enrolment (Phase 1 onboarding).
     const myAcademicCourses = useAcademicStore((s) => s.myCourses);
@@ -1088,6 +1105,31 @@ export const App: React.FC = () => {
         }
     };
 
+    const openDiscoverGroup = (params?: Record<string, unknown>) => {
+        const groupId = String(params?.groupId || '');
+        if (!groupId) return;
+        const target = groups.find((x) => x.id === groupId);
+        if (target) {
+            handleSelectChat({ ...target, chatType: 'group' });
+            setAppMode(AppMode.CHAT);
+            return;
+        }
+        if (!params?.joined) return;
+        const stub = {
+            id: groupId,
+            name: String(params.groupName || 'Group'),
+            members: [] as User[],
+            adminIds: [] as string[],
+            unreadCount: 0,
+            description: '',
+        };
+        useGroupStore.getState().updateGroups((prev) =>
+            prev.some((g) => g.id === groupId) ? prev : [...prev, stub]
+        );
+        handleSelectChat({ ...stub, chatType: 'group' });
+        setAppMode(AppMode.CHAT);
+    };
+
     const mainContent = () => {
         switch (appMode) {
             case AppMode.CREATE_GROUP:
@@ -1097,7 +1139,7 @@ export const App: React.FC = () => {
                         allUsers={users}
                         onCreateGroup={handleCreateGroup}
                         onEnterGroup={handleEnterCreatedGroup}
-                        onBack={() => navigateTo(AppMode.CHAT)}
+                        onBack={() => navigateTo(createGroupReturnMode || AppMode.CHAT)}
                     />
                 );
             case AppMode.CHAT:
@@ -1116,7 +1158,10 @@ export const App: React.FC = () => {
                     dmThreads={dmThreads}
                     onSelectChat={handleSelectChat}
                     onBack={handleChatBack}
-                    onCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
+                    onCreateGroup={() => {
+                        setCreateGroupReturnMode(AppMode.CHAT);
+                        navigateTo(AppMode.CREATE_GROUP);
+                    }}
                     onOpenNewDmModal={() => openModal('newDm')}
                     onDeleteDmThread={handleDeleteDmThread}
                     onArchiveDmThread={handleArchiveDmThread}
@@ -1189,7 +1234,10 @@ export const App: React.FC = () => {
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
                     onNavigateToDiscover={() => navigateTo(AppMode.DISCOVER)}
                     onNavigateToInvite={() => navigateTo(AppMode.INVITE_FRIENDS)}
-                    onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
+                    onNavigateToCreateGroup={() => {
+                        setCreateGroupReturnMode(AppMode.CHAT);
+                        navigateTo(AppMode.CREATE_GROUP);
+                    }}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
                     onNavigateToLibrary={() => navigateTo(AppMode.LIBRARY)}
@@ -1205,7 +1253,7 @@ export const App: React.FC = () => {
                     hasExploredMarketplace={appMode === AppMode.MARKETPLACE || appMode === AppMode.MARKETPLACE_LISTING_DETAIL}
                     hasTriedOffline={appMode === AppMode.OFFLINE_MODE}
                     onNavigateToNotes={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' })}
-                    onOpenImportAndStudy={() => navigateTo(AppMode.AI_TOOLS)}
+                    onOpenImportAndStudy={() => setShowImportAndStudy(true)}
                     onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
                     onReviewDueCards={handleFlashcardStudy}
                     onViewTestResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}
@@ -1292,6 +1340,7 @@ export const App: React.FC = () => {
                             setStudyProductSource({ courseId, title: courseLabel });
                             setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
                         }}
+                        onTurnSemesterIntoProducts={() => setAppMode(AppMode.SEMESTER_PRODUCTS)}
                     />
                 );
             case AppMode.STUDY_HUB:
@@ -1555,6 +1604,9 @@ export const App: React.FC = () => {
             case AppMode.MARKETPLACE:
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
+                    initialTab={marketplaceBrowseIntent?.tab}
+                    initialCategory={marketplaceBrowseIntent?.category}
                     onNavigateToDiscover={(section) => {
                         setDiscoverSection(section as any);
                         setAppMode(AppMode.DISCOVER);
@@ -1620,6 +1672,18 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE_ORDERS);
                         } else if (screen === 'MarketplaceCart') {
                             setAppMode(AppMode.MARKETPLACE_CART);
+                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(String(params.listingId));
+                            setSelectedMarketplaceListingInitialQuantity(
+                              params?.quantity != null ? Number(params.quantity) : null
+                            );
+                        } else if (screen === 'Marketplace') {
+                            setMarketplaceBrowseIntent({
+                                browseNodeId: params?.browseNodeId ? String(params.browseNodeId) : '',
+                                tab: params?.tab,
+                                category: params?.category ? String(params.category) : '',
+                            });
+                            setAppMode(AppMode.MARKETPLACE);
                         } else if (screen === 'MyListings') {
                             setAppMode(AppMode.MY_LISTINGS);
                         } else if (screen === 'EditMarketplaceListing' && params?.listing) {
@@ -1699,11 +1763,7 @@ export const App: React.FC = () => {
                     onBack={() => setAppMode(AppMode.DISCOVER)}
                     onNavigate={(screen, params) => {
                         if (screen === 'GroupChat' && params?.groupId) {
-                            const target = groups.find((x) => x.id === params.groupId);
-                            if (target) {
-                                handleSelectChat({ ...target, chatType: 'group' });
-                                setAppMode(AppMode.CHAT);
-                            }
+                            openDiscoverGroup(params);
                         }
                     }} />;
             }
@@ -1724,16 +1784,25 @@ export const App: React.FC = () => {
                             setSellerProfileReturnMode(AppMode.DISCOVER);
                             setAppMode(AppMode.CREATOR_PROFILE);
                         } else if (screen === 'GroupChat' && params?.groupId) {
-                            // Discover can surface a group the user has not
-                            // joined yet, so it may not be in `groups`. Only
-                            // open the chat when they are actually a member —
-                            // otherwise leave them in Discover rather than
-                            // dropping them on an empty chat screen.
-                            const target = groups.find((x) => x.id === params.groupId);
-                            if (target) {
-                                handleSelectChat({ ...target, chatType: 'group' });
-                                setAppMode(AppMode.CHAT);
-                            }
+                            openDiscoverGroup(params);
+                        } else if (screen === 'StudyRoom') {
+                            setStudyRoomJoin({
+                                courseId: params?.courseId ? String(params.courseId) : null,
+                                topic: params?.topic ? String(params.topic) : null,
+                            });
+                            if (params?.roomId) setSelectedStudyRoomId(String(params.roomId));
+                            else setSelectedStudyRoomId(null);
+                            setAppMode(AppMode.STUDY_ROOM);
+                        } else if (screen === 'CreateLab') {
+                            setCreateLabOpen(true);
+                        } else if (screen === 'AcademicSetup') {
+                            useUIStore.getState().setSettingsTab('academic');
+                            openModal('settings');
+                        } else if (screen === 'CreateGroup') {
+                            setCreateGroupReturnMode(AppMode.DISCOVER);
+                            navigateTo(AppMode.CREATE_GROUP);
+                        } else if (screen === 'Library') {
+                            navigateTo(AppMode.LIBRARY);
                         }
                     }} />;
             case AppMode.CREATOR_PROFILE:
@@ -1762,6 +1831,26 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                         }
                     }} />;
+            case AppMode.SEMESTER_PRODUCTS:
+                return (
+                    <SemesterProductsScreen
+                        onBack={() => setAppMode(AppMode.LIBRARY)}
+                        onNavigateToDrafts={() => {
+                            setStudyProductSource(null);
+                            setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                        }}
+                    />
+                );
+            case AppMode.STUDY_ROOM:
+                return (
+                    <StudyRoomScreen
+                        roomId={selectedStudyRoomId}
+                        join={studyRoomJoin}
+                        onBack={() => setAppMode(AppMode.DISCOVER)}
+                        onNeedCourse={() => setCreateLabOpen(true)}
+                        onRoomReady={(id) => setSelectedStudyRoomId(id)}
+                    />
+                );
             case AppMode.MARKETPLACE_FAVORITES:
                 return <MarketplaceFavoritesScreen
                     onBack={() => setAppMode(AppMode.MARKETPLACE)}
@@ -1883,6 +1972,9 @@ export const App: React.FC = () => {
                 if (!modals.createMarketplaceListing) openModal('createMarketplaceListing');
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
+                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
+                    initialTab={marketplaceBrowseIntent?.tab}
+                    initialCategory={marketplaceBrowseIntent?.category}
                     onNavigateToDiscover={(section) => {
                         setDiscoverSection(section as any);
                         setAppMode(AppMode.DISCOVER);
@@ -1975,7 +2067,10 @@ export const App: React.FC = () => {
         currentUser, groups, dmThreads,
         selectedChatId: selectedChat?.id,
         onSelectChat: handleSelectChat,
-        onNavigateToCreateGroup: () => navigateTo(AppMode.CREATE_GROUP),
+        onNavigateToCreateGroup: () => {
+            setCreateGroupReturnMode(AppMode.CHAT);
+            navigateTo(AppMode.CREATE_GROUP);
+        },
         onNavigateToDashboard: () => navigateTo(AppMode.DASHBOARD),
         onNavigateToOfflineMode: () => navigateTo(AppMode.OFFLINE_MODE),
         onNavigateToLibrary: () => navigateTo(AppMode.LIBRARY),
@@ -2162,6 +2257,11 @@ export const App: React.FC = () => {
                 duplicateInfo={duplicateInfo} onUpvoteAndClose={handleUpvoteDuplicateAndClose} />}
             <CreateMarketplaceListingModal isOpen={modals.createMarketplaceListing}
                 onClose={() => closeModal('createMarketplaceListing')} category={marketplaceListingCategory}
+                onOpenStudyProducts={() => {
+                    closeModal('createMarketplaceListing');
+                    setStudyProductSource(null);
+                    setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                }}
                 onSuccess={() => {
                     closeModal('createMarketplaceListing');
                     setMyListingsRefreshKey((k) => k + 1);
@@ -2206,12 +2306,25 @@ export const App: React.FC = () => {
                     <ImportAndStudyModal
                         isOpen={showImportAndStudy}
                         onClose={() => setShowImportAndStudy(false)}
-                        onComplete={() => setShowImportAndStudy(false)}
+                        onComplete={() => undefined}
                         onOpenNote={(noteId) => { noteHandlers.openNote(noteId); setShowImportAndStudy(false); }}
-                        theme={theme}
+                        onTurnIntoStudyProduct={(result) => {
+                            setStudyProductSource({ noteIds: [result.noteId], title: result.noteTitle });
+                            setShowImportAndStudy(false);
+                            setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                        }}
                     />
                 </Suspense>
             )}
+            <CreateLabModal
+                isOpen={createLabOpen}
+                onClose={() => setCreateLabOpen(false)}
+                onCreated={(room) => {
+                    setSelectedStudyRoomId(room.id);
+                    setStudyRoomJoin(null);
+                    setAppMode(AppMode.STUDY_ROOM);
+                }}
+            />
             {showOnboarding && currentUser && !modals.usernameRequired && (
                 <Suspense fallback={null}>
                     <OnboardingFlow
@@ -2219,9 +2332,9 @@ export const App: React.FC = () => {
                         programme={currentUser.programme ?? null}
                         studyLevel={currentUser.studyLevel ?? null}
                         firstCourse={onboardingFirstCourse}
-                        onSkip={() => { localStorage.setItem('lantern_onboarding_complete', '1'); setShowOnboarding(false); }}
+                        onSkip={() => { localStorage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, ONBOARDING_COMPLETE_VALUE); setShowOnboarding(false); }}
                         onComplete={({ streakTarget }) => {
-                            localStorage.setItem('lantern_onboarding_complete', '1');
+                            localStorage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, ONBOARDING_COMPLETE_VALUE);
                             localStorage.setItem('lantern_streak_target', String(streakTarget));
                             setShowOnboarding(false);
                             void import('./services/productAnalytics').then(({ trackOnboardingCompleted }) => {
@@ -2289,7 +2402,7 @@ export const App: React.FC = () => {
             <ToastBanner toast={toast} onDismiss={dismissToast} />
             <AccountSuspendedNotice variant="modal" />
             <FeatureTipsHost
-                onboardingComplete={!showOnboarding && Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('lantern_onboarding_complete'))}
+                onboardingComplete={!showOnboarding && typeof localStorage !== 'undefined' && isOnboardingCompleteFlag(localStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY))}
                 appMode={appMode}
                 isGroupChat={selectedChat?.chatType === 'group'}
                 isLibrary={

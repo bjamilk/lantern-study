@@ -175,16 +175,27 @@ export class ReferralsService {
         created_at: string;
       } | null;
 
+      // Activation is defined only by referral_activation_check. Stamp
+      // profiles.activated_at even when this user was never referred — do not
+      // copy the 10-events / 2-days constants here.
+      const { data: activated, error } = await this.db.rpc('referral_activation_check', {
+        p_user_id: refereeId,
+      });
+      if (error) throw error;
+      if (activated === true) {
+        await this.db
+          .from('profiles')
+          .update({ activated_at: new Date().toISOString() })
+          .eq('id', refereeId)
+          .is('activated_at', null);
+      }
+
       if (!row || row.rewarded_at) return { rewarded: false };
 
       // Stale referrals stop costing a query on every request.
       const ageDays = (Date.now() - new Date(row.created_at).getTime()) / 86_400_000;
       if (ageDays > REFERRAL_QUALIFY_WINDOW_DAYS) return { rewarded: false };
 
-      const { data: activated, error } = await this.db.rpc('referral_activation_check', {
-        p_user_id: refereeId,
-      });
-      if (error) throw error;
       if (activated !== true) return { rewarded: false };
 
       const now = new Date().toISOString();
