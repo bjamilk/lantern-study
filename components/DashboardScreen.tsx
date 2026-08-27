@@ -66,6 +66,9 @@ import {
 } from '../utils/academicSetup';
 import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
 
+/** Dashboard “Questions to review” card. Review/study screens stay available. */
+export const SHOW_DASHBOARD_QUESTIONS_TO_REVIEW = false;
+
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 
 /**
@@ -1651,7 +1654,7 @@ export default function DashboardScreen({
         </DashboardProgress>
 
         {/* ─── Troublesome Questions ─── */}
-        {troublesomeQuestions.length > 0 && (
+        {SHOW_DASHBOARD_QUESTIONS_TO_REVIEW && troublesomeQuestions.length > 0 && (
           <details open className="group">
             <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
               <h2 className="text-lg font-semibold text-lantern-text flex items-center">
