@@ -75,6 +75,20 @@
       "android": {
         "resourceClass": "medium"
       }
+    },
+    "ios-simulator-preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "node": "20.19.4",
+      "env": {
+        "APP_VARIANT": "preview",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5"
+      },
+      "ios": {
+        "simulator": true
+      }
     }
   },
   "submit": {

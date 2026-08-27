@@ -2,7 +2,11 @@ import { ExpoConfig, ConfigContext } from 'expo/config';
 
 const APP_VARIANT = process.env.APP_VARIANT || process.env.EAS_BUILD_PROFILE || 'development';
 const IS_DEV_VARIANT = APP_VARIANT === 'development';
-const IS_PRODUCTION_BUILD = ['production', 'preview'].includes(process.env.EAS_BUILD_PROFILE || '');
+// Keyed off APP_VARIANT as well as the profile name: the ios-simulator-preview
+// profile must bake in the same endpoints as `preview` without being named it.
+const IS_PRODUCTION_BUILD =
+  ['production', 'preview'].includes(process.env.EAS_BUILD_PROFILE || '') ||
+  ['production', 'preview'].includes(APP_VARIANT);
 const ANDROID_PACKAGE = IS_DEV_VARIANT ? 'com.lanternstudy.app.dev' : 'com.lanternstudy.app';
 const IOS_BUNDLE_ID = IS_DEV_VARIANT ? 'com.lanternstudy.app.dev' : 'com.lanternstudy.app';
 
@@ -135,7 +139,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // be built from the flashcard tags you already use. Topics are shared with
   // everyone taking the course, so renaming or deleting one changes it for them
   // too — deleting only unfiles work, it never deletes anyone's notes or decks.
-  version: '1.0.29',
+  // 1.0.30: the campus shop — browse and search listings by category, and a
+  // classifier that files what you are selling for you. Photographed notes can
+  // be turned into a Study Product, and semester study packs are proposed from
+  // the courses you actually take. Discover — cross-university study rooms off
+  // live presence, ambassador invites and study reminders — is built but stays
+  // behind the platform-admin gate and shows "Coming soon" to everyone else.
+  // The Study wallet now sits inside Budget as a sibling tab, the Dashboard is cut
+  // back to what people use, and Chat's overflow, mute and question filters are
+  // folded into single controls.
+  version: '1.0.30',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
