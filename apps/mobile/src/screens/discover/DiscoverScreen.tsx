@@ -245,7 +245,20 @@ export function DiscoverScreen({
       <View className="px-4 py-3 border-b border-lantern-border">
         <Text className="text-xl font-bold text-lantern-text">Discover</Text>
         {presenceLine ? (
-          <Text className="text-xs text-lantern-primary mt-0.5">{presenceLine}</Text>
+          <Pressable
+            onPress={() =>
+              navigation.navigate('StudyRoom', {
+                courseId: presence?.joinCourseId,
+                topic: presence?.joinTopic,
+              })
+            }
+            disabled={!presence?.joinCourseId}
+          >
+            <Text className="text-xs text-lantern-primary mt-0.5">
+              {presenceLine}
+              {presence?.joinCourseId ? ' · Join room' : ''}
+            </Text>
+          </Pressable>
         ) : (
           <Text className="text-xs text-lantern-text-tertiary mt-0.5">
             Your campus, your courses, and the people studying them.

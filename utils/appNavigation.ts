@@ -82,10 +82,9 @@ export function buildParamsFromState(mode: AppMode): AppRouteParams {
     case AppMode.NOTE_EDITOR:
       return state.selectedNote ? { noteId: state.selectedNote.id } : {};
     case AppMode.LIBRARY:
-      // Sidebar, bottom nav and breadcrumbs all navigate by mode alone. Without
-      // this they would build bare `/library` and drop the tab the user is on,
-      // then bounce through hydration's rewrite to get it back.
       return { libraryTab: state.libraryTab };
+    case AppMode.STUDY_ROOM:
+      return state.selectedStudyRoomId ? { roomId: state.selectedStudyRoomId } : {};
     default:
       return {};
   }
@@ -126,6 +125,9 @@ export function applyPreNavigationEffects(mode: AppMode, params?: AppRouteParams
     // Clear when absent, or a previously viewed job would open the form in
     // edit mode instead of starting a new post.
     ui.setSelectedJobId(params?.jobId ?? null);
+  }
+  if (mode === AppMode.STUDY_ROOM && params?.roomId) {
+    ui.setSelectedStudyRoomId(params.roomId);
   }
 }
 

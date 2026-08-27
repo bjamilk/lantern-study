@@ -50,6 +50,7 @@ import {
 } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
+import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
 import { Button, Card } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -140,6 +141,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [aiUsage, setAiUsage] = useState(getLatestAIUsage());
 
   useEffect(() => subscribeToAIUsage(setAiUsage), []);
+
+  useEffect(() => {
+    setStudyIntent({
+      context: 'writing',
+      courseId: selectedNote?.courseId || undefined,
+      topic: selectedNote?.title || title || undefined,
+    });
+    return () => setStudyIntent(null);
+  }, [noteId, selectedNote?.courseId, selectedNote?.title, title]);
 
   const remainingCredits = Math.max(0, aiUsage.remaining);
   const shortForSmartNote =

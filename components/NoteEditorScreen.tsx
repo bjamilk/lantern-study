@@ -45,6 +45,7 @@ import { TopicPicker } from './academic/TopicPicker';
 import { useToastStore } from '../stores/toastStore';
 import { navigateToPath } from '../utils/appNavigation';
 import { useNoteCommentsSync } from '../hooks/useNoteCommentsSync';
+import { setStudyIntent } from '../services/presenceHeartbeat';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -155,6 +156,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const isViewer = !canEdit;
   const { refresh: refreshComments, isRefreshing: isRefreshingComments } =
     useNoteCommentsSync(note.id, onRefreshComments);
+
+  useEffect(() => {
+    setStudyIntent({
+      context: 'writing',
+      courseId: note.courseId || undefined,
+      topic: note.title,
+    });
+    return () => setStudyIntent(null);
+  }, [note.id, note.courseId, note.title]);
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
   const isYoutubeNote = note.sourceType === 'youtube' || Boolean(note.youtubeVideoId);

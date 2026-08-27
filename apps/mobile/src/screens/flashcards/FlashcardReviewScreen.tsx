@@ -114,17 +114,22 @@ function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
 }
 
 export function FlashcardReviewScreen({ navigation, route }: Props) {
-  // Phase 3 M — see the web screen: without a caller, study_presence is never
-  // written and the "studying right now" count is permanently zero.
-  useEffect(() => {
-    setStudyIntent({ context: 'reviewing' });
-    return () => setStudyIntent(null);
-  }, []);
-
   const { reduceMotion, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Review';
+  const deck = useFlashcardStore(s => s.decks.find(d => d.id === deckId));
+
+  // Phase 3 M / 4 V — course + topic ride the existing heartbeat so Discover
+  // presence can open a real study room, not only a review-intent count.
+  useEffect(() => {
+    setStudyIntent({
+      context: 'reviewing',
+      courseId: deck?.course_id || undefined,
+      topic: deck?.name || deckName,
+    });
+    return () => setStudyIntent(null);
+  }, [deck?.course_id, deck?.name, deckName]);
   const user = useAuthStore(s => s.user);
   const deckCards = useFlashcardStore(s => s.flashcards[deckId] ?? EMPTY_CARDS);
   const isLoading = useFlashcardStore(s => s.isLoading);

@@ -9,6 +9,7 @@ import VoiceInputButton from './VoiceInputButton';
 import TestUtilityToolbar, { ToolType } from './TestUtilityToolbar';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 import { nearestPreviousUnlockedIndex } from '../utils/helpers';
+import { setStudyIntent } from '../services/presenceHeartbeat';
 
 interface TestTakingScreenProps {
   mode: 'test' | 'study';
@@ -88,6 +89,15 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   const previousTargetIndex = lockMode
     ? nearestPreviousUnlockedIndex(session.questions.map((q) => q.id), lockedIdSet, session.currentQuestionIndex)
     : session.currentQuestionIndex - 1;
+
+  useEffect(() => {
+    setStudyIntent({
+      context: 'testing',
+      courseId: session.config.courseId || undefined,
+      topic: session.title || session.config.groupName || undefined,
+    });
+    return () => setStudyIntent(null);
+  }, [session.config.courseId, session.title, session.config.groupName]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

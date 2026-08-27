@@ -13,6 +13,7 @@ import type {
   StudyPackCounts,
   StudyPackDraft,
   StudyPackDraftSummary,
+  SemesterPackProposalResponse,
 } from "../marketplace/studyPacks";
 import type {
   Community,
@@ -1703,6 +1704,26 @@ export function createApiEndpoints(client: ApiClient) {
         xp_to_next_level: number;
       }>(`/gamification/stats?userId=${encodeURIComponent(userId)}`),
 
+    fetchGamificationLeaderboard: (params: {
+      page?: number;
+      limit?: number;
+      ambassador?: boolean;
+      institutionId?: string;
+    } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.page) qs.set("page", String(params.page));
+      if (params.limit) qs.set("limit", String(params.limit));
+      if (params.ambassador) qs.set("ambassador", "1");
+      if (params.institutionId) qs.set("institutionId", params.institutionId);
+      const suffix = qs.toString() ? `?${qs}` : "";
+      return apiRequest<
+        Array<{
+          rank: number;
+          user: { id: string; name: string; avatarUrl?: string; points: number };
+        }>
+      >(`/gamification/leaderboard${suffix}`, {}, 10000);
+    },
+
     awardPoints: (userId: string, points: number, reason: string) =>
       apiRequest<void>(`/gamification/user/${userId}/points`, {
         method: "POST",
@@ -2833,6 +2854,23 @@ export function createApiEndpoints(client: ApiClient) {
         10000,
       ),
 
+    /** Phase 4 · S — proposed packs + remaining credit budget. Does not charge. */
+    fetchSemesterPackProposals: (academicYear?: string) => {
+      const qs = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : "";
+      return apiRequest<SemesterPackProposalResponse>(
+        `/ai/study-pack/semester-proposals${qs}`,
+        {},
+        15000,
+      );
+    },
+
+    /** Auth'd AI health — includes handwritingOcr on/off for the photo-notes banner. */
+    fetchAiHealth: () =>
+      apiRequestRaw<{
+        handwritingOcr?: "on" | "off";
+        gemini?: "on" | "off";
+      }>(`/ai/health`, {}, 8000),
+
     // ── Creators (Phase 2 · J) ──
 
     /** Public creator profile: academic line, bio, stats, packs. Never earnings. */
@@ -3006,6 +3044,40 @@ export function createApiEndpoints(client: ApiClient) {
         Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>
       >(`/referrals/ambassadors?${qs}`, {}, 10000);
     },
+
+    joinOrCreateStudyRoom: (input: {
+      courseId?: string | null;
+      communityId?: string | null;
+      topicId?: string | null;
+      topic?: string | null;
+      title?: string | null;
+    }) =>
+      apiRequest<import('../network').StudyRoomDetail>(
+        '/study-rooms/join-or-create',
+        { method: 'POST', body: JSON.stringify(input) },
+        15000,
+      ),
+
+    fetchStudyRoom: (roomId: string) =>
+      apiRequest<import('../network').StudyRoomDetail>(
+        `/study-rooms/${encodeURIComponent(roomId)}`,
+        {},
+        10000,
+      ),
+
+    joinStudyRoom: (roomId: string) =>
+      apiRequest<import('../network').StudyRoomDetail>(
+        `/study-rooms/${encodeURIComponent(roomId)}/join`,
+        { method: 'POST', body: '{}' },
+        10000,
+      ),
+
+    leaveStudyRoom: (roomId: string) =>
+      apiRequest<{ left: true }>(
+        `/study-rooms/${encodeURIComponent(roomId)}/leave`,
+        { method: 'POST', body: '{}' },
+        10000,
+      ),
 
     /** Population aggregate; the server refuses below a 20-student cohort. */
     fetchCourseMastery: (courseId: string) =>

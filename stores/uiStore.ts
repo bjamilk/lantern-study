@@ -147,6 +147,10 @@ interface UIState {
   setSelectedJobId: (id: string | null) => void;
   selectedCompanyId: string | null;
   setSelectedCompanyId: (id: string | null) => void;
+  selectedStudyRoomId: string | null;
+  setSelectedStudyRoomId: (id: string | null) => void;
+  studyRoomJoin: { courseId?: string | null; topic?: string | null } | null;
+  setStudyRoomJoin: (join: { courseId?: string | null; topic?: string | null } | null) => void;
   
   // Online Status
   isOnline: boolean;
@@ -347,6 +351,10 @@ export const useUIStore = create<UIState>()(
       setSelectedJobId: (id) => set({ selectedJobId: id }),
       selectedCompanyId: null,
       setSelectedCompanyId: (id) => set({ selectedCompanyId: id }),
+      selectedStudyRoomId: null,
+      setSelectedStudyRoomId: (id) => set({ selectedStudyRoomId: id }),
+      studyRoomJoin: null,
+      setStudyRoomJoin: (join) => set({ studyRoomJoin: join }),
       
       // Online Status
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,

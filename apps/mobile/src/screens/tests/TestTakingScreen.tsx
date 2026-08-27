@@ -30,6 +30,7 @@ import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 import { hapticSuccess } from '../../utils/haptics';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
+import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -546,6 +547,15 @@ export default function TestTakingScreen() {
 
   const { showExplanationsImmediately } = useStudySettings();
   const isFocused = useIsFocused();
+
+  useEffect(() => {
+    setStudyIntent({
+      context: 'testing',
+      courseId: activeTest?.courseId || undefined,
+      topic: testName || activeTest?.test.name || undefined,
+    });
+    return () => setStudyIntent(null);
+  }, [activeTest?.courseId, testName, activeTest?.test.name]);
   const [timeRemaining, setTimeRemaining] = useState(activeTest?.timeRemaining || 0);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackResult, setFeedbackResult] = useState<{ isCorrect: boolean; explanation?: string } | null>(null);

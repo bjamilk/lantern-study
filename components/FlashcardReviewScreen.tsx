@@ -66,9 +66,13 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   // "23 people studying right now" is permanently zero — the plumbing shipped
   // with no screen ever setting it.
   useEffect(() => {
-    setStudyIntent({ context: 'reviewing' });
+    setStudyIntent({
+      context: 'reviewing',
+      courseId: session.deck.courseId || undefined,
+      topic: session.deck.name,
+    });
     return () => setStudyIntent(null);
-  }, []);
+  }, [session.deck.courseId, session.deck.name]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnswerShown, setIsAnswerShown] = useState(false);

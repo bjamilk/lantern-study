@@ -178,6 +178,9 @@ export interface PresenceSnapshot {
   topics: Array<{ topic: string; count: number }>;
   /** Whether the VIEWER shares their own activity — drives the reciprocity nudge. */
   sharing: boolean;
+  /** Course most present people are in — Join room uses this. */
+  joinCourseId?: string | null;
+  joinTopic?: string | null;
 }
 
 /**
@@ -394,3 +397,5 @@ export function referralStatusLabel(status: ReferralRow['status']): string {
  */
 export const REFERRAL_ACTIVATION_EXPLAINER =
   'Your bonus lands once they have really started — about ten study actions across two different days.';
+
+export * from './studyRooms';

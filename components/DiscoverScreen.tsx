@@ -158,10 +158,30 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </div>
 
         {presenceLine && (
-          <p className="inline-flex items-center gap-1.5 rounded-lg bg-lantern-background-secondary px-3 py-1.5 text-xs text-lantern-text-secondary">
-            <SparklesIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
-            {presenceLine}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                onNavigate('StudyRoom', {
+                  courseId: presence?.joinCourseId,
+                  topic: presence?.joinTopic,
+                })
+              }
+              disabled={!presence?.joinCourseId}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-lantern-background-secondary px-3 py-1.5 text-xs text-lantern-text-secondary disabled:opacity-60"
+            >
+              <SparklesIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
+              {presenceLine}
+              {presence?.joinCourseId ? ' · Join room' : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('CreateLab')}
+              className="inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold text-lantern-primary hover:underline"
+            >
+              Start a room
+            </button>
+          </div>
         )}
 
         <DiscoverWorkspaceBar active={section} onSelect={handleSection} />

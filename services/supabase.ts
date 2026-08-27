@@ -4973,6 +4973,56 @@ export const fetchAmbassadors = (institutionId: string, limit?: number) =>
     `/referrals/ambassadors${networkQuery({ institutionId, limit })}`
   );
 
+export const fetchGamificationLeaderboard = (params: {
+  page?: number;
+  limit?: number;
+  ambassador?: boolean;
+  institutionId?: string;
+} = {}) =>
+  networkGet<Array<{ rank: number; user: { id: string; name: string; avatarUrl?: string; points: number } }>>(
+    `/gamification/leaderboard${networkQuery({
+      page: params.page,
+      limit: params.limit,
+      ambassador: params.ambassador ? '1' : undefined,
+      institutionId: params.institutionId,
+    })}`
+  );
+
+export const joinOrCreateStudyRoom = (input: {
+  courseId?: string | null;
+  communityId?: string | null;
+  topicId?: string | null;
+  topic?: string | null;
+  title?: string | null;
+}) =>
+  networkWrite<import('@lantern/shared/network').StudyRoomDetail>(
+    '/study-rooms/join-or-create',
+    'POST',
+    input,
+    'Could not open a study room'
+  );
+
+export const fetchStudyRoom = (roomId: string) =>
+  networkGet<import('@lantern/shared/network').StudyRoomDetail>(
+    `/study-rooms/${encodeURIComponent(roomId)}`
+  );
+
+export const joinStudyRoom = (roomId: string) =>
+  networkWrite<import('@lantern/shared/network').StudyRoomDetail>(
+    `/study-rooms/${encodeURIComponent(roomId)}/join`,
+    'POST',
+    {},
+    'Could not join the room'
+  );
+
+export const leaveStudyRoom = (roomId: string) =>
+  networkWrite<{ left: true }>(
+    `/study-rooms/${encodeURIComponent(roomId)}/leave`,
+    'POST',
+    {},
+    'Could not leave the room'
+  );
+
 export interface SellerPaymentRow {
   orderId: string;
   listingId: string | null;
@@ -5064,6 +5114,36 @@ export const deleteStudyPackDraft = async (draftId: string): Promise<void> => {
     const err = await response.json().catch(() => ({}));
     throw new Error((err as any).error || 'Could not delete draft');
   }
+};
+
+export const fetchSemesterPackProposals = async (
+  academicYear?: string,
+): Promise<import('@lantern/shared/marketplace').SemesterPackProposalResponse> => {
+  const qs = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : '';
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/ai/study-pack/semester-proposals${qs}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    15000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Could not load semester proposals');
+  }
+  return (await response.json()).data;
+};
+
+/** Auth'd AI health — includes handwritingOcr on/off for the photo-notes banner. */
+export const fetchAiHealth = async (): Promise<{
+  handwritingOcr?: 'on' | 'off';
+  gemini?: 'on' | 'off';
+}> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/ai/health`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    8000
+  );
+  if (!response.ok) return {};
+  return response.json();
 };
 
 export const fetchMarketplaceListingFull = async (

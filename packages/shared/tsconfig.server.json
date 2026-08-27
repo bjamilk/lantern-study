@@ -36,6 +36,7 @@
     "src/utils/chatMute.ts",
     "src/utils/dmHistoryCutoff.ts",
     "src/settings/**/*.ts",
+    "src/network/**/*.ts",
     "src/marketplace/**/*.ts",
     "src/academic/**/*.ts",
     "src/learning/**/*.ts",

@@ -41,6 +41,8 @@ export interface PresenceSnapshot {
   byContext: Record<string, number>;
   topics: Array<{ topic: string; count: number }>;
   sharing: boolean;
+  joinCourseId?: string | null;
+  joinTopic?: string | null;
 }
 
 export class StudyPresenceService {
@@ -151,12 +153,12 @@ export class StudyPresenceService {
     }
 
     if (!courseId && !institutionId) {
-      return { total: 0, byContext: {}, topics: [], sharing: shares };
+      return { total: 0, byContext: {}, topics: [], sharing: shares, joinCourseId: null, joinTopic: null };
     }
 
     let query = this.db
       .from('study_presence')
-      .select('user_id, context, topic')
+      .select('user_id, context, topic, course_id')
       .gt('expires_at', new Date().toISOString())
       .neq('user_id', viewerId)
       .limit(500);
@@ -168,19 +170,30 @@ export class StudyPresenceService {
 
     const byContext: Record<string, number> = {};
     const topicCounts = new Map<string, number>();
+    const courseCounts = new Map<string, number>();
     for (const row of data || []) {
       const ctx = (row as any).context || 'studying';
       byContext[ctx] = (byContext[ctx] || 0) + 1;
       const t = (row as any).topic;
       if (t) topicCounts.set(t, (topicCounts.get(t) || 0) + 1);
+      const cid = (row as any).course_id;
+      if (cid) courseCounts.set(cid, (courseCounts.get(cid) || 0) + 1);
     }
 
     const topics = [...topicCounts.entries()]
       .map(([topic, count]) => ({ topic, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
+    const topCourse = [...courseCounts.entries()].sort((a, b) => b[1] - a[1])[0];
 
-    return { total: (data || []).length, byContext, topics, sharing: shares };
+    return {
+      total: (data || []).length,
+      byContext,
+      topics,
+      sharing: shares,
+      joinCourseId: courseId || topCourse?.[0] || null,
+      joinTopic: topics[0]?.topic || null,
+    };
   }
 
   assertContext(value: unknown): PresenceContext {
