@@ -103,8 +103,7 @@ export const DISCOVER_SECTION_INTRO: Record<'communities' | 'groups' | 'people',
 };
 
 export const DISCOVER_COMING_SOON_TITLE = 'Discover';
-export const DISCOVER_COMING_SOON_BODY =
-  'Coming soon — campus rooms and people are still being set up.';
+export const DISCOVER_COMING_SOON_BODY = 'Coming soon!';
 
 /**
  * The Discover hub (communities, groups, people, Start a room) is platform-admin

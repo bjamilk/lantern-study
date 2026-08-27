@@ -18,7 +18,7 @@ export function DiscoverComingSoon({
       <View className="px-4 pt-3">
         <Text className="text-lg font-semibold text-lantern-text">{DISCOVER_COMING_SOON_TITLE}</Text>
         <View className="mt-3 rounded-xl border border-dashed border-lantern-border bg-lantern-surface p-8">
-          <Text className="text-center text-sm text-lantern-text-secondary">
+          <Text className="text-center text-sm font-medium text-lantern-text">
             {DISCOVER_COMING_SOON_BODY}
           </Text>
           {onBack ? (

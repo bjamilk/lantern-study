@@ -19,7 +19,7 @@ export const DiscoverComingSoon: React.FC<DiscoverComingSoonProps> = ({
   <div className="mx-auto w-full max-w-5xl px-4 py-3 space-y-3" data-testid="discover-coming-soon">
     <h1 className="text-lg font-semibold text-lantern-text">{DISCOVER_COMING_SOON_TITLE}</h1>
     <div className="rounded-xl border border-dashed border-lantern-border p-8 text-center">
-      <p className="text-sm text-lantern-text-secondary">{DISCOVER_COMING_SOON_BODY}</p>
+      <p className="text-sm font-medium text-lantern-text">{DISCOVER_COMING_SOON_BODY}</p>
       {onBack ? (
         <button
           type="button"

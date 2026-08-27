@@ -71,7 +71,7 @@ describe('canAccessDiscoverHub', () => {
 
   it('shares compact coming-soon copy for web and mobile', () => {
     expect(DISCOVER_COMING_SOON_TITLE).toBe('Discover');
-    expect(DISCOVER_COMING_SOON_BODY).toMatch(/^Coming soon — /);
+    expect(DISCOVER_COMING_SOON_BODY).toBe('Coming soon!');
   });
 });
 
