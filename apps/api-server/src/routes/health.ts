@@ -36,10 +36,13 @@ router.get('/health', (req: Request, res: Response) => {
   // reached the running service was to spend a user's daily AI credits on a
   // request and read the failure, which is a poor diagnostic and costs the
   // user something. No key material, just configured or not.
+  const gemini = process.env.GEMINI_API_KEY ? 'on' : 'off';
   const ai = {
     groq: process.env.GROQ_API_KEY ? 'on' : 'off',
     fireworks: process.env.FIREWORKS_API_KEY ? 'on' : 'off',
-    gemini: process.env.GEMINI_API_KEY ? 'on' : 'off',
+    gemini,
+    // Same key as gemini — clients use this for the handwritten-notes banner.
+    handwritingOcr: gemini,
     cloudflare: process.env.CF_API_TOKEN && process.env.CF_ACCOUNT_ID ? 'on' : 'off',
     huggingface: process.env.HF_API_TOKEN ? 'on' : 'off',
   };
