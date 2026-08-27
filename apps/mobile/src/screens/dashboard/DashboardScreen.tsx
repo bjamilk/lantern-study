@@ -58,8 +58,6 @@ import * as api from '../../services/api';
 import { refreshUserData } from '../../services/dataRefresh';
 
 import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
-import { AcademicFeedPanel } from '../../components/AcademicFeedPanel';
-import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 
 import { DailyQuizWidget } from '../../components/DailyQuizWidget';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
@@ -1155,15 +1153,6 @@ export function DashboardScreen({ navigation }: Props) {
         </Pressable>
 
 
-
-        {/* Phase 3 M: the plan asked for a feed panel on BOTH dashboards; only
-            web had one, so mobile users never saw network activity unless they
-            found the dedicated Feed screen. */}
-        <AcademicFeedPanel
-          onOpenFeed={() =>
-            navigateRootStack('Main', { screen: 'MarketTab', params: { screen: 'Feed' } })
-          }
-        />
 
         <Pressable
           onPress={() => navigation.navigate('Leaderboard')}

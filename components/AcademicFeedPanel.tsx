@@ -13,7 +13,8 @@ import { fetchFeed, fetchLearningConnections } from '../services/supabase';
  *
  * PULL-BASED. Web already holds ~8 realtime channels per user, so this
  * deliberately fetches on mount and on an explicit refresh rather than opening
- * a ninth subscription. Direct-to-me events stay in notifications.
+ * a ninth subscription. Direct-to-me events stay in the notification inbox;
+ * this panel is the live network feed, shown in the Notifications UI.
  */
 export interface AcademicFeedPanelProps {
   onNavigate?: (screen: string, params?: Record<string, unknown>) => void;
@@ -86,7 +87,10 @@ export const AcademicFeedPanel: React.FC<AcademicFeedPanelProps> = ({
 
   return (
     <section
-      className={`rounded-xl border border-lantern-border bg-lantern-background p-4 ${className}`}
+      className={
+        className ||
+        'rounded-xl border border-lantern-border bg-lantern-background p-4'
+      }
       aria-label="Academic feed"
     >
       <header className="mb-3 flex items-center justify-between gap-2">

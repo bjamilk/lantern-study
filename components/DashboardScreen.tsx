@@ -64,7 +64,6 @@ import {
   readAcademicSetupDismissed,
   markAcademicSetupDismissed,
 } from '../utils/academicSetup';
-import AcademicFeedPanel from './AcademicFeedPanel';
 import MasteryPanel from './MasteryPanel';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
@@ -226,8 +225,6 @@ interface DashboardScreenProps {
   onNavigateToCreateGroup?: () => void;
   onNavigateToBudget?: () => void;
   onNavigateToStudyHub?: () => void;
-  /** Phase 3 M: routing target for a feed row (listing, group, note, profile). */
-  onNavigateFromFeed?: (screen: string, params?: Record<string, unknown>) => void;
   onNavigateToLibrary?: () => void;
   onNavigateToOffline?: () => void;
   onToggleCompanion?: () => void;
@@ -381,7 +378,6 @@ export default function DashboardScreen({
   onNavigateToCreateGroup,
   onNavigateToBudget,
   onNavigateToStudyHub,
-  onNavigateFromFeed,
   onNavigateToLibrary,
   onNavigateToOffline,
   onToggleCompanion,
@@ -1318,17 +1314,6 @@ export default function DashboardScreen({
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <div className="px-4 md:px-8 py-6 w-full space-y-6">
-        {/*
-          Phase 3 M: the academic feed is a PRIMARY surface, so it sits above
-          "Progress & analytics" rather than inside it — that section is
-          collapsed by default and unmounts its children, and a feed nobody
-          sees is not a feed. Fetches and fails independently: it cannot blank
-          the dashboard if /feed is unavailable.
-        */}
-        <div className="mb-6">
-          <AcademicFeedPanel onNavigate={onNavigateFromFeed} />
-        </div>
-
         <DashboardProgress defaultOpen={false}>
         {/* ─── Stat Cards Row ─── */}
         <DashboardStatGrid
