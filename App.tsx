@@ -1208,24 +1208,6 @@ export const App: React.FC = () => {
                     onExplainAnswer={handleAIExplainAnswer} />;
             case AppMode.DASHBOARD:
                 return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser} offlineBundles={offlineBundles}
-                    onNavigateFromFeed={(screen, params) => {
-                        // Feed rows point at objects that already have homes.
-                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(String(params.listingId));
-                            setSelectedMarketplaceListingInitialQuantity(null);
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        } else if (screen === 'CreatorProfile' && params?.userId) {
-                            setSelectedSellerId(String(params.userId));
-                            setSellerProfileReturnMode(AppMode.DASHBOARD);
-                            setAppMode(AppMode.CREATOR_PROFILE);
-                        } else if (screen === 'GroupChat' && params?.groupId) {
-                            const target = groups.find((x) => x.id === params.groupId);
-                            if (target) {
-                                handleSelectChat({ ...target, chatType: 'group' });
-                                setAppMode(AppMode.CHAT);
-                            }
-                        }
-                    }}
                     studyActivityDays={studyActivityDays}
                     onNavigateToChat={() => navigateTo(AppMode.CHAT)} allMessages={messages}
                     userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
@@ -2225,6 +2207,10 @@ export const App: React.FC = () => {
                             handleSelectChat({ ...g, chatType: 'group' });
                             setAppMode(AppMode.CHAT);
                         }
+                    } else if (screen === 'CreatorProfile' && params?.userId) {
+                        setSelectedSellerId(String(params.userId));
+                        setSellerProfileReturnMode(AppMode.DASHBOARD);
+                        setAppMode(AppMode.CREATOR_PROFILE);
                     } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
                         navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
                     } else if (screen === 'MyJobApplications') {

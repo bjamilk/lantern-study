@@ -15,10 +15,24 @@ interface DashboardQuickLinksProps {
   links: QuickLinkItem[];
 }
 
+/** Matches web dashboard tiles: AI Tools, Notes, Flashcards, Explore/Discover. */
+const HIDDEN_DASHBOARD_SHORTCUT_IDS = new Set([
+  'ai-tools',
+  'aitools',
+  'notes',
+  'flashcards',
+  'marketplace',
+  'explore',
+  'discover',
+]);
+
 export function DashboardQuickLinks({ links }: DashboardQuickLinksProps) {
+  const visibleLinks = links.filter(link => !HIDDEN_DASHBOARD_SHORTCUT_IDS.has(link.id));
+  if (visibleLinks.length === 0) return null;
+
   return (
     <View className="flex-row flex-wrap gap-3 mb-4">
-      {links.map(link => (
+      {visibleLinks.map(link => (
         <Pressable
           key={link.id}
           onPress={link.onPress}

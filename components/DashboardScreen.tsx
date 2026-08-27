@@ -40,7 +40,7 @@ import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { DashboardProgress } from './dashboard/DashboardProgress';
-import { DashboardQuickLinks } from './dashboard/DashboardQuickLinks';
+import { DashboardQuickLinks, SHOW_DASHBOARD_QUICK_LINKS } from './dashboard/DashboardQuickLinks';
 import { DashboardSummaryRow } from './dashboard/DashboardSummaryRow';
 import { DashboardStatGrid } from './dashboard/DashboardStatGrid';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
@@ -64,8 +64,10 @@ import {
   readAcademicSetupDismissed,
   markAcademicSetupDismissed,
 } from '../utils/academicSetup';
-import AcademicFeedPanel from './AcademicFeedPanel';
-import MasteryPanel from './MasteryPanel';
+import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
+
+/** Dashboard “Questions to review” card. Review/study screens stay available. */
+export const SHOW_DASHBOARD_QUESTIONS_TO_REVIEW = false;
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 
@@ -226,8 +228,6 @@ interface DashboardScreenProps {
   onNavigateToCreateGroup?: () => void;
   onNavigateToBudget?: () => void;
   onNavigateToStudyHub?: () => void;
-  /** Phase 3 M: routing target for a feed row (listing, group, note, profile). */
-  onNavigateFromFeed?: (screen: string, params?: Record<string, unknown>) => void;
   onNavigateToLibrary?: () => void;
   onNavigateToOffline?: () => void;
   onToggleCompanion?: () => void;
@@ -381,7 +381,6 @@ export default function DashboardScreen({
   onNavigateToCreateGroup,
   onNavigateToBudget,
   onNavigateToStudyHub,
-  onNavigateFromFeed,
   onNavigateToLibrary,
   onNavigateToOffline,
   onToggleCompanion,
@@ -1220,31 +1219,55 @@ export default function DashboardScreen({
       {/* ─── Academic profile setup nudge (Phase 1) ─── */}
       <AcademicSetupBanner currentUser={currentUser} />
 
-      {/* ═══════════════ HERO ═══════════════ */}
-      <DashboardHero
-        userName={getDashboardFirstName({
-          firstName: currentUser.firstName,
-          name: currentUser.name,
-          username: currentUser.username,
-        })}
-        streak={displayStreak}
-        points={currentUser.points}
-        xpLevel={xpInfo.level}
-        xpTitle={xpInfo.title}
-        xpProgressPercent={xpInfo.progressPercent}
-        pointsToNextLevel={xpInfo.pointsToNextLevel}
-        dueCardsCount={dueCardsCount}
-        totalTestsTaken={totalTestsTakenOverall}
-        onPrimaryAction={() => {
-          if (dueCardsCount > 0 && onReviewDueCards) onReviewDueCards();
-          else if (onOpenImportAndStudy) onOpenImportAndStudy();
-          else if (onNavigateToAITools) onNavigateToAITools();
-        }}
-        activeTestSession={activeTestSession}
-        activeStudySession={activeStudySession}
-        onResumeSession={onResumeSession}
-        lowDataMode={lowDataMode}
-      />
+      {/* ═══════════════ HERO + DAILY QUESTS ═══════════════ */}
+      <div className="px-4 md:px-8 pt-6 w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-stretch">
+          <DashboardHero
+            userName={getDashboardFirstName({
+              firstName: currentUser.firstName,
+              name: currentUser.name,
+              username: currentUser.username,
+            })}
+            streak={displayStreak}
+            points={currentUser.points}
+            xpLevel={xpInfo.level}
+            xpTitle={xpInfo.title}
+            xpProgressPercent={xpInfo.progressPercent}
+            pointsToNextLevel={xpInfo.pointsToNextLevel}
+            dueCardsCount={dueCardsCount}
+            totalTestsTaken={totalTestsTakenOverall}
+            onPrimaryAction={() => {
+              if (dueCardsCount > 0 && onReviewDueCards) onReviewDueCards();
+              else if (onOpenImportAndStudy) onOpenImportAndStudy();
+              else if (onNavigateToAITools) onNavigateToAITools();
+            }}
+            activeTestSession={activeTestSession}
+            activeStudySession={activeStudySession}
+            onResumeSession={onResumeSession}
+            lowDataMode={lowDataMode}
+          />
+          {(dailyQuests.length > 0 || questsLoaded) ? (
+            <DailyQuestsWidget
+              quests={dailyQuests.map((q) => ({
+                id: q.id,
+                questType: (q as any).questType ?? (q as any).quest_type,
+                targetCount: (q as any).targetCount ?? (q as any).target_count,
+                progressCount: (q as any).progressCount ?? (q as any).progress_count,
+                completed: q.completed,
+                rewardXp: (q as any).rewardXp ?? (q as any).reward_xp,
+              }))}
+              streak={displayStreak}
+              streakFreezes={streakFreezes}
+              onPurchaseStreakFreeze={onPurchaseStreakFreeze}
+              questsLoaded={questsLoaded}
+              onRefresh={onRefreshGamification}
+              theme={theme}
+            />
+          ) : (
+            <SkeletonStatRow />
+          )}
+        </div>
+      </div>
 
       <div className="px-4 md:px-8 mt-4 w-full">
         <div className="w-full">
@@ -1280,52 +1303,20 @@ export default function DashboardScreen({
         </div>
       </div>
 
-      {/* Secondary quick links */}
-      <div className="px-4 md:px-8 -mt-2 w-full">
-        <DashboardQuickLinks
-          dueCardsCount={dueCardsCount}
-          onNavigateToAITools={onNavigateToAITools}
-          onNavigateToNotes={onNavigateToNotes}
-          onNavigateToFlashcards={onNavigateToFlashcards}
-          onNavigateToMarketplace={onNavigateToMarketplace}
-        />
-      </div>
+      {SHOW_DASHBOARD_QUICK_LINKS && (
+        <div className="px-4 md:px-8 -mt-2 w-full">
+          <DashboardQuickLinks
+            dueCardsCount={dueCardsCount}
+            onNavigateToAITools={onNavigateToAITools}
+            onNavigateToNotes={onNavigateToNotes}
+            onNavigateToFlashcards={onNavigateToFlashcards}
+            onNavigateToMarketplace={onNavigateToMarketplace}
+          />
+        </div>
+      )}
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <div className="px-4 md:px-8 py-6 w-full space-y-6">
-
-        {!questsLoaded && dailyQuests.length === 0 && <SkeletonStatRow />}
-
-        {(dailyQuests.length > 0 || questsLoaded) && (
-          <DailyQuestsWidget
-            quests={dailyQuests.map((q) => ({
-              id: q.id,
-              questType: (q as any).questType ?? (q as any).quest_type,
-              targetCount: (q as any).targetCount ?? (q as any).target_count,
-              progressCount: (q as any).progressCount ?? (q as any).progress_count,
-              completed: q.completed,
-              rewardXp: (q as any).rewardXp ?? (q as any).reward_xp,
-            }))}
-            streak={displayStreak}
-            streakFreezes={streakFreezes}
-            onPurchaseStreakFreeze={onPurchaseStreakFreeze}
-            questsLoaded={questsLoaded}
-            onRefresh={onRefreshGamification}
-            theme={theme}
-          />
-        )}
-
-        {/*
-          Phase 3 M: the academic feed is a PRIMARY surface, so it sits above
-          "Progress & analytics" rather than inside it — that section is
-          collapsed by default and unmounts its children, and a feed nobody
-          sees is not a feed. Fetches and fails independently: it cannot blank
-          the dashboard if /feed is unavailable.
-        */}
-        <div className="mb-6">
-          <AcademicFeedPanel onNavigate={onNavigateFromFeed} />
-        </div>
-
         <DashboardProgress defaultOpen={false}>
         {/* ─── Stat Cards Row ─── */}
         <DashboardStatGrid
@@ -1537,9 +1528,11 @@ export default function DashboardScreen({
           Achievements & Topic Insights. The FEED does not belong here and is
           rendered above, outside the collapsible.
         */}
-        <div className="mb-6">
-          <MasteryPanel />
-        </div>
+        {SHOW_DASHBOARD_MASTERY_PANEL && (
+          <div className="mb-6">
+            <MasteryPanel />
+          </div>
+        )}
 
         <details open className="group">
           <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
@@ -1661,7 +1654,7 @@ export default function DashboardScreen({
         </DashboardProgress>
 
         {/* ─── Troublesome Questions ─── */}
-        {troublesomeQuestions.length > 0 && (
+        {SHOW_DASHBOARD_QUESTIONS_TO_REVIEW && troublesomeQuestions.length > 0 && (
           <details open className="group">
             <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
               <h2 className="text-lg font-semibold text-lantern-text flex items-center">
@@ -1695,9 +1688,6 @@ export default function DashboardScreen({
                   <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary" />
                   Group performance
                 </h2>
-                <p className="text-xs text-lantern-text-secondary mt-1">
-                  Select one or more groups or subgroups. Archived groups are included, since their tests still count towards your totals. Metrics follow the period you pick below.
-                </p>
               </div>
               {/* min-w-0 + wrap, not flex-shrink-0: sm: is viewport-based, so
                   with the sidebar docked this row lives in a ~460px column at

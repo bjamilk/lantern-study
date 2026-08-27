@@ -17,14 +17,15 @@ interface Props {
   streakFreezes?: number;
   onPurchaseFreeze?: () => void;
   purchasingFreeze?: boolean;
+  className?: string;
 }
 
-export function DailyQuestsWidget({ quests, streak, streakFreezes = 0, onPurchaseFreeze, purchasingFreeze }: Props) {
+export function DailyQuestsWidget({ quests, streak, streakFreezes = 0, onPurchaseFreeze, purchasingFreeze, className }: Props) {
   if (quests.length === 0) return null;
   const completedCount = quests.filter(q => q.completed).length;
 
   return (
-    <Card className="mb-4 p-4">
+    <Card className={`p-4 ${className ?? 'mb-4'}`}>
       <View className="flex-row items-center justify-between mb-3">
         <Text className="font-semibold text-lantern-text">Daily Quests</Text>
         <View className="flex-row items-center gap-1.5">
