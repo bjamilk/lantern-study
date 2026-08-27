@@ -55,6 +55,7 @@ interface LibraryScreenProps {
    * `LibraryRail`.
    */
   onCreateStudyPackFromCourse?: (courseId: string, courseLabel?: string) => void;
+  onTurnSemesterIntoProducts?: () => void;
 }
 
 const tabs: { id: LibraryTab; label: string; icon: React.ElementType }[] = [
@@ -80,6 +81,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   onOpenOffline,
   onOpenTests,
   onCreateStudyPackFromCourse,
+  onTurnSemesterIntoProducts,
 }) => {
   const courseFilterId = useLibraryStore((s) => s.courseFilterId);
   const setCourseFilter = useLibraryStore((s) => s.setCourseFilter);
@@ -204,6 +206,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
       onOpenTests={onOpenTests}
       onOpenOffline={onOpenOffline}
       onCreateStudyPack={onCreateStudyPackFromCourse}
+      onTurnSemesterIntoProducts={onTurnSemesterIntoProducts}
     />
   );
 
