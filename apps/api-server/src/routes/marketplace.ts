@@ -222,6 +222,18 @@ router.get(
   })
 );
 
+// GET /api/v1/marketplace/access - Whether the marketplace is available to the
+// current viewer. Exempt from the private-pilot gate (see marketplaceAccess.ts)
+// so clients — signed in or not — can decide whether to render marketplace
+// surfaces at all.
+router.get(
+  '/access',
+  asyncHandler(async (req: any, res: any) => {
+    const { isMarketplaceAllowedUser } = await import('../middleware/marketplaceAccess');
+    res.json({ success: true, data: { enabled: isMarketplaceAllowedUser(req.user?.id) } });
+  })
+);
+
 // GET /api/v1/marketplace/listings/batch?ids=a,b,c - Batch fetch active listings
 // (recently-viewed rail). Registered before /listings/:id so "batch" is not
 // treated as a listing id.

@@ -21,6 +21,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Course } from '@lantern/shared/types';
 import { currentAcademicYear, studyLevelLabel } from '@lantern/shared/academic';
 import { useTheme } from '../theme';
@@ -28,6 +29,7 @@ import { checkUsername, updateUsername } from '../services/api';
 import { getMyActiveCourses, saveAcademicProfile, saveMyCourseSet } from '../services/academic';
 import { useAuthStore } from '../stores/authStore';
 import { useInstitutions } from '../hooks/useInstitutions';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import { CampusPicker } from '../screens/marketplace/CampusPicker';
 import { StudyLevelPicker } from './academic/StudyLevelPicker';
 import { CourseMultiSelect } from './academic/CourseMultiSelect';
@@ -63,6 +65,11 @@ export default function UsernameRequiredModal({
   onSkip,
 }: UsernameRequiredModalProps) {
   const { colors } = useTheme();
+  // Edge-to-edge (forced at targetSdk 35+): RN Modals draw under the status
+  // and navigation bars, so the header and the footer buttons need the real
+  // insets or they land beneath system chrome — the footer "Skip for now"
+  // was untappable behind the nav bar (same class as the ConfirmSheet fix).
+  const insets = useSafeAreaInsets();
   const academicProfile = useAuthStore(s => s.academicProfile);
   const {
     institutions,
@@ -261,13 +268,20 @@ export default function UsernameRequiredModal({
     >
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
-        // Android must stay undefined: the manifest sets adjustResize, so the
-        // window already shrinks for the keyboard. 'height' subtracts it a
-        // second time and the two corrections oscillate, which makes the footer
-        // Continue button jump around the screen.
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // iOS and Android 15+ (API 35, where adjustResize is ignored) need
+        // 'padding'; older Android still resizes the window itself, and
+        // padding on top of that would lift the footer twice.
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
       >
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View
+          style={[
+            styles.header,
+            {
+              borderBottomColor: colors.border,
+              paddingTop: Platform.OS === 'ios' ? 60 : insets.top + 16,
+            },
+          ]}
+        >
           <View style={styles.headerSpacer} />
           <Text style={[styles.headerTitle, { color: colors.text }]}>{title}</Text>
           {onSkip ? (
@@ -458,7 +472,12 @@ export default function UsernameRequiredModal({
           ) : null}
         </ScrollView>
 
-        <View style={[styles.footer, { borderTopColor: colors.border }]}>
+        <View
+          style={[
+            styles.footer,
+            { borderTopColor: colors.border, paddingBottom: insets.bottom + 16 },
+          ]}
+        >
           <TouchableOpacity
             style={[
               styles.submitButton,

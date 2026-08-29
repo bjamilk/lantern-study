@@ -21,6 +21,7 @@ import { SupabaseService } from './services/supabase';
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from './middleware/rateLimit';
 import { authMiddleware, optionalAuthMiddleware, requirePlatformAdmin } from './middleware/auth';
+import { marketplaceAccessGate } from './middleware/marketplaceAccess';
 import { AI_USAGE_EXPOSED_HEADERS } from './middleware/aiRateLimit';
 import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler, corsRejection } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
@@ -431,7 +432,10 @@ async function startServer() {
     app.use('/api/v1/user-stats', userStatsRoutes);
     app.use('/api/v1/dashboard', dashboardRoutes);
     app.use('/api/v1/preferences', preferencesRoutes);
-    app.use('/api/v1/marketplace', optionalAuthMiddleware, marketplaceGeoMiddleware, applyPublicRateLimits, marketplaceRoutes);
+    // Private pilot: only allowlisted accounts reach the marketplace routes
+    // (GET /access stays open so clients can hide the surfaces). See
+    // middleware/marketplaceAccess.ts for the reopen switch.
+    app.use('/api/v1/marketplace', optionalAuthMiddleware, marketplaceAccessGate, marketplaceGeoMiddleware, applyPublicRateLimits, marketplaceRoutes);
     app.use('/webhooks/paystack', paystackWebhookRoutes);
     app.use('/api/v1/webhooks/paystack', paystackWebhookRoutes);
     app.use('/api/v1/sitemap', sitemapRoutes);

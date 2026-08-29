@@ -3247,6 +3247,36 @@ export const addMarketplaceReview = async (listingId: string, review: { rating: 
 };
 
 /**
+ * Marketplace private-pilot probe: whether the current viewer may see the
+ * goods marketplace at all. The server enforces the gate with 403s
+ * regardless; this only decides which UI to render. Cached briefly per
+ * viewer so route changes don't refetch.
+ */
+let marketplaceAccessCache: { viewerKey: string; enabled: boolean; at: number } | null = null;
+export const fetchMarketplaceAccess = async (viewerKey: string = 'anon'): Promise<boolean> => {
+  const now = Date.now();
+  if (
+    marketplaceAccessCache &&
+    marketplaceAccessCache.viewerKey === viewerKey &&
+    now - marketplaceAccessCache.at < 5 * 60_000
+  ) {
+    return marketplaceAccessCache.enabled;
+  }
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/access`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || 'Could not check marketplace availability');
+  }
+  const enabled = payload.data?.enabled === true;
+  marketplaceAccessCache = { viewerKey, enabled, at: now };
+  return enabled;
+};
+
+/**
  * Mark / unmark a review as helpful. The control only renders when the API
  * returned a helpfulCount for the review, so pre-migration 503s are
  * unreachable from the UI.

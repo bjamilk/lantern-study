@@ -638,6 +638,13 @@ interface MarketplaceState {
   sortOrder: 'asc' | 'desc';
   /** Minimum average rating (1–5) or null for any. Server-enforced post-migration. */
   minRating: number | null;
+  /**
+   * Private pilot: whether this account may see the marketplace at all.
+   * null = not checked yet. The API 403s non-allowlisted accounts regardless;
+   * this only drives which UI renders (see MarketplaceGate).
+   */
+  marketplaceAccess: boolean | null;
+  checkMarketplaceAccess: () => Promise<void>;
   listingsPage: number;
   listingsHasMore: boolean;
   showFavoritesOnly: boolean;
@@ -747,6 +754,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   sortBy: 'trending',
   sortOrder: 'desc',
   minRating: null,
+  marketplaceAccess: null,
   listingsPage: 1,
   listingsHasMore: true,
   showFavoritesOnly: false,
@@ -1532,6 +1540,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   setSortBy: (value: string) => set({ sortBy: value }),
   setSortOrder: (value: 'asc' | 'desc') => set({ sortOrder: value }),
   setMinRating: (value: number | null) => set({ minRating: value }),
+  checkMarketplaceAccess: async () => {
+    try {
+      const result = await api.fetchMarketplaceAccess();
+      set({ marketplaceAccess: result?.enabled === true });
+    } catch {
+      // Fail closed: the server 403s non-allowlisted accounts anyway, so a
+      // failed probe must not flash marketplace UI that would then break.
+      set({ marketplaceAccess: false });
+    }
+  },
   applySavedSearch: (filters: Record<string, unknown>) => {
     listingsRequestSeq += 1;
     const normalized = normalizeSavedMarketplaceFilters(filters);

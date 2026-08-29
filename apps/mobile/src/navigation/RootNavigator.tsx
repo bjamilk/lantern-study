@@ -192,6 +192,31 @@ import {
   JobCompanyScreen,
 
 } from '../screens/marketplace';
+import { withMarketplaceGate } from '../screens/marketplace/MarketplaceGate';
+import { useMarketplaceStore } from '../stores/marketplaceStore';
+
+// Marketplace private pilot: commerce screens render only for allowlisted
+// accounts (the API 403s everyone else regardless — see MarketplaceGate).
+// Network screens on the same stack (Discover, CommunityDetail, Feed,
+// StudyRoom, CreatorProfile, Mastery) are deliberately NOT gated.
+// Module scope so each wrapped component keeps a stable identity.
+const GatedMarketplaceHome = withMarketplaceGate(MarketplaceScreen);
+const GatedListingDetail = withMarketplaceGate(ListingDetailScreen);
+const GatedMyListings = withMarketplaceGate(MyListingsScreen);
+const GatedInquiries = withMarketplaceGate(InquiriesScreen);
+const GatedCreateListing = withMarketplaceGate(CreateListingScreen);
+const GatedEditListing = withMarketplaceGate(EditListingScreen);
+const GatedMakeOffer = withMarketplaceGate(MakeOfferScreen);
+const GatedSellerProfile = withMarketplaceGate(SellerProfileScreen);
+const GatedOffers = withMarketplaceGate(OffersScreen);
+const GatedMarketFavorites = withMarketplaceGate(FavoritesScreen);
+const GatedOrders = withMarketplaceGate(OrdersScreen);
+const GatedCart = withMarketplaceGate(CartScreen);
+const GatedPurchases = withMarketplaceGate(PurchasesScreen);
+const GatedStudyProductDrafts = withMarketplaceGate(StudyProductDraftsScreen);
+const GatedSemesterProducts = withMarketplaceGate(SemesterProductsScreen);
+const GatedOrderDetail = withMarketplaceGate(OrderDetailScreen);
+const GatedSellerCustomers = withMarketplaceGate(SellerCustomersScreen);
 import {
   DiscoverScreen,
   CommunityDetailScreen,
@@ -398,35 +423,35 @@ function MarketNavigator() {
 
     <MarketStack.Navigator screenOptions={{ headerShown: false }}>
 
-      <MarketStack.Screen name="MarketplaceHome" component={MarketplaceScreen} />
+      <MarketStack.Screen name="MarketplaceHome" component={GatedMarketplaceHome} />
 
-      <MarketStack.Screen name="ListingDetail" component={ListingDetailScreen} />
+      <MarketStack.Screen name="ListingDetail" component={GatedListingDetail} />
 
-      <MarketStack.Screen name="MyListings" component={MyListingsScreen} />
+      <MarketStack.Screen name="MyListings" component={GatedMyListings} />
 
-      <MarketStack.Screen name="Inquiries" component={InquiriesScreen} />
+      <MarketStack.Screen name="Inquiries" component={GatedInquiries} />
 
-      <MarketStack.Screen name="CreateListing" component={CreateListingScreen} />
+      <MarketStack.Screen name="CreateListing" component={GatedCreateListing} />
 
-      <MarketStack.Screen name="EditListing" component={EditListingScreen} />
+      <MarketStack.Screen name="EditListing" component={GatedEditListing} />
 
-      <MarketStack.Screen name="MakeOffer" component={MakeOfferScreen} />
+      <MarketStack.Screen name="MakeOffer" component={GatedMakeOffer} />
 
-      <MarketStack.Screen name="SellerProfile" component={SellerProfileScreen} />
+      <MarketStack.Screen name="SellerProfile" component={GatedSellerProfile} />
 
-      <MarketStack.Screen name="Offers" component={OffersScreen} />
+      <MarketStack.Screen name="Offers" component={GatedOffers} />
 
-      <MarketStack.Screen name="Favorites" component={FavoritesScreen} />
+      <MarketStack.Screen name="Favorites" component={GatedMarketFavorites} />
 
-      <MarketStack.Screen name="Orders" component={OrdersScreen} />
+      <MarketStack.Screen name="Orders" component={GatedOrders} />
 
-      <MarketStack.Screen name="Cart" component={CartScreen} />
+      <MarketStack.Screen name="Cart" component={GatedCart} />
 
-      <MarketStack.Screen name="Purchases" component={PurchasesScreen} />
+      <MarketStack.Screen name="Purchases" component={GatedPurchases} />
 
-      <MarketStack.Screen name="StudyProductDrafts" component={StudyProductDraftsScreen} />
+      <MarketStack.Screen name="StudyProductDrafts" component={GatedStudyProductDrafts} />
 
-      <MarketStack.Screen name="SemesterProducts" component={SemesterProductsScreen} />
+      <MarketStack.Screen name="SemesterProducts" component={GatedSemesterProducts} />
 
       <MarketStack.Screen name="StudyRoom" component={StudyRoomScreen} />
 
@@ -440,9 +465,9 @@ function MarketNavigator() {
 
       <MarketStack.Screen name="Mastery" component={MasteryScreen} />
 
-      <MarketStack.Screen name="OrderDetail" component={OrderDetailScreen} />
+      <MarketStack.Screen name="OrderDetail" component={GatedOrderDetail} />
 
-      <MarketStack.Screen name="SellerCustomers" component={SellerCustomersScreen} />
+      <MarketStack.Screen name="SellerCustomers" component={GatedSellerCustomers} />
 
       <MarketStack.Screen name="JobsHome" component={JobsHomeScreen} />
 
@@ -822,6 +847,14 @@ function MainTabsShell() {
     navigateFromRoot('Main', { screen, params });
   };
 
+  // Private pilot: warm the marketplace-access answer as soon as the shell
+  // mounts so the Discover icon routes correctly on the first tap.
+  const marketplaceAccess = useMarketplaceStore(s => s.marketplaceAccess);
+  const checkMarketplaceAccess = useMarketplaceStore(s => s.checkMarketplaceAccess);
+  useEffect(() => {
+    void checkMarketplaceAccess();
+  }, [checkMarketplaceAccess]);
+
   return (
 
     <View className="flex-1 bg-lantern-background dark:bg-lantern-background">
@@ -842,7 +875,15 @@ function MainTabsShell() {
         // (the hub is a coming-soon wall for them, which would orphan the
         // marketplace as a destination).
         onDiscover={() =>
-          goTab('MarketTab', { screen: isPlatformAdmin ? 'Discover' : 'MarketplaceHome' })
+          goTab('MarketTab', {
+            // Private pilot: accounts without marketplace access land on the
+            // Discover hub (communities, groups, people) instead of a gate
+            // wall; admins keep the hub, the allowlisted account keeps the shop.
+            screen:
+              isPlatformAdmin || marketplaceAccess !== true
+                ? 'Discover'
+                : 'MarketplaceHome',
+          })
         }
       />
 

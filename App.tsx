@@ -31,7 +31,8 @@ import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
-import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile } from './services/supabase';
+import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess } from './services/supabase';
+import MarketplacePrivatePilot, { GOODS_MARKETPLACE_MODES } from './components/marketplace/MarketplacePrivatePilot';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
 import { purchaseStreakFreeze } from './services/gamificationStreak';
@@ -175,6 +176,18 @@ export const App: React.FC = () => {
     }, []);
     const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, isPasswordRecovery, setPasswordRecovery } = useAuthStore();
     const isPlatformAdmin = usePlatformAdmin();
+    // Marketplace private pilot: ask the API whether this viewer (guest or
+    // signed-in) may see the goods marketplace. The server enforces the gate
+    // with 403s either way — this only picks which UI to render.
+    const [marketplaceAccess, setMarketplaceAccess] = useState<boolean | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        setMarketplaceAccess(null);
+        fetchMarketplaceAccess(currentUser?.id ?? 'anon')
+            .then(enabled => { if (!cancelled) setMarketplaceAccess(enabled); })
+            .catch(() => { if (!cancelled) setMarketplaceAccess(false); });
+        return () => { cancelled = true; };
+    }, [currentUser?.id]);
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
         const { testResults, offlineBundles, pendingSyncResults, userQuestionStats, studyActivityDays,
             activeTestSession, activeStudySession, activeGameSession, setActiveGameSession, pausedSessions } = useTestStore();
@@ -943,6 +956,17 @@ export const App: React.FC = () => {
         }
 
         if (isPublicMarketplacePath(path)) {
+            // Private pilot: public marketplace browsing is paused too.
+            if (marketplaceAccess !== true) {
+                return (
+                    <MarketplacePrivatePilot
+                        checking={marketplaceAccess === null}
+                        onBack={() => navigateToPath('/')}
+                        backLabel="Back to the homepage"
+                        onSignIn={() => navigateToPath('/login')}
+                    />
+                );
+            }
             return (
                 <GuestMarketplaceShell
                     onSignIn={() => navigateToPath('/login')}
@@ -1130,6 +1154,17 @@ export const App: React.FC = () => {
     };
 
     const mainContent = () => {
+        // Marketplace private pilot: every goods-commerce mode renders the
+        // honest explanation for accounts outside the allowlist (the API
+        // 403s them regardless). Jobs modes are not in the set and stay open.
+        if (GOODS_MARKETPLACE_MODES.has(appMode) && marketplaceAccess !== true) {
+            return (
+                <MarketplacePrivatePilot
+                    checking={marketplaceAccess === null}
+                    onBack={() => navigateTo(AppMode.DASHBOARD)}
+                />
+            );
+        }
         switch (appMode) {
             case AppMode.CREATE_GROUP:
                 return (

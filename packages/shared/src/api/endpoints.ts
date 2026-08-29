@@ -1893,6 +1893,14 @@ export function createApiEndpoints(client: ApiClient) {
       }
     },
 
+    /**
+     * Marketplace private-pilot probe: whether the current viewer may see the
+     * goods marketplace at all. The server enforces the gate with 403s
+     * (code MARKETPLACE_PRIVATE) regardless; this only drives which UI to show.
+     */
+    fetchMarketplaceAccess: () =>
+      apiRequest<{ enabled: boolean }>("/marketplace/access", {}, 5000),
+
     fetchMarketplaceCategoryAnalytics: () =>
       marketplaceCategoryAnalyticsCache.get("categories", () =>
         apiRequest<
