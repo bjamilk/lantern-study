@@ -96,8 +96,8 @@ export function StudyRoomScreen({
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border">
-        <Pressable onPress={() => navigation.goBack()} accessibilityRole="button" className="p-2">
-          <Ionicons name="arrow-back" size={20} color="#64748b" />
+        <Pressable hitSlop={10} onPress={() => navigation.goBack()} accessibilityRole="button" className="p-2">
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-lg font-semibold text-lantern-text" numberOfLines={1}>
           {room?.title || 'Study room'}
@@ -118,7 +118,7 @@ export function StudyRoomScreen({
             <CoursePicker
               value={pickedCourseId}
               onChange={(course) => setPickedCourseId(course?.id ?? null)}
-              label="Course"
+              placeholder="Choose a course"
             />
             <TextInput
               value={topicDraft}
