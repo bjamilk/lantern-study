@@ -39,6 +39,7 @@ import {
   classifyListing,
   serializeClassifySuggestion,
   publicTaxonomyPayload,
+  computeMarketplaceReviewSummary,
 } from '@lantern/shared/marketplace';
 
 const router = Router();
@@ -155,12 +156,18 @@ router.get(
       campus_id: campusId,
       country_code: countryCode,
       condition,
+      minRating,
       taxonomyNodeId,
       includeUnclassified,
       sortBy = 'trending',
       sortOrder = 'desc',
       responseProfile,
     } = req.query;
+    // Star filter: whole stars 1–5 only; anything else is ignored.
+    const minRatingValue = (() => {
+      const parsed = Number(minRating);
+      return Number.isInteger(parsed) && parsed >= 1 && parsed <= 5 ? parsed : undefined;
+    })();
     const profile = resolveResponseProfile(responseProfile);
     const categoryList = typeof categories === 'string' && categories.trim()
       ? categories.split(',').map((c: string) => c.trim()).filter(Boolean).slice(0, 20)
@@ -173,7 +180,7 @@ router.get(
 
     logger.debug('Fetching marketplace listings', { page, limit, category, search, profile, campusId, countryCode });
 
-    const cacheKey = `marketplace:listings:v3:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${condition || ''}:${taxonomyId || ''}:${includeUnclassifiedNodes ? 1 : 0}:${sortBy}:${sortOrder}:profile:${profile}`;
+    const cacheKey = `marketplace:listings:v3:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${condition || ''}:${minRatingValue || ''}:${taxonomyId || ''}:${includeUnclassifiedNodes ? 1 : 0}:${sortBy}:${sortOrder}:profile:${profile}`;
     let result = await cacheService.get<{ data: any[]; total: number }>(cacheKey);
 
     if (!result) {
@@ -190,6 +197,7 @@ router.get(
         campusId: campusId as string | undefined,
         countryCode: (countryCode as string) || undefined,
         condition: (condition as string) || undefined,
+        minRating: minRatingValue,
         taxonomyNodeId: taxonomyId,
         includeUnclassified: includeUnclassifiedNodes,
         sortBy,
@@ -773,15 +781,63 @@ router.delete(
 );
 
 // GET /api/v1/marketplace/listings/:id/reviews - List reviews for a listing
+// (with verified-purchase + helpful-vote signals and an aggregate summary).
 router.get(
   '/listings/:id/reviews',
   validateListingId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
-    const reviews = await supabaseService.getMarketplaceReviews(id);
-    res.json({ success: true, data: reviews });
+    const reviews = await supabaseService.getMarketplaceReviews(id, req.user?.id);
+    res.json({
+      success: true,
+      data: reviews,
+      summary: computeMarketplaceReviewSummary(reviews),
+    });
   })
+);
+
+// POST/DELETE /api/v1/marketplace/listings/:id/reviews/:reviewId/helpful -
+// mark or unmark a review as helpful. 503s gracefully until the
+// marketplace_review_votes migration is applied.
+const REVIEW_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const handleReviewVote = (helpful: boolean) =>
+  asyncHandler(async (req: any, res: any) => {
+    const { id, reviewId } = req.params;
+    if (!REVIEW_ID_RE.test(reviewId)) {
+      return res.status(400).json({ success: false, error: 'Invalid review id' });
+    }
+    try {
+      const result = await supabaseService.setMarketplaceReviewVote(
+        id,
+        reviewId,
+        req.user.id,
+        helpful,
+      );
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      const status = typeof err?.statusCode === 'number' ? err.statusCode : 0;
+      if (status === 400 || status === 404 || status === 503) {
+        return res.status(status).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  });
+
+router.post(
+  '/listings/:id/reviews/:reviewId/helpful',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  handleReviewVote(true)
+);
+
+router.delete(
+  '/listings/:id/reviews/:reviewId/helpful',
+  authMiddleware,
+  validateListingId,
+  handleValidationErrors,
+  handleReviewVote(false)
 );
 
 // POST /api/v1/marketplace/listings/:id/reviews - Add review
@@ -2839,9 +2895,10 @@ router.get(
       isFavorited = await supabaseService.isListingFavorited(viewerId, id);
     }
 
-    // --- 4. Reviews with reviewer display names ---
-    const reviews = await supabaseService.getMarketplaceReviews(id);
+    // --- 4. Reviews with reviewer display names + read-time signals ---
+    const reviews = await supabaseService.getMarketplaceReviews(id, viewerId);
     listing = { ...listing, reviews };
+    const reviewSummary = computeMarketplaceReviewSummary(reviews);
 
     // --- 5. canReview (verified purchase; drives the Write Review button) ---
     let canReview = false;
@@ -2922,7 +2979,15 @@ router.get(
 
     res.json({
       success: true,
-      data: { listing: responseListing, isFavorited, similarListings, canReview, questionBank, studyPack },
+      data: {
+        listing: responseListing,
+        isFavorited,
+        similarListings,
+        canReview,
+        reviewSummary,
+        questionBank,
+        studyPack,
+      },
     });
   })
 );

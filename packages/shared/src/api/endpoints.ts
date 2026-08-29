@@ -1792,9 +1792,12 @@ export function createApiEndpoints(client: ApiClient) {
         location?: string;
         campus_id?: string;
         country_code?: string;
+        /** Sorts include 'rating' ("Top rated") once the ratings migration is live. */
         sortBy?: string;
         sortOrder?: "asc" | "desc";
         condition?: string;
+        /** Only listings with rating_avg >= this (1–5). Ignored pre-migration. */
+        minRating?: number;
         taxonomyNodeId?: string;
         includeUnclassified?: boolean;
         /** `compact` returns card-shaped rows (first image only) for grids. */
@@ -2281,8 +2284,26 @@ export function createApiEndpoints(client: ApiClient) {
           comment?: string;
           created_at: string;
           reviewer?: { id: string; name: string; avatar_url?: string };
+          verifiedPurchase?: boolean;
+          helpfulCount?: number;
+          viewerMarkedHelpful?: boolean;
         }>
       >(`/marketplace/listings/${listingId}/reviews`, {}, 5000),
+
+    /**
+     * Mark / unmark a review as helpful. 503s until the review-votes migration
+     * is applied; clients only render the control when `helpfulCount` is
+     * present on the review, so that path is unreachable from the UI.
+     */
+    setMarketplaceReviewHelpful: (
+      listingId: string,
+      reviewId: string,
+      helpful: boolean,
+    ) =>
+      apiRequest<{ helpfulCount: number; viewerMarkedHelpful: boolean }>(
+        `/marketplace/listings/${listingId}/reviews/${reviewId}/helpful`,
+        { method: helpful ? "POST" : "DELETE" },
+      ),
 
     fetchSimilarListings: (listingId: string) =>
       apiRequest<

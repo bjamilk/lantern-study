@@ -9681,6 +9681,8 @@ export class SupabaseService {
       is_boosted,
       category_specific_fields,
       quantity,
+      rating_avg,
+      rating_count,
     } = listing;
     return {
       id,
@@ -9705,6 +9707,9 @@ export class SupabaseService {
       seller,
       is_boosted,
       quantity: quantity ?? null,
+      // Rating aggregate for card stars; null until the ratings migration runs.
+      rating_avg: rating_avg ?? null,
+      rating_count: typeof rating_count === "number" ? rating_count : null,
       // Compact cards need condition + taxonomy node without shipping the
       // whole free-form blob.
       condition:
@@ -9753,6 +9758,31 @@ export class SupabaseService {
     return rows;
   }
 
+  /**
+   * The rating aggregate columns + votes table ship in migration
+   * 20260828160000, which is applied by hand like every migration here. Until
+   * it runs, any explicit reference to the columns fails with 42703; after one
+   * such failure we stop asking for 10 minutes so browse traffic does not pay
+   * a doomed extra round trip on every request.
+   */
+  private ratingColumnsBrokenUntil = 0;
+
+  private ratingColumnsAvailable(): boolean {
+    return Date.now() >= this.ratingColumnsBrokenUntil;
+  }
+
+  private isMissingRatingColumn(error: any): boolean {
+    return (
+      error?.code === "42703" &&
+      typeof error?.message === "string" &&
+      error.message.includes("rating_")
+    );
+  }
+
+  private noteRatingColumnsMissing(): void {
+    this.ratingColumnsBrokenUntil = Date.now() + 10 * 60 * 1000;
+  }
+
   async getMarketplaceListings(
     options: {
       page?: number;
@@ -9767,6 +9797,8 @@ export class SupabaseService {
       campusId?: string;
       countryCode?: string;
       condition?: string;
+      /** Keep only listings whose rating_avg is at least this (1–5). */
+      minRating?: number;
       taxonomyNodeId?: string;
       includeUnclassified?: boolean;
       sortBy?: string;
@@ -9787,6 +9819,7 @@ export class SupabaseService {
       campusId,
       countryCode,
       condition,
+      minRating,
       taxonomyNodeId,
       includeUnclassified = false,
       sortBy = "trending",
@@ -9806,10 +9839,14 @@ export class SupabaseService {
 
     // Condition and taxonomy node live inside category_specific_fields JSONB,
     // which the search RPC can't filter on — those queries use the fallback
-    // path (degrading trending to created_at).
+    // path (degrading trending to created_at). Rating sort/filter also go
+    // through the fallback: the pre-migration RPC would silently coerce an
+    // unknown sort to trending, which is worse than an honest degradation.
+    const wantsRatingQuery = sortBy === "rating" || minRating !== undefined;
     const useSearchRpc =
       !condition &&
       !taxonomyFilter &&
+      !wantsRatingQuery &&
       (Boolean(search) ||
         Boolean(category) ||
         Boolean(categoryList) ||
@@ -9869,9 +9906,10 @@ export class SupabaseService {
       }
     }
 
-    const selectClause =
-      profile === "compact"
-        ? `
+    const buildFallbackQuery = (withRatings: boolean) => {
+      const selectClause =
+        profile === "compact"
+          ? `
         id,
         user_id,
         category,
@@ -9889,14 +9927,14 @@ export class SupabaseService {
         status,
         views_count,
         quantity,
-        category_specific_fields,
+        category_specific_fields,${withRatings ? "\n        rating_avg,\n        rating_count," : ""}
         seller:profiles!user_id (
           id,
           name,
           avatar_url
         )
       `
-        : `
+          : `
         *,
         seller:profiles!user_id (
           id,
@@ -9905,67 +9943,94 @@ export class SupabaseService {
         )
       `;
 
-    let query = this.supabase
-      .from("marketplace_listings")
-      .select(selectClause, { count: "exact" })
-      // Reserved stays visible (sale in progress) but purchase APIs still require active.
-      .in("status", ["active", "reserved"])
-      .range(offset, offset + limit - 1);
+      let query = this.supabase
+        .from("marketplace_listings")
+        .select(selectClause, { count: "exact" })
+        // Reserved stays visible (sale in progress) but purchase APIs still require active.
+        .in("status", ["active", "reserved"])
+        .range(offset, offset + limit - 1);
 
-    if (countryCode) {
-      query = query.eq("country_code", countryCode);
+      if (countryCode) {
+        query = query.eq("country_code", countryCode);
+      }
+
+      if (campusId) {
+        query = query.eq("campus_id", campusId);
+      }
+
+      if (category) {
+        query = query.eq("category", category);
+      } else if (categoryList) {
+        const inList = `category.in.(${categoryList.join(",")})`;
+        query = includeCustomCategories
+          ? query.or(`${inList},category.like.custom:*`)
+          : query.or(inList);
+      }
+
+      if (search) {
+        query = query.ilike("title", `%${search}%`);
+      }
+
+      if (minPrice !== undefined) {
+        query = query.gte("price", minPrice);
+      }
+
+      if (maxPrice !== undefined) {
+        query = query.lte("price", maxPrice);
+      }
+
+      if (location) {
+        query = query.ilike("location", `%${location}%`);
+      }
+
+      if (condition) {
+        query = query.eq("category_specific_fields->>condition", condition);
+      }
+
+      if (taxonomyFilter) {
+        // Node ids contain dots; quote the eq value so PostgREST does not split
+        // `academic.materials.textbooks.course` into extra filter segments.
+        const quoted = `"${taxonomyFilter.replace(/"/g, "")}"`;
+        query = includeUnclassified
+          ? query.or(
+              `category_specific_fields->>taxonomyNodeId.eq.${quoted},category_specific_fields->>taxonomyNodeId.is.null`,
+            )
+          : query.eq("category_specific_fields->>taxonomyNodeId", taxonomyFilter);
+      }
+
+      // Pre-migration the rating columns do not exist: the filter is skipped
+      // and the sort degrades to newest — the same honest degradation trending
+      // already makes on this path.
+      if (withRatings && minRating !== undefined) {
+        query = query.gte("rating_avg", minRating);
+      }
+
+      if (sortBy === "rating" && withRatings) {
+        // "Top rated" is always best-first; unrated listings sink to the end.
+        query = query
+          .order("rating_avg", { ascending: false, nullsFirst: false })
+          .order("rating_count", { ascending: false })
+          .order("created_at", { ascending: false });
+      } else {
+        // Fallback path: trending/sale_first require the RPC; degrade to created_at.
+        const fallbackSort =
+          sortBy === "trending" || sortBy === "sale_first" || sortBy === "rating"
+            ? "created_at"
+            : sortBy;
+        const fallbackAscending =
+          sortBy === "rating" ? false : sortOrder === "asc";
+        query = query.order(fallbackSort, { ascending: fallbackAscending });
+      }
+
+      return query;
+    };
+
+    const attemptRatings = this.ratingColumnsAvailable();
+    let { data, error, count } = await buildFallbackQuery(attemptRatings);
+    if (error && attemptRatings && this.isMissingRatingColumn(error)) {
+      this.noteRatingColumnsMissing();
+      ({ data, error, count } = await buildFallbackQuery(false));
     }
-
-    if (campusId) {
-      query = query.eq("campus_id", campusId);
-    }
-
-    if (category) {
-      query = query.eq("category", category);
-    } else if (categoryList) {
-      const inList = `category.in.(${categoryList.join(",")})`;
-      query = includeCustomCategories
-        ? query.or(`${inList},category.like.custom:*`)
-        : query.or(inList);
-    }
-
-    if (search) {
-      query = query.ilike("title", `%${search}%`);
-    }
-
-    if (minPrice !== undefined) {
-      query = query.gte("price", minPrice);
-    }
-
-    if (maxPrice !== undefined) {
-      query = query.lte("price", maxPrice);
-    }
-
-    if (location) {
-      query = query.ilike("location", `%${location}%`);
-    }
-
-    if (condition) {
-      query = query.eq("category_specific_fields->>condition", condition);
-    }
-
-    if (taxonomyFilter) {
-      // Node ids contain dots; quote the eq value so PostgREST does not split
-      // `academic.materials.textbooks.course` into extra filter segments.
-      const quoted = `"${taxonomyFilter.replace(/"/g, "")}"`;
-      query = includeUnclassified
-        ? query.or(
-            `category_specific_fields->>taxonomyNodeId.eq.${quoted},category_specific_fields->>taxonomyNodeId.is.null`,
-          )
-        : query.eq("category_specific_fields->>taxonomyNodeId", taxonomyFilter);
-    }
-
-    // Fallback path: trending/sale_first require the RPC; degrade to created_at.
-    const fallbackSort =
-      sortBy === "trending" || sortBy === "sale_first" ? "created_at" : sortBy;
-    query = query.order(fallbackSort, { ascending: sortOrder === "asc" });
-
-    const { data, error, count } = await query;
     if (error) throw error;
 
     const rows = data || [];
@@ -9991,10 +10056,11 @@ export class SupabaseService {
   /** Batch fetch of active listings by id (recently-viewed rail). Card-shaped payloads. */
   async getMarketplaceListingsByIds(ids: string[]): Promise<any[]> {
     if (ids.length === 0) return [];
-    const { data, error } = await this.supabase
-      .from("marketplace_listings")
-      .select(
-        `
+    const buildBatchQuery = (withRatings: boolean) =>
+      this.supabase
+        .from("marketplace_listings")
+        .select(
+          `
         id,
         user_id,
         category,
@@ -10012,16 +10078,23 @@ export class SupabaseService {
         status,
         views_count,
         quantity,
-        category_specific_fields,
+        category_specific_fields,${withRatings ? "\n        rating_avg,\n        rating_count," : ""}
         seller:profiles!user_id (
           id,
           name,
           avatar_url
         )
       `,
-      )
-      .in("id", ids)
-      .eq("status", "active");
+        )
+        .in("id", ids)
+        .eq("status", "active");
+
+    const attemptRatings = this.ratingColumnsAvailable();
+    let { data, error } = await buildBatchQuery(attemptRatings);
+    if (error && attemptRatings && this.isMissingRatingColumn(error)) {
+      this.noteRatingColumnsMissing();
+      ({ data, error } = await buildBatchQuery(false));
+    }
     if (error) throw error;
 
     const cards = await this.toListingCardRecords(data || []);
@@ -10047,9 +10120,33 @@ export class SupabaseService {
     },
     limit = 6,
   ): Promise<any[]> {
+    try {
+      return await this.getRelatedMarketplaceListingsInner(listing, limit);
+    } catch (error) {
+      // Pre-migration: rating columns in the select 42703 — degrade and retry.
+      if (this.ratingColumnsAvailable() && this.isMissingRatingColumn(error)) {
+        this.noteRatingColumnsMissing();
+        return this.getRelatedMarketplaceListingsInner(listing, limit);
+      }
+      throw error;
+    }
+  }
+
+  private async getRelatedMarketplaceListingsInner(
+    listing: {
+      id: string;
+      category?: string;
+      campus_id?: string | null;
+      course_id?: string | null;
+      price?: number | null;
+      category_specific_fields?: Record<string, unknown> | null;
+    },
+    limit = 6,
+  ): Promise<any[]> {
     const client = this.getClient();
     const similarSelect =
-      "id, title, price, images, category, location, campus_id, category_specific_fields, created_at, status";
+      "id, title, price, images, category, location, campus_id, category_specific_fields, created_at, status" +
+      (this.ratingColumnsAvailable() ? ", rating_avg, rating_count" : "");
 
     let sameCategory: any[] = [];
     if (listing.category) {
@@ -10692,7 +10789,10 @@ export class SupabaseService {
     return mapMarketplaceReviewRow(data as any);
   }
 
-  async getMarketplaceReviews(listingId: string): Promise<any[]> {
+  async getMarketplaceReviews(
+    listingId: string,
+    viewerId?: string,
+  ): Promise<any[]> {
     const { MARKETPLACE_REVIEW_SELECT, mapMarketplaceReviewRow } =
       await import("./marketplaceReviewMapping");
     const { data, error } = await this.supabase
@@ -10703,7 +10803,177 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    return (data || []).map((row: any) => mapMarketplaceReviewRow(row));
+    const reviews = (data || []).map((row: any) => mapMarketplaceReviewRow(row));
+    return this.attachMarketplaceReviewSignals(listingId, reviews, viewerId);
+  }
+
+  /**
+   * Decorate mapped review rows with read-time signals:
+   * - verifiedPurchase: the reviewer holds one of the same proofs the write
+   *   gate (canUserReviewListing) accepts — delivered order, digital
+   *   entitlement, or a seller-confirmed 'purchased' inquiry.
+   * - helpfulCount / viewerMarkedHelpful from marketplace_review_votes.
+   * Every lookup is best-effort: a missing votes table (migration not applied
+   * yet) or a failed join must never block the review list — the fields are
+   * simply absent and clients hide the corresponding UI.
+   */
+  private async attachMarketplaceReviewSignals(
+    listingId: string,
+    reviews: any[],
+    viewerId?: string,
+  ): Promise<any[]> {
+    if (reviews.length === 0) return reviews;
+
+    const reviewIds = reviews.map((review) => review.id).filter(Boolean);
+    const reviewerIds = [
+      ...new Set(reviews.map((review) => review.reviewer_id).filter(Boolean)),
+    ];
+
+    let votesByReview: Map<string, number> | null = null;
+    const viewerVoted = new Set<string>();
+    try {
+      const { data: voteRows, error: voteError } = await this.supabase
+        .from("marketplace_review_votes")
+        .select("review_id, voter_id")
+        .in("review_id", reviewIds);
+      if (voteError) throw voteError;
+      votesByReview = new Map();
+      for (const row of voteRows || []) {
+        const reviewId = (row as any).review_id as string;
+        votesByReview.set(reviewId, (votesByReview.get(reviewId) ?? 0) + 1);
+        if (viewerId && (row as any).voter_id === viewerId) {
+          viewerVoted.add(reviewId);
+        }
+      }
+    } catch {
+      votesByReview = null; // table missing pre-migration, or transient failure
+    }
+
+    const verifiedReviewers = new Set<string>();
+    if (reviewerIds.length > 0) {
+      try {
+        const [orders, entitlements, inquiries] = await Promise.all([
+          this.supabase
+            .from("marketplace_orders")
+            .select("buyer_id")
+            .eq("listing_id", listingId)
+            .in("buyer_id", reviewerIds)
+            .in("status", ["buyer_confirmed", "completed"]),
+          this.supabase
+            .from("marketplace_question_bank_entitlements")
+            .select("user_id")
+            .eq("listing_id", listingId)
+            .in("user_id", reviewerIds),
+          this.supabase
+            .from("marketplace_inquiries")
+            .select("buyer_id")
+            .eq("listing_id", listingId)
+            .in("buyer_id", reviewerIds)
+            .eq("status", "purchased"),
+        ]);
+        for (const row of orders.data || []) {
+          verifiedReviewers.add((row as any).buyer_id);
+        }
+        for (const row of entitlements.data || []) {
+          verifiedReviewers.add((row as any).user_id);
+        }
+        for (const row of inquiries.data || []) {
+          verifiedReviewers.add((row as any).buyer_id);
+        }
+        return reviews.map((review) => ({
+          ...review,
+          verifiedPurchase: verifiedReviewers.has(review.reviewer_id),
+          ...(votesByReview
+            ? {
+                helpfulCount: votesByReview.get(review.id) ?? 0,
+                ...(viewerId
+                  ? { viewerMarkedHelpful: viewerVoted.has(review.id) }
+                  : {}),
+              }
+            : {}),
+        }));
+      } catch {
+        // fall through: return reviews with vote data only (if any)
+      }
+    }
+
+    if (!votesByReview) return reviews;
+    return reviews.map((review) => ({
+      ...review,
+      helpfulCount: votesByReview!.get(review.id) ?? 0,
+      ...(viewerId ? { viewerMarkedHelpful: viewerVoted.has(review.id) } : {}),
+    }));
+  }
+
+  /**
+   * Add or remove the viewer's "helpful" reaction on a review.
+   * 404 unknown review, 400 self-vote, 503 while the votes table has not been
+   * migrated yet (clients never show the control in that state).
+   */
+  async setMarketplaceReviewVote(
+    listingId: string,
+    reviewId: string,
+    voterId: string,
+    helpful: boolean,
+  ): Promise<{ helpfulCount: number; viewerMarkedHelpful: boolean }> {
+    const { data: review, error: reviewError } = await this.supabase
+      .from("marketplace_reviews")
+      .select("id, listing_id, reviewer_id")
+      .eq("id", reviewId)
+      .maybeSingle();
+    if (reviewError) throw reviewError;
+    if (!review || (review as any).listing_id !== listingId) {
+      const err: any = new Error("Review not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if ((review as any).reviewer_id === voterId) {
+      const err: any = new Error("You cannot mark your own review as helpful");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const missingTable = (error: any) =>
+      error?.code === "42P01" || error?.code === "PGRST205";
+
+    if (helpful) {
+      const { error } = await this.supabase
+        .from("marketplace_review_votes")
+        .upsert(
+          { review_id: reviewId, voter_id: voterId },
+          { onConflict: "review_id,voter_id", ignoreDuplicates: true },
+        );
+      if (error) {
+        if (missingTable(error)) {
+          const err: any = new Error("Review reactions are not available yet");
+          err.statusCode = 503;
+          throw err;
+        }
+        throw error;
+      }
+    } else {
+      const { error } = await this.supabase
+        .from("marketplace_review_votes")
+        .delete()
+        .eq("review_id", reviewId)
+        .eq("voter_id", voterId);
+      if (error) {
+        if (missingTable(error)) {
+          const err: any = new Error("Review reactions are not available yet");
+          err.statusCode = 503;
+          throw err;
+        }
+        throw error;
+      }
+    }
+
+    const { count, error: countError } = await this.supabase
+      .from("marketplace_review_votes")
+      .select("id", { count: "exact", head: true })
+      .eq("review_id", reviewId);
+    if (countError) throw countError;
+
+    return { helpfulCount: count ?? 0, viewerMarkedHelpful: helpful };
   }
 
   async buyMarketplaceListingNow(
