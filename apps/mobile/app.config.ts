@@ -160,7 +160,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.34: maintenance — the institutions list loads again everywhere (the
   // marketplace pilot gate had caught the shared campus lookup), and the
   // study-room course picker renders its prompt correctly.
-  version: '1.0.34',
+  // 1.0.35: communities you can talk in — the Discover tab is 'Community'
+  // again, every community gets a shared lounge chat (one tap from the card
+  // or the community page), 'Your communities' now really lists YOUR
+  // memberships (no more UNN rows masquerading as UNILAG), and study rooms
+  // auto-close after 6h and are deleted a few days later.
+  version: '1.0.35',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

@@ -46,6 +46,31 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'community-lounges-1-0-35',
+    title: 'Mobile 1.0.35 — community lounges, honest Discover, temporary rooms',
+    area: 'groups',
+    status: 'shipped',
+    shippedAt: '2026-08-29',
+    summary:
+      'A community is now a place you can talk, not a member directory: every community has a shared lounge chat, one tap from the Discover card or the community page. "Your communities" now lists your actual memberships (a fresh account no longer sees another campus presented as its own), the tab is named Community again, and study rooms close on their own after 6 hours and are deleted a few days later.',
+    details: [
+      'Lounge = one admin-less group per community (visibility community), minted lazily on first open; membership in the community is the only requirement, and concurrent first-openers converge on a single lounge.',
+      'The "Your communities" section is sourced from the membership list itself; discover results are a separate "More to join" section, deduped against memberships.',
+      'If a signed-up student with an academic profile has no memberships (signup paths that skip the profile save), the server re-derives them on the next communities fetch.',
+      'Rooms: 6h auto-close (expired rooms read closed immediately, joins are refused) and hard delete after 3 days, swept opportunistically on room traffic.',
+    ],
+    howToUse: [
+      'Discover → Community → your community card → "Community chat" drops you into the lounge.',
+      'The same button sits on the community page under Join/Leave once you are a member.',
+    ],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: [
+      'Requires migration 20260829170000_community_lounges.sql (communities.lounge_group_id). Until applied, the lounge button returns "Community chat is not available yet" (503) and nothing else breaks.',
+      'Lounges have no admins by design — moderation happens via the existing message-report pipeline, not group admin tools.',
+    ],
+    commits: ['6eb6a96'],
+  },
+  {
     id: 'maintenance-1-0-34',
     title: 'Mobile 1.0.34 — institutions list restored, study-room picker fix',
     area: 'platform',
