@@ -116,7 +116,10 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
         </p>
       ) : null}
     </div>
-    <div className="flex space-x-2 flex-shrink-0">
+    {/* Up to six actions (~490px). flex-shrink-0 without wrap ran them past
+        the card edge on phones and half-width windows, hiding Start Test and
+        Delete entirely — wrap instead of overflowing. */}
+    <div className="flex flex-wrap gap-2 min-w-0">
       {updateAvailable && onUpdate ? (
         <button
           type="button"
