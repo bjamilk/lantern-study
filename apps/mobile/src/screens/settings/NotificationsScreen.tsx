@@ -45,6 +45,7 @@ import {
 } from "../../navigation/navigationRef";
 import { NotificationRow } from "../../components/ui";
 import { AcademicFeedPanel } from "../../components/AcademicFeedPanel";
+import { useChrome } from '../../components/layout/ChromeContext';
 
 interface AppNotification {
   id: string;
@@ -66,6 +67,7 @@ type NotificationsNavigationProp = CompositeNavigationProp<
 >;
 
 export default function NotificationsScreen() {
+  const { onScroll: chromeOnScroll } = useChrome();
   const navigation = useNavigation<NotificationsNavigationProp>();
   const { colors } = useTheme();
   const user = useAuthStore((s) => s.user);
@@ -327,6 +329,8 @@ export default function NotificationsScreen() {
       ) : (
         <FlatList
           data={items}
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
           keyExtractor={(item) => item.id}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

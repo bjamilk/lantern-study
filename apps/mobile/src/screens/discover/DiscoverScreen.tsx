@@ -34,6 +34,7 @@ import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
 
 import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
+import { useChrome } from '../../components/layout/ChromeContext';
 
 type NavigationProp = {
   goBack: () => void;
@@ -56,6 +57,7 @@ function DiscoverHub({
   navigation: NavigationProp;
   route?: { params?: { section?: Section } };
 }) {
+  const { onScroll: chromeOnScroll } = useChrome();
   const [section, setSection] = useState<Section>(route?.params?.section ?? 'communities');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -436,6 +438,8 @@ function DiscoverHub({
       ) : section === 'communities' ? (
         <FlatList
           data={communities}
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
           keyExtractor={(item) => item.id}
           renderItem={renderCommunity}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
@@ -487,6 +491,8 @@ function DiscoverHub({
           data={groups}
           keyExtractor={(item) => item.id}
           renderItem={renderGroup}
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
           ListEmptyComponent={
             <View>
@@ -498,6 +504,8 @@ function DiscoverHub({
       ) : (
         <FlatList
           data={people}
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
           keyExtractor={(item) => item.id}
           renderItem={renderPerson}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}

@@ -1,6 +1,5 @@
 export * from './ui';
 export * from './layout/BottomTabBar';
-export * from './layout/MoreSheet';
 export { AICompanionPanel } from './AICompanionPanel';
 export { DailyQuestsWidget } from './DailyQuestsWidget';
 export { DailyQuizWidget } from './DailyQuizWidget';

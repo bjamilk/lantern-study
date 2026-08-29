@@ -45,6 +45,7 @@ import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { useChrome } from '../../components/layout/ChromeContext';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -226,6 +227,7 @@ function NoteCard({
 export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Props) {
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
+  const { onScroll: chromeOnScroll } = useChrome();
   const {
     folders,
     notes,
@@ -1417,6 +1419,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         </View>
       ) : (
         <FlatList
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
           data={filteredNotes}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}

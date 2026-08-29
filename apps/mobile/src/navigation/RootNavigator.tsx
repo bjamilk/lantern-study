@@ -9,7 +9,7 @@ import {
 } from '@lantern/shared/settings';
 
 import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, type NavigationState } from '@react-navigation/native';
-import { navigationRef } from './navigationRef';
+import { navigationRef, navigate as navigateFromRoot } from './navigationRef';
 
 /**
  * Changing the in-app font size re-keys the View wrapping the whole app
@@ -41,9 +41,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 import { useAppTheme, useTheme } from '../theme';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { BottomTabBar, TabKey } from '../components/layout/BottomTabBar';
 
-import { MoreSheet } from '../components/layout/MoreSheet';
+import { TopBar } from '../components/layout/TopBar';
+import { ProfileDrawer, DrawerEdgeSwipe } from '../components/layout/ProfileDrawer';
+import { ChromeProvider, useChrome } from '../components/layout/ChromeContext';
 import { ToastHost, ConfirmSheetHost } from '../components/ui';
 import { LectureRecordingBanner } from '../components/LectureRecordingBanner';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
@@ -234,6 +238,9 @@ import { linkingConfig } from './linking';
 import { registerForPushNotifications, uploadPushToken } from '../services/pushNotifications';
 
 import { useLowDataMode } from '../hooks/useLowDataMode';
+
+import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import { fetchUserProfile } from '../services/api';
 
 import UsernameRequiredModal from '../components/UsernameRequiredModal';
 import { AccountSuspendedBanner } from '../components/moderation/AccountSuspendedBanner';
@@ -499,15 +506,9 @@ function BudgetNavigator() {
 
 function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
-  const [moreOpen, setMoreOpen] = useState(false);
+  const { setTabState, showChrome, chromeProgress, drawerOpen } = useChrome();
 
-  const theme = useAppTheme();
-
-  const { updateSettings } = useSettingsStore();
-
-  const { lowDataMode, toggleLowDataMode } = useLowDataMode();
-
-  const signOut = useAuthStore(s => s.signOut);
+  const insets = useSafeAreaInsets();
 
   const openCompanion = useCompanionStore(s => s.open);
 
@@ -521,10 +522,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
   const groups = useGroupStore(s => s.groups);
 
   const dmThreads = useGroupStore(s => s.dmThreads);
-
-
-
-  const rootNav = navigation.getParent();
 
 
 
@@ -544,11 +541,11 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     Marketplace: 'MarketTab',
 
+    Offline: 'OfflineTab',
+
     AI: null,
 
     Notes: null,
-
-    Offline: null,
 
     More: null,
 
@@ -569,6 +566,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
     BudgetTab: 'Budget',
 
     MarketTab: 'Marketplace',
+
+    OfflineTab: 'Offline',
 
   };
 
@@ -594,13 +593,20 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
       if (focused === 'Library' || focused === 'NotesList' || focused === 'NoteEditor' || focused === 'StudyHub') return 'Library';
     }
 
-    return routeNameToTabKey[currentRoute ?? ''] ?? 'Home';
+    return routeNameToTabKey[currentRoute ?? ''] ?? 'Chat';
 
   }, [companionOpen, state.routes, state.index, focused]);
 
+  // The top bar lives outside the tab navigator; this is the one place that
+  // knows the focused route, so publish it into the chrome context.
+  useEffect(() => {
+    setTabState({ activeTab, immersive: hideBar });
+  }, [activeTab, hideBar, setTabState]);
 
-
-  const unreadNotificationCount = useNotificationStore(s => s.unreadCount);
+  // Changing screens always brings the bars back; only scrolling hides them.
+  useEffect(() => {
+    showChrome();
+  }, [state.index, focused, showChrome]);
 
 
 
@@ -628,16 +634,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   const navigateTab = (tab: TabKey) => {
 
-    if (tab === 'More') {
-
-      setMoreOpen(true);
-
-      return;
-
-    }
-
-    setMoreOpen(false);
-
     if (tab === 'AI') {
 
       openCompanion();
@@ -659,14 +655,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     }
 
-    if (tab === 'Offline') {
-
-      navigateRoot('Offline');
-
-      return;
-
-    }
-
     const routeName = tabKeyMap[tab];
 
     if (routeName) navigation.navigate(routeName);
@@ -679,22 +667,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     navigation.navigate('StudyTab', { screen: 'NotesList' });
 
-  };
-
-
-
-  const navigateRoot = (screen: keyof RootStackParamList) => {
-
-    rootNav?.navigate(screen);
-
-  };
-
-
-
-  const toggleTheme = () => {
-    // Quick toggle switches between light and dark; Settings retains System option.
-    const next = theme === 'dark' ? 'light' : 'dark';
-    void updateSettings('appearance', { theme: next });
   };
 
 
@@ -715,9 +687,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
           unreadChatCount={unreadChatCount}
 
-          unreadNotificationCount={unreadNotificationCount}
-
-          isMoreActive={moreOpen}
+          hideProgress={chromeProgress}
 
         />
 
@@ -727,55 +697,9 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
         <AIUsageFloatingBadge
           activeTab={activeTab}
           focusedRoute={focused}
-          hidden={moreOpen || companionOpen || activeTab === 'AI'}
+          hidden={drawerOpen || companionOpen || activeTab === 'AI'}
         />
       ) : null}
-
-      <MoreSheet
-
-        visible={moreOpen}
-
-        onClose={() => setMoreOpen(false)}
-
-        theme={theme}
-
-        onToggleTheme={toggleTheme}
-
-        lowDataMode={lowDataMode}
-
-        onToggleLowData={toggleLowDataMode}
-
-        items={[
-          {
-            id: 'notifications',
-            label: 'Notifications',
-            icon: 'notifications-outline',
-            badge: unreadNotificationCount,
-            onPress: () => navigateTab('Notifications'),
-          },
-          {
-            id: 'ai',
-            label: 'Lantern AI',
-            icon: 'sparkles-outline',
-            onPress: () => navigateTab('AI'),
-          },
-          {
-            id: 'budget',
-            label: 'Budget',
-            icon: 'wallet-outline',
-            onPress: () => navigateTab('Budget'),
-          },
-          {
-            id: 'offline',
-            label: 'Offline mode',
-            icon: 'cloud-offline-outline',
-            onPress: () => navigateTab('Offline'),
-          },
-          { id: 'settings', label: 'Settings', icon: 'settings-outline', onPress: () => navigateRoot('Settings') },
-          { id: 'logout', label: 'Log out', icon: 'log-out-outline', onPress: () => void signOut(), destructive: true },
-        ]}
-
-      />
 
       <AICompanionPanel />
       <FeatureTipsHost
@@ -788,10 +712,12 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
           focused === 'NoteEditor' ||
           activeTab === 'Library'
         }
-        moreOpen={moreOpen}
+        moreOpen={drawerOpen}
         companionOpen={companionOpen}
       />
-      <View className="absolute top-12 right-3 z-40">
+      {/* The navigator is pulled up by insets.top (see MainTabsShell); add it
+          back so the chip keeps sitting just below the top bar. */}
+      <View className="absolute right-3 z-40" style={{ top: (hideBar ? 0 : insets.top) + 48 }}>
         <SyncStatusIndicator compact />
       </View>
       <ToastHost />
@@ -805,7 +731,96 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
 
 
+/**
+ * The signed-in shell. Chat is the first thing a signed-in user sees; the
+ * base bar holds Chat / Library / Dashboard / Offline, the top bar holds
+ * Budget / Notifications / Lantern AI / Discover behind the profile avatar,
+ * and Settings / log out / low-data / theme live in the profile drawer
+ * (avatar tap or a right swipe from the left edge). Scrolling down slides
+ * both bars away; scrolling up brings them back (ChromeContext).
+ */
 function MainTabs() {
+
+  return (
+
+    <ChromeProvider>
+
+      <MainTabsShell />
+
+    </ChromeProvider>
+
+  );
+
+}
+
+
+
+function MainTabsShell() {
+
+  const theme = useAppTheme();
+
+  const user = useAuthStore(s => s.user);
+
+  const profileName = useAuthStore(s => s.profileName);
+
+  const signOut = useAuthStore(s => s.signOut);
+
+  const { updateSettings } = useSettingsStore();
+
+  const { lowDataMode, toggleLowDataMode } = useLowDataMode();
+
+  const openCompanion = useCompanionStore(s => s.open);
+
+  const unreadNotificationCount = useNotificationStore(s => s.unreadCount);
+
+  const isPlatformAdmin = usePlatformAdmin();
+
+  const { drawerOpen, setDrawerOpen, immersive, topBarSuppressed } = useChrome();
+
+  const insets = useSafeAreaInsets();
+
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  // Same avatar resolution as SettingsScreen: profile row first, then the
+  // auth metadata copy EditProfile keeps in sync.
+  useEffect(() => {
+    if (!user?.id) {
+      setAvatarUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchUserProfile(user.id)
+      .then((profile) => {
+        if (cancelled) return;
+        const url =
+          (profile as { avatar_url?: string; avatarUrl?: string }).avatar_url ||
+          (profile as { avatarUrl?: string }).avatarUrl ||
+          (user.user_metadata?.avatar_url as string | undefined) ||
+          null;
+        setAvatarUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAvatarUrl((user.user_metadata?.avatar_url as string | undefined) || null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.user_metadata?.avatar_url]);
+
+  const displayName =
+    profileName || (user?.user_metadata?.name as string | undefined) || 'Your profile';
+
+  const toggleTheme = () => {
+    // Quick toggle switches between light and dark; Settings retains System option.
+    const next = theme === 'dark' ? 'light' : 'dark';
+    void updateSettings('appearance', { theme: next });
+  };
+
+  const goTab = (screen: keyof MainTabParamList, params?: object) => {
+    navigateFromRoot('Main', { screen, params });
+  };
 
   return (
 
@@ -815,24 +830,78 @@ function MainTabs() {
           covering their headers — a recording used to hide the back button. */}
       <LectureRecordingBanner />
 
+      <TopBar
+        avatarUri={avatarUrl}
+        avatarName={displayName}
+        unreadNotificationCount={unreadNotificationCount}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        onBudget={() => goTab('BudgetTab')}
+        onNotifications={() => goTab('NotificationsTab')}
+        onAI={openCompanion}
+        // Admins land on the Discover hub; everyone else gets the campus shop
+        // (the hub is a coming-soon wall for them, which would orphan the
+        // marketplace as a destination).
+        onDiscover={() =>
+          goTab('MarketTab', { screen: isPlatformAdmin ? 'Discover' : 'MarketplaceHome' })
+        }
+      />
+
+      {/* Every screen still pads itself insets.top for a status bar the top
+          bar now covers, which left a dead band below the bar. Pull the
+          navigator up by exactly that inset so content starts flush at the
+          bottom edge of the bar. Immersive screens render with no top bar
+          and need their own padding intact. */}
+      <View className="flex-1" style={{ marginTop: immersive || topBarSuppressed ? 0 : -insets.top }}>
+
       <Tab.Navigator
+        initialRouteName="ChatTab"
         tabBar={props => <CustomTabBar {...props} />}
         screenOptions={{ headerShown: false, lazy: true }}
       >
 
-        <Tab.Screen name="HomeTab" component={HomeNavigator} />
+        <Tab.Screen name="ChatTab" component={ChatNavigator} />
 
         <Tab.Screen name="StudyTab" component={StudyNavigator} />
 
-        <Tab.Screen name="ChatTab" component={ChatNavigator} />
+        <Tab.Screen name="HomeTab" component={HomeNavigator} />
 
-        <Tab.Screen name="NotificationsTab" component={NotificationsScreen} />
+        <Tab.Screen name="OfflineTab" component={OfflineScreen} />
 
-        <Tab.Screen name="BudgetTab" component={BudgetNavigator} />
+        <Tab.Screen name="NotificationsTab" component={NotificationsScreen} options={{ tabBarButton: () => null }} />
+
+        <Tab.Screen name="BudgetTab" component={BudgetNavigator} options={{ tabBarButton: () => null }} />
 
         <Tab.Screen name="MarketTab" component={MarketNavigator} options={{ tabBarButton: () => null }} />
 
       </Tab.Navigator>
+
+      </View>
+
+      <DrawerEdgeSwipe enabled={!drawerOpen && !immersive} onOpen={() => setDrawerOpen(true)} />
+
+      <ProfileDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        name={displayName}
+        subtitle={user?.email ?? null}
+        avatarUri={avatarUrl}
+        onEditProfile={() => {
+          setDrawerOpen(false);
+          navigateFromRoot('EditProfile');
+        }}
+        onSettings={() => {
+          setDrawerOpen(false);
+          navigateFromRoot('Settings');
+        }}
+        onLogout={() => {
+          setDrawerOpen(false);
+          void signOut();
+        }}
+        lowDataMode={lowDataMode}
+        onToggleLowData={toggleLowDataMode}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
 
     </View>
 

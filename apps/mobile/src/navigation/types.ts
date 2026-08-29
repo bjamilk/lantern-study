@@ -158,6 +158,9 @@ export type MainTabParamList = {
   NotificationsTab: undefined;
   BudgetTab: undefined;
   MarketTab: undefined;
+  /** Offline mode as a base tab; the root-stack `Offline` modal remains for
+      course-filtered links from the Library tree. */
+  OfflineTab: undefined;
 };
 
 const IMMERSIVE_SCREENS = new Set([

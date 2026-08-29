@@ -42,6 +42,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 
 import { useNotesStore } from '../../stores/notesStore';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { useChrome } from '../../components/layout/ChromeContext';
 import { useTestStore } from '../../stores/testStore';
 
 import { Card, Button } from '../../components/ui';
@@ -154,6 +155,7 @@ function ActivityHeatmap({ days, theme }: { days: { date: string; count: number 
 
 export function DashboardScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(24);
+  const { onScroll: chromeOnScroll } = useChrome();
   const { width: windowWidth } = useWindowDimensions();
   const heroQuestsSideBySide = windowWidth >= 768;
 
@@ -646,6 +648,8 @@ export function DashboardScreen({ navigation }: Props) {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: tabBarClearance, paddingHorizontal: 16 }}
+        onScroll={chromeOnScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >

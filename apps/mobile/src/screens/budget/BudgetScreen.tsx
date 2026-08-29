@@ -44,6 +44,7 @@ import {
 import * as api from '../../services/api';
 import { featureAccents } from '@lantern/shared/design';
 import StudyWalletPanel from './StudyWalletPanel';
+import { useChrome } from '../../components/layout/ChromeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -59,6 +60,7 @@ const TABS: { key: BudgetTab; label: string; icon: keyof typeof Ionicons.glyphMa
 ];
 
 export default function BudgetScreen() {
+  const { onScroll: chromeOnScroll } = useChrome();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const userId = useAuthStore(s => s.user?.id) || '';
@@ -358,6 +360,8 @@ export default function BudgetScreen() {
         style={styles.content}
         contentContainerStyle={{ paddingBottom: tabBarClearance }}
         showsVerticalScrollIndicator={false}
+        onScroll={chromeOnScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

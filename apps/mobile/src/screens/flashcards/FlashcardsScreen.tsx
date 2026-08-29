@@ -27,6 +27,7 @@ import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModa
 import { COURSE_TOPIC_COPY, FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { useChrome } from '../../components/layout/ChromeContext';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { courseHasTopics } from '../../services/academic';
@@ -203,6 +204,7 @@ function DeckCard({
 export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' }: Props) {
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
+  const { onScroll: chromeOnScroll } = useChrome();
   const user = useAuthStore(s => s.user);
   const {
     decks,
@@ -575,6 +577,8 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         </View>
       ) : (
         <FlatList
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
           data={visibleDecks}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}

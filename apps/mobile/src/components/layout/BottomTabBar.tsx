@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { Animated, View, Text, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Badge } from '../ui';
@@ -31,11 +31,9 @@ interface Props {
   onTabPress: (tab: TabKey) => void;
   dueCardsCount?: number;
   unreadChatCount?: number;
-  unreadNotificationCount?: number;
-  isMoreActive?: boolean;
+  /** Chrome visibility (1 = shown, 0 = hidden); slides the bar off-screen. */
+  hideProgress?: Animated.Value;
 }
-
-const TAB_WIDTH = 68;
 
 function TabButton({
   tab,
@@ -53,7 +51,7 @@ function TabButton({
   return (
     <Pressable
       onPress={onPress}
-      style={{ width: TAB_WIDTH }}
+      style={{ flex: 1 }}
       className="items-center py-1"
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
@@ -87,27 +85,24 @@ export function useTabBarClearance(extra = 16): number {
   return BOTTOM_TAB_BAR_CONTENT_HEIGHT + Math.max(insets.bottom, 20) + 10 + extra;
 }
 
+/**
+ * The base bar: Chat, Library, Dashboard, Offline. Everything else moved to
+ * the top bar (Budget, Notifications, Lantern AI, Discover) or the profile
+ * drawer (Settings, log out, low-data, theme) — no More sheet, no scrolling
+ * tab strip. `hideProgress` slides it below the screen while reading.
+ */
 export function BottomTabBar({
   activeTab,
   onTabPress,
   dueCardsCount = 0,
   unreadChatCount = 0,
-  unreadNotificationCount = 0,
-  isMoreActive,
+  hideProgress,
 }: Props) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 20) + 10;
 
-  const scrollTabs: TabDef[] = [
-    { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
-    {
-      key: 'Library',
-      label: 'Library',
-      icon: 'library-outline',
-      activeIcon: 'library',
-      badge: dueCardsCount,
-    },
+  const tabs: TabDef[] = [
     {
       key: 'Chat',
       label: 'Chat',
@@ -115,22 +110,28 @@ export function BottomTabBar({
       activeIcon: 'chatbubbles',
       badge: unreadChatCount,
     },
-    { key: 'Marketplace', label: 'Explore', icon: 'bag-outline', activeIcon: 'bag' },
+    {
+      key: 'Library',
+      label: 'Library',
+      icon: 'library-outline',
+      activeIcon: 'library',
+      badge: dueCardsCount,
+    },
+    { key: 'Home', label: 'Dashboard', icon: 'home-outline', activeIcon: 'home' },
+    { key: 'Offline', label: 'Offline', icon: 'cloud-offline-outline', activeIcon: 'cloud-offline' },
   ];
 
-  const moreTab: TabDef = {
-    key: 'More',
-    label: 'More',
-    icon: 'ellipsis-horizontal-outline',
-    activeIcon: 'ellipsis-horizontal',
-    badge: unreadNotificationCount,
-  };
+  const hiddenOffset = BOTTOM_TAB_BAR_CONTENT_HEIGHT + bottomPad + 24;
+  const translateY = hideProgress
+    ? hideProgress.interpolate({ inputRange: [0, 1], outputRange: [hiddenOffset, 0] })
+    : 0;
 
   return (
-    <View
+    <Animated.View
       className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border pt-2 flex-row"
       style={{
         paddingBottom: bottomPad,
+        paddingHorizontal: 4,
         backgroundColor: colors.tabBar,
         borderTopColor: colors.tabBarBorder,
         shadowColor: isDark ? '#000000' : '#0f172a',
@@ -138,33 +139,19 @@ export function BottomTabBar({
         shadowOpacity: isDark ? 0.35 : 0.08,
         shadowRadius: 12,
         elevation: 12,
+        transform: [{ translateY }],
       }}
     >
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 4 }}
-        className="flex-1"
-        keyboardShouldPersistTaps="handled"
-      >
-        {scrollTabs.map(tab => (
-          <TabButton
-            key={tab.key}
-            tab={tab}
-            active={activeTab === tab.key && !isMoreActive}
-            onPress={() => onTabPress(tab.key)}
-            activeColor={colors.tabBarActive}
-            inactiveColor={colors.tabBarInactive}
-          />
-        ))}
-      </ScrollView>
-      <TabButton
-        tab={moreTab}
-        active={!!isMoreActive}
-        onPress={() => onTabPress('More')}
-        activeColor={colors.tabBarActive}
-        inactiveColor={colors.tabBarInactive}
-      />
-    </View>
+      {tabs.map(tab => (
+        <TabButton
+          key={tab.key}
+          tab={tab}
+          active={activeTab === tab.key}
+          onPress={() => onTabPress(tab.key)}
+          activeColor={colors.tabBarActive}
+          inactiveColor={colors.tabBarInactive}
+        />
+      ))}
+    </Animated.View>
   );
 }
