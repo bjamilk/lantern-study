@@ -24,8 +24,13 @@ export const FeatureHero: React.FC<FeatureHeroProps> = ({
     style={{ borderTopWidth: 3, borderTopColor: accentColor }}
   >
     <div className="p-4 sm:p-5">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
-        <div className="flex items-start gap-3 min-w-0">
+      {/* Wrap on CONTENT width, not viewport breakpoints: with the sidebar
+          open, an sm: row layout gets a ~460px column at 768-900px windows,
+          and a shrink-0 actions block then overlapped the title and squeezed
+          the subtitle to one word per line. flex-wrap + a basis floor on the
+          title block drops the actions onto their own line instead. */}
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-3 min-w-0 flex-1 basis-64">
           {icon ? (
             <div
               className="p-2.5 rounded-lantern shrink-0"
@@ -41,7 +46,7 @@ export const FeatureHero: React.FC<FeatureHeroProps> = ({
             ) : null}
           </div>
         </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div> : null}
+        {actions ? <div className="flex flex-wrap items-center gap-2 min-w-0">{actions}</div> : null}
       </div>
       {children}
     </div>
