@@ -9,6 +9,7 @@
  */
 import React from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 export interface ActionSheetItem {
@@ -38,6 +39,9 @@ export function ActionSheet({
   onClose,
   cancelLabel = 'Cancel',
 }: ActionSheetProps) {
+  // Same edge-to-edge trap as ConfirmSheetHost: without the inset the last
+  // row sinks under the system navigation bar.
+  const insets = useSafeAreaInsets();
   const select = (item: ActionSheetItem) => {
     if (item.disabled) return;
     // Close first so the sheet is never left open behind a modal or an alert
@@ -53,7 +57,8 @@ export function ActionSheet({
           accessibilityViewIsModal
           accessibilityLabel={title}
           onPress={(e) => e.stopPropagation?.()}
-          className="bg-lantern-surface rounded-t-3xl pt-5 pb-8"
+          className="bg-lantern-surface rounded-t-3xl pt-5"
+        style={{ paddingBottom: insets.bottom + 20 }}
         >
           {title ? (
             <Text

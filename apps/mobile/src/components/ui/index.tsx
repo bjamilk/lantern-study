@@ -198,6 +198,10 @@ export function ToastHost() {
 
 export function ConfirmSheetHost() {
   const { open, options, handleConfirm, handleCancel } = useConfirmStore();
+  // The modal window spans the full screen (edge-to-edge), so without this the
+  // Cancel/Confirm row sinks under the system navigation bar and cannot be
+  // tapped on devices with 3-button nav.
+  const insets = useSafeAreaInsets();
   if (!open || !options) return null;
   return (
     <Modal transparent animationType="fade" visible={open} onRequestClose={handleCancel}>
@@ -205,7 +209,8 @@ export function ConfirmSheetHost() {
         <View
           accessibilityViewIsModal
           accessibilityLabel={options.title}
-          className="bg-lantern-surface rounded-t-3xl px-5 pt-5 pb-8"
+          className="bg-lantern-surface rounded-t-3xl px-5 pt-5"
+          style={{ paddingBottom: insets.bottom + 20 }}
         >
           <Text className="text-lg font-bold text-lantern-text mb-2" accessibilityRole="header">
             {options.title}

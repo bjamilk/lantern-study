@@ -127,6 +127,7 @@ export const {
   archiveDmThread,
   unarchiveDmThread,
   getDmMuteStatus,
+  searchMessages,
   muteDmThread,
   unmuteDmThread,
   getGroupMuteStatus,

@@ -1196,6 +1196,25 @@ export function createApiEndpoints(client: ApiClient) {
         { method: "PUT" },
       ),
 
+    searchMessages: (query: string, limit = 20, scope?: { groupId?: string; threadId?: string }) => {
+      const params = new URLSearchParams({ q: query, limit: String(limit) });
+      if (scope?.groupId) params.set("groupId", scope.groupId);
+      if (scope?.threadId) params.set("threadId", scope.threadId);
+      return apiRequest<{
+        results: Array<{
+          id: string;
+          chatType: "group" | "dm";
+          chatId: string;
+          chatName: string;
+          chatAvatarUrl: string | null;
+          otherUserId: string | null;
+          text: string;
+          senderId: string;
+          timestamp: string;
+        }>;
+      }>(`/messages/search?${params.toString()}`);
+    },
+
     getDmMuteStatus: (threadId: string) =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
         `/messages/dm/${encodeURIComponent(threadId)}/mute`,

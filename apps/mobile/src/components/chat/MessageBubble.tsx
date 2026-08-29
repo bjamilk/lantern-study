@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import type { GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
@@ -44,6 +45,8 @@ interface MessageBubbleProps {
   onOpenThread?: (rootId: string) => void;
   /** Re-send a message that failed to reach the server. */
   onRetry?: (message: Message) => void;
+  /** Device-local star from the message action sheet. */
+  starred?: boolean;
 }
 
 function MessageBubbleComponent({
@@ -64,6 +67,7 @@ function MessageBubbleComponent({
   onScrollToMessage,
   onOpenThread,
   onRetry,
+  starred = false,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
@@ -381,6 +385,15 @@ function MessageBubbleComponent({
           {/* Time / edited / delivery are spoken once as part of the row label;
               only the Retry action stays as its own stop. */}
           <View className="flex-row items-center justify-end mt-1.5 gap-0.5">
+            {starred ? (
+              <Ionicons
+                name="star"
+                size={10}
+                color="#f59e0b"
+                style={{ marginRight: 2 }}
+                importantForAccessibility="no"
+              />
+            ) : null}
             <Text
               importantForAccessibility="no"
               className="text-[10px]"

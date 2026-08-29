@@ -14,8 +14,16 @@ import {
   useWindowDimensions,
   View,
   type ViewStyle,
+  TextInput,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
+import { ForwardMessageSheet } from '../../components/chat/ForwardMessageSheet';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
+import { MessageActionBar } from '../../components/chat/MessageActionBar';
+import { useToastStore } from '../../stores/toastStore';
 import { Ionicons } from '@expo/vector-icons';
 import {
   canEditChatMessage,
@@ -24,6 +32,8 @@ import {
   normalizeStorageUrl,
   resolveAvatarSrc,
   shouldRenderRemovedMessage,
+  isChatAudioMessage,
+  isChatImageMessage,
 } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type DirectMessage } from '../../stores/groupStore';
@@ -107,6 +117,8 @@ interface DmMessageRowProps {
   onScrollToMessage: (messageId: string) => void;
   onOpenThread: (rootId: string) => void;
   onRetryMessage: (message: DirectMessage) => void;
+  /** Device-local star indicator. */
+  starred: boolean;
 }
 
 /**
@@ -126,6 +138,7 @@ const DmMessageRow = React.memo(function DmMessageRow({
   onScrollToMessage,
   onOpenThread,
   onRetryMessage,
+  starred,
 }: DmMessageRowProps) {
   const bubbleMessage = useMemo(() => {
     const timestamp =
@@ -177,6 +190,7 @@ const DmMessageRow = React.memo(function DmMessageRow({
         onOpenThread={onOpenThread}
         threadRootId={message.threadRootId}
         messageId={message.id}
+        starred={starred}
       />
     </View>
   );
@@ -459,11 +473,24 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   // "Report user" (Phase 1 · E). Actions that open an Alert are deferred so the
   // sheet's Modal is gone first — iOS will not stack an Alert under a Modal.
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [dmMessageTarget, setDmMessageTarget] = useState<DirectMessage | null>(null);
+  const [dmMessageOverflowOpen, setDmMessageOverflowOpen] = useState(false);
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const [pinnedMessage, setPinnedMessage] = useState<{ id: string; text: string } | null>(null);
+  const [forwardMessage, setForwardMessage] = useState<DirectMessage | null>(null);
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [chatSearchIndex, setChatSearchIndex] = useState(0);
   const [muteSheetOpen, setMuteSheetOpen] = useState(false);
   const [showReportUser, setShowReportUser] = useState(false);
   const openChatMenu = useCallback(() => setChatMenuOpen(true), []);
   const afterSheet = (fn: () => void) => setTimeout(fn, Platform.OS === 'ios' ? 320 : 0);
   const chatMenuItems: ActionSheetItem[] = [
+    {
+      label: 'Search messages',
+      icon: 'search-outline',
+      onPress: () => afterSheet(() => setChatSearchOpen(true)),
+    },
     {
       label: chatMuted ? 'Unmute notifications' : 'Mute',
       icon: chatMuted ? 'notifications-outline' : 'notifications-off-outline',
@@ -789,42 +816,155 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     );
   }, [editingMessage?.id, reloadThread, removeDirectMessage, threadId, threadRootId]);
 
+  // Long-press opens one sheet with every message action (the nested Alerts
+  // it replaces could never show Reply, Forward, Star and Pin together).
   const showMessageActions = useCallback((message: DirectMessage) => {
+    setDmMessageTarget(message);
+  }, []);
+
+  useEffect(() => {
+    if (!dmMessageTarget) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setDmMessageTarget(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [dmMessageTarget]);
+
+  // Stars and the pinned message are device-local (no backend fields yet).
+  useEffect(() => {
+    if (!user?.id || !threadId) return;
+    let cancelled = false;
+    void AsyncStorage.getItem(`lantern_starred_msgs:${user.id}:dm:${threadId}`).then((raw) => {
+      if (cancelled || !raw) return;
+      try {
+        setStarredIds(new Set(JSON.parse(raw) as string[]));
+      } catch {
+        /* corrupt cache: start clean */
+      }
+    });
+    void AsyncStorage.getItem(`lantern_pinned_msg:${user.id}:dm:${threadId}`).then((raw) => {
+      if (cancelled || !raw) return;
+      try {
+        setPinnedMessage(JSON.parse(raw) as { id: string; text: string });
+      } catch {
+        /* corrupt cache: start clean */
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, threadId]);
+
+  const toggleStarMessage = useCallback(
+    (message: DirectMessage) => {
+      if (!user?.id) return;
+      const next = new Set(starredIds);
+      const starring = !next.has(message.id);
+      if (starring) next.add(message.id);
+      else next.delete(message.id);
+      setStarredIds(next);
+      void AsyncStorage.setItem(
+        `lantern_starred_msgs:${user.id}:dm:${threadId}`,
+        JSON.stringify([...next])
+      );
+      useToastStore
+        .getState()
+        .showToast(starring ? 'Message starred' : 'Star removed', 'success');
+    },
+    [threadId, user?.id, starredIds]
+  );
+
+  const togglePinMessage = useCallback(
+    (message: DirectMessage) => {
+      if (!user?.id) return;
+      const unpinning = pinnedMessage?.id === message.id;
+      const next = unpinning ? null : { id: message.id, text: (message.text || '').trim() };
+      setPinnedMessage(next);
+      const key = `lantern_pinned_msg:${user.id}:dm:${threadId}`;
+      if (next) void AsyncStorage.setItem(key, JSON.stringify(next));
+      else void AsyncStorage.removeItem(key);
+      useToastStore
+        .getState()
+        .showToast(unpinning ? 'Unpinned' : 'Pinned in this chat', 'success');
+    },
+    [threadId, user?.id, pinnedMessage]
+  );
+
+  const dmMessageItems: ActionSheetItem[] = useMemo(() => {
+    const message = dmMessageTarget;
+    if (!message) return [];
     const canEdit = canEditChatMessage(message, user?.id);
     const canRemove = canRemoveChatMessage(message, user?.id);
-    if (!canEdit && !canRemove) {
-      beginReply(message);
-      return;
+    const bodyText = (message.text || '').trim();
+    const plainText =
+      !!bodyText && !isChatAudioMessage(message.text) && !isChatImageMessage(message.text);
+    const starred = starredIds.has(message.id);
+    const pinned = pinnedMessage?.id === message.id;
+    const items: ActionSheetItem[] = [];
+    void bodyText;
+    void plainText;
+    void starred;
+    void pinned;
+    if (canEdit) {
+      items.push({
+        label: 'Edit',
+        icon: 'create-outline',
+        onPress: () => beginEdit(message),
+      });
     }
-
-    Alert.alert('Message options', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Reply', onPress: () => beginReply(message) },
-      {
-        text: canEdit ? 'Edit or remove' : 'Remove',
-        onPress: () =>
-          Alert.alert('Manage message', undefined, [
-            { text: 'Cancel', style: 'cancel' },
-            ...(canEdit ? [{ text: 'Edit', onPress: () => beginEdit(message) }] : []),
-            ...(canRemove
-              ? [{
-                  text: 'Remove',
-                  style: 'destructive' as const,
-                  onPress: () => confirmRemoveMessage(message),
-                }]
-              : []),
-          ]),
-      },
-    ]);
-  }, [beginEdit, beginReply, confirmRemoveMessage, user?.id]);
+    if (canRemove) {
+      items.push({
+        label: 'Remove',
+        icon: 'trash-outline',
+        destructive: true,
+        onPress: () => afterSheet(() => confirmRemoveMessage(message)),
+      });
+    }
+    return items;
+  }, [
+    dmMessageTarget,
+    user?.id,
+    starredIds,
+    pinnedMessage,
+    beginReply,
+    beginEdit,
+    confirmRemoveMessage,
+    toggleStarMessage,
+    togglePinMessage,
+  ]);
 
   // Reads the list through a ref so its identity survives every new message —
   // otherwise every row re-renders whenever the thread grows.
+  const chatSearchMatches = useMemo(() => {
+    const q = chatSearchQuery.trim().toLowerCase();
+    if (!chatSearchOpen || q.length < 2) return [] as string[];
+    return messages
+      .filter((m) => (m.text || '').toLowerCase().includes(q))
+      .map((m) => m.id);
+  }, [chatSearchOpen, chatSearchQuery, messages]);
+
   const handleScrollToMessage = useCallback((messageId: string) => {
     const index = messagesRef.current.findIndex((m) => m.id === messageId);
     if (index >= 0) {
       listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
     }
+  }, []);
+
+  const jumpToChatMatch = useCallback(
+    (nextIndex: number) => {
+      if (chatSearchMatches.length === 0) return;
+      const wrapped = (nextIndex + chatSearchMatches.length) % chatSearchMatches.length;
+      setChatSearchIndex(wrapped);
+      handleScrollToMessage(chatSearchMatches[wrapped]);
+    },
+    [chatSearchMatches, handleScrollToMessage]
+  );
+
+  const closeChatSearch = useCallback(() => {
+    setChatSearchOpen(false);
+    setChatSearchQuery('');
+    setChatSearchIndex(0);
   }, []);
 
   const handleRetryMessage = useCallback(
@@ -838,8 +978,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   // DmMessageRow is memoized, so the list has to be told when the values the
   // rows are *given* change — otherwise the unread divider goes stale.
   const listExtraData = useMemo(
-    () => ({ firstUnreadId, userId: user?.id, displayName, peerAvatarUrl }),
-    [firstUnreadId, user?.id, displayName, peerAvatarUrl]
+    () => ({ firstUnreadId, userId: user?.id, displayName, peerAvatarUrl, starredIds }),
+    [firstUnreadId, user?.id, displayName, peerAvatarUrl, starredIds]
   );
 
   const handleBack = useCallback(() => {
@@ -857,6 +997,53 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
+      {dmMessageTarget ? (
+        <MessageActionBar
+          onClose={() => setDmMessageTarget(null)}
+          onReply={() => {
+            const m = dmMessageTarget;
+            setDmMessageTarget(null);
+            beginReply(m);
+          }}
+          onForward={
+            (dmMessageTarget.text || '').trim() &&
+            !isChatAudioMessage(dmMessageTarget.text) &&
+            !isChatImageMessage(dmMessageTarget.text)
+              ? () => {
+                  const m = dmMessageTarget;
+                  setDmMessageTarget(null);
+                  setForwardMessage(m);
+                }
+              : undefined
+          }
+          onCopy={
+            (dmMessageTarget.text || '').trim() &&
+            !isChatAudioMessage(dmMessageTarget.text) &&
+            !isChatImageMessage(dmMessageTarget.text)
+              ? () => {
+                  const m = dmMessageTarget;
+                  setDmMessageTarget(null);
+                  void Clipboard.setStringAsync((m.text || '').trim());
+                }
+              : undefined
+          }
+          onStar={() => {
+            const m = dmMessageTarget;
+            setDmMessageTarget(null);
+            toggleStarMessage(m);
+          }}
+          onPin={() => {
+            const m = dmMessageTarget;
+            setDmMessageTarget(null);
+            togglePinMessage(m);
+          }}
+          starred={starredIds.has(dmMessageTarget.id)}
+          pinned={pinnedMessage?.id === dmMessageTarget.id}
+          onMore={dmMessageItems.length > 0 ? () => {
+            setDmMessageOverflowOpen(true);
+          } : undefined}
+        />
+      ) : (
       <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
         <Pressable
           onPress={handleBack}
@@ -881,6 +1068,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           <Ionicons name="ellipsis-vertical" size={22} color={colors.textSecondary} />
         </Pressable>
       </View>
+      )}
 
       {thread?.isArchived || chatMuted ? (
         <View className="flex-row items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
@@ -1082,7 +1270,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <View className="flex-1" style={columnStyle}>
@@ -1092,6 +1280,70 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           <ErrorState message={loadError} onRetry={() => void loadThread()} />
         ) : (
           <View className="flex-1">
+            {chatSearchOpen ? (
+              <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
+                <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+                <TextInput
+                  value={chatSearchQuery}
+                  onChangeText={(v) => {
+                    setChatSearchQuery(v);
+                    setChatSearchIndex(0);
+                  }}
+                  placeholder="Search this chat…"
+                  placeholderTextColor={colors.inputPlaceholder}
+                  autoFocus
+                  autoCorrect={false}
+                  className="flex-1 text-sm text-lantern-text py-1"
+                  accessibilityLabel="Search messages in this chat"
+                />
+                <Text className="text-xs text-lantern-text-secondary">
+                  {chatSearchMatches.length > 0
+                    ? `${chatSearchIndex + 1}/${chatSearchMatches.length}`
+                    : chatSearchQuery.trim().length >= 2
+                      ? '0'
+                      : ''}
+                </Text>
+                <Pressable
+                  onPress={() => jumpToChatMatch(chatSearchIndex + 1)}
+                  hitSlop={6}
+                  accessibilityLabel="Previous match"
+                  disabled={chatSearchMatches.length === 0}
+                >
+                  <Ionicons name="chevron-up" size={20} color={colors.text} />
+                </Pressable>
+                <Pressable
+                  onPress={() => jumpToChatMatch(chatSearchIndex - 1)}
+                  hitSlop={6}
+                  accessibilityLabel="Next match"
+                  disabled={chatSearchMatches.length === 0}
+                >
+                  <Ionicons name="chevron-down" size={20} color={colors.text} />
+                </Pressable>
+                <Pressable onPress={closeChatSearch} hitSlop={6} accessibilityLabel="Close search">
+                  <Ionicons name="close" size={20} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            ) : null}
+            {pinnedMessage ? (
+              <Pressable
+                onPress={() => handleScrollToMessage(pinnedMessage.id)}
+                className="flex-row items-center gap-2 px-3 py-2 bg-lantern-primary-background border-b border-lantern-border"
+                accessibilityRole="button"
+                accessibilityLabel="Jump to pinned message"
+              >
+                <Ionicons name="pin" size={14} color={colors.primary} />
+                <Text className="flex-1 text-[12px] text-lantern-text" numberOfLines={1}>
+                  {pinnedMessage.text || 'Pinned message'}
+                </Text>
+                <Pressable
+                  onPress={() => togglePinMessage({ id: pinnedMessage.id, text: pinnedMessage.text } as DirectMessage)}
+                  hitSlop={8}
+                  accessibilityLabel="Unpin message"
+                >
+                  <Ionicons name="close" size={16} color={colors.textSecondary} />
+                </Pressable>
+              </Pressable>
+            ) : null}
             <FlatList
               ref={listRef}
               data={messages}
@@ -1143,6 +1395,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   onScrollToMessage={handleScrollToMessage}
                   onOpenThread={handleOpenThread}
                   onRetryMessage={handleRetryMessage}
+                  starred={starredIds.has(item.id)}
                 />
               )}
             />
@@ -1328,6 +1581,24 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         otherDisplayName={displayName}
         otherAvatarUrl={peerAvatarUrl}
         threadId={threadId}
+      />
+      <ActionSheet
+        visible={dmMessageOverflowOpen}
+        title="More"
+        items={dmMessageItems.map((item) => ({
+          ...item,
+          onPress: () => {
+            setDmMessageOverflowOpen(false);
+            setDmMessageTarget(null);
+            item.onPress();
+          },
+        }))}
+        onClose={() => setDmMessageOverflowOpen(false)}
+      />
+      <ForwardMessageSheet
+        visible={!!forwardMessage}
+        onClose={() => setForwardMessage(null)}
+        messageText={(forwardMessage?.text || '').trim()}
       />
       <ActionSheet
         visible={chatMenuOpen}

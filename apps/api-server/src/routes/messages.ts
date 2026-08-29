@@ -82,6 +82,152 @@ export const initializeMessageRoutes = (supabase: SupabaseService, cache: CacheS
 };
 
 // POST /api/v1/messages/upload-image — SEC-07 chat image upload with magic-byte checks
+
+// ---------------------------------------------------------------------------
+// Full-history message search (group + DM), optionally scoped to one chat.
+// Access model mirrors the fetch routes: group messages only from groups the
+// caller belongs to; DM messages only from threads they participate in.
+// ---------------------------------------------------------------------------
+router.get(
+  '/search',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const q = String(req.query.q || '').trim();
+    const limit = Math.min(30, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
+    const scopeGroupId = typeof req.query.groupId === 'string' ? req.query.groupId : null;
+    const scopeThreadId = typeof req.query.threadId === 'string' ? req.query.threadId : null;
+    if (q.length < 2) {
+      return res.json({ results: [] });
+    }
+    // Commas/parens would break the PostgREST or() expression; wildcards are ours.
+    const pattern = `%${q.replace(/[,()%_]/g, ' ').trim()}%`;
+    if (pattern === '%%') return res.json({ results: [] });
+
+    const client = supabaseService.getClient();
+
+    try {
+      // --- resolve the group and thread scopes the caller may search ---
+      let groupIds: string[] = [];
+      if (scopeGroupId) {
+        const { data: membership } = await client
+          .from('group_members')
+          .select('group_id')
+          .eq('group_id', scopeGroupId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (membership) groupIds = [scopeGroupId];
+      } else if (!scopeThreadId) {
+        const { data: memberships } = await client
+          .from('group_members')
+          .select('group_id')
+          .eq('user_id', userId)
+          .limit(300);
+        groupIds = (memberships || []).map((m: any) => m.group_id).filter(Boolean);
+      }
+
+      type ThreadRow = { id: string; participant_ids: string[]; participants: any };
+      let threads: ThreadRow[] = [];
+      if (scopeThreadId || !scopeGroupId) {
+        let threadQuery = client
+          .from('dm_threads')
+          .select('id, participant_ids, participants, hidden_by')
+          .contains('participant_ids', JSON.stringify([userId]));
+        if (scopeThreadId) threadQuery = threadQuery.eq('id', scopeThreadId);
+        const { data: threadRows } = await threadQuery.limit(300);
+        threads = (threadRows || []).filter((t: any) => {
+          const pids = Array.isArray(t.participant_ids) ? t.participant_ids : [];
+          if (!pids.includes(userId)) return false;
+          const hiddenBy = Array.isArray(t.hidden_by) ? t.hidden_by : [];
+          return !hiddenBy.includes(userId);
+        });
+      }
+      const threadIds = threads.map((t) => t.id);
+      const threadById = new Map(threads.map((t) => [t.id, t]));
+
+      // --- search both stores ---
+      const [groupHits, dmHits] = await Promise.all([
+        groupIds.length
+          ? client
+              .from('messages')
+              .select('id, group_id, sender_id, text, question_stem, timestamp')
+              .in('group_id', groupIds)
+              .is('removed_at', null)
+              .or(`text.ilike.${pattern},question_stem.ilike.${pattern}`)
+              .order('timestamp', { ascending: false })
+              .limit(limit)
+          : Promise.resolve({ data: [] as any[] }),
+        threadIds.length
+          ? client
+              .from('dm_messages')
+              .select('id, thread_id, sender_id, text, timestamp')
+              .in('thread_id', threadIds)
+              .is('removed_at', null)
+              .ilike('text', pattern)
+              .order('timestamp', { ascending: false })
+              .limit(limit)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+
+      const groupRows = (groupHits as any).data || [];
+      const dmRows = (dmHits as any).data || [];
+
+      // --- chat labels ---
+      const matchedGroupIds = [...new Set(groupRows.map((m: any) => m.group_id))];
+      let groupNameById = new Map<string, { name: string; avatarUrl: string | null }>();
+      if (matchedGroupIds.length) {
+        const { data: groupMeta } = await client
+          .from('groups')
+          .select('id, name, avatar_url')
+          .in('id', matchedGroupIds);
+        groupNameById = new Map(
+          (groupMeta || []).map((g: any) => [g.id, { name: g.name, avatarUrl: g.avatar_url || null }])
+        );
+      }
+
+      const results = [
+        ...groupRows.map((m: any) => ({
+          id: m.id,
+          chatType: 'group' as const,
+          chatId: m.group_id,
+          chatName: groupNameById.get(m.group_id)?.name || 'Group',
+          chatAvatarUrl: groupNameById.get(m.group_id)?.avatarUrl || null,
+          otherUserId: null,
+          text: (m.question_stem || m.text || '').slice(0, 300),
+          senderId: m.sender_id,
+          timestamp: m.timestamp,
+        })),
+        ...dmRows.map((m: any) => {
+          const thread = threadById.get(m.thread_id);
+          const otherUserId =
+            (thread?.participant_ids || []).find((pid: string) => pid !== userId) || null;
+          const other = otherUserId ? thread?.participants?.[otherUserId] : null;
+          return {
+            id: m.id,
+            chatType: 'dm' as const,
+            chatId: m.thread_id,
+            chatName: other?.name || 'Direct chat',
+            chatAvatarUrl: other?.avatarUrl || null,
+            otherUserId,
+            text: (m.text || '').slice(0, 300),
+            senderId: m.sender_id,
+            timestamp: m.timestamp,
+          };
+        }),
+      ]
+        .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+        .slice(0, limit);
+
+      return res.json({ results });
+    } catch (error: any) {
+      logger.error('Message search failed', { userId, message: error?.message });
+      return res.status(500).json({ success: false, error: 'Search failed' });
+    }
+  })
+);
+
 router.post(
   '/upload-image',
   authMiddleware,

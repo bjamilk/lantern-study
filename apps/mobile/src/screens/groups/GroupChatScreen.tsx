@@ -10,10 +10,18 @@ import {
   Pressable,
   Text,
   View,
+  TextInput,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ForwardMessageSheet } from '../../components/chat/ForwardMessageSheet';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
+import { MessageActionBar } from '../../components/chat/MessageActionBar';
+import { ActionSheet, type ActionSheetItem } from '../../components/ui';
+import { useToastStore } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useGroupStore, type Message, type GroupMember } from '../../stores/groupStore';
@@ -214,6 +222,8 @@ interface MessageRowProps {
   onScrollToMessage: (messageId: string) => void;
   onOpenThread: (rootId: string) => void;
   onRetry: (message: Message) => void;
+  /** Device-local star indicator. */
+  starred: boolean;
 }
 
 /**
@@ -247,6 +257,7 @@ const MessageRow = React.memo(function MessageRow({
   onScrollToMessage,
   onOpenThread,
   onRetry,
+  starred,
 }: MessageRowProps) {
   const handleVote = useCallback(
     (vote: 'up' | 'down') => onVoteMessage(message, vote),
@@ -277,186 +288,11 @@ const MessageRow = React.memo(function MessageRow({
         onScrollToMessage={onScrollToMessage}
         onOpenThread={onOpenThread}
         onRetry={onRetry}
+        starred={starred}
       />
     </View>
   );
 });
-
-type MessageSheetTone = 'default' | 'destructive' | 'warning';
-
-interface MessageActionSheetProps {
-  message: Message | null;
-  currentUserId?: string;
-  onClose: () => void;
-  onReply: (message: Message) => void;
-  onCopy: (message: Message) => void;
-  onEdit: (message: Message) => void;
-  onRemove: (message: Message) => void;
-  /** Community duplicate/similar-question flag (enough flags auto-hide). */
-  onFlagDuplicate: (message: Message) => void;
-  /** Content report to Lantern moderation (Phase 1 · E). */
-  onReport: (message: Message) => void;
-}
-
-/**
- * One action sheet for a tapped-and-held message. Long-press now ALWAYS lands
- * here (it used to silently reply for messages you couldn't edit/remove), so
- * every bubble offers Reply / Copy, plus Edit / Remove on your own in-window
- * messages and Report on others'. Replaces the two stacked Alerts that used to
- * manage your own message — Android caps an Alert at three buttons, which is
- * why those had to nest; a real sheet lists them all at once.
- */
-function MessageActionSheet({
-  message,
-  currentUserId,
-  onClose,
-  onReply,
-  onCopy,
-  onEdit,
-  onRemove,
-  onFlagDuplicate,
-  onReport,
-}: MessageActionSheetProps) {
-  const { colors } = useTheme();
-
-  const rows = useMemo(() => {
-    if (!message) return [];
-    const isOwn = !!currentUserId && message.senderId === currentUserId;
-    const canEdit = canEditChatMessage(message, currentUserId);
-    const canRemove = canRemoveChatMessage(message, currentUserId);
-    const copyText = (message.questionStem || message.text || '').trim();
-    // Media messages are stored as markdown holding a signed URL — copying that
-    // leaks the URL and isn't the text the user sees, so hide Copy for them.
-    const copyable =
-      !!copyText &&
-      !isChatAudioMessage(message.text) &&
-      !isChatImageMessage(message.text);
-
-    const items: Array<{
-      id: string;
-      label: string;
-      icon: React.ComponentProps<typeof Ionicons>['name'];
-      tone: MessageSheetTone;
-      onPress: () => void;
-    }> = [
-      {
-        id: 'reply',
-        label: 'Reply',
-        icon: 'arrow-undo-outline',
-        tone: 'default',
-        onPress: () => onReply(message),
-      },
-    ];
-    if (copyable) {
-      items.push({
-        id: 'copy',
-        label: 'Copy text',
-        icon: 'copy-outline',
-        tone: 'default',
-        onPress: () => onCopy(message),
-      });
-    }
-    if (canEdit) {
-      items.push({
-        id: 'edit',
-        label: 'Edit',
-        icon: 'create-outline',
-        tone: 'default',
-        onPress: () => onEdit(message),
-      });
-    }
-    if (canRemove) {
-      items.push({
-        id: 'remove',
-        label: 'Remove',
-        icon: 'trash-outline',
-        tone: 'destructive',
-        onPress: () => onRemove(message),
-      });
-    }
-    if (!isOwn && message.type === 'question') {
-      // Kept as the duplicate-question signal (flag-as-similar); a real
-      // moderation report is the separate "Report message" below.
-      items.push({
-        id: 'flag-duplicate',
-        label: 'Flag duplicate',
-        icon: 'copy-outline',
-        tone: 'default',
-        onPress: () => onFlagDuplicate(message),
-      });
-    }
-    if (!isOwn) {
-      items.push({
-        id: 'report',
-        label: 'Report message',
-        icon: 'flag-outline',
-        tone: 'warning',
-        onPress: () => onReport(message),
-      });
-    }
-    return items;
-  }, [message, currentUserId, onReply, onCopy, onEdit, onRemove, onFlagDuplicate, onReport]);
-
-  const toneColor = (tone: MessageSheetTone) =>
-    tone === 'destructive' ? colors.error : tone === 'warning' ? colors.warning : colors.text;
-
-  return (
-    <Modal visible={!!message} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        className="flex-1 justify-end"
-        style={{ backgroundColor: colors.modalOverlay }}
-        onPress={onClose}
-      >
-        <Pressable
-          className="rounded-t-2xl px-4 pt-3"
-          style={{
-            backgroundColor: colors.modalBackground,
-            paddingBottom: Platform.OS === 'ios' ? 28 : 20,
-          }}
-          onPress={e => e.stopPropagation()}
-        >
-          <View
-            className="w-10 h-1 rounded-full self-center mb-3"
-            style={{ backgroundColor: colors.border }}
-          />
-          <Text
-            className="text-sm font-semibold text-lantern-text-secondary mb-2 px-1"
-            style={{ color: colors.textSecondary }}
-          >
-            Message
-          </Text>
-
-          {rows.map(row => (
-            <Pressable
-              key={row.id}
-              onPress={row.onPress}
-              className="flex-row items-center gap-3 py-3.5 px-1 border-b border-lantern-border"
-              style={{ borderBottomColor: colors.border }}
-              accessibilityRole="button"
-              accessibilityLabel={row.label}
-            >
-              <View
-                className="w-9 h-9 rounded-xl items-center justify-center"
-                style={{ backgroundColor: colors.backgroundSecondary }}
-              >
-                <Ionicons name={row.icon} size={20} color={toneColor(row.tone)} />
-              </View>
-              <Text className="text-base flex-1" style={{ color: toneColor(row.tone) }}>
-                {row.label}
-              </Text>
-            </Pressable>
-          ))}
-
-          <Pressable onPress={onClose} className="mt-3 py-3 items-center" accessibilityRole="button">
-            <Text className="text-base font-medium" style={{ color: colors.primary }}>
-              Cancel
-            </Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
 
 const NEAR_BOTTOM_PX = 120;
 
@@ -515,6 +351,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [messageActionTarget, setMessageActionTarget] = useState<Message | null>(null);
+  /** Device-local stars / single pinned message / forward picker target. */
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const [pinnedMessage, setPinnedMessage] = useState<{ id: string; text: string } | null>(null);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+  /** In-chat search over the loaded window, with next/prev jumping. */
+  const [msgOverflowOpen, setMsgOverflowOpen] = useState(false);
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [chatSearchIndex, setChatSearchIndex] = useState(0);
   const [showTestConfig, setShowTestConfig] = useState(false);
   const [testMode, setTestMode] = useState<TestMode>('test');
   const [showGroupInfo, setShowGroupInfo] = useState(false);
@@ -1103,6 +948,31 @@ export function GroupChatScreen({ navigation, route }: Props) {
     );
   }, [editingMessage?.id, groupId, reloadThread, removeGroupMessage, threadRootId]);
 
+  // Stars and the pinned message are device-local (no backend fields yet).
+  useEffect(() => {
+    if (!user?.id || !groupId) return;
+    let cancelled = false;
+    void AsyncStorage.getItem(`lantern_starred_msgs:${user.id}:${groupId}`).then((raw) => {
+      if (cancelled || !raw) return;
+      try {
+        setStarredIds(new Set(JSON.parse(raw) as string[]));
+      } catch {
+        /* corrupt cache: start clean */
+      }
+    });
+    void AsyncStorage.getItem(`lantern_pinned_msg:${user.id}:${groupId}`).then((raw) => {
+      if (cancelled || !raw) return;
+      try {
+        setPinnedMessage(JSON.parse(raw) as { id: string; text: string });
+      } catch {
+        /* corrupt cache: start clean */
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, groupId]);
+
   // Long-press ALWAYS opens the sheet now (it used to silently reply for
   // messages you couldn't edit/remove, with no menu and no way to copy text).
   const showMessageActions = useCallback((message: Message) => {
@@ -1110,6 +980,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, []);
 
   const closeMessageActions = useCallback(() => setMessageActionTarget(null), []);
+
+  useEffect(() => {
+    if (!messageActionTarget) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setMessageActionTarget(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [messageActionTarget]);
 
   // Row handlers, all stable — MessageRow's memo is only worth anything if these
   // keep their identity across composer keystrokes and incoming messages.
@@ -1212,6 +1091,53 @@ export function GroupChatScreen({ navigation, route }: Props) {
     setMessageActionTarget(null);
     setTimeout(() => setReportTarget(message), Platform.OS === 'ios' ? 320 : 0);
   }, []);
+  const handleSheetForward = useCallback((message: Message) => {
+    setMessageActionTarget(null);
+    setTimeout(() => setForwardMessage(message), Platform.OS === 'ios' ? 320 : 0);
+  }, []);
+  const handleSheetStar = useCallback(
+    (message: Message) => {
+      setMessageActionTarget(null);
+      if (!user?.id) return;
+      const next = new Set(starredIds);
+      const starring = !next.has(message.id);
+      if (starring) next.add(message.id);
+      else next.delete(message.id);
+      setStarredIds(next);
+      void AsyncStorage.setItem(
+        `lantern_starred_msgs:${user.id}:${groupId}`,
+        JSON.stringify([...next])
+      );
+      useToastStore
+        .getState()
+        .showToast(starring ? 'Message starred' : 'Star removed', 'success');
+    },
+    [groupId, user?.id, starredIds]
+  );
+  const handleSheetPin = useCallback(
+    (message: Message) => {
+      setMessageActionTarget(null);
+      if (!user?.id) return;
+      const unpinning = pinnedMessage?.id === message.id;
+      const next = unpinning
+        ? null
+        : { id: message.id, text: (message.questionStem || message.text || '').trim() };
+      setPinnedMessage(next);
+      const key = `lantern_pinned_msg:${user.id}:${groupId}`;
+      if (next) void AsyncStorage.setItem(key, JSON.stringify(next));
+      else void AsyncStorage.removeItem(key);
+      useToastStore
+        .getState()
+        .showToast(unpinning ? 'Unpinned' : 'Pinned in this chat', 'success');
+    },
+    [groupId, user?.id, pinnedMessage]
+  );
+  const handleUnpinFromBanner = useCallback(() => {
+    if (user?.id) {
+      void AsyncStorage.removeItem(`lantern_pinned_msg:${user.id}:${groupId}`);
+    }
+    setPinnedMessage(null);
+  }, [groupId, user?.id]);
 
   const handleMentionUser = useCallback((username: string) => {
     setSeedMentionUsername(username);
@@ -1297,8 +1223,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
   // needs them here — without it a vote, the unread divider or a sign-in change
   // silently fails to repaint rows that are already mounted.
   const listExtraData = useMemo(
-    () => ({ userVotes, firstUnreadId, userId: user?.id, members: groupMembers }),
-    [userVotes, firstUnreadId, user?.id, groupMembers]
+    () => ({ userVotes, firstUnreadId, userId: user?.id, members: groupMembers, starredIds }),
+    [userVotes, firstUnreadId, user?.id, groupMembers, starredIds]
   );
 
   // archiveGroup is a toggle, so this unarchives an archived group.
@@ -1405,6 +1331,74 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
   const isArchived = !!group?.isArchived;
 
+  const msgOverflowItems: ActionSheetItem[] = useMemo(() => {
+    const message = messageActionTarget;
+    if (!message) return [];
+    const isOwn = !!user?.id && message.senderId === user.id;
+    const items: ActionSheetItem[] = [];
+    if (canEditChatMessage(message, user?.id)) {
+      items.push({
+        label: 'Edit',
+        icon: 'create-outline',
+        onPress: () => handleSheetEdit(message),
+      });
+    }
+    if (canRemoveChatMessage(message, user?.id)) {
+      items.push({
+        label: 'Remove',
+        icon: 'trash-outline',
+        destructive: true,
+        onPress: () => handleSheetRemove(message),
+      });
+    }
+    if (!isOwn && message.type === 'question') {
+      items.push({
+        label: 'Flag duplicate',
+        icon: 'copy-outline',
+        onPress: () => handleSheetFlagDuplicate(message),
+      });
+    }
+    if (!isOwn) {
+      items.push({
+        label: 'Report message',
+        icon: 'flag-outline',
+        onPress: () => handleSheetReport(message),
+      });
+    }
+    return items;
+  }, [
+    messageActionTarget,
+    user?.id,
+    handleSheetEdit,
+    handleSheetRemove,
+    handleSheetFlagDuplicate,
+    handleSheetReport,
+  ]);
+
+  const chatSearchMatches = useMemo(() => {
+    const q = chatSearchQuery.trim().toLowerCase();
+    if (!chatSearchOpen || q.length < 2) return [] as string[];
+    return displayMessages
+      .filter((m) => (m.questionStem || m.text || '').toLowerCase().includes(q))
+      .map((m) => m.id);
+  }, [chatSearchOpen, chatSearchQuery, displayMessages]);
+
+  const jumpToChatMatch = useCallback(
+    (nextIndex: number) => {
+      if (chatSearchMatches.length === 0) return;
+      const wrapped = (nextIndex + chatSearchMatches.length) % chatSearchMatches.length;
+      setChatSearchIndex(wrapped);
+      handleScrollToMessage(chatSearchMatches[wrapped]);
+    },
+    [chatSearchMatches, handleScrollToMessage]
+  );
+
+  const closeChatSearch = useCallback(() => {
+    setChatSearchOpen(false);
+    setChatSearchQuery('');
+    setChatSearchIndex(0);
+  }, []);
+
   const headerMenuActions = useMemo((): GroupChatHeaderAction[] => {
     const actions: GroupChatHeaderAction[] = [
       // Practice — Study / Test are the primary entry points, so they lead.
@@ -1433,6 +1427,13 @@ export function GroupChatScreen({ navigation, route }: Props) {
       },
       // View — display preferences & insights. Nested under All questions so
       // Verified / Unverified / Hide all are not top-level siblings.
+      {
+        id: 'search-messages',
+        label: 'Search messages',
+        icon: 'search-outline',
+        section: 'View',
+        onPress: () => setChatSearchOpen(true),
+      },
       {
         id: 'question-filter',
         label: 'All questions',
@@ -1515,6 +1516,31 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
+      {messageActionTarget ? (
+        <MessageActionBar
+          onClose={closeMessageActions}
+          onReply={() => handleSheetReply(messageActionTarget)}
+          onForward={
+            (messageActionTarget.questionStem || messageActionTarget.text || '').trim() &&
+            !isChatAudioMessage(messageActionTarget.text) &&
+            !isChatImageMessage(messageActionTarget.text)
+              ? () => handleSheetForward(messageActionTarget)
+              : undefined
+          }
+          onCopy={
+            (messageActionTarget.questionStem || messageActionTarget.text || '').trim() &&
+            !isChatAudioMessage(messageActionTarget.text) &&
+            !isChatImageMessage(messageActionTarget.text)
+              ? () => handleSheetCopy(messageActionTarget)
+              : undefined
+          }
+          onStar={() => handleSheetStar(messageActionTarget)}
+          onPin={() => handleSheetPin(messageActionTarget)}
+          starred={starredIds.has(messageActionTarget.id)}
+          pinned={pinnedMessage?.id === messageActionTarget.id}
+          onMore={msgOverflowItems.length > 0 ? () => setMsgOverflowOpen(true) : undefined}
+        />
+      ) : (
       <GroupChatHeader
         displayName={displayName}
         avatarUrl={group?.avatarUrl}
@@ -1527,6 +1553,52 @@ export function GroupChatScreen({ navigation, route }: Props) {
         onTitlePress={() => setShowGroupInfo(true)}
         menuActions={headerMenuActions}
       />
+      )}
+
+      {chatSearchOpen ? (
+        <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
+          <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+          <TextInput
+            value={chatSearchQuery}
+            onChangeText={(v) => {
+              setChatSearchQuery(v);
+              setChatSearchIndex(0);
+            }}
+            placeholder="Search this chat…"
+            placeholderTextColor={colors.inputPlaceholder}
+            autoFocus
+            autoCorrect={false}
+            className="flex-1 text-sm text-lantern-text py-1"
+            accessibilityLabel="Search messages in this chat"
+          />
+          <Text className="text-xs text-lantern-text-secondary">
+            {chatSearchMatches.length > 0
+              ? `${chatSearchIndex + 1}/${chatSearchMatches.length}`
+              : chatSearchQuery.trim().length >= 2
+                ? '0'
+                : ''}
+          </Text>
+          <Pressable
+            onPress={() => jumpToChatMatch(chatSearchIndex + 1)}
+            hitSlop={6}
+            accessibilityLabel="Previous match"
+            disabled={chatSearchMatches.length === 0}
+          >
+            <Ionicons name="chevron-up" size={20} color={colors.text} />
+          </Pressable>
+          <Pressable
+            onPress={() => jumpToChatMatch(chatSearchIndex - 1)}
+            hitSlop={6}
+            accessibilityLabel="Next match"
+            disabled={chatSearchMatches.length === 0}
+          >
+            <Ionicons name="chevron-down" size={20} color={colors.text} />
+          </Pressable>
+          <Pressable onPress={closeChatSearch} hitSlop={6} accessibilityLabel="Close search">
+            <Ionicons name="close" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+      ) : null}
 
       {chatMuted ? (
         <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
@@ -1556,7 +1628,24 @@ export function GroupChatScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {pinnedMessage ? (
+        <Pressable
+          onPress={() => handleScrollToMessage(pinnedMessage.id)}
+          className="flex-row items-center gap-2 px-3 py-2 bg-lantern-primary-background border-b border-lantern-border"
+          accessibilityRole="button"
+          accessibilityLabel="Jump to pinned message"
+        >
+          <Ionicons name="pin" size={14} color={colors.primary} />
+          <Text className="flex-1 text-[12px] text-lantern-text" numberOfLines={1}>
+            {pinnedMessage.text || 'Pinned message'}
+          </Text>
+          <Pressable onPress={handleUnpinFromBanner} hitSlop={8} accessibilityLabel="Unpin message">
+            <Ionicons name="close" size={16} color={colors.textSecondary} />
+          </Pressable>
+        </Pressable>
+      ) : null}
+
+      <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         {isLoadingMessages && displayMessages.length === 0 ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color={colors.primary} />
@@ -1662,6 +1751,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
                   onScrollToMessage={handleScrollToMessage}
                   onOpenThread={handleOpenThread}
                   onRetry={handleRetryMessage}
+                  starred={starredIds.has(item.id)}
                 />
               );
             }}
@@ -1739,16 +1829,22 @@ export function GroupChatScreen({ navigation, route }: Props) {
         )}
       </KeyboardAvoidingView>
 
-      <MessageActionSheet
-        message={messageActionTarget}
-        currentUserId={user?.id}
-        onClose={closeMessageActions}
-        onReply={handleSheetReply}
-        onCopy={handleSheetCopy}
-        onEdit={handleSheetEdit}
-        onRemove={handleSheetRemove}
-        onFlagDuplicate={handleSheetFlagDuplicate}
-        onReport={handleSheetReport}
+      <ActionSheet
+        visible={msgOverflowOpen}
+        title="More"
+        items={msgOverflowItems.map((item) => ({
+          ...item,
+          onPress: () => {
+            setMsgOverflowOpen(false);
+            item.onPress();
+          },
+        }))}
+        onClose={() => setMsgOverflowOpen(false)}
+      />
+      <ForwardMessageSheet
+        visible={!!forwardMessage}
+        onClose={() => setForwardMessage(null)}
+        messageText={(forwardMessage?.questionStem || forwardMessage?.text || '').trim()}
       />
       <ReportContentSheet
         visible={!!reportTarget}
