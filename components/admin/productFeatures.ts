@@ -46,6 +46,34 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'readiness-pilot-1-0-33',
+    title: 'Mobile 1.0.33 — exam readiness, marketplace private pilot, profile-sheet fix',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-08-29',
+    summary:
+      'Exam readiness on both dashboards: every enrolled course gets an honest coverage-and-mastery rollup against its shared topic outline, a day-one "Start here" pointer, exam countdowns, and (at 20+ student cohorts) what the class finds hardest. The goods marketplace enters a founder-only private pilot with a friendly explanation for everyone else. The academic-profile setup sheet no longer hides its buttons under Android system bars.',
+    details: [
+      'Readiness = 60% average topic mastery + 40% syllabus coverage; no score is ever fabricated — courses with no performance evidence show coverage or "no study data yet".',
+      'Mastery now refreshes on flashcard reviews as well as test submissions (debounced server-side).',
+      'Web: Exam readiness card on the Dashboard with expandable per-topic breakdowns and the class signal. Mobile: matching Dashboard card opening the full Mastery screen (newly reachable), which focuses on a single course when opened from a course row.',
+      'Marketplace private pilot: the API 403s non-allowlisted accounts on every marketplace route; web and mobile render a private-pilot explanation instead of broken screens; the mobile Discover icon routes non-pilot accounts to the Discover hub.',
+      'Academic-profile setup modal: header and footer padded by real safe-area insets on Android 15+ edge-to-edge; keyboard behavior fixed for API 35+.',
+    ],
+    howToUse: [
+      'Dashboard → Exam readiness: tap a course (mobile) or expand it (web) for the topic-by-topic picture and the class signal.',
+      'Set exam dates on your courses to get countdowns; seed a course outline in the Library to make coverage meaningful.',
+      'Reopening the marketplace later is an env flip (MARKETPLACE_PUBLIC=true) or an allowlist extension (MARKETPLACE_ALLOWED_USER_IDS) — no code change.',
+    ],
+    surfaces: ['mobile', 'web', 'api'],
+    adminNotes: [
+      'Readiness bridges course_topics titles to mastery tags case/whitespace-insensitively — topics only match when tag text and outline title normalise identically.',
+      'Class signal is cohort-floored at 20 students by the RPC and the API; below that it reports itself unavailable.',
+      'The marketplace gate allowlists user ids server-side; GET /marketplace/access is the open probe clients use to decide what to render.',
+    ],
+    commits: ['f82415e', '9bab59d'],
+  },
+  {
     id: 'marketplace-ratings-1-0-32',
     title: 'Mobile 1.0.32 — marketplace ratings, top-rated discovery, chats column (web)',
     area: 'marketplace',

@@ -152,7 +152,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // related rails, a Top rated sort and minimum-rating filter, and on every
   // listing a ratings summary with a tappable star histogram, review sorting,
   // Verified purchase badges and Helpful votes on reviews.
-  version: '1.0.32',
+  // 1.0.33: exam readiness on the Dashboard (per-course coverage x mastery,
+  // Start-here pointers, class-signal at 20+ cohorts) with the Mastery screen
+  // reachable at last; the marketplace enters a private pilot (friendly wall
+  // for non-pilot accounts); the academic-profile setup sheet no longer hides
+  // its buttons under the status/navigation bars on Android 15+.
+  version: '1.0.33',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
