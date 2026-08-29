@@ -18,15 +18,16 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { useChrome } from '../../components/layout/ChromeContext';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useOfflineStore, OfflineTest, PendingResult, DownloadOptions } from '../../stores/offlineStore';
+import { useOfflineStore, OfflineTest, PendingResult } from '../../stores/offlineStore';
 import { matchesCourseFilter } from '../../utils/libraryArchive';
 import { useTestStore } from '../../stores/testStore';
 import { offlineQuestionsToTestQuestions } from '../../utils/questionHelpers';
 import { useFlashcardStore } from '../../stores/flashcardStore';
-import { useGroupStore } from '../../stores/groupStore';
-import { ThemeScope, useTheme } from '../../theme';
+import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { restoreQuestionBanks } from '../../services/api';
 import { PublishQuestionBankModal } from './PublishQuestionBankModal';
@@ -44,11 +45,16 @@ const QUESTION_TYPES = [
 
 export default function OfflineScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  // Mounted both as the OfflineTab base tab and as the root-stack modal the
+  // Library tree opens with a course filter. Only the modal gets a back arrow.
+  const isBaseTab = route.name === 'OfflineTab';
+  const tabBarClearance = useTabBarClearance(16);
+  const { onScroll: chromeOnScroll } = useChrome();
   // Library tree deep link: { courseId, courseLabel, topicLabel } — courseId is
   // a uuid or the literal 'null' (bundles not filed under any course). A topic
   // label may ride along even though offline_bundles has no topic_id: it is
   // shown only to explain why the list is the whole course, never to filter.
-  const route = useRoute<any>();
   const routeCourseId: string | null | undefined = route.params?.courseId;
   const routeCourseLabel: string | undefined = route.params?.courseLabel;
   const routeTopicLabel: string | null | undefined = route.params?.topicLabel;
@@ -73,28 +79,14 @@ export default function OfflineScreen() {
   // Pixel height, not '85%': percentage heights resolved against the themed
   // overlay have already burned us on release builds (footer collapsed to
   // zero). A definite px height cannot be mis-resolved.
-  const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const modalSheetHeight = Math.round(windowHeight * 0.85);
   const network = useNetworkStatus();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
 
-  // Download options modal state
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState<any>(null);
-  const [downloadOptions, setDownloadOptions] = useState<DownloadOptions>({
-    questionTypes: ['mcq-single', 'mcq-multiple', 'true-false', 'fill-blank'],
-    questionCount: 20,
-    timeLimit: 0,
-    shuffleQuestions: true,
-    includeExplanations: true,
-    recentlyAddedDays: 0, // 0 = all questions
-  });
 
   const {
     downloadedTests,
     pendingResults,
-    isDownloading,
     downloadProgress,
     isSyncing,
     totalStorageUsed,
@@ -103,7 +95,6 @@ export default function OfflineScreen() {
     deleteDownloadedTest,
     syncPendingResults,
     clearAllOfflineData,
-    downloadTest,
   } = useOfflineStore();
 
   // Must run after useOfflineStore — earlier access caused a TDZ crash (blank screen).
@@ -120,7 +111,6 @@ export default function OfflineScreen() {
   // flashcard offline data
   const { decks, offlineDeckIds, unmarkDeckOffline } = useFlashcardStore();
 
-  const { groups } = useGroupStore();
 
   // Course filter from the Library tree. Purchased packs (qbank-*) are plain
   // bundles carrying the listing's course, so they filter the same way.
@@ -378,61 +368,20 @@ export default function OfflineScreen() {
     </View>
   );
 
-  const AvailableDownloadItem = ({ group }: { group: any }) => {
-    const isDownloaded = downloadedTests.some(t => t.groupId === group.id);
-    
-    const handleOpenDownloadModal = () => {
-      setSelectedGroup(group);
-      // Reset options to defaults when opening modal
-      setDownloadOptions({
-        questionTypes: ['mcq-single', 'mcq-multiple', 'true-false', 'fill-blank'],
-        questionCount: 20,
-        timeLimit: 0,
-        shuffleQuestions: true,
-        includeExplanations: true,
-        // File the bundle under the group's course so it shows in the Library tree.
-        courseId: (group.courseId ?? group.course_id ?? null) as string | null,
-      });
-      setShowDownloadModal(true);
-    };
-    
-    return (
-      <View style={[styles.availableItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.availableInfo}>
-          <Text style={[styles.availableName, { color: colors.text }]}>{group.name}</Text>
-          <Text style={[styles.availableMeta, { color: colors.textSecondary }]}>
-            {group.memberCount} members
-          </Text>
-        </View>
-        
-        {isDownloaded ? (
-          <View style={styles.downloadedBadge}>
-            <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-            <Text style={styles.downloadedText}>Downloaded</Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.downloadButton, { backgroundColor: colors.primary }]}
-            onPress={handleOpenDownloadModal}
-          >
-            <Ionicons name="options" size={16} color="#ffffff" />
-            <Text style={styles.downloadButtonText}>Customize</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  };
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
+        {isBaseTab ? (
+          <View style={{ width: 40 }} />
+        ) : (
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+        )}
         <Text style={[styles.headerTitle, { color: colors.text }]}>Offline Mode</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -442,7 +391,12 @@ export default function OfflineScreen() {
         // Padding lives on the content container, not the outer style —
         // vertical padding there clips the scrollable extent on Android — and
         // the bottom inset keeps the last buttons above the system nav bar.
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: isBaseTab ? tabBarClearance : insets.bottom + 32,
+        }}
+        onScroll={chromeOnScroll}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -644,17 +598,6 @@ export default function OfflineScreen() {
               </View>
             )}
             
-            {/* Available to Download */}
-            {groups.length > 0 && (
-              <View style={styles.availableSection}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Available to Download</Text>
-                {/* All groups — the first-5 cap silently hid the rest with no
-                    hint that more existed. The screen scrolls. */}
-                {groups.map(group => (
-                  <AvailableDownloadItem key={group.id} group={group} />
-                ))}
-              </View>
-            )}
           </View>
         ) : (
           <View style={styles.section}>
@@ -688,308 +631,6 @@ export default function OfflineScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Download Options Modal */}
-      <Modal
-        visible={showDownloadModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDownloadModal(false)}
-      >
-        <ThemeScope style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, height: modalSheetHeight }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                Download Options
-              </Text>
-              <TouchableOpacity onPress={() => setShowDownloadModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={styles.modalBody}
-              // Padding must live on the content container, NOT the ScrollView
-              // style: vertical padding on the outer style clips the scrollable
-              // extent on Android, which is how the old inside-the-scroll footer
-              // ended up unreachable on Pixel-8-sized screens.
-              contentContainerStyle={styles.modalBodyContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Group Name */}
-              <View style={styles.modalSection}>
-                <Text style={[styles.modalSectionTitle, { color: colors.text }]}>
-                  {selectedGroup?.name || 'Test'}
-                </Text>
-                <Text style={[styles.modalSectionSubtitle, { color: colors.textSecondary }]}>
-                  Configure your offline test download
-                </Text>
-              </View>
-
-              {/* Question Count */}
-              <View style={styles.modalSection}>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>
-                  Number of Questions
-                </Text>
-                <View style={styles.countSelector}>
-                  {[10, 20, 30, 50, 100].map(count => (
-                    <TouchableOpacity
-                      key={count}
-                      style={[
-                        styles.countButton,
-                        {
-                          backgroundColor:
-                            downloadOptions.questionCount === count ? colors.primary : colors.background,
-                          borderColor:
-                            downloadOptions.questionCount === count ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => setDownloadOptions(prev => ({ ...prev, questionCount: count }))}
-                    >
-                      <Text style={[
-                        styles.countButtonText,
-                        {
-                          color:
-                            downloadOptions.questionCount === count ? '#ffffff' : colors.text,
-                        },
-                      ]}>
-                        {count}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Question Types */}
-              <View style={styles.modalSection}>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>
-                  Question Types
-                </Text>
-                <View style={styles.typesList}>
-                  {QUESTION_TYPES.map(type => {
-                    const isSelected = downloadOptions.questionTypes?.includes(type.id as any);
-                    return (
-                      <TouchableOpacity
-                        key={type.id}
-                        style={[
-                          styles.typeItem,
-                          { backgroundColor: colors.background },
-                          isSelected && styles.typeItemActive,
-                        ]}
-                        onPress={() => {
-                          setDownloadOptions(prev => {
-                            const types = prev.questionTypes || [];
-                            if (isSelected) {
-                              return { ...prev, questionTypes: types.filter(t => t !== type.id) as any };
-                            } else {
-                              return { ...prev, questionTypes: [...types, type.id] as any };
-                            }
-                          });
-                        }}
-                      >
-                        <Ionicons
-                          name={type.icon as any}
-                          size={18}
-                          color={isSelected ? '#6366f1' : colors.textSecondary}
-                        />
-                        <Text style={[
-                          styles.typeItemText,
-                          { color: isSelected ? '#6366f1' : colors.text },
-                        ]}>
-                          {type.label}
-                        </Text>
-                        {isSelected && (
-                          <Ionicons name="checkmark" size={16} color="#6366f1" />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Time Limit */}
-              <View style={styles.modalSection}>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>
-                  Time Limit (minutes)
-                </Text>
-                <View style={styles.countSelector}>
-                  {[0, 15, 30, 45, 60, 90].map(time => (
-                    <TouchableOpacity
-                      key={time}
-                      style={[
-                        styles.countButton,
-                        {
-                          backgroundColor:
-                            downloadOptions.timeLimit === time ? colors.primary : colors.background,
-                          borderColor:
-                            downloadOptions.timeLimit === time ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => setDownloadOptions(prev => ({ ...prev, timeLimit: time }))}
-                    >
-                      <Text style={[
-                        styles.countButtonText,
-                        {
-                          color: downloadOptions.timeLimit === time ? '#ffffff' : colors.text,
-                        },
-                      ]}>
-                        {time === 0 ? 'None' : time}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Recently Added Questions */}
-              <View style={styles.modalSection}>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>
-                  Recently Added Questions
-                </Text>
-                <View style={styles.countSelector}>
-                  {[
-                    { value: 0, label: 'All' },
-                    { value: 7, label: '7 days' },
-                    { value: 14, label: '14 days' },
-                    { value: 30, label: '30 days' },
-                    { value: 60, label: '60 days' },
-                  ].map(option => (
-                    <TouchableOpacity
-                      key={option.value}
-                      style={[
-                        styles.countButton,
-                        {
-                          backgroundColor:
-                            downloadOptions.recentlyAddedDays === option.value
-                              ? colors.primary
-                              : colors.background,
-                          borderColor:
-                            downloadOptions.recentlyAddedDays === option.value
-                              ? colors.primary
-                              : colors.border,
-                        },
-                      ]}
-                      onPress={() => setDownloadOptions(prev => ({ ...prev, recentlyAddedDays: option.value }))}
-                    >
-                      <Text style={[
-                        styles.countButtonText,
-                        {
-                          color:
-                            downloadOptions.recentlyAddedDays === option.value
-                              ? '#ffffff'
-                              : colors.text,
-                        },
-                      ]}>
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <Text style={[styles.optionHint, { color: colors.textSecondary }]}>
-                  Filter to only include questions added within the selected time period
-                </Text>
-              </View>
-
-              {/* Additional Options */}
-              <View style={styles.modalSection}>
-                <Text style={[styles.optionLabel, { color: colors.text }]}>
-                  Additional Options
-                </Text>
-                
-                <View style={[styles.switchRow, { backgroundColor: colors.background }]}>
-                  <View style={styles.switchInfo}>
-                    <Ionicons name="shuffle" size={20} color={colors.primary} />
-                    <Text style={[styles.switchLabel, { color: colors.text }]}>
-                      Shuffle Questions
-                    </Text>
-                  </View>
-                  <Switch
-                    value={downloadOptions.shuffleQuestions}
-                    onValueChange={(value) => 
-                      setDownloadOptions(prev => ({ ...prev, shuffleQuestions: value }))
-                    }
-                    trackColor={{ false: '#374151', true: '#6366f180' }}
-                    thumbColor={downloadOptions.shuffleQuestions ? '#6366f1' : '#9ca3af'}
-                  />
-                </View>
-                
-                <View style={[styles.switchRow, { backgroundColor: colors.background }]}>
-                  <View style={styles.switchInfo}>
-                    <Ionicons name="bulb" size={20} color={colors.primary} />
-                    <Text style={[styles.switchLabel, { color: colors.text }]}>
-                      Include Explanations
-                    </Text>
-                  </View>
-                  <Switch
-                    value={downloadOptions.includeExplanations}
-                    onValueChange={(value) => 
-                      setDownloadOptions(prev => ({ ...prev, includeExplanations: value }))
-                    }
-                    trackColor={{ false: '#374151', true: '#6366f180' }}
-                    thumbColor={downloadOptions.includeExplanations ? '#6366f1' : '#9ca3af'}
-                  />
-                </View>
-              </View>
-            </ScrollView>
-
-            {/* Pinned footer. Sibling of the ScrollView on purpose: the old
-                zero-height collapse happened under a maxHeight/auto parent and
-                a '85%' percentage height; with the definite px height above
-                plus minHeight here it cannot collapse, and the buttons stay
-                visible without scrolling. */}
-            <View
-              style={[
-                styles.modalActions,
-                { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 16) },
-              ]}
-            >
-              <TouchableOpacity
-                style={[styles.cancelButton, { backgroundColor: colors.background }]}
-                onPress={() => setShowDownloadModal(false)}
-              >
-                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.confirmDownloadButton,
-                  isDownloading && styles.buttonDisabled,
-                ]}
-                onPress={async () => {
-                  if (!selectedGroup) return;
-                  try {
-                    await downloadTest(
-                      `test-${selectedGroup.id}`,
-                      selectedGroup.id,
-                      selectedGroup.name,
-                      `${selectedGroup.name} Practice Test`,
-                      downloadOptions,
-                      userId || undefined
-                    );
-                    setShowDownloadModal(false);
-                    Alert.alert('Success', 'Test downloaded for offline use!');
-                  } catch (error) {
-                    const message =
-                      error instanceof Error && error.message.trim()
-                        ? error.message
-                        : 'Failed to download test';
-                    Alert.alert('Error', message);
-                  }
-                }}
-                disabled={isDownloading || (downloadOptions.questionTypes?.length === 0)}
-              >
-                {isDownloading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <>
-                    <Ionicons name="download" size={18} color="#ffffff" />
-                    <Text style={styles.confirmDownloadButtonText}>
-                      Download ({downloadOptions.questionCount} Q)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ThemeScope>
-      </Modal>
 
       <PublishQuestionBankModal
         test={publishTarget}
@@ -1101,9 +742,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 6,
   },
-  activeTab: {
-    backgroundColor: 'transparent',
-  },
   tabText: {
     fontSize: 14,
     color: '#9ca3af',
@@ -1209,11 +847,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 4,
   },
-  startButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
   deleteButton: {
     width: 36,
     height: 36,
@@ -1278,9 +911,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   // Available Downloads
-  availableSection: {
-    marginTop: 24,
-  },
   offlineDeckItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1295,56 +925,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginRight: 8,
   },
-  availableItem: {
-    backgroundColor: 'transparent',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  availableInfo: {
-    flex: 1,
-  },
-  availableName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#ffffff',
-  },
-  availableMeta: {
-    fontSize: 13,
-    color: '#9ca3af',
-    marginTop: 2,
-  },
-  downloadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  downloadingButton: {
-    opacity: 0.7,
-  },
-  downloadButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  downloadedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  downloadedText: {
-    color: '#10b981',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  // Empty State
   emptyState: {
     alignItems: 'center',
     paddingVertical: 40,
@@ -1377,168 +957,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    // Height is set inline as a definite px value (85% of the window, via
-    // useWindowDimensions). A fixed height (not maxHeight) is required: with
-    // maxHeight and auto height, Yoga clamps this container AFTER measuring
-    // children, so the body never shrinks and the Cancel/Download footer is
-    // pushed off-screen — offline downloads were impossible on a Pixel 8.
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'transparent',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  modalBody: {
-    // flex:1 (with the fixed-height modalContent above) bounds the body to
-    // the space between header and footer; flexShrink alone was not enough
-    // because the maxHeight clamp happened after child measurement.
-    flex: 1,
-  },
-  modalBodyContent: {
-    // Scroll padding lives here, not on the ScrollView style — vertical
-    // padding on the outer style clips the scrollable extent on Android.
-    padding: 20,
-    paddingBottom: 24,
-  },
-  modalSection: {
-    marginBottom: 24,
-  },
-  modalSectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  modalSectionSubtitle: {
-    fontSize: 14,
-  },
-  optionLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  optionHint: {
-    fontSize: 12,
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  countSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  countButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  countButtonActive: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
-  },
-  countButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#9ca3af',
-  },
-  countButtonTextActive: {
-    color: '#ffffff',
-  },
-  typesList: {
-    gap: 8,
-  },
-  typeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 12,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  typeItemActive: {
-    borderColor: '#6366f1',
-    backgroundColor: '#6366f120',
-  },
-  typeItemText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  switchInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  switchLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    padding: 20,
-    paddingBottom: 40,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'transparent',
-    // Belt and suspenders against the release-build zero-height collapse:
-    // a definite floor means the footer can never measure to nothing.
-    minHeight: 76,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#9ca3af',
-  },
-  confirmDownloadButton: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#6366f1',
-    gap: 8,
-  },
-  confirmDownloadButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
+
 });
