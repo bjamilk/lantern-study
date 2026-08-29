@@ -77,7 +77,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'Mute uses the existing endpoints with a fixed 8h duration from the selection bar.',
       'Support: notifications created before this release keep their generic type and stay in the default indigo family.',
     ],
-    commits: [],
+    commits: ['45b7ae7', 'c07ab8e', '78274ae', 'db85fdd', '56a9eb4', 'd31f525'],
   },
   {
     id: 'notes-folder-rename-delete',
