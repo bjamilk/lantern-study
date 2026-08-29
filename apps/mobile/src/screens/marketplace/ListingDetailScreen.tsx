@@ -32,6 +32,12 @@ import {
   listingBreadcrumb,
   listingSpecRows,
   listingTypeLabel,
+  computeMarketplaceReviewSummary,
+  reviewHistogramPercentages,
+  sortMarketplaceReviews,
+  filterReviewsByStar,
+  REVIEW_SORT_LABELS,
+  type ReviewSortOption,
 } from '@lantern/shared/marketplace';
 import {
   fetchPickupNudge,
@@ -96,6 +102,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     boostListing,
     updateListing,
     deleteListing,
+    toggleReviewHelpful,
   } = useMarketplaceStore();
 
   const [selectedQuantity, setSelectedQuantity] = useState(1);
@@ -107,6 +114,11 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [canReview, setCanReview] = useState(false);
+  // 'top' sorts by helpful votes with a recency tiebreak, so before any votes
+  // exist (or pre-migration) it reads as most-recent.
+  const [reviewSort, setReviewSort] = useState<ReviewSortOption>('top');
+  const [reviewStarFilter, setReviewStarFilter] = useState<number | null>(null);
+  const [votingReviewId, setVotingReviewId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
@@ -465,9 +477,30 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const avgRating =
-    reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+  const reviewSummary = computeMarketplaceReviewSummary(reviews);
+  const avgRating = reviewSummary.average ?? 0;
+  const histogramPct = reviewHistogramPercentages(reviewSummary);
+  const displayReviews = sortMarketplaceReviews(
+    filterReviewsByStar(reviews, reviewStarFilter),
+    reviewSort,
+  );
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
+
+  const handleToggleHelpful = async (reviewId: string) => {
+    if (votingReviewId) return;
+    if (!user?.id) {
+      Alert.alert('Sign in', 'Sign in to mark reviews as helpful.');
+      return;
+    }
+    setVotingReviewId(reviewId);
+    try {
+      await toggleReviewHelpful(listing.id, reviewId);
+    } catch {
+      Alert.alert('Error', 'Could not record that. Please try again.');
+    } finally {
+      setVotingReviewId(null);
+    }
+  };
   const crumbs = listingBreadcrumb(listing);
   const specRows = listingSpecRows(listing);
   const typeLabel = listingTypeLabel(listing, category?.name || '');
@@ -807,22 +840,151 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                 </Text>
               ) : null}
             </View>
+            {reviewSummary.count > 0 ? (
+              <View className="flex-row gap-4 mb-3">
+                <View className="items-center justify-center">
+                  <Text className="text-2xl font-bold text-lantern-text">
+                    {avgRating.toFixed(1)}
+                  </Text>
+                  <StarRow rating={Math.round(avgRating)} />
+                  <Text className="text-[11px] text-lantern-text-tertiary mt-0.5">
+                    {reviewSummary.count} rating{reviewSummary.count === 1 ? '' : 's'}
+                  </Text>
+                </View>
+                <View className="flex-1 justify-center" accessibilityLabel="Reviews by star rating">
+                  {[5, 4, 3, 2, 1].map(star => {
+                    const bucketCount = reviewSummary.histogram[star - 1] ?? 0;
+                    const pct = histogramPct[star - 1] ?? 0;
+                    const active = reviewStarFilter === star;
+                    return (
+                      <Pressable
+                        key={star}
+                        disabled={bucketCount === 0 && !active}
+                        onPress={() => setReviewStarFilter(active ? null : star)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={`${star} star: ${bucketCount} review${bucketCount === 1 ? '' : 's'}`}
+                        className={`flex-row items-center gap-1.5 py-0.5 ${bucketCount === 0 && !active ? 'opacity-40' : ''}`}
+                      >
+                        <Text className="w-3 text-[11px] text-lantern-text-secondary">{star}</Text>
+                        <Ionicons name="star" size={9} color="#f59e0b" />
+                        <View className="flex-1 h-1.5 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary overflow-hidden">
+                          <View
+                            className={`h-full rounded-full ${active ? 'bg-lantern-primary' : 'bg-amber-400'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </View>
+                        <Text className="w-8 text-right text-[10px] text-lantern-text-tertiary">{pct}%</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
+            {reviewSummary.count > 1 || reviewStarFilter !== null ? (
+              <View className="flex-row flex-wrap items-center gap-1.5 mb-2">
+                {reviewSummary.count > 1
+                  ? (Object.keys(REVIEW_SORT_LABELS) as ReviewSortOption[]).map(option => (
+                      <Pressable
+                        key={option}
+                        onPress={() => setReviewSort(option)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: reviewSort === option }}
+                        className={`px-2 py-1 rounded-full ${
+                          reviewSort === option
+                            ? 'bg-lantern-primary'
+                            : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
+                        }`}
+                      >
+                        <Text
+                          className={`text-[10px] font-medium ${
+                            reviewSort === option ? 'text-white' : 'text-lantern-text-secondary'
+                          }`}
+                        >
+                          {REVIEW_SORT_LABELS[option]}
+                        </Text>
+                      </Pressable>
+                    ))
+                  : null}
+                {reviewStarFilter !== null ? (
+                  <Pressable
+                    onPress={() => setReviewStarFilter(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Showing ${reviewStarFilter}-star reviews only. Clear filter`}
+                    className="flex-row items-center gap-1 px-2 py-1 rounded-full bg-lantern-primary/15"
+                  >
+                    <Text className="text-[10px] font-semibold text-lantern-primary">
+                      {reviewStarFilter}-star only
+                    </Text>
+                    <Ionicons name="close" size={11} color="#6366f1" />
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
+
             {reviews.length === 0 ? (
               <Text className="text-sm text-lantern-text-secondary">No reviews yet.</Text>
+            ) : displayReviews.length === 0 ? (
+              <Text className="text-sm text-lantern-text-secondary py-2">
+                No {reviewStarFilter}-star reviews.
+              </Text>
             ) : (
-              reviews.map(review => (
+              displayReviews.map(review => (
                 <View
                   key={review.id}
                   className="py-3 border-t border-lantern-border first:border-t-0 first:pt-0"
                 >
                   <View className="flex-row items-center justify-between mb-1">
-                    <Text className="text-sm font-medium text-lantern-text">
-                      {review.reviewer?.name || review.reviewer?.username || 'User'}
-                    </Text>
+                    <View className="flex-1 flex-row items-center gap-1.5 flex-wrap pr-2">
+                      <Text className="text-sm font-medium text-lantern-text">
+                        {review.reviewer?.name || review.reviewer?.username || 'User'}
+                      </Text>
+                      {review.verifiedPurchase ? (
+                        <View className="flex-row items-center gap-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5">
+                          <Ionicons name="checkmark-circle" size={10} color="#059669" />
+                          <Text className="text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
+                            Verified purchase
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <StarRow rating={review.rating} />
                   </View>
                   {review.comment ? (
                     <Text className="text-sm text-lantern-text-secondary">{review.comment}</Text>
+                  ) : null}
+                  {typeof review.helpfulCount === 'number' ? (
+                    review.reviewer_id === user?.id ? (
+                      review.helpfulCount > 0 ? (
+                        <Text className="text-[11px] text-lantern-text-tertiary mt-1.5">
+                          {review.helpfulCount}{' '}
+                          {review.helpfulCount === 1 ? 'person' : 'people'} found this helpful
+                        </Text>
+                      ) : null
+                    ) : (
+                      <Pressable
+                        onPress={() => void handleToggleHelpful(review.id)}
+                        disabled={votingReviewId === review.id}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: !!review.viewerMarkedHelpful }}
+                        className={`self-start mt-1.5 px-2.5 py-1 rounded-full border ${
+                          review.viewerMarkedHelpful
+                            ? 'border-lantern-primary bg-lantern-primary/10'
+                            : 'border-lantern-border'
+                        } ${votingReviewId === review.id ? 'opacity-60' : ''}`}
+                      >
+                        <Text
+                          className={`text-[11px] ${
+                            review.viewerMarkedHelpful
+                              ? 'text-lantern-primary font-semibold'
+                              : 'text-lantern-text-secondary'
+                          }`}
+                        >
+                          Helpful{(review.helpfulCount ?? 0) > 0 ? ` (${review.helpfulCount})` : ''}
+                        </Text>
+                      </Pressable>
+                    )
                   ) : null}
                 </View>
               ))
@@ -849,6 +1011,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                       <Text className="text-xs font-semibold text-lantern-primary mt-1">
                         {formatPrice(item.price)}
                       </Text>
+                      {(item.rating_count ?? 0) > 0 && item.rating_avg != null ? (
+                        <View className="flex-row items-center gap-0.5 mt-0.5">
+                          <Ionicons name="star" size={10} color="#f59e0b" />
+                          <Text className="text-[10px] text-lantern-text-secondary">
+                            {Number(item.rating_avg).toFixed(1)} ({item.rating_count})
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                   </Pressable>
                 ))}

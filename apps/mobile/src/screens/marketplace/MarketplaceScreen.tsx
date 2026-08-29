@@ -75,6 +75,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     campusIdFilter,
     sortBy,
     sortOrder,
+    minRating,
     listingsHasMore,
     listingsPage,
     showFavoritesOnly,
@@ -95,6 +96,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     setCampusIdFilter,
     setSortBy,
     setSortOrder,
+    setMinRating,
     applySavedSearch,
     resetFilters,
     setShowFavoritesOnly,
@@ -138,7 +140,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     maxPrice,
     locationFilter,
     campusIdFilter,
-  ].filter(Boolean).length + (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
+  ].filter(Boolean).length +
+    (minRating != null ? 1 : 0) +
+    (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
 
   const academicCategoryIds = useMemo(() => ACADEMIC_CATEGORIES.map(c => c.id), []);
   const studentLifeCategoryIds = useMemo(() => STUDENT_LIFE_CATEGORIES.map(c => c.id), []);
@@ -206,6 +210,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     campusIdFilter,
     sortBy,
     sortOrder,
+    minRating,
     fetchListings,
   ]);
 
@@ -408,6 +413,17 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           <Text className="text-[10px] text-lantern-text-tertiary mt-0.5" numberOfLines={1}>
             {listingTypeLabel(item, getCategoryInfo(item.category).name)}
           </Text>
+          {(item.rating_count ?? 0) > 0 && item.rating_avg != null ? (
+            <View
+              className="mt-0.5 flex-row items-center gap-0.5"
+              accessibilityLabel={`Rated ${Number(item.rating_avg).toFixed(1)} out of 5 from ${item.rating_count} reviews`}
+            >
+              <Ionicons name="star" size={11} color="#f59e0b" />
+              <Text className="text-[11px] text-lantern-text-secondary">
+                {Number(item.rating_avg).toFixed(1)} ({item.rating_count})
+              </Text>
+            </View>
+          ) : null}
           {/* Phase 3 N — see the web card: the server attaches trust to every
               browse row and nothing rendered it. 'new' shows no chip. */}
           {shouldShowTrustChip((item.seller as { trustLevel?: string } | undefined)?.trustLevel) ? (
@@ -721,6 +737,39 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   Price
                 </Text>
               </Pressable>
+              <Pressable
+                onPress={() => {
+                  setSortBy('rating');
+                  setSortOrder('desc');
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: sortBy === 'rating' }}
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'rating' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+              >
+                <Text className={`text-xs ${sortBy === 'rating' ? 'text-white' : 'text-lantern-text-secondary'}`}>
+                  Top rated
+                </Text>
+              </Pressable>
+            </View>
+            <View className="flex-row items-center gap-2 flex-wrap">
+              <Text className="text-[11px] text-lantern-text-tertiary">Rating</Text>
+              {([null, 4, 3, 2] as Array<number | null>).map(value => {
+                const selected = minRating === value;
+                return (
+                  <Pressable
+                    key={String(value)}
+                    onPress={() => setMinRating(value)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={value ? `Rated ${value} stars and up` : 'Any rating'}
+                    className={`px-3 py-1.5 rounded-lg ${selected ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                  >
+                    <Text className={`text-xs ${selected ? 'text-white' : 'text-lantern-text-secondary'}`}>
+                      {value ? `★ ${value}+` : 'Any'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
         ) : null}

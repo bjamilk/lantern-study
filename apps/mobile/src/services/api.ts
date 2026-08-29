@@ -183,6 +183,7 @@ export const {
   updateInquiryStatus,
   addMarketplaceReview,
   fetchListingReviews,
+  setMarketplaceReviewHelpful,
   fetchSimilarListings,
   reportMarketplaceListing,
   createMarketplaceOffer,
