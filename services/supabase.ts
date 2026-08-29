@@ -23,6 +23,8 @@ import type { StudyPackContentInput, StudyPackCounts, StudyPackDraft, StudyPackD
 import type {
   Community,
   CommunityDetail,
+  CourseClassSignal,
+  CourseReadiness,
   DiscoverGroup,
   DiscoverPerson,
   ExamReadiness,
@@ -5032,6 +5034,16 @@ export const refreshMasteryGraph = () =>
   networkWrite<{ topics: TopicMastery[] }>('/mastery/refresh', 'POST', undefined, 'Could not refresh');
 
 export const fetchExamReadiness = () => networkGetList<ExamReadiness>('/mastery/exam-readiness');
+
+/**
+ * Syllabus-aware readiness for every active course (no exam date needed).
+ * With a courseId, the response also carries the cohort-floored class signal.
+ */
+export const fetchCourseReadiness = (courseId?: string) =>
+  networkGet<{ courses: CourseReadiness[]; classSignal?: CourseClassSignal }>(
+    `/mastery/readiness${networkQuery(courseId ? { courseId } : {})}`,
+    15000
+  );
 
 // ── Phase 4 Q — referrals ──
 

@@ -4600,6 +4600,17 @@ export class SupabaseService {
         }),
       );
 
+      // Keep the mastery graph's card-side numbers (due counts, maturity)
+      // moving with reviews, not only test submissions. The service debounces
+      // (30s), so a 60-card session costs a couple of refreshes, and
+      // refresh() never throws — a stale graph must not fail a review.
+      try {
+        const { getTopicMasteryService } = await import("./topicMastery");
+        getTopicMasteryService(this).refreshAsync(userId);
+      } catch {
+        /* mastery refresh is best-effort */
+      }
+
       // Phase 3 M + O — "this person studied this deck", at most once per
       // window per (deck, user).
       //

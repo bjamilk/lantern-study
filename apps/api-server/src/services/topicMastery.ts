@@ -18,6 +18,10 @@
  */
 import type { SupabaseService } from './supabase';
 import { logger } from '../utils/logger';
+import {
+  computeCourseReadiness,
+  type CourseReadiness,
+} from '@lantern/shared/network';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -243,6 +247,104 @@ export class TopicMasteryService {
           .slice(0, 3)
           .map((t) => t.topic),
       };
+    });
+  }
+
+  /**
+   * Syllabus-aware readiness for every ACTIVE enrolled course — unlike
+   * examReadiness above it does not require an exam date, so a brand-new
+   * student sees their courses (and where to start) from day one. The
+   * outline↔mastery bridge and all the arithmetic live in the shared
+   * computeCourseReadiness so web, mobile and this API can never disagree.
+   */
+  async courseReadiness(
+    userId: string,
+    opts: { courseId?: string | null } = {}
+  ): Promise<CourseReadiness[]> {
+    const today = new Date();
+
+    let enrolQuery = this.db
+      .from('user_courses')
+      .select('course_id, exam_date, courses!inner(id, code, title)')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .limit(12);
+    if (opts.courseId && UUID_RE.test(String(opts.courseId))) {
+      enrolQuery = enrolQuery.eq('course_id', opts.courseId);
+    }
+    const { data: enrolments, error } = await enrolQuery;
+    if (error) throw error;
+    if (!enrolments || enrolments.length === 0) return [];
+
+    const courseIds = enrolments.map((e: any) => e.course_id);
+    const [outlineResult, masteryResult] = await Promise.all([
+      this.db
+        .from('course_topics')
+        .select('id, course_id, title, position')
+        .in('course_id', courseIds)
+        .limit(1000),
+      this.db
+        .from('user_topic_mastery')
+        .select('topic, course_id, mastery_score, attempts, cards_total, cards_due')
+        .eq('user_id', userId)
+        .in('course_id', courseIds)
+        .limit(1000),
+    ]);
+    if (outlineResult.error) throw outlineResult.error;
+    if (masteryResult.error) throw masteryResult.error;
+
+    const outlineByCourse = new Map<string, Array<{ id: string; title: string; position: number }>>();
+    for (const row of outlineResult.data || []) {
+      const cid = (row as any).course_id as string;
+      if (!outlineByCourse.has(cid)) outlineByCourse.set(cid, []);
+      outlineByCourse.get(cid)!.push({
+        id: (row as any).id,
+        title: (row as any).title,
+        position: Number((row as any).position ?? 0),
+      });
+    }
+
+    const masteryByCourse = new Map<
+      string,
+      Array<{ topic: string; masteryScore: number | null; attempts: number; cardsTotal: number; cardsDue: number }>
+    >();
+    for (const row of masteryResult.data || []) {
+      const cid = (row as any).course_id as string | null;
+      if (!cid) continue;
+      if (!masteryByCourse.has(cid)) masteryByCourse.set(cid, []);
+      masteryByCourse.get(cid)!.push({
+        topic: (row as any).topic,
+        masteryScore: (row as any).mastery_score == null ? null : Number((row as any).mastery_score),
+        attempts: (row as any).attempts ?? 0,
+        cardsTotal: (row as any).cards_total ?? 0,
+        cardsDue: (row as any).cards_due ?? 0,
+      });
+    }
+
+    const courses = enrolments.map((e: any) => {
+      const course = Array.isArray(e.courses) ? e.courses[0] : e.courses;
+      let daysUntil: number | null = null;
+      if (e.exam_date) {
+        const examDate = new Date(`${e.exam_date}T00:00:00Z`);
+        daysUntil = Math.max(0, Math.ceil((examDate.getTime() - today.getTime()) / 86_400_000));
+      }
+      return computeCourseReadiness({
+        courseId: e.course_id,
+        courseCode: course?.code ?? null,
+        courseTitle: course?.title ?? null,
+        examDate: e.exam_date ?? null,
+        daysUntil,
+        outline: outlineByCourse.get(e.course_id) || [],
+        mastery: masteryByCourse.get(e.course_id) || [],
+      });
+    });
+
+    // Soonest exam first; date-less courses after, stable by code.
+    return courses.sort((a, b) => {
+      const da = a.daysUntil ?? Number.POSITIVE_INFINITY;
+      const db = b.daysUntil ?? Number.POSITIVE_INFINITY;
+      if (da !== db) return da - db;
+      return (a.courseCode ?? '').localeCompare(b.courseCode ?? '');
     });
   }
 

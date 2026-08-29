@@ -101,6 +101,37 @@ masteryRouter.get(
 );
 
 /**
+ * GET /api/v1/mastery/readiness?courseId= — syllabus-aware readiness for every
+ * active enrolled course (no exam date required, unlike /exam-readiness).
+ * With a courseId it also attaches the class-population signal (classSignal),
+ * cohort-floored by the RPC — that is the "what past/other students found
+ * hard" context, only ever shown when the cohort is big enough to be
+ * anonymous. classSignal failures never block the personal payload.
+ */
+masteryRouter.get(
+  '/readiness',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const courseId = str(req.query.courseId) ?? null;
+    const service = getTopicMasteryService(supabaseService);
+    const courses = await service.courseReadiness(userId, { courseId });
+
+    let classSignal: Record<string, unknown> | undefined;
+    if (courseId) {
+      try {
+        classSignal = await service.courseAggregate(courseId);
+      } catch {
+        classSignal = { available: false };
+      }
+    }
+
+    res.json({ success: true, data: { courses, ...(classSignal ? { classSignal } : {}) } });
+  })
+);
+
+/**
  * GET /api/v1/mastery/course/:courseId — population aggregate.
  * Refused below a 20-student cohort; the RPC enforces the same floor so this
  * endpoint is not the only thing protecting a small class from a

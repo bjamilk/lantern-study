@@ -239,6 +239,7 @@ export const {
   fetchMasteryGraph,
   refreshMasteryGraph,
   fetchExamReadiness,
+  fetchCourseReadiness,
   fetchReferralSummary,
   fetchAmbassadors,
   fetchGamificationLeaderboard,

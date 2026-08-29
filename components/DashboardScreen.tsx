@@ -65,6 +65,7 @@ import {
   markAcademicSetupDismissed,
 } from '../utils/academicSetup';
 import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
+import CourseReadinessCard from './CourseReadinessCard';
 
 /** Dashboard “Questions to review” card. Review/study screens stay available. */
 export const SHOW_DASHBOARD_QUESTIONS_TO_REVIEW = false;
@@ -1528,6 +1529,13 @@ export default function DashboardScreen({
           Achievements & Topic Insights. The FEED does not belong here and is
           rendered above, outside the collapsible.
         */}
+        {/* Exam readiness: the syllabus-aware rollup (course outline ×
+            mastery graph), useful from day one — a new student sees each
+            course's outline and a Start-here pointer before any activity. */}
+        <div className="mb-6">
+          <CourseReadinessCard />
+        </div>
+
         {SHOW_DASHBOARD_MASTERY_PANEL && (
           <div className="mb-6">
             <MasteryPanel />

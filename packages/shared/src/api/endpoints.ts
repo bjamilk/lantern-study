@@ -18,6 +18,8 @@ import type {
 import type {
   Community,
   CommunityDetail,
+  CourseClassSignal,
+  CourseReadiness,
   DiscoverGroup,
   DiscoverPerson,
   ExamReadiness,
@@ -3107,6 +3109,18 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<{ topics: TopicMastery[] }>('/mastery/refresh', { method: 'POST' }, 20000),
 
     fetchExamReadiness: () => apiRequest<ExamReadiness[]>('/mastery/exam-readiness', {}, 10000),
+
+    /**
+     * Syllabus-aware readiness for every active course (no exam date
+     * required). With a courseId the response also carries the cohort-floored
+     * class signal for that course.
+     */
+    fetchCourseReadiness: (courseId?: string) =>
+      apiRequest<{ courses: CourseReadiness[]; classSignal?: CourseClassSignal }>(
+        `/mastery/readiness${courseId ? `?courseId=${encodeURIComponent(courseId)}` : ''}`,
+        {},
+        15000,
+      ),
 
     /** Phase 4 Q — the caller's referral code, stats and referred users. */
     fetchReferralSummary: () => apiRequest<ReferralSummary>('/referrals', {}, 10000),

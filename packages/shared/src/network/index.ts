@@ -413,6 +413,207 @@ export function examCountdownLabel(daysUntil: number): string {
 export const MASTERY_MIN_COHORT = 20;
 
 // ---------------------------------------------------------------------------
+// Course readiness — the syllabus-aware rollup of the mastery graph.
+//
+// `user_topic_mastery.topic` is a free-text tag; `course_topics.title` is the
+// shared syllabus. Nothing in the database joins them, so this module is the
+// single place that bridges the two (case/whitespace-insensitively) and rolls
+// them up into "how ready am I for this course". All three surfaces (API, web,
+// mobile) call this same function so they can never disagree on a number.
+// ---------------------------------------------------------------------------
+
+export interface CourseOutlineTopicInput {
+  id: string;
+  title: string;
+  position: number;
+}
+
+export interface CourseMasterySignalInput {
+  /** Free-text topic tag from user_topic_mastery. */
+  topic: string;
+  masteryScore: number | null;
+  attempts: number;
+  cardsTotal: number;
+  cardsDue: number;
+}
+
+export interface CourseTopicReadiness {
+  /** course_topics.id for outline topics; null for evidence outside the outline. */
+  topicId: string | null;
+  title: string;
+  inOutline: boolean;
+  /** Any evidence at all (a mastery row exists for this topic). */
+  covered: boolean;
+  masteryScore: number | null;
+  band: MasteryBand;
+  attempts: number;
+  cardsTotal: number;
+  cardsDue: number;
+}
+
+export interface CourseReadiness {
+  courseId: string;
+  courseCode: string | null;
+  courseTitle: string | null;
+  examDate: string | null;
+  daysUntil: number | null;
+  /** Topics in the shared course outline (0 = no outline seeded yet). */
+  outlineTotal: number;
+  /** Outline topics with any evidence. */
+  coveredCount: number;
+  /** Whole percent, or null when the course has no outline to cover. */
+  coveragePct: number | null;
+  /** Mean of scored topics (outline + outside), or null with no scores. */
+  averageMastery: number | null;
+  /**
+   * The headline 0-100. Blends performance with syllabus coverage when an
+   * outline exists (someone strong on 2 of 18 topics is not exam-ready), and
+   * is plain average mastery when there is no outline. Null means "no
+   * performance evidence yet" — coverage alone never fabricates a score.
+   */
+  readinessScore: number | null;
+  /** Day-one pointer: first untouched outline topic, else the weakest one. */
+  nextTopic: { topicId: string; title: string } | null;
+  weakestTopics: string[];
+  /** Outline order first, then out-of-outline evidence (weakest first). */
+  topics: CourseTopicReadiness[];
+}
+
+/**
+ * The course_topic_mastery RPC payload: the class-population signal ("what
+ * students of this course find hard"), refused below a 20-student cohort so a
+ * small class can never be re-identified from it. Topics arrive hardest-first
+ * (lowest average accuracy).
+ */
+export interface CourseClassSignalTopic {
+  topic: string;
+  learners: number;
+  avg_accuracy: number | null;
+  avg_mastery: number | null;
+}
+
+export interface CourseClassSignal {
+  available: boolean;
+  reason?: string;
+  cohortSize?: number;
+  minCohort?: number;
+  topics?: CourseClassSignalTopic[];
+}
+
+const normaliseTopicKey = (title: string): string => title.trim().toLowerCase();
+
+export function computeCourseReadiness(input: {
+  courseId: string;
+  courseCode?: string | null;
+  courseTitle?: string | null;
+  examDate?: string | null;
+  daysUntil?: number | null;
+  outline: ReadonlyArray<CourseOutlineTopicInput>;
+  mastery: ReadonlyArray<CourseMasterySignalInput>;
+}): CourseReadiness {
+  const masteryByKey = new Map<string, CourseMasterySignalInput>();
+  for (const row of input.mastery) {
+    const key = normaliseTopicKey(row.topic || '');
+    if (!key) continue;
+    const existing = masteryByKey.get(key);
+    // Two tags that normalise identically: keep the one with more evidence.
+    if (!existing || row.attempts + row.cardsTotal > existing.attempts + existing.cardsTotal) {
+      masteryByKey.set(key, row);
+    }
+  }
+
+  const outline = [...input.outline].sort(
+    (a, b) => a.position - b.position || a.title.localeCompare(b.title)
+  );
+
+  const matchedKeys = new Set<string>();
+  const outlineTopics: CourseTopicReadiness[] = outline.map((topic) => {
+    const key = normaliseTopicKey(topic.title);
+    const signal = masteryByKey.get(key);
+    if (signal) matchedKeys.add(key);
+    return {
+      topicId: topic.id,
+      title: topic.title,
+      inOutline: true,
+      covered: !!signal,
+      masteryScore: signal?.masteryScore ?? null,
+      band: masteryBand(signal?.masteryScore ?? null),
+      attempts: signal?.attempts ?? 0,
+      cardsTotal: signal?.cardsTotal ?? 0,
+      cardsDue: signal?.cardsDue ?? 0,
+    };
+  });
+
+  const outsideTopics: CourseTopicReadiness[] = [...masteryByKey.entries()]
+    .filter(([key]) => !matchedKeys.has(key))
+    .map(([, signal]) => ({
+      topicId: null,
+      title: signal.topic,
+      inOutline: false,
+      covered: true,
+      masteryScore: signal.masteryScore,
+      band: masteryBand(signal.masteryScore),
+      attempts: signal.attempts,
+      cardsTotal: signal.cardsTotal,
+      cardsDue: signal.cardsDue,
+    }))
+    .sort((a, b) => (a.masteryScore ?? 101) - (b.masteryScore ?? 101));
+
+  const allTopics = [...outlineTopics, ...outsideTopics];
+  const scored = allTopics.filter((t) => t.masteryScore != null);
+  const averageMastery = scored.length
+    ? Math.round(scored.reduce((sum, t) => sum + (t.masteryScore as number), 0) / scored.length)
+    : null;
+
+  const outlineTotal = outline.length;
+  const coveredCount = outlineTopics.filter((t) => t.covered).length;
+  const coveragePct = outlineTotal > 0 ? Math.round((coveredCount / outlineTotal) * 100) : null;
+
+  let readinessScore: number | null = null;
+  if (averageMastery != null) {
+    readinessScore =
+      coveragePct != null
+        ? Math.round(0.6 * averageMastery + 0.4 * coveragePct)
+        : averageMastery;
+  }
+
+  let nextTopic: { topicId: string; title: string } | null = null;
+  const firstUncovered = outlineTopics.find((t) => !t.covered);
+  if (firstUncovered && firstUncovered.topicId) {
+    nextTopic = { topicId: firstUncovered.topicId, title: firstUncovered.title };
+  } else {
+    const weakestOutline = outlineTopics
+      .filter((t) => t.masteryScore != null && t.topicId)
+      .sort((a, b) => (a.masteryScore as number) - (b.masteryScore as number))[0];
+    if (weakestOutline) {
+      nextTopic = { topicId: weakestOutline.topicId as string, title: weakestOutline.title };
+    }
+  }
+
+  const weakestTopics = allTopics
+    .filter((t) => t.masteryScore != null)
+    .sort((a, b) => (a.masteryScore as number) - (b.masteryScore as number))
+    .slice(0, 3)
+    .map((t) => t.title);
+
+  return {
+    courseId: input.courseId,
+    courseCode: input.courseCode ?? null,
+    courseTitle: input.courseTitle ?? null,
+    examDate: input.examDate ?? null,
+    daysUntil: input.daysUntil ?? null,
+    outlineTotal,
+    coveredCount,
+    coveragePct,
+    averageMastery,
+    readinessScore,
+    nextTopic,
+    weakestTopics,
+    topics: allTopics,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Q — Referrals and ambassadors (Phase 4)
 // ---------------------------------------------------------------------------
 

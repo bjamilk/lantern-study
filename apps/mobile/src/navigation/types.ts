@@ -114,7 +114,7 @@ export type MarketStackParamList = {
   Discover: { section?: 'communities' | 'groups' | 'people' | 'marketplace' } | undefined;
   CommunityDetail: { slug: string };
   Feed: undefined;
-  Mastery: undefined;
+  Mastery: { courseId?: string } | undefined;
   SemesterProducts: undefined;
   StudyRoom: { roomId?: string; courseId?: string; topic?: string } | undefined;
   OrderDetail: {

@@ -54,6 +54,7 @@ import { GettingStartedChecklist } from '../../components/dashboard/GettingStart
 import { DashboardInsights } from '../../components/dashboard/DashboardInsights';
 import { GroupPerformanceChartCard } from '../../components/dashboard/GroupPerformanceChartCard';
 import { AIStudyCoachCard } from '../../components/dashboard/AIStudyCoachCard';
+import { CourseReadinessCard } from '../../components/dashboard/CourseReadinessCard';
 import { useCompanionStore } from '../../stores/companionStore';
 import * as api from '../../services/api';
 import { refreshUserData } from '../../services/dataRefresh';
@@ -903,6 +904,8 @@ export function DashboardScreen({ navigation }: Props) {
 
 
         <AIStudyCoachCard stats={stats} streak={streak} />
+
+        <CourseReadinessCard />
 
 
 
