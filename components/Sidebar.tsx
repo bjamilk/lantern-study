@@ -6,7 +6,7 @@ import AIUsageBadge from './AIUsageBadge';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
 import { compressImage } from '../utils/imageCompression';
 import { resolveAvatarSrc } from '../utils/avatar';
-import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, GlobeAltIcon, GiftIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, XMarkIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, GlobeAltIcon, GiftIcon } from '@heroicons/react/24/outline';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useUIStore } from '../stores/uiStore';
@@ -97,7 +97,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
   const isPlatformAdmin = usePlatformAdmin();
-  const { isChatsSectionExpanded, toggleChatsSection, setChatsSectionExpanded } = useUIStore();
+  const { isChatsSectionExpanded, toggleChatsSection } = useUIStore();
   
   const canInteractWithChats = ![AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE].includes(currentAppMode);
   
@@ -181,11 +181,13 @@ const Sidebar: React.FC<SidebarProps> = ({
     setExpandedParentGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
-  // Recursive function to render a group and its subgroups
+  // Recursive renderer for a group and its subgroups. Rendered inside the
+  // chats flyout column, which always has full width — so text always shows,
+  // whatever state the sidebar itself is in.
   const renderGroupWithSubgroups = (group: Group, nestingLevel: number = 0): React.ReactNode => {
     const subGroups = subGroupsMap[group.id] || [];
     const isGroupExpanded = !!expandedParentGroups[group.id];
-    
+
     return (
       <React.Fragment key={group.id}>
         <GroupListItem
@@ -199,9 +201,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           onToggleExpand={subGroups.length > 0 ? () => toggleParentGroupExpansion(group.id) : undefined}
           isSubGroup={nestingLevel > 0}
           nestingLevel={nestingLevel}
-          showText={showText}
+          showText={true}
         />
-        {isExpanded && showText && isGroupExpanded && subGroups.map(subGroup => 
+        {isGroupExpanded && subGroups.map(subGroup =>
           renderGroupWithSubgroups(subGroup, nestingLevel + 1)
         )}
       </React.Fragment>
@@ -251,7 +253,29 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
   
-  const showText = isExpanded;
+  // The chats flyout column replaces the old in-sidebar vertical accordion:
+  // expanding Chats slides out a dedicated column beside the sidebar instead
+  // of unfolding the list downward. On the chat screen itself ChatWindow
+  // already renders the conversation list, so the flyout yields there rather
+  // than doubling it; the persisted flag survives and the column returns on
+  // any other screen.
+  const chatsFlyoutOpen = isChatsSectionExpanded && currentAppMode !== AppMode.CHAT;
+  // Width budget (Discord-style): while the chats column is out, the sidebar
+  // renders as its icon rail. Derived only — the user's persisted expanded
+  // preference is untouched and comes back the moment the column closes.
+  const effectiveExpanded = isExpanded && !chatsFlyoutOpen;
+  const showText = effectiveExpanded;
+
+  const handleSidebarToggle = () => {
+    if (chatsFlyoutOpen) {
+      // "Expand the sidebar" while the chats column is out means: retract the
+      // column and show the full sidebar.
+      toggleChatsSection();
+      if (!isExpanded) onToggleExpand();
+      return;
+    }
+    onToggleExpand();
+  };
 
   const NavButton = ({ navFunc, icon: Icon, label, appMode, badgeCount, tipId }: { navFunc: () => void, icon: React.ElementType, label: string, appMode?: AppMode, badgeCount?: number, tipId?: string }) => (
     <button
@@ -283,7 +307,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
 
   return (
-    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-background-secondary/90 backdrop-blur-md text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${isExpanded ? 'w-72' : 'w-20'}`} data-expanded={isExpanded}>
+    <>
+    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-background-secondary/90 backdrop-blur-md text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-72' : 'w-20'}`} data-expanded={effectiveExpanded}>
       <div className="flex items-center justify-between h-16 p-4 border-b border-lantern-border flex-shrink-0">
         {showText && (
           <div className="flex items-center gap-2.5">
@@ -293,9 +318,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
         <div className={`flex items-center space-x-1 ${!showText && 'w-full justify-center'}`}>
             <button
-              onClick={onToggleExpand}
+              onClick={handleSidebarToggle}
               className="p-2 text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-surface rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
-              aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
+              aria-label={effectiveExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
               <Bars3Icon className={`w-6 h-6 transition-transform duration-300`} />
             </button>
@@ -353,183 +378,46 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </nav>
 
-        {isExpanded ? (
-          <>
-            <div className={`px-3 pt-4 pb-2 flex items-center justify-between gap-2`}>
-              <button
-                type="button"
-                onClick={toggleChatsSection}
-                data-tip-id="nav.chat"
-                className="flex items-center gap-1.5 min-w-0 flex-1 text-left rounded-md hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary px-1 py-0.5 -ml-1"
-                aria-expanded={isChatsSectionExpanded}
-                title={isChatsSectionExpanded ? 'Collapse chats' : 'Expand chats'}
-              >
-                {/* emerald-700/400 instead of the inline featureAccents.groups
-                    (#10b981): that read at 2.34:1 on the light background and,
-                    being an inline style, could never adapt to dark mode. */}
-                <h3 className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400 tracking-wider truncate">Chats</h3>
-                {showChatsHeaderBadge && (
-                  <span className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
-                    {formatUnreadBadgeCount(totalUnreadChatCount)}
-                  </span>
-                )}
-                {isChatsSectionExpanded ? (
-                  <ChevronDownIcon className="w-4 h-4 text-lantern-text-tertiary flex-shrink-0" />
-                ) : (
-                  <ChevronRightIcon className="w-4 h-4 text-lantern-text-tertiary flex-shrink-0" />
-                )}
-              </button>
-              {isChatsSectionExpanded && (
-                <div className="flex gap-1 flex-shrink-0">
-                  <button
-                    onClick={onNavigateToCreateGroup}
-                    className={`p-1.5 rounded-md text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    disabled={!canInteractWithChats}
-                    title="New Group"
-                  >
-                    <PlusIcon className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={onOpenNewDmModal}
-                    className={`p-1.5 rounded-md text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    disabled={!canInteractWithChats}
-                    title="New DM"
-                  >
-                    <ChatBubbleLeftRightIcon className="w-4 h-4" />
-                  </button>
-                </div>
+        {effectiveExpanded ? (
+          <div className="px-3 pt-4 pb-2">
+            <button
+              type="button"
+              onClick={toggleChatsSection}
+              data-tip-id="nav.chat"
+              className={`w-full flex items-center gap-1.5 min-w-0 text-left rounded-md hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary px-1 py-0.5 -ml-1 ${isChatsSectionExpanded ? 'bg-lantern-background-secondary/70' : ''}`}
+              aria-expanded={isChatsSectionExpanded}
+              title={isChatsSectionExpanded ? 'Close the chats panel' : 'Open chats in a side panel'}
+            >
+              {/* emerald-700/400 instead of the inline featureAccents.groups
+                  (#10b981): that read at 2.34:1 on the light background and,
+                  being an inline style, could never adapt to dark mode. */}
+              <h3 className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400 tracking-wider truncate">Chats</h3>
+              {showChatsHeaderBadge && (
+                <span className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                  {formatUnreadBadgeCount(totalUnreadChatCount)}
+                </span>
               )}
-            </div>
-            {isChatsSectionExpanded && (
-            <div>
-              {messageRequestChats.length > 0 && showText && (
-                <div className="mb-1">
-                  <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                    Message requests ({messageRequestChats.length})
-                  </p>
-                  {messageRequestChats.map((chat) => (
-                    <GroupListItem
-                      key={chat.id}
-                      chat={chat}
-                      currentUser={currentUser}
-                      isSelected={selectedChatId === chat.id && currentAppMode === AppMode.CHAT}
-                      onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
-                      isDisabled={!canInteractWithChats}
-                      showText={showText}
-                    />
-                  ))}
-                </div>
-              )}
-              {topLevelChats.map((chat) => {
-                  if (chat.chatType === 'group') {
-                    // Use recursive render for groups
-                    return renderGroupWithSubgroups(chat, 0);
-                  } else {
-                    // Render DM threads normally
-                    return (
-                      <GroupListItem
-                        key={chat.id}
-                        chat={chat}
-                        currentUser={currentUser}
-                        isSelected={selectedChatId === chat.id && currentAppMode === AppMode.CHAT}
-                        onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
-                        isDisabled={!canInteractWithChats}
-                        showText={showText}
-                      />
-                    );
-                  }
-              })}
-              {topLevelChats.length === 0 && messageRequestChats.length === 0 && showText && (
-                <p className="px-3 py-2 text-sm text-lantern-text-secondary">No active chats.</p>
-              )}
-              {archivedGroups.length > 0 && showText && (
-                <div className="mt-2 pt-2 border-t border-lantern-border">
-                    <button
-                        onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
-                        className="w-full flex items-center justify-between p-3 text-xs font-semibold text-lantern-text-secondary uppercase hover:text-lantern-text focus:outline-none"
-                        aria-expanded={isArchivedExpanded}
-                    >
-                        <span className="flex items-center"><ArchiveBoxIcon className="w-4 h-4 mr-2"/> Archived</span>
-                        {isArchivedExpanded ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronRightIcon className="w-5 h-5" />}
-                    </button>
-                    {isArchivedExpanded && (
-                        <div className="mt-1">
-                            {archivedGroups.map(chat => (
-                                <GroupListItem
-                                    key={chat.id}
-                                    chat={chat}
-                                    currentUser={currentUser}
-                                    isSelected={selectedChatId === chat.id}
-                                    onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
-                                    isDisabled={!canInteractWithChats}
-                                    showText={showText}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-              )}
-            </div>
-            )}
-          </>
+              <ChevronRightIcon
+                className={`w-4 h-4 text-lantern-text-tertiary flex-shrink-0 ml-auto transition-transform duration-300 ${isChatsSectionExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
+          </div>
         ) : (
-             <div className="mt-4 space-y-2 flex flex-col items-center px-2">
-                {!isChatsSectionExpanded ? (
-                  <button
-                    onClick={() => {
-                      setChatsSectionExpanded(true);
-                      onToggleExpand();
-                    }}
-                    className="relative group w-14 h-14 flex items-center justify-center rounded-2xl hover:bg-lantern-background-secondary/60 dark:hover:bg-lantern-surface/60"
-                    title="Chats"
-                  >
-                    <ChatBubbleLeftRightIcon className="w-8 h-8 text-lantern-text-secondary" />
-                    {showChatsHeaderBadge && (
-                      <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-lantern-border dark:border-lantern-border">
-                        {formatUnreadBadgeCount(totalUnreadChatCount)}
-                      </span>
-                    )}
-                  </button>
-                ) : (
-                groups.filter(g => !g.isArchived).map(group => {
-                    const hasSubgroups = subGroupsMap[group.id] && subGroupsMap[group.id].length > 0;
-                    return (
-                    <button
-                        key={group.id}
-                        onClick={() => {
-                            onSelectChat({...group, chatType: 'group'});
-                            // when the sidebar is collapsed on a narrow/mobile viewport,
-                            // automatically expand it and also expand the tapped parent group
-                            // so that any subgroups are revealed immediately. This makes it
-                            // much easier to navigate into nested groups from mobile mode.
-                            if (!isExpanded) {
-                                onToggleExpand();
-                                setExpandedParentGroups(prev => ({ ...prev, [group.id]: true }));
-                            }
-                        }}
-                        className="relative group w-14 h-14 flex items-center justify-center"
-                        title={group.name}
-                        >
-                        <Avatar
-                          name={group.name}
-                          src={resolveAvatarSrc(group.avatarUrl, lowDataMode)}
-                          size="lg"
-                          localOnly={lowDataMode}
-                          className={selectedChatId === group.id ? 'ring-4 ring-lantern-primary rounded-2xl' : ''}
-                        />
-                        {(group.unreadCount ?? 0) > 0 && (
-                            <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-lantern-border dark:border-lantern-border">
-                            {formatUnreadBadgeCount(group.unreadCount ?? 0)}
-                            </span>
-                        )}
-                        {hasSubgroups && (
-                          <span className="absolute bottom-1 right-1 w-2 h-2 bg-lantern-primary rounded-full" />
-                        )}
-                    </button>
-                    );
-                })
-                )}
-             </div>
+          <div className="mt-4 space-y-2 flex flex-col items-center px-2">
+            <button
+              onClick={toggleChatsSection}
+              className={`relative group w-14 h-14 flex items-center justify-center rounded-2xl hover:bg-lantern-background-secondary/60 dark:hover:bg-lantern-surface/60 ${isChatsSectionExpanded ? 'bg-lantern-background-secondary/70' : ''}`}
+              title={isChatsSectionExpanded ? 'Close the chats panel' : 'Open chats in a side panel'}
+              aria-expanded={isChatsSectionExpanded}
+            >
+              <ChatBubbleLeftRightIcon className={`w-8 h-8 ${isChatsSectionExpanded ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`} />
+              {showChatsHeaderBadge && (
+                <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-lantern-border dark:border-lantern-border">
+                  {formatUnreadBadgeCount(totalUnreadChatCount)}
+                </span>
+              )}
+            </button>
+          </div>
         )}
       </div>
 
@@ -630,6 +518,127 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
       </div>
     </div>
+
+    {/* Chats flyout column — the horizontal expansion that replaced the
+        vertical in-sidebar accordion. The outer aside animates its width
+        (0 ↔ 20rem) while the inner wrapper keeps a fixed width, so rows
+        slide into view instead of reflowing mid-animation. AppShell shifts
+        <main> by the same 20rem (see its md:ml-* classes). */}
+    <aside
+      aria-label="Chats"
+      aria-hidden={!chatsFlyoutOpen}
+      className={`fixed inset-y-0 z-30 bg-lantern-background-secondary/95 backdrop-blur-md border-r border-lantern-border overflow-hidden transition-all duration-300 ease-in-out ${effectiveExpanded ? 'left-72' : 'left-20'} ${chatsFlyoutOpen ? 'w-80' : 'w-0 border-r-0'}`}
+    >
+      {chatsFlyoutOpen && (
+        <div className="w-80 h-full flex flex-col">
+          <div className="flex items-center justify-between gap-2 h-16 px-4 border-b border-lantern-border flex-shrink-0">
+            <h2 className="text-sm font-bold text-lantern-text flex items-center gap-2 min-w-0">
+              <span className="truncate">Chats</span>
+              {totalUnreadChatCount > 0 && (
+                <span className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                  {formatUnreadBadgeCount(totalUnreadChatCount)}
+                </span>
+              )}
+            </h2>
+            <div className="flex gap-1 flex-shrink-0">
+              <button
+                onClick={onNavigateToCreateGroup}
+                className={`p-1.5 rounded-md text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={!canInteractWithChats}
+                title="New Group"
+              >
+                <PlusIcon className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onOpenNewDmModal}
+                className={`p-1.5 rounded-md text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={!canInteractWithChats}
+                title="New DM"
+              >
+                <ChatBubbleLeftRightIcon className="w-4 h-4" />
+              </button>
+              <button
+                onClick={toggleChatsSection}
+                className="p-1.5 rounded-md text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors"
+                title="Close chats panel"
+                aria-label="Close chats panel"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto py-1">
+            {messageRequestChats.length > 0 && (
+              <div className="mb-1">
+                <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                  Message requests ({messageRequestChats.length})
+                </p>
+                {messageRequestChats.map((chat) => (
+                  <GroupListItem
+                    key={chat.id}
+                    chat={chat}
+                    currentUser={currentUser}
+                    // The flyout never renders on the chat screen, so no row
+                    // is ever the "current" conversation here.
+                    isSelected={false}
+                    onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
+                    isDisabled={!canInteractWithChats}
+                    showText={true}
+                  />
+                ))}
+              </div>
+            )}
+            {topLevelChats.map((chat) => {
+              if (chat.chatType === 'group') {
+                return renderGroupWithSubgroups(chat, 0);
+              }
+              return (
+                <GroupListItem
+                  key={chat.id}
+                  chat={chat}
+                  currentUser={currentUser}
+                  isSelected={false}
+                  onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
+                  isDisabled={!canInteractWithChats}
+                  showText={true}
+                />
+              );
+            })}
+            {topLevelChats.length === 0 && messageRequestChats.length === 0 && (
+              <p className="px-3 py-2 text-sm text-lantern-text-secondary">No active chats.</p>
+            )}
+            {archivedGroups.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-lantern-border">
+                <button
+                  onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
+                  className="w-full flex items-center justify-between p-3 text-xs font-semibold text-lantern-text-secondary uppercase hover:text-lantern-text focus:outline-none"
+                  aria-expanded={isArchivedExpanded}
+                >
+                  <span className="flex items-center"><ArchiveBoxIcon className="w-4 h-4 mr-2"/> Archived</span>
+                  {isArchivedExpanded ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronRightIcon className="w-5 h-5" />}
+                </button>
+                {isArchivedExpanded && (
+                  <div className="mt-1">
+                    {archivedGroups.map(chat => (
+                      <GroupListItem
+                        key={chat.id}
+                        chat={chat}
+                        currentUser={currentUser}
+                        isSelected={selectedChatId === chat.id}
+                        onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
+                        isDisabled={!canInteractWithChats}
+                        showText={true}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </aside>
+    </>
   );
 };
 

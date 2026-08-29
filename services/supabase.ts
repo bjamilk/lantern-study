@@ -3064,6 +3064,8 @@ export const fetchMarketplaceListingsPage = async (filters: {
   country_code?: string;
   /** Filters on category_specific_fields.condition (new/like-new/good/fair). */
   condition?: string;
+  /** Keep only listings rated at least this (1–5 whole stars). */
+  minRating?: number;
   /** Fine-grained campus listing type (taxonomy leaf id). */
   taxonomyNodeId?: string;
   /** When set with taxonomyNodeId, also include listings that have no node id. */
@@ -3242,6 +3244,31 @@ export const addMarketplaceReview = async (listingId: string, review: { rating: 
     console.error('Error adding review:', error);
     throw error;
   }
+};
+
+/**
+ * Mark / unmark a review as helpful. The control only renders when the API
+ * returned a helpfulCount for the review, so pre-migration 503s are
+ * unreachable from the UI.
+ */
+export const setMarketplaceReviewHelpful = async (
+  listingId: string,
+  reviewId: string,
+  helpful: boolean
+): Promise<{ helpfulCount: number; viewerMarkedHelpful: boolean }> => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/marketplace/listings/${listingId}/reviews/${reviewId}/helpful`,
+    {
+      method: helpful ? 'POST' : 'DELETE',
+      headers: await getAuthHeaders(),
+    }
+  );
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || 'Failed to update review reaction');
+  }
+  return payload.data;
 };
 
 export const reportMarketplaceListing = async (listingId: string, report: { reason: string; details?: string }) => {

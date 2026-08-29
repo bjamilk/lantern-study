@@ -990,6 +990,13 @@ export interface MarketplaceListing {
   views_count?: number;
   favorites_count?: number;
   inquiries_count?: number;
+  /**
+   * Trigger-maintained review aggregate (20260828160000 migration). Absent /
+   * null until the migration is applied — clients must hide rating UI when
+   * `rating_count` is not a positive number.
+   */
+  rating_avg?: number | null;
+  rating_count?: number | null;
   is_boosted?: boolean;
   search_score?: number;
   quantity?: number | null;
@@ -1141,6 +1148,19 @@ export interface MarketplaceReview {
   rating: number;
   comment?: string;
   created_at: string;
+  /**
+   * Reviewer completed a purchase of this listing (order / digital
+   * entitlement / seller-confirmed inquiry). Computed at read time by the API;
+   * absent when the lookup was skipped or failed.
+   */
+  verifiedPurchase?: boolean;
+  /**
+   * "Helpful" reaction count. Absent (not 0) while the review-votes migration
+   * has not been applied — clients hide the control entirely then.
+   */
+  helpfulCount?: number;
+  /** Whether the current viewer marked this review helpful (authed reads only). */
+  viewerMarkedHelpful?: boolean;
 }
 
 export interface MarketplaceReport {

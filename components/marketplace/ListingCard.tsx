@@ -54,10 +54,19 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
   onToggleFavorite,
   viewerCampusId,
 }) => {
+  // Prefer the trigger-maintained aggregate (present on browse rows once the
+  // ratings migration is live); fall back to counting an embedded review list
+  // for payloads that still carry one. No data → no stars.
+  const aggregateCount =
+    typeof listing.rating_count === 'number' ? listing.rating_count : 0;
   const avgRating =
-    listing.reviews && listing.reviews.length > 0
-      ? listing.reviews.reduce((sum, r) => sum + r.rating, 0) / listing.reviews.length
-      : 0;
+    aggregateCount > 0 && listing.rating_avg != null
+      ? Number(listing.rating_avg)
+      : listing.reviews && listing.reviews.length > 0
+        ? listing.reviews.reduce((sum, r) => sum + r.rating, 0) / listing.reviews.length
+        : 0;
+  const ratingCount =
+    aggregateCount > 0 ? aggregateCount : listing.reviews?.length ?? 0;
 
   const typeLabel = listingTypeLabel(listing, categoryName);
   const conditionLabel = listingConditionLabel(listing);
@@ -188,9 +197,13 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
             )}
           </span>
           {avgRating > 0 ? (
-            <div className="flex items-center text-xs text-lantern-text-tertiary shrink-0">
+            <div
+              className="flex items-center text-xs text-lantern-text-tertiary shrink-0"
+              aria-label={`Rated ${avgRating.toFixed(1)} out of 5 from ${ratingCount} review${ratingCount === 1 ? '' : 's'}`}
+            >
               <StarIcon className="w-3.5 h-3.5 mr-0.5 text-amber-400 fill-current" />
               {avgRating.toFixed(1)}
+              {ratingCount > 0 ? <span className="ml-0.5">({ratingCount})</span> : null}
             </div>
           ) : null}
         </div>

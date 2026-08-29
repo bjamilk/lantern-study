@@ -55,6 +55,8 @@ export type RemoteListing = {
   title: string;
   description?: string;
   price?: number;
+  rating_avg?: number | string | null;
+  rating_count?: number | null;
   sale_price?: number;
   sale_ends_at?: string;
   promo_label?: string;
@@ -132,6 +134,10 @@ export function mapRemoteListing(l: RemoteListing): MarketplaceListing {
     status,
     views_count: l.views_count || 0,
     favorites_count: l.favorites_count || 0,
+    // Trigger-maintained review aggregate; null until the ratings migration
+    // runs (Postgres NUMERIC can arrive as a string — normalize to number).
+    rating_avg: l.rating_avg != null ? Number(l.rating_avg) : null,
+    rating_count: typeof l.rating_count === 'number' ? l.rating_count : null,
     // Academic archive: map the raw column onto the camelCase field every
     // screen reads; the raw JSONB keeps courseCode for older listings.
     courseId: l.course_id ?? l.courseId ?? null,
@@ -216,6 +222,13 @@ export interface MarketplaceListing {
   status: MarketplaceListingStatus;
   views_count?: number;
   favorites_count?: number;
+  /**
+   * Trigger-maintained review aggregate (20260828160000 migration). Null
+   * until the migration is applied — hide rating UI when rating_count is not
+   * a positive number.
+   */
+  rating_avg?: number | null;
+  rating_count?: number | null;
   /** Academic archive: marketplace_listings.course_id (mapped from the raw column). */
   courseId?: string | null;
   /** Syllabus topic inside `courseId`; absent until 20260826120000 is applied. */
@@ -281,6 +294,12 @@ export interface MarketplaceReview {
   rating: number;
   comment?: string;
   created_at: string;
+  /** Reviewer completed a purchase (order / entitlement / purchased inquiry). */
+  verifiedPurchase?: boolean;
+  /** "Helpful" count; absent until the review-votes migration is applied. */
+  helpfulCount?: number;
+  /** Whether the current viewer marked this review helpful. */
+  viewerMarkedHelpful?: boolean;
 }
 
 export interface MarketplaceInquiry {
@@ -617,6 +636,8 @@ interface MarketplaceState {
   campusIdFilter: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
+  /** Minimum average rating (1–5) or null for any. Server-enforced post-migration. */
+  minRating: number | null;
   listingsPage: number;
   listingsHasMore: boolean;
   showFavoritesOnly: boolean;
@@ -632,6 +653,7 @@ interface MarketplaceState {
   fetchListing: (listingId: string) => Promise<void>;
   fetchListingReviews: (listingId: string) => Promise<void>;
   addReview: (listingId: string, rating: number, comment?: string) => Promise<void>;
+  toggleReviewHelpful: (listingId: string, reviewId: string) => Promise<void>;
   reportListing: (listingId: string, reason: string, details?: string) => Promise<void>;
   fetchSimilar: (listingId: string) => Promise<void>;
   fetchOffers: (role: 'buyer' | 'seller') => Promise<void>;
@@ -685,6 +707,7 @@ interface MarketplaceState {
   setCampusIdFilter: (value: string) => void;
   setSortBy: (value: string) => void;
   setSortOrder: (value: 'asc' | 'desc') => void;
+  setMinRating: (value: number | null) => void;
   applySavedSearch: (filters: Record<string, unknown>) => void;
   resetFilters: () => void;
   setShowFavoritesOnly: (value: boolean) => void;
@@ -723,10 +746,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   campusIdFilter: '',
   sortBy: 'trending',
   sortOrder: 'desc',
+  minRating: null,
   listingsPage: 1,
   listingsHasMore: true,
   showFavoritesOnly: false,
-  
+
   // Load cached data from AsyncStorage (scoped to current user)
   loadFromStorage: async () => {
     try {
@@ -869,6 +893,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         campusIdFilter,
         sortBy,
         sortOrder,
+        minRating,
       } = get();
 
       const categoryFilter = selectedCategory || filters?.category;
@@ -887,6 +912,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         ...buildMarketplaceGeographyQuery(campusIdFilter),
         sortBy,
         sortOrder,
+        minRating: minRating ?? undefined,
         responseProfile: 'compact',
       }) as
         | RemoteListing[]
@@ -1354,6 +1380,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           rating: r.rating,
           comment: r.comment,
           created_at: r.created_at,
+          // Read-time signals; absent (not defaulted) pre-migration so the UI
+          // knows to hide the corresponding controls.
+          verifiedPurchase: r.verifiedPurchase,
+          helpfulCount: r.helpfulCount,
+          viewerMarkedHelpful: r.viewerMarkedHelpful,
         })),
       });
     } catch (error: any) {
@@ -1364,6 +1395,27 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   addReview: async (listingId: string, rating: number, comment?: string) => {
     await api.addMarketplaceReview(listingId, { rating, comment });
     await get().fetchListingReviews(listingId);
+  },
+
+  toggleReviewHelpful: async (listingId: string, reviewId: string) => {
+    const review = get().reviews.find(r => r.id === reviewId);
+    if (!review) return;
+    const result = await api.setMarketplaceReviewHelpful(
+      listingId,
+      reviewId,
+      !review.viewerMarkedHelpful,
+    );
+    set(state => ({
+      reviews: state.reviews.map(r =>
+        r.id === reviewId
+          ? {
+              ...r,
+              helpfulCount: result.helpfulCount,
+              viewerMarkedHelpful: result.viewerMarkedHelpful,
+            }
+          : r,
+      ),
+    }));
   },
 
   reportListing: async (listingId: string, reason: string, details?: string) => {
@@ -1479,12 +1531,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
   setSortBy: (value: string) => set({ sortBy: value }),
   setSortOrder: (value: 'asc' | 'desc') => set({ sortOrder: value }),
+  setMinRating: (value: number | null) => set({ minRating: value }),
   applySavedSearch: (filters: Record<string, unknown>) => {
     listingsRequestSeq += 1;
     const normalized = normalizeSavedMarketplaceFilters(filters);
     set({
       ...normalized,
       selectedCategory: normalized.selectedCategory as MarketplaceCategory | null,
+      // Saved searches predate the rating filter; restoring one means exactly
+      // what it meant when saved.
+      minRating: null,
       listings: [],
       listingsPage: 1,
       listingsHasMore: true,
@@ -1502,6 +1558,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       campusIdFilter: '',
       sortBy: 'trending',
       sortOrder: 'desc',
+      minRating: null,
       listings: [],
       listingsPage: 1,
       listingsHasMore: true,

@@ -48,7 +48,7 @@ const AppShell: React.FC<AppShellProps> = ({
     onOpenLectureNote,
     hideMobileAiUsageBadge = false,
 }) => {
-    const { appMode, isSidebarExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
+    const { appMode, isSidebarExpanded, isChatsSectionExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
     const uploadJobList = useNoteUploadStore((s) => s.jobs);
     const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
     const activeUploadJob = useMemo(() => getActiveUploadJob(uploadJobList), [uploadJobList]);
@@ -172,7 +172,16 @@ const AppShell: React.FC<AppShellProps> = ({
             </div>
 
             {/* Main content area */}
-            <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'safe-area-pb'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused || lectureBannerVisible ? 'pt-12' : ''}`}>
+            <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'safe-area-pb'} md:pb-0 ${
+                // While the chats flyout column is out, the sidebar renders as
+                // its 5rem icon rail (Sidebar derives this), so the offset is
+                // always rail + 20rem column = 25rem. The flyout yields on the
+                // chat screen (ChatWindow has its own list); this must mirror
+                // Sidebar's chatsFlyoutOpen.
+                isChatsSectionExpanded && appMode !== AppMode.CHAT
+                  ? 'md:ml-[25rem]'
+                  : isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'
+            } ${isSessionPaused || lectureBannerVisible ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
                 {isSessionPaused && !lectureBannerVisible && (
