@@ -1,3 +1,4 @@
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -82,7 +83,7 @@ export function ResetPasswordScreen({ navigation }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background">
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         className="flex-1"
       >
         <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">

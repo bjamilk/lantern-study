@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -35,6 +36,7 @@ const isPayable = (order: OfferOrder): boolean =>
 export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const { buyerOffers, sellerOffers, isLoading, fetchOffers, respondToOffer } = useMarketplaceStore();
   const [tab, setTab] = useState<Tab>('seller');
@@ -257,13 +259,13 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
-        <Pressable
+        <Pressable hitSlop={10}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="Back"
           className="p-2 -ml-2 mr-1"
         >
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-xl font-bold text-lantern-text">Offers</Text>
       </View>
@@ -306,6 +308,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
           accessibilityViewIsModal
           accessibilityLabel="Send counter offer"
           className="absolute bottom-0 left-0 right-0 p-4 bg-lantern-surface border-t border-lantern-border"
+          style={{ paddingBottom: insets.bottom + 16 }}
         >
           <Text className="text-sm font-semibold text-lantern-text mb-2">Counter amount (₦)</Text>
           <TextInput

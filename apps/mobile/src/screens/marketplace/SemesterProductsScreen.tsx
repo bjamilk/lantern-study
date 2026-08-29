@@ -81,8 +81,8 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="flex-row items-center px-4 py-2">
-        <Pressable onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Back">
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+        <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Back">
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-lg font-semibold text-lantern-text">Semester products</Text>
       </View>

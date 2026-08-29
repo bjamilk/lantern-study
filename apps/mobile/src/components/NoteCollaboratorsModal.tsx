@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -57,6 +58,7 @@ export function NoteCollaboratorsModal({
   onClose,
 }: NoteCollaboratorsModalProps) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const insets = useSafeAreaInsets();
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [userQuery, setUserQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Array<{ id: string; name?: string }>>([]);
@@ -197,7 +199,7 @@ export function NoteCollaboratorsModal({
               <Ionicons name="close" size={22} color="#64748b" />
             </Pressable>
           </View>
-          <ScrollView contentContainerClassName="px-5 pb-8">
+          <ScrollView contentContainerClassName="px-5" contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
             <Text className="text-sm font-medium text-lantern-text mt-2 mb-2">Permission</Text>
             <View className="flex-row gap-2 mb-3">
               {(['viewer', 'editor'] as Role[]).map((role) => (

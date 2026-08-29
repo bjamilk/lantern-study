@@ -2,6 +2,8 @@
 // Lantern Study Mobile - Question Modal
 // ===========================================
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
@@ -93,6 +95,7 @@ export default function QuestionModal({
   onSubmit,
 }: QuestionModalProps) {
   const [step, setStep] = useState<'type' | 'content' | 'options'>('type');
+  const insets = useSafeAreaInsets();
   const [questionType, setQuestionType] = useState<QuestionType>('mcq-single');
   const [stem, setStem] = useState('');
   const [options, setOptions] = useState<QuestionOption[]>([
@@ -900,10 +903,10 @@ export default function QuestionModal({
         ]}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={COMPOSER_KEYBOARD_BEHAVIOR}
           style={styles.overlayContent}
         >
-          <View style={[styles.container, { backgroundColor: colors.card }]}>
+          <View style={[styles.container, { paddingBottom: insets.bottom + 12, backgroundColor: colors.card }]}>
             {/* Header */}
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
               <View style={styles.headerLeft}>

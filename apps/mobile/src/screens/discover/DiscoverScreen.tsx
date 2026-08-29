@@ -35,6 +35,7 @@ import { DiscoverComingSoon } from './DiscoverComingSoon';
 
 import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
 import { useChrome } from '../../components/layout/ChromeContext';
+import { BackButton } from '../../components/ui';
 
 type NavigationProp = {
   goBack: () => void;
@@ -370,7 +371,12 @@ function DiscoverHub({
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="border-b border-lantern-border">
-        <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
+        <View className="flex-row items-center">
+          <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
+          <View className="flex-1">
+            <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
+          </View>
+        </View>
         {section === 'communities' || section === 'groups' || section === 'people' ? (
           <Text className="px-4 pt-1.5 text-[11px] text-lantern-text-tertiary">
             {DISCOVER_SECTION_INTRO[section]}

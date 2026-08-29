@@ -257,7 +257,7 @@ export function NotePdfViewer({
         statusBarTranslucent
         onRequestClose={() => setFullscreen(false)}
       >
-        <View className="flex-1" style={{ backgroundColor: colors.background, paddingTop: insets.top }}>
+        <View className="flex-1" style={{ backgroundColor: colors.background, paddingTop: insets.top, paddingBottom: insets.bottom }}>
           <View
             className="px-3 py-2 border-b flex-row items-center justify-between gap-2"
             style={{ borderBottomColor: colors.border, backgroundColor: colors.surface }}

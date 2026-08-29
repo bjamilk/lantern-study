@@ -1,3 +1,4 @@
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useState, useCallback } from 'react';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {
@@ -65,7 +66,7 @@ export default function AddInvestmentScreen() {
           <Text style={styles.saveButtonText}>Save</Text>
         </TouchableOpacity>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
           <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
             Log money put into savings, investments, or long-term funds.

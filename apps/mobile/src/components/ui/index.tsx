@@ -3,6 +3,7 @@ import { Pressable, Text, ActivityIndicator, View, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToastStore } from '../../stores/toastStore';
 import { useConfirmStore } from '../../stores/confirmStore';
+import { BackButton } from './BackButton';
 
 type Variant = 'primary' | 'secondary' | 'accent' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
@@ -121,9 +122,10 @@ export function ScreenHeader({
       className={`px-4 pt-2 pb-3 flex-row items-start ${className}`}
     >
       {onBack ? (
-        <Pressable onPress={onBack} className="p-1 mr-2 mt-1">
-          <Text className="text-lantern-primary text-lg">←</Text>
-        </Pressable>
+        // A real, visible, 44pt back target — the old text-glyph "←" was the
+        // "back buttons are tiny or invisible" complaint for the 21 screens
+        // that use this header.
+        <BackButton onPress={onBack} style={{ marginLeft: -8, marginRight: 4 }} />
       ) : null}
       <View className="flex-1 min-w-0 pr-3">
         <Text className="text-2xl font-bold text-lantern-text tracking-tight">{title}</Text>
@@ -238,3 +240,4 @@ export { FeatureHero } from './FeatureHero';
 export { ActionSheet, type ActionSheetItem } from './ActionSheet';
 export { LoadingState, ErrorState, InlineErrorBanner, EmptyState } from './AsyncStates';
 export { IconButton } from './IconButton';
+export { BackButton } from './BackButton';

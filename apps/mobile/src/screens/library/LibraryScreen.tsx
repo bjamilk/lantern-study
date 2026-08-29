@@ -34,6 +34,7 @@ type Tab = LibraryTab;
 interface Props {
   navigation: {
     navigate: (screen: string, params?: Record<string, unknown>) => void;
+    goBack: () => void;
   };
   route?: { params?: { tab?: Tab } };
 }
@@ -375,7 +376,7 @@ export function LibraryScreen({ navigation, route }: Props) {
         {trimmedQuery ? (
           <View className="mb-2 flex-row items-center gap-2">
             {searchEverything ? (
-              <Pressable
+              <Pressable hitSlop={10}
                 onPress={() => setSearchEverything(false)}
                 className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary min-h-[36px]"
                 accessibilityRole="button"

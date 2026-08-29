@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { sendSellerCampaign } from '../../../services/api';
@@ -21,6 +22,7 @@ interface Props {
 
 export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props) {
   const [segment, setSegment] = useState<SellerCustomerSegment | ''>('');
+  const insets = useSafeAreaInsets();
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
             <Text className="text-lg font-bold">Message customers</Text>
             <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
-          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
+          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
             <Text className="text-sm text-lantern-text-secondary mb-3">
               Sends an in-app notification and DM to up to 25 customers.
             </Text>

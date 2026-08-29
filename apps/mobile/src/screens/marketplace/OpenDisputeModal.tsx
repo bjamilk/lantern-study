@@ -1,3 +1,5 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -53,6 +55,7 @@ export function OpenDisputeModal({
   viewerIsSeller = false,
 }: OpenDisputeModalProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const defaultCategory: DisputeCategory = viewerIsSeller ? 'other' : 'not_received';
   const [category, setCategory] = useState<DisputeCategory>(defaultCategory);
   const [reason, setReason] = useState('');
@@ -98,7 +101,7 @@ export function OpenDisputeModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
       >
         <View
@@ -107,6 +110,7 @@ export function OpenDisputeModal({
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
             maxHeight: '88%',
+            paddingBottom: insets.bottom + 12,
           }}
         >
           <View

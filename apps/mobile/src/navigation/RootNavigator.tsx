@@ -876,13 +876,11 @@ function MainTabsShell() {
         // marketplace as a destination).
         onDiscover={() =>
           goTab('MarketTab', {
-            // Private pilot: accounts without marketplace access land on the
-            // Discover hub (communities, groups, people) instead of a gate
-            // wall; admins keep the hub, the allowlisted account keeps the shop.
-            screen:
-              isPlatformAdmin || marketplaceAccess !== true
-                ? 'Discover'
-                : 'MarketplaceHome',
+            // Admins get the Discover hub; everyone else goes to the
+            // marketplace screen — during the private pilot the gate renders
+            // its explanation there, which beats the hub's bare
+            // "Coming soon" wall for non-admins.
+            screen: isPlatformAdmin ? 'Discover' : 'MarketplaceHome',
           })
         }
       />

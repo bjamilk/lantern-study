@@ -1,4 +1,6 @@
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Modal,
   View,
@@ -42,6 +44,9 @@ export function ContactSupportModal({
   defaultEmail = '',
   colors,
 }: ContactSupportModalProps) {
+  // pageSheet is full-screen on Android (edge-to-edge): the title sat under
+  // the status bar and the Send button under the nav bar without these.
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState(defaultName);
   const [email, setEmail] = useState(defaultEmail);
   const [category, setCategory] = useState<ContactCategory>('general');
@@ -80,9 +85,18 @@ export function ContactSupportModal({
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={[styles.flex, { backgroundColor: colors.background }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
       >
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[
+            styles.container,
+            {
+              paddingTop: Platform.OS === 'ios' ? 20 : insets.top + 16,
+              paddingBottom: insets.bottom + 40,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={[styles.title, { color: colors.text }]}>Contact support</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             We reply by email. Do not include passwords or card numbers.

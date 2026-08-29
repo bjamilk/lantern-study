@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { createMarketplaceBundle, fetchMarketplaceCampuses } from '../../../services/api';
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function CreateBundleModal({ visible, listings, onClose, onCreated }: Props) {
+  const insets = useSafeAreaInsets();
   const activeListings = useMemo(
     () =>
       listings.filter(
@@ -107,7 +109,7 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
             <Text className="text-lg font-bold">Create bundle</Text>
             <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
-          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
+          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
             <TextInput
               value={title}
               onChangeText={setTitle}

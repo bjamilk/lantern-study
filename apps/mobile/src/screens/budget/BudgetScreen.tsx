@@ -381,7 +381,7 @@ export default function BudgetScreen() {
             style={styles.monthArrow}
             accessibilityLabel="Previous month"
           >
-            <Ionicons name="chevron-back" size={20} color={colors.text} />
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.monthLabelWrap}>
             <Text style={[styles.monthLabel, { color: colors.text }]}>

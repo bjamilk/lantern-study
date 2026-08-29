@@ -2,6 +2,8 @@
 // Lantern Study Mobile - Sign Up Screen
 // ===========================================
 
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
@@ -48,6 +50,7 @@ interface FormErrors {
 
 export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
@@ -311,7 +314,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
       style={[styles.container, { backgroundColor: colors.background }]}
       // See UsernameRequiredModal: 'height' fights the manifest's adjustResize
       // on Android and makes the layout oscillate.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={COMPOSER_KEYBOARD_BEHAVIOR}
     >
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 24 + cookieNoticeInset }]}
@@ -319,9 +322,10 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 40 : insets.top + 12 }]}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={[styles.backButton, { top: Platform.OS === 'ios' ? 40 : insets.top + 12 }]}
+            hitSlop={10}
             onPress={() => navigation.goBack()}
             disabled={isLoading}
           >
@@ -642,13 +646,13 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 24,
-    paddingTop: Platform.OS === 'ios' ? 40 : 20,
+    // paddingTop is applied inline with the real status-bar inset —
+    // Android 15+ edge-to-edge put the back button under the clock at 20dp.
   },
   backButton: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 40 : 20,
     left: 0,
-    padding: 8,
+    padding: 10,
     zIndex: 1,
   },
   logoContainer: {

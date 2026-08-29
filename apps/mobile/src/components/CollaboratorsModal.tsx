@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -44,6 +45,7 @@ export default function CollaboratorsModal({
   currentUserId,
 }: CollaboratorsModalProps) {
   const [collaborators, setCollaborators] = useState<DeckCollaborator[]>([]);
+  const insets = useSafeAreaInsets();
   const [userQuery, setUserQuery] = useState('');
   const [newUserId, setNewUserId] = useState('');
   const [newRole, setNewRoleId] = useState<'viewer' | 'editor' | 'owner'>('editor');
@@ -133,7 +135,7 @@ export default function CollaboratorsModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View className="flex-1 bg-black/50 justify-end">
-        <View className="bg-lantern-surface rounded-t-3xl max-h-[85%] min-h-[50%]">
+        <View className="bg-lantern-surface rounded-t-3xl max-h-[85%] min-h-[50%]" style={{ paddingBottom: insets.bottom + 8 }}>
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-lantern-border dark:border-lantern-border">
             <View className="flex-row items-center gap-2">
               <Ionicons name="people-outline" size={22} color="#6366f1" />

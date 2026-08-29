@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useMemo, useState } from 'react';
 import {
   Dimensions,
@@ -69,6 +70,7 @@ export function GroupChatHeader({
   menuActions,
 }: GroupChatHeaderProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [menuVisible, setMenuVisible] = useState(false);
   const [submenu, setSubmenu] = useState<GroupChatHeaderAction | null>(null);
   const sheetMaxHeight = useMemo(
@@ -198,14 +200,14 @@ export function GroupChatHeader({
         className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface"
         style={{ borderBottomColor: colors.border, backgroundColor: colors.card }}
       >
-        <Pressable
+        <Pressable hitSlop={10}
           onPress={onBack}
           // 48dp is the Android/Material minimum target; p-2 around a 22px icon was 36dp.
           className="p-2 rounded-lg min-w-[48px] min-h-[48px] items-center justify-center"
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={22} color={colors.textSecondary} />
+          <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
         </Pressable>
 
         {/* Tapping the avatar/title opens Group Info — previously an inert View,
@@ -276,7 +278,7 @@ export function GroupChatHeader({
             className="rounded-t-2xl px-4 pt-3"
             style={{
               backgroundColor: colors.modalBackground,
-              paddingBottom: Platform.OS === 'ios' ? 28 : 20,
+              paddingBottom: insets.bottom + 20,
               maxHeight: sheetMaxHeight,
             }}
             onPress={e => e.stopPropagation()}
@@ -292,7 +294,7 @@ export function GroupChatHeader({
                     accessibilityRole="button"
                     accessibilityLabel="Back to group actions"
                   >
-                    <Ionicons name="chevron-back" size={22} color={colors.primary} />
+                    <Ionicons name="chevron-back" size={24} color={colors.primary} />
                   </TouchableOpacity>
                   <Text
                     className="text-sm font-semibold text-lantern-text-secondary"

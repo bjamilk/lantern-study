@@ -36,6 +36,7 @@ import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
+  goBack: () => void;
 };
 
 interface Props {
@@ -495,6 +496,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       )}
       {!embedded && (
       <ScreenHeader
+        onBack={() => navigation.goBack()}
         title="Flashcards"
         subtitle={`${decks.length} deck${decks.length !== 1 ? 's' : ''}`}
         right={

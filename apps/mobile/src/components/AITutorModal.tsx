@@ -3,6 +3,8 @@
 // Ask the AI tutor any study question
 // ===========================================
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -42,6 +44,7 @@ export default function AITutorModal({
   recentTopics,
 }: AITutorModalProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { handleAIAskTutor, isAILoading, aiError, setAiError } = useAIHandlers();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -79,7 +82,7 @@ export default function AITutorModal({
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         style={styles.overlay}
       >
         <View style={[styles.container, { backgroundColor: colors.modalBackground }]}>
@@ -156,7 +159,7 @@ export default function AITutorModal({
           </ScrollView>
 
           {/* Input */}
-          <View style={[styles.inputRow, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+          <View style={[styles.inputRow, { paddingBottom: insets.bottom + 20, backgroundColor: colors.card, borderTopColor: colors.border }]}>
             <TextInput
               style={[
                 styles.textInput,

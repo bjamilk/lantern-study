@@ -5,6 +5,8 @@
  * the API's validation can never disagree; a 409 (already reported by this
  * user) is shown as a friendly notice instead of an error.
  */
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../chat/composerKeyboardBehavior';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -60,6 +62,7 @@ export function ReportContentSheet({
   onSubmitted,
 }: ReportContentSheetProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const reasons = useMemo(() => reasonsForTarget(targetType), [targetType]);
   const [reason, setReason] = useState<ContentReportReason | null>(null);
   const [details, setDetails] = useState('');
@@ -105,13 +108,14 @@ export function ReportContentSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
       >
         <Pressable className="flex-1 bg-black/50 justify-end" onPress={onClose}>
           <Pressable
             accessibilityViewIsModal
             onPress={(e) => e.stopPropagation?.()}
-            className="bg-lantern-surface rounded-t-3xl pt-4 pb-8 max-h-[88%]"
+            className="bg-lantern-surface rounded-t-3xl pt-4 max-h-[88%]"
+            style={{ paddingBottom: insets.bottom + 32 }}
           >
             <View className="flex-row items-center px-5 mb-1">
               <Ionicons name="flag-outline" size={18} color={colors.warning} />

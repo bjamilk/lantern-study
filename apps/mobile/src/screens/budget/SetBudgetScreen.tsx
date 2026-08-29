@@ -2,6 +2,7 @@
 // Lantern Study Mobile - Set Budget Screen
 // ===========================================
 
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -138,7 +139,7 @@ export default function SetBudgetScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
       >
         <ScrollView
           style={styles.keyboardView}

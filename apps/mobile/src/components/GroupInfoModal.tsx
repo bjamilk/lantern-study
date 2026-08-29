@@ -2,6 +2,8 @@
 // Lantern Study Mobile - Group Info Modal
 // ===========================================
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
@@ -70,6 +72,7 @@ export default function GroupInfoModal({
   onAvatarUpdated,
 }: GroupInfoModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('details');
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description || '');
   const [hasChanges, setHasChanges] = useState(false);
@@ -274,7 +277,7 @@ export default function GroupInfoModal({
   );
 
   const renderDetailsTab = () => (
-    <View style={styles.tabContent}>
+    <View style={[styles.tabContent, { paddingBottom: insets.bottom + 40 }]}>
       {/* Group Avatar */}
       <View style={styles.avatarSection}>
         <Image
@@ -395,7 +398,7 @@ export default function GroupInfoModal({
   );
 
   const renderMembersTab = () => (
-    <View style={styles.tabContent}>
+    <View style={[styles.tabContent, { paddingBottom: insets.bottom + 40 }]}>
       {/* Add Members Button */}
       {isAdmin && (
         <TouchableOpacity
@@ -510,7 +513,7 @@ export default function GroupInfoModal({
   );
 
   const renderDangerTab = () => (
-    <View style={styles.tabContent}>
+    <View style={[styles.tabContent, { paddingBottom: insets.bottom + 40 }]}>
       <View style={styles.dangerSection}>
         <View style={styles.dangerHeader}>
           <Ionicons name="exit-outline" size={24} color="#f97316" />
@@ -628,7 +631,7 @@ export default function GroupInfoModal({
     >
       <View style={styles.overlay}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={COMPOSER_KEYBOARD_BEHAVIOR}
           style={styles.keyboardView}
         >
         <View style={[styles.container, { backgroundColor: colors.card }]}>

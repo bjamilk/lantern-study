@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +38,7 @@ interface Props {
  */
 export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -427,6 +429,7 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
               flexDirection: 'row',
               gap: 10,
               padding: 16,
+              paddingBottom: insets.bottom + 16,
               borderTopWidth: 1,
               borderTopColor: colors.border,
             }}

@@ -60,8 +60,8 @@ export function InviteFriendsScreen({ navigation }: { navigation: NavigationProp
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border">
-        <Pressable onPress={() => navigation.goBack()} className="p-2" accessibilityRole="button">
-          <Ionicons name="arrow-back" size={20} color="#64748b" />
+        <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityRole="button">
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-lg font-semibold text-lantern-text">Invite friends</Text>
       </View>

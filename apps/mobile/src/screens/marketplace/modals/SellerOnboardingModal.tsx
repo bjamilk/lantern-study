@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,7 @@ interface Props {
 
 export function SellerOnboardingModal({ visible, status, onComplete, onDismiss }: Props) {
   const [step, setStep] = useState(0);
+  const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const tips = status.tips?.length ? status.tips : [
     'Add clear photos — listings with 3+ images get more views.',
@@ -37,7 +39,7 @@ export function SellerOnboardingModal({ visible, status, onComplete, onDismiss }
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
       <View className="flex-1 justify-end bg-black/40">
-        <View className="bg-lantern-surface rounded-t-3xl p-5">
+        <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
           <View className="flex-row items-center gap-2 mb-2">
             <Ionicons name="rocket-outline" size={22} color="#6366f1" />
             <Text className="text-lg font-bold text-lantern-text">Seller setup</Text>

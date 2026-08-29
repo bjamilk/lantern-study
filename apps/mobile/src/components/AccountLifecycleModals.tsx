@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -92,6 +93,7 @@ export function AccountLifecycleModals({
   renderPausedBanner = false,
 }: AccountLifecycleModalsProps) {
   const [lifecycle, setLifecycle] = useState<AccountLifecycleInfo | null>(null);
+  const insets = useSafeAreaInsets();
   const [deleteStep, setDeleteStep] = useState<'warn' | 'choose' | 'confirm'>('warn');
   const [deleteChoice, setDeleteChoice] = useState<'pause' | 'immediate'>('pause');
   const [confirmText, setConfirmText] = useState('');
@@ -223,7 +225,7 @@ export function AccountLifecycleModals({
       <Modal visible={deleteOpen} animationType="slide" transparent onRequestClose={handleCloseDelete}>
         <View className="flex-1 justify-end bg-black/50">
           <View className="bg-lantern-surface rounded-t-2xl max-h-[85%]">
-            <ScrollView contentContainerClassName="p-5 pb-8">
+            <ScrollView contentContainerClassName="p-5" contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
               <Text className="text-lg font-semibold text-lantern-text mb-2">
                 Delete or pause account
               </Text>
@@ -317,7 +319,7 @@ export function AccountLifecycleModals({
 
       <Modal visible={importOpen} animationType="slide" transparent onRequestClose={onCloseImport}>
         <View className="flex-1 justify-end bg-black/50">
-          <View className="bg-lantern-surface rounded-t-2xl p-5 pb-8">
+          <View className="bg-lantern-surface rounded-t-2xl p-5" style={{ paddingBottom: insets.bottom + 32 }}>
             <Text className="text-lg font-semibold text-lantern-text mb-2">Import backup</Text>
             <Text className="text-sm text-lantern-text-secondary mb-3">{ACCOUNT_EXPORT_COPY.restoreHint}</Text>
             <Button variant="secondary" onPress={() => void pickImportFile()} className="mb-2">

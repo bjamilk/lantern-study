@@ -301,13 +301,13 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
       <View className="px-4 pt-2 pb-2 gap-2">
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center flex-1 min-w-0">
-            <Pressable
+            <Pressable hitSlop={10}
               onPress={() => navigation.goBack()}
               className="p-2 -ml-2 mr-1 min-w-[44px] min-h-[44px] justify-center"
               accessibilityRole="button"
               accessibilityLabel="Back"
             >
-              <Ionicons name="arrow-back" size={22} color="#64748b" />
+              <Ionicons name="arrow-back" size={24} color="#64748b" />
             </Pressable>
             <View className="flex-1 min-w-0">
               <Text className="text-xl font-bold text-lantern-text">Selling</Text>

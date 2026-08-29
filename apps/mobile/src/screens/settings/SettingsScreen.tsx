@@ -17,7 +17,7 @@ import {
   Modal,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
@@ -121,6 +121,9 @@ export default function SettingsScreen() {
   
   // Theme
   const { colors, isDark, themeMode, setThemeMode } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Edge-to-edge: bottom-sheet buttons must clear the system nav bar.
+  const sheetInsetPad = { paddingBottom: insets.bottom + 40 };
   const paystackEnabled = usePaystackEnabled();
 
   const modalTheme = useMemo(
@@ -1309,7 +1312,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowHelpModal(false)}
       >
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
-          <View style={[styles.modalContent, modalTheme.content, { maxHeight: '80%' }]}>
+          <View style={[styles.modalContent, sheetInsetPad, modalTheme.content, { maxHeight: '80%' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Help & FAQ</Text>
               <TouchableOpacity onPress={() => setShowHelpModal(false)}>
@@ -1362,7 +1365,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowCampusModal(false)}
       >
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
-          <View style={[styles.modalContent, modalTheme.content, { maxHeight: '85%' }]}>
+          <View style={[styles.modalContent, sheetInsetPad, modalTheme.content, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Your campus</Text>
               <TouchableOpacity onPress={() => setShowCampusModal(false)}>
@@ -1503,7 +1506,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowDailyGoalModal(false)}
       >
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
-          <View style={[styles.modalContent, modalTheme.content]}>
+          <View style={[styles.modalContent, sheetInsetPad, modalTheme.content]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Daily Goal</Text>
               <TouchableOpacity onPress={() => setShowDailyGoalModal(false)}>
@@ -1561,7 +1564,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowSRSSettingsModal(false)}
       >
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
-          <View style={[styles.modalContent, modalTheme.content]}>
+          <View style={[styles.modalContent, sheetInsetPad, modalTheme.content]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Review settings</Text>
               <TouchableOpacity onPress={() => setShowSRSSettingsModal(false)}>
@@ -1619,7 +1622,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowPrivacyModal(false)}
       >
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
-          <View style={[styles.modalContent, modalTheme.content]}>
+          <View style={[styles.modalContent, sheetInsetPad, modalTheme.content]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Profile Visibility</Text>
               <TouchableOpacity onPress={() => setShowPrivacyModal(false)}>
@@ -1674,7 +1677,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowDirectMessagesModal(false)}
       >
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
-          <View style={[styles.modalContent, modalTheme.content]}>
+          <View style={[styles.modalContent, sheetInsetPad, modalTheme.content]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Direct Messages</Text>
               <TouchableOpacity onPress={() => setShowDirectMessagesModal(false)}>

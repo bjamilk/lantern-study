@@ -1,3 +1,4 @@
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './composerKeyboardBehavior';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -322,7 +323,7 @@ export function ChatThreadModal({
 
         <KeyboardAvoidingView
           className="flex-1"
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         >
           {loading && messages.length === 0 ? (
             <LoadingState label="Loading thread" />

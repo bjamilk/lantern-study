@@ -4,6 +4,7 @@
  * semester). Mirrors the web Settings → Academic section
  * (docs/phase1-academic-identity-contract.md §4/§5).
  */
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -251,7 +252,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         <View style={styles.headerButton} />
       </View>
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"

@@ -1,3 +1,4 @@
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -326,8 +327,8 @@ export function EditListingScreen({
     return (
       <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
-          <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
-            <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
+            <Ionicons name="arrow-back" size={24} color="#64748b" />
           </Pressable>
           <Text className="text-xl font-bold text-lantern-text">Edit Listing</Text>
         </View>
@@ -344,10 +345,10 @@ export function EditListingScreen({
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
-          <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
-            <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
+            <Ionicons name="arrow-back" size={24} color="#64748b" />
           </Pressable>
           <Text className="text-xl font-bold text-lantern-text">Edit Listing</Text>
         </View>

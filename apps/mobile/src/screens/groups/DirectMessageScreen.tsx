@@ -1045,11 +1045,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         />
       ) : (
       <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
-        <Pressable
+        <Pressable hitSlop={10}
           onPress={handleBack}
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
         >
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <ResolvedAvatar
           name={displayName}

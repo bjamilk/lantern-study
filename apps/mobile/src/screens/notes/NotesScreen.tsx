@@ -51,6 +51,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
+  goBack: () => void;
 };
 
 interface Props {
@@ -1099,6 +1100,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
 
       {!embedded && (
         <ScreenHeader
+          onBack={() => navigation.goBack()}
           title="Notes"
           subtitle="Capture lectures and turn notes into study tools"
           className="pb-1"

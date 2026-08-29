@@ -1,3 +1,4 @@
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -187,7 +188,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
         }
       />
 
-      <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <ScrollView className="flex-1 px-4" contentContainerClassName="pb-10" keyboardShouldPersistTaps="handled">
           <View className="items-center py-6">
             <Pressable onPress={() => void handlePickAvatar()} className="relative">

@@ -83,7 +83,7 @@ export function CreatorProfileScreen({
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="mr-2 -ml-1 p-1">
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-lg font-bold text-lantern-text">Creator</Text>
       </View>

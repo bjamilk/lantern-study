@@ -132,7 +132,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-1">
           <Text className="text-lg font-bold text-lantern-text">From your network</Text>

@@ -3,6 +3,8 @@
 // ===========================================
 // Allows adding members by username search or share invite link
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
@@ -59,6 +61,7 @@ export default function AddMembersModal({
   onAddMembers,
 }: AddMembersModalProps) {
   const [view, setView] = useState<'initial' | 'search' | 'invite'>('initial');
+  const insets = useSafeAreaInsets();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -310,10 +313,10 @@ export default function AddMembersModal({
     >
       <ThemeScope style={styles.overlay}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={COMPOSER_KEYBOARD_BEHAVIOR}
           style={styles.keyboardView}
         >
-        <View style={[styles.container, { backgroundColor: colors.card }]}>
+        <View style={[styles.container, { paddingBottom: insets.bottom + 12, backgroundColor: colors.card }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             {view !== 'initial' && (

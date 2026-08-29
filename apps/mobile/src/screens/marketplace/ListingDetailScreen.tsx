@@ -508,8 +508,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-2 flex-row items-center justify-between">
-        <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2">
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+        <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-row items-center gap-1">
           {!own && user?.id ? (
@@ -1197,7 +1197,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       <Modal visible={showContact} transparent animationType="slide" onRequestClose={() => setShowContact(false)}>
         <View className="flex-1 justify-end bg-black/40">
-          <View className="bg-lantern-surface rounded-t-3xl p-5">
+          <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
             <Text className="text-lg font-bold text-lantern-text mb-3">Contact Seller</Text>
             <TextInput
               value={contactMessage}
@@ -1223,7 +1223,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       <Modal visible={showReview} transparent animationType="slide" onRequestClose={() => setShowReview(false)}>
         <View className="flex-1 justify-end bg-black/40">
-          <View className="bg-lantern-surface rounded-t-3xl p-5">
+          <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
             <Text className="text-lg font-bold text-lantern-text mb-3">Write a review</Text>
             <View className="flex-row gap-2 mb-4">
               {[1, 2, 3, 4, 5].map(i => (

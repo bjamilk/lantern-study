@@ -13,6 +13,7 @@
  *
  * StyleSheet + useTheme to match TopicPicker, its sibling modal.
  */
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -72,6 +73,7 @@ export function ManageOutlineSheet({
   onTopicDeleted,
 }: ManageOutlineSheetProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [topics, setTopics] = useState<CourseTopic[]>([]);
   const [loading, setLoading] = useState(false);
@@ -227,7 +229,7 @@ export function ManageOutlineSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close manage topics" />
-        <View style={[styles.sheet, { backgroundColor: colors.modalBackground }]}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 12, backgroundColor: colors.modalBackground }]}>
           <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
             <View style={styles.headerText}>
               <Text style={[styles.sheetTitle, { color: colors.text }]}>{COURSE_TOPIC_COPY.manageTitle}</Text>

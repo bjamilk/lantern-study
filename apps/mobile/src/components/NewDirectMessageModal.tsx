@@ -3,6 +3,8 @@
 // Start a chat with contacts/members
 // ===========================================
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
@@ -60,6 +62,7 @@ export default function NewDirectMessageModal({
   onStartChat,
 }: NewDirectMessageModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const insets = useSafeAreaInsets();
   const [apiResults, setApiResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
@@ -263,7 +266,7 @@ export default function NewDirectMessageModal({
     >
       <ThemeScope style={styles.overlay}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={COMPOSER_KEYBOARD_BEHAVIOR}
           style={styles.keyboardView}
         >
         <View style={[styles.container, { backgroundColor: colors.card }]}>
@@ -316,7 +319,7 @@ export default function NewDirectMessageModal({
             data={listData}
             keyExtractor={(item) => item.id}
             renderItem={renderContact}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 40 }]}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={emptyMessage}
           />

@@ -19,13 +19,13 @@ function MarketplacePrivatePilotScreen() {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2">
-        <Pressable
+        <Pressable hitSlop={10}
           onPress={() => (navigation.canGoBack() ? navigation.goBack() : undefined)}
           className="p-2 -ml-2 self-start"
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
       </View>
       <View className="flex-1 items-center justify-center px-8 -mt-10">

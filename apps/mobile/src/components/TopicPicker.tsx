@@ -8,6 +8,7 @@
  * find-or-creates via POST /courses/:courseId/topics. StyleSheet + useTheme so
  * it drops into both the NativeWind screens and the legacy StyleSheet modals.
  */
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -66,6 +67,7 @@ export function TopicPicker({
   onClose,
 }: TopicPickerProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const controlled = visible !== undefined;
   const [selfOpen, setSelfOpen] = useState(false);
@@ -214,7 +216,7 @@ export function TopicPicker({
       <Modal visible={open} transparent animationType="slide" onRequestClose={close}>
         <View style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close topic picker" />
-          <View style={[styles.sheet, { backgroundColor: colors.modalBackground }]}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 12, backgroundColor: colors.modalBackground }]}>
             <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.sheetTitle, { color: colors.text }]}>{title}</Text>
               <Pressable onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">

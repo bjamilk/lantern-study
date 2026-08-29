@@ -1,6 +1,7 @@
 /**
  * Mobile Group performance chart — parity with web Dashboard multi-select chart.
  */
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -135,6 +136,7 @@ function buildHierarchicalOptions(
 
 export function GroupPerformanceChartCard({ groups, testResults }: GroupPerformanceChartCardProps) {
   const lowDataMode = useSettingsStore((s) => s.settings.appearance.lowDataMode);
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -559,6 +561,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
         <Pressable className="flex-1 bg-black/40 justify-end" onPress={() => setPickerOpen(false)}>
           <Pressable
             className="bg-lantern-surface rounded-t-2xl max-h-[70%] border-t border-lantern-border"
+            style={{ paddingBottom: insets.bottom + 12 }}
             onPress={(e) => e.stopPropagation()}
           >
             <View className="flex-row items-center justify-between px-4 py-3 border-b border-lantern-border">

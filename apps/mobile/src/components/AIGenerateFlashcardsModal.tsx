@@ -3,6 +3,8 @@
 // Generate flashcards from pasted notes using AI
 // ===========================================
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useState } from 'react';
 import {
   View,
@@ -41,6 +43,7 @@ export default function AIGenerateFlashcardsModal({
   onFlashcardsGenerated,
 }: AIGenerateFlashcardsModalProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   // Definite px height, not maxHeight '92%': the maxHeight+flex:1-scroll combo
   // collapses the body to zero height on Android release builds (same failure
   // family as the offline Download Options footer, 5fd746d).
@@ -87,7 +90,7 @@ export default function AIGenerateFlashcardsModal({
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         style={styles.overlay}
       >
         <View style={[styles.container, { backgroundColor: colors.modalBackground, height: sheetHeight }]}>
@@ -105,7 +108,7 @@ export default function AIGenerateFlashcardsModal({
 
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
             keyboardShouldPersistTaps="handled"
           >
             {generated.length === 0 ? (

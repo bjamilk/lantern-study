@@ -13,7 +13,7 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
@@ -23,6 +23,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
+import { BackButton } from '../../components/ui';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 
@@ -84,6 +85,7 @@ export default function TestScreen() {
   const { user } = useAuthStore();
   const defaultTestMode = useSettingsStore(s => s.settings.study.defaultTestMode);
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, deleteAttempt, clearTestHistory } = useTestStore();
 
   const visibleAttempts = useMemo(() => {
@@ -416,6 +418,7 @@ export default function TestScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
+          <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: -9, marginRight: 4 }} />
           <Text style={[styles.headerTitle, { color: colors.text }]}>Tests</Text>
           {activeTab === 'history' && attempts.length > 0 ? (
             <TouchableOpacity onPress={handleClearHistory} style={styles.clearHistoryButton}>
@@ -568,7 +571,7 @@ export default function TestScreen() {
         onRequestClose={() => setSelectedTest(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 40 }, { backgroundColor: colors.card }]}>
             {selectedTest && (
               <>
                 <View style={styles.modalHeader}>

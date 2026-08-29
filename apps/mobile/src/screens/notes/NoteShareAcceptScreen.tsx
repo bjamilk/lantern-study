@@ -67,8 +67,8 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="flex-row items-center px-4 py-3">
-        <Pressable onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Go back">
-          <Ionicons name="arrow-back" size={22} color="#475569" />
+        <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={24} color="#475569" />
         </Pressable>
         <Text className="ml-2 text-lg font-semibold text-lantern-text">Note invitation</Text>
       </View>

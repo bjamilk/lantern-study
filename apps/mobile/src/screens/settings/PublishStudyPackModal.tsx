@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,6 +68,7 @@ export function PublishStudyPackModal({
   onPublished,
 }: Props) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState(defaultTitle || '');
   const [description, setDescription] = useState(defaultDescription || '');
   const [price, setPrice] = useState(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
@@ -350,6 +352,7 @@ export function PublishStudyPackModal({
               flexDirection: 'row',
               gap: 10,
               padding: 16,
+              paddingBottom: insets.bottom + 16,
               borderTopWidth: 1,
               borderTopColor: colors.border,
             }}

@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import { Image, Modal, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -47,6 +48,7 @@ export function MentionText({
  */
 function ChatImageViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
   const scale = useSharedValue(1);
+  const insets = useSafeAreaInsets();
   const savedScale = useSharedValue(1);
 
   const pinch = Gesture.Pinch()
@@ -72,7 +74,7 @@ function ChatImageViewer({ uri, onClose }: { uri: string; onClose: () => void })
   return (
     <Modal visible animationType="fade" onRequestClose={onClose}>
       <View className="flex-1 bg-black">
-        <View className="flex-row items-center justify-end px-4 pt-12 pb-3">
+        <View className="flex-row items-center justify-end px-4 pb-3" style={{ paddingTop: insets.top + 8 }}>
           <Pressable
             onPress={onClose}
             className="p-2"

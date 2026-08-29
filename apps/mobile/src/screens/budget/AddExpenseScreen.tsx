@@ -1,4 +1,5 @@
 // ===========================================
+import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 // Lantern Study Mobile - Add Expense Screen
 // ===========================================
@@ -92,7 +93,7 @@ export default function AddExpenseScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
       >
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Amount Input */}

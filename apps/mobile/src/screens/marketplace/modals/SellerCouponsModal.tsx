@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { createSellerCoupon, fetchSellerCoupons } from '../../../services/api';
@@ -12,6 +13,7 @@ interface Props {
 
 export function SellerCouponsModal({ visible, onClose }: Props) {
   const [coupons, setCoupons] = useState<MarketplaceCoupon[]>([]);
+  const insets = useSafeAreaInsets();
   const [code, setCode] = useState('');
   const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
   const [discountValue, setDiscountValue] = useState('');
@@ -58,7 +60,7 @@ export function SellerCouponsModal({ visible, onClose }: Props) {
             <Text className="text-lg font-bold text-lantern-text">Seller coupons</Text>
             <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
-          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
+          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
             <Text className="text-sm text-lantern-text-secondary mb-3">Buyers apply these at checkout on your listings.</Text>
             <TextInput
               value={code}

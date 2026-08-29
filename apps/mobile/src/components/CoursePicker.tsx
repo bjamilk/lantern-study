@@ -6,6 +6,7 @@
  * row. StyleSheet + useTheme so it drops into both the NativeWind screens
  * and the legacy StyleSheet modals.
  */
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -65,6 +66,7 @@ export function CoursePicker({
   onClose,
 }: CoursePickerProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const profileInstitutionId = useAuthStore(s => s.academicProfile?.institutionId ?? null);
   const effectiveInstitutionId = institutionId === undefined ? profileInstitutionId : institutionId;
 
@@ -203,7 +205,7 @@ export function CoursePicker({
       <Modal visible={open} transparent animationType="slide" onRequestClose={close}>
         <View style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close course picker" />
-          <View style={[styles.sheet, { backgroundColor: colors.modalBackground }]}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 12, backgroundColor: colors.modalBackground }]}>
             <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.sheetTitle, { color: colors.text }]}>{title}</Text>
               <Pressable onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">

@@ -207,7 +207,7 @@ export function MasteryScreen({
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-lg font-bold text-lantern-text">
           {focusCourseId ? 'Course readiness' : 'Exam readiness'}

@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -35,6 +36,7 @@ interface Props {
 export function SellerProfileScreen({ navigation, route }: Props) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
+  const insets = useSafeAreaInsets();
   const sellerId = route.params?.sellerId ?? '';
   const { user } = useAuthStore();
   const { sellerProfile, fetchSellerProfile, updateMyShop, isLoading } = useMarketplaceStore();
@@ -190,11 +192,11 @@ export function SellerProfileScreen({ navigation, route }: Props) {
 
       <View className="px-4 -mt-10">
         <View className="flex-row items-center justify-between mb-2">
-          <Pressable
+          <Pressable hitSlop={10}
             onPress={() => navigation.goBack()}
             className="flex-row items-center gap-1 px-2 py-1.5 rounded-lg bg-black/30"
           >
-            <Ionicons name="arrow-back" size={18} color="#f8fafc" />
+            <Ionicons name="arrow-back" size={24} color="#f8fafc" />
             <Text className="text-sm font-medium text-white/90">Back</Text>
           </Pressable>
           <View className="flex-row gap-2">
@@ -331,7 +333,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
 
       <Modal visible={editOpen} animationType="slide" transparent onRequestClose={() => setEditOpen(false)}>
         <View className="flex-1 justify-end bg-black/40">
-          <View className="bg-lantern-surface rounded-t-2xl p-4 border-t border-lantern-border">
+          <View className="bg-lantern-surface rounded-t-2xl p-4 border-t border-lantern-border" style={{ paddingBottom: insets.bottom + 16 }}>
             <Text className="text-base font-bold text-lantern-text mb-3">Edit shop</Text>
             <Text className="text-xs font-semibold text-lantern-text-secondary mb-1">Shop name</Text>
             <TextInput

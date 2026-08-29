@@ -37,13 +37,13 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
-        <Pressable
+        <Pressable hitSlop={10}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="Back"
           className="p-2 -ml-2 mr-1"
         >
-          <Ionicons name="arrow-back" size={22} color="#64748b" />
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-xl font-bold text-lantern-text">Saved Listings</Text>
       </View>

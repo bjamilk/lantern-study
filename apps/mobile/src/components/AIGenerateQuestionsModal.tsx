@@ -3,6 +3,8 @@
 // Lets users paste notes/topic and have AI generate questions
 // ===========================================
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import React, { useState } from 'react';
 import {
   View,
@@ -47,6 +49,7 @@ export default function AIGenerateQuestionsModal({
   subject,
 }: AIGenerateQuestionsModalProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   // Definite px height, not maxHeight '92%': with maxHeight and auto height,
   // Yoga clamps AFTER measuring children, so the flex:1 ScrollView body
   // resolves to zero height on release builds — only the header rendered.
@@ -148,7 +151,7 @@ export default function AIGenerateQuestionsModal({
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         style={styles.overlay}
       >
         <View style={[styles.container, { backgroundColor: colors.modalBackground, height: sheetHeight }]}>
@@ -166,7 +169,7 @@ export default function AIGenerateQuestionsModal({
 
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
             keyboardShouldPersistTaps="handled"
           >
             {generatedQuestions.length === 0 ? (
