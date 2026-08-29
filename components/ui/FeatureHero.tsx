@@ -19,8 +19,12 @@ export const FeatureHero: React.FC<FeatureHeroProps> = ({
   children,
   className = '',
 }) => (
+  /* shrink-0 is load-bearing: screens mount this inside a flex-col scroll
+     container, and overflow-hidden zeroes a flex item's automatic minimum
+     height — so once the page content outgrew the viewport, the hero (the
+     only shrinkable child) was crushed and its text clipped mid-line. */
   <section
-    className={`rounded-lantern-xl border border-lantern-border bg-lantern-surface shadow-lantern overflow-hidden mb-4 ${className}`}
+    className={`shrink-0 rounded-lantern-xl border border-lantern-border bg-lantern-surface shadow-lantern overflow-hidden mb-4 ${className}`}
     style={{ borderTopWidth: 3, borderTopColor: accentColor }}
   >
     <div className="p-4 sm:p-5">
