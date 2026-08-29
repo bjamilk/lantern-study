@@ -46,6 +46,28 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'maintenance-1-0-34',
+    title: 'Mobile 1.0.34 — institutions list restored, study-room picker fix',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-08-29',
+    summary:
+      'Maintenance release. The institutions list loads again in academic-profile setup, settings and the jobs create screen (the marketplace private-pilot gate had accidentally blocked the shared campus lookup — fixed server-side, this build just aligns versions), and the study-room course picker shows its prompt correctly.',
+    details: [
+      'Server: GET /marketplace/campuses is exempt from the private-pilot gate as reference data; commerce routes remain founder-only.',
+      'Study room: the course picker used an unsupported label prop; it now uses placeholder, restoring the mobile typecheck baseline to zero.',
+      'Includes the full 1.0.33 safe-area and back-button sweep for anyone updating straight from 1.0.32 or earlier.',
+    ],
+    howToUse: [
+      'Profile setup and Settings → Academic: the university picker lists all institutions again.',
+    ],
+    surfaces: ['mobile', 'api'],
+    adminNotes: [
+      'The institutions outage was server-side (403 from the pilot gate), so 1.0.33 devices recovered without updating; 1.0.34 exists to keep the shipped binary current with main.',
+    ],
+    commits: ['5cc8ad1'],
+  },
+  {
     id: 'readiness-pilot-1-0-33',
     title: 'Mobile 1.0.33 — exam readiness, marketplace private pilot, profile-sheet fix',
     area: 'platform',

@@ -157,7 +157,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // reachable at last; the marketplace enters a private pilot (friendly wall
   // for non-pilot accounts); the academic-profile setup sheet no longer hides
   // its buttons under the status/navigation bars on Android 15+.
-  version: '1.0.33',
+  // 1.0.34: maintenance — the institutions list loads again everywhere (the
+  // marketplace pilot gate had caught the shared campus lookup), and the
+  // study-room course picker renders its prompt correctly.
+  version: '1.0.34',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
