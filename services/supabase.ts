@@ -2690,6 +2690,8 @@ export const createNotification = async (notificationData: {
   user_id: string;
   message: string;
   link?: string;
+  /** Feature family for colour-coding (e.g. 'test_result'); defaults to info. */
+  type?: string;
 }) => {
   console.log('Creating notification for user:', notificationData.user_id);
   try {
@@ -2700,7 +2702,7 @@ export const createNotification = async (notificationData: {
         userId: notificationData.user_id,
         message: notificationData.message,
         link: notificationData.link,
-        type: 'info'
+        type: notificationData.type || 'info'
       }),
     });
 

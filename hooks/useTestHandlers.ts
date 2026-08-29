@@ -592,6 +592,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 try {
                     await createNotification({
                         user_id: currentUser.id,
+                        // Typed so the notification list colour-codes it into
+                        // the blue Test family instead of the generic bell.
+                        type: 'test_result',
                         message: `Test completed! You scored ${score}% (${correctAnswersCount}/${finalSessionData.questions.length} correct)`,
                         link: `/dashboard`
                     });

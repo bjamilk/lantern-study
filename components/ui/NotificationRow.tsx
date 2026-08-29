@@ -1,8 +1,17 @@
 import React from 'react';
 import {
   BellIcon,
-  CurrencyDollarIcon,
+  BriefcaseIcon,
   ChatBubbleLeftEllipsisIcon,
+  ClipboardDocumentListIcon,
+  CurrencyDollarIcon,
+  EnvelopeIcon,
+  ExclamationTriangleIcon,
+  HeartIcon,
+  MegaphoneIcon,
+  PuzzlePieceIcon,
+  ReceiptPercentIcon,
+  RectangleStackIcon,
   ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -16,7 +25,15 @@ const iconMap: Record<NotificationIconKey, React.ComponentType<{ className?: str
   currency: CurrencyDollarIcon,
   chat: ChatBubbleLeftEllipsisIcon,
   shopping: ShoppingBagIcon,
-  envelope: ChatBubbleLeftEllipsisIcon,
+  envelope: EnvelopeIcon,
+  flashcards: RectangleStackIcon,
+  test: ClipboardDocumentListIcon,
+  game: PuzzlePieceIcon,
+  briefcase: BriefcaseIcon,
+  order: ReceiptPercentIcon,
+  megaphone: MegaphoneIcon,
+  heart: HeartIcon,
+  alert: ExclamationTriangleIcon,
 };
 
 interface NotificationRowProps {
@@ -53,6 +70,8 @@ export const NotificationRow: React.FC<NotificationRowProps> = ({
           ? 'bg-lantern-surface hover:bg-lantern-background-secondary'
           : 'bg-lantern-primary-background hover:bg-lantern-primary-background/80'
       } ${onPress ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary focus-visible:ring-inset' : ''} ${className}`}
+      // One hue per feature family — the colour-coding cue.
+      style={{ borderLeft: `3px solid ${meta.accentColor}` }}
     >
       <div className="flex items-start gap-3">
         <div

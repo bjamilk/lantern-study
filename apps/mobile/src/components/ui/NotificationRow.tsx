@@ -13,6 +13,14 @@ const iconMap: Record<NotificationIconKey, keyof typeof Ionicons.glyphMap> = {
   chat: 'chatbubble-ellipses-outline',
   shopping: 'bag-outline',
   envelope: 'mail-outline',
+  flashcards: 'albums-outline',
+  test: 'clipboard-outline',
+  game: 'game-controller-outline',
+  briefcase: 'briefcase-outline',
+  order: 'receipt-outline',
+  megaphone: 'megaphone-outline',
+  heart: 'heart-outline',
+  alert: 'warning-outline',
 };
 
 interface NotificationRowProps {
@@ -46,6 +54,8 @@ export function NotificationRow({
       className={`p-4 rounded-lantern-xl border border-lantern-border mb-2 ${
         read ? 'bg-lantern-surface' : 'bg-lantern-primary-background'
       } ${className}`}
+      // The left accent is the colour-coding cue: one hue per feature family.
+      style={{ borderLeftWidth: 3, borderLeftColor: meta.accentColor }}
     >
       <View className="flex-row items-start gap-3">
         <View

@@ -131,3 +131,78 @@ describe("job notification links", () => {
     );
   });
 });
+
+describe("colour-coded feature families", () => {
+  it("codes duels red with a game icon, per challenge subtype", () => {
+    const meta = getNotificationMeta(undefined, {
+      type: "challenge_result",
+      link: "challenge:c1",
+    });
+    expect(meta.iconKey).toBe("game");
+    expect(meta.label).toBe("Duel result");
+    expect(meta.accentColor).toBe("#dc2626");
+  });
+
+  it("codes order updates emerald with a receipt icon", () => {
+    const meta = getNotificationMeta(undefined, {
+      type: "marketplace_order_update",
+    });
+    expect(meta.iconKey).toBe("order");
+    expect(meta.accentColor).toBe("#059669");
+  });
+
+  it("codes flashcards-due fuchsia even with no link", () => {
+    const meta = getNotificationMeta(undefined, { type: "flashcards_due" });
+    expect(meta.iconKey).toBe("flashcards");
+    expect(meta.label).toBe("Flashcards due");
+    expect(meta.accentColor).toBe("#c026d3");
+  });
+
+  it("codes test results blue", () => {
+    const meta = getNotificationMeta(undefined, { type: "test_result" });
+    expect(meta.iconKey).toBe("test");
+    expect(meta.accentColor).toBe("#2563eb");
+  });
+
+  it("gives jobs the briefcase icon and keeps the teal family", () => {
+    const meta = getNotificationMeta("/marketplace/jobs/p1", {
+      type: "job_alert",
+      link: "/marketplace/jobs/p1",
+    });
+    expect(meta.iconKey).toBe("briefcase");
+    expect(meta.accentColor).toBe("#0f766e");
+  });
+
+  it("every branch carries an accent colour", () => {
+    for (const probe of [
+      undefined,
+      { type: "warning" },
+      { type: "dm_message", data: { senderId: "u1" } },
+      { type: "group_invite", data: { groupId: "g1" } },
+    ] as const) {
+      const meta = getNotificationMeta(undefined, probe as never);
+      expect(meta.accentColor).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+  });
+});
+
+describe("marketplace type families without tuple links", () => {
+  it("codes a sale (marketplace_purchase) emerald with a receipt", () => {
+    const meta = getNotificationMeta("marketplace:order:o1", {
+      type: "marketplace_purchase",
+      link: "marketplace:order:o1",
+    });
+    expect(meta.iconKey).toBe("order");
+    expect(meta.label).toBe("Sale");
+    expect(meta.accentColor).toBe("#059669");
+  });
+
+  it("codes a path-linked inquiry amber", () => {
+    const meta = getNotificationMeta("/marketplace/inquiries/i1", {
+      type: "marketplace_inquiry",
+      link: "/marketplace/inquiries/i1",
+    });
+    expect(meta.label).toBe("Inquiry");
+    expect(meta.accentColor).toBe("#d97706");
+  });
+});

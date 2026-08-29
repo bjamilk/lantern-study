@@ -26,7 +26,15 @@ export type NotificationIconKey =
   | "currency"
   | "chat"
   | "shopping"
-  | "envelope";
+  | "envelope"
+  | "flashcards"
+  | "test"
+  | "game"
+  | "briefcase"
+  | "order"
+  | "megaphone"
+  | "heart"
+  | "alert";
 
 export interface NotificationMeta {
   iconKey: NotificationIconKey;
@@ -37,6 +45,8 @@ export interface NotificationMeta {
   mobileIconColor: string;
   /** Tailwind bg class for mobile icon container */
   mobileBgClass: string;
+  /** Hex accent for the row's left border — the colour-coding cue. */
+  accentColor: string;
 }
 
 export function formatRelativeTime(dateInput: string | Date): string {
@@ -175,6 +185,113 @@ export function getNotificationMeta(
   link?: string,
   n?: Pick<AppNotification, "type" | "data" | "link">,
 ): NotificationMeta {
+  // Feature families are colour-coded by type FIRST (before link parsing) so a
+  // notification with no link still lands in the right colour family:
+  // study/fuchsia, tests/blue, games/red, orders+offers/emerald,
+  // jobs/teal, messages/sky, alerts/amber.
+  const t = n?.type || "";
+  if (t.startsWith("flashcard") || t.startsWith("srs") || t === "study_reminder") {
+    return {
+      iconKey: "flashcards",
+      label: "Flashcards due",
+      webColorClass: "text-fuchsia-700 bg-fuchsia-50 dark:bg-fuchsia-950/30",
+      mobileIconColor: "#c026d3",
+      accentColor: "#c026d3",
+      mobileBgClass: "bg-fuchsia-50 dark:bg-fuchsia-950/30",
+    };
+  }
+  if (t.startsWith("test") || t.startsWith("exam")) {
+    return {
+      iconKey: "test",
+      label: t.startsWith("exam") ? "Exam" : "Test",
+      webColorClass: "text-blue-700 bg-blue-50 dark:bg-blue-950/30",
+      mobileIconColor: "#2563eb",
+      accentColor: "#2563eb",
+      mobileBgClass: "bg-blue-50 dark:bg-blue-950/30",
+    };
+  }
+  if (t.startsWith("challenge") || t.startsWith("game")) {
+    const gameLabel =
+      t === "challenge_invite"
+        ? "Duel invite"
+        : t === "challenge_result"
+          ? "Duel result"
+          : t === "challenge_accepted"
+            ? "Duel accepted"
+            : t === "challenge_declined"
+              ? "Duel declined"
+              : t === "challenge_opponent_finished"
+                ? "Opponent finished"
+                : "Game";
+    return {
+      iconKey: "game",
+      label: gameLabel,
+      webColorClass: "text-lantern-error bg-lantern-error/10",
+      mobileIconColor: "#dc2626",
+      accentColor: "#dc2626",
+      mobileBgClass: "bg-red-50 dark:bg-red-950/30",
+    };
+  }
+  if (t === "marketplace_purchase") {
+    return {
+      iconKey: "order",
+      label: "Sale",
+      webColorClass: "text-lantern-success bg-lantern-success/10",
+      mobileIconColor: "#059669",
+      accentColor: "#059669",
+      mobileBgClass: "bg-emerald-50 dark:bg-emerald-950/30",
+    };
+  }
+  if (t === "marketplace_inquiry") {
+    return {
+      iconKey: "chat",
+      label: "Inquiry",
+      webColorClass: "text-lantern-accent bg-lantern-accent-background",
+      mobileIconColor: "#d97706",
+      accentColor: "#d97706",
+      mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
+    };
+  }
+  if (t === "marketplace_order_update") {
+    return {
+      iconKey: "order",
+      label: "Order update",
+      webColorClass: "text-lantern-success bg-lantern-success/10",
+      mobileIconColor: "#059669",
+      accentColor: "#059669",
+      mobileBgClass: "bg-emerald-50 dark:bg-emerald-950/30",
+    };
+  }
+  if (t === "marketplace_seller_campaign") {
+    return {
+      iconKey: "megaphone",
+      label: "Shop campaign",
+      webColorClass: "text-lantern-primary bg-lantern-primary-background",
+      mobileIconColor: "#4f46e5",
+      accentColor: "#4f46e5",
+      mobileBgClass: "bg-lantern-primary-background",
+    };
+  }
+  if (t === "marketplace_favorite_milestone") {
+    return {
+      iconKey: "heart",
+      label: "Favourites",
+      webColorClass: "text-pink-700 bg-pink-50 dark:bg-pink-950/30",
+      mobileIconColor: "#db2777",
+      accentColor: "#db2777",
+      mobileBgClass: "bg-pink-50 dark:bg-pink-950/30",
+    };
+  }
+  if (t === "warning") {
+    return {
+      iconKey: "alert",
+      label: "Alert",
+      webColorClass: "text-amber-800 bg-amber-50 dark:bg-amber-950/30",
+      mobileIconColor: "#b45309",
+      accentColor: "#b45309",
+      mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
+    };
+  }
   const parsed = parseNotificationLink(link, n);
   if (!parsed) {
     return {
@@ -182,6 +299,7 @@ export function getNotificationMeta(
       label: null,
       webColorClass: "text-lantern-primary bg-lantern-primary-background",
       mobileIconColor: "#4f46e5",
+      accentColor: "#4f46e5",
       mobileBgClass: "bg-lantern-primary-background",
     };
   }
@@ -200,6 +318,7 @@ export function getNotificationMeta(
           : "Interview",
       webColorClass: "text-violet-600 bg-violet-50 dark:bg-violet-950/30",
       mobileIconColor: "#7c3aed",
+      accentColor: "#7c3aed",
       mobileBgClass: "bg-violet-50 dark:bg-violet-950/30",
     };
   }
@@ -215,6 +334,7 @@ export function getNotificationMeta(
       label: n.type === "job_offer_reminder" ? "Offer expiring" : "Job offer",
       webColorClass: "text-lantern-success bg-lantern-success/10",
       mobileIconColor: "#059669",
+      accentColor: "#059669",
       mobileBgClass: "bg-emerald-50 dark:bg-emerald-950/30",
     };
   }
@@ -225,6 +345,7 @@ export function getNotificationMeta(
         label: "Duel",
         webColorClass: "text-lantern-error bg-lantern-error/10",
         mobileIconColor: "#dc2626",
+      accentColor: "#dc2626",
         mobileBgClass: "bg-red-50 dark:bg-red-950/30",
       };
     case "offer":
@@ -233,6 +354,7 @@ export function getNotificationMeta(
         label: "Offer",
         webColorClass: "text-lantern-success bg-lantern-success/10",
         mobileIconColor: "#059669",
+      accentColor: "#059669",
         mobileBgClass: "bg-emerald-50 dark:bg-emerald-950/30",
       };
     case "inquiry":
@@ -241,6 +363,7 @@ export function getNotificationMeta(
         label: "Inquiry",
         webColorClass: "text-lantern-accent bg-lantern-accent-background",
         mobileIconColor: "#d97706",
+      accentColor: "#d97706",
         mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
       };
     case "listing":
@@ -250,6 +373,7 @@ export function getNotificationMeta(
         webColorClass:
           "text-lantern-primary-light bg-lantern-primary-background",
         mobileIconColor: "#6366f1",
+      accentColor: "#6366f1",
         mobileBgClass:
           "bg-lantern-primary-background dark:bg-lantern-primary-background",
       };
@@ -260,6 +384,7 @@ export function getNotificationMeta(
           label: "Message request",
           webColorClass: "text-amber-700 bg-amber-50 dark:bg-amber-950/30",
           mobileIconColor: "#b45309",
+      accentColor: "#b45309",
           mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
         };
       }
@@ -268,6 +393,7 @@ export function getNotificationMeta(
         label: "Message",
         webColorClass: "text-sky-600 bg-sky-50 dark:bg-sky-900/30",
         mobileIconColor: "#0ea5e9",
+      accentColor: "#0ea5e9",
         mobileBgClass: "bg-sky-50 dark:bg-sky-950/30",
       };
     case "group_invite":
@@ -276,6 +402,7 @@ export function getNotificationMeta(
         label: "Group invite",
         webColorClass: "text-lantern-primary bg-lantern-primary-background",
         mobileIconColor: "#4f46e5",
+      accentColor: "#4f46e5",
         mobileBgClass: "bg-lantern-primary-background",
       };
     case "group":
@@ -287,6 +414,7 @@ export function getNotificationMeta(
             : "Mentioned you",
           webColorClass: "text-amber-700 bg-amber-50 dark:bg-amber-950/30",
           mobileIconColor: "#b45309",
+      accentColor: "#b45309",
           mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
         };
       }
@@ -296,6 +424,7 @@ export function getNotificationMeta(
           label: "Reply",
           webColorClass: "text-violet-700 bg-violet-50 dark:bg-violet-950/30",
           mobileIconColor: "#6d28d9",
+      accentColor: "#6d28d9",
           mobileBgClass: "bg-violet-50 dark:bg-violet-950/30",
         };
       }
@@ -304,30 +433,34 @@ export function getNotificationMeta(
         label: "Group",
         webColorClass: "text-sky-600 bg-sky-50 dark:bg-sky-900/30",
         mobileIconColor: "#0ea5e9",
+      accentColor: "#0ea5e9",
         mobileBgClass: "bg-sky-50 dark:bg-sky-950/30",
       };
     case "job":
       return {
-        iconKey: "shopping",
+        iconKey: "briefcase",
         label: n?.type === "job_alert" ? "Job alert" : "Job",
         webColorClass: "text-teal-700 bg-teal-50 dark:bg-teal-950/30",
         mobileIconColor: "#0f766e",
+      accentColor: "#0f766e",
         mobileBgClass: "bg-teal-50 dark:bg-teal-950/30",
       };
     case "job_applications":
       return {
-        iconKey: "envelope",
+        iconKey: "briefcase",
         label: "Application",
         webColorClass: "text-teal-700 bg-teal-50 dark:bg-teal-950/30",
         mobileIconColor: "#0f766e",
+      accentColor: "#0f766e",
         mobileBgClass: "bg-teal-50 dark:bg-teal-950/30",
       };
     case "job_applicants":
       return {
-        iconKey: "envelope",
+        iconKey: "briefcase",
         label: "New applicant",
         webColorClass: "text-teal-700 bg-teal-50 dark:bg-teal-950/30",
         mobileIconColor: "#0f766e",
+      accentColor: "#0f766e",
         mobileBgClass: "bg-teal-50 dark:bg-teal-950/30",
       };
     case "note":
@@ -335,9 +468,10 @@ export function getNotificationMeta(
       return {
         iconKey: "envelope",
         label: "Note share",
-        webColorClass: "text-lantern-primary bg-lantern-primary-background",
-        mobileIconColor: "#4f46e5",
-        mobileBgClass: "bg-lantern-primary-background",
+        webColorClass: "text-cyan-700 bg-cyan-50 dark:bg-cyan-950/30",
+        mobileIconColor: "#0891b2",
+        accentColor: "#0891b2",
+        mobileBgClass: "bg-cyan-50 dark:bg-cyan-950/30",
       };
     default:
       return {
@@ -345,6 +479,7 @@ export function getNotificationMeta(
         label: null,
         webColorClass: "text-lantern-primary bg-lantern-primary-background",
         mobileIconColor: "#4f46e5",
+      accentColor: "#4f46e5",
         mobileBgClass: "bg-lantern-primary-background",
       };
   }
