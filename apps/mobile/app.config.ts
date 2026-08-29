@@ -148,7 +148,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // The Study wallet now sits inside Budget as a sibling tab, the Dashboard is cut
   // back to what people use, and Chat's overflow, mute and question filters are
   // folded into single controls.
-  version: '1.0.30',
+  version: '1.0.31',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

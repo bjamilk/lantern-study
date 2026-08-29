@@ -46,6 +46,40 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'mobile-shell-chat-tools-1-0-31',
+    title: 'Mobile 1.0.31 — chat-first shell, chat tools, lights-out dark',
+    area: 'mobile',
+    status: 'shipped',
+    shippedAt: '2026-08-28',
+    summary:
+      'Navigation rebuilt around chat: chat-first shell with a top icon bar, profile drawer and scroll-away bars; chat multi-select and message actions (reply/forward/copy/star/pin) in a top action bar; search across chats, messages (full history via new endpoint), and people; colour-coded notifications; X-style pure-black dark mode.',
+    details: [
+      'Chat is the first screen after sign-in. Base bar: Chat / Library / Dashboard / Offline. Budget, Notifications, Lantern AI and Discover moved to a top icon bar; Settings, low-data, theme and log-out to a profile drawer (avatar tap or edge swipe).',
+      'Both bars hide on scroll-down and return on scroll-up on every root surface.',
+      'Chat list: long-press multi-select with pin / mute (8h) / archive / delete acting on the selection; chat pins are device-local; Archived pinned to the top under a persistent search bar.',
+      'Messages: long-press swaps the chat header for an action bar (reply, forward, copy, star, pin + overflow edit/remove/report) in groups, sub-groups and DMs. Stars and pinned-message banner are device-local.',
+      'Search: universal chat-list search (Chats / Messages / People), in-conversation match jumping, and GET /messages/search for full history (membership-scoped; client falls back to latest-message previews until the API deploys).',
+      'Notifications are colour-coded by feature family with a left accent border on web and mobile; test completions now carry type test_result.',
+      'Dark mode is pure black (X-style) on web and mobile; dark own-bubble text is pure white. Web Enter inserts a newline — Send sends.',
+      'Composers clear the soft keyboard on Android 15+ (companion, group chat, DMs). Confirm/action sheets respect the bottom system inset.',
+      'Offline screen no longer lists Available-to-Download groups; downloads stay in the group Study/Test flow.',
+    ],
+    howToUse: [
+      'Long-press a chat for the selection bar; tap more chats to extend; icons act on all selected at once.',
+      'Long-press any message for reply / forward / copy / star / pin; ⋮ holds edit, remove and report.',
+      'Group menu (⋮) → Search messages jumps between matches in the conversation.',
+      'Profile drawer: tap your avatar (top-left) or swipe right from the left edge; dark mode toggle lives there.',
+    ],
+    surfaces: ['mobile', 'web', 'api'],
+    adminNotes: [
+      'Chat pins, message stars and pinned messages are DEVICE-LOCAL (AsyncStorage) — no backend fields yet, so they do not sync across devices.',
+      'Full-history message search needs this API release; older clients and servers fall back to latest-message preview matching silently.',
+      'Mute uses the existing endpoints with a fixed 8h duration from the selection bar.',
+      'Support: notifications created before this release keep their generic type and stay in the default indigo family.',
+    ],
+    commits: [],
+  },
+  {
     id: 'notes-folder-rename-delete',
     title: 'Notes — rename and delete folders',
     area: 'notes',
