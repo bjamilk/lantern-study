@@ -4964,6 +4964,19 @@ export const joinCommunity = (communityId: string) =>
     'Could not join this community'
   );
 
+/**
+ * Open (mint on first use) a community's lounge — the persistent chat every
+ * member shares — and join the caller. Members only; 503 until the
+ * community-lounges migration is applied.
+ */
+export const openCommunityLounge = (communityId: string) =>
+  networkWrite<{ groupId: string; name: string; created: boolean }>(
+    `/communities/${encodeURIComponent(communityId)}/lounge`,
+    'POST',
+    undefined,
+    'Could not open the community chat'
+  );
+
 export const leaveCommunity = (communityId: string) =>
   networkWrite<{ left: true }>(
     `/communities/${encodeURIComponent(communityId)}/join`,

@@ -31,7 +31,7 @@ const TABS: Array<{
   shortLabel: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
-  { id: 'communities', label: 'Communities', shortLabel: 'Campus', icon: UserGroupIcon },
+  { id: 'communities', label: 'Communities', shortLabel: 'Community', icon: UserGroupIcon },
   { id: 'groups', label: 'Groups', shortLabel: 'Groups', icon: ChatBubbleLeftRightIcon },
   { id: 'people', label: 'People', shortLabel: 'People', icon: UsersIcon },
   { id: 'marketplace', label: 'Marketplace', shortLabel: 'Market', icon: ShoppingBagIcon },

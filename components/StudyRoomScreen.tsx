@@ -10,7 +10,9 @@ import {
 } from '../services/supabase';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
-import { studyRoomPresenceChannel } from '@lantern/shared/network';
+import { studyRoomPresenceChannel,
+  STUDY_ROOM_LIFETIME_COPY,
+} from '@lantern/shared/network';
 
 export interface StudyRoomScreenProps {
   roomId?: string | null;
@@ -167,6 +169,7 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
               {room.topic ? `Studying ${room.topic}` : 'Course study room'}
               {liveCount > 0 ? ` · ${liveCount} live in the room` : ''}
             </p>
+            <p className="mt-1 text-xs text-lantern-text-tertiary">{STUDY_ROOM_LIFETIME_COPY}</p>
             <ul className="mt-4 divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-surface">
               {(room.participants ?? []).length === 0 ? (
                 <li className="px-4 py-3 text-sm text-lantern-text-secondary">Nobody here yet.</li>

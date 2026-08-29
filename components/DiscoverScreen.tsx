@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   MagnifyingGlassIcon,
+  ChatBubbleLeftRightIcon,
   CheckBadgeIcon,
   ArrowPathIcon,
   SparklesIcon,
@@ -23,6 +24,7 @@ import {
 import {
   createCommunity,
   discoverCommunities,
+  openCommunityLounge,
   discoverGroups,
   discoverPeople,
   fetchMyCommunities,
@@ -241,8 +243,26 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   };
 
   const presenceLine = presenceLabel(presence);
-  const yours = communities.filter((c) => myIds.has(c.id));
+  // "Yours" comes from the MEMBERSHIP list itself — discover only returns
+  // public, top-by-members rows, so filtering it hid real memberships and
+  // (for a brand-new account) presented other campuses' communities as the
+  // whole tab. `more` stays discover-sourced, deduped against memberships.
+  const yours = mine;
   const more = communities.filter((c) => !myIds.has(c.id));
+
+  const [loungePendingId, setLoungePendingId] = useState<string | null>(null);
+  const openLounge = async (community: Community) => {
+    if (loungePendingId) return;
+    setLoungePendingId(community.id);
+    try {
+      const lounge = await openCommunityLounge(community.id);
+      onNavigate('GroupChat', { groupId: lounge.groupId, groupName: lounge.name, joined: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open the community chat');
+    } finally {
+      setLoungePendingId(null);
+    }
+  };
 
   const renderCommunityCard = (community: Community) => {
     const isMember = myIds.has(community.id);
@@ -288,6 +308,17 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
             {pendingId === community.id ? '…' : action}
           </button>
         </div>
+        {isMember ? (
+          <button
+            type="button"
+            onClick={() => void openLounge(community)}
+            disabled={loungePendingId === community.id}
+            className="self-start rounded-full bg-lantern-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-lantern-primary hover:bg-lantern-primary/20 disabled:opacity-60"
+          >
+            <ChatBubbleLeftRightIcon className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+            {loungePendingId === community.id ? 'Opening…' : 'Community chat'}
+          </button>
+        ) : null}
       </article>
     );
   };

@@ -112,6 +112,26 @@ export class CommunitiesService {
     );
     if (cached) return cached;
 
+    let rows = await this.queryMemberships(userId);
+
+    // Self-heal: several signup paths (the mobile PostgREST profile insert,
+    // OAuth profile triggers) write academic fields WITHOUT going through the
+    // profile PUT that refreshes auto-memberships — leaving an account with a
+    // real profile but zero communities. Discover then falls back to other
+    // campuses' communities, which reads as "I was put in the wrong
+    // university". Recompute once when we see that state.
+    if (rows.length === 0 && (await this.hasAcademicSignal(userId))) {
+      await this.refreshAutoMemberships(userId);
+      rows = await this.queryMemberships(userId);
+    }
+
+    await cacheService.set(cacheKey, rows, 60);
+    return rows;
+  }
+
+  private async queryMemberships(
+    userId: string
+  ): Promise<Array<CommunityRow & { role: string; source: string }>> {
     const { data, error } = await this.db
       .from('community_members')
       .select(`role, source, communities!inner(${COMMUNITY_COLUMNS})`)
@@ -121,15 +141,140 @@ export class CommunitiesService {
       .limit(100);
     if (error) throw error;
 
-    const rows = (data || [])
+    return (data || [])
       .map((r: any) => {
         const c = Array.isArray(r.communities) ? r.communities[0] : r.communities;
         return c ? { ...(c as CommunityRow), role: r.role, source: r.source } : null;
       })
       .filter(Boolean) as Array<CommunityRow & { role: string; source: string }>;
+  }
 
-    await cacheService.set(cacheKey, rows, 60);
-    return rows;
+  /** Anything on the profile (or an active course) the derivation could use. */
+  private async hasAcademicSignal(userId: string): Promise<boolean> {
+    const { data: profile } = await this.db
+      .from('profiles')
+      .select('institution_id, programme, study_level')
+      .eq('id', userId)
+      .maybeSingle();
+    const p = profile as
+      | { institution_id?: string | null; programme?: string | null; study_level?: number | null }
+      | null;
+    if (p && (p.institution_id || (p.programme && p.programme.trim()) || p.study_level != null)) {
+      return true;
+    }
+    const { count } = await this.db
+      .from('user_courses')
+      .select('course_id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'active');
+    return (count ?? 0) > 0;
+  }
+
+  /**
+   * Open a community's lounge — the one persistent, admin-less chat every
+   * member shares. Lazily mints a groups row (visibility='community', which
+   * joinDiscoverableGroup already gates on membership) and pins it on
+   * communities.lounge_group_id, then joins the caller. Chat itself rides the
+   * existing groups/messages stack — no new chat machinery.
+   */
+  async openLounge(
+    userId: string,
+    communityId: string
+  ): Promise<{ groupId: string; name: string; created: boolean }> {
+    this.assertUuid(communityId, 'community id');
+
+    const { data: membership } = await this.db
+      .from('community_members')
+      .select('user_id')
+      .eq('community_id', communityId)
+      .eq('user_id', userId)
+      .is('opted_out_at', null)
+      .maybeSingle();
+    if (!membership) {
+      throw Object.assign(new PublicError('Join this community first'), { statusCode: 403 });
+    }
+
+    const { data: community, error } = await this.db
+      .from('communities')
+      .select('id, name, course_id, lounge_group_id')
+      .eq('id', communityId)
+      .maybeSingle();
+    if (error) {
+      // Pre-migration (20260829170000 not applied): the pointer column does
+      // not exist yet. Fail soft — clients show the message, nothing breaks.
+      if ((error as { code?: string }).code === '42703') {
+        throw Object.assign(new PublicError('Community chat is not available yet'), {
+          statusCode: 503,
+        });
+      }
+      throw error;
+    }
+    if (!community) {
+      throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
+    }
+
+    const loungeName = `${String((community as any).name || 'Community')} Lounge`.slice(0, 80);
+    let groupId = (community as any).lounge_group_id as string | null;
+    let created = false;
+
+    if (!groupId) {
+      const { data: group, error: groupError } = await this.db
+        .from('groups')
+        .insert({
+          name: loungeName,
+          description:
+            'The open chat for this community. Everyone here is a member — say hi, ask questions, share what you are studying.',
+          // No admins on purpose: an official scope community's lounge must
+          // not be deletable or reconfigurable by whoever opened it first.
+          admin_ids: [],
+          permissions: {},
+          visibility: 'community',
+          community_id: communityId,
+          course_id: (community as any).course_id ?? null,
+          is_archived: false,
+        })
+        .select('id')
+        .single();
+      if (groupError || !group) throw groupError || new PublicError('Could not open the lounge');
+
+      // Claim the pointer; exactly one concurrent opener wins.
+      const { data: claimed, error: claimError } = await this.db
+        .from('communities')
+        .update({ lounge_group_id: (group as any).id })
+        .eq('id', communityId)
+        .is('lounge_group_id', null)
+        .select('id');
+      if (claimError) throw claimError;
+
+      if (claimed && claimed.length > 0) {
+        groupId = (group as any).id;
+        created = true;
+      } else {
+        // Lost the race: adopt the winner's lounge, remove the orphan group.
+        const { data: winner } = await this.db
+          .from('communities')
+          .select('lounge_group_id')
+          .eq('id', communityId)
+          .maybeSingle();
+        groupId = ((winner as any)?.lounge_group_id as string | null) ?? null;
+        await this.db.from('groups').delete().eq('id', (group as any).id);
+        if (!groupId) throw new PublicError('Could not open the lounge');
+      }
+    }
+
+    const { error: joinError } = await this.db.from('group_members').upsert(
+      { group_id: groupId, user_id: userId, pending: false },
+      { onConflict: 'group_id,user_id' }
+    );
+    if (joinError) throw joinError;
+
+    await cacheService.deletePattern('groups:discover:*');
+    await cacheService.deletePattern('groups:user:*');
+    await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern(`group:${groupId}:*`);
+    await cacheService.deletePattern(`user:groups:${userId}:*`);
+
+    return { groupId: groupId as string, name: loungeName, created };
   }
 
   /**

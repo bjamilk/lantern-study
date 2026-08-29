@@ -9,7 +9,7 @@ export interface DiscoverWorkspaceBarProps {
 }
 
 const TABS: Array<{ id: DiscoverSection; label: string; shortLabel: string }> = [
-  { id: 'communities', label: 'Communities', shortLabel: 'Campus' },
+  { id: 'communities', label: 'Communities', shortLabel: 'Community' },
   { id: 'groups', label: 'Groups', shortLabel: 'Groups' },
   { id: 'people', label: 'People', shortLabel: 'People' },
   { id: 'marketplace', label: 'Marketplace', shortLabel: 'Market' },

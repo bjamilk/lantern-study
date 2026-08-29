@@ -27,6 +27,7 @@ import {
   joinCommunity,
   joinDiscoverableGroup,
   leaveCommunity,
+  openCommunityLounge,
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
@@ -70,6 +71,7 @@ function DiscoverHub({
   const [people, setPeople] = useState<DiscoverPerson[]>([]);
   const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [loungePendingId, setLoungePendingId] = useState<string | null>(null);
   const [creatingCommunity, setCreatingCommunity] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
@@ -206,7 +208,46 @@ function DiscoverHub({
 
   const presenceLine = presenceLabel(presence);
 
-  const renderCommunity = ({ item }: { item: Community }) => {
+  // Honest sectioning: "Your communities" comes from the MEMBERSHIP list
+  // (which includes the private/auto rooms discover never returns), never
+  // from partitioning the global discover page — a brand-new account used to
+  // see other campuses' communities styled exactly like its own, which read
+  // as "I was put in the wrong university".
+  type CommunityListItem =
+    | { kind: 'header'; key: string; title: string }
+    | { kind: 'community'; key: string; community: Community };
+  const communityList = useMemo<CommunityListItem[]>(() => {
+    const more = communities.filter((c) => !myIds.has(c.id));
+    const items: CommunityListItem[] = [];
+    if (mine.length > 0) {
+      items.push({ kind: 'header', key: 'h-yours', title: 'Your communities' });
+      for (const c of mine) items.push({ kind: 'community', key: c.id, community: c });
+      if (more.length > 0) items.push({ kind: 'header', key: 'h-more', title: 'More to join' });
+    } else if (more.length > 0) {
+      items.push({ kind: 'header', key: 'h-more', title: 'On Discover' });
+    }
+    for (const c of more) items.push({ kind: 'community', key: c.id, community: c });
+    return items;
+  }, [mine, communities, myIds]);
+
+  const openLounge = async (community: Community) => {
+    if (loungePendingId) return;
+    setLoungePendingId(community.id);
+    try {
+      const lounge = await openCommunityLounge(community.id);
+      if (userId) await fetchGroups(userId).catch(() => undefined);
+      tabNav?.navigate('ChatTab', {
+        screen: 'GroupChat',
+        params: { groupId: lounge.groupId, groupName: lounge.name },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open the community chat');
+    } finally {
+      setLoungePendingId(null);
+    }
+  };
+
+  const renderCommunityCard = (item: Community) => {
     const isMember = myIds.has(item.id);
     const action = communityMembershipAction(isMember, myById.get(item.id)?.source);
     return (
@@ -253,8 +294,35 @@ function DiscoverHub({
             </Text>
           </Pressable>
         </View>
+        {isMember ? (
+          <Pressable
+            onPress={() => void openLounge(item)}
+            disabled={loungePendingId === item.id}
+            hitSlop={6}
+            className="mt-2 flex-row items-center self-start rounded-full bg-lantern-primary/10 px-2.5 py-1.5"
+            style={{ opacity: loungePendingId === item.id ? 0.6 : 1 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${item.name} community chat`}
+          >
+            <Ionicons name="chatbubbles-outline" size={13} color="#6366f1" />
+            <Text className="ml-1 text-[11px] font-semibold text-lantern-primary">
+              {loungePendingId === item.id ? 'Opening…' : 'Community chat'}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     );
+  };
+
+  const renderCommunityItem = ({ item }: { item: CommunityListItem }) => {
+    if (item.kind === 'header') {
+      return (
+        <Text className="mx-4 mb-1.5 mt-2 text-[11px] font-semibold uppercase tracking-wider text-lantern-text-tertiary">
+          {item.title}
+        </Text>
+      );
+    }
+    return renderCommunityCard(item.community);
   };
 
   const renderGroup = ({ item }: { item: DiscoverGroup }) => (
@@ -443,11 +511,11 @@ function DiscoverHub({
         </View>
       ) : section === 'communities' ? (
         <FlatList
-          data={communities}
+          data={communityList}
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
-          keyExtractor={(item) => item.id}
-          renderItem={renderCommunity}
+          keyExtractor={(item) => item.key}
+          renderItem={renderCommunityItem}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
           ListHeaderComponent={
             <View className="mx-4 mb-2">

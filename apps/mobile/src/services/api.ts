@@ -240,6 +240,7 @@ export const {
   refreshMasteryGraph,
   fetchExamReadiness,
   fetchCourseReadiness,
+  openCommunityLounge,
   fetchReferralSummary,
   fetchAmbassadors,
   fetchGamificationLeaderboard,

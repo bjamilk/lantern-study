@@ -8,8 +8,12 @@
  */
 import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
+import { logger } from '../utils/logger';
 import {
   isStudyRoomReusable,
+  isStudyRoomExpired,
+  STUDY_ROOM_MAX_AGE_MS,
+  STUDY_ROOM_PURGE_AFTER_DAYS,
   studyRoomPresenceChannel,
   type JoinOrCreateStudyRoomInput,
   type StudyRoom,
@@ -63,7 +67,9 @@ function mapRoom(row: SessionRow, participantCount: number): StudyRoom {
     kind: row.kind === 'lab' ? 'lab' : 'room',
     createdBy: row.created_by,
     startedAt: row.started_at,
-    isActive: row.is_active !== false,
+    // Rooms are temporary: past the max age a room reads as closed even if
+    // the abandoned-room sweep has not flipped the row yet.
+    isActive: row.is_active !== false && !isStudyRoomExpired(row.started_at),
     participantCount,
     presenceChannel: studyRoomPresenceChannel(row.id),
   };
@@ -72,11 +78,67 @@ function mapRoom(row: SessionRow, participantCount: number): StudyRoom {
 export class StudyRoomsService {
   constructor(private supabaseService: SupabaseService) {}
 
+  private lastSweepAt = 0;
+
   private get db() {
     return this.supabaseService.getClient();
   }
 
+  /**
+   * Auto-delete lifecycle (rooms are temporary by design):
+   * 1. CLOSE rooms older than STUDY_ROOM_MAX_AGE_MS whose members never
+   *    tapped Leave — abandoned rooms must not linger as "live".
+   * 2. DELETE closed rooms after STUDY_ROOM_PURGE_AFTER_DAYS (the roster
+   *    rows go with them via ON DELETE CASCADE).
+   * Piggybacks on room traffic with a 10-minute in-process debounce — no
+   * cron dependency, never on the caller's critical path, never throws.
+   */
+  private sweepExpired(): void {
+    const now = Date.now();
+    if (now - this.lastSweepAt < 10 * 60_000) return;
+    this.lastSweepAt = now;
+    void (async () => {
+      try {
+        const nowIso = new Date(now).toISOString();
+        const closeCutoff = new Date(now - STUDY_ROOM_MAX_AGE_MS).toISOString();
+        const { data: closed, error: closeError } = await this.db
+          .from('study_sessions')
+          .update({ is_active: false, ends_at: nowIso })
+          .eq('kind', 'room')
+          .eq('is_active', true)
+          .lt('started_at', closeCutoff)
+          .select('id');
+        if (closeError) throw closeError;
+        if (closed && closed.length > 0) {
+          await this.db
+            .from('study_session_participants')
+            .update({ left_at: nowIso })
+            .in('session_id', closed.map((r: { id: string }) => r.id))
+            .is('left_at', null);
+        }
+
+        const purgeCutoff = new Date(
+          now - STUDY_ROOM_PURGE_AFTER_DAYS * 86_400_000
+        ).toISOString();
+        const { error: purgeError } = await this.db
+          .from('study_sessions')
+          .delete()
+          .eq('kind', 'room')
+          .eq('is_active', false)
+          .lt('started_at', purgeCutoff);
+        if (purgeError) throw purgeError;
+      } catch (err) {
+        // Best-effort: an expired room still reads closed via mapRoom.
+        this.lastSweepAt = 0;
+        logger.warn('study room sweep failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+  }
+
   async joinOrCreate(userId: string, input: JoinOrCreateStudyRoomInput): Promise<StudyRoomDetail> {
+    this.sweepExpired();
     const courseId = uuidOrNull(input.courseId);
     const communityId = uuidOrNull(input.communityId);
     const topicId = uuidOrNull(input.topicId);
@@ -120,6 +182,7 @@ export class StudyRoomsService {
   }
 
   async get(userId: string, roomId: string): Promise<StudyRoomDetail> {
+    this.sweepExpired();
     if (!UUID_RE.test(String(roomId))) notFound();
     const { data, error } = await this.db
       .from('study_sessions')

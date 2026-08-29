@@ -17,6 +17,7 @@ import {
   joinCommunity,
   joinDiscoverableGroup,
   leaveCommunity,
+  openCommunityLounge,
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
@@ -126,6 +127,24 @@ function CommunityDetailHub({
     }
   };
 
+  const [loungePending, setLoungePending] = useState(false);
+  const openLounge = async () => {
+    if (!community || loungePending) return;
+    setLoungePending(true);
+    try {
+      const lounge = await openCommunityLounge(community.id);
+      if (userId) await fetchGroups(userId).catch(() => undefined);
+      navigation.getParent?.()?.navigate('ChatTab', {
+        screen: 'GroupChat',
+        params: { groupId: lounge.groupId, groupName: lounge.name },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open the community chat');
+    } finally {
+      setLoungePending(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
@@ -189,6 +208,22 @@ function CommunityDetailHub({
                     : communityMembershipAction(community.isMember, community.source)}
                 </Text>
               </Pressable>
+
+              {community.isMember ? (
+                <Pressable
+                  onPress={() => void openLounge()}
+                  disabled={loungePending}
+                  className="mt-2 flex-row items-center self-start rounded-lg bg-lantern-primary px-4 py-2"
+                  style={{ opacity: loungePending ? 0.6 : 1 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${community.name} community chat`}
+                >
+                  <Ionicons name="chatbubbles-outline" size={14} color="#ffffff" />
+                  <Text className="ml-1.5 text-xs font-semibold text-white">
+                    {loungePending ? 'Opening…' : 'Community chat'}
+                  </Text>
+                </Pressable>
+              ) : null}
 
               {members.length > 0 ? (
                 <View className="mt-5">

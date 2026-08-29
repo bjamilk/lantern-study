@@ -45,7 +45,7 @@ const CreateLabModal: React.FC<CreateLabModalProps> = ({ isOpen, onClose, onCrea
           Start a study room
         </h2>
         <p className="mt-1 text-sm text-lantern-text-secondary">
-          People studying the same course can join. If a room is already open tonight, you land there.
+          People studying the same course can join — if a room is already open for it, you land there. Rooms are temporary and close on their own.
         </p>
         <div className="mt-4">
           <CoursePicker

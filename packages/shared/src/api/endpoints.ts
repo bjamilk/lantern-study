@@ -2991,6 +2991,18 @@ export function createApiEndpoints(client: ApiClient) {
     /** The caller's own communities (auto-derived + joined). */
     fetchMyCommunities: () => apiRequest<MyCommunity[]>('/communities', {}, 10000),
 
+    /**
+     * Open (mint on first use) a community's lounge — the persistent chat
+     * every member shares — and join the caller. Members only; 503 until the
+     * community-lounges migration is applied.
+     */
+    openCommunityLounge: (communityId: string) =>
+      apiRequest<{ groupId: string; name: string; created: boolean }>(
+        `/communities/${encodeURIComponent(communityId)}/lounge`,
+        { method: 'POST' },
+        10000,
+      ),
+
     fetchCommunity: (slug: string) =>
       apiRequest<CommunityDetail>(`/communities/${encodeURIComponent(slug)}`, {}, 10000),
 

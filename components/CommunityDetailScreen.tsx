@@ -15,6 +15,7 @@ import {
   joinCommunity,
   joinDiscoverableGroup,
   leaveCommunity,
+  openCommunityLounge,
 } from '../services/supabase';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
@@ -93,6 +94,20 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({
       setError(err instanceof Error ? err.message : 'Could not update membership');
     } finally {
       setPending(false);
+    }
+  };
+
+  const [loungePending, setLoungePending] = useState(false);
+  const openLounge = async () => {
+    if (!community || loungePending) return;
+    setLoungePending(true);
+    try {
+      const lounge = await openCommunityLounge(community.id);
+      onNavigate?.('GroupChat', { groupId: lounge.groupId, groupName: lounge.name, joined: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open the community chat');
+    } finally {
+      setLoungePending(false);
     }
   };
 
@@ -177,6 +192,16 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({
                 ? 'Working…'
                 : communityMembershipAction(community.isMember, community.source)}
             </button>
+            {community.isMember ? (
+              <button
+                type="button"
+                onClick={() => void openLounge()}
+                disabled={loungePending}
+                className="mt-1 h-9 min-h-[44px] self-start rounded-lg bg-lantern-primary/10 px-4 text-sm font-semibold text-lantern-primary hover:bg-lantern-primary/20 disabled:opacity-60 sm:min-h-[36px]"
+              >
+                {loungePending ? 'Opening…' : 'Community chat'}
+              </button>
+            ) : null}
           </header>
 
           {members.length > 0 && (

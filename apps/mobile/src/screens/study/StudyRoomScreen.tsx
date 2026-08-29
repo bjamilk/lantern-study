@@ -11,7 +11,9 @@ import {
 } from '../../services/api';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../stores/authStore';
-import { studyRoomPresenceChannel } from '@lantern/shared/network';
+import { studyRoomPresenceChannel,
+  STUDY_ROOM_LIFETIME_COPY,
+} from '@lantern/shared/network';
 import { CoursePicker } from '../../components/CoursePicker';
 
 type NavigationProp = {
@@ -113,7 +115,8 @@ export function StudyRoomScreen({
         ) : !room ? (
           <View>
             <Text className="text-sm text-lantern-text-secondary mb-3">
-              Pick a course. If a room is already open tonight, you land there.
+              Pick a course. If a room is already open for it, you land there.
+              {' '}Rooms are temporary — they close on their own.
             </Text>
             <CoursePicker
               value={pickedCourseId}
@@ -154,6 +157,9 @@ export function StudyRoomScreen({
             <Text className="text-sm text-lantern-text-secondary">
               {room.topic ? `Studying ${room.topic}` : 'Course study room'}
               {liveCount > 0 ? ` · ${liveCount} live` : ''}
+            </Text>
+            <Text className="mt-1 text-[11px] text-lantern-text-tertiary">
+              {STUDY_ROOM_LIFETIME_COPY}
             </Text>
             {room.participants.map((p) => (
               <View key={p.userId} className="mt-2 rounded-lg border border-lantern-border px-3 py-2">

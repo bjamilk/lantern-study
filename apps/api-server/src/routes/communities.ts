@@ -101,6 +101,27 @@ router.get(
   })
 );
 
+// POST /api/v1/communities/:communityId/lounge — open (mint if needed) the
+// community's persistent chat and join the caller. Members only; 503 until
+// the 20260829170000 migration is applied.
+router.post(
+  '/:communityId/lounge',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getCommunitiesService(supabaseService).openLounge(
+        userId,
+        req.params.communityId
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
 // POST /api/v1/communities/:communityId/join
 router.post(
   '/:communityId/join',
