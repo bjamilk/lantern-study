@@ -1632,23 +1632,27 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             </div>
           )}
 
-          {reviewSummary.count > 1 && (
+          {(reviewSummary.count > 1 || reviewStarFilter !== null) && (
             <div className="mb-4 flex flex-wrap items-center gap-2">
-              <label htmlFor="marketplace-review-sort" className="text-xs font-medium text-lantern-text-secondary">
-                Sort by
-              </label>
-              <select
-                id="marketplace-review-sort"
-                value={reviewSort}
-                onChange={e => setReviewSort(e.target.value as ReviewSortOption)}
-                className="px-2.5 py-1.5 rounded-lg bg-lantern-surface border border-lantern-border text-lantern-text text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-              >
-                {(Object.keys(REVIEW_SORT_LABELS) as ReviewSortOption[]).map(option => (
-                  <option key={option} value={option}>
-                    {REVIEW_SORT_LABELS[option]}
-                  </option>
-                ))}
-              </select>
+              {reviewSummary.count > 1 && (
+                <>
+                  <label htmlFor="marketplace-review-sort" className="text-xs font-medium text-lantern-text-secondary">
+                    Sort by
+                  </label>
+                  <select
+                    id="marketplace-review-sort"
+                    value={reviewSort}
+                    onChange={e => setReviewSort(e.target.value as ReviewSortOption)}
+                    className="px-2.5 py-1.5 rounded-lg bg-lantern-surface border border-lantern-border text-lantern-text text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+                  >
+                    {(Object.keys(REVIEW_SORT_LABELS) as ReviewSortOption[]).map(option => (
+                      <option key={option} value={option}>
+                        {REVIEW_SORT_LABELS[option]}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
               {reviewStarFilter !== null && (
                 <button
                   type="button"
