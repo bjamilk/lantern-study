@@ -46,9 +46,42 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'marketplace-ratings-1-0-32',
+    title: 'Mobile 1.0.32 — marketplace ratings, top-rated discovery, chats column (web)',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-08-29',
+    summary:
+      'Ratings-led discovery for the goods marketplace on web and mobile: stars with review counts on browse cards and related rails, a Top rated sort and minimum-rating filter, and a ratings summary on every listing with a tappable star histogram, review sorting, Verified purchase badges and Helpful votes. On web, Chats now opens as a side column instead of collapsing inside the sidebar.',
+    details: [
+      'Per-listing rating aggregate (rating_avg / rating_count) maintained by a database trigger on reviews, backfilled for existing reviews, and exposed on browse, batch, similar and detail payloads.',
+      'Browse: sort by Top rated (best average first, unrated last) and filter to ★4/3/2/1 & up — filter panel on web, filter-sheet chips on mobile.',
+      'Listing page: average + star histogram; tapping a bar filters reviews to that star bucket. Reviews sort by Top (most helpful), Most recent, Highest or Lowest rating.',
+      'Verified purchase badge on reviews whose author completed an order, owns the digital product, or had the inquiry marked purchased by the seller — the same proofs the write gate uses.',
+      'Helpful votes on reviews (one per person, own reviews excluded); authors see "N people found this helpful".',
+      'Web chats column: expanding Chats slides out a dedicated list column beside the sidebar (the sidebar condenses to its icon rail while open); on the chat screen the column yields to the conversation list.',
+    ],
+    howToUse: [
+      'Marketplace → filters → "Customer rating" and the "Top rated" sort (web), or the Rating chips and Top rated chip in the filter sheet (mobile).',
+      'On a listing, tap a histogram bar to read only that star bucket; use the sort control above the reviews to reorder them.',
+      'Mark a review Helpful from the button under it; tap again to undo.',
+      'On web, click "Chats" in the sidebar to slide the chat list out as its own column; click again (or ✕ in its header) to retract it.',
+    ],
+    surfaces: ['mobile', 'web', 'api'],
+    adminNotes: [
+      'Requires migration 20260828160000_marketplace_ratings_and_review_votes.sql. Until it is applied everything degrades: no stars anywhere, Top rated falls back to newest, and the Helpful / Verified controls stay hidden.',
+      'Rating sort and the minimum-rating filter run through the fallback browse query; with a search term active they use ilike matching rather than full-text ranking.',
+      'Helpful counts and verified flags are computed at read time; a failed lookup omits them rather than failing the review list.',
+    ],
+    commits: ['16e05c2'],
+  },
+  {
     id: 'mobile-shell-chat-tools-1-0-31',
     title: 'Mobile 1.0.31 — chat-first shell, chat tools, lights-out dark',
-    area: 'mobile',
+    // 'mobile' is not a ProductFeatureArea; this shipped untyped because no
+    // gate typechecks this file (esbuild strips types). Chat is the release's
+    // centre of gravity.
+    area: 'chat',
     status: 'shipped',
     shippedAt: '2026-08-28',
     summary:

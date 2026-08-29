@@ -148,7 +148,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // The Study wallet now sits inside Budget as a sibling tab, the Dashboard is cut
   // back to what people use, and Chat's overflow, mute and question filters are
   // folded into single controls.
-  version: '1.0.31',
+  // 1.0.32: marketplace ratings — stars with review counts on browse cards and
+  // related rails, a Top rated sort and minimum-rating filter, and on every
+  // listing a ratings summary with a tappable star histogram, review sorting,
+  // Verified purchase badges and Helpful votes on reviews.
+  version: '1.0.32',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
