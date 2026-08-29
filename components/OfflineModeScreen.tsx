@@ -300,52 +300,52 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
         </div>
       ) : null}
 
-      <section className="mb-8">
-        <h2 className="text-lg font-semibold mb-3 text-lantern-text">Sync Status</h2>
-        <div className="bg-lantern-surface border border-lantern-border p-4 rounded-lantern-xl shadow-lantern space-y-4">
-          {pendingSyncResultsCount > 0 ? (
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
-              <p className="text-lantern-accent mb-0">
-                {syncCopy.pendingSync(pendingSyncResultsCount)} (test results)
+      {/* No standing "Sync Status" section (founder decision 2026-08-29: the
+          sync badge suffices). Pending work still surfaces a compact bar,
+          because a stuck auto-sync needs a visible retry. */}
+      {totalPendingSync > 0 && (
+        <section className="mb-8 shrink-0">
+          <div className="bg-lantern-surface border border-lantern-border p-4 rounded-lantern-xl shadow-lantern space-y-4">
+            {pendingSyncResultsCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-lantern-accent mb-0">
+                  {syncCopy.pendingSync(pendingSyncResultsCount)} (test results)
+                </p>
+                <button
+                  type="button"
+                  onClick={onSyncPendingResults}
+                  disabled={!isOnline}
+                  className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  <ArrowPathIcon className="w-5 h-5 mr-2" />
+                  Sync Test Results
+                </button>
+              </div>
+            )}
+            {pendingFlashcardReviewsCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-lantern-accent mb-0">
+                  {pendingFlashcardReviewsCount} flashcard review{pendingFlashcardReviewsCount !== 1 ? 's' : ''} waiting to sync
+                </p>
+                <button
+                  type="button"
+                  onClick={onSyncFlashcardReviews}
+                  disabled={!isOnline}
+                  className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  <ArrowPathIcon className="w-5 h-5 mr-2" />
+                  Sync Flashcard Reviews
+                </button>
+              </div>
+            )}
+            {!isOnline && (
+              <p className="text-xs text-lantern-text-secondary">
+                Connect to the internet to sync your pending activity.
               </p>
-              <button
-                type="button"
-                onClick={onSyncPendingResults}
-                disabled={!isOnline}
-                className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              >
-                <ArrowPathIcon className="w-5 h-5 mr-2" />
-                Sync Test Results
-              </button>
-            </div>
-          ) : (
-            <p className="text-lantern-success">All offline test results are synced!</p>
-          )}
-          {pendingFlashcardReviewsCount > 0 ? (
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
-              <p className="text-lantern-accent mb-0">
-                {pendingFlashcardReviewsCount} flashcard review{pendingFlashcardReviewsCount !== 1 ? 's' : ''} waiting to sync
-              </p>
-              <button
-                type="button"
-                onClick={onSyncFlashcardReviews}
-                disabled={!isOnline}
-                className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              >
-                <ArrowPathIcon className="w-5 h-5 mr-2" />
-                Sync Flashcard Reviews
-              </button>
-            </div>
-          ) : (
-            <p className="text-lantern-success">All flashcard reviews are synced!</p>
-          )}
-          {!isOnline && totalPendingSync > 0 && (
-            <p className="text-xs text-lantern-text-secondary">
-              Connect to the internet to sync your pending activity.
-            </p>
-          )}
-        </div>
-      </section>
+            )}
+          </div>
+        </section>
+      )}
 
       {visibleDecks.length > 0 && (
         <section className="mb-8">
