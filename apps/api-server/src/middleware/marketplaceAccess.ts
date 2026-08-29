@@ -41,6 +41,16 @@ export function isMarketplaceAllowedUser(userId?: string | null): boolean {
 }
 
 /**
+ * Routes on the marketplace mount that are REFERENCE DATA, not commerce, and
+ * that other parts of the app depend on. The institutions list behind the
+ * academic-profile setup (web + mobile), the settings campus picker and the
+ * jobs create screen all read GET /marketplace/campuses — gating it broke
+ * "Couldn't load institutions" everywhere on 2026-08-29. The pilot protects
+ * buying/selling; it must never gate shared lookups.
+ */
+const OPEN_PATHS = new Set(['/access', '/campuses']);
+
+/**
  * Mounted on /api/v1/marketplace after optionalAuthMiddleware (which is what
  * populates req.user when a credential is present). Express strips the mount
  * prefix, so req.path here is e.g. '/listings' or '/access'.
@@ -50,7 +60,10 @@ export function marketplaceAccessGate(
   res: Response,
   next: NextFunction
 ): void {
-  if (req.path === '/access' || req.path === '/access/') {
+  const path = req.path.length > 1 && req.path.endsWith('/')
+    ? req.path.slice(0, -1)
+    : req.path;
+  if (OPEN_PATHS.has(path)) {
     next();
     return;
   }

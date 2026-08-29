@@ -71,6 +71,15 @@ describe('marketplace private-pilot gate', () => {
     expect(run('/access/').nexted).toBe(true);
   });
 
+  it('keeps reference data open: the institutions list feeds academic setup', () => {
+    // GET /marketplace/campuses backs the institution pickers in the
+    // academic-profile setup (web + mobile), settings and the jobs create
+    // screen — gating it broke "Couldn't load institutions" app-wide.
+    expect(run('/campuses').nexted).toBe(true);
+    expect(run('/campuses/').nexted).toBe(true);
+    expect(run('/campuses', 'stranger-1').nexted).toBe(true);
+  });
+
   it('MARKETPLACE_PUBLIC=true reopens the marketplace for everyone', () => {
     process.env.MARKETPLACE_PUBLIC = 'true';
     expect(marketplaceIsPublic()).toBe(true);
