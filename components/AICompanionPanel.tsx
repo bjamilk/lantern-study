@@ -536,13 +536,6 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, isBusy, dictationBusy, sendMessageStreaming, enrichedContext]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   const handleClear = async () => {
     setShowClearConfirm(false);
     await clearHistory();
@@ -925,7 +918,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
+              // Enter inserts a newline on purpose — only the Send button sends.
               placeholder={
                 isRecording
                   ? 'Listening…'

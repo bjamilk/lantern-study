@@ -769,7 +769,7 @@ export default function TestScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#000000',
   },
   header: {
     paddingHorizontal: 20,
@@ -803,7 +803,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
     borderRadius: 12,
     padding: 4,
   },
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
   testCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -874,7 +874,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   attemptCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -992,7 +992,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1028,7 +1028,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     marginBottom: 24,
     paddingVertical: 16,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#000000',
     borderRadius: 16,
   },
   modalStatItem: {
@@ -1095,7 +1095,7 @@ const styles = StyleSheet.create({
   },
   modeOption: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#000000',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
@@ -1105,13 +1105,13 @@ const styles = StyleSheet.create({
   },
   modeOptionActive: {
     borderColor: '#6366f1',
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
   },
   modeIconContainer: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,

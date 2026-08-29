@@ -426,10 +426,8 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
         return;
       }
     }
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      void handleSend();
-    }
+    // Enter inserts a newline on purpose (users compose multi-line messages);
+    // only the Send button sends. Enter still picks a mention above.
   };
 
   const busy = isAIThinking || isSending || isUploadingAudio || isUploadingImage;

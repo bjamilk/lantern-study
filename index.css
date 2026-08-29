@@ -61,10 +61,10 @@
 
 .dark {
   color-scheme: dark;
-  --color-background: #0b1220;
-  --color-background-secondary: #151e2e;
-  --color-surface: #151e2e;
-  --color-surface-secondary: #1e293b;
+  --color-background: #000000;
+  --color-background-secondary: #16181c;
+  --color-surface: #101214;
+  --color-surface-secondary: #1a1d21;
   --color-text: #f8fafc;
   --color-text-secondary: #94a3b8;
   /* UI-01: raised for WCAG AA (≥4.5:1) on dark surfaces */
@@ -77,7 +77,7 @@
   --color-primary-background: #6366f120;
   --color-accent: #fbbf24;
   --color-accent-background: #f59e0b20;
-  --color-border: #243044;
+  --color-border: #2f3336;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.45);
@@ -90,10 +90,8 @@
   --color-feature-offline: #fbbf24;
   --color-feature-tests: #38bdf8;
   --color-feature-budget: #2dd4bf;
-  --app-atmosphere:
-    radial-gradient(1000px 520px at 10% -15%, rgba(99, 102, 241, 0.18), transparent 55%),
-    radial-gradient(800px 420px at 90% 0%, rgba(251, 191, 36, 0.08), transparent 50%),
-    linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+  /* Lights-out dark is flat black, X-style — no tinted atmosphere. */
+  --app-atmosphere: linear-gradient(180deg, #000000 0%, #000000 100%);
 }
 
 /* Dark-mode primary (#818cf8) and accent (#fbbf24) are bright fills — white

@@ -1738,7 +1738,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#000000',
   },
   scrollView: {
     flex: 1,
@@ -1784,7 +1784,7 @@ const styles = StyleSheet.create({
   profileSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
     padding: 16,
     borderRadius: 16,
     marginBottom: 24,
@@ -1847,7 +1847,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   sectionContent: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#1a1d21',
     borderRadius: 16,
     overflow: 'hidden',
   },
