@@ -39,7 +39,7 @@ export function computeMarketplaceReviewSummary(
   for (const review of reviews ?? []) {
     const rating = clampRating(review?.rating);
     if (rating === null) continue;
-    histogram[rating - 1] += 1;
+    histogram[rating - 1] = (histogram[rating - 1] ?? 0) + 1;
     total += rating;
     count += 1;
   }

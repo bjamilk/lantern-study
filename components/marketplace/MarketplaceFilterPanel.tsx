@@ -20,6 +20,8 @@ export interface MarketplaceFilterPanelProps {
   campusIdFilter: string;
   locationFilter: string;
   condition: string;
+  /** '' = any rating; otherwise '4' | '3' | '2' | '1' (avg rating at least N). */
+  minRating: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
   campuses: MarketplaceCampus[];
@@ -29,6 +31,7 @@ export interface MarketplaceFilterPanelProps {
   onCampusChange: (v: string) => void;
   onLocationChange: (v: string) => void;
   onConditionChange: (v: string) => void;
+  onMinRatingChange: (v: string) => void;
   onSortChange: (sortBy: string, sortOrder: 'asc' | 'desc') => void;
   onClearFilters: () => void;
   variant?: 'hero' | 'card';
@@ -40,6 +43,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
   campusIdFilter,
   locationFilter,
   condition,
+  minRating,
   sortBy,
   sortOrder,
   campuses,
@@ -49,6 +53,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
   onCampusChange,
   onLocationChange,
   onConditionChange,
+  onMinRatingChange,
   onSortChange,
   onClearFilters,
   variant = 'card',
@@ -136,6 +141,22 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
         </div>
 
         <div>
+          <label htmlFor="marketplace-filter-min-rating" className={labelClass}>Customer rating</label>
+          <select
+            id="marketplace-filter-min-rating"
+            value={minRating}
+            onChange={e => onMinRatingChange(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Any rating</option>
+            <option value="4">★ 4 &amp; up</option>
+            <option value="3">★ 3 &amp; up</option>
+            <option value="2">★ 2 &amp; up</option>
+            <option value="1">★ 1 &amp; up</option>
+          </select>
+        </div>
+
+        <div>
           <label htmlFor="marketplace-filter-sort" className={labelClass}>Sort by</label>
           <select
             id="marketplace-filter-sort"
@@ -147,6 +168,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
             className={inputClass}
           >
             <option value="trending:desc">Trending</option>
+            <option value="rating:desc">Top rated</option>
             <option value="created_at:desc">Newest first</option>
             <option value="created_at:asc">Oldest first</option>
             <option value="price:asc">Price: low to high</option>

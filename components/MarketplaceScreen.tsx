@@ -140,6 +140,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [locationFilter, setLocationFilter] = useState<string>('');
   const [campusIdFilter, setCampusIdFilter] = useState<string>('');
   const [conditionFilter, setConditionFilter] = useState<string>('');
+  const [minRatingFilter, setMinRatingFilter] = useState<string>('');
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const ITEMS_PER_PAGE = 20;
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -219,7 +220,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     if (!guestMode) {
       loadFavorites();
     }
-  }, [activeTab, searchTerm, selectedCategory, browseNodeId, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter, guestMode, refreshKey]);
+  }, [activeTab, searchTerm, selectedCategory, browseNodeId, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter, minRatingFilter, guestMode, refreshKey]);
 
   useEffect(() => {
     if (activeTab !== 'shops') return;
@@ -393,6 +394,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setLocationFilter(restored.locationFilter);
     setCampusIdFilter(restored.campusIdFilter);
     setConditionFilter(restored.condition);
+    // Saved searches predate the rating filter; reset it so the restored
+    // search means exactly what it did when saved.
+    setMinRatingFilter('');
     setSortBy(restored.sortBy);
     setSortOrder(restored.sortOrder);
     setBrowseNodeId('');
@@ -446,12 +450,10 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       if (maxPrice) filters.maxPrice = parseFloat(maxPrice);
       if (locationFilter) filters.location = locationFilter;
       if (campusIdFilter) filters.campus_id = campusIdFilter;
-      // Server-side condition filter: sent so the board filters by condition the
-      // moment the listings API supports it. See note in report — the route,
-      // service, RPC, and compact card payload do NOT yet carry condition, so
-      // this param is currently a harmless no-op (unknown query params are
-      // ignored) rather than a working filter.
+      // Condition and rating filters run server-side through the fallback
+      // query path (see getMarketplaceListings in the API service).
       if (conditionFilter) filters.condition = conditionFilter;
+      if (minRatingFilter) filters.minRating = parseInt(minRatingFilter, 10);
       filters.country_code = 'NG';
       filters.responseProfile = 'compact';
 
@@ -563,13 +565,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setLocationFilter('');
     setCampusIdFilter('');
     setConditionFilter('');
+    setMinRatingFilter('');
     setSortBy('trending');
     setSortOrder('desc');
     setShowFilters(false);
   };
 
   const activeFilterCount =
-    [minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter].filter(Boolean).length +
+    [minPrice, maxPrice, locationFilter, campusIdFilter, conditionFilter, minRatingFilter].filter(Boolean).length +
     (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
 
   const handleCreateListing = () => {
@@ -1075,6 +1078,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             campusIdFilter={campusIdFilter}
             locationFilter={locationFilter}
             condition={conditionFilter}
+            minRating={minRatingFilter}
             sortBy={sortBy}
             sortOrder={sortOrder}
             campuses={campuses}
@@ -1084,6 +1088,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onCampusChange={setCampusIdFilter}
             onLocationChange={setLocationFilter}
             onConditionChange={setConditionFilter}
+            onMinRatingChange={setMinRatingFilter}
             onSortChange={(field, order) => {
               setSortBy(field);
               setSortOrder(order);

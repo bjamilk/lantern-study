@@ -4,6 +4,7 @@ import {
   fetchMarketplaceListingFull,
   fetchNegotiationHistory,
   addMarketplaceReview,
+  setMarketplaceReviewHelpful,
   createInquiry,
   addToFavorites,
   removeFromFavorites,
@@ -43,6 +44,12 @@ import {
   listingBreadcrumb,
   listingSpecRows,
   listingTypeLabel,
+  computeMarketplaceReviewSummary,
+  reviewHistogramPercentages,
+  sortMarketplaceReviews,
+  filterReviewsByStar,
+  REVIEW_SORT_LABELS,
+  type ReviewSortOption,
 } from '@lantern/shared/marketplace';
 import {
   generateListingLink,
@@ -81,7 +88,8 @@ import {
   CurrencyDollarIcon,
   PencilSquareIcon,
   ClipboardDocumentListIcon,
-  CheckBadgeIcon
+  CheckBadgeIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon, HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
 
@@ -105,6 +113,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 }) => {
   const [listing, setListing] = useState<MarketplaceListing | null>(null);
   const [reviews, setReviews] = useState<MarketplaceReview[]>([]);
+  // 'top' sorts by helpful votes with a recency tiebreak, so before any votes
+  // exist (or pre-migration, when counts are absent) it reads as most-recent.
+  const [reviewSort, setReviewSort] = useState<ReviewSortOption>('top');
+  const [reviewStarFilter, setReviewStarFilter] = useState<number | null>(null);
+  const [votingReviewId, setVotingReviewId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [showReportForm, setShowReportForm] = useState(false);
@@ -363,12 +376,46 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
     try {
       const newReview = await addMarketplaceReview(listing.id, reviewForm);
-      setReviews(prev => [newReview, ...prev]);
+      // Posting again edits the existing review server-side (upsert), so
+      // replace rather than duplicate when the reviewer already has one.
+      setReviews(prev => {
+        const rest = prev.filter(r => r.reviewer_id !== newReview.reviewer_id);
+        return [newReview, ...rest];
+      });
       setReviewForm({ rating: 5, comment: '' });
       setShowReviewForm(false);
     } catch (error) {
       console.error('Error adding review:', error);
       showToast('Failed to add review. Please try again.', 'error');
+    }
+  };
+
+  const handleToggleHelpful = async (review: MarketplaceReview) => {
+    if (!listing || requireAuth()) return;
+    if (votingReviewId) return;
+    setVotingReviewId(review.id);
+    try {
+      const result = await setMarketplaceReviewHelpful(
+        listing.id,
+        review.id,
+        !review.viewerMarkedHelpful,
+      );
+      setReviews(prev =>
+        prev.map(r =>
+          r.id === review.id
+            ? {
+                ...r,
+                helpfulCount: result.helpfulCount,
+                viewerMarkedHelpful: result.viewerMarkedHelpful,
+              }
+            : r,
+        ),
+      );
+    } catch (error) {
+      console.error('Error updating review vote:', error);
+      showToast('Could not record that. Please try again.', 'error');
+    } finally {
+      setVotingReviewId(null);
     }
   };
 
@@ -601,9 +648,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     );
   }
 
-  const averageRating = reviews.length > 0
-    ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
-    : 0;
+  const reviewSummary = computeMarketplaceReviewSummary(reviews);
+  const averageRating = reviewSummary.average ?? 0;
+  const histogramPct = reviewHistogramPercentages(reviewSummary);
+  const displayReviews = sortMarketplaceReviews(
+    filterReviewsByStar(reviews, reviewStarFilter),
+    reviewSort,
+  );
 
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
   const isDigital = isDigitalListingKind(listing.listing_kind);
@@ -1509,7 +1560,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           <div className="flex items-center justify-between mb-4 sm:mb-5 gap-3">
             <div>
               <h2 className="text-base sm:text-lg font-bold text-lantern-text">Reviews</h2>
-              <p className="text-sm text-lantern-text-secondary">{reviews.length} review{reviews.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-lantern-text-secondary">{reviewSummary.count} review{reviewSummary.count !== 1 ? 's' : ''}</p>
             </div>
             {/* Verified purchases only — the API enforces the same rule. */}
             {canReview ? (
@@ -1527,6 +1578,90 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             ) : null}
           </div>
 
+          {reviewSummary.count > 0 && (
+            <div className="mb-5 grid gap-4 sm:grid-cols-[minmax(0,11rem)_1fr] items-start">
+              <div className="flex flex-col items-start gap-1">
+                <p className="text-3xl font-bold text-lantern-text leading-none">
+                  {averageRating.toFixed(1)}
+                  <span className="text-base font-medium text-lantern-text-tertiary"> / 5</span>
+                </p>
+                <div className="flex items-center gap-0.5" aria-hidden>
+                  {[...Array(5)].map((_, i) => (
+                    <StarSolidIcon
+                      key={i}
+                      className={`w-4 h-4 ${
+                        i < Math.round(averageRating) ? 'text-amber-400' : 'text-lantern-border'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className="text-xs text-lantern-text-tertiary">
+                  {reviewSummary.count} rating{reviewSummary.count !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <div className="space-y-1.5" role="group" aria-label="Filter reviews by star rating">
+                {[5, 4, 3, 2, 1].map(star => {
+                  const bucketCount = reviewSummary.histogram[star - 1] ?? 0;
+                  const pct = histogramPct[star - 1] ?? 0;
+                  const active = reviewStarFilter === star;
+                  const clickable = bucketCount > 0 || active;
+                  return (
+                    <button
+                      key={star}
+                      type="button"
+                      disabled={!clickable}
+                      onClick={() => setReviewStarFilter(active ? null : star)}
+                      aria-pressed={active}
+                      aria-label={`${star} star: ${bucketCount} review${bucketCount !== 1 ? 's' : ''} (${pct}%)`}
+                      className={`w-full flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors ${
+                        clickable ? 'hover:bg-lantern-background-secondary cursor-pointer' : 'opacity-40 cursor-default'
+                      } ${active ? 'bg-lantern-primary/10' : ''}`}
+                    >
+                      <span className="w-10 shrink-0 text-left text-xs text-lantern-text-secondary">{star} star</span>
+                      <span className="flex-1 h-2.5 rounded-full bg-lantern-background-secondary overflow-hidden">
+                        <span
+                          className={`block h-full rounded-full ${active ? 'bg-lantern-primary' : 'bg-amber-400'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </span>
+                      <span className="w-9 shrink-0 text-right text-xs tabular-nums text-lantern-text-tertiary">{pct}%</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {reviewSummary.count > 1 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <label htmlFor="marketplace-review-sort" className="text-xs font-medium text-lantern-text-secondary">
+                Sort by
+              </label>
+              <select
+                id="marketplace-review-sort"
+                value={reviewSort}
+                onChange={e => setReviewSort(e.target.value as ReviewSortOption)}
+                className="px-2.5 py-1.5 rounded-lg bg-lantern-surface border border-lantern-border text-lantern-text text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+              >
+                {(Object.keys(REVIEW_SORT_LABELS) as ReviewSortOption[]).map(option => (
+                  <option key={option} value={option}>
+                    {REVIEW_SORT_LABELS[option]}
+                  </option>
+                ))}
+              </select>
+              {reviewStarFilter !== null && (
+                <button
+                  type="button"
+                  onClick={() => setReviewStarFilter(null)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-lantern-primary/10 text-lantern-primary text-xs font-medium hover:bg-lantern-primary/20 transition-colors"
+                >
+                  {reviewStarFilter}-star only
+                  <XMarkIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
           {reviews.length === 0 ? (
             <div className="flex flex-col items-center py-10">
               <div className="w-14 h-14 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-2xl flex items-center justify-center mb-3">
@@ -1536,9 +1671,20 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 {canReview ? 'No reviews yet. Be the first to leave one!' : 'No reviews yet.'}
               </p>
             </div>
+          ) : displayReviews.length === 0 ? (
+            <p className="py-6 text-center text-sm text-lantern-text-secondary">
+              No {reviewStarFilter}-star reviews.{' '}
+              <button
+                type="button"
+                onClick={() => setReviewStarFilter(null)}
+                className="text-lantern-primary font-medium hover:underline"
+              >
+                Show all reviews
+              </button>
+            </p>
           ) : (
             <div className="space-y-3">
-              {reviews.map(review => (
+              {displayReviews.map(review => (
                 <div key={review.id} className="border-b border-lantern-border pb-3 last:border-b-0 last:pb-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
@@ -1546,8 +1692,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         <UserIcon className="w-4 h-4 text-lantern-primary" />
                       </div>
                       <div>
-                        <p className="font-semibold text-sm text-lantern-text">
+                        <p className="font-semibold text-sm text-lantern-text flex items-center gap-1.5 flex-wrap">
                           {review.reviewer?.name || review.reviewer?.username || 'User'}
+                          {review.verifiedPurchase && (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                              <CheckBadgeIcon className="w-3 h-3" aria-hidden />
+                              Verified purchase
+                            </span>
+                          )}
                         </p>
                         <div className="flex items-center gap-0.5">
                           {[...Array(5)].map((_, i) => (
@@ -1569,6 +1721,31 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     <p className="text-sm text-lantern-text-secondary mt-2 ml-[42px]">
                       {review.comment}
                     </p>
+                  )}
+                  {typeof review.helpfulCount === 'number' && (
+                    <div className="mt-2 ml-[42px]">
+                      {review.reviewer_id === currentUser?.id ? (
+                        review.helpfulCount > 0 ? (
+                          <span className="text-xs text-lantern-text-tertiary">
+                            {review.helpfulCount} {review.helpfulCount === 1 ? 'person' : 'people'} found this helpful
+                          </span>
+                        ) : null
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleHelpful(review)}
+                          disabled={votingReviewId === review.id}
+                          aria-pressed={!!review.viewerMarkedHelpful}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-60 ${
+                            review.viewerMarkedHelpful
+                              ? 'border-lantern-primary bg-lantern-primary/10 text-lantern-primary font-medium'
+                              : 'border-lantern-border text-lantern-text-secondary hover:border-lantern-primary/40 hover:text-lantern-text'
+                          }`}
+                        >
+                          Helpful{review.helpfulCount > 0 ? ` (${review.helpfulCount})` : ''}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
@@ -1599,6 +1776,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   <div className="p-2.5">
                     <p className="text-xs font-semibold text-lantern-text line-clamp-1 group-hover:text-lantern-primary dark:group-hover:text-lantern-primary-light transition-colors">{item.title}</p>
                     <p className="text-sm font-bold text-lantern-primary mt-0.5">{item.price ? `₦${item.price.toLocaleString()}` : 'Free'}</p>
+                    {(item.rating_count ?? 0) > 0 && item.rating_avg != null ? (
+                      <p className="mt-0.5 flex items-center gap-0.5 text-[11px] text-lantern-text-tertiary">
+                        <StarSolidIcon className="w-3 h-3 text-amber-400" aria-hidden />
+                        {Number(item.rating_avg).toFixed(1)} ({item.rating_count})
+                      </p>
+                    ) : null}
                   </div>
                 </button>
               ))}
