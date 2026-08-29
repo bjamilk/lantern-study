@@ -143,8 +143,15 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isLoadingConversations: false,
 
   open: () => set({ isOpen: true }),
-  close: () => set({ isOpen: false }),
-  toggle: () => set((s) => ({ isOpen: !s.isOpen })),
+  /**
+   * A queued send belongs to the open that queued it. Leaving `pendingMessage`
+   * set on close meant the next open auto-fired it the moment history was
+   * already loaded — spending an AI credit while the panel was still loading,
+   * without the user typing anything.
+   */
+  close: () => set({ isOpen: false, pendingMessage: null }),
+  toggle: () =>
+    set((s) => (s.isOpen ? { isOpen: false, pendingMessage: null } : { isOpen: true })),
   clearError: () => set({ error: null }),
   failedMessage: null,
   consumeFailedMessage: () => {

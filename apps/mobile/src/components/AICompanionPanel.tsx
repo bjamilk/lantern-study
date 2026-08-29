@@ -127,6 +127,19 @@ interface Props {
   context?: CompanionUserContext;
 }
 
+/**
+ * Android 15 (API 35) stopped honouring `android:windowSoftInputMode="adjustResize"`
+ * for apps targeting SDK 35+ — and this app targets 36 — so the window no longer
+ * shrinks when the keyboard opens and a KeyboardAvoidingView with no `behavior`
+ * (the pattern used everywhere else in this app) does nothing: the keyboard just
+ * covers the composer. Below API 35 the window still resizes on its own, and
+ * adding padding on top of that would lift the composer twice as far.
+ */
+const COMPOSER_KEYBOARD_BEHAVIOR: 'padding' | undefined =
+  Platform.OS === 'ios' || (Platform.OS === 'android' && Number(Platform.Version) >= 35)
+    ? 'padding'
+    : undefined;
+
 export function AICompanionPanel({ context }: Props) {
   const theme = useAppTheme();
   const user = useAuthStore(s => s.user);
@@ -537,6 +550,7 @@ export function AICompanionPanel({ context }: Props) {
         className={`flex-1 ${theme === 'dark' ? 'bg-lantern-background' : 'bg-lantern-surface'}`}
         edges={['top', 'bottom']}
       >
+        <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
           <Ionicons name="sparkles" size={22} color="#c45c26" />
           <Text className="flex-1 ml-2 text-lg font-bold text-lantern-text dark:text-white">Lantern AI</Text>
@@ -762,148 +776,147 @@ export function AICompanionPanel({ context }: Props) {
         ) : null}
 
         {!showHistoryList && (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View className="px-4 py-3 border-t border-lantern-border">
-            {activeNoteContext ? (
-              <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
-                <Ionicons name="document-text-outline" size={14} color="#c45c26" />
-                <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary" numberOfLines={1}>
-                  {activeNoteContext.title}
-                </Text>
-                <Pressable
-                  onPress={() => {
-                    void setActiveNoteContext(null);
-                    trackAIAnalyticsEvent('companion_note_context_cleared');
-                  }}
-                  hitSlop={8}
-                  accessibilityLabel="Remove note context"
-                >
-                  <Ionicons name="close" size={14} color="#c45c26" />
-                </Pressable>
-              </View>
-            ) : null}
-
-            {showNotePicker ? (
-              <View className="mb-2 max-h-52 rounded-xl border border-lantern-border bg-lantern-background-secondary overflow-hidden">
-                <View className="flex-row items-center px-3 py-2 border-b border-lantern-border">
-                  <TextInput
-                    value={noteSearch}
-                    onChangeText={setNoteSearch}
-                    placeholder="Search notes…"
-                    placeholderTextColor="#94a3b8"
-                    className="flex-1 text-sm text-lantern-text dark:text-white"
-                    autoFocus
-                  />
-                  <Pressable
-                    onPress={() => {
-                      setShowNotePicker(false);
-                      setNoteSearch('');
-                    }}
-                    className="pl-2"
-                  >
-                    <Text className="text-xs text-lantern-text-secondary">Close</Text>
-                  </Pressable>
-                </View>
-                {notesLoading && notes.length === 0 ? (
-                  <View className="py-4 items-center">
-                    <ActivityIndicator color="#6366f1" />
-                  </View>
-                ) : (
-                  <FlatList
-                    data={filteredNotes}
-                    keyExtractor={(item) => item.id}
-                    keyboardShouldPersistTaps="handled"
-                    style={{ maxHeight: 160 }}
-                    ListEmptyComponent={
-                      <Text className="px-3 py-4 text-sm text-center text-lantern-text-secondary">
-                        {noteSearch.trim() ? 'No matching notes' : 'No notes yet'}
-                      </Text>
-                    }
-                    renderItem={({ item }) => (
-                      <Pressable
-                        onPress={() => void handleSelectNote(item)}
-                        className={`px-3 py-2.5 border-b border-lantern-border/50 ${
-                          activeNoteContext?.id === item.id ? 'bg-lantern-primary/10' : ''
-                        }`}
-                      >
-                        <Text className="text-sm text-lantern-text dark:text-white" numberOfLines={1}>
-                          {(item.title || '').trim() || 'Untitled note'}
-                        </Text>
-                      </Pressable>
-                    )}
-                  />
-                )}
-              </View>
-            ) : null}
-
-            <View className="flex-row items-end gap-2">
-              <Pressable
-                onPress={() => setShowNotePicker((v) => !v)}
-                disabled={isBusy}
-                accessibilityRole="button"
-                accessibilityLabel="Attach a note as context"
-                className={`h-11 w-11 items-center justify-center rounded-full ${
-                  showNotePicker || activeNoteContext
-                    ? 'bg-lantern-primary-background'
-                    : 'bg-lantern-background-secondary'
-                } ${isBusy ? 'opacity-40' : ''}`}
-              >
-                <Ionicons name="add" size={22} color="#6366f1" />
-              </Pressable>
+        <View className="px-4 py-3 border-t border-lantern-border">
+          {activeNoteContext ? (
+            <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
+              <Ionicons name="document-text-outline" size={14} color="#c45c26" />
+              <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary" numberOfLines={1}>
+                {activeNoteContext.title}
+              </Text>
               <Pressable
                 onPress={() => {
-                  if (isRecording) void finishDictation();
-                  else void startDictation();
+                  void setActiveNoteContext(null);
+                  trackAIAnalyticsEvent('companion_note_context_cleared');
                 }}
-                disabled={isBusy || isTranscribing}
-                accessibilityRole="button"
-                accessibilityLabel={isRecording ? 'Stop dictation' : 'Dictate with microphone'}
-                accessibilityState={{ disabled: isBusy || isTranscribing, selected: isRecording }}
-                className={`h-11 w-11 items-center justify-center rounded-full ${
-                  isRecording ? 'bg-red-500' : 'bg-lantern-background-secondary'
-                } ${(isBusy || isTranscribing) ? 'opacity-40' : ''}`}
+                hitSlop={8}
+                accessibilityLabel="Remove note context"
               >
-                <Ionicons
-                  name={isRecording ? 'stop' : 'mic'}
-                  size={20}
-                  color={isRecording ? '#fff' : '#6366f1'}
-                />
+                <Ionicons name="close" size={14} color="#c45c26" />
               </Pressable>
-              <TextInput
-                value={input}
-                onChangeText={setInput}
-                placeholder={
-                  isRecording
-                    ? 'Listening…'
-                    : isTranscribing
-                      ? 'Transcribing…'
-                      : activeNoteContext
-                        ? `Ask about this note…`
-                        : 'Ask Lantern AI...'
-                }
-                placeholderTextColor="#94a3b8"
-                multiline
-                editable={!dictationBusy}
-                className="flex-1 max-h-24 bg-lantern-background-secondary rounded-2xl px-4 py-3 text-lantern-text dark:text-white"
-              />
-              <Button
-                size="sm"
-                disabled={!input.trim() || isBusy || dictationBusy}
-                onPress={() => void handleSend()}
-              >
-                Send
-              </Button>
             </View>
-            {(isRecording || isTranscribing) && (
-              <Text className="mt-2 text-xs text-center text-lantern-text-secondary">
-                {isRecording
-                  ? `Listening… ${recordingSeconds}s — tap stop when done`
-                  : 'Converting speech to text…'}
-              </Text>
-            )}
+          ) : null}
+
+          {showNotePicker ? (
+            <View className="mb-2 max-h-52 rounded-xl border border-lantern-border bg-lantern-background-secondary overflow-hidden">
+              <View className="flex-row items-center px-3 py-2 border-b border-lantern-border">
+                <TextInput
+                  value={noteSearch}
+                  onChangeText={setNoteSearch}
+                  placeholder="Search notes…"
+                  placeholderTextColor="#94a3b8"
+                  className="flex-1 text-sm text-lantern-text dark:text-white"
+                  autoFocus
+                />
+                <Pressable
+                  onPress={() => {
+                    setShowNotePicker(false);
+                    setNoteSearch('');
+                  }}
+                  className="pl-2"
+                >
+                  <Text className="text-xs text-lantern-text-secondary">Close</Text>
+                </Pressable>
+              </View>
+              {notesLoading && notes.length === 0 ? (
+                <View className="py-4 items-center">
+                  <ActivityIndicator color="#6366f1" />
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredNotes}
+                  keyExtractor={(item) => item.id}
+                  keyboardShouldPersistTaps="handled"
+                  style={{ maxHeight: 160 }}
+                  ListEmptyComponent={
+                    <Text className="px-3 py-4 text-sm text-center text-lantern-text-secondary">
+                      {noteSearch.trim() ? 'No matching notes' : 'No notes yet'}
+                    </Text>
+                  }
+                  renderItem={({ item }) => (
+                    <Pressable
+                      onPress={() => void handleSelectNote(item)}
+                      className={`px-3 py-2.5 border-b border-lantern-border/50 ${
+                        activeNoteContext?.id === item.id ? 'bg-lantern-primary/10' : ''
+                      }`}
+                    >
+                      <Text className="text-sm text-lantern-text dark:text-white" numberOfLines={1}>
+                        {(item.title || '').trim() || 'Untitled note'}
+                      </Text>
+                    </Pressable>
+                  )}
+                />
+              )}
+            </View>
+          ) : null}
+
+          <View className="flex-row items-end gap-2">
+            <Pressable
+              onPress={() => setShowNotePicker((v) => !v)}
+              disabled={isBusy}
+              accessibilityRole="button"
+              accessibilityLabel="Attach a note as context"
+              className={`h-11 w-11 items-center justify-center rounded-full ${
+                showNotePicker || activeNoteContext
+                  ? 'bg-lantern-primary-background'
+                  : 'bg-lantern-background-secondary'
+              } ${isBusy ? 'opacity-40' : ''}`}
+            >
+              <Ionicons name="add" size={22} color="#6366f1" />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                if (isRecording) void finishDictation();
+                else void startDictation();
+              }}
+              disabled={isBusy || isTranscribing}
+              accessibilityRole="button"
+              accessibilityLabel={isRecording ? 'Stop dictation' : 'Dictate with microphone'}
+              accessibilityState={{ disabled: isBusy || isTranscribing, selected: isRecording }}
+              className={`h-11 w-11 items-center justify-center rounded-full ${
+                isRecording ? 'bg-red-500' : 'bg-lantern-background-secondary'
+              } ${(isBusy || isTranscribing) ? 'opacity-40' : ''}`}
+            >
+              <Ionicons
+                name={isRecording ? 'stop' : 'mic'}
+                size={20}
+                color={isRecording ? '#fff' : '#6366f1'}
+              />
+            </Pressable>
+            <TextInput
+              value={input}
+              onChangeText={setInput}
+              placeholder={
+                isRecording
+                  ? 'Listening…'
+                  : isTranscribing
+                    ? 'Transcribing…'
+                    : activeNoteContext
+                      ? `Ask about this note…`
+                      : 'Ask Lantern AI...'
+              }
+              placeholderTextColor="#94a3b8"
+              multiline
+              editable={!dictationBusy}
+              className="flex-1 max-h-24 bg-lantern-background-secondary rounded-2xl px-4 py-3 text-lantern-text dark:text-white"
+            />
+            <Button
+              size="sm"
+              disabled={!input.trim() || isBusy || dictationBusy}
+              onPress={() => void handleSend()}
+            >
+              Send
+            </Button>
           </View>
-        </KeyboardAvoidingView>
+          {(isRecording || isTranscribing) && (
+            <Text className="mt-2 text-xs text-center text-lantern-text-secondary">
+              {isRecording
+                ? `Listening… ${recordingSeconds}s — tap stop when done`
+                : 'Converting speech to text…'}
+            </Text>
+          )}
+        </View>
         )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
