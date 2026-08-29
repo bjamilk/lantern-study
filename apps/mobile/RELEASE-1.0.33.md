@@ -11,5 +11,9 @@ Know where you stand, from day one.
 - Readiness updates as you study: tests and flashcard reviews both move it.
 - The marketplace is in a **private pilot** for now — a clear note explains
   this instead of an error. Everything else in Lantern stays open.
-- Fixed: the academic-profile setup sheet no longer hides its Continue /
-  Skip buttons under the Android system bars.
+- Fixed across the whole app: sheets, modals and bottom bars no longer hide
+  their buttons under the Android status or navigation bars (40 screens and
+  sheets adjusted), and typing no longer hides fields behind the keyboard on
+  Android 15+.
+- Back buttons are now real buttons: bigger, visible, and present on every
+  screen that needed one (Tests, Flashcards, Notes and Discover included).

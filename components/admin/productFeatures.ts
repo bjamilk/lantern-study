@@ -59,6 +59,8 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'Web: Exam readiness card on the Dashboard with expandable per-topic breakdowns and the class signal. Mobile: matching Dashboard card opening the full Mastery screen (newly reachable), which focuses on a single course when opened from a course row.',
       'Marketplace private pilot: the API 403s non-allowlisted accounts on every marketplace route; web and mobile render a private-pilot explanation instead of broken screens; the mobile Discover icon routes non-pilot accounts to the Discover hub.',
       'Academic-profile setup modal: header and footer padded by real safe-area insets on Android 15+ edge-to-edge; keyboard behavior fixed for API 35+.',
+      'App-wide edge-to-edge sweep: 40 modals/sheets/bars now pad by the real system insets so no button hides under the status or navigation bar; 25 keyboard-avoiding views fixed for Android 15+.',
+      'Back buttons everywhere: a shared 44pt BackButton replaces the tiny header glyph on 16 screens; Tests, Flashcards, Notes and Discover gain back buttons; 30 undersized back icons enlarged and 23 given bigger touch targets.',
     ],
     howToUse: [
       'Dashboard → Exam readiness: tap a course (mobile) or expand it (web) for the topic-by-topic picture and the class signal.',
