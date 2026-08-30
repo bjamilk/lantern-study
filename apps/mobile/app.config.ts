@@ -165,7 +165,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // or the community page), 'Your communities' now really lists YOUR
   // memberships (no more UNN rows masquerading as UNILAG), and study rooms
   // auto-close after 6h and are deleted a few days later.
-  version: '1.0.35',
+  // 1.0.36: "Don't show again" on feature tips now sticks for good — the
+  // durable hide flags are monotonic (this app could previously overwrite a
+  // saved opt-out with its own boot-time false, resurrecting tips on web).
+  version: '1.0.36',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

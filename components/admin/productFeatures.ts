@@ -46,6 +46,29 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'tips-persistence-1-0-36',
+    title: 'Mobile 1.0.36 — "Don\'t show again" sticks; community lounges live',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-08-29',
+    summary:
+      'Feature-tip opt-outs are now permanent across devices: the durable hide flags are monotonic, so a device that has not loaded the profile yet can no longer overwrite a saved "Don\'t show again" back to false (the overwrite is what kept resurrecting tips on web). Ships alongside the server-side activation of community lounges (migration 20260829170000 applied).',
+    details: [
+      'Persistence is one-way for skippedAll / dontShowAgain / checklistDismissed — only the explicit Replay Tips flow in Settings can turn them back off.',
+      'Devices self-heal the profile: if local state knows a durable hide the profile lost, it is pushed back up on the next settings sync.',
+      'Web shipped the same fix in 1d63ff6; this release carries the mobile half.',
+    ],
+    howToUse: [
+      'Tap "Don\'t show again" on any coach tip once — it never returns unless you choose Replay Tips in Settings.',
+      'Discover → Community → "Community chat" now opens the shared lounge (live since the migration was applied).',
+    ],
+    surfaces: ['mobile'],
+    adminNotes: [
+      'The "Unexpected sign-out" Sentry alarm (fingerprint unexpected-sign-out) is the regression signal for the related web auth fix; all 15 open Sentry issues were resolved 2026-08-29 and auto-reopen on recurrence.',
+    ],
+    commits: ['1d63ff6'],
+  },
+  {
     id: 'community-lounges-1-0-35',
     title: 'Mobile 1.0.35 — community lounges, honest Discover, temporary rooms',
     area: 'groups',
