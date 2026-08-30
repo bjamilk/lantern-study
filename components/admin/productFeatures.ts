@@ -46,6 +46,32 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'chat-fixes-semester-1-0-37',
+    title: 'Mobile 1.0.37 — chat selection/star/pin fixes, semester on the profile',
+    area: 'chat',
+    status: 'shipped',
+    shippedAt: '2026-08-30',
+    summary:
+      'Four founder-reported chat defects: a long-pressed message had no visual selection, starred messages were unreachable after starring, the floating sync chip covered and swallowed taps on the pinned-message bar, and the chat list drew a hairline between every conversation. Ships with first/second semester on the academic profile (web + mobile).',
+    details: [
+      'Selection: the action-bar target row now tints full-width; the target id is part of the list extraData, without which the memoized rows never repaint.',
+      'Starred: chat menu gains "Starred messages (n)", filtering the thread in place so replies, jumps and unstar keep working; amber banner + Show all; filter-aware empty state. Group and DM.',
+      'Sync chip: informational only, so it renders pointerEvents=none and hides entirely when online with nothing pending (the rule SyncDot already followed). The pinned bar also reserves right padding.',
+      'Chat list: row hairlines removed from conversations and pending invites; section headers and search results keep theirs.',
+      'Semester: profiles.current_semester (1|2, nullable) via migration 20260830090000, shared semesterLabel/semesterOptions, API 400 on anything but 1|2, and the field in all four academic forms.',
+    ],
+    howToUse: [
+      'Long-press any message: the row highlights while the action bar is open.',
+      'Chat menu → Starred messages to see just your starred ones; Show all to return.',
+      'Settings → Academic (or profile setup) → Semester: First or Second; tap the selected chip again to clear it.',
+    ],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: [
+      'Migration 20260830090000_profile_current_semester.sql applied 2026-08-30. The semester field reads "Not set" and silently no-ops on any environment where it has not been applied.',
+    ],
+    commits: ['444896c'],
+  },
+  {
     id: 'tips-persistence-1-0-36',
     title: 'Mobile 1.0.36 — "Don\'t show again" sticks; community lounges live',
     area: 'platform',

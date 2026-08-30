@@ -168,7 +168,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // 1.0.36: "Don't show again" on feature tips now sticks for good — the
   // durable hide flags are monotonic (this app could previously overwrite a
   // saved opt-out with its own boot-time false, resurrecting tips on web).
-  version: '1.0.36',
+  // 1.0.37: chat fixes — long-pressed messages highlight, starred messages are
+  // findable (menu filter), the floating sync chip no longer covers or eats
+  // taps on the pinned-message bar, and the chat list drops its row hairlines;
+  // the academic profile gains first/second semester.
+  version: '1.0.37',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
