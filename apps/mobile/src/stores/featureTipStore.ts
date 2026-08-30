@@ -73,18 +73,29 @@ async function writeLocal(tips: FeatureTipsState) {
   }
 }
 
-function schedulePersist(getTips: () => FeatureTipsState) {
+function schedulePersist(
+  getTips: () => FeatureTipsState,
+  opts: { allowRegress?: boolean } = {}
+) {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     const tips = getTips();
     const durable = toPersistentFeatureTips(tips);
     void writeLocal(tips);
+    // Durable hide flags are MONOTONIC: a push fired before this device
+    // loaded the profile (e.g. a Got-it tap right after boot) must not
+    // flip a saved "Don't show again" back to false — that overwrite is
+    // how tips resurrected on the web after re-login. Only Replay
+    // regresses them.
+    const remoteFlags = normalizeFeatureTips(useSettingsStore.getState().settings.featureTips);
+    const keepTrue = (local?: boolean, remote?: boolean) =>
+      opts.allowRegress ? Boolean(local) : Boolean(local || remote);
     void useSettingsStore.getState().updateSettings('featureTips', {
       version: durable.version,
       dismissed: {},
-      skippedAll: durable.skippedAll,
-      dontShowAgain: durable.dontShowAgain,
-      checklistDismissed: durable.checklistDismissed,
+      skippedAll: keepTrue(durable.skippedAll, remoteFlags.skippedAll),
+      dontShowAgain: keepTrue(durable.dontShowAgain, remoteFlags.dontShowAgain),
+      checklistDismissed: keepTrue(durable.checklistDismissed, remoteFlags.checklistDismissed),
       checklist: durable.checklist as Record<string, boolean>,
     });
   }, 400);
@@ -120,10 +131,20 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   },
 
   syncFromUserSettings: (raw) => {
+    const remote = normalizeFeatureTips(raw);
     const merged = mergeFeatureTipsProgress(get().tips, raw);
     set({ tips: merged });
     void writeLocal(merged);
     get().recomputeActive();
+    // Self-heal: push a durable hide the profile lost back up, or the next
+    // fresh install / web re-login resurrects the tips.
+    if (
+      (merged.dontShowAgain && !remote.dontShowAgain) ||
+      (merged.skippedAll && !remote.skippedAll) ||
+      (merged.checklistDismissed && !remote.checklistDismissed)
+    ) {
+      schedulePersist(() => get().tips);
+    }
   },
 
   setOnboardingComplete: (value) => {
@@ -179,7 +200,8 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
     const next = replayHelper(get().tips);
     set({ tips: { ...next, version: FEATURE_TIPS_VERSION } });
     get().recomputeActive();
-    schedulePersist(() => get().tips);
+    // Replay is the ONE flow allowed to turn the durable hide flags off.
+    schedulePersist(() => get().tips, { allowRegress: true });
   },
 
   markChecklist: (key, done = true) => {

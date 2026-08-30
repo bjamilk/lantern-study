@@ -66,7 +66,10 @@ function computeActive(s: {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-function schedulePersist(getTips: () => FeatureTipsState) {
+function schedulePersist(
+  getTips: () => FeatureTipsState,
+  opts: { allowRegress?: boolean } = {}
+) {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     const tips = getTips();
@@ -77,12 +80,19 @@ function schedulePersist(getTips: () => FeatureTipsState) {
     if (!user?.id) return;
     const latest = useAuthStore.getState().currentUser || user;
     const current = normalizeUserSettings(latest.settings);
+    // Durable hide flags are MONOTONIC: a client that hasn't loaded the
+    // remote value yet must not flip a saved "Don't show again" back to
+    // false (that stomp is how tips kept resurrecting after re-login).
+    // Only the explicit Replay flow may regress them.
+    const remoteFlags = normalizeFeatureTips(current.featureTips);
+    const keepTrue = (local?: boolean, remote?: boolean) =>
+      opts.allowRegress ? Boolean(local) : Boolean(local || remote);
     const featureTipsPatch = {
       version: durable.version,
       dismissed: {},
-      skippedAll: durable.skippedAll,
-      dontShowAgain: durable.dontShowAgain,
-      checklistDismissed: durable.checklistDismissed,
+      skippedAll: keepTrue(durable.skippedAll, remoteFlags.skippedAll),
+      dontShowAgain: keepTrue(durable.dontShowAgain, remoteFlags.dontShowAgain),
+      checklistDismissed: keepTrue(durable.checklistDismissed, remoteFlags.checklistDismissed),
       checklist: durable.checklist as Record<string, boolean>,
     };
     const next = {
@@ -131,10 +141,21 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
 
   syncFromUserSettings: (raw) => {
     const settings = normalizeUserSettings(raw);
+    const remote = normalizeFeatureTips(settings.featureTips);
     const merged = mergeRemoteFeatureTips(get().tips, settings.featureTips);
     set({ tips: merged });
     saveLocalFeatureTips(merged);
     get().recomputeActive();
+    // Self-heal: if this device knows a durable hide the profile lost (a
+    // failed save, or an older client overwrote it), push it back up —
+    // otherwise the next localStorage wipe (logout) resurrects the tips.
+    if (
+      (merged.dontShowAgain && !remote.dontShowAgain) ||
+      (merged.skippedAll && !remote.skippedAll) ||
+      (merged.checklistDismissed && !remote.checklistDismissed)
+    ) {
+      schedulePersist(() => get().tips);
+    }
   },
 
   setOnboardingComplete: (value) => {
@@ -185,6 +206,9 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   skipAll: () => {
     const next = skipAllTips(get().tips);
     set({ tips: next });
+    // Write-through NOW: the 400ms debounce lost the click when the user
+    // refreshed right away.
+    saveLocalFeatureTips(next);
     get().recomputeActive();
     schedulePersist(() => get().tips);
   },
@@ -192,6 +216,7 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   dontShowAgain: () => {
     const next = setDontShowAgain(get().tips, true);
     set({ tips: next });
+    saveLocalFeatureTips(next);
     get().recomputeActive();
     schedulePersist(() => get().tips);
   },
@@ -199,8 +224,10 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   replay: () => {
     const next = replayFeatureTips(get().tips);
     set({ tips: { ...next, version: FEATURE_TIPS_VERSION } });
+    saveLocalFeatureTips({ ...next, version: FEATURE_TIPS_VERSION });
     get().recomputeActive();
-    schedulePersist(() => get().tips);
+    // Replay is the ONE flow allowed to turn the durable hide flags off.
+    schedulePersist(() => get().tips, { allowRegress: true });
   },
 
   markChecklist: (key, done = true) => {
