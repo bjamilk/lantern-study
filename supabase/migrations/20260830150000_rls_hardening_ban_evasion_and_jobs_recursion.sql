@@ -5,7 +5,10 @@
 --
 -- 32 of 33 attacks were already blocked (no cross-user reads or writes on
 -- profiles, notes, messages, DMs, groups; no self-granted points, verification
--- or admin; anon can read nothing). This migration closes what got through.
+-- or admin). Exactly 4 of 113 tables are anon-readable, each scoped by policy
+-- to published content: job_postings (active/paused/closed), job_companies
+-- (verified), job_screening_questions (for public postings) and
+-- marketplace_listings (active). This migration closes what got through.
 
 -- ===========================================================================
 -- 1. CRITICAL — ban evasion by deleting and re-creating your own profile.
