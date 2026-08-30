@@ -172,7 +172,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // findable (menu filter), the floating sync chip no longer covers or eats
   // taps on the pinned-message bar, and the chat list drops its row hairlines;
   // the academic profile gains first/second semester.
-  version: '1.0.37',
+  // 1.0.38: chat — a long-pressed message now visibly highlights (the 1.0.37
+  // fix used a Tailwind opacity class that compiled to nothing), Delete is a
+  // first-class action instead of hiding inside an overflow that disappears,
+  // and emoji reactions land on every message type including questions. Also
+  // repairs ~93 tints/dividers/bars app-wide that silently rendered nothing.
+  version: '1.0.38',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

@@ -46,6 +46,33 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'reactions-palette-1-0-38',
+    title: 'Mobile 1.0.38 — emoji reactions, real Delete, visible selection, palette repair',
+    area: 'chat',
+    status: 'shipped',
+    shippedAt: '2026-08-30',
+    summary:
+      'Emoji reactions on every message type (groups + DMs, questions included), Delete promoted out of the vanishing overflow menu into the action bar, a selection highlight that actually renders, and a platform-wide palette fix that restores 511 styling rules which silently produced nothing.',
+    details: [
+      'Reactions: message_reactions table (one row per message+user+emoji), service-role only, with counts denormalised onto messages.reactions / dm_messages.reactions by trigger so they ride the existing realtime channels. Fixed eight-emoji set; optimistic toggle with rollback.',
+      'Reactions are deliberately separate from question up/down votes: votes decide whether a question is verified into tests, reactions gate nothing.',
+      'Delete: onMore was passed only when the overflow list was non-empty, so for an own message with nothing else applicable the button — and the only path to Delete — disappeared. Now a first-class trash action gated by the shared canRemoveChatMessage, with an explained disabled state.',
+      'Selection highlight: 1.0.37 shipped `bg-lantern-primary/15`, which Tailwind drops entirely when the colour is an unparseable var(). Now an inline themed colour via a withAlpha helper.',
+      'Palette: CSS vars now hold RGB channels and colours are declared rgb(var(--x) / <alpha-value>), so opacity modifiers work at last — 418 dead classes on web, 93 on mobile. primary-background / accent-background stay whole colours (their dark values carry their own alpha), guarded by a test.',
+    ],
+    howToUse: [
+      'Long-press a message → emoji row appears above the action bar; tap one to react.',
+      'Tap any reaction chip under a message to add or remove your own.',
+      'Long-press your own message → the trash button deletes it (within 30 minutes; questions cannot be deleted).',
+    ],
+    surfaces: ['web', 'mobile', 'api', 'database'],
+    adminNotes: [
+      'Requires migration 20260830120000_chat_message_reactions.sql (applied 2026-08-30). Without it the API answers 503 "Reactions are not available yet" and nothing else is affected.',
+      'The palette change is all-or-nothing per platform: a CSS var holding a whole colour inside rgb() renders transparent on web and undefined on mobile. Never reintroduce hex into --color-* vars.',
+    ],
+    commits: ['2b555e9', '259f508'],
+  },
+  {
     id: 'chat-fixes-semester-1-0-37',
     title: 'Mobile 1.0.37 — chat selection/star/pin fixes, semester on the profile',
     area: 'chat',
