@@ -87,6 +87,29 @@ export function canRemoveChatMessage(
   );
 }
 
+/**
+ * Why the viewer cannot remove their OWN message, phrased for the UI.
+ * Returns undefined when removal is allowed, or when the message is not the
+ * viewer's at all (other people's messages get Report, not a delete excuse).
+ *
+ * Exists so "Delete is missing" stops being a mystery: the same three rules
+ * that gate canRemoveChatMessage are now explainable in one sentence.
+ */
+export function deleteBlockedReason(
+  message: ChatMessageMutationCandidate,
+  currentUserId?: string | null,
+  nowMs = Date.now()
+): string | undefined {
+  const senderId = message.senderId || message.sender?.id;
+  if (!currentUserId || senderId !== currentUserId) return undefined;
+  if (canRemoveChatMessage(message, currentUserId, nowMs)) return undefined;
+  if (message.isRemoved || message.removedAt) return undefined;
+  if (String(message.type || 'TEXT').toUpperCase() !== 'TEXT') {
+    return 'Questions cannot be deleted once shared — the group may already be practising with them.';
+  }
+  return 'Messages can only be deleted within 30 minutes of sending.';
+}
+
 export function canEditChatMessage(
   message: ChatMessageMutationCandidate,
   currentUserId?: string | null,

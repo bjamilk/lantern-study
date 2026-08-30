@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   canEditChatMessage,
   canRemoveChatMessage,
+  deleteBlockedReason,
   findFirstUnreadMessageId,
   normalizeStorageUrl,
   resolveAvatarSrc,
@@ -67,13 +68,18 @@ import {
   muteDmThread,
   unmuteDmThread,
   unblockUser,
+  addMessageReaction,
+  removeMessageReaction,
+  fetchUserReactionsForThread,
 } from '../../services/api';
 import {
   CHAT_MUTE_DURATIONS,
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
-import { useTheme } from '../../theme';
+import { useTheme, withAlpha } from '../../theme';
+import { applyReactionLocally } from '@lantern/shared/chat';
+import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 
 type ThreadInquiry = Awaited<ReturnType<typeof fetchInquiryByThread>>;
@@ -121,6 +127,9 @@ interface DmMessageRowProps {
   starred: boolean;
   /** This row is the target of the open action bar — highlight the whole row. */
   selected: boolean;
+  /** Emoji the viewer has personally added to this message. */
+  myReactions?: string[];
+  onToggleReaction: (message: DirectMessage, emoji: string, added: boolean) => void;
 }
 
 /**
@@ -142,7 +151,10 @@ const DmMessageRow = React.memo(function DmMessageRow({
   onRetryMessage,
   starred,
   selected,
+  myReactions,
+  onToggleReaction,
 }: DmMessageRowProps) {
+  const { colors } = useTheme();
   const bubbleMessage = useMemo(() => {
     const timestamp =
       message.timestamp instanceof Date
@@ -180,8 +192,21 @@ const DmMessageRow = React.memo(function DmMessageRow({
 
   return (
     // Full-row selection highlight (negative margin cancels the list padding)
-    // so the action bar visibly belongs to the message it will act on.
-    <View className={selected ? '-mx-4 px-4 py-0.5 bg-lantern-primary/15' : undefined}>
+    // so the action bar visibly belongs to the message it will act on. Inline
+    // style, not `bg-lantern-primary/15`: that class compiles to nothing (the
+    // lantern palette is var()-backed, so Tailwind drops opacity modifiers).
+    <View
+      className={selected ? '-mx-4 px-4 py-1' : undefined}
+      style={
+        selected
+          ? {
+              backgroundColor: withAlpha(colors.primary, 0.18),
+              borderLeftWidth: 3,
+              borderLeftColor: colors.primary,
+            }
+          : undefined
+      }
+    >
       {showUnreadDivider ? <NewMessagesDivider /> : null}
       <DmBubble
         message={bubbleMessage}
@@ -196,6 +221,12 @@ const DmMessageRow = React.memo(function DmMessageRow({
         threadRootId={message.threadRootId}
         messageId={message.id}
         starred={starred}
+      />
+      <MessageReactions
+        reactions={message.reactions}
+        mine={myReactions}
+        align={isOwn ? 'end' : 'start'}
+        onToggle={(emoji, added) => onToggleReaction(message, emoji, added)}
       />
     </View>
   );
@@ -220,6 +251,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     archiveDmThread,
     unarchiveDmThread,
     deleteDmThread,
+    patchDirectMessageInState,
   } =
     useGroupStore();
   const { colors } = useTheme();
@@ -483,6 +515,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   /** Filter the thread down to starred messages — stars were unfindable without it. */
   const [starredOnly, setStarredOnly] = useState(false);
+  /** The viewer's OWN reactions: { messageId: ['👍'] }. Counts live on the message. */
+  const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
   // Declared here rather than folded into `messages` (line ~273): that memo runs
   // before starredIds exists. Only the list reads this; scroll/unread logic
   // keeps using the unfiltered `messages`.
@@ -812,6 +846,38 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     setText(message.text);
   }, []);
 
+  const handleToggleReaction = useCallback(
+    async (message: DirectMessage, emoji: string, added: boolean) => {
+      const previousMine = myReactions[message.id] ? [...myReactions[message.id]] : [];
+      const previousCounts = message.reactions;
+      setMyReactions((prev) => {
+        const mine = new Set(prev[message.id] || []);
+        if (added) mine.add(emoji);
+        else mine.delete(emoji);
+        return { ...prev, [message.id]: [...mine] };
+      });
+      patchDirectMessageInState(threadId, message.id, {
+        reactions: applyReactionLocally(previousCounts, emoji, added),
+      });
+      try {
+        const result = added
+          ? await addMessageReaction(message.id, emoji)
+          : await removeMessageReaction(message.id, emoji);
+        patchDirectMessageInState(threadId, message.id, { reactions: result?.reactions ?? {} });
+      } catch (error) {
+        setMyReactions((prev) => ({ ...prev, [message.id]: previousMine }));
+        patchDirectMessageInState(threadId, message.id, { reactions: previousCounts });
+        useToastStore
+          .getState()
+          .showToast(
+            error instanceof Error ? error.message : 'Could not save that reaction',
+            'error'
+          );
+      }
+    },
+    [myReactions, patchDirectMessageInState, threadId]
+  );
+
   const confirmRemoveMessage = useCallback((message: DirectMessage) => {
     Alert.alert(
       'Remove message?',
@@ -861,6 +927,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!user?.id || !threadId) return;
     let cancelled = false;
+    void fetchUserReactionsForThread(threadId)
+      .then((map) => setMyReactions(map || {}))
+      .catch(() => {
+        /* best effort */
+      });
     void AsyncStorage.getItem(`lantern_starred_msgs:${user.id}:dm:${threadId}`).then((raw) => {
       if (cancelled || !raw) return;
       try {
@@ -939,14 +1010,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         onPress: () => beginEdit(message),
       });
     }
-    if (canRemove) {
-      items.push({
-        label: 'Remove',
-        icon: 'trash-outline',
-        destructive: true,
-        onPress: () => afterSheet(() => confirmRemoveMessage(message)),
-      });
-    }
+    // Remove now lives in the action bar as a first-class Delete button.
+    void canRemove;
     return items;
   }, [
     dmMessageTarget,
@@ -1013,6 +1078,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       // The rows are memoized: without this the selection highlight never paints.
       actionTargetId: dmMessageTarget?.id,
       starredOnly,
+      myReactions,
     }),
     [
       firstUnreadId,
@@ -1022,6 +1088,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       starredIds,
       dmMessageTarget?.id,
       starredOnly,
+      myReactions,
     ]
   );
 
@@ -1041,6 +1108,15 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
       {dmMessageTarget ? (
+        <>
+        <ReactionPickerRow
+          mine={myReactions[dmMessageTarget.id]}
+          onPick={(emoji, added) => {
+            const target = dmMessageTarget;
+            setDmMessageTarget(null);
+            void handleToggleReaction(target, emoji, added);
+          }}
+        />
         <MessageActionBar
           onClose={() => setDmMessageTarget(null)}
           onReply={() => {
@@ -1082,10 +1158,24 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           }}
           starred={starredIds.has(dmMessageTarget.id)}
           pinned={pinnedMessage?.id === dmMessageTarget.id}
+          // First-class Delete: the DM overflow could only ever hold Edit and
+          // Remove, so its button — and delete with it — disappeared for every
+          // message that was not your own and recent.
+          onDelete={
+            canRemoveChatMessage(dmMessageTarget, user?.id)
+              ? () => {
+                  const m = dmMessageTarget;
+                  setDmMessageTarget(null);
+                  afterSheet(() => confirmRemoveMessage(m));
+                }
+              : undefined
+          }
+          deleteBlockedReason={deleteBlockedReason(dmMessageTarget, user?.id)}
           onMore={dmMessageItems.length > 0 ? () => {
             setDmMessageOverflowOpen(true);
           } : undefined}
         />
+        </>
       ) : (
       <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
         <Pressable hitSlop={10}
@@ -1450,6 +1540,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 <DmMessageRow
                   message={item}
                   selected={dmMessageTarget?.id === item.id}
+                  myReactions={myReactions[item.id]}
+                  onToggleReaction={handleToggleReaction}
                   isOwn={item.senderId === user?.id}
                   senderName={displayName}
                   senderAvatar={

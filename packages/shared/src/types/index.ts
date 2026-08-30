@@ -352,6 +352,8 @@ export interface Message {
   sender: User;
   timestamp: Date;
   type: MessageType;
+  /** Emoji reaction counts, e.g. { "👍": 3 }. Server-owned (trigger-maintained). */
+  reactions?: Record<string, number>;
   text?: string;
   questionStem?: string;
   explanation?: string;
@@ -826,6 +828,8 @@ export interface DirectMessage {
   id: string;
   threadId: string;
   senderId: string;
+  /** Emoji reaction counts, e.g. { "👍": 3 }. Server-owned (trigger-maintained). */
+  reactions?: Record<string, number>;
   /** Profile photo from API/realtime — used for the other person's bubbles. */
   senderAvatar?: string | null;
   senderName?: string | null;

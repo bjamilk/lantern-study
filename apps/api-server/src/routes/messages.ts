@@ -6,6 +6,11 @@ import { handleValidationErrors, validateGroupId, validateSendMessage, validateM
 import { ChatMessageMutationResult, SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import {
+  CHAT_REACTION_MAX_DISTINCT_PER_MESSAGE,
+  CHAT_REACTION_MAX_LENGTH,
+  isSupportedReactionEmoji,
+} from '@lantern/shared/chat';
 import { clientErrorMessage } from '../utils/safeError';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
@@ -1300,6 +1305,156 @@ router.delete(
       success: true,
       data: result,
     });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Emoji reactions (20260830120000) — group messages AND DMs, every message
+// type including questions. Reactions gate nothing; question votes still
+// decide verification, so the two are kept deliberately separate.
+// ---------------------------------------------------------------------------
+
+/** Resolve the message and the viewer's right to react to it, group or DM. */
+async function authorizeReactionTarget(messageId: string, userId: string) {
+  const group = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+  if (group) return { scope: 'group' as const, groupId: (group as any).group_id ?? null };
+  const dm = await supabaseService.getAuthorizedDmMessage(messageId, userId);
+  if (dm) return { scope: 'dm' as const, threadId: dm.threadId };
+  return null;
+}
+
+// POST /api/v1/messages/:messageId/reactions  { emoji }
+router.post(
+  '/:messageId/reactions',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { messageId } = req.params;
+    const emoji = typeof req.body?.emoji === 'string' ? req.body.emoji.trim() : '';
+
+    if (!emoji || emoji.length > CHAT_REACTION_MAX_LENGTH) {
+      return res.status(400).json({ success: false, error: 'A valid emoji is required' });
+    }
+    // Fixed set: keeps the counts readable and the column bounded. Clients
+    // render exactly these, so anything else is a malformed or hostile call.
+    if (!isSupportedReactionEmoji(emoji)) {
+      return res.status(400).json({ success: false, error: 'That emoji is not available' });
+    }
+
+    const target = await authorizeReactionTarget(messageId, userId);
+    if (!target) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    const existing = await supabaseService.countDistinctReactionEmoji(messageId, target.scope);
+    const already = await supabaseService.readMessageReactions(messageId, target.scope);
+    if (
+      existing >= CHAT_REACTION_MAX_DISTINCT_PER_MESSAGE &&
+      !(emoji in already.reactions)
+    ) {
+      return res.status(409).json({
+        success: false,
+        error: 'This message already has the maximum number of different reactions',
+      });
+    }
+
+    try {
+      const result = await supabaseService.addMessageReaction(
+        messageId,
+        userId,
+        emoji,
+        target.scope
+      );
+      await cacheService.delete(`message:${messageId}`);
+      if (target.scope === 'group' && (target as any).groupId) {
+        await cacheService.deletePattern(`messages:group:${(target as any).groupId}:*`);
+      }
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      if (error?.statusCode === 503) {
+        return res.status(503).json({ success: false, error: error.message });
+      }
+      throw error;
+    }
+  })
+);
+
+// DELETE /api/v1/messages/:messageId/reactions  { emoji }
+router.delete(
+  '/:messageId/reactions',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { messageId } = req.params;
+    const raw = req.body?.emoji ?? req.query?.emoji;
+    const emoji = typeof raw === 'string' ? raw.trim() : '';
+    if (!emoji || emoji.length > CHAT_REACTION_MAX_LENGTH) {
+      return res.status(400).json({ success: false, error: 'A valid emoji is required' });
+    }
+
+    const target = await authorizeReactionTarget(messageId, userId);
+    if (!target) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    try {
+      const result = await supabaseService.removeMessageReaction(
+        messageId,
+        userId,
+        emoji,
+        target.scope
+      );
+      await cacheService.delete(`message:${messageId}`);
+      if (target.scope === 'group' && (target as any).groupId) {
+        await cacheService.deletePattern(`messages:group:${(target as any).groupId}:*`);
+      }
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      if (error?.statusCode === 503) {
+        return res.status(503).json({ success: false, error: error.message });
+      }
+      throw error;
+    }
+  })
+);
+
+// GET /api/v1/messages/group/:groupId/user-reactions
+router.get(
+  '/group/:groupId/user-reactions',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { groupId } = req.params;
+    const isMember = await supabaseService.isGroupMember(groupId, userId);
+    if (!isMember) {
+      return res.status(404).json({ success: false, error: 'Group not found' });
+    }
+    const data = await supabaseService.getUserReactionsForGroup(groupId, userId);
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/messages/dm/:threadId/user-reactions
+router.get(
+  '/dm/:threadId/user-reactions',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { threadId } = req.params;
+    const allowed = await supabaseService.isDmThreadParticipant(threadId, userId);
+    if (!allowed) {
+      return res.status(404).json({ success: false, error: 'Conversation not found' });
+    }
+    const data = await supabaseService.getUserReactionsForThread(threadId, userId);
+    res.json({ success: true, data });
   })
 );
 

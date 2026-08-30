@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
+import { useToastStore } from '../../stores/toastStore';
 
 interface Props {
   onClose: () => void;
@@ -13,6 +14,14 @@ interface Props {
   onPin: () => void;
   starred: boolean;
   pinned: boolean;
+  /** Soft-remove this message. Present only when the viewer may remove it. */
+  onDelete?: () => void;
+  /**
+   * Set when the viewer OWNS the message but cannot remove it (a question, or
+   * the 30-minute window has closed). Renders a dimmed Delete that explains
+   * itself instead of silently omitting the action.
+   */
+  deleteBlockedReason?: string;
   /** Overflow (edit / remove / report) when any such action applies. */
   onMore?: () => void;
 }
@@ -31,6 +40,8 @@ export function MessageActionBar({
   onPin,
   starred,
   pinned,
+  onDelete,
+  deleteBlockedReason,
   onMore,
 }: Props) {
   const { colors } = useTheme();
@@ -73,6 +84,22 @@ export function MessageActionBar({
         {onCopy ? button('Copy text', 'copy-outline', onCopy) : null}
         {button(starred ? 'Unstar' : 'Star', starred ? 'star' : 'star-outline', onStar, starred ? '#f59e0b' : undefined)}
         {button(pinned ? 'Unpin' : 'Pin', 'pin-outline', onPin, pinned ? colors.primary : undefined)}
+        {onDelete ? button('Delete', 'trash-outline', onDelete, colors.error) : null}
+        {!onDelete && deleteBlockedReason ? (
+          <Pressable
+            key="delete-blocked"
+            onPress={() =>
+              useToastStore.getState().showToast(deleteBlockedReason, 'info')
+            }
+            className="h-11 w-11 items-center justify-center"
+            accessibilityRole="button"
+            accessibilityLabel="Delete unavailable"
+            accessibilityHint={deleteBlockedReason}
+            style={{ opacity: 0.4 }}
+          >
+            <Ionicons name="trash-outline" size={22} color={colors.textSecondary} />
+          </Pressable>
+        ) : null}
         {onMore ? button('More actions', 'ellipsis-vertical', onMore) : null}
       </View>
     </View>

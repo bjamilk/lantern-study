@@ -2126,6 +2126,27 @@ export class SupabaseService {
   }
 
   /**
+   * A DM message the viewer is allowed to act on: the message must exist and
+   * the viewer must be a participant in its thread. Mirrors
+   * getAuthorizedGroupMessage so reaction routes can 404 uniformly.
+   */
+  async getAuthorizedDmMessage(
+    messageId: string,
+    userId: string,
+  ): Promise<{ id: string; threadId: string } | null> {
+    const { data, error } = await this.supabase
+      .from("dm_messages")
+      .select("id, thread_id")
+      .eq("id", messageId)
+      .maybeSingle();
+    if (error && error.code !== "PGRST116") throw error;
+    if (!data) return null;
+    const threadId = String((data as any).thread_id);
+    const allowed = await this.isDmThreadParticipant(threadId, userId);
+    return allowed ? { id: String((data as any).id), threadId } : null;
+  }
+
+  /**
    * True when viewer may see peer's profile avatar in chat (DM partner or shared active group),
    * even if the peer's profile visibility is private.
    */
@@ -3087,6 +3108,162 @@ export class SupabaseService {
       downvotes: synced.downvotes,
       questionStatus: synced.questionStatus,
     };
+  }
+
+  /**
+   * Emoji reactions (20260830120000). One table serves group messages and DMs;
+   * the DB trigger recounts the denormalised `reactions` JSONB on the parent,
+   * whose UPDATE then rides the realtime channels both clients already have.
+   *
+   * Authorization is the caller's job (getAuthorizedGroupMessage /
+   * getAuthorizedDmMessage) — this layer only writes.
+   */
+  private reactionsMissingTable(error: any): boolean {
+    return (
+      error?.code === "42P01" ||
+      error?.code === "PGRST205" ||
+      error?.code === "42703"
+    );
+  }
+
+  async addMessageReaction(
+    messageId: string,
+    userId: string,
+    emoji: string,
+    scope: "group" | "dm" = "group",
+  ): Promise<{ reactions: Record<string, number> }> {
+    const column = scope === "dm" ? "dm_message_id" : "group_message_id";
+    const { error } = await this.supabase
+      .from("message_reactions")
+      .upsert(
+        { [column]: messageId, user_id: userId, emoji },
+        { onConflict: `${column},user_id,emoji`, ignoreDuplicates: true },
+      );
+    if (error) {
+      if (this.reactionsMissingTable(error)) {
+        const err: any = new Error("Reactions are not available yet");
+        err.statusCode = 503;
+        throw err;
+      }
+      throw error;
+    }
+    return this.readMessageReactions(messageId, scope);
+  }
+
+  async removeMessageReaction(
+    messageId: string,
+    userId: string,
+    emoji: string,
+    scope: "group" | "dm" = "group",
+  ): Promise<{ reactions: Record<string, number> }> {
+    const column = scope === "dm" ? "dm_message_id" : "group_message_id";
+    const { error } = await this.supabase
+      .from("message_reactions")
+      .delete()
+      .eq(column, messageId)
+      .eq("user_id", userId)
+      .eq("emoji", emoji);
+    if (error) {
+      if (this.reactionsMissingTable(error)) {
+        const err: any = new Error("Reactions are not available yet");
+        err.statusCode = 503;
+        throw err;
+      }
+      throw error;
+    }
+    return this.readMessageReactions(messageId, scope);
+  }
+
+  /** Authoritative counts straight after a write (the trigger has already run). */
+  async readMessageReactions(
+    messageId: string,
+    scope: "group" | "dm" = "group",
+  ): Promise<{ reactions: Record<string, number> }> {
+    const table = scope === "dm" ? "dm_messages" : "messages";
+    const { data, error } = await this.supabase
+      .from(table)
+      .select("reactions")
+      .eq("id", messageId)
+      .maybeSingle();
+    if (error) {
+      if (this.reactionsMissingTable(error)) return { reactions: {} };
+      throw error;
+    }
+    const raw = (data as any)?.reactions;
+    return { reactions: raw && typeof raw === "object" ? raw : {} };
+  }
+
+  /** How many DISTINCT emoji a message already carries (API-side cap). */
+  async countDistinctReactionEmoji(
+    messageId: string,
+    scope: "group" | "dm" = "group",
+  ): Promise<number> {
+    const { reactions } = await this.readMessageReactions(messageId, scope);
+    return Object.keys(reactions).length;
+  }
+
+  /** The viewer's own reactions across a group: { messageId: ["👍", "🔥"] }. */
+  async getUserReactionsForGroup(
+    groupId: string,
+    userId: string,
+  ): Promise<Record<string, string[]>> {
+    const { data: messages, error: msgError } = await this.supabase
+      .from("messages")
+      .select("id")
+      .eq("group_id", groupId);
+    if (msgError) throw msgError;
+    if (!messages || messages.length === 0) return {};
+
+    const { data, error } = await this.supabase
+      .from("message_reactions")
+      .select("group_message_id, emoji")
+      .eq("user_id", userId)
+      .in(
+        "group_message_id",
+        messages.map((m: any) => m.id),
+      );
+    if (error) {
+      if (this.reactionsMissingTable(error)) return {};
+      throw error;
+    }
+    const out: Record<string, string[]> = {};
+    for (const row of data || []) {
+      const id = String((row as any).group_message_id);
+      (out[id] ||= []).push(String((row as any).emoji));
+    }
+    return out;
+  }
+
+  /** The viewer's own reactions across a DM thread. */
+  async getUserReactionsForThread(
+    threadId: string,
+    userId: string,
+  ): Promise<Record<string, string[]>> {
+    const { data: messages, error: msgError } = await this.supabase
+      .from("dm_messages")
+      .select("id")
+      .eq("thread_id", threadId);
+    if (msgError) throw msgError;
+    if (!messages || messages.length === 0) return {};
+
+    const { data, error } = await this.supabase
+      .from("message_reactions")
+      .select("dm_message_id, emoji")
+      .eq("user_id", userId)
+      .in(
+        "dm_message_id",
+        messages.map((m: any) => m.id),
+      );
+    if (error) {
+      if (this.reactionsMissingTable(error)) return {};
+      throw error;
+    }
+    const out: Record<string, string[]> = {};
+    for (const row of data || []) {
+      const id = String((row as any).dm_message_id);
+      (out[id] ||= []).push(String((row as any).emoji));
+    }
+    return out;
   }
 
   async getUserVotesForGroup(

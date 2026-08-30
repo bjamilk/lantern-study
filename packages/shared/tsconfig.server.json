@@ -40,6 +40,7 @@
     "src/marketplace/**/*.ts",
     "src/network/**/*.ts",
     "src/academic/**/*.ts",
+    "src/chat/**/*.ts",
     "src/learning/**/*.ts",
     "src/jobs/**/*.ts",
     "src/analytics/**/*.ts",

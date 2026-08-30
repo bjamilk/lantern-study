@@ -49,7 +49,9 @@ import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode';
-import { useTheme } from '../../theme';
+import { useTheme, withAlpha } from '../../theme';
+import { applyReactionLocally } from '@lantern/shared/chat';
+import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
 import * as api from '../../services/api';
@@ -58,6 +60,7 @@ import {
   QUESTION_VISIBILITY_MODE_OPTIONS,
   canEditChatMessage,
   canRemoveChatMessage,
+  deleteBlockedReason,
   isChatAudioMessage,
   isChatImageMessage,
   messagePassesQuestionVisibility,
@@ -192,11 +195,15 @@ function ChatDateSeparator({ label }: { label: string }) {
 }
 
 function NewMessagesDivider() {
+  // The rules were invisible: `bg-lantern-primary/40` emits no rule at all
+  // (var()-backed colour + opacity modifier). Inline style instead.
+  const { colors } = useTheme();
+  const ruleStyle = { backgroundColor: withAlpha(colors.primary, 0.4) };
   return (
     <View className="flex-row items-center my-3 gap-2">
-      <View className="flex-1 h-px bg-lantern-primary/40" />
+      <View className="flex-1 h-px" style={ruleStyle} />
       <Text className="text-[11px] font-semibold text-lantern-primary">New messages</Text>
-      <View className="flex-1 h-px bg-lantern-primary/40" />
+      <View className="flex-1 h-px" style={ruleStyle} />
     </View>
   );
 }
@@ -226,6 +233,9 @@ interface MessageRowProps {
   starred: boolean;
   /** This row is the target of the open action bar — highlight the whole row. */
   selected: boolean;
+  /** Emoji the viewer has personally added to this message. */
+  myReactions?: string[];
+  onToggleReaction: (message: Message, emoji: string, added: boolean) => void;
 }
 
 /**
@@ -261,7 +271,10 @@ const MessageRow = React.memo(function MessageRow({
   onRetry,
   starred,
   selected,
+  myReactions,
+  onToggleReaction,
 }: MessageRowProps) {
+  const { colors } = useTheme();
   const handleVote = useCallback(
     (vote: 'up' | 'down') => onVoteMessage(message, vote),
     [message, onVoteMessage]
@@ -272,8 +285,21 @@ const MessageRow = React.memo(function MessageRow({
   return (
     // Selection highlight spans the full row (negative margin cancels the
     // list's px-4) so a long-pressed message is unmistakable while the action
-    // bar is open — the bar used to act on a message with no visual anchor.
-    <View className={selected ? '-mx-4 px-4 py-0.5 bg-lantern-primary/15' : undefined}>
+    // bar is open. The tint MUST be an inline style: `bg-lantern-primary/15`
+    // compiles to nothing, because the lantern palette reaches Tailwind as
+    // bare var() strings and Tailwind drops opacity modifiers it cannot parse.
+    <View
+      className={selected ? '-mx-4 px-4 py-1' : undefined}
+      style={
+        selected
+          ? {
+              backgroundColor: withAlpha(colors.primary, 0.18),
+              borderLeftWidth: 3,
+              borderLeftColor: colors.primary,
+            }
+          : undefined
+      }
+    >
       {dateLabel ? <ChatDateSeparator label={dateLabel} /> : null}
       {showUnreadDivider ? <NewMessagesDivider /> : null}
       <MessageBubble
@@ -295,6 +321,15 @@ const MessageRow = React.memo(function MessageRow({
         onOpenThread={onOpenThread}
         onRetry={onRetry}
         starred={starred}
+      />
+      {/* Reactions sit under the bubble for EVERY message type, questions
+          included — they are not the question vote row, which lives inside the
+          bubble and decides verification. */}
+      <MessageReactions
+        reactions={message.reactions}
+        mine={myReactions}
+        align={isOwn ? 'end' : 'start'}
+        onToggle={(emoji, added) => onToggleReaction(message, emoji, added)}
       />
     </View>
   );
@@ -329,6 +364,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   // Only the cross-group aggregate below needs the whole cache.
   const messagesCache = useGroupStore(s => s.messagesCache);
   const selectGroup = useGroupStore(s => s.selectGroup);
+  const patchMessageInState = useGroupStore(s => s.patchMessageInState);
   const fetchMessages = useGroupStore(s => s.fetchMessages);
   const loadMoreMessages = useGroupStore(s => s.loadMoreMessages);
   const sendMessage = useGroupStore(s => s.sendMessage);
@@ -361,6 +397,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   /** Filter the chat down to starred messages — stars were unfindable without it. */
   const [starredOnly, setStarredOnly] = useState(false);
+  /** The viewer's OWN reactions: { messageId: ['👍'] }. Counts live on the message. */
+  const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
   const [pinnedMessage, setPinnedMessage] = useState<{ id: string; text: string } | null>(null);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   /** In-chat search over the loaded window, with next/prev jumping. */
@@ -963,6 +1001,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!user?.id || !groupId) return;
     let cancelled = false;
+    void api
+      .fetchUserReactionsForGroup(groupId)
+      .then((map) => setMyReactions(map || {}))
+      .catch(() => {
+        /* best effort: chips render unselected until the next open */
+      });
     void AsyncStorage.getItem(`lantern_starred_msgs:${user.id}:${groupId}`).then((raw) => {
       if (cancelled || !raw) return;
       try {
@@ -1106,6 +1150,40 @@ export function GroupChatScreen({ navigation, route }: Props) {
     setMessageActionTarget(null);
     setTimeout(() => setForwardMessage(message), Platform.OS === 'ios' ? 320 : 0);
   }, []);
+  const handleToggleReaction = useCallback(
+    async (message: Message, emoji: string, added: boolean) => {
+      const previousMine = myReactions[message.id] ? [...myReactions[message.id]] : [];
+      const previousCounts = message.reactions;
+      setMyReactions((prev) => {
+        const mine = new Set(prev[message.id] || []);
+        if (added) mine.add(emoji);
+        else mine.delete(emoji);
+        return { ...prev, [message.id]: [...mine] };
+      });
+      // Optimistic count so the tap feels instant; the server's authoritative
+      // numbers (and everyone else's) arrive over the existing realtime channel.
+      patchMessageInState(message.id, {
+        reactions: applyReactionLocally(previousCounts, emoji, added),
+      });
+      try {
+        const result = added
+          ? await api.addMessageReaction(message.id, emoji)
+          : await api.removeMessageReaction(message.id, emoji);
+        patchMessageInState(message.id, { reactions: result?.reactions ?? {} });
+      } catch (error) {
+        setMyReactions((prev) => ({ ...prev, [message.id]: previousMine }));
+        patchMessageInState(message.id, { reactions: previousCounts });
+        useToastStore
+          .getState()
+          .showToast(
+            error instanceof Error ? error.message : 'Could not save that reaction',
+            'error'
+          );
+      }
+    },
+    [myReactions, patchMessageInState]
+  );
+
   const handleSheetStar = useCallback(
     (message: Message) => {
       setMessageActionTarget(null);
@@ -1243,8 +1321,18 @@ export function GroupChatScreen({ navigation, route }: Props) {
       // The rows are memoized: without this the selection highlight never paints.
       actionTargetId: messageActionTarget?.id,
       starredOnly,
+      myReactions,
     }),
-    [userVotes, firstUnreadId, user?.id, groupMembers, starredIds, messageActionTarget?.id, starredOnly]
+    [
+      userVotes,
+      firstUnreadId,
+      user?.id,
+      groupMembers,
+      starredIds,
+      messageActionTarget?.id,
+      starredOnly,
+      myReactions,
+    ]
   );
 
   // archiveGroup is a toggle, so this unarchives an archived group.
@@ -1363,14 +1451,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
         onPress: () => handleSheetEdit(message),
       });
     }
-    if (canRemoveChatMessage(message, user?.id)) {
-      items.push({
-        label: 'Remove',
-        icon: 'trash-outline',
-        destructive: true,
-        onPress: () => handleSheetRemove(message),
-      });
-    }
+    // Remove is no longer listed here — it is a first-class Delete button in
+    // the action bar (duplicating it made the overflow the only path when the
+    // bar's other actions were unavailable).
     if (!isOwn && message.type === 'question') {
       items.push({
         label: 'Flag duplicate',
@@ -1555,6 +1638,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
       {messageActionTarget ? (
+        <>
+        <ReactionPickerRow
+          mine={myReactions[messageActionTarget.id]}
+          onPick={(emoji, added) => {
+            const target = messageActionTarget;
+            setMessageActionTarget(null);
+            void handleToggleReaction(target, emoji, added);
+          }}
+        />
         <MessageActionBar
           onClose={closeMessageActions}
           onReply={() => handleSheetReply(messageActionTarget)}
@@ -1576,8 +1668,19 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onPin={() => handleSheetPin(messageActionTarget)}
           starred={starredIds.has(messageActionTarget.id)}
           pinned={pinnedMessage?.id === messageActionTarget.id}
+          // Delete is first-class now (web has always had a one-click trash).
+          // It used to live only inside the overflow sheet, whose button is
+          // hidden when the sheet would be empty — so for an own message with
+          // nothing else applicable, delete vanished entirely.
+          onDelete={
+            canRemoveChatMessage(messageActionTarget, user?.id)
+              ? () => handleSheetRemove(messageActionTarget)
+              : undefined
+          }
+          deleteBlockedReason={deleteBlockedReason(messageActionTarget, user?.id)}
           onMore={msgOverflowItems.length > 0 ? () => setMsgOverflowOpen(true) : undefined}
         />
+        </>
       ) : (
       <GroupChatHeader
         displayName={displayName}
@@ -1817,6 +1920,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
                   onRetry={handleRetryMessage}
                   starred={starredIds.has(item.id)}
                   selected={messageActionTarget?.id === item.id}
+                  myReactions={myReactions[item.id]}
+                  onToggleReaction={handleToggleReaction}
                 />
               );
             }}

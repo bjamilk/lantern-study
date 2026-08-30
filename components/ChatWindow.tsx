@@ -1,4 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { applyReactionLocally } from '@lantern/shared/chat';
+import {
+  addMessageReaction,
+  removeMessageReaction,
+  fetchUserReactionsForGroup,
+  fetchUserReactionsForThread,
+} from '../services/supabase';
+import { useGroupStore } from '../stores/groupStore';
+import { useToastStore } from '../stores/toastStore';
 import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder, MessageReplyPreview } from '../types';
@@ -156,6 +165,75 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  /**
+   * The viewer's OWN reactions per message: { messageId: ['👍'] }. Counts live
+   * on the message itself (server-owned, realtime-delivered); this map only
+   * decides which chips render as "mine". Kept local to the chat window rather
+   * than threaded through App state — nothing else needs it.
+   */
+  const updateMessageInState = useGroupStore((state) => state.updateMessageInState);
+  const showToast = useToastStore((state) => state.showToast);
+  const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
+
+  // Hydrate the viewer's own reactions whenever the open conversation changes.
+  useEffect(() => {
+    if (!chat?.id) {
+      setMyReactions({});
+      return;
+    }
+    let cancelled = false;
+    const load = chat.chatType === 'group'
+      ? fetchUserReactionsForGroup(chat.id)
+      : fetchUserReactionsForThread(chat.id);
+    void load
+      .then((map) => {
+        if (!cancelled) setMyReactions(map || {});
+      })
+      .catch(() => {
+        // Best effort: chips just render unselected until the next open.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chat?.id, chat?.chatType]);
+
+  /**
+   * Toggle one emoji. Optimistic on both halves — the viewer's own chip and the
+   * visible count — then reconciled with the authoritative counts the server
+   * returns. Everyone else sees it via the existing realtime message UPDATE.
+   */
+  const handleToggleReaction = useCallback(
+    async (messageId: string, emoji: string, added: boolean) => {
+      const previousMine = myReactions[messageId] ? [...myReactions[messageId]] : [];
+      const message = messagesProp.find((m) => m.id === messageId);
+      const previousCounts = message?.reactions;
+
+      setMyReactions((prev) => {
+        const mine = new Set(prev[messageId] || []);
+        if (added) mine.add(emoji);
+        else mine.delete(emoji);
+        return { ...prev, [messageId]: [...mine] };
+      });
+      updateMessageInState(messageId, {
+        reactions: applyReactionLocally(previousCounts, emoji, added),
+      });
+
+      try {
+        const reactions = added
+          ? await addMessageReaction(messageId, emoji)
+          : await removeMessageReaction(messageId, emoji);
+        updateMessageInState(messageId, { reactions });
+      } catch (error) {
+        setMyReactions((prev) => ({ ...prev, [messageId]: previousMine }));
+        updateMessageInState(messageId, { reactions: previousCounts });
+        showToast(
+          error instanceof Error ? error.message : 'Could not save that reaction',
+          'error'
+        );
+      }
+    },
+    [myReactions, messagesProp, updateMessageInState, showToast]
+  );
   const [questionFiltersOpen, setQuestionFiltersOpen] = useState(false);
   const [muteDurationsOpen, setMuteDurationsOpen] = useState(false);
   // "Report…" target: a group message (hover bar) or the DM peer (header menu).
@@ -1322,6 +1400,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   message={msg}
                   isCurrentUserMessage={msg.sender?.id === currentUser.id}
                   currentUserVote={userVotes[msg.id]}
+                  myReactions={myReactions[msg.id]}
+                  onToggleReaction={handleToggleReaction}
                   onVoteQuestion={onVoteQuestion}
                   onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
                   currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
@@ -1545,6 +1625,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   message={msg}
                   isCurrentUserMessage={msg.sender?.id === currentUser.id}
                   currentUserVote={userVotes[msg.id]}
+                  myReactions={myReactions[msg.id]}
+                  onToggleReaction={handleToggleReaction}
                   onVoteQuestion={onVoteQuestion}
                   onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
                   currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}

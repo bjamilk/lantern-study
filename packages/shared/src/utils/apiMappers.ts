@@ -3,6 +3,7 @@
 // ===========================================
 // Explicit mappers for converting API responses (snake_case) to app types (camelCase)
 
+import { normalizeReactions } from '../chat/reactions';
 import type {
   User,
   Group,
@@ -224,6 +225,7 @@ export const mapMessageFromApi = (data: any): Message => {
     questionStatus: data.question_status || data.questionStatus || questionData.questionStatus,
     upvotes: data.upvotes || 0,
     downvotes: data.downvotes || 0,
+    reactions: normalizeReactions(data.reactions),
     flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || data.flaggedAsSimilarUserIds,
     isArchived: data.is_archived || data.isArchived || false,
     editedAt: data.edited_at || data.editedAt,

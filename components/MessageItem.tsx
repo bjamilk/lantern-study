@@ -1,3 +1,4 @@
+import { MessageReactions } from './chat/MessageReactions';
 import React, { useRef, useState } from 'react';
 import { Message, MessageType, QuestionType, MatchingItem, User, Group, QuestionStatus } from '../types';
 import { Avatar } from './ui';
@@ -69,6 +70,10 @@ interface MessageItemProps {
   onReportMessage?: (message: Message) => void;
   /** When true, show group-style seen-by tooltip on ticks. */
   isGroupChat?: boolean;
+  /** Emoji the viewer has personally added to this message. */
+  myReactions?: string[];
+  /** Toggle a reaction; omitted in read-only contexts (e.g. thread previews). */
+  onToggleReaction?: (messageId: string, emoji: string, added: boolean) => void;
 }
 
 function ReceiptTicks({
@@ -283,7 +288,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
   );
 }
 
-const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onMentionUser, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, onReportMessage, isGroupChat = false }) => {
+const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onMentionUser, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, onReportMessage, isGroupChat = false, myReactions, onToggleReaction }) => {
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
   const audioUrl = message.type === MessageType.TEXT ? parseChatAudioUrl(message.text) : null;
@@ -692,6 +697,17 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             )}
           </div>
         )}
+
+        {/* Reactions: every message type, questions included. Rendered OUTSIDE
+            the question block above so it never reads as part of the vote row —
+            votes decide verification, reactions gate nothing. */}
+        <MessageReactions
+          reactions={message.reactions}
+          mine={myReactions}
+          disabled={!onToggleReaction}
+          align={isCurrentUserMessage ? 'end' : 'start'}
+          onToggle={(emoji, added) => onToggleReaction?.(message.id, emoji, added)}
+        />
 
         {(message.replyCount ?? 0) > 0 && onOpenThread && (
           <button

@@ -119,6 +119,12 @@
       "require": "./dist/network/index.js",
       "default": "./src/network/index.ts"
     },
+    "./chat": {
+      "types": "./src/chat/index.ts",
+      "import": "./src/chat/index.ts",
+      "require": "./dist/chat/index.js",
+      "default": "./src/chat/index.ts"
+    },
     "./academic": {
       "types": "./src/academic/index.ts",
       "import": "./src/academic/index.ts",

@@ -16,6 +16,7 @@
       "@lantern/shared/marketplace": ["../../packages/shared/dist/marketplace/index"],
       "@lantern/shared/network": ["../../packages/shared/dist/network/index"],
       "@lantern/shared/academic": ["../../packages/shared/dist/academic/index"],
+      "@lantern/shared/chat": ["../../packages/shared/dist/chat/index"],
       "@lantern/shared/learning": ["../../packages/shared/dist/learning/index"],
       "@lantern/shared/jobs": ["../../packages/shared/dist/jobs/index"],
       "@lantern/shared/analytics": ["../../packages/shared/dist/analytics/index"],

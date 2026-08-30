@@ -1075,6 +1075,74 @@ export const sendMessage = async (
   return retryUncertainDelivery(request);
 };
 
+/**
+ * Emoji reactions. One endpoint pair serves group messages and DMs — the
+ * server resolves which the id belongs to and authorizes accordingly.
+ * Returns the authoritative counts; realtime delivers everyone else's.
+ */
+export const addMessageReaction = async (messageId: string, emoji: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/${encodeURIComponent(messageId)}/reactions`,
+    withApiCredentials({
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ emoji }),
+    })
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.error || body?.message || 'Could not add that reaction');
+  }
+  return (body?.data?.reactions || {}) as Record<string, number>;
+};
+
+export const removeMessageReaction = async (messageId: string, emoji: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/${encodeURIComponent(messageId)}/reactions`,
+    withApiCredentials({
+      method: 'DELETE',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ emoji }),
+    })
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.error || body?.message || 'Could not remove that reaction');
+  }
+  return (body?.data?.reactions || {}) as Record<string, number>;
+};
+
+/** The viewer's own reactions in a group: { messageId: ["👍"] }. */
+export const fetchUserReactionsForGroup = async (groupId: string) => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/group/${encodeURIComponent(groupId)}/user-reactions`,
+      withApiCredentials({ headers: await getAuthHeaders() })
+    );
+    if (!response.ok) return {} as Record<string, string[]>;
+    const body = await response.json().catch(() => ({}));
+    return (body?.data || {}) as Record<string, string[]>;
+  } catch {
+    // Best-effort: without it the viewer's own chips just render unselected.
+    return {} as Record<string, string[]>;
+  }
+};
+
+/** The viewer's own reactions in a DM thread. */
+export const fetchUserReactionsForThread = async (threadId: string) => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/user-reactions`,
+      withApiCredentials({ headers: await getAuthHeaders() })
+    );
+    if (!response.ok) return {} as Record<string, string[]>;
+    const body = await response.json().catch(() => ({}));
+    return (body?.data || {}) as Record<string, string[]>;
+  } catch {
+    return {} as Record<string, string[]>;
+  }
+};
+
 export const voteQuestion = async (messageId: string, userId: string, voteType: 'up' | 'down') => {
   console.log('Voting on message:', messageId, 'type:', voteType);
   try {

@@ -128,6 +128,8 @@ export interface Group {
 }
 
 export interface Message {
+  /** Emoji reaction counts, e.g. { "👍": 3 }. Server-owned. */
+  reactions?: Record<string, number>;
   id: string;
   groupId: string;
   senderId: string;
@@ -315,6 +317,12 @@ interface GroupState {
     options?: { replyToMessageId?: string }
   ) => Promise<void>;
   editDirectMessage: (threadId: string, messageId: string, content: string) => Promise<void>;
+  /** Patch one DM in place (used for optimistic reaction counts). */
+  patchDirectMessageInState: (
+    threadId: string,
+    messageId: string,
+    updates: Partial<DirectMessage>
+  ) => void;
   removeDirectMessage: (threadId: string, messageId: string) => Promise<void>;
   markDMAsRead: (threadId: string, userId: string) => Promise<string | null>;
   archiveDmThread: (threadId: string, userId: string) => Promise<void>;
@@ -348,6 +356,8 @@ interface GroupState {
   deleteGroup: (groupId: string) => Promise<void>;
   submitQuestion: (groupId: string, question: any) => Promise<void>;
   flagMessageAsSimilar: (messageId: string, groupId: string, userId: string) => Promise<void>;
+  /** Patch one message wherever it is held (live list + per-group cache). */
+  patchMessageInState: (messageId: string, updates: Partial<Message>) => void;
   fetchUserVotesForGroup: (groupId: string, userId: string) => Promise<void>;
   voteOnMessage: (groupId: string, messageId: string, userId: string, voteType: 'up' | 'down') => Promise<void>;
 
@@ -490,6 +500,7 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
     editedAt: m.edited_at || m.editedAt,
     removedAt,
     isRemoved,
+    reactions: m.reactions && typeof m.reactions === 'object' ? m.reactions : {},
     upvotes: m.upvotes ?? 0,
     downvotes: m.downvotes ?? 0,
     flaggedAsSimilarUserIds:
@@ -617,6 +628,7 @@ function mapDirectMessage(m: any, threadId: string): DirectMessage {
     replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
     receiptStatus: m.receiptStatus || m.receipt_status || undefined,
     clientMessageId: m.client_message_id || m.clientMessageId || undefined,
+    reactions: m.reactions && typeof m.reactions === 'object' ? m.reactions : {},
   };
 }
 
@@ -1871,6 +1883,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  patchDirectMessageInState: (threadId, messageId, updates) => {
+    set((state) => ({
+      directMessages: {
+        ...state.directMessages,
+        [threadId]: (state.directMessages[threadId] || []).map((m) =>
+          m.id === messageId ? { ...m, ...updates } : m
+        ),
+      },
+    }));
+  },
+
   editDirectMessage: async (threadId: string, messageId: string, content: string) => {
     const payload = await api.editDirectMessage(messageId, content);
     const incoming = mapDirectMessage(payload, threadId);
@@ -2234,6 +2257,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         messages: state.activeGroupId === chatId ? updated : state.messages,
       };
     });
+  },
+
+  patchMessageInState: (messageId: string, updates: Partial<Message>) => {
+    const apply = (msgs: Message[]) =>
+      msgs.map((m) => (m.id === messageId ? { ...m, ...updates } : m));
+    set((state) => ({
+      messages: apply(state.messages),
+      messagesCache: Object.fromEntries(
+        Object.entries(state.messagesCache).map(([key, list]) => [key, apply(list)])
+      ),
+    }));
   },
 
   flagMessageAsSimilar: async (messageId: string, groupId: string, userId: string) => {

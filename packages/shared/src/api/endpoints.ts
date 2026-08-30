@@ -1035,6 +1035,35 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify({ questionStatus }),
       }),
 
+    /** Emoji reactions — works for group messages and DMs alike. */
+    addMessageReaction: (messageId: string, emoji: string) =>
+      apiRequest<{ reactions: Record<string, number> }>(
+        `/messages/${encodeURIComponent(messageId)}/reactions`,
+        { method: "POST", body: JSON.stringify({ emoji }) },
+        10000,
+      ),
+
+    removeMessageReaction: (messageId: string, emoji: string) =>
+      apiRequest<{ reactions: Record<string, number> }>(
+        `/messages/${encodeURIComponent(messageId)}/reactions`,
+        { method: "DELETE", body: JSON.stringify({ emoji }) },
+        10000,
+      ),
+
+    fetchUserReactionsForGroup: (groupId: string) =>
+      apiRequest<Record<string, string[]>>(
+        `/messages/group/${encodeURIComponent(groupId)}/user-reactions`,
+        { method: "GET" },
+        10000,
+      ),
+
+    fetchUserReactionsForThread: (threadId: string) =>
+      apiRequest<Record<string, string[]>>(
+        `/messages/dm/${encodeURIComponent(threadId)}/user-reactions`,
+        { method: "GET" },
+        10000,
+      ),
+
     voteOnMessage: (
       messageId: string,
       userId: string,
