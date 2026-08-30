@@ -88,6 +88,60 @@ async function createDeliveryResponseError(
   return error;
 }
 
+// ─── Cookie-mode auth-refresh interception ──────────────────────────────────
+// In cookie mode the browser never holds the real refresh token — the memory
+// session carries the literal placeholder 'cookie-managed'. But gotrue-js
+// still refreshes INTERNALLY whenever any caller touches an expired session
+// (getSession / setSession / refreshSession all do this), posting that
+// placeholder to /auth/v1/token. Supabase answers 400 and supabase-js reacts
+// by discarding the session and emitting SIGNED_OUT — a spurious sign-out
+// while the HttpOnly cookie session is still valid (Sentry WEB-17/WEB-18,
+// 90+ events). Route those refreshes through the cookie BFF instead,
+// single-flight so concurrent triggers share one /refresh call.
+let cookieBffRefreshInFlight: Promise<Response> | null = null;
+
+const supabaseFetch: typeof fetch = (input, init) => {
+  if (!cookieAuthEnabled) return fetch(input as RequestInfo, init);
+  const url =
+    typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+  const body = typeof init?.body === 'string' ? init.body : '';
+  if (!url.includes('/auth/v1/token') || !body.includes('cookie-managed')) {
+    return fetch(input as RequestInfo, init);
+  }
+  if (!cookieBffRefreshInFlight) {
+    cookieBffRefreshInFlight = (async () => {
+      // Dynamic import: this module and authCookieSession are circular.
+      const { cookieAuthFetch, applyMemorySession } = await import('./authCookieSession');
+      const bff = await cookieAuthFetch('/refresh', { method: 'POST' });
+      if (bff.status === 401 || bff.status === 403) {
+        // Genuinely revoked — hand gotrue-js the 400 it expects so it signs out.
+        return new Response(
+          JSON.stringify({ error: 'invalid_grant', error_description: 'Session revoked' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (!bff.ok) {
+        // Transient (5xx / rate limit): a network-style failure makes
+        // gotrue-js KEEP the session and retry later instead of signing out.
+        throw new TypeError('Failed to fetch');
+      }
+      const payload = (await bff.json().catch(() => ({}))) as {
+        data?: { session?: import('@supabase/supabase-js').Session };
+      };
+      const session = payload.data?.session;
+      if (!session?.access_token) throw new TypeError('Failed to fetch');
+      applyMemorySession(session);
+      return new Response(JSON.stringify({ ...session, refresh_token: 'cookie-managed' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    })().finally(() => {
+      cookieBffRefreshInFlight = null;
+    });
+  }
+  return cookieBffRefreshInFlight.then((r) => r.clone());
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: !cookieAuthEnabled,
@@ -100,6 +154,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         : undefined,
   },
   global: {
+    fetch: supabaseFetch,
     headers: {
       // PostgREST will respond with JSON; include wildcard and object media type
       'Accept': 'application/json, text/plain, */*, application/vnd.pgrst.object+json',
@@ -6578,7 +6633,13 @@ export const fetchBudgetTransactions = async (userId: string): Promise<Transacti
       withApiCredentials({ headers })
     );
     if (!response.ok) {
-      console.error('Error fetching budget transactions: HTTP', response.status);
+      // 401/403 = session expiry / suspension, both handled elsewhere — a
+      // console.error here files a Sentry issue for an expected condition.
+      if (response.status === 401 || response.status === 403) {
+        console.warn('Skipping budget transactions fetch: HTTP', response.status);
+      } else {
+        console.error('Error fetching budget transactions: HTTP', response.status);
+      }
       return [];
     }
     const body = await response.json().catch(() => ({}));

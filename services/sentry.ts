@@ -68,6 +68,11 @@ export function initSentry(): void {
       // A voice note recorded as WebM/Opus cannot decode in Safari. Playback
       // already falls back to "Could not play voice note" in the message row.
       /The element has no supported sources/i,
+      // Our own fetch-timeout message (slow campus connections) — offline
+      // mode and per-call retries are the handling, not an incident.
+      /Request timed out/i,
+      // Server-side rate limiting; the UI surfaces a try-again message.
+      /HTTP error! status: 429/,
     ],
     beforeSend(event) {
       return scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event;
