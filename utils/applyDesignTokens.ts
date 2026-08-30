@@ -4,6 +4,7 @@ import {
   lightTheme,
   paletteToCssVars,
 } from '@lantern/shared/design';
+import { hexToRgbChannels } from '@lantern/shared/design';
 import { DEFAULT_USER_SETTINGS } from '@lantern/shared/settings';
 
 const FEATURE_VAR_MAP: Record<keyof typeof featureAccents, string> = {
@@ -61,8 +62,19 @@ export function applyDesignTokensToDom(
   const defaultAccent = DEFAULT_USER_SETTINGS.appearance.accentColor.toLowerCase();
   if (accent && accent !== defaultAccent) {
     // An explicit custom accent applies to both themes (the user's choice).
+    // --lantern-accent keeps the whole colour (it is used as one); but
+    // --color-primary is consumed as `rgb(var(--color-primary) / <alpha>)`,
+    // so it MUST be channels. Writing a hex here would compute to transparent
+    // and blank out every primary background, border and ring app-wide.
     root.style.setProperty('--lantern-accent', accent);
-    root.style.setProperty('--color-primary', accent);
+    const channels = hexToRgbChannels(accent);
+    if (channels) {
+      root.style.setProperty('--color-primary', channels);
+    } else {
+      // Unparseable accent: fall back to the designed primary rather than
+      // poisoning the variable.
+      root.style.removeProperty('--color-primary');
+    }
   } else {
     // Default accent = no override: each theme keeps its designed primary
     // (#4f46e5 light / #818cf8 dark), which also fixes primary contrast in dark.

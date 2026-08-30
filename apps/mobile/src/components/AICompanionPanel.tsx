@@ -669,7 +669,7 @@ export function AICompanionPanel({ context }: Props) {
                   <Pressable
                     key={p}
                     onPress={() => void handleSend(p)}
-                    className="px-3 py-2 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background/50 border border-lantern-primary/30 dark:border-lantern-primary/30"
+                    className="px-3 py-2 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30"
                   >
                     <Text className="text-xs text-lantern-primary">{p}</Text>
                   </Pressable>

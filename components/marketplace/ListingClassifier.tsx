@@ -99,7 +99,7 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
       </div>
 
       {selected && !browsing ? (
-        <div className="rounded-xl border border-lantern-primary/40 bg-lantern-primary-background/40 p-4 space-y-2">
+        <div className="rounded-xl border border-lantern-primary/40 bg-lantern-primary-background p-4 space-y-2">
           <p className="text-[11px] font-medium uppercase tracking-wide text-lantern-text-secondary">
             {taxonomyPathLabel(selected.id)}
           </p>

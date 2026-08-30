@@ -60,7 +60,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
 }) => {
   const shellClass =
     variant === 'hero'
-      ? 'bg-lantern-primary-background/50 rounded-lantern border border-lantern-border p-3 space-y-3'
+      ? 'bg-lantern-primary-background rounded-lantern border border-lantern-border p-3 space-y-3'
       : 'bg-lantern-surface rounded-lantern-xl border border-lantern-border p-4 space-y-3 shadow-lantern';
 
   const labelClass = 'block text-xs font-medium text-lantern-text-secondary mb-1';

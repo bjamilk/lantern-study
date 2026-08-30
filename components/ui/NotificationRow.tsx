@@ -68,7 +68,7 @@ export const NotificationRow: React.FC<NotificationRowProps> = ({
       className={`w-full text-left p-4 transition-colors duration-200 ${
         read
           ? 'bg-lantern-surface hover:bg-lantern-background-secondary'
-          : 'bg-lantern-primary-background hover:bg-lantern-primary-background/80'
+          : 'bg-lantern-primary-background hover:bg-lantern-primary-background'
       } ${onPress ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary focus-visible:ring-inset' : ''} ${className}`}
       // One hue per feature family — the colour-coding cue.
       style={{ borderLeft: `3px solid ${meta.accentColor}` }}

@@ -200,25 +200,44 @@ export const cssVarNames = {
   fontSans: '--font-sans',
 } as const;
 
+/**
+ * CSS-variable values for a palette. Colour vars hold RGB CHANNELS
+ * ("79 70 229") because Tailwind declares them as
+ * `rgb(var(--x) / <alpha-value>)`; primaryBackground / accentBackground stay
+ * whole colours because their dark values carry their own alpha.
+ * See design/colorChannels.ts.
+ */
 export function paletteToCssVars(palette: ThemePalette): Record<string, string> {
+  const ch = (hex: string): string => {
+    const raw = hex.trim().replace("#", "");
+    const full =
+      raw.length === 3 || raw.length === 4
+        ? raw
+            .split("")
+            .map((c) => c + c)
+            .join("")
+        : raw;
+    if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(full)) return hex;
+    return `${parseInt(full.slice(0, 2), 16)} ${parseInt(full.slice(2, 4), 16)} ${parseInt(full.slice(4, 6), 16)}`;
+  };
   return {
-    [cssVarNames.background]: palette.background,
-    [cssVarNames.backgroundSecondary]: palette.backgroundSecondary,
-    [cssVarNames.surface]: palette.surface,
-    [cssVarNames.surfaceSecondary]: palette.surfaceSecondary,
-    [cssVarNames.text]: palette.text,
-    [cssVarNames.textSecondary]: palette.textSecondary,
-    [cssVarNames.textTertiary]: palette.textTertiary,
-    [cssVarNames.primary]: palette.primary,
-    [cssVarNames.primaryLight]: palette.primaryLight,
-    [cssVarNames.primaryDark]: palette.primaryDark,
+    [cssVarNames.background]: ch(palette.background),
+    [cssVarNames.backgroundSecondary]: ch(palette.backgroundSecondary),
+    [cssVarNames.surface]: ch(palette.surface),
+    [cssVarNames.surfaceSecondary]: ch(palette.surfaceSecondary),
+    [cssVarNames.text]: ch(palette.text),
+    [cssVarNames.textSecondary]: ch(palette.textSecondary),
+    [cssVarNames.textTertiary]: ch(palette.textTertiary),
+    [cssVarNames.primary]: ch(palette.primary),
+    [cssVarNames.primaryLight]: ch(palette.primaryLight),
+    [cssVarNames.primaryDark]: ch(palette.primaryDark),
     [cssVarNames.primaryBackground]: palette.primaryBackground,
-    [cssVarNames.accent]: palette.accent,
+    [cssVarNames.accent]: ch(palette.accent),
     [cssVarNames.accentBackground]: palette.accentBackground,
-    [cssVarNames.success]: palette.success,
-    [cssVarNames.warning]: palette.warning,
-    [cssVarNames.error]: palette.error,
-    [cssVarNames.border]: palette.border,
+    [cssVarNames.success]: ch(palette.success),
+    [cssVarNames.warning]: ch(palette.warning),
+    [cssVarNames.error]: ch(palette.error),
+    [cssVarNames.border]: ch(palette.border),
     [cssVarNames.radiusLg]: `${radius.lg}px`,
     [cssVarNames.radiusXl]: `${radius.xl}px`,
   };

@@ -1287,7 +1287,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           {summary ? (
 
-            <Card className="mb-4 border-lantern-primary/30 dark:border-lantern-primary/30 bg-lantern-primary-background/50 dark:bg-lantern-primary-background/20">
+            <Card className="mb-4 border-lantern-primary/30 dark:border-lantern-primary/30 bg-lantern-primary-background dark:bg-lantern-primary-background">
 
               <Text className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light mb-2">Smart Notes</Text>
 
