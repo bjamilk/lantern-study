@@ -23,6 +23,54 @@ import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { setUserSessionCutoff } from '../services/tokenDenylist';
 import { clearAuthTokenCache } from '../middleware/auth';
+
+/**
+ * How long a ban lasts at the auth layer. GoTrue takes a duration string, not
+ * an end date, and has no "forever" — ~100 years is the conventional stand-in.
+ * A ban is lifted explicitly by setting 'none', never by expiry.
+ */
+export const AUTH_BAN_DURATION = '876000h';
+
+/**
+ * Ban or unban a user in GoTrue itself.
+ *
+ * Why this exists: banning only wrote profiles.settings and signed the user
+ * out. Signing out invalidates the tokens they already hold — it does not stop
+ * them signing straight back in for a fresh one. Setting banned_until makes
+ * GoTrue refuse to issue tokens at all, which is what "banned" should mean.
+ *
+ * Never throws: the ban is already recorded in the database and enforced by
+ * the API, so a GoTrue hiccup must not fail the admin's action or leave the
+ * two halves inconsistent. Returns whether the auth layer agreed, so the
+ * caller can surface it.
+ */
+export async function setAuthBan(
+  client: any,
+  userId: string,
+  duration: typeof AUTH_BAN_DURATION | 'none'
+): Promise<boolean> {
+  try {
+    const { error } = await client.auth.admin.updateUserById(userId, {
+      ban_duration: duration,
+    });
+    if (error) {
+      logger.warn('Auth-layer ban update failed', {
+        userId,
+        duration,
+        error: error.message,
+      });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn('Auth-layer ban update threw', {
+      userId,
+      duration,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
 import { logger } from '../utils/logger';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { getModerationService } from '../services/moderation';
@@ -450,6 +498,8 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     });
     await invalidateBanCache(id);
 
+    let authBanApplied: boolean | null = null;
+
     if (status === 'banned') {
       try {
         await client.auth.admin.signOut(id, 'global');
@@ -457,6 +507,14 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
         logger.warn('Supabase global signOut failed on ban', { id, signOutErr });
       }
       await setUserSessionCutoff(id);
+      // Ban at the AUTH layer too, not just in profiles.settings. Signing the
+      // user out only invalidates the tokens they already hold — without this
+      // they can sign in again immediately and get a fresh one. GoTrue refuses
+      // to issue tokens at all while banned_until is in the future.
+      authBanApplied = await setAuthBan(client, id, AUTH_BAN_DURATION);
+    } else if (status === 'active') {
+      // Lift the auth-layer ban, or an unbanned user could never sign in again.
+      authBanApplied = await setAuthBan(client, id, 'none');
     } else if (status === 'suspended') {
       await supabaseService
         .createNotification(id, {
@@ -469,7 +527,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
         .catch((notifyErr) => logger.warn('Suspension notification failed', { id, notifyErr }));
     }
 
-    res.json({ success: true, data: { id, status, suspendedUntil } });
+    res.json({ success: true, data: { id, status, suspendedUntil, authBanApplied } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: clientErrorMessage(err) });
   }
