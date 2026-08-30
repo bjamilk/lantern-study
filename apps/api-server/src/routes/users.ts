@@ -39,6 +39,7 @@ export const ACADEMIC_PROFILE_FIELDS = [
   'faculty',
   'programme',
   'studyLevel',
+  'currentSemester',
   'entryYear',
   'expectedGraduationYear',
 ] as const;
@@ -85,6 +86,7 @@ export const toPublicUser = (
     last_name?: string;
     institution_id?: string | null;
     study_level?: number | null;
+    current_semester?: number | null;
   }
 ) => ({
   id: user.id,
@@ -101,6 +103,7 @@ export const toPublicUser = (
   faculty: user.faculty ?? null,
   programme: user.programme ?? null,
   studyLevel: user.studyLevel ?? user.study_level ?? null,
+  currentSemester: user.currentSemester ?? user.current_semester ?? null,
 });
 
 /**
@@ -669,6 +672,18 @@ router.put(
       if (updateData[intField] !== undefined && updateData[intField] !== null) {
         updateData[intField] = Number(updateData[intField]);
       }
+    }
+    // Semester is a two-value enum, not a free int: reject anything else with a
+    // 400 rather than letting the DB CHECK turn it into a 500.
+    if (updateData.currentSemester !== undefined && updateData.currentSemester !== null) {
+      const semester = Number(updateData.currentSemester);
+      if (semester !== 1 && semester !== 2) {
+        return res.status(400).json({
+          success: false,
+          error: 'Semester must be 1 (first) or 2 (second)',
+        });
+      }
+      updateData.currentSemester = semester;
     }
     // Creator bio: trimmed, ≤ 280 chars (400 rather than a DB CHECK violation).
     if (updateData.bio !== undefined) {

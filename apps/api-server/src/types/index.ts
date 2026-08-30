@@ -60,6 +60,8 @@ export interface User {
   faculty?: string | null;
   programme?: string | null;
   studyLevel?: number | null;
+  /** 1 = first semester, 2 = second (20260830090000). */
+  currentSemester?: 1 | 2 | null;
   entryYear?: number | null;
   expectedGraduationYear?: number | null;
 }

@@ -79,6 +79,13 @@ export function SyncStatusIndicator({
   const color = statusColor(status.state);
   const hasPending = sync.pendingCount > 0;
 
+  // The compact chip is a floating overlay on every screen. When everything is
+  // online and synced it states the default and only covers content, so it
+  // renders nothing — same rule SyncDot already follows.
+  if (compact && status.state === 'online' && !hasPending && !sync.isSyncing) {
+    return null;
+  }
+
   const content = (
     <View style={[styles.container, compact && styles.containerCompact, { backgroundColor: `${color}15` }]}>
       {sync.isSyncing ? (

@@ -202,6 +202,8 @@ function mapProfileRowToUser(
     faculty: (row.faculty as string | null | undefined) ?? null,
     programme: (row.programme as string | null | undefined) ?? null,
     studyLevel: toNullableInt(row.study_level),
+    // 20260830090000. Absent column (migration unapplied) reads as null.
+    currentSemester: toNullableInt(row.current_semester),
     entryYear: toNullableInt(row.entry_year),
     expectedGraduationYear: toNullableInt(row.expected_graduation_year),
     // Creator identity (20260823123000). Read back so "Edit bio" can prefill
@@ -1332,6 +1334,8 @@ export class SupabaseService {
       updateData.programme = updates.programme || null;
     if (updates.studyLevel !== undefined)
       updateData.study_level = updates.studyLevel ?? null;
+    if (updates.currentSemester !== undefined)
+      updateData.current_semester = updates.currentSemester ?? null;
     if (updates.entryYear !== undefined)
       updateData.entry_year = updates.entryYear ?? null;
     if (updates.expectedGraduationYear !== undefined)

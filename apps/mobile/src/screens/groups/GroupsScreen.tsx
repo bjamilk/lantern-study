@@ -144,7 +144,9 @@ function ChatRow({
         borderLeftColor: nestingLevel > 0 ? `${featureAccents.groups}55` : 'transparent',
         opacity: isArchived ? 0.6 : 1,
       }}
-      className={`flex-row items-center pr-4 py-3.5 border-b border-lantern-border${
+      // No row divider: avatars + generous row padding already separate chats,
+      // and the hairline made a dense list look like a table (founder call).
+      className={`flex-row items-center pr-4 py-3.5${
         selected ? ' bg-lantern-primary-background' : ''
       }`}
     >
@@ -229,7 +231,7 @@ function InviteRow({
   onDecline: () => void;
 }) {
   return (
-    <View className="flex-row items-center gap-3 px-4 py-3.5 border-b border-lantern-border">
+    <View className="flex-row items-center gap-3 px-4 py-3.5">
       <ResolvedAvatar
         name={invite.groupName}
         uri={resolveAvatarSrc(invite.avatarUrl, lowDataMode)}

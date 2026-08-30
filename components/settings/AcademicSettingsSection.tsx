@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { semesterOptions } from '@lantern/shared/academic';
 import { ArchiveBoxIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { currentAcademicYear } from '@lantern/shared';
 import type { Course, User, UserCourse } from '../../types';
@@ -58,6 +59,9 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
   const [institutionId, setInstitutionId] = useState<string | null>(currentUser.institutionId ?? null);
   const [programme, setProgramme] = useState(currentUser.programme ?? '');
   const [studyLevel, setStudyLevel] = useState<number | null>(currentUser.studyLevel ?? null);
+  const [currentSemester, setCurrentSemester] = useState<1 | 2 | null>(
+    currentUser.currentSemester ?? null
+  );
   const [entryYear, setEntryYear] = useState(currentUser.entryYear != null ? String(currentUser.entryYear) : '');
   const [gradYear, setGradYear] = useState(
     currentUser.expectedGraduationYear != null ? String(currentUser.expectedGraduationYear) : ''
@@ -79,6 +83,7 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
     setInstitutionId(currentUser.institutionId ?? null);
     setProgramme(currentUser.programme ?? '');
     setStudyLevel(currentUser.studyLevel ?? null);
+    setCurrentSemester(currentUser.currentSemester ?? null);
     setEntryYear(currentUser.entryYear != null ? String(currentUser.entryYear) : '');
     setGradYear(currentUser.expectedGraduationYear != null ? String(currentUser.expectedGraduationYear) : '');
   }, [
@@ -87,6 +92,7 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
     currentUser.institutionId,
     currentUser.programme,
     currentUser.studyLevel,
+    currentUser.currentSemester,
     currentUser.entryYear,
     currentUser.expectedGraduationYear,
   ]);
@@ -111,6 +117,7 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
     (institutionId ?? null) !== (currentUser.institutionId ?? null) ||
     programme.trim() !== (currentUser.programme ?? '') ||
     (studyLevel ?? null) !== (currentUser.studyLevel ?? null) ||
+    (currentSemester ?? null) !== (currentUser.currentSemester ?? null) ||
     entryYear.trim() !== (currentUser.entryYear != null ? String(currentUser.entryYear) : '') ||
     gradYear.trim() !== (currentUser.expectedGraduationYear != null ? String(currentUser.expectedGraduationYear) : '');
 
@@ -132,6 +139,7 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
         institutionId,
         programme: programme.trim() || null,
         studyLevel,
+        currentSemester,
         entryYear: parsedEntry,
         expectedGraduationYear: parsedGrad,
       });
@@ -150,6 +158,7 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
           faculty: saved.faculty ?? latest.faculty ?? null,
           programme: saved.programme ?? (programme.trim() || null),
           studyLevel: saved.studyLevel ?? studyLevel,
+          currentSemester: saved.currentSemester ?? currentSemester,
           entryYear: saved.entryYear ?? parsedEntry,
           expectedGraduationYear: saved.expectedGraduationYear ?? parsedGrad,
         });
@@ -280,6 +289,22 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
             >
               <option value="">Not set</option>
               {levelOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="academic-semester" className="block text-sm font-medium text-lantern-text">Semester</label>
+            <select
+              id="academic-semester"
+              value={currentSemester ?? ''}
+              onChange={(e) =>
+                setCurrentSemester(e.target.value ? (Number(e.target.value) as 1 | 2) : null)
+              }
+              className={inputClass}
+            >
+              <option value="">Not set</option>
+              {semesterOptions().map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>

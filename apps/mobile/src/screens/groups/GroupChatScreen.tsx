@@ -224,6 +224,8 @@ interface MessageRowProps {
   onRetry: (message: Message) => void;
   /** Device-local star indicator. */
   starred: boolean;
+  /** This row is the target of the open action bar — highlight the whole row. */
+  selected: boolean;
 }
 
 /**
@@ -258,6 +260,7 @@ const MessageRow = React.memo(function MessageRow({
   onOpenThread,
   onRetry,
   starred,
+  selected,
 }: MessageRowProps) {
   const handleVote = useCallback(
     (vote: 'up' | 'down') => onVoteMessage(message, vote),
@@ -267,7 +270,10 @@ const MessageRow = React.memo(function MessageRow({
   const isQuestion = message.type === 'question';
 
   return (
-    <View>
+    // Selection highlight spans the full row (negative margin cancels the
+    // list's px-4) so a long-pressed message is unmistakable while the action
+    // bar is open — the bar used to act on a message with no visual anchor.
+    <View className={selected ? '-mx-4 px-4 py-0.5 bg-lantern-primary/15' : undefined}>
       {dateLabel ? <ChatDateSeparator label={dateLabel} /> : null}
       {showUnreadDivider ? <NewMessagesDivider /> : null}
       <MessageBubble
@@ -353,6 +359,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [messageActionTarget, setMessageActionTarget] = useState<Message | null>(null);
   /** Device-local stars / single pinned message / forward picker target. */
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  /** Filter the chat down to starred messages — stars were unfindable without it. */
+  const [starredOnly, setStarredOnly] = useState(false);
   const [pinnedMessage, setPinnedMessage] = useState<{ id: string; text: string } | null>(null);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   /** In-chat search over the loaded window, with next/prev jumping. */
@@ -510,12 +518,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const displayMessages = useMemo(() => {
     // Per-group cache is the source of truth — global `messages` can lag or hold another chat.
     const raw = groupMessages || [];
-    return raw.filter(
+    const visible = raw.filter(
       (msg) =>
         shouldRenderRemovedMessage(msg, raw) &&
         messagePassesQuestionVisibility(msg, questionVisibilityMode)
     );
-  }, [groupMessages, questionVisibilityMode]);
+    // Starred view: same list, filtered — keeps every row action working
+    // (reply, jump to thread, unstar) instead of a read-only side panel.
+    return starredOnly ? visible.filter((msg) => starredIds.has(msg.id)) : visible;
+  }, [groupMessages, questionVisibilityMode, starredOnly, starredIds]);
 
   // Read by handlers that must not take `displayMessages` as a dependency.
   const displayMessagesRef = useRef(displayMessages);
@@ -1223,8 +1234,17 @@ export function GroupChatScreen({ navigation, route }: Props) {
   // needs them here — without it a vote, the unread divider or a sign-in change
   // silently fails to repaint rows that are already mounted.
   const listExtraData = useMemo(
-    () => ({ userVotes, firstUnreadId, userId: user?.id, members: groupMembers, starredIds }),
-    [userVotes, firstUnreadId, user?.id, groupMembers, starredIds]
+    () => ({
+      userVotes,
+      firstUnreadId,
+      userId: user?.id,
+      members: groupMembers,
+      starredIds,
+      // The rows are memoized: without this the selection highlight never paints.
+      actionTargetId: messageActionTarget?.id,
+      starredOnly,
+    }),
+    [userVotes, firstUnreadId, user?.id, groupMembers, starredIds, messageActionTarget?.id, starredOnly]
   );
 
   // archiveGroup is a toggle, so this unarchives an archived group.
@@ -1435,6 +1455,22 @@ export function GroupChatScreen({ navigation, route }: Props) {
         onPress: () => setChatSearchOpen(true),
       },
       {
+        // Stars were write-only before this: you could star a message and had
+        // no way to get back to it short of scrolling the whole history.
+        id: 'starred-messages',
+        label: starredOnly
+          ? 'Show all messages'
+          : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`,
+        icon: starredOnly ? 'star' : 'star-outline',
+        iconColor: starredOnly ? '#f59e0b' : undefined,
+        section: 'View',
+        disabled: !starredOnly && starredIds.size === 0,
+        onPress: () => {
+          setStarredOnly((on) => !on);
+          setChatSearchOpen(false);
+        },
+      },
+      {
         id: 'question-filter',
         label: 'All questions',
         icon: 'filter-outline',
@@ -1512,6 +1548,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
     muteBusy,
     clearMute,
     applyMute,
+    starredOnly,
+    starredIds,
   ]);
 
   return (
@@ -1628,10 +1666,32 @@ export function GroupChatScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
+      {starredOnly ? (
+        <View className="flex-row items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+          <Ionicons name="star" size={14} color="#f59e0b" />
+          <Text className="flex-1 text-[12px] font-semibold text-amber-800 dark:text-amber-300">
+            Starred messages ({displayMessages.length})
+          </Text>
+          <Pressable
+            onPress={() => setStarredOnly(false)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Show all messages"
+            className="px-2 py-1"
+          >
+            <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+              Show all
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {pinnedMessage ? (
         <Pressable
           onPress={() => handleScrollToMessage(pinnedMessage.id)}
-          className="flex-row items-center gap-2 px-3 py-2 bg-lantern-primary-background border-b border-lantern-border"
+          // pr-14 keeps the unpin button clear of the floating sync chip, which
+          // the shell parks at the top-right of every screen.
+          className="flex-row items-center gap-2 pl-3 pr-14 py-2 bg-lantern-primary-background border-b border-lantern-border"
           accessibilityRole="button"
           accessibilityLabel="Jump to pinned message"
         >
@@ -1705,8 +1765,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
               ) : null
             }
             ListEmptyComponent={
-              <View className="flex-1 items-center justify-center py-16">
-                <Text className="text-sm text-lantern-text-secondary">No messages yet. Say hello!</Text>
+              <View className="flex-1 items-center justify-center py-16 px-8">
+                <Text className="text-sm text-center text-lantern-text-secondary">
+                  {starredOnly
+                    ? 'No starred messages in this chat yet. Long-press a message and tap the star to keep it here.'
+                    : 'No messages yet. Say hello!'}
+                </Text>
               </View>
             }
             // MessageRow closes over none of these, so the list must be told
@@ -1752,6 +1816,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
                   onOpenThread={handleOpenThread}
                   onRetry={handleRetryMessage}
                   starred={starredIds.has(item.id)}
+                  selected={messageActionTarget?.id === item.id}
                 />
               );
             }}

@@ -98,7 +98,16 @@ export async function archiveAcademicYear(academicYear: string = currentAcademic
 }
 
 export type AcademicProfilePatch = Partial<
-  Pick<AcademicProfile, 'institutionId' | 'faculty' | 'programme' | 'studyLevel' | 'entryYear' | 'expectedGraduationYear'>
+  Pick<
+    AcademicProfile,
+    | 'institutionId'
+    | 'faculty'
+    | 'programme'
+    | 'studyLevel'
+    | 'currentSemester'
+    | 'entryYear'
+    | 'expectedGraduationYear'
+  >
 >;
 
 /** PUT /users/:id with academic fields; mirrors the result into the auth store. */

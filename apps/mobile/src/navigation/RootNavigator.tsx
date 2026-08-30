@@ -742,7 +742,14 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
       />
       {/* The navigator is pulled up by insets.top (see MainTabsShell); add it
           back so the chip keeps sitting just below the top bar. */}
-      <View className="absolute right-3 z-40" style={{ top: (hideBar ? 0 : insets.top) + 48 }}>
+      {/* Informational only (no onPress): pointerEvents none so it can never
+          swallow taps meant for the screen under it — it was eating the unpin
+          button on the chat's pinned-message banner. */}
+      <View
+        pointerEvents="none"
+        className="absolute right-3 z-40"
+        style={{ top: (hideBar ? 0 : insets.top) + 48 }}
+      >
         <SyncStatusIndicator compact />
       </View>
       <ToastHost />

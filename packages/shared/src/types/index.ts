@@ -178,6 +178,8 @@ export interface User {
   programme?: string | null;
   /** 100..900 */
   studyLevel?: number | null;
+  /** Semester the student is currently in: 1 = first, 2 = second. */
+  currentSemester?: 1 | 2 | null;
   /** Owner/admin only in the public projection. */
   entryYear?: number | null;
   /** Owner/admin only in the public projection. */

@@ -81,3 +81,18 @@ export type CourseSemester = (typeof COURSE_SEMESTERS)[number];
 export function isValidCourseSemester(value: unknown): value is CourseSemester {
   return value === 1 || value === 2;
 }
+
+/** "First semester" / "Second semester". */
+export function semesterLabel(semester: number | null | undefined): string {
+  if (semester === 1) return "First semester";
+  if (semester === 2) return "Second semester";
+  return "";
+}
+
+/**
+ * Options for the profile's semester select. One source for web + mobile so the
+ * two platforms cannot drift on wording or values.
+ */
+export function semesterOptions(): Array<{ value: CourseSemester; label: string }> {
+  return COURSE_SEMESTERS.map((value) => ({ value, label: semesterLabel(value) }));
+}

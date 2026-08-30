@@ -8,6 +8,8 @@ export interface AcademicProfile {
   faculty: string | null;
   programme: string | null;
   studyLevel: number | null;
+  /** 1 = first semester, 2 = second. */
+  currentSemester: 1 | 2 | null;
   entryYear: number | null;
   expectedGraduationYear: number | null;
 }
@@ -18,6 +20,7 @@ export const EMPTY_ACADEMIC_PROFILE: AcademicProfile = {
   faculty: null,
   programme: null,
   studyLevel: null,
+  currentSemester: null,
   entryYear: null,
   expectedGraduationYear: null,
 };
@@ -51,6 +54,11 @@ export function extractAcademicProfile(profile: unknown): AcademicProfile {
     faculty: str(p.faculty),
     programme: str(p.programme),
     studyLevel: int(p.studyLevel ?? p.study_level),
+    // Only 1 or 2 are meaningful; anything else reads as "not set".
+    currentSemester: ((): 1 | 2 | null => {
+      const value = int(p.currentSemester ?? p.current_semester);
+      return value === 1 || value === 2 ? value : null;
+    })(),
     entryYear: int(p.entryYear ?? p.entry_year),
     expectedGraduationYear: int(p.expectedGraduationYear ?? p.expected_graduation_year),
   };

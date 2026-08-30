@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { semesterOptions } from '@lantern/shared/academic';
 import { CheckCircleIcon, ExclamationCircleIcon, UserIcon } from '@heroicons/react/24/outline';
 import { checkUsernameAvailability, updateUsername } from '../services/supabase';
 import { fetchInstitutions, updateAcademicProfile } from '../services/academic';
@@ -45,6 +46,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
   const [institutionId, setInstitutionId] = useState<string | null>(null);
   const [programme, setProgramme] = useState('');
   const [studyLevel, setStudyLevel] = useState<number | null>(null);
+  const [currentSemester, setCurrentSemester] = useState<1 | 2 | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [institutions, setInstitutions] = useState<InstitutionOption[]>([]);
   const [institutionsLoading, setInstitutionsLoading] = useState(false);
@@ -70,6 +72,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
     setInstitutionId(currentUser.institutionId || null);
     setProgramme(currentUser.programme || '');
     setStudyLevel(currentUser.studyLevel ?? null);
+    setCurrentSemester(currentUser.currentSemester ?? null);
     setError('');
     setTouched(false);
     setUsernameError('');
@@ -199,6 +202,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
         institutionId,
         programme: trimmedProgramme || null,
         studyLevel,
+        currentSemester,
       });
       updates.institutionId = saved.institutionId ?? institutionId;
       updates.institution =
@@ -211,6 +215,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
           : null);
       updates.programme = saved.programme ?? (trimmedProgramme || null);
       updates.studyLevel = saved.studyLevel ?? studyLevel;
+      updates.currentSemester = saved.currentSemester ?? currentSemester;
       if (saved.faculty !== undefined) updates.faculty = saved.faculty;
 
       // 3. Courses via PUT /users/me/courses (only when the user picked some —
@@ -417,6 +422,26 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
             {touched && fieldErrors.studyLevel ? (
               <p className="mt-1 text-xs text-lantern-error">{fieldErrors.studyLevel}</p>
             ) : null}
+          </div>
+          <div>
+            <label htmlFor="profile-setup-semester" className="block text-sm font-medium text-lantern-text mb-1">
+              Semester
+            </label>
+            <select
+              id="profile-setup-semester"
+              value={currentSemester ?? ''}
+              onChange={(e) =>
+                setCurrentSemester(e.target.value ? (Number(e.target.value) as 1 | 2) : null)
+              }
+              className={inputClass}
+            >
+              <option value="">Not set</option>
+              {semesterOptions().map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

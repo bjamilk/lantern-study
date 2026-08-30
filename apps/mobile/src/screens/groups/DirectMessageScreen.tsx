@@ -119,6 +119,8 @@ interface DmMessageRowProps {
   onRetryMessage: (message: DirectMessage) => void;
   /** Device-local star indicator. */
   starred: boolean;
+  /** This row is the target of the open action bar — highlight the whole row. */
+  selected: boolean;
 }
 
 /**
@@ -139,6 +141,7 @@ const DmMessageRow = React.memo(function DmMessageRow({
   onOpenThread,
   onRetryMessage,
   starred,
+  selected,
 }: DmMessageRowProps) {
   const bubbleMessage = useMemo(() => {
     const timestamp =
@@ -176,7 +179,9 @@ const DmMessageRow = React.memo(function DmMessageRow({
   const handleRetry = useCallback(() => onRetryMessage(message), [message, onRetryMessage]);
 
   return (
-    <View>
+    // Full-row selection highlight (negative margin cancels the list padding)
+    // so the action bar visibly belongs to the message it will act on.
+    <View className={selected ? '-mx-4 px-4 py-0.5 bg-lantern-primary/15' : undefined}>
       {showUnreadDivider ? <NewMessagesDivider /> : null}
       <DmBubble
         message={bubbleMessage}
@@ -476,6 +481,15 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [dmMessageTarget, setDmMessageTarget] = useState<DirectMessage | null>(null);
   const [dmMessageOverflowOpen, setDmMessageOverflowOpen] = useState(false);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  /** Filter the thread down to starred messages — stars were unfindable without it. */
+  const [starredOnly, setStarredOnly] = useState(false);
+  // Declared here rather than folded into `messages` (line ~273): that memo runs
+  // before starredIds exists. Only the list reads this; scroll/unread logic
+  // keeps using the unfiltered `messages`.
+  const visibleMessages = useMemo(
+    () => (starredOnly ? messages.filter((m) => starredIds.has(m.id)) : messages),
+    [messages, starredOnly, starredIds]
+  );
   const [pinnedMessage, setPinnedMessage] = useState<{ id: string; text: string } | null>(null);
   const [forwardMessage, setForwardMessage] = useState<DirectMessage | null>(null);
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
@@ -490,6 +504,18 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       label: 'Search messages',
       icon: 'search-outline',
       onPress: () => afterSheet(() => setChatSearchOpen(true)),
+    },
+    {
+      // Stars were write-only before this: nothing led back to them.
+      label: starredOnly
+        ? 'Show all messages'
+        : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`,
+      icon: starredOnly ? 'star' : 'star-outline',
+      onPress: () =>
+        afterSheet(() => {
+          setStarredOnly((on) => !on);
+          setChatSearchOpen(false);
+        }),
     },
     {
       label: chatMuted ? 'Unmute notifications' : 'Mute',
@@ -978,8 +1004,25 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   // DmMessageRow is memoized, so the list has to be told when the values the
   // rows are *given* change — otherwise the unread divider goes stale.
   const listExtraData = useMemo(
-    () => ({ firstUnreadId, userId: user?.id, displayName, peerAvatarUrl, starredIds }),
-    [firstUnreadId, user?.id, displayName, peerAvatarUrl, starredIds]
+    () => ({
+      firstUnreadId,
+      userId: user?.id,
+      displayName,
+      peerAvatarUrl,
+      starredIds,
+      // The rows are memoized: without this the selection highlight never paints.
+      actionTargetId: dmMessageTarget?.id,
+      starredOnly,
+    }),
+    [
+      firstUnreadId,
+      user?.id,
+      displayName,
+      peerAvatarUrl,
+      starredIds,
+      dmMessageTarget?.id,
+      starredOnly,
+    ]
   );
 
   const handleBack = useCallback(() => {
@@ -1324,10 +1367,30 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 </Pressable>
               </View>
             ) : null}
+            {starredOnly ? (
+              <View className="flex-row items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+                <Ionicons name="star" size={14} color="#f59e0b" />
+                <Text className="flex-1 text-[12px] font-semibold text-amber-800 dark:text-amber-300">
+                  Starred messages ({visibleMessages.length})
+                </Text>
+                <Pressable
+                  onPress={() => setStarredOnly(false)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Show all messages"
+                  className="px-2 py-1"
+                >
+                  <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                    Show all
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             {pinnedMessage ? (
               <Pressable
                 onPress={() => handleScrollToMessage(pinnedMessage.id)}
-                className="flex-row items-center gap-2 px-3 py-2 bg-lantern-primary-background border-b border-lantern-border"
+                // pr-14 keeps the unpin button clear of the shell's floating sync chip.
+                className="flex-row items-center gap-2 pl-3 pr-14 py-2 bg-lantern-primary-background border-b border-lantern-border"
                 accessibilityRole="button"
                 accessibilityLabel="Jump to pinned message"
               >
@@ -1346,7 +1409,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             ) : null}
             <FlatList
               ref={listRef}
-              data={messages}
+              data={visibleMessages}
               keyExtractor={item => item.id}
               {...CHAT_LIST_WINDOWING}
               className="flex-1"
@@ -1373,8 +1436,12 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               }
               ListEmptyComponent={
                 <EmptyState
-                  icon="chatbubble-ellipses-outline"
-                  title={`Start a conversation with ${displayName}`}
+                  icon={starredOnly ? 'star-outline' : 'chatbubble-ellipses-outline'}
+                  title={
+                    starredOnly
+                      ? 'No starred messages yet'
+                      : `Start a conversation with ${displayName}`
+                  }
                 />
               }
               // DmMessageRow is memoized and closes over none of these.
@@ -1382,6 +1449,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               renderItem={({ item }) => (
                 <DmMessageRow
                   message={item}
+                  selected={dmMessageTarget?.id === item.id}
                   isOwn={item.senderId === user?.id}
                   senderName={displayName}
                   senderAvatar={

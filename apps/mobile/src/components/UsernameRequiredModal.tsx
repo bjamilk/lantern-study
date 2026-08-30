@@ -23,7 +23,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Course } from '@lantern/shared/types';
-import { currentAcademicYear, studyLevelLabel } from '@lantern/shared/academic';
+import { currentAcademicYear, semesterLabel, studyLevelLabel } from '@lantern/shared/academic';
 import { useTheme } from '../theme';
 import { checkUsername, updateUsername } from '../services/api';
 import { getMyActiveCourses, saveAcademicProfile, saveMyCourseSet } from '../services/academic';
@@ -32,6 +32,7 @@ import { useInstitutions } from '../hooks/useInstitutions';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from './chat/composerKeyboardBehavior';
 import { CampusPicker } from '../screens/marketplace/CampusPicker';
 import { StudyLevelPicker } from './academic/StudyLevelPicker';
+import { SemesterPicker } from './academic/SemesterPicker';
 import { CourseMultiSelect } from './academic/CourseMultiSelect';
 
 interface User {
@@ -87,6 +88,9 @@ export default function UsernameRequiredModal({
   const [institutionId, setInstitutionId] = useState(academicProfile?.institutionId ?? '');
   const [programme, setProgramme] = useState(academicProfile?.programme ?? '');
   const [studyLevel, setStudyLevel] = useState<number | null>(academicProfile?.studyLevel ?? null);
+  const [currentSemester, setCurrentSemester] = useState<1 | 2 | null>(
+    academicProfile?.currentSemester ?? null
+  );
   const [courses, setCourses] = useState<Course[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -112,6 +116,7 @@ export default function UsernameRequiredModal({
     setInstitutionId(prev => prev || academicProfile.institutionId || '');
     setProgramme(prev => prev || academicProfile.programme || '');
     setStudyLevel(prev => prev ?? academicProfile.studyLevel ?? null);
+    setCurrentSemester(prev => prev ?? academicProfile.currentSemester ?? null);
   }, [academicProfile]);
 
   // Debounced username availability check
@@ -201,7 +206,8 @@ export default function UsernameRequiredModal({
         });
       }
 
-      const hasAcademicInput = !!institutionId || studyLevel != null || !!programme.trim();
+      const hasAcademicInput =
+        !!institutionId || studyLevel != null || currentSemester != null || !!programme.trim();
       if (hasAcademicInput) {
         // Best-effort — a failed academic PUT must not trap the user behind the
         // gate once the username is set.
@@ -210,6 +216,7 @@ export default function UsernameRequiredModal({
             institutionId: institutionId || null,
             programme: programme.trim() || null,
             studyLevel: studyLevel ?? null,
+            currentSemester: currentSemester ?? null,
           });
 
           if (courses.length > 0) {
@@ -442,6 +449,21 @@ export default function UsernameRequiredModal({
               value={studyLevel}
               onChange={(level) => {
                 setStudyLevel(level);
+                setError('');
+              }}
+              disabled={isSubmitting}
+            />
+          </View>
+
+          {/* Semester */}
+          <View style={styles.inputContainer}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Semester (Optional){currentSemester ? ` — ${semesterLabel(currentSemester)}` : ''}
+            </Text>
+            <SemesterPicker
+              value={currentSemester}
+              onChange={(semester) => {
+                setCurrentSemester(semester);
                 setError('');
               }}
               disabled={isSubmitting}

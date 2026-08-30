@@ -21,11 +21,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { Course, UserCourse } from '@lantern/shared/types';
-import { currentAcademicYear, studyLevelLabel } from '@lantern/shared/academic';
+import { currentAcademicYear, semesterLabel, studyLevelLabel } from '@lantern/shared/academic';
 import { useAuthStore } from '../../stores/authStore';
 import { useTheme } from '../../theme';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { StudyLevelPicker } from '../../components/academic/StudyLevelPicker';
+import { SemesterPicker } from '../../components/academic/SemesterPicker';
 import { CourseMultiSelect } from '../../components/academic/CourseMultiSelect';
 import { useInstitutions } from '../../hooks/useInstitutions';
 import {
@@ -61,6 +62,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
   const [programme, setProgramme] = useState('');
   const [faculty, setFaculty] = useState('');
   const [studyLevel, setStudyLevel] = useState<number | null>(null);
+  const [currentSemester, setCurrentSemester] = useState<1 | 2 | null>(null);
   const [entryYear, setEntryYear] = useState('');
   const [graduationYear, setGraduationYear] = useState('');
 
@@ -78,6 +80,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
     setProgramme(profile.programme ?? '');
     setFaculty(profile.faculty ?? '');
     setStudyLevel(profile.studyLevel ?? null);
+    setCurrentSemester(profile.currentSemester ?? null);
     setEntryYear(profile.entryYear != null ? String(profile.entryYear) : '');
     setGraduationYear(profile.expectedGraduationYear != null ? String(profile.expectedGraduationYear) : '');
   }, []);
@@ -142,6 +145,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         programme: programme.trim() || null,
         faculty: faculty.trim() || null,
         studyLevel: studyLevel ?? null,
+        currentSemester: currentSemester ?? null,
         entryYear: entry,
         expectedGraduationYear: grad,
       });
@@ -151,7 +155,16 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
     } finally {
       setSaving(false);
     }
-  }, [user?.id, institutionId, programme, faculty, studyLevel, entryYear, graduationYear]);
+  }, [
+    user?.id,
+    institutionId,
+    programme,
+    faculty,
+    studyLevel,
+    currentSemester,
+    entryYear,
+    graduationYear,
+  ]);
 
   const handleAddCourse = useCallback(
     async (course: Course) => {
@@ -298,6 +311,11 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
               Level{studyLevel ? ` · ${studyLevelLabel(studyLevel)}` : ''}
             </Text>
             <StudyLevelPicker value={studyLevel} onChange={setStudyLevel} />
+
+            <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>
+              Semester{currentSemester ? ` · ${semesterLabel(currentSemester)}` : ''}
+            </Text>
+            <SemesterPicker value={currentSemester} onChange={setCurrentSemester} />
 
             <View style={styles.yearRow}>
               <View style={styles.yearCol}>

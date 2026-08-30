@@ -81,6 +81,8 @@ export const mapUserFromApi = (data: any): User => {
     faculty: data.faculty,
     programme: data.programme,
     studyLevel: data.studyLevel !== undefined ? data.studyLevel : data.study_level,
+    currentSemester:
+      data.currentSemester !== undefined ? data.currentSemester : data.current_semester,
     entryYear: data.entryYear !== undefined ? data.entryYear : data.entry_year,
     expectedGraduationYear:
       data.expectedGraduationYear !== undefined
