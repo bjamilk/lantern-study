@@ -152,6 +152,23 @@ export default function NotificationsScreen() {
     [navigation],
   );
 
+  // Jobs moved to its own bottom-tab stack, so a job notification dispatched
+  // into MarketTab reaches no navigator and the tap does nothing.
+  const navigateToJobs = useCallback(
+    (screen: string, params?: Record<string, string>) => {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: "Main",
+          params: {
+            screen: "JobsTab",
+            params: params ? { screen, params } : { screen },
+          },
+        }),
+      );
+    },
+    [navigation],
+  );
+
   const handleNotificationPress = useCallback(
     async (item: AppNotification) => {
       await markRead(item.id);
@@ -167,15 +184,15 @@ export default function NotificationsScreen() {
         return;
       }
       if (parsed.type === "job" && parsed.id) {
-        navigateToMarket("JobDetail", { jobId: parsed.id });
+        navigateToJobs("JobDetail", { jobId: parsed.id });
         return;
       }
       if (parsed.type === "job_applications") {
-        navigateToMarket("MyJobApplications");
+        navigateToJobs("MyJobApplications");
         return;
       }
       if (parsed.type === "job_applicants" && parsed.id) {
-        navigateToMarket("JobApplicants", { jobId: parsed.id });
+        navigateToJobs("JobApplicants", { jobId: parsed.id });
         return;
       }
       if (parsed.type === "dm" && parsed.id) {

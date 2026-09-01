@@ -475,6 +475,36 @@ export function JobsHomeScreen() {
           ) : null}
         </View>
 
+        {/* Both sides of the market, above the fold: a seeker should not have
+            to scroll past every listing to reach their own applications, and a
+            poster should not have to guess that Jobs is also where they hire. */}
+        <View className="mx-4 mt-3 flex-row gap-2">
+          {(
+            [
+              { label: "My applications", icon: "document-text-outline", screen: "MyJobApplications" },
+              { label: "My job posts", icon: "megaphone-outline", screen: "MyJobPostings" },
+              { label: "Employer hub", icon: "business-outline", screen: "JobEmployer" },
+            ] as const
+          ).map((row) => (
+            <Pressable
+              key={row.screen}
+              onPress={() => navigation.navigate(row.screen)}
+              accessibilityRole="button"
+              accessibilityLabel={row.label}
+              className="flex-1 items-center gap-1 rounded-xl border border-lantern-border bg-lantern-surface px-2 py-2.5"
+              style={{ minHeight: 64 }}
+            >
+              <Ionicons name={row.icon} size={18} color="#6366f1" />
+              <Text
+                numberOfLines={2}
+                className="text-center text-[11px] font-semibold text-lantern-primary"
+              >
+                {row.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -766,33 +796,6 @@ export function JobsHomeScreen() {
             ))}
           </View>
         ) : null}
-
-        <View className="mx-4 mb-4 flex-row gap-2">
-          <Pressable
-            onPress={() => navigation.navigate("MyJobApplications")}
-            className="flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
-          >
-            <Text className="text-xs font-semibold text-lantern-primary">
-              My applications
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => navigation.navigate("MyJobPostings")}
-            className="flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
-          >
-            <Text className="text-xs font-semibold text-lantern-primary">
-              My job posts
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => navigation.navigate("JobEmployer")}
-            className="flex-1 items-center rounded-xl border border-lantern-border bg-lantern-surface px-2 py-3"
-          >
-            <Text className="text-xs font-semibold text-lantern-primary">
-              Employer hub
-            </Text>
-          </Pressable>
-        </View>
 
         <View className="px-4">
           <Text className="mb-3 text-base font-semibold text-lantern-text">

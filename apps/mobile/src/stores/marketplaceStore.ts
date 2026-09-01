@@ -712,6 +712,8 @@ interface MarketplaceState {
   sortOrder: 'asc' | 'desc';
   /** Minimum average rating (1–5) or null for any. Server-enforced post-migration. */
   minRating: number | null;
+  /** Item condition slug ('new', 'like-new', …) or '' for any. */
+  conditionFilter: string;
   /**
    * Private pilot: whether this account may see the marketplace at all.
    * null = not checked yet. The API 403s non-allowlisted accounts regardless;
@@ -790,6 +792,7 @@ interface MarketplaceState {
   setSortBy: (value: string) => void;
   setSortOrder: (value: 'asc' | 'desc') => void;
   setMinRating: (value: number | null) => void;
+  setConditionFilter: (value: string) => void;
   applySavedSearch: (filters: Record<string, unknown>) => void;
   resetFilters: () => void;
   setShowFavoritesOnly: (value: boolean) => void;
@@ -830,6 +833,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   sortBy: 'trending',
   sortOrder: 'desc',
   minRating: null,
+  conditionFilter: '',
   marketplaceAccess: null,
   listingsPage: 1,
   listingsHasMore: true,
@@ -981,6 +985,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         sortOrder,
         minRating,
         taxonomyNodeId,
+        conditionFilter,
       } = get();
 
       const categoryFilter = selectedCategory || filters?.category;
@@ -1017,6 +1022,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         sortBy,
         sortOrder,
         minRating: minRating ?? undefined,
+        condition: conditionFilter || undefined,
         responseProfile: 'compact',
       }) as
         | RemoteListing[]
@@ -1659,6 +1665,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   setSortBy: (value: string) => set({ sortBy: value }),
   setSortOrder: (value: 'asc' | 'desc') => set({ sortOrder: value }),
   setMinRating: (value: number | null) => set({ minRating: value }),
+  setConditionFilter: (value: string) => {
+    listingsRequestSeq += 1;
+    set({
+      conditionFilter: value,
+      listings: [],
+      listingsPage: 1,
+      listingsHasMore: true,
+      isLoading: true,
+    });
+  },
   checkMarketplaceAccess: async () => {
     try {
       const result = await api.fetchMarketplaceAccess();
@@ -1675,9 +1691,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     set({
       ...normalized,
       selectedCategory: normalized.selectedCategory as MarketplaceCategory | null,
-      // Saved searches predate the rating filter; restoring one means exactly
-      // what it meant when saved.
+      // Saved searches predate the rating and condition filters; restoring one
+      // means exactly what it meant when saved.
       minRating: null,
+      conditionFilter: '',
       listings: [],
       listingsPage: 1,
       listingsHasMore: true,
@@ -1697,6 +1714,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       sortBy: 'trending',
       sortOrder: 'desc',
       minRating: null,
+      conditionFilter: '',
       listings: [],
       listingsPage: 1,
       listingsHasMore: true,

@@ -49,6 +49,7 @@ import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
 import { DiscoverWorkspaceBar } from '../discover/DiscoverWorkspaceBar';
 import { shouldShowTrustChip, trustLabel, canAccessDiscoverHub } from '@lantern/shared/network';
 import {
+  CONDITION_ATTRIBUTE,
   getTaxonomyPath,
   listingTypeLabel,
   suggestMarketplaceSearch,
@@ -85,6 +86,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     sortBy,
     sortOrder,
     minRating,
+    conditionFilter,
     listingsHasMore,
     listingsPage,
     showFavoritesOnly,
@@ -107,6 +109,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     setSortBy,
     setSortOrder,
     setMinRating,
+    setConditionFilter,
     applySavedSearch,
     resetFilters,
     setShowFavoritesOnly,
@@ -150,6 +153,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     maxPrice,
     locationFilter,
     campusIdFilter,
+    conditionFilter,
   ].filter(Boolean).length +
     (minRating != null ? 1 : 0) +
     (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
@@ -833,6 +837,28 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 </Text>
               </Pressable>
             </View>
+            {/* Condition is the filter a second-hand campus market lives on, and
+                the server has always supported it — nothing exposed it. */}
+            <View className="flex-row items-center gap-2 flex-wrap">
+              <Text className="text-[11px] text-lantern-text-tertiary">Condition</Text>
+              {[{ value: '', label: 'Any' }, ...(CONDITION_ATTRIBUTE.options ?? [])].map(option => {
+                const selected = conditionFilter === option.value;
+                return (
+                  <Pressable
+                    key={option.value || 'any'}
+                    onPress={() => setConditionFilter(option.value)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`Condition ${option.label}`}
+                    className={`px-3 py-1.5 rounded-lg ${selected ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                  >
+                    <Text className={`text-xs ${selected ? 'text-white' : 'text-lantern-text-secondary'}`}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
             <View className="flex-row items-center gap-2 flex-wrap">
               <Text className="text-[11px] text-lantern-text-tertiary">Rating</Text>
               {([null, 4, 3, 2] as Array<number | null>).map(value => {
@@ -1014,10 +1040,29 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               <Ionicons name="bag-outline" size={48} color="#cbd5e1" />
-              <Text className="text-lg font-semibold text-lantern-text mt-4">No listings found</Text>
-              <Button className="mt-4" onPress={() => navigation.navigate('CreateListing')}>
-                Create Listing
-              </Button>
+              <Text className="text-lg font-semibold text-lantern-text mt-4">
+                {taxonomyPath.length > 0
+                  ? `Nothing in ${taxonomyPath[taxonomyPath.length - 1]?.label} yet`
+                  : 'No listings found'}
+              </Text>
+              {/* A buyer who drilled three levels down and found nothing wants
+                  to widen the search, not open the seller form. */}
+              {taxonomyPath.length > 1 ? (
+                <Button
+                  className="mt-4"
+                  onPress={() => setTaxonomyNode(taxonomyPath[taxonomyPath.length - 2]?.id ?? null)}
+                >
+                  {`Look in ${taxonomyPath[taxonomyPath.length - 2]?.label}`}
+                </Button>
+              ) : taxonomyPath.length === 1 ? (
+                <Button className="mt-4" onPress={() => setTaxonomyNode(null)}>
+                  Browse the whole department
+                </Button>
+              ) : (
+                <Button className="mt-4" onPress={() => navigation.navigate('CreateListing')}>
+                  Create Listing
+                </Button>
+              )}
             </View>
           }
           renderItem={renderListing}

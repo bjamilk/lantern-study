@@ -47,7 +47,9 @@ const NAV: NavItem[] = [
   // Phase 3 L / decision D12: Discover is the hub the marketplace sits inside.
   { id: 'discover', label: 'Discover', icon: 'globe-outline', screen: 'Discover' },
   { id: 'browse', label: 'Goods', icon: 'search-outline', screen: 'MarketplaceHome' },
-  { id: 'jobs', label: 'Jobs', icon: 'briefcase-outline', screen: 'JobsHome' },
+  // Jobs is its own bottom-tab stack now: navigating to JobsHome from inside
+  // the Market stack reaches no navigator, so the chip targets the tab.
+  { id: 'jobs', label: 'Jobs', icon: 'briefcase-outline', screen: 'JobsTab' },
   { id: 'orders', label: 'Orders', icon: 'receipt-outline', screen: 'Orders' },
   { id: 'cart', label: 'Cart', icon: 'cart-outline', screen: 'Cart' },
   { id: 'purchases', label: 'Library', icon: 'albums-outline', screen: 'Purchases' },

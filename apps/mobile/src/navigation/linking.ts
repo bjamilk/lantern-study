@@ -57,6 +57,14 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               Orders: 'marketplace/orders',
               OrderDetail: 'marketplace/orders/:orderId',
               CreateListing: 'marketplace/create',
+              ShopBrowse: 'marketplace/browse',
+            },
+          },
+          // Jobs owns its own stack, so its links must resolve under JobsTab.
+          // The paths keep their marketplace/ prefix: they are already in the
+          // wild, in job alerts and shared postings.
+          JobsTab: {
+            screens: {
               JobsHome: 'marketplace/jobs',
               JobDetail: 'marketplace/jobs/:jobId',
               CreateJob: 'marketplace/jobs/new',
