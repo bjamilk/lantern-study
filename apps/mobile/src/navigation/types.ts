@@ -106,7 +106,8 @@ export type MarketStackParamList = {
   SellerProfile: { sellerId: string; sellerName?: string };
   Offers: undefined;
   Favorites: undefined;
-  Orders: undefined;
+  /** Which side of the order the viewer is on; defaults to buyer. */
+  Orders: { role?: 'buyer' | 'seller' } | undefined;
   Cart: undefined;
   Purchases: undefined;
   StudyProductDrafts:

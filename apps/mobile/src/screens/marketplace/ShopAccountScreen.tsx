@@ -116,7 +116,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       detail: summary.sellerActionOrders > 0 ? 'Paid and waiting for you' : 'No paid orders waiting',
       icon: 'cube-outline',
       badge: summary.sellerActionOrders,
-      onPress: go('Orders'),
+      onPress: go('Orders', { role: 'seller' }),
     },
     {
       key: 'offers-received',

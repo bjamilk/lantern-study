@@ -18,8 +18,17 @@ const isPayable = (order: MarketplaceOrder): boolean =>
   order.status === 'awaiting_payment' ||
   (order.status === 'pending_payment' && Boolean(order.payment_id));
 
-export function OrdersScreen({ navigation }: { navigation: NavigationProp }) {
-  const [role, setRole] = useState<'buyer' | 'seller'>('buyer');
+export function OrdersScreen({
+  navigation,
+  route,
+}: {
+  navigation: NavigationProp;
+  route?: { params?: { role?: 'buyer' | 'seller' } };
+}) {
+  // The You hub's "Orders to Hand Over" is a seller destination; without this
+  // it landed on the buyer's purchase history and the seller had to notice the
+  // toggle. Buyer stays the default for every other entry.
+  const [role, setRole] = useState<'buyer' | 'seller'>(route?.params?.role ?? 'buyer');
   const [orders, setOrders] = useState<MarketplaceOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState<string | null>(null);

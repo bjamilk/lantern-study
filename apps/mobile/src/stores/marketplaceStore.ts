@@ -475,8 +475,23 @@ export const EMPTY_SHOP_SUMMARY: ShopSummary = {
 
 /** Orders that need the buyer: pay for it, or confirm you collected it. */
 const BUYER_ACTION_ORDER_STATUSES = new Set(['pending_payment', 'awaiting_payment', 'ready_for_pickup']);
-/** Orders that need the seller: money is in, item still to hand over. */
-const SELLER_ACTION_ORDER_STATUSES = new Set(['paid']);
+/**
+ * Orders that need the seller. `paid` is the online-payment case: money is in,
+ * item still to hand over. A cash or transfer order never reaches `paid` on its
+ * own — it sits in `pending_payment` with no payment_id until the seller taps
+ * "Confirm payment received", so that state is the seller's too.
+ */
+function orderNeedsSeller(order: { status: string; payment_id?: string | null }): boolean {
+  if (order.status === 'paid') return true;
+  return order.status === 'pending_payment' && !order.payment_id;
+}
+/** An offer still on the table: pending, and not past its expiry. */
+function offerIsOpen(offer: { status: string; expires_at?: string | null }): boolean {
+  if (offer.status !== 'pending') return false;
+  if (!offer.expires_at) return true;
+  const expires = Date.parse(offer.expires_at);
+  return Number.isNaN(expires) || expires > Date.now();
+}
 /** How long a summary stays fresh before a screen focus refetches it. */
 const SHOP_SUMMARY_TTL_MS = 45_000;
 
@@ -1854,12 +1869,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           (o) => BUYER_ACTION_ORDER_STATUSES.has(o.status),
           prev.buyerActionOrders,
         ),
-        sellerActionOrders: count(
-          sellerOrders,
-          (o) => SELLER_ACTION_ORDER_STATUSES.has(o.status),
-          prev.sellerActionOrders,
-        ),
-        pendingOffersReceived: count(offers, (o) => o.status === 'pending', prev.pendingOffersReceived),
+        sellerActionOrders: count(sellerOrders, orderNeedsSeller, prev.sellerActionOrders),
+        pendingOffersReceived: count(offers, offerIsOpen, prev.pendingOffersReceived),
         openInquiries: count(
           inquiries,
           (i) => i.status === 'open' || i.status === 'negotiating',
