@@ -227,6 +227,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       void fetchListings({ page: 1 });
     }, 350);
     return () => clearTimeout(timer);
+    // Every filter the store can change must be listed here. The setters mark
+    // the list loading and clear it; this effect is what actually refetches, so
+    // a filter missing from these deps leaves the grid on skeletons for good.
+    // taxonomyNodeId only appeared to work because drilling in from Shop by
+    // department usually also changes the department, and that IS watched.
   }, [
     searchQuery,
     minPrice,
@@ -236,6 +241,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     sortBy,
     sortOrder,
     minRating,
+    taxonomyNodeId,
+    conditionFilter,
     fetchListings,
   ]);
 
