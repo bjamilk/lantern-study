@@ -49,8 +49,8 @@ describe('mobile marketplace saved filters', () => {
     expect(normalizeSavedMarketplaceFilters({})).toEqual({
       searchQuery: '',
       selectedCategory: null,
-      // An empty saved search opens on the default department.
-      activeTab: 'electronics',
+      // An empty saved search opens where browse opens: everything.
+      activeTab: 'all',
       minPrice: '',
       maxPrice: '',
       locationFilter: '',

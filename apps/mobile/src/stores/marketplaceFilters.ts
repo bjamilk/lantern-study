@@ -7,13 +7,14 @@ import {
 } from '@lantern/shared/marketplace';
 
 /** Keep in step with DEFAULT_MARKETPLACE_TAB in marketplaceStore. */
-const DEFAULT_MARKETPLACE_DEPARTMENT: MarketplaceDepartment = 'electronics';
+const DEFAULT_MARKETPLACE_DEPARTMENT: MarketplaceBrowseTab = 'all';
 
 
-function isMarketplaceDepartment(value: unknown): value is MarketplaceDepartment {
+function isMarketplaceBrowseTab(value: unknown): value is MarketplaceBrowseTab {
   return (
-    typeof value === 'string' &&
-    (MARKETPLACE_DEPARTMENTS as readonly string[]).includes(value)
+    value === 'all' ||
+    (typeof value === 'string' &&
+      (MARKETPLACE_DEPARTMENTS as readonly string[]).includes(value))
   );
 }
 
@@ -24,8 +25,8 @@ function departmentForListingCategory(category: string): MarketplaceDepartment |
   );
 }
 
-/** Saved searches remember which department they were made in. */
-export type MarketplaceBrowseTab = MarketplaceDepartment;
+/** Saved searches remember which browse tab they were made in. */
+export type MarketplaceBrowseTab = 'all' | MarketplaceDepartment;
 
 export interface MarketplaceBrowseFilterState {
   searchQuery: string;
@@ -75,7 +76,7 @@ export function normalizeSavedMarketplaceFilters(
   // otherwise restore under the stale tab it was saved in.
   const activeTab: MarketplaceBrowseTab =
     savedNodeDepartment ||
-    (isMarketplaceDepartment(savedTab)
+    (isMarketplaceBrowseTab(savedTab)
       ? savedTab
       : (selectedCategory && departmentForListingCategory(selectedCategory)) ||
         DEFAULT_MARKETPLACE_DEPARTMENT);

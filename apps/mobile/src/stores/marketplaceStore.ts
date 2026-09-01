@@ -445,18 +445,21 @@ export type MarketplaceCategory =
 export { MARKETPLACE_DEPARTMENTS };
 export type { MarketplaceDepartment };
 
-export type MarketplaceTab = MarketplaceDepartment | 'shops';
+export type MarketplaceTab = 'all' | MarketplaceDepartment | 'shops';
 
 /**
- * Where browse opens when nothing else is chosen. Electronics leads because
- * phones, laptops and power banks are the highest-volume campus trade — the
- * same reason Amazon opens on its densest department rather than an empty
- * "all". Named rather than implied so it is a decision, not an array index.
+ * Where browse opens when nothing else is chosen.
+ *
+ * Everything, not a department. Opening on one department shows an empty shop
+ * whenever that department happens to have no stock — which on a young campus
+ * market is most of them, and is what a buyer sees first. Facebook Marketplace
+ * and Amazon both open on a cross-department feed for the same reason.
  */
-export const DEFAULT_MARKETPLACE_TAB: MarketplaceTab = 'electronics';
+export const DEFAULT_MARKETPLACE_TAB: MarketplaceTab = 'all';
 
-/** Browse-strip order: departments first, Shops last (it browses sellers). */
+/** Browse-strip order: All, the nine departments, then Shops (sellers). */
 export const MARKETPLACE_TABS: readonly MarketplaceTab[] = [
+  'all',
   ...MARKETPLACE_DEPARTMENTS,
   'shops',
 ];
@@ -475,6 +478,7 @@ const DEPARTMENT_LABELS: Record<MarketplaceDepartment, string> = {
 
 /** Short enough for a scrolling tab; the full name lives on the browse page. */
 export function marketplaceTabLabel(tab: MarketplaceTab): string {
+  if (tab === 'all') return 'All';
   return tab === 'shops' ? 'Shops' : DEPARTMENT_LABELS[tab];
 }
 
@@ -516,6 +520,18 @@ export const CATEGORIES_BY_DEPARTMENT: Record<MarketplaceDepartment, BrowseCateg
     },
     {} as Record<MarketplaceDepartment, BrowseCategoryRow[]>,
   );
+
+/** Every browsable category, in department order — what the All tab spans. */
+export const ALL_BROWSE_CATEGORIES: BrowseCategoryRow[] = MARKETPLACE_DEPARTMENTS.flatMap(
+  (department) => CATEGORIES_BY_DEPARTMENT[department],
+);
+
+/** The categories a browse tab covers. */
+export function categoriesForTab(tab: MarketplaceTab): BrowseCategoryRow[] {
+  if (tab === 'shops') return [];
+  if (tab === 'all') return ALL_BROWSE_CATEGORIES;
+  return CATEGORIES_BY_DEPARTMENT[tab];
+}
 
 /** @deprecated Study material is one department of nine; use CATEGORIES_BY_DEPARTMENT. */
 export const ACADEMIC_CATEGORIES = CATEGORIES_BY_DEPARTMENT['study-materials'];
@@ -824,7 +840,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   error: null,
   searchQuery: '',
   selectedCategory: null,
-  activeTab: MARKETPLACE_DEPARTMENTS[0],
+  activeTab: DEFAULT_MARKETPLACE_TAB,
   taxonomyNodeId: null,
   minPrice: '',
   maxPrice: '',
@@ -910,7 +926,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       error: null,
       searchQuery: '',
       selectedCategory: null,
-      activeTab: MARKETPLACE_DEPARTMENTS[0],
+      activeTab: DEFAULT_MARKETPLACE_TAB,
   taxonomyNodeId: null,
       minPrice: '',
       maxPrice: '',
@@ -949,7 +965,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         const studentLifeCategories = STUDENT_LIFE_CATEGORIES.map(c => c.id);
         filtered = filtered.filter(listing => {
           if (activeTab !== 'shops') {
-            const ids = CATEGORIES_BY_DEPARTMENT[activeTab].map((c) => c.id);
+            const ids = categoriesForTab(activeTab).map((c) => c.id);
             return ids.includes(listing.category as MarketplaceCategory);
           }
           return studentLifeCategories.includes(listing.category as MarketplaceCategory);
@@ -990,7 +1006,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
 
       const categoryFilter = selectedCategory || filters?.category;
       const tabCategoryIds = (
-        activeTab === 'shops' ? STUDENT_LIFE_CATEGORIES : CATEGORIES_BY_DEPARTMENT[activeTab]
+        activeTab === 'shops' ? STUDENT_LIFE_CATEGORIES : categoriesForTab(activeTab)
       ).map(c => c.id);
       // A drilled-in node is the narrowest thing the buyer asked for, so it
       // outranks the department's whole category list.
@@ -1011,7 +1027,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           }
         : categoryFilter
           ? { category: categoryFilter }
-          : { categories: tabCategoryIds, includeCustom: true };
+          : activeTab === 'all'
+            ? // All means all: sending every category id would also exclude the
+              // custom ones and any category a newer client knows about.
+              {}
+            : { categories: tabCategoryIds, includeCustom: true };
 
       const raw = await api.fetchMarketplaceListings({
         page,

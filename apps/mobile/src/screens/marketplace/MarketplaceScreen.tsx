@@ -17,7 +17,7 @@ import {
   MARKETPLACE_DEPARTMENTS,
   marketplaceTabLabel,
   MARKETPLACE_TABS,
-  CATEGORIES_BY_DEPARTMENT,
+  categoriesForTab,
   useMarketplaceStore,
   useAuthStore,
   useSettingsStore,
@@ -132,12 +132,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     void getRecentMarketplaceSearches().then(setRecentSearches);
   }, []);
 
-  const categories = activeTab === 'shops' ? [] : CATEGORIES_BY_DEPARTMENT[activeTab];
+  const categories = categoriesForTab(activeTab);
   const searchSuggestions = useMemo(
     () =>
       searchFocused || searchQuery.trim().length >= 2
         ? suggestMarketplaceSearch(searchQuery, {
-            department: activeTab === 'shops' ? undefined : activeTab,
+            // Typeahead narrows by department; All and Shops have none, so it
+            // searches the whole catalog.
+            department:
+              activeTab === 'shops' || activeTab === 'all' ? undefined : activeTab,
             recents: recentSearches,
             limit: 6,
           })
@@ -165,7 +168,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   );
 
   const departmentCategoryIds = useMemo(
-    () => (activeTab === 'shops' ? [] : CATEGORIES_BY_DEPARTMENT[activeTab].map((c) => c.id)),
+    () => categoriesForTab(activeTab).map((c) => c.id),
     [activeTab],
   );
 
@@ -644,7 +647,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           className="flex-row items-center gap-1 ml-3 mr-1 px-2.5 py-2 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
         >
           <Ionicons name="menu" size={16} color="#64748b" />
-          <Text className="text-xs font-semibold text-lantern-text-secondary">All</Text>
+          <Text className="text-xs font-semibold text-lantern-text-secondary">Departments</Text>
         </Pressable>
         <ScrollView
           horizontal
