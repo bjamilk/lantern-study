@@ -88,16 +88,19 @@ export function useTabBarClearance(extra = 16): number {
 }
 
 /**
- * The base bar: Chat, Library, Shop, Jobs, Home, Offline.
+ * The base bar: Chat, Library, Home, Offline.
  *
- * Six destinations is deliberate (founder decision 2026-08-30): Shop and Jobs
- * were previously unreachable except through an unlabelled overflow sheet.
- * Android's 5-item BottomNavigationView cap does not apply — this bar is a
- * plain custom View — but the 60dp-per-column budget is real, which is why
- * every label here is short, the icon is Material's 24dp default, and the
- * stock 56dp active indicator is omitted. Labels stay visible on all six
- * (Material's LABELED behaviour): auto-hiding inactive labels would bury the
- * two destinations this change exists to surface.
+ * Shop and Jobs are deliberately absent (founder decision 2026-09-01). They
+ * briefly sat here as a fifth and sixth destination; both are private-pilot
+ * surfaces, and a labelled bottom-bar button advertises them to every account
+ * that cannot open them. Shop is now the top bar's fourth icon and Jobs is a
+ * profile-drawer row beside Settings, each shown only to accounts on the
+ * pilot. TabKey still carries both keys — the routes exist and stay reachable
+ * by deep link, notification and in-app navigation.
+ *
+ * Labels stay visible (Material's LABELED behaviour) and the 60dp-per-column
+ * budget still governs: short labels, Material's 24dp icon, no active
+ * indicator.
  *
  * `hideProgress` slides it below the screen while reading.
  */
