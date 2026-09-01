@@ -32,7 +32,7 @@ import {
   saveJobApplicantProfile,
   updateJobApplicationStatus,
 } from "../../services/jobsBoard";
-import type { MarketStackParamList } from "../../navigation/types";
+import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 const CLOSED_STATUSES = new Set<JobApplicationStatus>([
@@ -57,7 +57,7 @@ export function MyJobApplicationsScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const navigation =
-    useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
+    useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
   const [apps, setApps] = useState<JobApplication[]>([]);
   const [interviews, setInterviews] = useState<JobInterview[]>([]);
   const [offers, setOffers] = useState<JobOffer[]>([]);

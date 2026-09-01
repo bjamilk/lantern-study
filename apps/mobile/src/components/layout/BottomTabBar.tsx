@@ -12,6 +12,7 @@ export type TabKey =
   | 'Chat'
   | 'AI'
   | 'Marketplace'
+  | 'Jobs'
   | 'Notes'
   | 'Offline'
   | 'Notifications'
@@ -51,8 +52,9 @@ function TabButton({
   return (
     <Pressable
       onPress={onPress}
-      style={{ flex: 1 }}
-      className="items-center py-1"
+      // 48dp is Material's minimum touch target; the old py-1 left it at ~46.
+      style={{ flex: 1, minHeight: 48 }}
+      className="items-center justify-center py-1"
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       accessibilityLabel={tab.label}
@@ -60,14 +62,14 @@ function TabButton({
       <View className="relative">
         <Ionicons
           name={active ? tab.activeIcon : tab.icon}
-          size={22}
+          size={24}
           color={active ? activeColor : inactiveColor}
         />
         {tab.badge ? <Badge count={tab.badge} /> : null}
       </View>
       <Text
         numberOfLines={1}
-        className={`text-[10px] mt-1 font-medium text-center ${active ? 'text-lantern-primary' : 'text-lantern-text-tertiary'}`}
+        className={`text-[10px] mt-0.5 font-medium text-center ${active ? 'text-lantern-primary' : 'text-lantern-text-tertiary'}`}
       >
         {tab.label}
       </Text>
@@ -86,10 +88,18 @@ export function useTabBarClearance(extra = 16): number {
 }
 
 /**
- * The base bar: Chat, Library, Dashboard, Offline. Everything else moved to
- * the top bar (Budget, Notifications, Lantern AI, Discover) or the profile
- * drawer (Settings, log out, low-data, theme) — no More sheet, no scrolling
- * tab strip. `hideProgress` slides it below the screen while reading.
+ * The base bar: Chat, Library, Shop, Jobs, Home, Offline.
+ *
+ * Six destinations is deliberate (founder decision 2026-08-30): Shop and Jobs
+ * were previously unreachable except through an unlabelled overflow sheet.
+ * Android's 5-item BottomNavigationView cap does not apply — this bar is a
+ * plain custom View — but the 60dp-per-column budget is real, which is why
+ * every label here is short, the icon is Material's 24dp default, and the
+ * stock 56dp active indicator is omitted. Labels stay visible on all six
+ * (Material's LABELED behaviour): auto-hiding inactive labels would bury the
+ * two destinations this change exists to surface.
+ *
+ * `hideProgress` slides it below the screen while reading.
  */
 export function BottomTabBar({
   activeTab,
@@ -117,7 +127,16 @@ export function BottomTabBar({
       activeIcon: 'library',
       badge: dueCardsCount,
     },
-    { key: 'Home', label: 'Dashboard', icon: 'home-outline', activeIcon: 'home' },
+    {
+      key: 'Marketplace',
+      label: 'Shop',
+      icon: 'storefront-outline',
+      activeIcon: 'storefront',
+    },
+    { key: 'Jobs', label: 'Jobs', icon: 'briefcase-outline', activeIcon: 'briefcase' },
+    // "Dashboard" overflows a 60dp column at 12sp and truncates under font
+    // scaling; "Home" is the same destination and fits.
+    { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
     { key: 'Offline', label: 'Offline', icon: 'cloud-offline-outline', activeIcon: 'cloud-offline' },
   ];
 
@@ -131,7 +150,7 @@ export function BottomTabBar({
       className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border pt-2 flex-row"
       style={{
         paddingBottom: bottomPad,
-        paddingHorizontal: 4,
+        paddingHorizontal: 0,
         backgroundColor: colors.tabBar,
         borderTopColor: colors.tabBarBorder,
         shadowColor: isDark ? '#000000' : '#0f172a',

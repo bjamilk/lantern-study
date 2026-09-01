@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 
 export type DiscoverSection = 'communities' | 'groups' | 'people' | 'marketplace';
 
@@ -16,16 +17,23 @@ const TABS: Array<{ id: DiscoverSection; label: string; shortLabel: string }> = 
 ];
 
 /**
- * Compact underline tabs shared by Discover and Marketplace so the marketplace
- * sits inside Discover (decision D12) without a second chip parade.
+ * Compact underline tabs shared by Discover and Marketplace.
+ *
+ * Sections are filtered by DISCOVER_SECTION_ENABLED, so hiding Community /
+ * Groups / People is a flag flip rather than a code deletion. When only one
+ * section survives the bar renders nothing at all — a single tab is not a
+ * choice, it is decoration.
  */
 export function DiscoverWorkspaceBar({ active, onSelect }: DiscoverWorkspaceBarProps) {
+  const visible = TABS.filter((tab) => isDiscoverSectionEnabled(tab.id));
+  if (visible.length < 2) return null;
+
   return (
     <View
       accessibilityLabel="Discover sections"
       className="flex-row border-b border-lantern-border"
     >
-      {TABS.map((tab) => {
+      {visible.map((tab) => {
         const selected = active === tab.id;
         return (
           <Pressable

@@ -5,6 +5,7 @@ import {
   UsersIcon,
   ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
+import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 
 /**
  * Discover's section tabs (Phase 3 · L, decision D12).
@@ -41,13 +42,20 @@ export const DiscoverWorkspaceBar: React.FC<DiscoverWorkspaceBarProps> = ({
   active,
   onSelect,
   className = '',
-}) => (
+}) => {
+  // Sections are flag-gated (DISCOVER_SECTION_ENABLED); one surviving tab is
+  // decoration, not a choice, so the bar disappears entirely.
+  const visible = TABS.filter((tab) => isDiscoverSectionEnabled(tab.id));
+  if (visible.length < 2) return null;
+
+  return (
   <div
     role="tablist"
     aria-label="Discover sections"
-    className={`grid grid-cols-4 border-b border-lantern-border ${className}`}
+    className={`grid border-b border-lantern-border ${className}`}
+    style={{ gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))` }}
   >
-    {TABS.map(({ id, label, shortLabel, icon: Icon }) => {
+    {visible.map(({ id, label, shortLabel, icon: Icon }) => {
       const selected = active === id;
       return (
         <button
@@ -76,6 +84,7 @@ export const DiscoverWorkspaceBar: React.FC<DiscoverWorkspaceBarProps> = ({
       );
     })}
   </div>
-);
+  );
+};
 
 export default DiscoverWorkspaceBar;

@@ -9,3 +9,4 @@ export * from './taxonomy';
 export * from './reviews';
 export * from './classify';
 export * from './shop';
+export * from './discoverSections';

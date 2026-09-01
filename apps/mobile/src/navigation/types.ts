@@ -126,6 +126,14 @@ export type MarketStackParamList = {
     trxref?: string;
   };
   SellerCustomers: undefined;
+};
+
+/**
+ * Jobs owns its own stack so Shop and Jobs keep independent history — the
+ * point of giving each a bottom-tab destination is that switching between
+ * them returns you where you were, which a shared stack cannot do.
+ */
+export type JobsStackParamList = {
   JobsHome: undefined;
   JobDetail: { jobId: string };
   /** `jobId` switches the form into edit mode for an existing posting. */
@@ -158,6 +166,7 @@ export type MainTabParamList = {
   NotificationsTab: undefined;
   BudgetTab: undefined;
   MarketTab: undefined;
+  JobsTab: undefined;
   /** Offline mode as a base tab; the root-stack `Offline` modal remains for
       course-filtered links from the Library tree. */
   OfflineTab: undefined;

@@ -46,7 +46,7 @@ import {
   updateJobApplicationStatus,
 } from "../../services/jobsBoard";
 import { useAuthStore } from "../../stores";
-import type { MarketStackParamList } from "../../navigation/types";
+import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 const STATUSES: JobApplicationStatus[] = [
@@ -65,8 +65,8 @@ export function JobApplicantsScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const navigation =
-    useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
-  const route = useRoute<RouteProp<MarketStackParamList, "JobApplicants">>();
+    useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
+  const route = useRoute<RouteProp<JobsStackParamList, "JobApplicants">>();
   const { user } = useAuthStore();
   const [apps, setApps] = useState<JobApplication[]>([]);
   const [openingResumeId, setOpeningResumeId] = useState<string | null>(null);

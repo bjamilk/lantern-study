@@ -42,7 +42,7 @@ import {
   trackJobExternalApply,
 } from "../../services/jobsBoard";
 import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
-import type { MarketStackParamList } from "../../navigation/types";
+import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 /** Days until the deadline (ceil), negative once it has passed; null when unset. */
@@ -70,8 +70,8 @@ export function JobDetailScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const navigation =
-    useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
-  const route = useRoute<RouteProp<MarketStackParamList, "JobDetail">>();
+    useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
+  const route = useRoute<RouteProp<JobsStackParamList, "JobDetail">>();
   const [job, setJob] = useState<JobPosting | null>(null);
   const [message, setMessage] = useState("");
   const [applicantProfile, setApplicantProfile] =

@@ -100,6 +100,7 @@ import {
   ChatStackParamList,
 
   MarketStackParamList,
+  JobsStackParamList,
 
   MainTabParamList,
 
@@ -290,6 +291,8 @@ const StudyStack = createNativeStackNavigator<StudyStackParamList>();
 
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 
+const JobsStack = createNativeStackNavigator<JobsStackParamList>();
+
 const MarketStack = createNativeStackNavigator<MarketStackParamList>();
 
 const BudgetStack = createNativeStackNavigator<BudgetStackParamList>();
@@ -469,23 +472,40 @@ function MarketNavigator() {
 
       <MarketStack.Screen name="SellerCustomers" component={GatedSellerCustomers} />
 
-      <MarketStack.Screen name="JobsHome" component={JobsHomeScreen} />
-
-      <MarketStack.Screen name="JobDetail" component={JobDetailScreen} />
-
-      <MarketStack.Screen name="CreateJob" component={CreateJobScreen} />
-
-      <MarketStack.Screen name="MyJobPostings" component={MyJobPostingsScreen} />
-
-      <MarketStack.Screen name="MyJobApplications" component={MyJobApplicationsScreen} />
-
-      <MarketStack.Screen name="JobEmployer" component={JobEmployerScreen} />
-
-      <MarketStack.Screen name="JobApplicants" component={JobApplicantsScreen} />
-
-      <MarketStack.Screen name="JobCompany" component={JobCompanyScreen} />
-
     </MarketStack.Navigator>
+
+  );
+
+}
+
+/**
+ * Jobs has its own stack and its own bottom-tab destination. It used to live
+ * inside MarketStack, reachable only through an unlabelled overflow sheet on
+ * the marketplace toolbar — effectively unreachable.
+ */
+function JobsNavigator() {
+
+  return (
+
+    <JobsStack.Navigator screenOptions={{ headerShown: false }}>
+
+      <JobsStack.Screen name="JobsHome" component={JobsHomeScreen} />
+
+      <JobsStack.Screen name="JobDetail" component={JobDetailScreen} />
+
+      <JobsStack.Screen name="CreateJob" component={CreateJobScreen} />
+
+      <JobsStack.Screen name="MyJobPostings" component={MyJobPostingsScreen} />
+
+      <JobsStack.Screen name="MyJobApplications" component={MyJobApplicationsScreen} />
+
+      <JobsStack.Screen name="JobEmployer" component={JobEmployerScreen} />
+
+      <JobsStack.Screen name="JobApplicants" component={JobApplicantsScreen} />
+
+      <JobsStack.Screen name="JobCompany" component={JobCompanyScreen} />
+
+    </JobsStack.Navigator>
 
   );
 
@@ -566,6 +586,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     Marketplace: 'MarketTab',
 
+    Jobs: 'JobsTab',
+
     Offline: 'OfflineTab',
 
     AI: null,
@@ -592,6 +614,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     MarketTab: 'Marketplace',
 
+    JobsTab: 'Jobs',
+
     OfflineTab: 'Offline',
 
   };
@@ -613,6 +637,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
     const currentRoute = state.routes[state.index]?.name as string | undefined;
 
     if (currentRoute === 'MarketTab') return 'Marketplace';
+
+    if (currentRoute === 'JobsTab') return 'Jobs';
 
     if (currentRoute === 'StudyTab' && focused) {
       if (focused === 'Library' || focused === 'NotesList' || focused === 'NoteEditor' || focused === 'StudyHub') return 'Library';
@@ -917,7 +943,9 @@ function MainTabsShell() {
 
         <Tab.Screen name="BudgetTab" component={BudgetNavigator} options={{ tabBarButton: () => null }} />
 
-        <Tab.Screen name="MarketTab" component={MarketNavigator} options={{ tabBarButton: () => null }} />
+        <Tab.Screen name="MarketTab" component={MarketNavigator} />
+
+        <Tab.Screen name="JobsTab" component={JobsNavigator} />
 
       </Tab.Navigator>
 

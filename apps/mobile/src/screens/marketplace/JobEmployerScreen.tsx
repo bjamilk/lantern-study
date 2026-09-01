@@ -33,13 +33,13 @@ import {
 } from '../../services/jobsBoard';
 import { prepareImageBase64ForUpload } from '../../utils/prepareImage';
 import { useAuthStore } from '../../stores';
-import type { MarketStackParamList } from '../../navigation/types';
+import type { JobsStackParamList } from '../../navigation/types';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 export function JobEmployerScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
-  const navigation = useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
+  const navigation = useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
   const actorUserId = useAuthStore((state) => state.user?.id || '');
   const [companies, setCompanies] = useState<
     Array<{ role: JobCompanyMemberRole; company: JobCompany }>

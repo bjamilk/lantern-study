@@ -40,15 +40,15 @@ import {
   fetchMyJobCompanies,
   updateJobPosting,
 } from "../../services/jobsBoard";
-import type { MarketStackParamList } from "../../navigation/types";
+import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 export function CreateJobScreen() {
   // The submit button is the last scroll child; clear the floating tab bar.
   const tabBarClearance = useTabBarClearance(32);
   const navigation =
-    useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
-  const route = useRoute<RouteProp<MarketStackParamList, "CreateJob">>();
+    useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
+  const route = useRoute<RouteProp<JobsStackParamList, "CreateJob">>();
   const jobId = route.params?.jobId;
   const isEdit = !!jobId;
   const [title, setTitle] = useState("");

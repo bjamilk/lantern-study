@@ -40,7 +40,7 @@ import {
   setJobPostingSaved,
   updateJobSavedSearch,
 } from "../../services/jobsBoard";
-import type { MarketStackParamList } from "../../navigation/types";
+import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 /** Employment types promoted to one-tap chips; the panel still exposes all 8. */
@@ -159,7 +159,7 @@ export function JobsHomeScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const navigation =
-    useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
+    useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
@@ -404,10 +404,11 @@ export function JobsHomeScreen() {
 
   return (
     <View className="flex-1 bg-lantern-background">
+      {/* No back button: Jobs is a root tab destination now, not a screen
+          reached from inside the marketplace. */}
       <ScreenHeader safeTop
         title="Jobs"
         subtitle="Explore opportunities"
-        onBack={() => navigation.navigate("MarketplaceHome")}
         right={
           <Pressable
             onPress={() => navigation.navigate("CreateJob")}

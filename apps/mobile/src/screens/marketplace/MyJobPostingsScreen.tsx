@@ -21,7 +21,7 @@ import {
 import { Card, ScreenHeader } from "../../components/ui";
 import { JobEmployerInsights } from "../../components/jobs/JobEmployerInsights";
 import { fetchMyJobPostings, updateJobPosting } from "../../services/jobsBoard";
-import type { MarketStackParamList } from "../../navigation/types";
+import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 const STATUS_STYLES: Record<JobPosting["status"], string> = {
@@ -38,7 +38,7 @@ export function MyJobPostingsScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const navigation =
-    useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
+    useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

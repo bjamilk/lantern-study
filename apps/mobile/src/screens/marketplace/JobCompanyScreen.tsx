@@ -26,15 +26,15 @@ import {
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import { fetchJobCompanyProfile } from "../../services/jobsBoard";
-import type { MarketStackParamList } from "../../navigation/types";
+import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 export function JobCompanyScreen() {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const navigation =
-    useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
-  const route = useRoute<RouteProp<MarketStackParamList, "JobCompany">>();
+    useNavigation<NativeStackNavigationProp<JobsStackParamList>>();
+  const route = useRoute<RouteProp<JobsStackParamList, "JobCompany">>();
   const [company, setCompany] = useState<JobCompany | null>(null);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [myRole, setMyRole] = useState<JobCompanyMemberRole | null>(null);
