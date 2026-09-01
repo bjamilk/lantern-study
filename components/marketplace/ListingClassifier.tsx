@@ -13,6 +13,7 @@ import {
   taxonomyForest,
   taxonomyPathLabel,
   getTaxonomyNode,
+  PRINTED_PAST_QUESTIONS_NODE_ID,
   OTHER_TAXONOMY_NODE_ID,
   type MarketplaceDepartment,
   type TaxonomyNode,
@@ -56,11 +57,11 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const [browsing, setBrowsing] = useState(!selectedNodeId);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
-    academic: department === 'academic',
-    campus: department === 'student-life',
-    'academic.materials': department === 'academic',
-  }));
+  // Expand whichever department the seller is already in. The keys used to be
+  // the two hardcoded roots, which the nine-department tree left behind.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
+    department ? { [department]: true } : {},
+  );
 
   useEffect(() => {
     if (!selectedNodeId) setBrowsing(true);
@@ -145,7 +146,10 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
                 {selected.publishFlow === 'question_bank' && (
                   <button
                     type="button"
-                    onClick={() => pick(getTaxonomyNode('academic.materials.assessments.printed-pq') as TaxonomyNode)}
+                    onClick={() => {
+                      const printed = getTaxonomyNode(PRINTED_PAST_QUESTIONS_NODE_ID);
+                      if (printed) pick(printed);
+                    }}
                     className="rounded-md border border-lantern-border px-3 py-1.5 text-xs font-medium text-lantern-text min-h-[40px]"
                   >
                     List a PDF or printed pack instead

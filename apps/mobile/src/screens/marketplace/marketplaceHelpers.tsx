@@ -67,6 +67,8 @@ const CATEGORY_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   'shirt-outline': 'shirt-outline',
   people: 'people-outline',
   ticket: 'ticket-outline',
+  'phone-portrait': 'phone-portrait-outline',
+  restaurant: 'restaurant-outline',
   'help-circle': 'help-circle-outline',
 };
 

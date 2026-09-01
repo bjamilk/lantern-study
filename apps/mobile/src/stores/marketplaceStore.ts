@@ -417,6 +417,11 @@ const refreshMarketplaceBudget = async (userId: string) => {
   }
 };
 
+/**
+ * Coarse listing categories. The taxonomy is the source of truth
+ * (knownListingCategories()); this union exists so screens keep their
+ * autocomplete, and must gain a member whenever a new leaf introduces one.
+ */
 export type MarketplaceCategory =
   | 'textbook_exchange'
   | 'pq_bank'
@@ -487,6 +492,9 @@ const BROWSE_ICONS: Record<string, string> = {
   aso_ebi: 'shirt-outline',
   campus_services: 'people',
   events_social: 'ticket',
+  electronics: 'phone-portrait',
+  beauty_hair: 'sparkles',
+  food_drink: 'restaurant',
 };
 
 export interface BrowseCategoryRow {

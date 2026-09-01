@@ -136,6 +136,15 @@ export interface TaxonomyNode {
 export const CUSTOM_LISTING_CATEGORY_PREFIX = 'custom:';
 export const OTHER_TAXONOMY_NODE_ID = 'custom.other';
 
+/**
+ * Leaves the app links to by name. Hardcoding path strings at the call site is
+ * how the last rename left four dead lookups behind, each failing silently.
+ */
+export const PRINTED_PAST_QUESTIONS_NODE_ID =
+  'study-materials.past-questions.printed-past-questions';
+/** What a fresh listing form starts on before the seller picks. */
+export const DEFAULT_LISTING_NODE_ID = 'study-materials.textbooks.course-textbook';
+
 export const CONDITION_ATTRIBUTE: TaxonomyAttribute = {
   key: 'condition',
   label: 'Condition',

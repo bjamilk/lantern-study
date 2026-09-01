@@ -24,6 +24,10 @@ import { aiGenerateListingDescription } from '../../services/ai';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import {
   getTaxonomyNode,
+  DEFAULT_LISTING_NODE_ID,
+  OTHER_TAXONOMY_NODE_ID,
+  PRINTED_PAST_QUESTIONS_NODE_ID,
+  toCustomListingCategory,
   isOtherCityCampus,
   listingNeedsCoursePicker,
   taxonomyPathLabel,
@@ -81,7 +85,10 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<MarketplaceCategory>('textbook_exchange');
-  const [taxonomyNodeId, setTaxonomyNodeId] = useState('academic.materials.textbooks.course');
+  // Set when the seller picks "Something else": they name the type themselves
+  // and it is stored as a custom:<name> category, the same as on web.
+  const [customCategory, setCustomCategory] = useState('');
+  const [taxonomyNodeId, setTaxonomyNodeId] = useState(DEFAULT_LISTING_NODE_ID);
   const [price, setPrice] = useState('');
   const [salePrice, setSalePrice] = useState('');
   const [saleEndsPreset, setSaleEndsPreset] = useState<'none' | '24h' | '7d'>('none');
@@ -108,6 +115,10 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const [attestationError, setAttestationError] = useState<string | null>(null);
   /** Server refusal shown inline (attestation missing, blocked content). */
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const isCustomType = taxonomyNodeId === OTHER_TAXONOMY_NODE_ID;
+  const submitCategory = isCustomType
+    ? (toCustomListingCategory(customCategory.trim()) as MarketplaceCategory)
+    : category;
   const needsAttestation = isAcademicListing({ category });
 
   // Draft persistence: survive app switches / process death mid-creation.
@@ -232,6 +243,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const resetForm = () => {
     setTitle('');
     setCategory('textbook_exchange');
+    setCustomCategory('');
     setPrice('');
     setSalePrice('');
     setSaleEndsPreset('none');
@@ -325,6 +337,13 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       Alert.alert('Missing title', 'Please enter a title for your listing.');
       return;
     }
+    if (isCustomType && !customCategory.trim()) {
+      Alert.alert(
+        'Name this type',
+        'Tell buyers what kind of thing this is, or pick a category from the catalog.'
+      );
+      return;
+    }
     if (!campusId) {
       Alert.alert(
         'Missing area',
@@ -401,7 +420,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       const { listing, queued } = await createListing(
         {
           user_id: user.id,
-          category,
+          category: submitCategory,
           title: title.trim(),
           description: description.trim() || undefined,
           price: parsedPrice,
@@ -576,7 +595,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
                     ? {
                         text: 'List a PDF pack',
                         onPress: () => {
-                          const printed = getTaxonomyNode('academic.materials.assessments.printed-pq');
+                          const printed = getTaxonomyNode(PRINTED_PAST_QUESTIONS_NODE_ID);
                           if (printed?.listingCategory) {
                             setTaxonomyNodeId(printed.id);
                             setCategory(printed.listingCategory as MarketplaceCategory);
@@ -593,8 +612,14 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
               return;
             }
             const listingCategory = node.listingCategory;
-            if (!listingCategory || listingCategory === 'other') return;
+            if (!listingCategory) return;
             setTaxonomyNodeId(node.id);
+            if (node.id === OTHER_TAXONOMY_NODE_ID || listingCategory === 'other') {
+              // The seller names this one; handleSubmit turns it into custom:<name>.
+              setCategory('other' as MarketplaceCategory);
+              return;
+            }
+            setCustomCategory('');
             setCategory(listingCategory as MarketplaceCategory);
             if (!listingNeedsCoursePicker(listingCategory)) {
               setCourseId(null);
@@ -604,6 +629,23 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
             }
           }}
         />
+
+        {isCustomType ? (
+          <View className="mb-4">
+            <Text className="text-sm font-semibold text-lantern-text mb-1">Name this type *</Text>
+            <Text className="text-xs text-lantern-text-secondary mb-2">
+              Buyers see this as the category, so name the thing — not the listing.
+            </Text>
+            <TextInput
+              value={customCategory}
+              onChangeText={setCustomCategory}
+              placeholder="e.g. Department souvenir"
+              placeholderTextColor="#94a3b8"
+              maxLength={40}
+              className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text"
+            />
+          </View>
+        ) : null}
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">
           Campus or city *
