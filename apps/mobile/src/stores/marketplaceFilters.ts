@@ -1,4 +1,29 @@
-export type MarketplaceBrowseTab = 'academic' | 'student-life';
+import {
+  MARKETPLACE_DEPARTMENTS,
+  browseListingCategories,
+  type MarketplaceDepartment,
+} from '@lantern/shared/marketplace';
+
+/** Keep in step with DEFAULT_MARKETPLACE_TAB in marketplaceStore. */
+const DEFAULT_MARKETPLACE_DEPARTMENT: MarketplaceDepartment = 'electronics';
+
+
+function isMarketplaceDepartment(value: unknown): value is MarketplaceDepartment {
+  return (
+    typeof value === 'string' &&
+    (MARKETPLACE_DEPARTMENTS as readonly string[]).includes(value)
+  );
+}
+
+/** Which department browses this coarse listing category. */
+function departmentForListingCategory(category: string): MarketplaceDepartment | undefined {
+  return MARKETPLACE_DEPARTMENTS.find((department) =>
+    browseListingCategories(department).some((row) => row.id === category),
+  );
+}
+
+/** Saved searches remember which department they were made in. */
+export type MarketplaceBrowseTab = MarketplaceDepartment;
 
 export interface MarketplaceBrowseFilterState {
   searchQuery: string;
@@ -32,12 +57,13 @@ export function normalizeSavedMarketplaceFilters(
 ): MarketplaceBrowseFilterState {
   const selectedCategory = stringValue(filters.category) || null;
   const savedTab = filters.activeTab;
-  const activeTab: MarketplaceBrowseTab =
-    savedTab === 'academic' || savedTab === 'student-life'
-      ? savedTab
-      : selectedCategory && STUDENT_LIFE_CATEGORY_IDS.has(selectedCategory)
-        ? 'student-life'
-        : 'academic';
+  // A saved search from before the department tree stored 'academic' or
+  // 'student-life'; neither exists now, so fall back to the department that
+  // actually browses the saved category, and only then to the first one.
+  const activeTab: MarketplaceBrowseTab = isMarketplaceDepartment(savedTab)
+    ? savedTab
+    : (selectedCategory && departmentForListingCategory(selectedCategory)) ||
+      DEFAULT_MARKETPLACE_DEPARTMENT;
 
   return {
     searchQuery: stringValue(filters.search ?? filters.query),

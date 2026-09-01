@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  MARKETPLACE_DEPARTMENTS,
   classifyListing,
   getTaxonomyLeaves,
   getTaxonomyNode,
@@ -45,8 +46,11 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
     [query],
   );
   const groups = useMemo(() => groupedLeaves(department), [department]);
+  // With nine departments there is no single "other side" any more: show every
+  // department the seller is not currently browsing, so nothing is unreachable.
   const otherGroups = useMemo(
-    () => groupedLeaves(department === 'academic' ? 'student-life' : 'academic'),
+    () =>
+      MARKETPLACE_DEPARTMENTS.filter((d) => d !== department).flatMap((d) => groupedLeaves(d)),
     [department],
   );
 

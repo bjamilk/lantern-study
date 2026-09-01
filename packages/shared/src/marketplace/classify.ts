@@ -106,7 +106,7 @@ function scoreLeaf(
   }
 
   if (COURSE_CODE_RE.test(titleNorm) || COURSE_CODE_RE.test(descNorm)) {
-    if (leaf.department === 'academic' && leaf.publishFlow === 'listing') {
+    if (leaf.department === 'study-materials' && leaf.publishFlow === 'listing') {
       add(1.8, { kind: 'signal', text: 'course code' }, true);
     }
   }

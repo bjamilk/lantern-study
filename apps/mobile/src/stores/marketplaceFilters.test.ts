@@ -9,7 +9,7 @@ describe('mobile marketplace saved filters', () => {
     const base = {
       searchQuery: '',
       selectedCategory: null,
-      activeTab: 'academic' as const,
+      activeTab: 'study-materials' as const,
       minPrice: '',
       maxPrice: '',
       locationFilter: '',
@@ -40,7 +40,7 @@ describe('mobile marketplace saved filters', () => {
       minPrice: '1000',
       maxPrice: '5000',
       selectedCategory: 'personal_goods',
-      activeTab: 'student-life',
+      activeTab: 'housing',
     });
   });
 
@@ -48,7 +48,8 @@ describe('mobile marketplace saved filters', () => {
     expect(normalizeSavedMarketplaceFilters({})).toEqual({
       searchQuery: '',
       selectedCategory: null,
-      activeTab: 'academic',
+      // An empty saved search opens on the default department.
+      activeTab: 'electronics',
       minPrice: '',
       maxPrice: '',
       locationFilter: '',

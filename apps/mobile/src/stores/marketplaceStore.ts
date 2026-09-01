@@ -3,7 +3,9 @@
  * Manages marketplace listings and favorites with local-first pattern
  */
 import { create } from 'zustand';
-import { browseListingCategories, isMarketplaceListingStatus } from '@lantern/shared/marketplace';
+import {
+  MARKETPLACE_DEPARTMENTS,
+  type MarketplaceDepartment, browseListingCategories, isMarketplaceListingStatus } from '@lantern/shared/marketplace';
 import type { MarketplaceListingStatus } from '@lantern/shared/marketplace';
 import type { ListingAppealStatus, ListingRightsStatus } from '@lantern/shared/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -429,7 +431,46 @@ export type MarketplaceCategory =
   | 'campus_services' 
   | 'events_social';
 
-export type MarketplaceTab = 'academic' | 'student-life' | 'shops';
+/**
+ * Browse tabs = the nine departments, plus Shops (sellers rather than items).
+ * The old 'academic' | 'student-life' pair described the SELLER, not the
+ * product, which is what buried phones, hostels and hair under "student life".
+ */
+export { MARKETPLACE_DEPARTMENTS };
+export type { MarketplaceDepartment };
+
+export type MarketplaceTab = MarketplaceDepartment | 'shops';
+
+/**
+ * Where browse opens when nothing else is chosen. Electronics leads because
+ * phones, laptops and power banks are the highest-volume campus trade — the
+ * same reason Amazon opens on its densest department rather than an empty
+ * "all". Named rather than implied so it is a decision, not an array index.
+ */
+export const DEFAULT_MARKETPLACE_TAB: MarketplaceTab = 'electronics';
+
+/** Browse-strip order: departments first, Shops last (it browses sellers). */
+export const MARKETPLACE_TABS: readonly MarketplaceTab[] = [
+  ...MARKETPLACE_DEPARTMENTS,
+  'shops',
+];
+
+const DEPARTMENT_LABELS: Record<MarketplaceDepartment, string> = {
+  electronics: 'Electronics',
+  'study-materials': 'Books & Study',
+  housing: 'Housing',
+  'fashion-beauty': 'Fashion & Beauty',
+  'food-groceries': 'Food',
+  services: 'Services',
+  transport: 'Transport',
+  'events-tickets': 'Events',
+  'campus-essentials': 'Essentials',
+};
+
+/** Short enough for a scrolling tab; the full name lives on the browse page. */
+export function marketplaceTabLabel(tab: MarketplaceTab): string {
+  return tab === 'shops' ? 'Shops' : DEPARTMENT_LABELS[tab];
+}
 
 const BROWSE_ICONS: Record<string, string> = {
   textbook_exchange: 'book',
@@ -447,19 +488,37 @@ const BROWSE_ICONS: Record<string, string> = {
   events_social: 'ticket',
 };
 
-export const ACADEMIC_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] =
-  browseListingCategories('academic').map((row) => ({
-    id: row.id as MarketplaceCategory,
-    name: row.name,
-    icon: BROWSE_ICONS[row.id] || 'book',
-  }));
+export interface BrowseCategoryRow {
+  id: MarketplaceCategory;
+  name: string;
+  icon: string;
+}
 
-export const STUDENT_LIFE_CATEGORIES: { id: MarketplaceCategory; name: string; icon: string }[] =
-  browseListingCategories('student-life').map((row) => ({
-    id: row.id as MarketplaceCategory,
-    name: row.name,
-    icon: BROWSE_ICONS[row.id] || 'gift',
-  }));
+/** Browse chips per department, derived from the taxonomy — never hand-listed. */
+export const CATEGORIES_BY_DEPARTMENT: Record<MarketplaceDepartment, BrowseCategoryRow[]> =
+  MARKETPLACE_DEPARTMENTS.reduce(
+    (acc, department) => {
+      acc[department] = browseListingCategories(department).map((row) => ({
+        id: row.id as MarketplaceCategory,
+        name: row.name,
+        icon: BROWSE_ICONS[row.id] || 'gift',
+      }));
+      return acc;
+    },
+    {} as Record<MarketplaceDepartment, BrowseCategoryRow[]>,
+  );
+
+/** @deprecated Study material is one department of nine; use CATEGORIES_BY_DEPARTMENT. */
+export const ACADEMIC_CATEGORIES = CATEGORIES_BY_DEPARTMENT['study-materials'];
+
+/**
+ * @deprecated The academic / student-life split is gone. This flattens the
+ * other eight departments so the screens that still assume two buckets keep
+ * working while they are reworked onto CATEGORIES_BY_DEPARTMENT.
+ */
+export const STUDENT_LIFE_CATEGORIES: BrowseCategoryRow[] = MARKETPLACE_DEPARTMENTS.filter(
+  (d) => d !== 'study-materials',
+).flatMap((d) => CATEGORIES_BY_DEPARTMENT[d]);
 
 // Mock data for demo mode
 const DEMO_LISTINGS: MarketplaceListing[] = [
@@ -746,7 +805,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   error: null,
   searchQuery: '',
   selectedCategory: null,
-  activeTab: 'academic',
+  activeTab: MARKETPLACE_DEPARTMENTS[0],
   minPrice: '',
   maxPrice: '',
   locationFilter: '',
@@ -830,7 +889,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       error: null,
       searchQuery: '',
       selectedCategory: null,
-      activeTab: 'academic',
+      activeTab: MARKETPLACE_DEPARTMENTS[0],
       minPrice: '',
       maxPrice: '',
       locationFilter: '',
@@ -867,8 +926,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         const academicCategories = ACADEMIC_CATEGORIES.map(c => c.id);
         const studentLifeCategories = STUDENT_LIFE_CATEGORIES.map(c => c.id);
         filtered = filtered.filter(listing => {
-          if (activeTab === 'academic') {
-            return academicCategories.includes(listing.category as MarketplaceCategory);
+          if (activeTab !== 'shops') {
+            const ids = CATEGORIES_BY_DEPARTMENT[activeTab].map((c) => c.id);
+            return ids.includes(listing.category as MarketplaceCategory);
           }
           return studentLifeCategories.includes(listing.category as MarketplaceCategory);
         });
@@ -905,7 +965,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       } = get();
 
       const categoryFilter = selectedCategory || filters?.category;
-      const tabCategoryIds = (activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES).map(c => c.id);
+      const tabCategoryIds = (
+        activeTab === 'shops' ? STUDENT_LIFE_CATEGORIES : CATEGORIES_BY_DEPARTMENT[activeTab]
+      ).map(c => c.id);
 
       const raw = await api.fetchMarketplaceListings({
         page,

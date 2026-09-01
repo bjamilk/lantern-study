@@ -25,6 +25,10 @@ export {
   mapRemoteListing,
   ACADEMIC_CATEGORIES,
   STUDENT_LIFE_CATEGORIES,
+  CATEGORIES_BY_DEPARTMENT,
+  MARKETPLACE_TABS,
+  MARKETPLACE_DEPARTMENTS,
+  marketplaceTabLabel,
 } from './marketplaceStore';
 export type { 
   MarketplaceListing, 

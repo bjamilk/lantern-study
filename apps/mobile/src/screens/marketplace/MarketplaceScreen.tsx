@@ -14,6 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Skeleton, Button } from '../../components/ui';
 import {
+  MARKETPLACE_DEPARTMENTS,
+  marketplaceTabLabel,
+  MARKETPLACE_TABS,
+  CATEGORIES_BY_DEPARTMENT,
   useMarketplaceStore,
   useAuthStore,
   useSettingsStore,
@@ -119,7 +123,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     void getRecentMarketplaceSearches().then(setRecentSearches);
   }, []);
 
-  const categories = activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES;
+  const categories = activeTab === 'shops' ? [] : CATEGORIES_BY_DEPARTMENT[activeTab];
   const searchSuggestions = useMemo(
     () =>
       searchFocused || searchQuery.trim().length >= 2
@@ -144,8 +148,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     (minRating != null ? 1 : 0) +
     (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
 
-  const academicCategoryIds = useMemo(() => ACADEMIC_CATEGORIES.map(c => c.id), []);
-  const studentLifeCategoryIds = useMemo(() => STUDENT_LIFE_CATEGORIES.map(c => c.id), []);
+  const departmentCategoryIds = useMemo(
+    () => (activeTab === 'shops' ? [] : CATEGORIES_BY_DEPARTMENT[activeTab].map((c) => c.id)),
+    [activeTab],
+  );
 
   const loadRecent = useCallback(async () => {
     const ids = await getRecentlyViewedListingIds();
@@ -261,12 +267,13 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
   const listingMatchesFilters = useCallback(
     (listing: MarketplaceListing) => {
+      // A listing belongs to the open department if its coarse category is one
+      // the department browses. Custom categories are department-less by
+      // definition, so they surface everywhere rather than nowhere.
       const tabMatch =
-        activeTab === 'academic'
-          ? academicCategoryIds.includes(listing.category as MarketplaceCategory) ||
-            listing.category.startsWith('custom:')
-          : studentLifeCategoryIds.includes(listing.category as MarketplaceCategory) ||
-            listing.category.startsWith('custom:');
+        activeTab === 'shops' ||
+        departmentCategoryIds.includes(listing.category as MarketplaceCategory) ||
+        listing.category.startsWith('custom:');
       if (!tabMatch) return false;
       if (selectedCategory && listing.category !== selectedCategory) return false;
       if (
@@ -281,8 +288,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       activeTab,
       selectedCategory,
       campusIdFilter,
-      academicCategoryIds,
-      studentLifeCategoryIds,
+      departmentCategoryIds,
     ]
   );
 
@@ -349,10 +355,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         buildSavedMarketplaceFilters({
           searchQuery,
           selectedCategory,
-          // Saved searches only cover the two browse tabs; a search saved from
-          // the shops tab already round-trips to 'academic' via
-          // normalizeSavedMarketplaceFilters, so coerce it explicitly.
-          activeTab: activeTab === 'shops' ? 'academic' : activeTab,
+          // Saved searches cover the department tabs; one saved from Shops
+          // round-trips to the first department.
+          activeTab: activeTab === 'shops' ? MARKETPLACE_DEPARTMENTS[0] : activeTab,
           minPrice,
           maxPrice,
           locationFilter,
@@ -611,24 +616,38 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             </Pressable>
           </ScrollView>
         ) : null}
-        <View className="flex-row px-4 items-center">
-          {(['academic', 'student-life', 'shops'] as const).map(tab => (
+        {/* Departments scroll horizontally, Amazon-style: nine of them cannot
+            share a row of equal thirds, and squeezing them would truncate every
+            label. Shops sits last because it browses sellers, not products. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+          className="max-h-12"
+        >
+          {MARKETPLACE_TABS.map(tab => (
             <Pressable
               key={tab}
               onPress={() => {
                 setActiveTab(tab);
+                setSelectedCategory(null);
                 setShowCategories(false);
               }}
-              className={`flex-1 py-2.5 items-center border-b-2 ${
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === tab }}
+              className={`px-3 py-2.5 mr-1 items-center border-b-2 ${
                 activeTab === tab ? 'border-lantern-primary' : 'border-transparent'
               }`}
             >
-              <Text className={`text-sm font-medium ${activeTab === tab ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}>
-                {tab === 'academic' ? 'Academic' : tab === 'student-life' ? 'Student Life' : 'Shops'}
+              <Text
+                numberOfLines={1}
+                className={`text-sm font-medium ${activeTab === tab ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}
+              >
+                {marketplaceTabLabel(tab)}
               </Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         {activeTab !== 'shops' ? (
         <View className="flex-row px-3 pb-2 gap-2 flex-wrap">

@@ -15,15 +15,15 @@ describe('resolveListingTaxonomy', () => {
   it('prefers the stored taxonomy node over the coarse category', () => {
     const resolved = resolveListingTaxonomy({
       category: 'textbook_exchange',
-      category_specific_fields: { taxonomyNodeId: 'academic.materials.textbooks.solutions' },
+      category_specific_fields: { taxonomyNodeId: 'study-materials.textbooks.solutions-manual' },
     });
-    expect(resolved.node?.id).toBe('academic.materials.textbooks.solutions');
+    expect(resolved.node?.id).toBe('study-materials.textbooks.solutions-manual');
     expect(listingTypeLabel({ category: 'textbook_exchange' })).toMatch(/textbook/i);
   });
 
   it('falls back to the default leaf for a category', () => {
     const resolved = resolveListingTaxonomy({ category: 'pq_bank' });
-    expect(resolved.node?.id).toBe('academic.materials.assessments.printed-pq');
+    expect(resolved.node?.id).toBe('study-materials.past-questions.printed-past-questions');
   });
 });
 
@@ -39,7 +39,7 @@ describe('listing specs and condition', () => {
     const rows = listingSpecRows({
       category: 'textbook_exchange',
       category_specific_fields: {
-        taxonomyNodeId: 'academic.materials.textbooks.course',
+        taxonomyNodeId: 'study-materials.textbooks.course-textbook',
         condition: 'good',
         isbn: '9781234567897',
         edition: '7th',
@@ -52,22 +52,22 @@ describe('listing specs and condition', () => {
 
 describe('browseFilterForNode', () => {
   it('maps a leaf to its listing category and node id', () => {
-    const filter = browseFilterForNode('academic.materials.textbooks.solutions');
+    const filter = browseFilterForNode('study-materials.textbooks.solutions-manual');
     expect(filter?.category).toBe('textbook_exchange');
-    expect(filter?.taxonomyNodeId).toBe('academic.materials.textbooks.solutions');
+    expect(filter?.taxonomyNodeId).toBe('study-materials.textbooks.solutions-manual');
     expect(filter?.includeUnclassified).toBe(false);
   });
 
   it('includes unclassified rows for the default leaf of a category', () => {
-    const filter = browseFilterForNode('academic.materials.assessments.printed-pq');
+    const filter = browseFilterForNode('study-materials.past-questions.printed-past-questions');
     expect(filter?.category).toBe('pq_bank');
     expect(filter?.includeUnclassified).toBe(true);
   });
 
   it('maps a group to descendant listing categories', () => {
-    const filter = browseFilterForNode('academic.materials.textbooks');
+    const filter = browseFilterForNode('study-materials.textbooks');
     expect(filter?.categories).toContain('textbook_exchange');
-    expect(listingCategoriesUnderNode('campus.housing')).toContain('accommodation');
+    expect(listingCategoriesUnderNode('housing.rooms-rentals')).toContain('accommodation');
   });
 });
 
@@ -79,7 +79,7 @@ describe('related listing ranking', () => {
     course_id: 'course-bio',
     price: 2000,
     category_specific_fields: {
-      taxonomyNodeId: 'academic.materials.notes.lecture',
+      taxonomyNodeId: 'study-materials.notes-handouts.lecture-notes',
       courseCode: 'BIO 201',
     },
   };
@@ -143,7 +143,7 @@ describe('listingBreadcrumb', () => {
   it('walks from department to the leaf', () => {
     const crumbs = listingBreadcrumb({
       category: 'aso_ebi',
-      category_specific_fields: { taxonomyNodeId: 'campus.fashion.aso-ebi' },
+      category_specific_fields: { taxonomyNodeId: 'fashion-beauty.occasion-wear.aso-ebi' },
     });
     expect(crumbs.map((node) => node.label).join(' › ')).toMatch(/Aso ebi/i);
   });
