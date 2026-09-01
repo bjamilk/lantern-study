@@ -145,6 +145,8 @@ import {
 
   ShopBrowseScreen,
 
+  ShopAccountScreen,
+
   ListingDetailScreen,
 
   MyListingsScreen,
@@ -205,6 +207,7 @@ import { useMarketplaceStore } from '../stores/marketplaceStore';
 // Module scope so each wrapped component keeps a stable identity.
 const GatedMarketplaceHome = withMarketplaceGate(MarketplaceScreen);
 const GatedShopBrowse = withMarketplaceGate(ShopBrowseScreen);
+const GatedShopAccount = withMarketplaceGate(ShopAccountScreen);
 // Jobs joins the private pilot: hiding the drawer row is not a gate, since a
 // deep link, a job notification or the marketplace workspace bar all reach
 // these screens directly.
@@ -442,6 +445,8 @@ function MarketNavigator() {
       <MarketStack.Screen name="MarketplaceHome" component={GatedMarketplaceHome} />
 
       <MarketStack.Screen name="ShopBrowse" component={GatedShopBrowse} />
+
+      <MarketStack.Screen name="ShopAccount" component={GatedShopAccount} />
 
       <MarketStack.Screen name="ListingDetail" component={GatedListingDetail} />
 

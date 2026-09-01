@@ -445,6 +445,41 @@ export type MarketplaceCategory =
 export { MARKETPLACE_DEPARTMENTS };
 export type { MarketplaceDepartment };
 
+/**
+ * What the Shop keeps in front of the user. Every field is a count of things
+ * that exist now, not a lifetime total — a badge that never clears is noise.
+ */
+export interface ShopSummary {
+  /** Line items in the cart (quantity summed). */
+  cartCount: number;
+  /** Orders where the BUYER must act: pay, or confirm pickup. */
+  buyerActionOrders: number;
+  /** Orders where the SELLER must act: paid and waiting to be handed over. */
+  sellerActionOrders: number;
+  /** Offers made to this seller that are still open. */
+  pendingOffersReceived: number;
+  /** Buyer conversations on this seller's listings that are still open. */
+  openInquiries: number;
+  /** Listings currently live. */
+  activeListings: number;
+}
+
+export const EMPTY_SHOP_SUMMARY: ShopSummary = {
+  cartCount: 0,
+  buyerActionOrders: 0,
+  sellerActionOrders: 0,
+  pendingOffersReceived: 0,
+  openInquiries: 0,
+  activeListings: 0,
+};
+
+/** Orders that need the buyer: pay for it, or confirm you collected it. */
+const BUYER_ACTION_ORDER_STATUSES = new Set(['pending_payment', 'awaiting_payment', 'ready_for_pickup']);
+/** Orders that need the seller: money is in, item still to hand over. */
+const SELLER_ACTION_ORDER_STATUSES = new Set(['paid']);
+/** How long a summary stays fresh before a screen focus refetches it. */
+const SHOP_SUMMARY_TTL_MS = 45_000;
+
 export type MarketplaceTab = 'all' | MarketplaceDepartment | 'shops';
 
 /**
@@ -743,6 +778,15 @@ interface MarketplaceState {
   marketplaceAccess: boolean | null;
   /** The last probe failed (network/timeout/5xx) rather than answering. */
   marketplaceAccessUnavailable: boolean;
+  /**
+   * The numbers Amazon keeps in front of you: what is in the cart, what needs
+   * your attention as a buyer, what needs it as a seller. Powers every badge on
+   * the Shop header, the quick-access band and the You hub.
+   */
+  shopSummary: ShopSummary;
+  shopSummaryLoadedAt: number | null;
+  shopSummaryLoading: boolean;
+  fetchShopSummary: (options?: { force?: boolean }) => Promise<void>;
   /** A probe is in flight; keeps the gate on a spinner instead of a verdict. */
   marketplaceAccessChecking: boolean;
   checkMarketplaceAccess: () => Promise<void>;
@@ -862,6 +906,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   marketplaceAccess: null,
   marketplaceAccessUnavailable: false,
   marketplaceAccessChecking: false,
+  shopSummary: EMPTY_SHOP_SUMMARY,
+  shopSummaryLoadedAt: null,
+  shopSummaryLoading: false,
   listingsPage: 1,
   listingsHasMore: true,
   showFavoritesOnly: false,
@@ -936,6 +983,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       marketplaceAccess: null,
       marketplaceAccessUnavailable: false,
       marketplaceAccessChecking: false,
+      shopSummary: EMPTY_SHOP_SUMMARY,
+      shopSummaryLoadedAt: null,
+      shopSummaryLoading: false,
       shops: [],
       shopsLoading: false,
       isLoading: false,
@@ -1762,6 +1812,66 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
     }
   },
+  fetchShopSummary: async (options) => {
+    const { shopSummaryLoadedAt, shopSummaryLoading, marketplaceAccess } = get();
+    if (shopSummaryLoading) return;
+    // Nothing to count for an account the gate refuses; the requests would 403.
+    if (marketplaceAccess === false) return;
+    const fresh =
+      shopSummaryLoadedAt != null && Date.now() - shopSummaryLoadedAt < SHOP_SUMMARY_TTL_MS;
+    if (fresh && !options?.force) return;
+    set({ shopSummaryLoading: true });
+
+    // Six cheap reads, each allowed to fail on its own. A badge that cannot be
+    // counted shows nothing; it must never take the other badges down with it.
+    const settle = async <T,>(work: Promise<T>): Promise<T | null> => {
+      try {
+        return await work;
+      } catch {
+        return null;
+      }
+    };
+    const [cart, buyerOrders, sellerOrders, offers, inquiries, stats] = await Promise.all([
+      settle(api.fetchMarketplaceCart()),
+      settle(api.fetchMarketplaceOrders('buyer')),
+      settle(api.fetchMarketplaceOrders('seller')),
+      settle(api.fetchMarketplaceOffers('seller')),
+      settle(api.fetchMyInquiries('seller')),
+      settle(api.fetchSellerStats()),
+    ]);
+
+    const prev = get().shopSummary;
+    const count = <T,>(rows: T[] | null, keep: (row: T) => boolean, fallback: number) =>
+      rows ? rows.filter(keep).length : fallback;
+
+    set({
+      shopSummary: {
+        cartCount: cart
+          ? cart.reduce((n, item) => n + Math.max(1, Number(item.quantity) || 1), 0)
+          : prev.cartCount,
+        buyerActionOrders: count(
+          buyerOrders,
+          (o) => BUYER_ACTION_ORDER_STATUSES.has(o.status),
+          prev.buyerActionOrders,
+        ),
+        sellerActionOrders: count(
+          sellerOrders,
+          (o) => SELLER_ACTION_ORDER_STATUSES.has(o.status),
+          prev.sellerActionOrders,
+        ),
+        pendingOffersReceived: count(offers, (o) => o.status === 'pending', prev.pendingOffersReceived),
+        openInquiries: count(
+          inquiries,
+          (i) => i.status === 'open' || i.status === 'negotiating',
+          prev.openInquiries,
+        ),
+        activeListings: stats ? stats.activeListings : prev.activeListings,
+      },
+      shopSummaryLoadedAt: Date.now(),
+      shopSummaryLoading: false,
+    });
+  },
+
   applySavedSearch: (filters: Record<string, unknown>) => {
     listingsRequestSeq += 1;
     const normalized = normalizeSavedMarketplaceFilters(filters);

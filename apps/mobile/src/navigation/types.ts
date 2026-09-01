@@ -91,6 +91,8 @@ export type MarketStackParamList = {
   MarketplaceHome: undefined;
   /** Shop by department; omitting nodeId opens the department list. */
   ShopBrowse: { nodeId?: string } | undefined;
+  /** The Amazon-style "You" hub: orders, saved, cart, and everything a seller runs. */
+  ShopAccount: undefined;
   ListingDetail: { listingId: string; quantity?: number };
   MyListings: undefined;
   Inquiries: undefined;

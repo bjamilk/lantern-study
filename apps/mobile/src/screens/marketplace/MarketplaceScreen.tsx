@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Skeleton, Button } from '../../components/ui';
+import { Skeleton, Button, Badge } from '../../components/ui';
 import {
   MARKETPLACE_DEPARTMENTS,
   marketplaceTabLabel,
@@ -45,7 +45,8 @@ import {
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
-import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
+import { ShopQuickActions } from './components/ShopQuickActions';
+import { useFocusEffect } from '@react-navigation/native';
 import { DiscoverWorkspaceBar } from '../discover/DiscoverWorkspaceBar';
 import { shouldShowTrustChip, trustLabel, canAccessDiscoverHub } from '@lantern/shared/network';
 import {
@@ -112,9 +113,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     setConditionFilter,
     applySavedSearch,
     resetFilters,
-    setShowFavoritesOnly,
     toggleFavorite,
     loadFromStorage,
+    shopSummary,
+    fetchShopSummary,
   } = useMarketplaceStore();
 
   const [showCategories, setShowCategories] = useState(false);
@@ -217,6 +219,14 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       await loadRecent();
     })();
   }, [activeTab, selectedCategory]);
+
+  // The badges describe what needs you now, so they refresh whenever you come
+  // back to the shop — after paying, after a seller replies, after listing.
+  useFocusEffect(
+    useCallback(() => {
+      void fetchShopSummary();
+    }, [fetchShopSummary]),
+  );
 
   useEffect(() => {
     void loadSavedSearchMatches();
@@ -484,6 +494,13 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
   const listHeader = (
     <View>
+      {!showFavoritesOnly && !searchQuery.trim() ? (
+        <ShopQuickActions
+          summary={shopSummary}
+          savedCount={favorites.size}
+          onNavigate={(screen, params) => navigation.navigate(screen, params)}
+        />
+      ) : null}
       {recentListings.length > 0 && !showFavoritesOnly ? (
         <View className="px-2 pt-3">
           <Text className="text-sm font-semibold text-lantern-text mb-2 px-1">
@@ -566,24 +583,45 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               />
             </Pressable>
           </View>
+          {/* Amazon keeps the cart and your account one tap away on every
+              page. These replace a favourites toggle and a "..." sheet that
+              hid orders, cart, inquiries and offers behind an extra tap. */}
           <Pressable
-            onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            onPress={() => navigation.navigate('Cart')}
             accessibilityRole="button"
-            accessibilityLabel={showFavoritesOnly ? 'Show all listings' : 'Show favorites only'}
-            className={`h-9 w-9 items-center justify-center rounded-lg ${
-              showFavoritesOnly ? 'bg-lantern-error/10' : 'bg-lantern-background-secondary'
-            }`}
+            accessibilityLabel={
+              shopSummary.cartCount > 0 ? `Cart, ${shopSummary.cartCount} items` : 'Cart'
+            }
+            className="h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary"
           >
-            <Ionicons name="heart" size={18} color={showFavoritesOnly ? '#dc2626' : '#64748b'} />
+            <Ionicons name="cart-outline" size={19} color="#64748b" />
+            <Badge count={shopSummary.cartCount} />
           </Pressable>
-          <MarketplaceWorkspaceBar
-            variant="toolbar"
-            active="browse"
-            onNavigate={screen => navigation.navigate(screen)}
-            onSell={() => navigation.navigate('CreateListing')}
-            showFavorites
-            primaryLabel="Sell"
-          />
+          <Pressable
+            onPress={() => navigation.navigate('ShopAccount')}
+            accessibilityRole="button"
+            accessibilityLabel="Your orders, saved items and selling"
+            className="h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary"
+          >
+            <Ionicons name="person-circle-outline" size={20} color="#64748b" />
+            <Badge
+              count={
+                shopSummary.buyerActionOrders +
+                shopSummary.sellerActionOrders +
+                shopSummary.pendingOffersReceived +
+                shopSummary.openInquiries
+              }
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => navigation.navigate('CreateListing')}
+            accessibilityRole="button"
+            accessibilityLabel="Sell an item"
+            className="h-9 flex-row items-center gap-1 px-3 rounded-lg bg-lantern-primary"
+          >
+            <Ionicons name="add" size={16} color="#fff" />
+            <Text className="text-sm font-semibold text-white">Sell</Text>
+          </Pressable>
         </View>
         {searchSuggestions.length > 0 && searchFocused ? (
           <View className="mx-4 rounded-xl border border-lantern-border bg-lantern-surface overflow-hidden">
