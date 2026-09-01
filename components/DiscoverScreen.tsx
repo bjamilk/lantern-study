@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
   MagnifyingGlassIcon,
   ChatBubbleLeftRightIcon,
@@ -93,9 +94,14 @@ const EmptyState: React.FC<{
 
 const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   onNavigate,
-  initialSection = 'communities',
+  initialSection,
 }) => {
-  const [section, setSection] = useState<DiscoverSection>(initialSection);
+  // Same rule as mobile: never open on a section that is switched off.
+  const [section, setSection] = useState<DiscoverSection>(() =>
+    initialSection && isDiscoverSectionEnabled(initialSection)
+      ? initialSection
+      : (defaultDiscoverSection() as DiscoverSection),
+  );
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);

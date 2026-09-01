@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
   DISCOVER_SECTION_INTRO,
   canAccessDiscoverHub,
@@ -60,7 +61,15 @@ function DiscoverHub({
   route?: { params?: { section?: Section } };
 }) {
   const { onScroll: chromeOnScroll } = useChrome();
-  const [section, setSection] = useState<Section>(route?.params?.section ?? 'communities');
+  // Open on a section that is actually switched on. Defaulting to communities
+  // now lands on a hidden section with no tab bar to leave it, because the bar
+  // hides itself when fewer than two sections are enabled.
+  const [section, setSection] = useState<Section>(() => {
+    const requested = route?.params?.section;
+    return requested && isDiscoverSectionEnabled(requested)
+      ? requested
+      : (defaultDiscoverSection() as Section);
+  });
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +118,7 @@ function DiscoverHub({
   useEffect(() => {
     const next = route?.params?.section;
     if (!next || next === 'marketplace') return;
+    if (!isDiscoverSectionEnabled(next)) return;
     setSection(next);
   }, [route?.params?.section]);
 

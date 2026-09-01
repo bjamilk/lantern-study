@@ -1003,7 +1003,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
             taxonomyNodeId: nodeFilter.taxonomyNodeId,
             taxonomyNodeIds: nodeFilter.taxonomyNodeIds,
             includeUnclassified: nodeFilter.includeUnclassified,
-            ...(nodeFilter.categories ? { includeCustom: true } : {}),
+            // Custom categories carry no node id, so a leaf-filtered group
+            // would exclude them anyway; only ask for them when nothing narrows.
+            ...(nodeFilter.categories && !nodeFilter.taxonomyNodeIds
+              ? { includeCustom: true }
+              : {}),
           }
         : categoryFilter
           ? { category: categoryFilter }
