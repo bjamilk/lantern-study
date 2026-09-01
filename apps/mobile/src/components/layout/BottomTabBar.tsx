@@ -135,9 +135,10 @@ export function BottomTabBar({
     // surfaces, so a bottom-bar button would advertise them to every account
     // that cannot open them. TabKey still carries both — the routes exist and
     // stay reachable by deep link, notification and in-app navigation.
-    // "Dashboard" overflows a 60dp column at 12sp and truncates under font
-    // scaling; "Home" is the same destination and fits.
-    { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
+    // This read "Home" while the bar carried six destinations, because
+    // "Dashboard" truncated in a 60dp column. At four the column is ~90dp and
+    // the real name fits. The key stays 'Home' — it is the route identity.
+    { key: 'Home', label: 'Dashboard', icon: 'home-outline', activeIcon: 'home' },
     { key: 'Offline', label: 'Offline', icon: 'cloud-offline-outline', activeIcon: 'cloud-offline' },
   ];
 
