@@ -48,7 +48,11 @@ import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
 import { DiscoverWorkspaceBar } from '../discover/DiscoverWorkspaceBar';
 import { shouldShowTrustChip, trustLabel, canAccessDiscoverHub } from '@lantern/shared/network';
-import { listingTypeLabel, suggestMarketplaceSearch } from '@lantern/shared/marketplace';
+import {
+  getTaxonomyPath,
+  listingTypeLabel,
+  suggestMarketplaceSearch,
+} from '@lantern/shared/marketplace';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useChrome } from '../../components/layout/ChromeContext';
 
@@ -73,6 +77,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     searchQuery,
     selectedCategory,
     activeTab,
+    taxonomyNodeId,
     minPrice,
     maxPrice,
     locationFilter,
@@ -94,6 +99,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     setSearchQuery,
     setSelectedCategory,
     setActiveTab,
+    setTaxonomyNode,
     setMinPrice,
     setMaxPrice,
     setLocationFilter,
@@ -147,6 +153,12 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   ].filter(Boolean).length +
     (minRating != null ? 1 : 0) +
     (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
+
+  // Breadcrumb for the drilled-in node, department first.
+  const taxonomyPath = useMemo(
+    () => (taxonomyNodeId ? getTaxonomyPath(taxonomyNodeId) : []),
+    [taxonomyNodeId],
+  );
 
   const departmentCategoryIds = useMemo(
     () => (activeTab === 'shops' ? [] : CATEGORIES_BY_DEPARTMENT[activeTab].map((c) => c.id)),
@@ -358,6 +370,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           // Saved searches cover the department tabs; one saved from Shops
           // round-trips to the first department.
           activeTab: activeTab === 'shops' ? MARKETPLACE_DEPARTMENTS[0] : activeTab,
+          taxonomyNodeId,
           minPrice,
           maxPrice,
           locationFilter,
@@ -619,10 +632,20 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         {/* Departments scroll horizontally, Amazon-style: nine of them cannot
             share a row of equal thirds, and squeezing them would truncate every
             label. Shops sits last because it browses sellers, not products. */}
+        <View className="flex-row items-center">
+        <Pressable
+          onPress={() => navigation.navigate('ShopBrowse')}
+          accessibilityRole="button"
+          accessibilityLabel="Shop by department"
+          className="flex-row items-center gap-1 ml-3 mr-1 px-2.5 py-2 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
+        >
+          <Ionicons name="menu" size={16} color="#64748b" />
+          <Text className="text-xs font-semibold text-lantern-text-secondary">All</Text>
+        </Pressable>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16 }}
+          contentContainerStyle={{ paddingHorizontal: 8 }}
           className="max-h-12"
         >
           {MARKETPLACE_TABS.map(tab => (
@@ -648,6 +671,46 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             </Pressable>
           ))}
         </ScrollView>
+        </View>
+
+        {/* Where the buyer actually is in the tree. Each crumb widens the
+            browse by one level; the last one clears back to the department. */}
+        {taxonomyPath.length > 0 ? (
+          <View className="px-3 pb-2 flex-row items-center flex-wrap">
+            {taxonomyPath.map((crumb, index) => (
+              <React.Fragment key={crumb.id}>
+                {index > 0 ? (
+                  <Text className="px-1 text-[11px] text-lantern-text-tertiary">›</Text>
+                ) : null}
+                <Pressable
+                  onPress={() => setTaxonomyNode(crumb.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Browse ${crumb.label}`}
+                  className="py-1"
+                >
+                  <Text
+                    className={`text-[11px] ${
+                      index === taxonomyPath.length - 1
+                        ? 'font-semibold text-lantern-text'
+                        : 'text-lantern-primary'
+                    }`}
+                  >
+                    {crumb.label}
+                  </Text>
+                </Pressable>
+              </React.Fragment>
+            ))}
+            <Pressable
+              onPress={() => setTaxonomyNode(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Clear category filter"
+              hitSlop={8}
+              className="ml-2 py-1"
+            >
+              <Ionicons name="close-circle" size={15} color="#94a3b8" />
+            </Pressable>
+          </View>
+        ) : null}
 
         {activeTab !== 'shops' ? (
         <View className="flex-row px-3 pb-2 gap-2 flex-wrap">

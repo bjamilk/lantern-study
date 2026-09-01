@@ -16,6 +16,7 @@ describe('mobile marketplace saved filters', () => {
       campusIdFilter: '',
       sortBy: 'created_at',
       sortOrder: 'desc' as const,
+      taxonomyNodeId: null,
     };
 
     expect(buildSavedMarketplaceFilters(base)).not.toHaveProperty('campus_id');
@@ -56,7 +57,45 @@ describe('mobile marketplace saved filters', () => {
       campusIdFilter: '',
       sortBy: 'created_at',
       sortOrder: 'desc',
+      taxonomyNodeId: null,
     });
+  });
+
+  it('round-trips a drilled-in department node and lets it own the tab', () => {
+    const saved = buildSavedMarketplaceFilters({
+      searchQuery: '',
+      selectedCategory: null,
+      // Deliberately mismatched: the saved tab is stale, the node is the truth.
+      activeTab: 'housing' as const,
+      minPrice: '',
+      maxPrice: '',
+      locationFilter: '',
+      campusIdFilter: '',
+      sortBy: 'created_at',
+      sortOrder: 'desc' as const,
+      taxonomyNodeId: 'study-materials.textbooks.solutions-manual',
+    });
+    expect(saved).toMatchObject({
+      taxonomyNodeId: 'study-materials.textbooks.solutions-manual',
+    });
+    expect(normalizeSavedMarketplaceFilters(saved)).toMatchObject({
+      taxonomyNodeId: 'study-materials.textbooks.solutions-manual',
+      activeTab: 'study-materials',
+    });
+  });
+
+  it('drops a node id that no longer exists instead of filtering to nothing', () => {
+    expect(
+      normalizeSavedMarketplaceFilters({ taxonomyNodeId: 'not.a.real.node' }).taxonomyNodeId
+    ).toBeNull();
+  });
+
+  it('resolves a legacy node id forward into the new tree', () => {
+    const restored = normalizeSavedMarketplaceFilters({
+      taxonomyNodeId: 'campus.goods.electronics',
+    });
+    expect(restored.taxonomyNodeId).toBe('electronics');
+    expect(restored.activeTab).toBe('electronics');
   });
 
   it('accepts legacy camel-case campus filters', () => {

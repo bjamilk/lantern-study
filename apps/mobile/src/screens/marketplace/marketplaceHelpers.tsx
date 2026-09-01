@@ -73,3 +73,27 @@ const CATEGORY_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
 export function categoryIcon(name: string): keyof typeof Ionicons.glyphMap {
   return CATEGORY_ICON_MAP[name] ?? 'bag-outline';
 }
+
+/** Taxonomy nodes carry a platform-neutral icon key; this is its Ionicon. */
+const TAXONOMY_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
+  book: 'book-outline',
+  notes: 'document-text-outline',
+  sparkles: 'sparkles-outline',
+  albums: 'albums-outline',
+  briefcase: 'briefcase-outline',
+  beaker: 'flask-outline',
+  chart: 'stats-chart-outline',
+  home: 'home-outline',
+  car: 'car-outline',
+  shirt: 'shirt-outline',
+  gift: 'gift-outline',
+  people: 'people-outline',
+  ticket: 'ticket-outline',
+  phone: 'phone-portrait-outline',
+  food: 'restaurant-outline',
+  plus: 'add-circle-outline',
+};
+
+export function taxonomyIcon(key: string): keyof typeof Ionicons.glyphMap {
+  return TAXONOMY_ICON_MAP[key] ?? 'pricetag-outline';
+}

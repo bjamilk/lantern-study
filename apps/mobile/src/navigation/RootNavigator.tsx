@@ -143,6 +143,8 @@ import {
 
   MarketplaceScreen,
 
+  ShopBrowseScreen,
+
   ListingDetailScreen,
 
   MyListingsScreen,
@@ -202,6 +204,7 @@ import { useMarketplaceStore } from '../stores/marketplaceStore';
 // StudyRoom, CreatorProfile, Mastery) are deliberately NOT gated.
 // Module scope so each wrapped component keeps a stable identity.
 const GatedMarketplaceHome = withMarketplaceGate(MarketplaceScreen);
+const GatedShopBrowse = withMarketplaceGate(ShopBrowseScreen);
 const GatedListingDetail = withMarketplaceGate(ListingDetailScreen);
 const GatedMyListings = withMarketplaceGate(MyListingsScreen);
 const GatedInquiries = withMarketplaceGate(InquiriesScreen);
@@ -427,6 +430,8 @@ function MarketNavigator() {
     <MarketStack.Navigator screenOptions={{ headerShown: false }}>
 
       <MarketStack.Screen name="MarketplaceHome" component={GatedMarketplaceHome} />
+
+      <MarketStack.Screen name="ShopBrowse" component={GatedShopBrowse} />
 
       <MarketStack.Screen name="ListingDetail" component={GatedListingDetail} />
 

@@ -89,6 +89,8 @@ export type ChatStackParamList = {
 
 export type MarketStackParamList = {
   MarketplaceHome: undefined;
+  /** Shop by department; omitting nodeId opens the department list. */
+  ShopBrowse: { nodeId?: string } | undefined;
   ListingDetail: { listingId: string; quantity?: number };
   MyListings: undefined;
   Inquiries: undefined;

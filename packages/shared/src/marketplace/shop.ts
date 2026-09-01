@@ -11,6 +11,7 @@ import {
   attributesForNode,
   defaultLeafForListingCategory,
   getTaxonomyChildren,
+  getTaxonomyLeaves,
   getTaxonomyNode,
   getTaxonomyPath,
   isTaxonomyLeaf,
@@ -173,30 +174,75 @@ export interface ShopBrowseFilter {
   category?: string;
   categories?: string[];
   taxonomyNodeId?: string;
+  /** Group browse: match any of these leaves. */
+  taxonomyNodeIds?: string[];
   includeUnclassified?: boolean;
   department?: MarketplaceDepartment;
 }
 
+/** Every leaf that files under a coarse listing category. */
+function leavesForListingCategory(category: string): TaxonomyNode[] {
+  return getTaxonomyLeaves().filter((leaf) => leaf.listingCategory === category);
+}
+
+/**
+ * Whether a node covers every leaf of each listing category it touches.
+ *
+ * This is what makes it safe to show listings that carry no node id yet. Such a
+ * listing is only known to its coarse category, so it can be placed under a node
+ * that owns that whole category — and nowhere narrower. Showing them under a
+ * partial node is how "Smartphones" ends up full of unfiled laptops.
+ */
+function coversWholeCategories(nodeId: string): boolean {
+  const leaves = descendantLeaves(nodeId);
+  const covered = new Set(leaves.map((leaf) => leaf.id));
+  const categories = new Set(
+    leaves
+      .map((leaf) => leaf.listingCategory)
+      .filter((category): category is string => Boolean(category) && category !== 'other'),
+  );
+  if (categories.size === 0) return false;
+  for (const category of categories) {
+    for (const sibling of leavesForListingCategory(category)) {
+      if (!covered.has(sibling.id)) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Map a taxonomy node (group or leaf) onto listings API filters.
- * Default leaves also include unclassified rows in that category so older
- * listings still appear until they are re-saved with a node id.
+ *
+ * A group filters on its descendant leaves rather than on the coarse category
+ * alone, because the tree is finer than `marketplace_listings.category`:
+ * "Phones & Tablets" and "Computers & Laptops" are both stored as `electronics`,
+ * and filtering by category would make the two indistinguishable.
  */
 export function browseFilterForNode(nodeId: string): ShopBrowseFilter | null {
   const node = getTaxonomyNode(nodeId);
   if (!node) return null;
   if (isTaxonomyLeaf(node) && node.listingCategory && node.listingCategory !== 'other') {
-    const defaultLeaf = defaultLeafForListingCategory(node.listingCategory, node.department);
     return {
       category: node.listingCategory,
       taxonomyNodeId: node.id,
-      includeUnclassified: defaultLeaf?.id === node.id,
+      includeUnclassified: coversWholeCategories(node.id),
       department: node.department,
     };
   }
   const categories = listingCategoriesUnderNode(nodeId);
   if (categories.length === 0) return null;
-  return { categories, department: node.department };
+  const leafIds = descendantLeaves(nodeId)
+    .filter((leaf) => leaf.listingCategory && leaf.listingCategory !== 'other')
+    .map((leaf) => leaf.id);
+  const wholeCategories = coversWholeCategories(nodeId);
+  return {
+    categories,
+    // A node that owns its categories outright needs no leaf filter: the
+    // category list already says exactly the same thing, in one indexed column.
+    ...(wholeCategories ? {} : { taxonomyNodeIds: leafIds }),
+    includeUnclassified: wholeCategories,
+    department: node.department,
+  };
 }
 
 export function isKnownTaxonomyNodeId(id: string | null | undefined): boolean {

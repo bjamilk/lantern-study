@@ -9992,6 +9992,7 @@ export class SupabaseService {
       /** Keep only listings whose rating_avg is at least this (1–5). */
       minRating?: number;
       taxonomyNodeId?: string;
+      taxonomyNodeIds?: string[];
       includeUnclassified?: boolean;
       sortBy?: string;
       sortOrder?: "asc" | "desc";
@@ -10013,6 +10014,7 @@ export class SupabaseService {
       condition,
       minRating,
       taxonomyNodeId,
+      taxonomyNodeIds,
       includeUnclassified = false,
       sortBy = "trending",
       sortOrder = "desc",
@@ -10028,6 +10030,13 @@ export class SupabaseService {
       taxonomyNodeId && isKnownTaxonomyNodeId(taxonomyNodeId)
         ? taxonomyNodeId
         : undefined;
+    // Group browse: the set of leaves under the node the buyer opened. Unknown
+    // ids are dropped rather than passed through, so a stale client cannot turn
+    // a browse into a filter that matches nothing.
+    const taxonomyFilterList =
+      taxonomyNodeIds && taxonomyNodeIds.length > 0
+        ? taxonomyNodeIds.filter((id) => isKnownTaxonomyNodeId(id))
+        : undefined;
 
     // Condition and taxonomy node live inside category_specific_fields JSONB,
     // which the search RPC can't filter on — those queries use the fallback
@@ -10038,6 +10047,7 @@ export class SupabaseService {
     const useSearchRpc =
       !condition &&
       !taxonomyFilter &&
+      !taxonomyFilterList?.length &&
       !wantsRatingQuery &&
       (Boolean(search) ||
         Boolean(category) ||
@@ -10188,6 +10198,16 @@ export class SupabaseService {
               `category_specific_fields->>taxonomyNodeId.eq.${quoted},category_specific_fields->>taxonomyNodeId.is.null`,
             )
           : query.eq("category_specific_fields->>taxonomyNodeId", taxonomyFilter);
+      } else if (taxonomyFilterList && taxonomyFilterList.length > 0) {
+        // A group browse never also asks for unfiled rows: a node either owns
+        // its whole listing category — in which case the category filter alone
+        // already says it, and unfiled rows belong — or it owns only part of
+        // one, in which case an unfiled row cannot be placed inside it. So a
+        // plain IN is enough here, and the client escapes the values.
+        query = query.in(
+          "category_specific_fields->>taxonomyNodeId",
+          taxonomyFilterList,
+        );
       }
 
       // Pre-migration the rating columns do not exist: the filter is skipped

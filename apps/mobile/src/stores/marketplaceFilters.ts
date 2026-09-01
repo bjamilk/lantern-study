@@ -1,6 +1,8 @@
 import {
   MARKETPLACE_DEPARTMENTS,
   browseListingCategories,
+  getTaxonomyNode,
+  resolveTaxonomyNodeId,
   type MarketplaceDepartment,
 } from '@lantern/shared/marketplace';
 
@@ -35,6 +37,8 @@ export interface MarketplaceBrowseFilterState {
   campusIdFilter: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
+  /** The Shop-by-department node the search was drilled into, if any. */
+  taxonomyNodeId: string | null;
 }
 
 const STUDENT_LIFE_CATEGORY_IDS = new Set([
@@ -56,19 +60,31 @@ export function normalizeSavedMarketplaceFilters(
   filters: Record<string, unknown>
 ): MarketplaceBrowseFilterState {
   const selectedCategory = stringValue(filters.category) || null;
+  // A saved search made before the nine-department tree stores a legacy node
+  // id; resolve it forward rather than dropping the buyer back to the top.
+  const taxonomyNodeId =
+    resolveTaxonomyNodeId(stringValue(filters.taxonomyNodeId ?? filters.taxonomy_node_id)) ?? null;
+  const savedNodeDepartment = taxonomyNodeId
+    ? getTaxonomyNode(taxonomyNodeId)?.department
+    : undefined;
   const savedTab = filters.activeTab;
   // A saved search from before the department tree stored 'academic' or
   // 'student-life'; neither exists now, so fall back to the department that
   // actually browses the saved category, and only then to the first one.
-  const activeTab: MarketplaceBrowseTab = isMarketplaceDepartment(savedTab)
-    ? savedTab
-    : (selectedCategory && departmentForListingCategory(selectedCategory)) ||
-      DEFAULT_MARKETPLACE_DEPARTMENT;
+  // The node owns the department: a node that migrated across departments would
+  // otherwise restore under the stale tab it was saved in.
+  const activeTab: MarketplaceBrowseTab =
+    savedNodeDepartment ||
+    (isMarketplaceDepartment(savedTab)
+      ? savedTab
+      : (selectedCategory && departmentForListingCategory(selectedCategory)) ||
+        DEFAULT_MARKETPLACE_DEPARTMENT);
 
   return {
     searchQuery: stringValue(filters.search ?? filters.query),
     selectedCategory,
     activeTab,
+    taxonomyNodeId,
     minPrice: stringValue(filters.minPrice ?? filters.min_price),
     maxPrice: stringValue(filters.maxPrice ?? filters.max_price),
     locationFilter: stringValue(filters.location),
@@ -95,6 +111,7 @@ export function buildSavedMarketplaceFilters(
 
   if (state.searchQuery.trim()) filters.search = state.searchQuery.trim();
   if (state.selectedCategory) filters.category = state.selectedCategory;
+  if (state.taxonomyNodeId) filters.taxonomyNodeId = state.taxonomyNodeId;
   if (state.minPrice.trim()) filters.minPrice = state.minPrice.trim();
   if (state.maxPrice.trim()) filters.maxPrice = state.maxPrice.trim();
   if (state.locationFilter.trim()) filters.location = state.locationFilter.trim();

@@ -1830,6 +1830,8 @@ export function createApiEndpoints(client: ApiClient) {
         /** Only listings with rating_avg >= this (1–5). Ignored pre-migration. */
         minRating?: number;
         taxonomyNodeId?: string;
+        /** Group browse: match any of these leaves. Serialized comma-separated. */
+        taxonomyNodeIds?: string[];
         includeUnclassified?: boolean;
         /** `compact` returns card-shaped rows (first image only) for grids. */
         responseProfile?: "compact" | "full";

@@ -58,10 +58,31 @@ describe('browseFilterForNode', () => {
     expect(filter?.includeUnclassified).toBe(false);
   });
 
-  it('includes unclassified rows for the default leaf of a category', () => {
-    const filter = browseFilterForNode('study-materials.past-questions.printed-past-questions');
-    expect(filter?.category).toBe('pq_bank');
+  it('keeps unfiled listings out of a leaf that is one of many in its category', () => {
+    // 'electronics' holds phones, laptops and power banks alike, so a listing
+    // known only to be `electronics` must not surface under Smartphones.
+    const filter = browseFilterForNode('electronics.phones-tablets.smartphones');
+    expect(filter?.category).toBe('electronics');
+    expect(filter?.includeUnclassified).toBe(false);
+  });
+
+  it('lets a node that owns its whole category absorb unfiled listings', () => {
+    // Every textbook_exchange leaf lives under this group, so a listing known
+    // only to be a textbook has nowhere narrower it could belong.
+    const filter = browseFilterForNode('study-materials.textbooks');
+    expect(filter?.categories).toEqual(['textbook_exchange']);
     expect(filter?.includeUnclassified).toBe(true);
+    expect(filter?.taxonomyNodeIds).toBeUndefined();
+  });
+
+  it('filters a partial group by its descendant leaves, not by category', () => {
+    // Phones and laptops are both stored as `electronics`; without the leaf
+    // list, opening Phones & Tablets would show every laptop too.
+    const filter = browseFilterForNode('electronics.phones-tablets');
+    expect(filter?.categories).toEqual(['electronics']);
+    expect(filter?.includeUnclassified).toBe(false);
+    expect(filter?.taxonomyNodeIds).toContain('electronics.phones-tablets.smartphones');
+    expect(filter?.taxonomyNodeIds).not.toContain('electronics.computers-laptops.laptops');
   });
 
   it('maps a group to descendant listing categories', () => {

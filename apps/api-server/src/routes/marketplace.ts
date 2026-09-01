@@ -158,6 +158,7 @@ router.get(
       condition,
       minRating,
       taxonomyNodeId,
+      taxonomyNodeIds,
       includeUnclassified,
       sortBy = 'trending',
       sortOrder = 'desc',
@@ -175,12 +176,22 @@ router.get(
     const includeCustomCategories = includeCustom === '1' || includeCustom === 'true';
     const taxonomyId =
       typeof taxonomyNodeId === 'string' && taxonomyNodeId.trim() ? taxonomyNodeId.trim() : undefined;
+    // Group browse sends every descendant leaf. The cap matches the widest
+    // group in the tree with headroom; a longer list is a malformed request.
+    const taxonomyIdList =
+      typeof taxonomyNodeIds === 'string' && taxonomyNodeIds.trim()
+        ? taxonomyNodeIds
+            .split(',')
+            .map((id: string) => id.trim())
+            .filter(Boolean)
+            .slice(0, 40)
+        : undefined;
     const includeUnclassifiedNodes =
       includeUnclassified === '1' || includeUnclassified === 'true';
 
     logger.debug('Fetching marketplace listings', { page, limit, category, search, profile, campusId, countryCode });
 
-    const cacheKey = `marketplace:listings:v3:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${condition || ''}:${minRatingValue || ''}:${taxonomyId || ''}:${includeUnclassifiedNodes ? 1 : 0}:${sortBy}:${sortOrder}:profile:${profile}`;
+    const cacheKey = `marketplace:listings:v3:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${condition || ''}:${minRatingValue || ''}:${taxonomyId || ''}:${taxonomyIdList ? taxonomyIdList.join('|') : ''}:${includeUnclassifiedNodes ? 1 : 0}:${sortBy}:${sortOrder}:profile:${profile}`;
     let result = await cacheService.get<{ data: any[]; total: number }>(cacheKey);
 
     if (!result) {
@@ -199,6 +210,7 @@ router.get(
         condition: (condition as string) || undefined,
         minRating: minRatingValue,
         taxonomyNodeId: taxonomyId,
+        taxonomyNodeIds: taxonomyIdList,
         includeUnclassified: includeUnclassifiedNodes,
         sortBy,
         sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',

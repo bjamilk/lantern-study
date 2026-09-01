@@ -5,7 +5,8 @@
 import { create } from 'zustand';
 import {
   MARKETPLACE_DEPARTMENTS,
-  type MarketplaceDepartment, browseListingCategories, isMarketplaceListingStatus } from '@lantern/shared/marketplace';
+  type MarketplaceDepartment, browseListingCategories, isMarketplaceListingStatus,
+  browseFilterForNode, getTaxonomyNode } from '@lantern/shared/marketplace';
 import type { MarketplaceListingStatus } from '@lantern/shared/marketplace';
 import type { ListingAppealStatus, ListingRightsStatus } from '@lantern/shared/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -689,6 +690,12 @@ interface MarketplaceState {
   searchQuery: string;
   selectedCategory: MarketplaceCategory | null;
   activeTab: MarketplaceTab;
+  /**
+   * The exact taxonomy node the buyer drilled into from Shop by department.
+   * Narrower than `selectedCategory`: a category chip says "textbooks", a node
+   * says "solutions manuals". Null means the buyer is browsing the department.
+   */
+  taxonomyNodeId: string | null;
   minPrice: string;
   maxPrice: string;
   locationFilter: string;
@@ -767,6 +774,7 @@ interface MarketplaceState {
   setSearchQuery: (query: string) => void;
   setSelectedCategory: (category: MarketplaceCategory | null) => void;
   setActiveTab: (tab: MarketplaceTab) => void;
+  setTaxonomyNode: (nodeId: string | null) => void;
   setMinPrice: (value: string) => void;
   setMaxPrice: (value: string) => void;
   setLocationFilter: (value: string) => void;
@@ -806,6 +814,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   searchQuery: '',
   selectedCategory: null,
   activeTab: MARKETPLACE_DEPARTMENTS[0],
+  taxonomyNodeId: null,
   minPrice: '',
   maxPrice: '',
   locationFilter: '',
@@ -890,6 +899,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       searchQuery: '',
       selectedCategory: null,
       activeTab: MARKETPLACE_DEPARTMENTS[0],
+  taxonomyNodeId: null,
       minPrice: '',
       maxPrice: '',
       locationFilter: '',
@@ -962,19 +972,35 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         sortBy,
         sortOrder,
         minRating,
+        taxonomyNodeId,
       } = get();
 
       const categoryFilter = selectedCategory || filters?.category;
       const tabCategoryIds = (
         activeTab === 'shops' ? STUDENT_LIFE_CATEGORIES : CATEGORIES_BY_DEPARTMENT[activeTab]
       ).map(c => c.id);
+      // A drilled-in node is the narrowest thing the buyer asked for, so it
+      // outranks the department's whole category list.
+      const nodeFilter =
+        !categoryFilter && taxonomyNodeId ? browseFilterForNode(taxonomyNodeId) : null;
+      const scopeQuery = nodeFilter
+        ? {
+            category: nodeFilter.category,
+            categories: nodeFilter.categories,
+            taxonomyNodeId: nodeFilter.taxonomyNodeId,
+            taxonomyNodeIds: nodeFilter.taxonomyNodeIds,
+            includeUnclassified: nodeFilter.includeUnclassified,
+            ...(nodeFilter.categories ? { includeCustom: true } : {}),
+          }
+        : categoryFilter
+          ? { category: categoryFilter }
+          : { categories: tabCategoryIds, includeCustom: true };
 
       const raw = await api.fetchMarketplaceListings({
         page,
         limit: 20,
-        category: categoryFilter,
-        // Tab filtering happens server-side so pages come back full.
-        ...(categoryFilter ? {} : { categories: tabCategoryIds, includeCustom: true }),
+        // Scope filtering happens server-side so pages come back full.
+        ...scopeQuery,
         search: searchQuery || filters?.search,
         minPrice: minPrice ? Number(minPrice) : undefined,
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
@@ -1377,6 +1403,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     listingsRequestSeq += 1;
     set({
       selectedCategory: category,
+      // A chip and a node are two ways to say the same thing; the chip wins.
+      taxonomyNodeId: null,
       listings: [],
       listingsPage: 1,
       listingsHasMore: true,
@@ -1389,6 +1417,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     set({
       activeTab: tab,
       selectedCategory: null,
+      taxonomyNodeId: null,
       listings: tab === 'shops' ? get().listings : [],
       listingsPage: 1,
       listingsHasMore: true,
@@ -1401,7 +1430,27 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       });
     }
   },
-  
+
+  /**
+   * Drill into a node from Shop by department. The node carries its own
+   * department, so selecting one also moves the department strip — otherwise the
+   * strip would claim the buyer is in Electronics while the results are books.
+   */
+  setTaxonomyNode: (nodeId: string | null) => {
+    const node = nodeId ? getTaxonomyNode(nodeId) : undefined;
+    if (nodeId && !node) return;
+    listingsRequestSeq += 1;
+    set({
+      taxonomyNodeId: node ? node.id : null,
+      selectedCategory: null,
+      ...(node ? { activeTab: node.department } : {}),
+      listings: [],
+      listingsPage: 1,
+      listingsHasMore: true,
+      isLoading: true,
+    });
+  },
+
   sendInquiry: async (listingId: string, message: string) => {
     try {
       set({ isLoading: true, error: null });
@@ -1632,6 +1681,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   resetFilters: () => {
     listingsRequestSeq += 1;
     set({
+      taxonomyNodeId: null,
       minPrice: '',
       maxPrice: '',
       locationFilter: '',
