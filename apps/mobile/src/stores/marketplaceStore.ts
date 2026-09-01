@@ -735,7 +735,16 @@ interface MarketplaceState {
    * null = not checked yet. The API 403s non-allowlisted accounts regardless;
    * this only drives which UI renders (see MarketplaceGate).
    */
+  /**
+   * Pilot access: true = allowed, false = the server said no, null = unknown.
+   * Null is NOT a denial — it means we could not get an answer, and the UI
+   * must say so rather than accusing the account of not being on the pilot.
+   */
   marketplaceAccess: boolean | null;
+  /** The last probe failed (network/timeout/5xx) rather than answering. */
+  marketplaceAccessUnavailable: boolean;
+  /** A probe is in flight; keeps the gate on a spinner instead of a verdict. */
+  marketplaceAccessChecking: boolean;
   checkMarketplaceAccess: () => Promise<void>;
   listingsPage: number;
   listingsHasMore: boolean;
@@ -851,6 +860,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   minRating: null,
   conditionFilter: '',
   marketplaceAccess: null,
+  marketplaceAccessUnavailable: false,
+  marketplaceAccessChecking: false,
   listingsPage: 1,
   listingsHasMore: true,
   showFavoritesOnly: false,
@@ -920,6 +931,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       offers: [],
       savedSearches: [],
       sellerProfile: null,
+      // A verdict belongs to the account that earned it: leaving it behind let
+      // one account's "no" greet the next sign-in.
+      marketplaceAccess: null,
+      marketplaceAccessUnavailable: false,
+      marketplaceAccessChecking: false,
       shops: [],
       shopsLoading: false,
       isLoading: false,
@@ -1700,13 +1716,50 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     });
   },
   checkMarketplaceAccess: async () => {
-    try {
-      const result = await api.fetchMarketplaceAccess();
-      set({ marketplaceAccess: result?.enabled === true });
-    } catch {
-      // Fail closed: the server 403s non-allowlisted accounts anyway, so a
-      // failed probe must not flash marketplace UI that would then break.
-      set({ marketplaceAccess: false });
+    if (get().marketplaceAccessChecking) return;
+    set({ marketplaceAccessChecking: true });
+    // Two attempts: a cold Render dyno or a campus network blip is not an
+    // answer, and the previous single attempt turned either one into a
+    // permanent "you are not on the pilot" for the rest of the session.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await api.fetchMarketplaceAccess();
+        const signedIn = Boolean(useAuthStore.getState().user?.id);
+        if (
+          result?.enabled !== true &&
+          signedIn &&
+          result?.authenticated === false
+        ) {
+          // We believe we are signed in but the server saw no credential, so
+          // this "no" is about the request, not the account. Treat it as
+          // unknown; the token usually lands a moment later.
+          set({
+            marketplaceAccess: null,
+            marketplaceAccessUnavailable: true,
+            marketplaceAccessChecking: false,
+          });
+          return;
+        }
+        set({
+          marketplaceAccess: result?.enabled === true,
+          marketplaceAccessUnavailable: false,
+          marketplaceAccessChecking: false,
+        });
+        return;
+      } catch {
+        if (attempt === 0) {
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          continue;
+        }
+        // Still no answer. The server is the enforcement point (it 403s with
+        // MARKETPLACE_PRIVATE), so the honest client state is "unknown" —
+        // never a denial we cannot substantiate.
+        set({
+          marketplaceAccess: null,
+          marketplaceAccessUnavailable: true,
+          marketplaceAccessChecking: false,
+        });
+      }
     }
   },
   applySavedSearch: (filters: Record<string, unknown>) => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useCallback, useEffect, useState, Suspense } from 'react';
 import { useLocation, Navigate } from 'react-router-dom';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -31,7 +31,7 @@ import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
-import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess } from './services/supabase';
+import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache } from './services/supabase';
 import MarketplacePrivatePilot, { GOODS_MARKETPLACE_MODES } from './components/marketplace/MarketplacePrivatePilot';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
@@ -180,14 +180,43 @@ export const App: React.FC = () => {
     // signed-in) may see the goods marketplace. The server enforces the gate
     // with 403s either way — this only picks which UI to render.
     const [marketplaceAccess, setMarketplaceAccess] = useState<boolean | null>(null);
+    // Separate from the verdict: the probe could not answer. Collapsing the two
+    // meant any outage — cold API, dropped wifi, token not yet restored — told
+    // an allowlisted account it was not on the pilot, and the 5-minute cache
+    // kept saying it.
+    const [marketplaceAccessUnavailable, setMarketplaceAccessUnavailable] = useState(false);
+    const [marketplaceProbeAttempt, setMarketplaceProbeAttempt] = useState(0);
+    const retryMarketplaceAccess = useCallback(() => {
+        resetMarketplaceAccessCache();
+        setMarketplaceProbeAttempt(n => n + 1);
+    }, []);
     useEffect(() => {
         let cancelled = false;
         setMarketplaceAccess(null);
-        fetchMarketplaceAccess(currentUser?.id ?? 'anon')
-            .then(enabled => { if (!cancelled) setMarketplaceAccess(enabled); })
-            .catch(() => { if (!cancelled) setMarketplaceAccess(false); });
+        setMarketplaceAccessUnavailable(false);
+        const probe = (attemptsLeft: number): void => {
+            fetchMarketplaceAccess(currentUser?.id ?? 'anon')
+                .then(enabled => {
+                    if (!cancelled) {
+                        setMarketplaceAccess(enabled);
+                        setMarketplaceAccessUnavailable(false);
+                    }
+                })
+                .catch(() => {
+                    if (cancelled) return;
+                    if (attemptsLeft > 0) {
+                        window.setTimeout(() => { if (!cancelled) probe(attemptsLeft - 1); }, 1200);
+                        return;
+                    }
+                    // Unknown, not denied. The API is the enforcement point and
+                    // 403s regardless, so the UI says what actually happened.
+                    setMarketplaceAccess(null);
+                    setMarketplaceAccessUnavailable(true);
+                });
+        };
+        probe(1);
         return () => { cancelled = true; };
-    }, [currentUser?.id]);
+    }, [currentUser?.id, marketplaceProbeAttempt]);
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
         const { testResults, offlineBundles, pendingSyncResults, userQuestionStats, studyActivityDays,
             activeTestSession, activeStudySession, activeGameSession, setActiveGameSession, pausedSessions } = useTestStore();
@@ -960,7 +989,9 @@ export const App: React.FC = () => {
             if (marketplaceAccess !== true) {
                 return (
                     <MarketplacePrivatePilot
-                        checking={marketplaceAccess === null}
+                        checking={marketplaceAccess === null && !marketplaceAccessUnavailable}
+                        unavailable={marketplaceAccessUnavailable}
+                        onRetry={retryMarketplaceAccess}
                         onBack={() => navigateToPath('/')}
                         backLabel="Back to the homepage"
                         onSignIn={() => navigateToPath('/login')}
@@ -1160,7 +1191,9 @@ export const App: React.FC = () => {
         if (GOODS_MARKETPLACE_MODES.has(appMode) && marketplaceAccess !== true) {
             return (
                 <MarketplacePrivatePilot
-                    checking={marketplaceAccess === null}
+                    checking={marketplaceAccess === null && !marketplaceAccessUnavailable}
+                    unavailable={marketplaceAccessUnavailable}
+                    onRetry={retryMarketplaceAccess}
                     onBack={() => navigateTo(AppMode.DASHBOARD)}
                 />
             );

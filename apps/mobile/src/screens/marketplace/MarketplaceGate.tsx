@@ -53,6 +53,46 @@ function MarketplacePrivatePilotScreen() {
   );
 }
 
+function MarketplaceUnavailableScreen({ onRetry }: { onRetry: () => void }) {
+  const navigation = useNavigation();
+
+  return (
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+      <View className="px-4 pt-2">
+        <Pressable
+          hitSlop={10}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : undefined)}
+          className="p-2 -ml-2 self-start"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
+        </Pressable>
+      </View>
+      <View className="flex-1 items-center justify-center px-8 -mt-10">
+        <View className="w-16 h-16 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center justify-center mb-5">
+          <Ionicons name="cloud-offline-outline" size={30} color="#64748b" />
+        </View>
+        <Text className="text-lg font-bold text-lantern-text text-center mb-2">
+          Couldn’t check the marketplace
+        </Text>
+        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
+          We couldn’t reach Lantern to confirm your access. This is a connection
+          problem, not something about your account.
+        </Text>
+        <Pressable
+          onPress={onRetry}
+          className="px-5 py-2.5 rounded-xl bg-lantern-primary"
+          accessibilityRole="button"
+          accessibilityLabel="Try again"
+        >
+          <Text className="text-sm font-semibold text-white">Try again</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 /**
  * Wrap a marketplace-commerce screen so it only renders for allowlisted
  * accounts. Use at MODULE scope only (a stable component identity), e.g.
@@ -63,6 +103,7 @@ export function withMarketplaceGate<P extends object>(
 ): React.FC<P> {
   function GatedScreen(props: P) {
     const marketplaceAccess = useMarketplaceStore(s => s.marketplaceAccess);
+    const unavailable = useMarketplaceStore(s => s.marketplaceAccessUnavailable);
     const checkMarketplaceAccess = useMarketplaceStore(s => s.checkMarketplaceAccess);
     const userId = useAuthStore(s => s.user?.id);
 
@@ -75,6 +116,12 @@ export function withMarketplaceGate<P extends object>(
 
     if (marketplaceAccess === true) return <Screen {...props} />;
     if (marketplaceAccess === false) return <MarketplacePrivatePilotScreen />;
+    // Unknown. Only say "private pilot" when the server actually said so —
+    // otherwise an outage reads as an accusation, and because MarketTab stays
+    // mounted for the session, it used to stick until the app was restarted.
+    if (unavailable) {
+      return <MarketplaceUnavailableScreen onRetry={() => void checkMarketplaceAccess()} />;
+    }
     return (
       <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center" edges={['top']}>
         <ActivityIndicator size="large" color="#6366f1" />

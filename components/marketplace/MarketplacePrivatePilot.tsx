@@ -31,6 +31,12 @@ export const GOODS_MARKETPLACE_MODES: ReadonlySet<AppMode> = new Set([
 interface MarketplacePrivatePilotProps {
   /** Access is still being checked — show a quiet placeholder, not the pitch. */
   checking?: boolean;
+  /**
+   * The probe could not reach the API. This is NOT a denial, and saying
+   * "private pilot" here blames the account for an outage.
+   */
+  unavailable?: boolean;
+  onRetry?: () => void;
   onBack: () => void;
   backLabel?: string;
   /** Guests get a sign-in CTA alongside the explanation. */
@@ -39,6 +45,8 @@ interface MarketplacePrivatePilotProps {
 
 export const MarketplacePrivatePilot: React.FC<MarketplacePrivatePilotProps> = ({
   checking = false,
+  unavailable = false,
+  onRetry,
   onBack,
   backLabel = 'Back to Dashboard',
   onSignIn,
@@ -55,6 +63,34 @@ export const MarketplacePrivatePilot: React.FC<MarketplacePrivatePilotProps> = (
         <p className="text-sm text-lantern-text-secondary" role="status">
           Checking marketplace availability…
         </p>
+      ) : unavailable ? (
+        <>
+          <h1 className="text-xl font-bold text-lantern-text mb-2">
+            Couldn’t check the marketplace
+          </h1>
+          <p className="text-sm text-lantern-text-secondary mb-6">
+            We couldn’t reach Lantern to confirm your access. This is a
+            connection problem, not something about your account.
+          </p>
+          <div className="flex flex-col items-center gap-2">
+            {onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="px-5 py-2.5 rounded-xl bg-lantern-primary hover:bg-lantern-primary-dark text-white text-sm font-semibold transition-colors"
+              >
+                Try again
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onBack}
+              className="px-5 py-2 text-sm font-medium text-lantern-primary hover:underline"
+            >
+              {backLabel}
+            </button>
+          </div>
+        </>
       ) : (
         <>
           <h1 className="text-xl font-bold text-lantern-text mb-2">

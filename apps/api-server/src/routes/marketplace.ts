@@ -242,7 +242,18 @@ router.get(
   '/access',
   asyncHandler(async (req: any, res: any) => {
     const { isMarketplaceAllowedUser } = await import('../middleware/marketplaceAccess');
-    res.json({ success: true, data: { enabled: isMarketplaceAllowedUser(req.user?.id) } });
+    // `authenticated` lets a client tell "you are not on the pilot" apart from
+    // "you asked without a credential". A signed-in client whose token had not
+    // finished restoring used to receive the anonymous enabled:false and cache
+    // it as a real denial, locking an allowlisted account out of its own
+    // marketplace until reinstall.
+    res.json({
+      success: true,
+      data: {
+        enabled: isMarketplaceAllowedUser(req.user?.id),
+        authenticated: Boolean(req.user?.id),
+      },
+    });
   })
 );
 

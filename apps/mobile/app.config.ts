@@ -177,7 +177,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // first-class action instead of hiding inside an overflow that disappears,
   // and emoji reactions land on every message type including questions. Also
   // repairs ~93 tints/dividers/bars app-wide that silently rendered nothing.
-  version: '1.0.38',
+  // 1.0.39: the marketplace becomes a real shop. Shop and Jobs are separate
+  // bottom-tab destinations; Community/Groups/People are hidden from Discover;
+  // the academic / student-life split is replaced by nine product departments
+  // with a three-level browse (and the same drill-down for sellers). Fixes the
+  // access check that reported an outage as "you are not on the private pilot"
+  // and then stuck for the whole session.
+  version: '1.0.39',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

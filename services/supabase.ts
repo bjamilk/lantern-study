@@ -3378,6 +3378,17 @@ export const addMarketplaceReview = async (listingId: string, review: { rating: 
  * viewer so route changes don't refetch.
  */
 let marketplaceAccessCache: { viewerKey: string; enabled: boolean; at: number } | null = null;
+
+/** Clear a cached verdict — call when the session changes underneath us. */
+export const resetMarketplaceAccessCache = (): void => {
+  marketplaceAccessCache = null;
+};
+
+/**
+ * Answers "may this viewer see the marketplace?", or throws if it could not
+ * find out. Those are different things and the caller must keep them apart:
+ * an unanswerable probe is not a denial.
+ */
 export const fetchMarketplaceAccess = async (viewerKey: string = 'anon'): Promise<boolean> => {
   const now = Date.now();
   if (
@@ -3387,16 +3398,24 @@ export const fetchMarketplaceAccess = async (viewerKey: string = 'anon'): Promis
   ) {
     return marketplaceAccessCache.enabled;
   }
+  // 5s was half the app's usual budget, so a cold Render dyno aborted here and
+  // the abort was then rendered as "you are not on the pilot".
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/marketplace/access`,
     { method: 'GET', headers: await getAuthHeaders() },
-    5000
+    10000
   );
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.success) {
     throw new Error(payload?.error || 'Could not check marketplace availability');
   }
   const enabled = payload.data?.enabled === true;
+  // A signed-in viewer whose token had not restored yet gets the anonymous
+  // answer. Caching that would pin a real account to "no" for five minutes,
+  // so treat it as not-an-answer instead.
+  if (!enabled && viewerKey !== 'anon' && payload.data?.authenticated === false) {
+    throw new Error('Could not check marketplace availability');
+  }
   marketplaceAccessCache = { viewerKey, enabled, at: now };
   return enabled;
 };

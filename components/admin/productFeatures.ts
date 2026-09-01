@@ -46,6 +46,36 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'marketplace-departments-1-0-39',
+    title: 'Mobile 1.0.39 — nine product departments, Shop-by-department browse, Shop/Jobs tabs',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-09-01',
+    summary:
+      'The academic / student-life split described the seller, not the product, which buried phones, hostels, hair and food under "student life". Replaced with nine Amazon-shaped departments and 104 leaves, a three-level buyer browse that actually filters, the same drill-down for sellers, and Shop and Jobs as separate bottom-tab destinations. Also repairs an access check that reported outages as "you are not on the private pilot".',
+    details: [
+      'Taxonomy: nine departments (electronics, study-materials, housing, fashion-beauty, food-groceries, services, transport, events-tickets, campus-essentials), 146 nodes / 104 leaves, with a 57-row legacy map. Listings keep marketplace_listings.category (5 SQL functions, 4 indexes and the search vector read it); the leaf lives in category_specific_fields.taxonomyNodeId.',
+      'Browse filtering follows one rule, coversWholeCategories: a node that owns every leaf of its listing categories also collects listings that carry no leaf yet; a node that owns only part of one filters on its descendant leaf ids instead. Without it, "Smartphones" would have shown every unfiled laptop — 13 of 16 listing categories have more than one leaf.',
+      'A group filters on descendant leaves (new taxonomyNodeIds param) rather than the coarse category, because Phones & Tablets and Computers & Laptops are both stored as `electronics`. useSearchRpc had to learn about the leaf list or a group browse would silently return the whole category.',
+      'Navigation: Jobs owns its own stack so Shop and Jobs keep independent history. Six bottom destinations (Chat, Library, Shop, Jobs, Home, Offline) — above Material\'s recommended five, so the tabs are icon-led and compact, verified legible at 360dp.',
+      'Access check: the client treated any probe failure — network, 5s timeout, cold Render dyno, a token that had not finished restoring — as a denial, cached it, and never retried, so one blip locked all 19 gated screens for the session. Now three-state (allowed / denied / unknown) with a retry, an honest "couldn\'t check" screen, and an `authenticated` flag on GET /marketplace/access so an anonymous-race answer is not mistaken for a verdict.',
+      'validateBody exempted question-banks but not study-packs from the 100-key body cap, so publishing a deck of 45+ cards (30+ with tags) was rejected with 400 before the route ran.',
+    ],
+    howToUse: [
+      'Shop tab → Departments → walk down to the exact subcategory; breadcrumbs above the results widen the search a level per tap.',
+      'Shop opens on All rather than a department, so a department with no stock is never the first thing a buyer sees.',
+      'Filters → Condition (new / like new / good / fair), which the API has always accepted and no UI ever sent.',
+      'Selling: the listing-type picker is the same drill-down; "Something else" asks you to name the type and stores it as custom:<name>.',
+    ],
+    surfaces: ['web', 'mobile', 'api', 'database'],
+    adminNotes: [
+      'Requires migration 20260901090000_backfill_taxonomy_node_ids.sql. It rewrites the 41 legacy node ids whose replacement is a leaf and REMOVES the rest rather than writing them to a group — a group id would hide the listing twice over, since leaf browse matches only leaves and the unfiled rule matches only NULL. Also adds the partial index the browse filter reads on every drill-down.',
+      'Community, Groups and People are HIDDEN, not deleted: flip DISCOVER_SECTION_ENABLED in packages/shared/src/marketplace/discoverSections.ts to restore them. Web and mobile both read it.',
+      'The marketplace stays a private pilot; the allowlist is unchanged (founder id only, in middleware/marketplaceAccess.ts). MARKETPLACE_PUBLIC=true opens it to everyone with no code change.',
+    ],
+    commits: ['2e28859', 'cafbded', '215ea50', '7b3e045'],
+  },
+  {
     id: 'reactions-palette-1-0-38',
     title: 'Mobile 1.0.38 — emoji reactions, real Delete, visible selection, palette repair',
     area: 'chat',

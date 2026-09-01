@@ -125,3 +125,61 @@ describe('validateBodyShape', () => {
     expect(res.statusCode).toBe(200);
   });
 });
+
+function runAtPath(path: string, body: unknown) {
+  const req = { method: 'POST', path, body } as any;
+  const res = {
+    statusCode: 200,
+    body: null as any,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: any) {
+      this.body = payload;
+      return this;
+    },
+  };
+  let nextCalled = false;
+  validateBodyShape()(req, res as any, () => {
+    nextCalled = true;
+  });
+  return { nextCalled, statusCode: res.statusCode, body: res.body };
+}
+
+/** A study pack the size a real flashcard deck produces. */
+function studyPackBody(cardCount: number) {
+  return {
+    title: 'CHM 201 revision pack',
+    campusId: 'campus-1',
+    attestation: true,
+    content: {
+      flashcards: Array.from({ length: cardCount }, (_, i) => ({
+        id: `card-${i}`,
+        front: 'Front text',
+        back: 'Back text',
+        tags: ['organic', 'exam'],
+      })),
+    },
+  };
+}
+
+describe('study-pack publish body limits', () => {
+  it('accepts a deck-sized study pack', () => {
+    // 45 cards used to 400 before the route ran: the large-payload exemption
+    // listed question-banks and not study-packs, so a real deck was refused
+    // with nothing published and no explanation the seller could act on.
+    expect(runAtPath('/api/v1/marketplace/study-packs/publish', studyPackBody(120)).nextCalled).toBe(
+      true,
+    );
+    expect(
+      runAtPath('/api/v1/marketplace/study-packs/abc/update-content', studyPackBody(120)).nextCalled,
+    ).toBe(true);
+  });
+
+  it('still caps an ordinary marketplace route', () => {
+    const wide: Record<string, unknown> = {};
+    for (let i = 0; i < 400; i += 1) wide[`k${i}`] = i;
+    expect(runAtPath('/api/v1/marketplace/listings', wide).nextCalled).toBe(false);
+  });
+});

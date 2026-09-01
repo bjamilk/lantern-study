@@ -1932,7 +1932,17 @@ export function createApiEndpoints(client: ApiClient) {
      * (code MARKETPLACE_PRIVATE) regardless; this only drives which UI to show.
      */
     fetchMarketplaceAccess: () =>
-      apiRequest<{ enabled: boolean }>("/marketplace/access", {}, 5000),
+      // `authenticated` reports whether the server actually saw a credential;
+      // without it, an anonymous-race answer is indistinguishable from a real
+      // denial. The 5s budget was half the client default and turned a Render
+      // cold start into "you are not on the pilot" — a probe timing out must
+      // never decide access, so it gets the normal budget and the caller
+      // treats a failure as unknown.
+      apiRequest<{ enabled: boolean; authenticated?: boolean }>(
+        "/marketplace/access",
+        {},
+        10000,
+      ),
 
     fetchMarketplaceCategoryAnalytics: () =>
       marketplaceCategoryAnalyticsCache.get("categories", () =>
