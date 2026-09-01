@@ -171,6 +171,17 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
     setSection(next);
   };
 
+  // Selecting the marketplace tab has always been a navigation, not a section
+  // to render. Now that it can also be the STARTING section — Community,
+  // Groups and People are switched off — that navigation has to happen on
+  // mount too, or the hub renders an empty community list with a "Search
+  // communities" box over it.
+  useEffect(() => {
+    if (section === 'marketplace') {
+      onNavigate('Marketplace');
+    }
+  }, [section, onNavigate]);
+
   const toggleMembership = async (community: Community, isMember: boolean) => {
     setPendingId(community.id);
     // Optimistic: the row flips immediately and reverts on failure, so the hub

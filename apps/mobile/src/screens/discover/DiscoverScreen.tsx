@@ -92,7 +92,14 @@ function DiscoverHub({
   const myIds = useMemo(() => new Set(mine.map((c) => c.id)), [mine]);
 
   const load = useCallback(async (target: Section, q: string) => {
-    if (target === 'marketplace') return;
+    if (target === 'marketplace') {
+      // Discover has no marketplace list of its own — the section is a pointer
+      // to the Shop. Returning without clearing `loading` (which starts true)
+      // left the screen spinning forever the moment marketplace became the
+      // default section.
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -121,6 +128,16 @@ function DiscoverHub({
     if (!isDiscoverSectionEnabled(next)) return;
     setSection(next);
   }, [route?.params?.section]);
+
+  // With Community, Groups and People switched off, the only section left is a
+  // pointer to the Shop, and this screen would render a search box labelled
+  // "Search communities" over an empty list. Send the viewer where they were
+  // actually going instead.
+  useEffect(() => {
+    if (section === 'marketplace') {
+      navigation.navigate('MarketplaceHome');
+    }
+  }, [section, navigation]);
 
   useEffect(() => {
     void load(section, query);
@@ -496,7 +513,9 @@ function DiscoverHub({
                 ? 'Search groups'
                 : section === 'people'
                   ? 'Search people'
-                  : 'Search communities'
+                  : section === 'marketplace'
+                    ? 'Search the marketplace'
+                    : 'Search communities'
             }
             placeholderTextColor="#94a3b8"
             className="flex-1 py-2 px-2 text-sm text-lantern-text"
