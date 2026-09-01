@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { FeatureTipSheet } from './FeatureTipSheet';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import type { TabKey } from '../layout/BottomTabBar';
 
 interface FeatureTipsHostProps {
@@ -34,6 +35,7 @@ export function FeatureTipsHost({
   const activeTipId = useFeatureTipStore((s) => s.activeTipId);
   const markChecklist = useFeatureTipStore((s) => s.markChecklist);
   const featureTips = useSettingsStore((s) => s.settings.featureTips);
+  const marketplaceAccess = useMarketplaceStore((s) => s.marketplaceAccess);
 
   useEffect(() => {
     void hydrate();
@@ -59,6 +61,11 @@ export function FeatureTipsHost({
     setTipReady('chat.aiGenerate', isGroupChat);
     setTipAllowed('chat.aiGenerate', isGroupAdmin);
 
+    // Only coach the marketplace to accounts that can actually open it —
+    // otherwise the tip advertises a private-pilot surface to the people it is
+    // closed to. `setTipAllowed` false suppresses it without consuming it, so
+    // it still appears if the pilot later opens.
+    setTipAllowed('nav.marketplace', marketplaceAccess === true);
     setTipReady('nav.marketplace', activeTab === 'Marketplace' || moreOpen);
     setTipReady('nav.budget', activeTab === 'Budget' || moreOpen);
     setTipReady('nav.offline', activeTab === 'Offline' || moreOpen);
@@ -74,6 +81,7 @@ export function FeatureTipsHost({
     isGroupAdmin,
     moreOpen,
     companionOpen,
+    marketplaceAccess,
     setTipReady,
     setTipAllowed,
     markChecklist,

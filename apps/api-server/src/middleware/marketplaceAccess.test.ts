@@ -5,6 +5,7 @@
  */
 import {
   isMarketplaceAllowedUser,
+  jobsBoardAccessGate,
   marketplaceAccessGate,
   marketplaceIsPublic,
 } from './marketplaceAccess';
@@ -92,5 +93,73 @@ describe('marketplace private-pilot gate', () => {
     expect(isMarketplaceAllowedUser('tester-1')).toBe(true);
     expect(isMarketplaceAllowedUser('tester-2')).toBe(true);
     expect(isMarketplaceAllowedUser('tester-3')).toBe(false);
+  });
+});
+
+describe('jobsBoardAccessGate', () => {
+  it('lets the allowlisted account through', () => {
+    const res = fakeRes();
+    let passed = false;
+    jobsBoardAccessGate({ path: '/postings', user: { id: FOUNDER } } as any, res, () => {
+      passed = true;
+    });
+    expect(passed).toBe(true);
+    expect(res.statusCode).toBe(0);
+  });
+
+  it('refuses everyone else, including anonymous browsers', () => {
+    for (const user of [undefined, { id: 'someone-else' }]) {
+      const res = fakeRes();
+      let passed = false;
+      jobsBoardAccessGate({ path: '/postings', user } as any, res, () => {
+        passed = true;
+      });
+      expect(passed).toBe(false);
+      expect(res.statusCode).toBe(403);
+      expect(res.body).toMatchObject({ code: 'JOBS_PRIVATE' });
+    }
+  });
+
+  it('exempts nothing — the jobs board serves no shared reference data', () => {
+    // The marketplace has to keep /campuses open because the academic-profile
+    // institution picker reads it. The jobs board has no such route, so an
+    // exemption here would be a hole rather than a fix.
+    for (const path of ['/postings', '/postings/abc', '/access', '/campuses']) {
+      const res = fakeRes();
+      jobsBoardAccessGate({ path, user: { id: 'someone-else' } } as any, res, () => {});
+      expect(res.statusCode).toBe(403);
+    }
+  });
+
+  it('reopens with MARKETPLACE_PUBLIC, like the marketplace', () => {
+    const prev = process.env.MARKETPLACE_PUBLIC;
+    process.env.MARKETPLACE_PUBLIC = 'true';
+    try {
+      expect(marketplaceIsPublic()).toBe(true);
+      const res = fakeRes();
+      let passed = false;
+      jobsBoardAccessGate({ path: '/postings', user: undefined } as any, res, () => {
+        passed = true;
+      });
+      expect(passed).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.MARKETPLACE_PUBLIC;
+      else process.env.MARKETPLACE_PUBLIC = prev;
+    }
+  });
+
+  it('is mounted on the jobs-board router, never on a /api/v1/jobs prefix', () => {
+    // /api/v1/jobs is the async job-queue status endpoint that note import, AI
+    // and the companion poll. A prefix-based gate would catch it and break
+    // uploads app-wide, so this asserts the mount stays router-scoped.
+    const server = require('fs').readFileSync(
+      require('path').join(__dirname, '../server.ts'),
+      'utf8',
+    );
+    expect(server).toContain(
+      "app.use('/api/v1/jobs-board', optionalAuthMiddleware, jobsBoardAccessGate",
+    );
+    expect(server).toContain("app.use('/api/v1/jobs', jobsRoutes);");
+    expect(server).not.toContain("app.use('/api/v1/jobs', optionalAuthMiddleware, jobsBoardAccessGate");
   });
 });

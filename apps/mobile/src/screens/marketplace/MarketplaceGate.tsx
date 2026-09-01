@@ -13,8 +13,36 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useMarketplaceStore, useAuthStore } from '../../stores';
 
-function MarketplacePrivatePilotScreen() {
+/** Which private-pilot surface a gated screen belongs to. */
+export type PilotSurface = 'marketplace' | 'jobs';
+
+const PILOT_COPY: Record<
+  PilotSurface,
+  { title: string; body: string; icon: keyof typeof Ionicons.glyphMap }
+> = {
+  marketplace: {
+    title: 'The marketplace is in a private pilot',
+    body:
+      'Buying and selling study materials is being tested with a small group ' +
+      'right now. It will open up campus by campus — you’ll see it here the ' +
+      'moment it’s available on your account. Everything else in Lantern is ' +
+      'yours to use in the meantime.',
+    icon: 'storefront-outline',
+  },
+  jobs: {
+    title: 'Jobs is in a private pilot',
+    body:
+      'The jobs board is being tested with a small group right now. It will ' +
+      'open up campus by campus — you’ll see it here the moment it’s ' +
+      'available on your account. Everything else in Lantern is yours to use ' +
+      'in the meantime.',
+    icon: 'briefcase-outline',
+  },
+};
+
+function MarketplacePrivatePilotScreen({ surface }: { surface: PilotSurface }) {
   const navigation = useNavigation();
+  const copy = PILOT_COPY[surface];
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
@@ -30,16 +58,13 @@ function MarketplacePrivatePilotScreen() {
       </View>
       <View className="flex-1 items-center justify-center px-8 -mt-10">
         <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/30 items-center justify-center mb-5">
-          <Ionicons name="storefront-outline" size={30} color="#6366f1" />
+          <Ionicons name={copy.icon} size={30} color="#6366f1" />
         </View>
         <Text className="text-lg font-bold text-lantern-text text-center mb-2">
-          The marketplace is in a private pilot
+          {copy.title}
         </Text>
         <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-          Buying and selling study materials is being tested with a small group
-          right now. It will open up campus by campus — you’ll see it here the
-          moment it’s available on your account. Everything else in Lantern is
-          yours to use in the meantime.
+          {copy.body}
         </Text>
         <Pressable
           onPress={() => (navigation.canGoBack() ? navigation.goBack() : undefined)}
@@ -100,6 +125,7 @@ function MarketplaceUnavailableScreen({ onRetry }: { onRetry: () => void }) {
  */
 export function withMarketplaceGate<P extends object>(
   Screen: React.ComponentType<P>,
+  surface: PilotSurface = 'marketplace',
 ): React.FC<P> {
   function GatedScreen(props: P) {
     const marketplaceAccess = useMarketplaceStore(s => s.marketplaceAccess);
@@ -115,7 +141,7 @@ export function withMarketplaceGate<P extends object>(
     }, [userId, checkMarketplaceAccess]);
 
     if (marketplaceAccess === true) return <Screen {...props} />;
-    if (marketplaceAccess === false) return <MarketplacePrivatePilotScreen />;
+    if (marketplaceAccess === false) return <MarketplacePrivatePilotScreen surface={surface} />;
     // Unknown. Only say "private pilot" when the server actually said so —
     // otherwise an outage reads as an accusation, and because MarketTab stays
     // mounted for the session, it used to stick until the app was restarted.

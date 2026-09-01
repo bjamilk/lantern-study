@@ -21,6 +21,9 @@ interface Props {
   subtitle: string | null;
   avatarUri: string | null;
   onEditProfile: () => void;
+  onJobs: () => void;
+  /** False hides Jobs for accounts outside the private pilot. */
+  showJobs: boolean;
   onSettings: () => void;
   onLogout: () => void;
   lowDataMode: boolean;
@@ -45,6 +48,8 @@ export function ProfileDrawer({
   subtitle,
   avatarUri,
   onEditProfile,
+  onJobs,
+  showJobs,
   onSettings,
   onLogout,
   lowDataMode,
@@ -201,6 +206,9 @@ export function ProfileDrawer({
           </Pressable>
 
           <View className="flex-1 pt-2 px-1">
+            {/* Jobs moved off the bottom bar to here: it is a private-pilot
+                surface, so it is listed only for accounts that can open it. */}
+            {showJobs ? row('briefcase-outline', 'Jobs', onJobs) : null}
             {row('settings-outline', 'Settings', onSettings)}
             {row(
               lowDataMode ? 'cellular-outline' : 'wifi-outline',

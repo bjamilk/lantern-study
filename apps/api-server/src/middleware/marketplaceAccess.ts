@@ -1,10 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 
 /**
- * Marketplace private-pilot gate (2026-08-29, founder request): the goods
- * marketplace — listings, cart, orders, offers, digital products — is
- * available ONLY to the founder account until the pilot opens up. Everything
- * else in the app (chat, library, notes, tests, jobs) is untouched.
+ * Private-pilot gate (2026-08-29, founder request; extended to the jobs board
+ * 2026-09-01): the goods marketplace — listings, cart, orders, offers, digital
+ * products — and the jobs board are available ONLY to the founder account
+ * until the pilot opens up. Everything else in the app (chat, library, notes,
+ * tests) is untouched.
  *
  * - Allowed accounts: DEFAULT_ALLOWED_USER_IDS plus any ids in the
  *   MARKETPLACE_ALLOWED_USER_IDS env (comma-separated), matched on the
@@ -75,5 +76,33 @@ export function marketplaceAccessGate(
     success: false,
     error: 'The marketplace is in a private pilot and is not available on your account yet.',
     code: 'MARKETPLACE_PRIVATE',
+  });
+}
+
+/**
+ * The same gate for the jobs board, mounted on /api/v1/jobs-board.
+ *
+ * Note the mount path: /api/v1/jobs is a DIFFERENT router — the async job-queue
+ * status endpoint that note import, AI and the companion poll. Gating by path
+ * prefix would catch both and break uploads app-wide, so this is mounted on the
+ * jobs-board router specifically.
+ *
+ * Nothing is exempt here. Unlike the marketplace, the jobs board serves no
+ * shared reference data: the only outside readers are the SEO prerender
+ * functions, which fall through to the SPA shell on any non-OK response.
+ */
+export function jobsBoardAccessGate(
+  req: Request & { user?: { id?: string } },
+  res: Response,
+  next: NextFunction
+): void {
+  if (isMarketplaceAllowedUser(req.user?.id)) {
+    next();
+    return;
+  }
+  res.status(403).json({
+    success: false,
+    error: 'The jobs board is in a private pilot and is not available on your account yet.',
+    code: 'JOBS_PRIVATE',
   });
 }

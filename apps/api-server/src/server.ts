@@ -21,7 +21,7 @@ import { SupabaseService } from './services/supabase';
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from './middleware/rateLimit';
 import { authMiddleware, optionalAuthMiddleware, requirePlatformAdmin } from './middleware/auth';
-import { marketplaceAccessGate } from './middleware/marketplaceAccess';
+import { marketplaceAccessGate, jobsBoardAccessGate } from './middleware/marketplaceAccess';
 import { AI_USAGE_EXPOSED_HEADERS } from './middleware/aiRateLimit';
 import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler, corsRejection } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
@@ -418,7 +418,11 @@ async function startServer() {
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);
     app.use('/api/v1/jobs', jobsRoutes);
-    app.use('/api/v1/jobs-board', optionalAuthMiddleware, applyPublicRateLimits, jobsBoardRoutes);
+    // Private pilot: only allowlisted accounts reach the jobs board. Mounted on
+    // the router, not a path prefix — /api/v1/jobs is the async job-queue
+    // status endpoint that note import, AI and the companion poll, and a prefix
+    // test would gate that too.
+    app.use('/api/v1/jobs-board', optionalAuthMiddleware, jobsBoardAccessGate, applyPublicRateLimits, jobsBoardRoutes);
     app.use('/api/v1/budget', budgetRoutes);
     app.use('/api/v1/contact', contactRoutes);
     app.use('/api/v1/analytics', analyticsRoutes);

@@ -28,7 +28,9 @@ interface Props {
   onBudget: () => void;
   onNotifications: () => void;
   onAI: () => void;
-  onDiscover: () => void;
+  onShop: () => void;
+  /** False hides the Shop icon for accounts outside the private pilot. */
+  showShop: boolean;
 }
 
 /**
@@ -49,7 +51,8 @@ export function TopBar({
   onBudget,
   onNotifications,
   onAI,
-  onDiscover,
+  onShop,
+  showShop,
 }: Props) {
   const { chromeProgress, activeTab, immersive, topBarSuppressed } = useChrome();
   const { colors, isDark } = useTheme();
@@ -84,14 +87,19 @@ export function TopBar({
       onPress: onAI,
     },
     {
-      key: 'discover',
-      label: 'Discover',
-      icon: 'compass-outline',
-      activeIcon: 'compass',
+      key: 'shop',
+      label: 'Shop',
+      icon: 'storefront-outline',
+      activeIcon: 'storefront',
       activeWhen: 'Marketplace',
-      onPress: onDiscover,
+      onPress: onShop,
     },
   ];
+
+  // The Shop is a private-pilot surface. Accounts outside the pilot do not get
+  // a button that only leads to a wall — but an unknown answer still shows it,
+  // because a failed probe must not silently remove navigation.
+  const visibleIcons = showShop ? icons : icons.filter((item) => item.key !== 'shop');
 
   const height = chromeProgress.interpolate({
     inputRange: [0, 1],
@@ -138,7 +146,7 @@ export function TopBar({
         {/* Icons spread across the remaining width rather than clustering
             against the right edge. */}
         <View className="flex-1 flex-row items-center justify-evenly pl-2">
-        {icons.map(item => {
+        {visibleIcons.map(item => {
           const active = item.activeWhen != null && activeTab === item.activeWhen;
           return (
             <Pressable

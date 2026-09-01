@@ -127,13 +127,11 @@ export function BottomTabBar({
       activeIcon: 'library',
       badge: dueCardsCount,
     },
-    {
-      key: 'Marketplace',
-      label: 'Shop',
-      icon: 'storefront-outline',
-      activeIcon: 'storefront',
-    },
-    { key: 'Jobs', label: 'Jobs', icon: 'briefcase-outline', activeIcon: 'briefcase' },
+    // Shop and Jobs are not here: Shop is the top bar's fourth icon and Jobs
+    // sits in the profile drawer beside Settings. Both are private-pilot
+    // surfaces, so a bottom-bar button would advertise them to every account
+    // that cannot open them. TabKey still carries both — the routes exist and
+    // stay reachable by deep link, notification and in-app navigation.
     // "Dashboard" overflows a 60dp column at 12sp and truncates under font
     // scaling; "Home" is the same destination and fits.
     { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },

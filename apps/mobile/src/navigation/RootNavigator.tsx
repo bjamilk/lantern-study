@@ -205,6 +205,17 @@ import { useMarketplaceStore } from '../stores/marketplaceStore';
 // Module scope so each wrapped component keeps a stable identity.
 const GatedMarketplaceHome = withMarketplaceGate(MarketplaceScreen);
 const GatedShopBrowse = withMarketplaceGate(ShopBrowseScreen);
+// Jobs joins the private pilot: hiding the drawer row is not a gate, since a
+// deep link, a job notification or the marketplace workspace bar all reach
+// these screens directly.
+const GatedJobsHome = withMarketplaceGate(JobsHomeScreen, 'jobs');
+const GatedJobDetail = withMarketplaceGate(JobDetailScreen, 'jobs');
+const GatedCreateJob = withMarketplaceGate(CreateJobScreen, 'jobs');
+const GatedMyJobPostings = withMarketplaceGate(MyJobPostingsScreen, 'jobs');
+const GatedMyJobApplications = withMarketplaceGate(MyJobApplicationsScreen, 'jobs');
+const GatedJobEmployer = withMarketplaceGate(JobEmployerScreen, 'jobs');
+const GatedJobApplicants = withMarketplaceGate(JobApplicantsScreen, 'jobs');
+const GatedJobCompany = withMarketplaceGate(JobCompanyScreen, 'jobs');
 const GatedListingDetail = withMarketplaceGate(ListingDetailScreen);
 const GatedMyListings = withMarketplaceGate(MyListingsScreen);
 const GatedInquiries = withMarketplaceGate(InquiriesScreen);
@@ -268,7 +279,6 @@ import { registerForPushNotifications, uploadPushToken } from '../services/pushN
 
 import { useLowDataMode } from '../hooks/useLowDataMode';
 
-import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { fetchUserProfile } from '../services/api';
 
 import UsernameRequiredModal from '../components/UsernameRequiredModal';
@@ -494,21 +504,21 @@ function JobsNavigator() {
 
     <JobsStack.Navigator screenOptions={{ headerShown: false }}>
 
-      <JobsStack.Screen name="JobsHome" component={JobsHomeScreen} />
+      <JobsStack.Screen name="JobsHome" component={GatedJobsHome} />
 
-      <JobsStack.Screen name="JobDetail" component={JobDetailScreen} />
+      <JobsStack.Screen name="JobDetail" component={GatedJobDetail} />
 
-      <JobsStack.Screen name="CreateJob" component={CreateJobScreen} />
+      <JobsStack.Screen name="CreateJob" component={GatedCreateJob} />
 
-      <JobsStack.Screen name="MyJobPostings" component={MyJobPostingsScreen} />
+      <JobsStack.Screen name="MyJobPostings" component={GatedMyJobPostings} />
 
-      <JobsStack.Screen name="MyJobApplications" component={MyJobApplicationsScreen} />
+      <JobsStack.Screen name="MyJobApplications" component={GatedMyJobApplications} />
 
-      <JobsStack.Screen name="JobEmployer" component={JobEmployerScreen} />
+      <JobsStack.Screen name="JobEmployer" component={GatedJobEmployer} />
 
-      <JobsStack.Screen name="JobApplicants" component={JobApplicantsScreen} />
+      <JobsStack.Screen name="JobApplicants" component={GatedJobApplicants} />
 
-      <JobsStack.Screen name="JobCompany" component={JobCompanyScreen} />
+      <JobsStack.Screen name="JobCompany" component={GatedJobCompany} />
 
     </JobsStack.Navigator>
 
@@ -836,7 +846,6 @@ function MainTabsShell() {
 
   const unreadNotificationCount = useNotificationStore(s => s.unreadCount);
 
-  const isPlatformAdmin = usePlatformAdmin();
 
   const { drawerOpen, setDrawerOpen, immersive, topBarSuppressed } = useChrome();
 
@@ -885,8 +894,9 @@ function MainTabsShell() {
     navigateFromRoot('Main', { screen, params });
   };
 
-  // Private pilot: warm the marketplace-access answer as soon as the shell
-  // mounts so the Discover icon routes correctly on the first tap.
+  // Private pilot: warm the access answer as soon as the shell mounts, so the
+  // Shop icon and the drawer's Jobs row settle before the first tap. One
+  // allowlist covers both surfaces, so one probe answers for both.
   const marketplaceAccess = useMarketplaceStore(s => s.marketplaceAccess);
   const checkMarketplaceAccess = useMarketplaceStore(s => s.checkMarketplaceAccess);
   useEffect(() => {
@@ -909,18 +919,14 @@ function MainTabsShell() {
         onBudget={() => goTab('BudgetTab')}
         onNotifications={() => goTab('NotificationsTab')}
         onAI={openCompanion}
-        // Admins land on the Discover hub; everyone else gets the campus shop
-        // (the hub is a coming-soon wall for them, which would orphan the
-        // marketplace as a destination).
-        onDiscover={() =>
-          goTab('MarketTab', {
-            // Admins get the Discover hub; everyone else goes to the
-            // marketplace screen — during the private pilot the gate renders
-            // its explanation there, which beats the hub's bare
-            // "Coming soon" wall for non-admins.
-            screen: isPlatformAdmin ? 'Discover' : 'MarketplaceHome',
-          })
-        }
+        // The Shop takes the slot and icon the Discover compass used to hold.
+        // It goes straight to the shop rather than the Discover hub: with
+        // Community, Groups and People switched off the hub has nothing of its
+        // own left to show and forwards here anyway.
+        onShop={() => goTab('MarketTab', { screen: 'MarketplaceHome' })}
+        // Hidden only on a definite no. Unknown keeps it visible, because a
+        // failed probe must not quietly delete a destination.
+        showShop={marketplaceAccess !== false}
       />
 
       {/* Every screen still pads itself insets.top for a status bar the top
@@ -968,6 +974,11 @@ function MainTabsShell() {
           setDrawerOpen(false);
           navigateFromRoot('EditProfile');
         }}
+        onJobs={() => {
+          setDrawerOpen(false);
+          goTab('JobsTab', { screen: 'JobsHome' });
+        }}
+        showJobs={marketplaceAccess !== false}
         onSettings={() => {
           setDrawerOpen(false);
           navigateFromRoot('Settings');
