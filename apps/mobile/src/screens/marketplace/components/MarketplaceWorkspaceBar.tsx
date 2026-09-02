@@ -62,6 +62,25 @@ const NAV: NavItem[] = [
 
 const TOOLBAR_NAV = NAV.filter((item) => item.id !== 'discover' && item.id !== 'browse');
 
+/** Sections from which "Orders" means the orders you are SELLING, not buying. */
+const SELLER_SECTIONS: ReadonlySet<MarketplaceWorkspaceSection> = new Set([
+  'selling',
+  'offers',
+  'inquiries',
+  'studyProducts',
+]);
+
+/**
+ * OrdersScreen defaults to the buyer's purchase history. Tapped from a seller
+ * screen, that is the wrong list — a seller checking on sales landed on their
+ * own purchases and had to notice the toggle. The bar knows which screen it is
+ * on, so it can say which side of the order the tap means.
+ */
+function navParams(item: NavItem, active: MarketplaceWorkspaceSection): Record<string, unknown> | undefined {
+  if (item.id === 'orders' && SELLER_SECTIONS.has(active)) return { role: 'seller' };
+  return undefined;
+}
+
 /**
  * Compact CRM-style workspace nav for marketplace buyer/seller screens.
  */
@@ -113,7 +132,7 @@ export function MarketplaceWorkspaceBar({
             id: item.id,
             label: item.label,
             icon: item.icon,
-            onSelect: () => onNavigate(item.screen),
+            onSelect: () => onNavigate(item.screen, navParams(item, active)),
           })),
           ...(showFavorites
             ? [
@@ -166,7 +185,7 @@ export function MarketplaceWorkspaceBar({
           return (
             <Pressable
               key={item.id}
-              onPress={() => onNavigate(item.screen)}
+              onPress={() => onNavigate(item.screen, navParams(item, active))}
               accessibilityRole="button"
               accessibilityState={{ selected: isActive }}
               accessibilityLabel={item.label}
