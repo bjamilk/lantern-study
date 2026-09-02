@@ -459,10 +459,25 @@ export interface ShopSummary {
   buyerActionOrders: number;
   /** Orders where the SELLER must act: paid and waiting to be handed over. */
   sellerActionOrders: number;
-  /** Offers made to this seller that are still open. */
+  /** Offers made to this seller where it is the SELLER's turn to answer. */
   pendingOffersReceived: number;
+  /** Offers this user made where the seller countered and the BUYER must answer. */
+  offersAwaitingYou: number;
   /** Buyer conversations on this seller's listings that are still open. */
   openInquiries: number;
+  /**
+   * DM thread ids behind this seller's open inquiries. The store does not know
+   * what is unread — groupStore's dmUnreadCounts does — so the badge joins the
+   * two at read time (useShopBadges) instead of counting "open" as "needs you".
+   */
+  sellerInquiryThreadIds: string[];
+  /** DM thread ids behind inquiries this user sent as a buyer. */
+  buyerInquiryThreadIds: string[];
+  /**
+   * Seller orders where the buyer still has to pay online. Not attention —
+   * nothing the seller can do — so it is rendered grey, never as a badge.
+   */
+  sellerAwaitingBuyerPayment: number;
   /** Listings currently live. */
   activeListings: number;
 }
@@ -472,28 +487,44 @@ export const EMPTY_SHOP_SUMMARY: ShopSummary = {
   buyerActionOrders: 0,
   sellerActionOrders: 0,
   pendingOffersReceived: 0,
+  offersAwaitingYou: 0,
   openInquiries: 0,
+  sellerInquiryThreadIds: [],
+  buyerInquiryThreadIds: [],
+  sellerAwaitingBuyerPayment: 0,
   activeListings: 0,
 };
 
-/** Orders that need the buyer: pay for it, or confirm you collected it. */
-const BUYER_ACTION_ORDER_STATUSES = new Set(['pending_payment', 'awaiting_payment', 'ready_for_pickup']);
+/**
+ * Orders that need the buyer: pay for it, or confirm you collected it.
+ * Exported so the OrderStatusPill's "action" tone and the badge count share
+ * one definition — a row marked as needing you must also be counted.
+ */
+export const BUYER_ACTION_ORDER_STATUSES = new Set(['pending_payment', 'awaiting_payment', 'ready_for_pickup']);
 /**
  * Orders that need the seller. `paid` is the online-payment case: money is in,
  * item still to hand over. A cash or transfer order never reaches `paid` on its
  * own — it sits in `pending_payment` with no payment_id until the seller taps
  * "Confirm payment received", so that state is the seller's too.
  */
-function orderNeedsSeller(order: { status: string; payment_id?: string | null }): boolean {
+export function orderNeedsSeller(order: { status: string; payment_id?: string | null }): boolean {
   if (order.status === 'paid') return true;
   return order.status === 'pending_payment' && !order.payment_id;
+}
+/**
+ * The mirror image: the buyer still has to pay online, so the seller can only
+ * wait. Kept separate from orderNeedsSeller so it never lands in a red badge.
+ */
+export function orderAwaitsBuyerPayment(order: { status: string; payment_id?: string | null }): boolean {
+  if (order.status === 'awaiting_payment') return true;
+  return order.status === 'pending_payment' && !!order.payment_id;
 }
 /**
  * An offer that needs THIS user: pending, not past its expiry, and it is their
  * turn. Counting every pending offer badged a seller for their own counter —
  * the ball was in the buyer's court, yet the seller was told to act.
  */
-function offerAwaitsUser(
+export function offerAwaitsUser(
   offer: {
     status: string;
     expires_at?: string | null;
@@ -515,6 +546,13 @@ function offerAwaitsUser(
     userId,
   );
 }
+/**
+ * Unread DM messages across a set of inquiry threads. The store never imports
+ * groupStore (it would be a cycle); the hook passes the unread map in. A thread
+ * missing from the map counts 0 — conservative, never over-badged.
+ */
+export const sumUnread = (ids: string[], counts: Record<string, number>): number =>
+  ids.reduce((n, id) => n + (counts[id] ?? 0), 0);
 /** How long a summary stays fresh before a screen focus refetches it. */
 const SHOP_SUMMARY_TTL_MS = 45_000;
 
@@ -825,6 +863,14 @@ interface MarketplaceState {
   shopSummaryLoadedAt: number | null;
   shopSummaryLoading: boolean;
   fetchShopSummary: (options?: { force?: boolean }) => Promise<void>;
+  /**
+   * Mark the summary stale so the next Shop focus refetches instead of trusting
+   * the TTL. Called after anything that changes what needs you: a checkout, an
+   * offer response, an order action.
+   */
+  invalidateShopSummary: () => void;
+  /** The cart screen knows the exact quantity it just loaded; let it correct the badge. */
+  setCartCount: (n: number) => void;
   /** A probe is in flight; keeps the gate on a spinner instead of a verdict. */
   marketplaceAccessChecking: boolean;
   checkMarketplaceAccess: () => Promise<void>;
@@ -1860,8 +1906,12 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     if (fresh && !options?.force) return;
     set({ shopSummaryLoading: true });
 
-    // Six cheap reads, each allowed to fail on its own. A badge that cannot be
+    // Eight reads, each allowed to fail on its own. A badge that cannot be
     // counted shows nothing; it must never take the other badges down with it.
+    // Cost: orders x2 are unbounded with four joins, offers x2 each attach
+    // their orders — fine for a founder-only pilot, but the first server change
+    // before widening it is a GET /marketplace/badge-counts that head-counts
+    // these instead of shipping the rows.
     const settle = async <T,>(work: Promise<T>): Promise<T | null> => {
       try {
         return await work;
@@ -1869,18 +1919,29 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         return null;
       }
     };
-    const [cart, buyerOrders, sellerOrders, offers, inquiries, stats] = await Promise.all([
-      settle(api.fetchMarketplaceCart()),
-      settle(api.fetchMarketplaceOrders('buyer')),
-      settle(api.fetchMarketplaceOrders('seller')),
-      settle(api.fetchMarketplaceOffers('seller')),
-      settle(api.fetchMyInquiries('seller')),
-      settle(api.fetchSellerStats()),
-    ]);
+    const userId = getCurrentUserId() ?? undefined;
+    const [cart, buyerOrders, sellerOrders, offers, buyerOffers, inquiries, buyerInquiries, stats] =
+      await Promise.all([
+        settle(api.fetchMarketplaceCart()),
+        settle(api.fetchMarketplaceOrders('buyer')),
+        settle(api.fetchMarketplaceOrders('seller')),
+        settle(api.fetchMarketplaceOffers('seller')),
+        settle(api.fetchMarketplaceOffers('buyer')),
+        settle(api.fetchMyInquiries('seller')),
+        settle(api.fetchMyInquiries('buyer')),
+        settle(api.fetchSellerStats()),
+      ]);
 
     const prev = get().shopSummary;
     const count = <T,>(rows: T[] | null, keep: (row: T) => boolean, fallback: number) =>
       rows ? rows.filter(keep).length : fallback;
+    const inquiryIsOpen = (i: { status: string }) => i.status === 'open' || i.status === 'negotiating';
+    // Only live conversations feed the unread join: a closed or purchased
+    // inquiry's thread can still receive messages, but they are chat, not work.
+    const openThreadIds = (
+      rows: Array<{ status: string; dm_thread_id: string | null }> | null,
+      fallback: string[],
+    ) => (rows ? rows.filter(inquiryIsOpen).map((i) => i.dm_thread_id).filter((id): id is string => !!id) : fallback);
 
     set({
       shopSummary: {
@@ -1893,22 +1954,33 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           prev.buyerActionOrders,
         ),
         sellerActionOrders: count(sellerOrders, orderNeedsSeller, prev.sellerActionOrders),
+        sellerAwaitingBuyerPayment: count(
+          sellerOrders,
+          orderAwaitsBuyerPayment,
+          prev.sellerAwaitingBuyerPayment,
+        ),
         pendingOffersReceived: count(
           offers,
-          (o) => offerAwaitsUser(o, useAuthStore.getState().user?.id),
+          (o) => offerAwaitsUser(o, userId),
           prev.pendingOffersReceived,
         ),
-        openInquiries: count(
-          inquiries,
-          (i) => i.status === 'open' || i.status === 'negotiating',
-          prev.openInquiries,
+        offersAwaitingYou: count(
+          buyerOffers,
+          (o) => offerAwaitsUser(o, userId),
+          prev.offersAwaitingYou,
         ),
+        openInquiries: count(inquiries, inquiryIsOpen, prev.openInquiries),
+        sellerInquiryThreadIds: openThreadIds(inquiries, prev.sellerInquiryThreadIds),
+        buyerInquiryThreadIds: openThreadIds(buyerInquiries, prev.buyerInquiryThreadIds),
         activeListings: stats ? stats.activeListings : prev.activeListings,
       },
       shopSummaryLoadedAt: Date.now(),
       shopSummaryLoading: false,
     });
   },
+  invalidateShopSummary: () => set({ shopSummaryLoadedAt: null }),
+  setCartCount: (n: number) =>
+    set((s) => ({ shopSummary: { ...s.shopSummary, cartCount: Math.max(0, n) } })),
 
   applySavedSearch: (filters: Record<string, unknown>) => {
     listingsRequestSeq += 1;
@@ -2066,6 +2138,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         isLoading: false,
       }));
 
+      // Whatever happened, an offer just left or entered someone's court; the
+      // next Shop focus must recount rather than trust the 45s TTL.
+      get().invalidateShopSummary();
       if (action === 'accept') {
         await refreshMarketplaceBudget(userId);
       }
@@ -2097,6 +2172,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
 
       const result = await api.buyNowListing(listingId, couponCode, undefined, quantity);
+      // A new order now needs the buyer (pay) or the seller (hand over).
+      get().invalidateShopSummary();
       await get().fetchMyListings(userId);
       set({ isLoading: false });
       return result;
@@ -2112,6 +2189,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       set({ error: null });
       if (DEMO_MODE) return;
       await api.addToMarketplaceCart(listingId, quantity);
+      // The cart is server-only (no local lines), so bump the badge here rather
+      // than make the user wait a focus cycle to see it move; the stale mark
+      // lets the next summary fetch replace the guess with the real sum.
+      set((s) => ({
+        shopSummary: {
+          ...s.shopSummary,
+          cartCount: s.shopSummary.cartCount + Math.max(1, quantity ?? 1),
+        },
+        shopSummaryLoadedAt: null,
+      }));
     } catch (error: any) {
       console.error('Failed to add to cart:', error);
       set({ error: error.message });

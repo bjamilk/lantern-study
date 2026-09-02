@@ -31,8 +31,16 @@ export {
   MARKETPLACE_TABS,
   MARKETPLACE_DEPARTMENTS,
   marketplaceTabLabel,
+  EMPTY_SHOP_SUMMARY,
+  BUYER_ACTION_ORDER_STATUSES,
+  orderNeedsSeller,
+  orderAwaitsBuyerPayment,
+  offerAwaitsUser,
+  sumUnread,
 } from './marketplaceStore';
 export type { 
+  ShopSummary,
+
   MarketplaceListing, 
   MarketplaceListingCampus,
   RemoteListing,
