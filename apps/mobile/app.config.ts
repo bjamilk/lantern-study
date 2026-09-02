@@ -183,7 +183,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // with a three-level browse (and the same drill-down for sellers). Fixes the
   // access check that reported an outage as "you are not on the private pilot"
   // and then stuck for the whole session.
-  version: '1.0.39',
+  // 1.0.40: the Shop gets an Amazon-shaped shell. Cart and a You hub in the
+  // header with live badges; a quick-access band; a You hub with a persisted
+  // Buying | Selling side, card rows and a Your Seller Account section; a
+  // Payouts screen with an earnings ledger; Your Listings becomes the seller's
+  // home with a "Needs you" strip; Buy Again; order rows with status pills;
+  // and the buy/sell tools that lived behind a "..." menu are all visible.
+  // Shop moves to the top bar, Jobs to the profile drawer; both are pilot-only.
+  version: '1.0.40',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

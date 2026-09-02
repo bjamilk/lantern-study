@@ -46,6 +46,34 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'shop-shell-1-0-40',
+    title: 'Mobile 1.0.40 — Amazon-shaped Shop shell: Cart/You header, You hub, Payouts, seller home',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-09-02',
+    summary:
+      'Every buy/sell tool that lived behind a "..." overflow is visible: a Cart + You header with live badges on every Shop screen, a quick-access band, a You hub with a persisted Buying | Selling side and a Your Seller Account section, a Payouts screen with an earnings ledger, Your Listings as the seller home with a Needs-you strip, Buy Again, status pills on orders, and thumbnails/CTAs in Cart and Saved. Shop moved to the top bar and Jobs to the profile drawer, both pilot-only.',
+    details: [
+      'One badge source: hooks/useShopBadges() feeds header, band, hub and Your Listings, so counts cannot disagree. needsYou = seller action orders + buyer action orders + offers awaiting me + offers awaiting you (your turn only, via canRespondToOffer) + unread inquiries (real DM unread joined on inquiry dm_thread_id, not open-status counts).',
+      'Store exports orderNeedsSeller / BUYER_ACTION_ORDER_STATUSES / offerAwaitsUser; OrderStatusPill and the Orders sort consume the same predicates. Cheap sync: setCartCount from loaded rows, optimistic addToCart, invalidateShopSummary after checkout / offer response / order actions; realtime marketplace_* notifications force a summary refetch.',
+      'SellerPayoutScreen wraps the untouched SellerPayoutSetup and lists fetchSellerPayments pages with the server vocabulary (initialized / paid / payout_pending / paid_out / refunded / failed). Pages are 20 rows; Load more continues while a full page returns.',
+      'You hub: Buying | Selling segment persisted per user (AsyncStorage). Payouts row shows "Not set up" only when the payout profile is inactive AND activeListings > 0. Embedded SellerPayoutSetup removed from the hub.',
+      'Route params: Orders { role, view: buy_again }, Offers { tab }, Inquiries { tab }, MyListings { openInsights }; each screen param-syncs when already mounted. Deep links: marketplace/cart, marketplace/you, marketplace/products, marketplace/payouts.',
+      'The shared MarketplaceWorkspaceBar is deleted; Your Listings uses SellerToolsRow + SellerNeedsYouStrip and an ActionSheet in place of a 5-button Alert (Android caps Alert at 3).',
+    ],
+    howToUse: [
+      'Shop (top bar) -> You icon -> Buying | Selling. Selling -> Payouts to add bank details and see the ledger.',
+      'Selling -> Your Listings: the Needs-you strip at the top is the seller to-do list; chips below are every seller tool.',
+      'You -> Buy Again lists completed purchases with a one-tap reorder.',
+    ],
+    surfaces: ['mobile', 'api'],
+    adminNotes: [
+      'Jobs board is now behind the same private-pilot allowlist as the marketplace (JOBS_PRIVATE 403); MARKETPLACE_PUBLIC=true opens both. Sitemaps serve only section landing pages while the pilot is on.',
+      'Emulator/dev trap: a foreground Bash timeout while a workflow runs interrupts its subagents; worktree isolation needs the session cwd to be a repo — see memory notes.',
+    ],
+    commits: ['352dbec', '611705e', '4113e05', 'f7adecd', '6119e36', '3d63c57', '854ff8a'],
+  },
+  {
     id: 'marketplace-departments-1-0-39',
     title: 'Mobile 1.0.39 — nine product departments, Shop-by-department browse, Shop/Jobs tabs',
     area: 'marketplace',
