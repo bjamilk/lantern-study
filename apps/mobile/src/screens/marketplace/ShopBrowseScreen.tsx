@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import {
   MARKETPLACE_DEPARTMENTS,
   OTHER_TAXONOMY_NODE_ID,
@@ -86,6 +87,7 @@ export function ShopBrowseScreen({
         <Text numberOfLines={1} className="flex-1 text-xl font-bold text-lantern-text">
           {node ? node.label : 'Shop by department'}
         </Text>
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
       </View>
 
       {path.length > 1 ? (

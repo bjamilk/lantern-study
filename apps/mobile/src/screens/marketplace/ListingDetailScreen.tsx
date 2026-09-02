@@ -369,7 +369,13 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     setActionLoading(true);
     try {
       await addToCart(listing.id, qty);
-      Alert.alert('Added to cart', qty > 1 ? `${qty} items added.` : 'Item added to cart.');
+      // Alert, not toast: toastStore's showToast(message, type?) has no action
+      // slot, so a toast cannot offer "View cart" — and that tap is the whole
+      // point of confirming (Amazon's add-to-cart sheet does the same).
+      Alert.alert('Added to cart', qty > 1 ? `${qty} items added.` : 'Item added to cart.', [
+        { text: 'Keep shopping', style: 'cancel' },
+        { text: 'View cart', onPress: () => navigation.navigate('Cart') },
+      ]);
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Could not add to cart');
     } finally {

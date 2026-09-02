@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import * as ImagePicker from 'expo-image-picker';
 import {
   useMarketplaceStore,
@@ -41,6 +42,7 @@ import { ListingTakedownNotice } from '../../components/moderation/ListingTakedo
 
 type NavigationProp = {
   goBack: () => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
 const ALL_CATEGORIES = [...ACADEMIC_CATEGORIES, ...STUDENT_LIFE_CATEGORIES];
@@ -350,7 +352,8 @@ export function EditListingScreen({
           <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
             <Ionicons name="arrow-back" size={24} color="#64748b" />
           </Pressable>
-          <Text className="text-xl font-bold text-lantern-text">Edit Listing</Text>
+          <Text className="flex-1 text-xl font-bold text-lantern-text">Edit Listing</Text>
+          <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
         </View>
 
         <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
