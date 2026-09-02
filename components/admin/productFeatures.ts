@@ -963,6 +963,104 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     ],
     commits: ['de6ed33', '341b0ef', '9158230', 'ac974ae', '40208dd', 'ef6b22d'],
   },
+  {
+    id: 'community-server-view-1-0-41',
+    title: 'Communities as servers \u2014 channels, rooms, members and presence (1.0.41)',
+    area: 'groups',
+    status: 'shipped',
+    shippedAt: '2026-09-02',
+    summary:
+      'A community is now a place a student stays inside: its lounge is a channel, the study groups filed under it are channels, its open 24h rooms are the voice-like channels, and the roster shows who is online and who runs it.',
+    details: [
+      'One read paints the view: GET /communities/:id/channels returns the lounge, channels sorted joined-first with unread counts, open rooms, member count and online count.',
+      'Chat is unchanged \u2014 channels ARE groups, so messages, realtime, typing, read receipts, reactions, mute and archive all keep working. The chat body is rendered by both the Chat tab and the community, from one extracted component.',
+      'Everything stays on the community surface (founder rule): on mobile the community, channels, rooms and roster sit on the community\u2019s own stack; on web a channel renders inside the community page beside the channel column at /discover/c/:slug/ch/:groupId.',
+      'Members are cursor-paged with role and online status; Online/Offline sections, status dots and Owner/Admin/Moderator badges. A member who hides their online status never shows a dot.',
+      'Presence is two layers: profiles.last_seen_at (5 minutes, honours the privacy setting) plus one Supabase presence channel per community, held only while a community is on screen and gated by membership, low-data mode and a member cap.',
+      'Rooms inside a community come from GET /study-rooms?communityId&courseId; room lifetime moved from 6 hours to 24.',
+      'Guests of a public community see public channels only \u2014 no rooms, roster, online count or message previews. A private community stays 404 to non-members.',
+    ],
+    howToUse: [
+      'Profile menu \u2192 Community \u2192 tap a community. Web: Discover \u2192 Communities \u2192 a community, or /discover/c/:slug.',
+    ],
+    surfaces: ['mobile', 'web', 'api'],
+    adminNotes: [
+      'Still behind canAccessDiscoverHub (platform admins only). Everyone else sees Coming soon.',
+      'Security gap closed on the way: group create/update now refuse a community listing from a non-member, so nobody can file a group into a community they are not in.',
+      'No new tables and no migration; the pre-existing communities.lounge_group_id migration is applied in production.',
+      'Presence topics are not membership-gated yet \u2014 acceptable while admin-only, to be hardened with Realtime RLS before the gate opens.',
+      'Verified with two accounts on 2026-09-02: presence, cross-account unread and Owner badges all confirmed live.',
+    ],
+    commits: ['821697c', '16f1ff2', 'c9a6eb6', 'd0b0747'],
+  },
+  {
+    id: 'marketplace-fee-in-price-1-0-41',
+    title: 'Hand-over fee moved into the price (1.0.41)',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-09-02',
+    summary:
+      'Buyers pay the listed price with nothing added at checkout; Lantern keeps 5% and the seller receives 95%. Previously the buyer paid list + 5% and the seller received the full list price.',
+    details: [
+      'resolveMarketplaceFees is the single split decider. The buyer-side surcharge knob defaults to 0; a new MARKETPLACE_PHYSICAL_COMMISSION_BPS (default 500) feeds the hand-over commission.',
+      'Every downstream reader \u2014 Paystack initialisation, the webhook amount check, the seller transfer, refunds, the ledger and the shop summary \u2014 reads the stored columns, so nothing else in the money path changed.',
+      'A checkout session opened before the change is retired and re-initialised rather than resumed, so nobody is charged the old total under the new copy.',
+      'A late Paystack success against a retired session is recorded as a settlement mismatch instead of silently doing nothing.',
+      'Buyer disclosures, seller payout copy and the terms describe the new model on both platforms.',
+    ],
+    howToUse: [
+      'Shop \u2192 any hand-over listing \u2192 Buy Now shows a single Total. Sellers see the split on Payouts.',
+    ],
+    surfaces: ['mobile', 'web', 'api'],
+    adminNotes: [
+      'Paystack\u2019s processing fee now comes out of Lantern\u2019s 5%, not out of an extra charge to the buyer.',
+      'Check GET /marketplace/payments/config reports serviceFeeBps 0 and physicalCommissionBps 500. A stale MARKETPLACE_SERVICE_FEE_BPS=500 in Render would double-dip.',
+      'The DB CHECK from 20260823122000 holds for the new split; the only migration is a corrected table comment.',
+    ],
+    commits: ['69f1a88', 'd77d0d3'],
+  },
+  {
+    id: 'admin-role-management-1-0-41',
+    title: 'Platform-admin role management enabled in the console (1.0.41)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-02',
+    summary:
+      'Make admin / Revoke admin in Admin \u2192 Users now work. The buttons existed but the API refused every call because ENABLE_ADMIN_ROLE_MANAGEMENT had to be set to true and was set nowhere.',
+    details: [
+      'The variable is now a kill switch: role management is on unless it is set to the literal "false". Any other value, including the old "true", means enabled.',
+      'GET /admin/stats reports roleManagementEnabled, and the Users tab disables the buttons with an explanation when the server has it switched off \u2014 instead of failing on click with a 403.',
+    ],
+    howToUse: ['Admin \u2192 Users \u2192 Make admin / Revoke admin, then type CONFIRM_ADMIN_ROLE_CHANGE.'],
+    surfaces: ['web', 'api'],
+    adminNotes: [
+      'Guards unchanged: platform-admin auth, the typed confirmation phrase, no revoking your own role, the last platform admin cannot be removed, an audit entry, and a forced global sign-out with a session cutoff on revoke.',
+      'If the buttons are greyed out, the Render service has ENABLE_ADMIN_ROLE_MANAGEMENT=false set explicitly \u2014 remove it.',
+    ],
+    commits: ['b284135'],
+  },
+  {
+    id: 'mobile-shop-shell-1-0-41',
+    title: 'Mobile \u2014 collapsible Shop search and a tidier profile menu (1.0.41)',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-09-02',
+    summary:
+      'The Shop header collapses search behind an icon so Alerts, Cart, You and Sell share the row, and recent searches live in the suggestions rather than a band of their own.',
+    details: [
+      'Collapsed: a search icon plus Alerts, Cart, You and Sell stretched across the row, with labels when the row is wide enough. Expanded: a full-width field with Close and Clear; only Sell yields its width.',
+      'Whether the box is open is derived from the stored query, so returning from a listing or the cart re-shows the field with the query and a Clear control.',
+      'The separate Recent chips band is gone \u2014 recent searches were already in the suggestions dropdown, which goes away with the keyboard.',
+      'The quick-actions band under the header shows labels only; the hint lines under Your Orders, Buy Again and Saved are gone.',
+      'Profile menu order: Community, Jobs, Low-data mode, Dark mode, Settings.',
+    ],
+    howToUse: ['Shop \u2192 the search icon in the header; profile avatar \u2192 the drawer.'],
+    surfaces: ['mobile'],
+    adminNotes: [
+      'Community and Jobs are gated surfaces, so each row is listed only for accounts that can open it.',
+    ],
+    commits: ['1f2bf56', 'c386033'],
+  },
 ];
 
 export function sortProductFeatures(entries: ProductFeatureEntry[]): ProductFeatureEntry[] {
