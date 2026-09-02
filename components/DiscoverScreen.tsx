@@ -15,12 +15,14 @@ import {
   memberCountLabel,
   presenceLabel,
   shouldShowTrustChip,
+  studyRoomTimeLeftLabel,
   trustLabel,
   type Community,
   type DiscoverGroup,
   type DiscoverPerson,
   type MyCommunity,
   type PresenceSnapshot,
+  type StudyRoomListItem,
 } from '@lantern/shared/network';
 import {
   createCommunity,
@@ -33,6 +35,7 @@ import {
   joinCommunity,
   joinDiscoverableGroup,
   leaveCommunity,
+  listStudyRooms,
 } from '../services/supabase';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
@@ -111,6 +114,9 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   const [groups, setGroups] = useState<DiscoverGroup[]>([]);
   const [people, setPeople] = useState<DiscoverPerson[]>([]);
   const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
+  const [rooms, setRooms] = useState<StudyRoomListItem[]>([]);
+  // "Closes in Xh" ticks once a minute while the Room tab is open.
+  const [now, setNow] = useState(() => Date.now());
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [creatingCommunity, setCreatingCommunity] = useState(false);
   const [newName, setNewName] = useState('');
@@ -136,6 +142,10 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           setMine(own);
         } else if (target === 'groups') {
           setGroups(await discoverGroups({ q: q || undefined }));
+        } else if (target === 'rooms') {
+          // Open rooms only, capped server-side; the search box filters
+          // locally instead of round-tripping (same as mobile).
+          setRooms(await listStudyRooms());
         } else {
           setPeople(await discoverPeople({ q: q || undefined }));
         }
@@ -154,6 +164,32 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
     // keystroke — re-running this on each character would hammer the API.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, load]);
+
+  // The Room tab is "what is open right now": refetch when the tab regains
+  // visibility (coming back from a room) and tick the countdown once a minute.
+  useEffect(() => {
+    if (section !== 'rooms') return undefined;
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        setNow(Date.now());
+        void load('rooms', '');
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(tick);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [section, load]);
+
+  const visibleRooms = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rooms;
+    return rooms.filter((room) =>
+      [room.title, room.topic ?? ''].some((field) => field.toLowerCase().includes(q))
+    );
+  }, [rooms, query]);
 
   useEffect(() => {
     // Presence is a nicety; a failure here must not blank the hub.
@@ -345,10 +381,13 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       <header className="space-y-2">
         <h1 className="sr-only">Discover</h1>
         <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
-        {section === 'communities' || section === 'groups' || section === 'people' ? (
+        {section === 'communities' || section === 'groups' || section === 'people' || section === 'rooms' ? (
           <p className="text-[11px] text-lantern-text-tertiary">{DISCOVER_SECTION_INTRO[section]}</p>
         ) : null}
 
+        {/* "Start a room" and the who-is-studying line belong to the Room tab,
+            not under every section (parity with mobile, founder ask 2026-09-02). */}
+        {section === 'rooms' ? (
         <div className="flex flex-wrap items-center gap-2">
           {presenceLine ? (
             <button
@@ -370,16 +409,18 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('CreateLab')}
-            className="inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold text-lantern-primary hover:underline"
+            className="inline-flex items-center rounded-lg bg-lantern-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-lantern-primary-dark"
           >
             Start a room
           </button>
         </div>
+        ) : null}
 
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void load(section, query);
+            // Rooms filter locally as you type; a submit there has nothing to fetch.
+            if (section !== 'rooms') void load(section, query);
           }}
           className="relative"
           role="search"
@@ -397,14 +438,18 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 ? 'Search groups'
                 : section === 'people'
                   ? 'Search people'
-                  : 'Search communities'
+                  : section === 'rooms'
+                    ? 'Search open rooms'
+                    : 'Search communities'
             }
             aria-label={
               section === 'groups'
                 ? 'Search groups'
                 : section === 'people'
                   ? 'Search people'
-                  : 'Search communities'
+                  : section === 'rooms'
+                    ? 'Search open rooms'
+                    : 'Search communities'
             }
             className="w-full rounded-lg border border-lantern-border bg-lantern-background py-2 pl-9 pr-3 text-sm text-lantern-text placeholder:text-lantern-text-secondary focus:border-lantern-primary focus:outline-none"
           />
@@ -660,6 +705,45 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                   {person.activePacks} {person.activePacks === 1 ? 'pack' : 'packs'} ·{' '}
                   {person.learnersHelped} helped
                 </p>
+              </button>
+            );
+          })}
+        </section>
+      )}
+
+      {status !== 'loading' && section === 'rooms' && (
+        <section className="grid gap-2 sm:grid-cols-2" aria-label="Rooms">
+          {visibleRooms.length === 0 && !error && (
+            <div className="sm:col-span-2">
+              <EmptyState
+                title={query.trim() ? 'No open rooms match that search' : 'No rooms are open right now'}
+                hint="Start one above — it stays open for 24 hours, then disappears."
+              />
+            </div>
+          )}
+          {visibleRooms.map((room) => {
+            const timeLeft = studyRoomTimeLeftLabel(room.startedAt, now);
+            return (
+              <button
+                key={room.id}
+                type="button"
+                onClick={() => onNavigate('StudyRoom', { roomId: room.id })}
+                className={`${card} w-full text-left`}
+                aria-label={`${room.joined ? 'Open' : 'Join'} ${room.title}, ${room.participantCount} joined, ${timeLeft}`}
+              >
+                <h2 className="flex items-center justify-between gap-2 text-sm font-semibold text-lantern-text">
+                  <span className="truncate">{room.title}</span>
+                  <span className={`text-xs font-semibold ${room.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'}`}>
+                    {room.joined ? 'Open' : 'Join'}
+                  </span>
+                </h2>
+                <p className="text-xs text-lantern-text-secondary">
+                  {/* Joined = on the roster (has not left); live presence is only
+                      known inside the room, so this never claims "here". */}
+                  {room.participantCount} joined · {timeLeft}
+                  {room.joined ? ' · You are in' : ''}
+                </p>
+                {room.topic ? <p className="text-xs text-lantern-text-tertiary">{room.topic}</p> : null}
               </button>
             );
           })}

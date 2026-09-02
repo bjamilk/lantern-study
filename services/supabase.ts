@@ -5272,6 +5272,10 @@ export const joinOrCreateStudyRoom = (input: {
     'Could not open a study room'
   );
 
+/** The hub's Room tab: open rooms, newest first, the viewer's own first. */
+export const listStudyRooms = () =>
+  networkGet<import('@lantern/shared/network').StudyRoomListItem[]>('/study-rooms');
+
 export const fetchStudyRoom = (roomId: string) =>
   networkGet<import('@lantern/shared/network').StudyRoomDetail>(
     `/study-rooms/${encodeURIComponent(roomId)}`

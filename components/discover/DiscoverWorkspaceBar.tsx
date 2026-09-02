@@ -3,22 +3,23 @@ import {
   UserGroupIcon,
   ChatBubbleLeftRightIcon,
   UsersIcon,
-  ShoppingBagIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 
 /**
  * Discover's section tabs (Phase 3 · L, decision D12).
  *
- * D12 resolved: "Explore" in the sidebar becomes DISCOVER, with the marketplace
- * as one tab inside it rather than a sibling destination. This bar is rendered
- * by both DiscoverScreen and MarketplaceScreen so the marketplace visibly sits
- * INSIDE Discover instead of merely linking back to it.
+ * D12 resolved: "Explore" in the sidebar becomes DISCOVER. The marketplace
+ * used to be one tab inside it; since 2026-09-02 (founder ask, matching the
+ * mobile hub) that slot is Rooms — temporary 24-hour study rooms — and the
+ * marketplace is reached from its own sidebar entry. 'marketplace' stays in
+ * the type because MarketplaceScreen still renders this bar with it active.
  *
  * Underline tabs (not filled pills) keep the chrome to one compact row so the
  * list itself is the screen.
  */
-export type DiscoverSection = 'communities' | 'groups' | 'people' | 'marketplace';
+export type DiscoverSection = 'communities' | 'groups' | 'people' | 'rooms' | 'marketplace';
 
 export interface DiscoverWorkspaceBarProps {
   active: DiscoverSection;
@@ -35,7 +36,7 @@ const TABS: Array<{
   { id: 'communities', label: 'Communities', shortLabel: 'Community', icon: UserGroupIcon },
   { id: 'groups', label: 'Groups', shortLabel: 'Groups', icon: ChatBubbleLeftRightIcon },
   { id: 'people', label: 'People', shortLabel: 'People', icon: UsersIcon },
-  { id: 'marketplace', label: 'Marketplace', shortLabel: 'Market', icon: ShoppingBagIcon },
+  { id: 'rooms', label: 'Rooms', shortLabel: 'Room', icon: ClockIcon },
 ];
 
 export const DiscoverWorkspaceBar: React.FC<DiscoverWorkspaceBarProps> = ({
