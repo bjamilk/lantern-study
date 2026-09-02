@@ -77,12 +77,25 @@ async function enrichInquiries(raw: Awaited<ReturnType<typeof fetchMyInquiries>>
   return enriched.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
-export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) {
+export function InquiriesScreen({
+  navigation,
+  route,
+}: {
+  navigation: NavigationProp;
+  route?: { params?: { tab?: Tab } };
+}) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
   const { updateInquiryStatus } = useMarketplaceStore();
-  const [tab, setTab] = useState<Tab>('seller');
+  // The You hub's "Messages to sellers" is a buyer destination and the seller
+  // strip's "Questions" a seller one; seller stays the default for bare entries.
+  const [tab, setTab] = useState<Tab>(route?.params?.tab ?? 'seller');
+  // The Market stack keeps screens mounted, so navigating here with a param
+  // while already open changes the params, not the state the tabs read.
+  useEffect(() => {
+    if (route?.params?.tab) setTab(route.params.tab);
+  }, [route?.params?.tab]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('');
   const [inquiries, setInquiries] = useState<InquiryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,7 +172,9 @@ export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) 
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
-        <Text className="flex-1 text-xl font-bold text-lantern-text">Messages</Text>
+        <Text className="flex-1 text-xl font-bold text-lantern-text">
+          {tab === 'seller' ? 'Buyer questions' : 'Messages to sellers'}
+        </Text>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
       </View>
 

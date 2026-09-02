@@ -1,10 +1,8 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   Share,
@@ -13,21 +11,24 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useMarketplaceStore, useAuthStore, getCategoryInfo } from '../../stores';
 import {
+  fetchMarketplaceOrders,
   fetchSellerAnalytics,
   fetchSellerOnboarding,
   fetchSellerPreferences,
 } from '../../services/api';
-import { Button } from '../../components/ui';
+import { ActionSheet, Button, type ActionSheetItem } from '../../components/ui';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { SellerOnboardingModal } from './modals/SellerOnboardingModal';
 import { SellerCouponsModal } from './modals/SellerCouponsModal';
 import { CreateBundleModal } from './modals/CreateBundleModal';
 import { SellerCampaignModal } from './modals/SellerCampaignModal';
 import { SellerInsightsModal } from './modals/SellerInsightsModal';
-import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
+import { SellerNeedsYouStrip } from './components/SellerNeedsYouStrip';
+import { SellerToolsRow } from './components/SellerToolsRow';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import type { SellerAnalytics, SellerOnboardingStatus } from '@lantern/shared/types';
 import {
@@ -49,12 +50,33 @@ type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
-export function MyListingsScreen({ navigation }: { navigation: NavigationProp }) {
+// Per user: a second seller on the same phone still gets the walkthrough.
+const onboardingDismissedKey = (userId: string) => `lantern_seller_onboarding_dismissed_${userId}`;
+
+/**
+ * Seller orders where the buyer still has to pay online. Not the seller's to
+ * act on, so the strip shows it as a grey line rather than a badge. Computed
+ * here because ShopSummary has no such field; if it grows one, read that.
+ */
+const awaitsBuyerPayment = (order: { status: string; payment_id?: string | null }): boolean =>
+  order.status === 'awaiting_payment' || (order.status === 'pending_payment' && !!order.payment_id);
+
+export function MyListingsScreen({
+  navigation,
+  route,
+}: {
+  navigation: NavigationProp;
+  route?: { params?: { openInsights?: boolean } };
+}) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
   const { myListings, sellerStats, isLoading, fetchMyListings, fetchSellerStats, updateListing, deleteListing } =
     useMarketplaceStore();
+  // The strip reads the same counts the You badge does, so the two never
+  // disagree about what needs the seller.
+  const shopSummary = useMarketplaceStore(s => s.shopSummary);
+  const fetchShopSummary = useMarketplaceStore(s => s.fetchShopSummary);
   const [activeTab, setActiveTab] = useState<StatusTab>('active');
   const [refreshing, setRefreshing] = useState(false);
   const [analytics, setAnalytics] = useState<SellerAnalytics | null>(null);
@@ -65,6 +87,11 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
   const [showBundle, setShowBundle] = useState(false);
   const [showCampaign, setShowCampaign] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [awaitingBuyerPayment, setAwaitingBuyerPayment] = useState(0);
+  // The row "..." menu. Alert.alert cannot hold it: Android caps a native
+  // dialog at three buttons and silently drops the rest, so Reactivate and
+  // Delete were unreachable there.
+  const [listingActions, setListingActions] = useState<{ title: string; items: ActionSheetItem[] } | null>(null);
   const [requirePaymentConfirmation, setRequirePaymentConfirmation] = useState(false);
   const [hallDropoffEnabled, setHallDropoffEnabled] = useState(false);
   const [hallDropoffMin, setHallDropoffMin] = useState('');
@@ -73,10 +100,17 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
     if (!user?.id) return;
     await fetchMyListings(user.id);
     await fetchSellerStats();
+    // TTL-cached: free when arriving from Shop home, which just fetched it.
+    void fetchShopSummary();
     try {
       setAnalytics(await fetchSellerAnalytics());
     } catch {
       setAnalytics(null);
+    }
+    try {
+      setAwaitingBuyerPayment((await fetchMarketplaceOrders('seller')).filter(awaitsBuyerPayment).length);
+    } catch {
+      /* keep the last count; a missing grey line is not worth an error */
     }
     try {
       const prefs = await fetchSellerPreferences();
@@ -94,18 +128,30 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
       if (onboarding) {
         setOnboardingStatus(onboarding);
         setBoostCredits(onboarding.boostCredits);
-        if (onboarding.needsOnboarding) setShowOnboarding(true);
+        if (onboarding.needsOnboarding) {
+          // "Later" used to last one mount: the server still says
+          // needsOnboarding, so the modal came back on every focus.
+          const dismissed = await AsyncStorage.getItem(onboardingDismissedKey(user.id)).catch(() => null);
+          if (!dismissed) setShowOnboarding(true);
+        }
       }
     } catch {
       /* optional */
     }
-  }, [fetchMyListings, fetchSellerStats, user?.id]);
+  }, [fetchMyListings, fetchSellerStats, fetchShopSummary, user?.id]);
 
   useFocusEffect(
     useCallback(() => {
       void load();
     }, [load])
   );
+
+  // The You hub's Insights row lands here with openInsights; a screen that is
+  // already mounted only sees the param change, so this is not a mount effect.
+  const openInsights = route?.params?.openInsights;
+  useEffect(() => {
+    if (openInsights) setShowInsights(true);
+  }, [openInsights]);
 
   const filtered = useMemo(
     () =>
@@ -136,7 +182,8 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    // A pull is the seller asking "what changed?" — skip the summary TTL too.
+    await Promise.all([load(), fetchShopSummary({ force: true })]);
     setRefreshing(false);
   };
 
@@ -203,44 +250,25 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
     // the sheet and the API can never disagree.
     const offers = (to: MarketplaceListingStatus) =>
       item.status !== to && canSellerSetListingStatus(item.status, to);
-    const actions: { label: string; onPress: () => void; destructive?: boolean }[] = [
-      { label: 'Edit', onPress: () => navigation.navigate('EditListing', { listingId: item.id }) },
+    const actions: ActionSheetItem[] = [
+      { label: 'Edit', icon: 'create-outline', onPress: () => navigation.navigate('EditListing', { listingId: item.id }) },
     ];
     if (offers('sold')) {
-      actions.push({ label: 'Mark sold', onPress: () => void handleStatusChange(item.id, 'sold') });
+      actions.push({ label: 'Mark sold', icon: 'checkmark-done-outline', onPress: () => void handleStatusChange(item.id, 'sold') });
     }
     if (offers('inactive')) {
-      actions.push({ label: 'Deactivate', onPress: () => void handleStatusChange(item.id, 'inactive') });
+      actions.push({ label: 'Deactivate', icon: 'eye-off-outline', onPress: () => void handleStatusChange(item.id, 'inactive') });
     }
     if (offers('active')) {
-      actions.push({ label: 'Reactivate', onPress: () => void handleStatusChange(item.id, 'active') });
+      actions.push({ label: 'Reactivate', icon: 'refresh-outline', onPress: () => void handleStatusChange(item.id, 'active') });
     }
-    actions.push({ label: 'Delete', destructive: true, onPress: () => handleDelete(item.id, item.title) });
-
-    if (Platform.OS === 'ios') {
-      const options = [...actions.map(a => a.label), 'Cancel'];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: options.length - 1,
-          destructiveButtonIndex: actions.findIndex(a => a.destructive),
-          title: item.title,
-        },
-        buttonIndex => {
-          actions[buttonIndex]?.onPress();
-        }
-      );
-      return;
-    }
-
-    Alert.alert(item.title, 'Choose an action', [
-      ...actions.map(a => ({
-        text: a.label,
-        style: a.destructive ? ('destructive' as const) : undefined,
-        onPress: a.onPress,
-      })),
-      { text: 'Cancel', style: 'cancel' as const },
-    ]);
+    actions.push({
+      label: 'Delete',
+      icon: 'trash-outline',
+      destructive: true,
+      onPress: () => handleDelete(item.id, item.title),
+    });
+    setListingActions({ title: item.title, items: actions });
   };
 
   const tabs: { id: StatusTab; label: string }[] = [
@@ -251,6 +279,17 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
 
   const listHeader = (
     <View>
+      <SellerNeedsYouStrip
+        handOver={shopSummary.sellerActionOrders}
+        offers={shopSummary.pendingOffersReceived}
+        inquiries={shopSummary.openInquiries}
+        awaitingBuyerPayment={awaitingBuyerPayment}
+        onNavigate={(screen, params) => navigation.navigate(screen, params)}
+      />
+
+      <Text className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-1.5">
+        Performance
+      </Text>
       <View className="flex-row flex-wrap gap-2 mb-3">
         <Kpi label="Active" value={String(tabCounts.active)} />
         <Kpi label="Views" value={String(sellerStats?.total_views ?? 0)} />
@@ -261,19 +300,6 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
           accent
         />
       </View>
-
-      <Pressable
-        onPress={() => setShowInsights(true)}
-        className="mb-3 flex-row items-center justify-between px-3 py-2.5 rounded-xl border border-lantern-border bg-lantern-surface"
-        accessibilityRole="button"
-        accessibilityLabel="Open performance insights"
-      >
-        <View className="flex-row items-center gap-2">
-          <Ionicons name="stats-chart-outline" size={16} color="#6366f1" />
-          <Text className="text-xs font-semibold text-lantern-text">Insights & preferences</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-      </Pressable>
 
       <View className="flex-row mb-2">
         {tabs.map(tab => (
@@ -311,7 +337,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
               <Ionicons name="arrow-back" size={24} color="#64748b" />
             </Pressable>
             <View className="flex-1 min-w-0">
-              <Text className="text-xl font-bold text-lantern-text">Selling</Text>
+              <Text className="text-xl font-bold text-lantern-text">Your Listings</Text>
               {boostCredits != null ? (
                 <Text className="text-xs text-amber-700 dark:text-amber-400">
                   {boostCredits} boost credit{boostCredits === 1 ? '' : 's'}
@@ -348,43 +374,15 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
           ) : null}
         </View>
 
-        <MarketplaceWorkspaceBar
-          active="selling"
+        <SellerToolsRow
           onNavigate={(screen, params) => navigation.navigate(screen, params)}
-          onSell={() => navigation.navigate('CreateListing')}
-          primaryLabel="New"
-          moreItems={[
-            {
-              id: 'customers',
-              label: 'Customers',
-              icon: 'people-outline',
-              onSelect: () => navigation.navigate('SellerCustomers'),
-            },
-            {
-              id: 'coupons',
-              label: 'Coupons',
-              icon: 'pricetag-outline',
-              onSelect: () => setShowCoupons(true),
-            },
-            {
-              id: 'bundle',
-              label: 'Bundle',
-              icon: 'layers-outline',
-              onSelect: () => setShowBundle(true),
-            },
-            {
-              id: 'campaign',
-              label: 'Campaign',
-              icon: 'megaphone-outline',
-              onSelect: () => setShowCampaign(true),
-            },
-            {
-              id: 'insights',
-              label: 'Insights & preferences',
-              icon: 'stats-chart-outline',
-              onSelect: () => setShowInsights(true),
-            },
-          ]}
+          onOpenTool={tool => {
+            if (tool === 'coupons') setShowCoupons(true);
+            else if (tool === 'bundles') setShowBundle(true);
+            else if (tool === 'campaign') setShowCampaign(true);
+            else setShowInsights(true);
+          }}
+          onNew={() => navigation.navigate('CreateListing')}
         />
       </View>
 
@@ -471,9 +469,20 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
               setBoostCredits(onboarding.boostCredits);
             }
           }}
-          onDismiss={() => setShowOnboarding(false)}
+          onDismiss={() => {
+            setShowOnboarding(false);
+            if (user?.id) {
+              AsyncStorage.setItem(onboardingDismissedKey(user.id), '1').catch(() => {});
+            }
+          }}
         />
       ) : null}
+      <ActionSheet
+        visible={listingActions != null}
+        title={listingActions?.title}
+        items={listingActions?.items ?? []}
+        onClose={() => setListingActions(null)}
+      />
       <SellerCouponsModal visible={showCoupons} onClose={() => setShowCoupons(false)} />
       <CreateBundleModal
         visible={showBundle}
