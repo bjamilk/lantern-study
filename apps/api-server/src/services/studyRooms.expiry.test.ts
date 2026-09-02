@@ -79,7 +79,7 @@ const roomRow = (startedAt: string, isActive = true) => ({
 describe('room expiry', () => {
   it('a room past the max age reads closed even when is_active is stale', async () => {
     const { service } = makeDb([
-      { table: 'study_sessions', result: { data: roomRow(hoursAgo(7), true) } },
+      { table: 'study_sessions', result: { data: roomRow(hoursAgo(25), true) } },
       { table: 'study_session_participants', result: { data: [] } },
     ]);
     (service as any).lastSweepAt = Date.now(); // debounce the sweep out of the way
@@ -99,15 +99,87 @@ describe('room expiry', () => {
 
   it('join refuses a closed room', async () => {
     const { service } = makeDb([
-      { table: 'study_sessions', result: { data: roomRow(hoursAgo(7), true) } },
+      { table: 'study_sessions', result: { data: roomRow(hoursAgo(25), true) } },
       { table: 'study_session_participants', result: { data: [] } },
     ]);
     (service as any).lastSweepAt = Date.now();
     await expect(service.join(USER, ROOM)).rejects.toThrow('This study room has closed');
   });
 
-  it('uses the documented 6-hour lifetime', () => {
-    expect(STUDY_ROOM_MAX_AGE_MS).toBe(6 * 60 * 60 * 1000);
+  it('uses the documented 24-hour lifetime', () => {
+    expect(STUDY_ROOM_MAX_AGE_MS).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
+describe('list (the Room tab)', () => {
+  const OTHER = '22222222-2222-4222-8222-222222222222';
+  const ROOM_B = '77777777-7777-4777-8777-777777777777';
+
+  it('returns open rooms with joined counts, the viewer\'s rooms first', async () => {
+    const { service, script } = makeDb([
+      { table: 'study_session_participants', result: { data: [{ session_id: ROOM }] } }, // viewer's memberships
+      {
+        table: 'study_sessions',
+        result: {
+          data: [
+            { ...roomRow(hoursAgo(1), true), id: ROOM_B, title: 'Newest, not mine' },
+            { ...roomRow(hoursAgo(5), true), id: ROOM, title: 'Older, mine' },
+          ],
+        },
+      },
+      {
+        table: 'study_session_participants',
+        result: {
+          data: [
+            { session_id: ROOM, user_id: USER },
+            { session_id: ROOM, user_id: OTHER },
+            { session_id: ROOM_B, user_id: OTHER },
+          ],
+        },
+      },
+    ]);
+    (service as any).lastSweepAt = Date.now();
+    const rooms = await service.list(USER);
+    expect(script).toHaveLength(0);
+    expect(rooms.map((r) => r.id)).toEqual([ROOM, ROOM_B]);
+    expect(rooms[0]).toMatchObject({ joined: true, participantCount: 2, isActive: true });
+    expect(rooms[1]).toMatchObject({ joined: false, participantCount: 1, isActive: true });
+  });
+
+  it("keeps the viewer's own room even when it is not among the newest page", async () => {
+    const { service, script } = makeDb([
+      { table: 'study_session_participants', result: { data: [{ session_id: ROOM }] } },
+      { table: 'study_sessions', result: { data: [{ ...roomRow(hoursAgo(1), true), id: ROOM_B }] } }, // page without it
+      { table: 'study_sessions', result: { data: [{ ...roomRow(hoursAgo(20), true), id: ROOM }] } }, // fetched by id
+      {
+        table: 'study_session_participants',
+        result: { data: [{ session_id: ROOM, user_id: USER }, { session_id: ROOM_B, user_id: OTHER }] },
+      },
+    ]);
+    (service as any).lastSweepAt = Date.now();
+    const rooms = await service.list(USER);
+    expect(script).toHaveLength(0);
+    expect(rooms.map((r) => [r.id, r.joined])).toEqual([[ROOM, true], [ROOM_B, false]]);
+  });
+
+  it('drops a room the sweep has not flipped yet but that is past its life', async () => {
+    const { service } = makeDb([
+      { table: 'study_session_participants', result: { data: [] } },
+      { table: 'study_sessions', result: { data: [{ ...roomRow(hoursAgo(25), true), id: ROOM }] } },
+      { table: 'study_session_participants', result: { data: [] } },
+    ]);
+    (service as any).lastSweepAt = Date.now();
+    expect(await service.list(USER)).toEqual([]);
+  });
+
+  it('skips the roster query when nothing is open', async () => {
+    const { service, script } = makeDb([
+      { table: 'study_session_participants', result: { data: [] } },
+      { table: 'study_sessions', result: { data: [] } },
+    ]);
+    (service as any).lastSweepAt = Date.now();
+    expect(await service.list(USER)).toEqual([]);
+    expect(script).toHaveLength(0);
   });
 });
 

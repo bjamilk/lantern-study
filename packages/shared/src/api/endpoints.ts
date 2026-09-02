@@ -3240,6 +3240,9 @@ export function createApiEndpoints(client: ApiClient) {
         15000,
       ),
 
+    listStudyRooms: () =>
+      apiRequest<import('../network').StudyRoomListItem[]>('/study-rooms', {}, 8000),
+
     fetchStudyRoom: (roomId: string) =>
       apiRequest<import('../network').StudyRoomDetail>(
         `/study-rooms/${encodeURIComponent(roomId)}`,

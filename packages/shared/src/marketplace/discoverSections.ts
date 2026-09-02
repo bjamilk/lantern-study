@@ -14,12 +14,16 @@
  *
  * Web and mobile both read this so the two cannot drift.
  */
-export type DiscoverSectionId = 'communities' | 'groups' | 'people' | 'marketplace';
+export type DiscoverSectionId = 'communities' | 'groups' | 'people' | 'rooms' | 'marketplace';
 
 export const DISCOVER_SECTION_ENABLED: Record<DiscoverSectionId, boolean> = {
   communities: true,
   groups: false,
   people: false,
+  // Temporary study rooms (24h). Added 2026-09-02 as the mobile hub's second
+  // tab, taking the slot Market used to hold there; the web bar does not list
+  // it yet, so on web this flag is inert.
+  rooms: true,
   marketplace: true,
 };
 

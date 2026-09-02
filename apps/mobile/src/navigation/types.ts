@@ -122,7 +122,13 @@ export type MarketStackParamList = {
   CreatorProfile: { userId: string };
   // Phase 3 L / decision D12 — Discover is the hub; the marketplace is a tab
   // inside it, which is why these live on the Market stack.
-  Discover: { section?: 'communities' | 'groups' | 'people' | 'marketplace' } | undefined;
+  Discover:
+    | {
+        section?: 'communities' | 'groups' | 'people' | 'rooms' | 'marketplace';
+        /** Changes on every drawer tap so the same section re-applies even if the screen sits on another tab. */
+        at?: number;
+      }
+    | undefined;
   CommunityDetail: { slug: string };
   Feed: undefined;
   Mastery: { courseId?: string } | undefined;

@@ -2,18 +2,20 @@ import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 
-export type DiscoverSection = 'communities' | 'groups' | 'people' | 'marketplace';
+export type DiscoverSection = 'communities' | 'groups' | 'people' | 'rooms' | 'marketplace';
 
 export interface DiscoverWorkspaceBarProps {
   active: DiscoverSection;
   onSelect: (section: DiscoverSection) => void;
 }
 
+// Room took the slot Market held here (founder ask 2026-09-02): the Shop has
+// its own top-bar icon, so a Market tab on the hub only duplicated it.
 const TABS: Array<{ id: DiscoverSection; label: string; shortLabel: string }> = [
   { id: 'communities', label: 'Communities', shortLabel: 'Community' },
   { id: 'groups', label: 'Groups', shortLabel: 'Groups' },
   { id: 'people', label: 'People', shortLabel: 'People' },
-  { id: 'marketplace', label: 'Marketplace', shortLabel: 'Market' },
+  { id: 'rooms', label: 'Rooms', shortLabel: 'Room' },
 ];
 
 /**

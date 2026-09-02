@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
+import { studyRoomTimeLeftLabel, type StudyRoomListItem } from '@lantern/shared/network';
 import {
   DISCOVER_SECTION_INTRO,
   canAccessDiscoverHub,
@@ -28,6 +30,7 @@ import {
   joinCommunity,
   joinDiscoverableGroup,
   leaveCommunity,
+  listStudyRooms,
   openCommunityLounge,
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
@@ -58,7 +61,7 @@ function DiscoverHub({
   route,
 }: {
   navigation: NavigationProp;
-  route?: { params?: { section?: Section } };
+  route?: { params?: { section?: Section; at?: number } };
 }) {
   const { onScroll: chromeOnScroll } = useChrome();
   // Open on a section that is actually switched on. Defaulting to communities
@@ -78,6 +81,10 @@ function DiscoverHub({
   const [communities, setCommunities] = useState<Community[]>([]);
   const [groups, setGroups] = useState<DiscoverGroup[]>([]);
   const [people, setPeople] = useState<DiscoverPerson[]>([]);
+  const [rooms, setRooms] = useState<StudyRoomListItem[]>([]);
+  const [roomsRefreshing, setRoomsRefreshing] = useState(false);
+  // "Closes in Xh" ticks once a minute while the Room tab is open.
+  const [now, setNow] = useState(() => Date.now());
   const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [loungePendingId, setLoungePendingId] = useState<string | null>(null);
@@ -91,7 +98,7 @@ function DiscoverHub({
   const myById = useMemo(() => new Map(mine.map((c) => [c.id, c])), [mine]);
   const myIds = useMemo(() => new Set(mine.map((c) => c.id)), [mine]);
 
-  const load = useCallback(async (target: Section, q: string) => {
+  const load = useCallback(async (target: Section, q: string, options?: { silent?: boolean }) => {
     if (target === 'marketplace') {
       // Discover has no marketplace list of its own — the section is a pointer
       // to the Shop. Returning without clearing `loading` (which starts true)
@@ -100,7 +107,7 @@ function DiscoverHub({
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!options?.silent) setLoading(true);
     setError(null);
     try {
       if (target === 'communities') {
@@ -112,6 +119,10 @@ function DiscoverHub({
         setMine(own);
       } else if (target === 'groups') {
         setGroups(await discoverGroups({ q: q || undefined }));
+      } else if (target === 'rooms') {
+        // The list is small (open rooms only, capped server-side), so the
+        // search box filters it locally instead of round-tripping.
+        setRooms(await listStudyRooms());
       } else {
         setPeople(await discoverPeople({ q: q || undefined }));
       }
@@ -127,7 +138,9 @@ function DiscoverHub({
     if (!next || next === 'marketplace') return;
     if (!isDiscoverSectionEnabled(next)) return;
     setSection(next);
-  }, [route?.params?.section]);
+    // `at` changes on every drawer tap, so tapping Community while this screen
+    // sits on the Room tab still brings Communities back.
+  }, [route?.params?.section, route?.params?.at]);
 
   // With Community, Groups and People switched off, the only section left is a
   // pointer to the Shop, and this screen would render a search box labelled
@@ -140,10 +153,33 @@ function DiscoverHub({
   }, [section, navigation]);
 
   useEffect(() => {
+    // Rooms load from the focus effect below so a return from a room refetches.
+    if (section === 'rooms') return;
     void load(section, query);
     // Search is applied on submit, not per keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, load]);
+
+  // The Room tab is "what is open right now": refetch whenever it gains focus
+  // (including coming back from a room after Join/Leave) and tick the clock.
+  useFocusEffect(
+    useCallback(() => {
+      if (section !== 'rooms') return undefined;
+      setNow(Date.now());
+      void load('rooms', '');
+      const tick = setInterval(() => setNow(Date.now()), 60_000);
+      return () => clearInterval(tick);
+    }, [section, load]),
+  );
+  const refreshRooms = useCallback(async () => {
+    setRoomsRefreshing(true);
+    try {
+      setNow(Date.now());
+      await load('rooms', '', { silent: true });
+    } finally {
+      setRoomsRefreshing(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     void fetchStudyPresence({})
@@ -442,7 +478,7 @@ function DiscoverHub({
       >
         <Text className="text-center text-xs font-semibold text-white">Create a study group</Text>
       </Pressable>
-    ) : (
+    ) : section === 'rooms' ? null : (
       <Pressable
         onPress={() => navigation.navigate('MarketplaceHome')}
         className="mx-4 mt-3 rounded-lg bg-lantern-primary px-3 py-2"
@@ -456,12 +492,65 @@ function DiscoverHub({
       ? 'No communities match that search.'
       : section === 'groups'
         ? 'No groups match that search.'
-        : 'No people match that search.'
+        : section === 'rooms'
+          ? 'No open rooms match that search.'
+          : 'No people match that search.'
     : section === 'communities'
       ? 'Add your university and courses so campus rooms can appear — or start an interest community.'
       : section === 'groups'
         ? 'Groups stay private until an owner lists them on Discover. Create one and turn on Show in Discover.'
-        : 'People appear here once they publish a study pack or question bank.';
+        : section === 'rooms'
+          ? 'No rooms are open right now. Start one above — it stays open for 24 hours, then disappears.'
+          : 'People appear here once they publish a study pack or question bank.';
+
+  // Rooms are filtered locally: the search box narrows by title or topic.
+  const visibleRooms = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rooms;
+    return rooms.filter((room) =>
+      [room.title, room.topic ?? ''].some((field) => field.toLowerCase().includes(q)),
+    );
+  }, [rooms, query]);
+
+  const renderRoom = ({ item }: { item: StudyRoomListItem }) => {
+    const timeLeft = studyRoomTimeLeftLabel(item.startedAt, now);
+    return (
+      <Pressable
+        onPress={() => navigation.navigate('StudyRoom', { roomId: item.id })}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.joined ? 'Open' : 'Join'} ${item.title}, ${item.participantCount} joined, ${timeLeft}`}
+        className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3"
+      >
+        <View className="flex-row items-start">
+          <View className="flex-1 pr-2">
+            <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
+              {item.title}
+            </Text>
+            <Text className="text-xs text-lantern-text-tertiary mt-0.5">
+              {/* Joined = on the roster (has not tapped Leave). Live presence
+                  is only known inside the room, so this never claims "here". */}
+              {item.participantCount === 1 ? '1 joined' : `${item.participantCount} joined`}
+              {' · '}
+              {timeLeft}
+              {item.joined ? ' · You are in' : ''}
+            </Text>
+            {item.topic ? (
+              <Text className="text-xs text-lantern-text-tertiary mt-1.5" numberOfLines={2}>
+                {item.topic}
+              </Text>
+            ) : null}
+          </View>
+          <Text
+            className={`text-xs font-semibold px-2 py-1.5 ${
+              item.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+            }`}
+          >
+            {item.joined ? 'Open' : 'Join'}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
@@ -472,50 +561,64 @@ function DiscoverHub({
             <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
           </View>
         </View>
-        {section === 'communities' || section === 'groups' || section === 'people' ? (
+        {section === 'communities' || section === 'groups' || section === 'people' || section === 'rooms' ? (
           <Text className="px-4 pt-1.5 text-[11px] text-lantern-text-tertiary">
             {DISCOVER_SECTION_INTRO[section]}
           </Text>
         ) : null}
-        <View className="flex-row flex-wrap items-center gap-2 px-4 pt-1">
-          {presenceLine ? (
+        {/* "Start a room" and the who-is-studying line belong to the Room tab
+            now, not under every section's intro (founder ask 2026-09-02). */}
+        {section === 'rooms' ? (
+          <View className="flex-row flex-wrap items-center gap-2 px-4 pt-1">
+            {presenceLine ? (
+              <Pressable
+                onPress={() =>
+                  navigation.navigate('StudyRoom', {
+                    courseId: presence?.joinCourseId,
+                    topic: presence?.joinTopic,
+                  })
+                }
+                disabled={!presence?.joinCourseId}
+                accessibilityRole="button"
+                accessibilityLabel={`${presenceLine}${presence?.joinCourseId ? ' · Join room' : ''}`}
+              >
+                <Text className="text-[11px] text-lantern-primary">
+                  {presenceLine}
+                  {presence?.joinCourseId ? ' · Join room' : ''}
+                </Text>
+              </Pressable>
+            ) : null}
             <Pressable
-              onPress={() =>
-                navigation.navigate('StudyRoom', {
-                  courseId: presence?.joinCourseId,
-                  topic: presence?.joinTopic,
-                })
-              }
-              disabled={!presence?.joinCourseId}
+              onPress={() => navigation.navigate('StudyRoom')}
+              accessibilityRole="button"
+              accessibilityLabel="Start a room"
+              hitSlop={6}
+              className="self-start min-h-[32px] justify-center rounded-lg bg-lantern-primary px-3"
             >
-              <Text className="text-[11px] text-lantern-primary">
-                {presenceLine}
-                {presence?.joinCourseId ? ' · Join room' : ''}
-              </Text>
+              <Text className="text-[11px] font-semibold text-white">Start a room</Text>
             </Pressable>
-          ) : null}
-          <Pressable
-            onPress={() => navigation.navigate('StudyRoom')}
-            className="self-start rounded-lg bg-lantern-background-secondary px-2 py-1"
-          >
-            <Text className="text-[11px] font-semibold text-lantern-primary">Start a room</Text>
-          </Pressable>
-        </View>
+          </View>
+        ) : null}
         <View className="mx-4 mt-2 mb-2 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
           <Ionicons name="search-outline" size={16} color="#64748b" />
           <TextInput
             value={query}
             onChangeText={setQuery}
-            onSubmitEditing={() => void load(section, query)}
+            // Rooms filter locally as you type; a submit there has nothing to fetch.
+            onSubmitEditing={() => {
+              if (section !== 'rooms') void load(section, query);
+            }}
             returnKeyType="search"
             placeholder={
               section === 'groups'
                 ? 'Search groups'
                 : section === 'people'
                   ? 'Search people'
-                  : section === 'marketplace'
-                    ? 'Search the marketplace'
-                    : 'Search communities'
+                  : section === 'rooms'
+                    ? 'Search open rooms'
+                    : section === 'marketplace'
+                      ? 'Search the marketplace'
+                      : 'Search communities'
             }
             placeholderTextColor="#94a3b8"
             className="flex-1 py-2 px-2 text-sm text-lantern-text"
@@ -589,6 +692,21 @@ function DiscoverHub({
             </View>
           }
         />
+      ) : section === 'rooms' ? (
+        <FlatList
+          data={visibleRooms}
+          keyExtractor={(item) => item.id}
+          renderItem={renderRoom}
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
+          refreshControl={<RefreshControl refreshing={roomsRefreshing} onRefresh={() => void refreshRooms()} />}
+          // After a failed fetch the error banner above already says so; an
+          // "open rooms" claim under it would be a guess.
+          ListEmptyComponent={
+            error ? null : <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+          }
+        />
       ) : section === 'groups' ? (
         <FlatList
           data={groups}
@@ -629,7 +747,7 @@ export function DiscoverScreen({
   route,
 }: {
   navigation: NavigationProp;
-  route?: { params?: { section?: Section } };
+  route?: { params?: { section?: Section; at?: number } };
 }) {
   const isPlatformAdmin = usePlatformAdmin();
   if (!canAccessDiscoverHub(isPlatformAdmin)) {

@@ -995,7 +995,7 @@ function MainTabsShell() {
         // param lands it on Communities rather than the default section.
         onCommunity={() => {
           setDrawerOpen(false);
-          goTab('MarketTab', { screen: 'Discover', params: { section: 'communities' } });
+          goTab('MarketTab', { screen: 'Discover', params: { section: 'communities', at: Date.now() } });
         }}
         showCommunity={showCommunity}
         onJobs={() => {

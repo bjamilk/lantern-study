@@ -191,7 +191,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'Lounge = one admin-less group per community (visibility community), minted lazily on first open; membership in the community is the only requirement, and concurrent first-openers converge on a single lounge.',
       'The "Your communities" section is sourced from the membership list itself; discover results are a separate "More to join" section, deduped against memberships.',
       'If a signed-up student with an academic profile has no memberships (signup paths that skip the profile save), the server re-derives them on the next communities fetch.',
-      'Rooms: 6h auto-close (expired rooms read closed immediately, joins are refused) and hard delete after 3 days, swept opportunistically on room traffic.',
+      'Rooms: 24h auto-close (raised from 6h on 2026-09-02; expired rooms read closed immediately, joins are refused), listed on the mobile hub\'s Room tab while open, hard delete after 3 days, swept opportunistically on room traffic.',
     ],
     howToUse: [
       'Discover → Community → your community card → "Community chat" drops you into the lounge.',

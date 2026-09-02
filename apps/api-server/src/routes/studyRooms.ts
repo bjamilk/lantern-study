@@ -27,6 +27,21 @@ function handle(err: unknown, res: Response): void {
   throw err;
 }
 
+router.get(
+  '/',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getStudyRoomsService(supabaseService).list(userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  }),
+);
+
 router.post(
   '/join-or-create',
   authMiddleware,

@@ -93,13 +93,15 @@ export function memberCountLabel(count: number): string {
  * One-line explainer under each Discover tab. Kept here so web and mobile
  * cannot describe the same hub two different ways.
  */
-export const DISCOVER_SECTION_INTRO: Record<'communities' | 'groups' | 'people', string> = {
+export const DISCOVER_SECTION_INTRO: Record<'communities' | 'groups' | 'people' | 'rooms', string> = {
   communities:
     'Campus and course rooms made from your university, programme and courses. Join one to find study groups inside it.',
   groups:
     'Study chats you can find and join. They stay private until an owner lists them here.',
   people:
     'Students who published a study pack or question bank — tap a card to open their shop.',
+  rooms:
+    'Live study rooms anyone can join. Each room closes 24 hours after it opens and then disappears from here.',
 };
 
 export const DISCOVER_COMING_SOON_TITLE = 'Discover';

@@ -250,6 +250,7 @@ export const {
   fetchAmbassadors,
   fetchGamificationLeaderboard,
   joinOrCreateStudyRoom,
+  listStudyRooms,
   fetchStudyRoom,
   joinStudyRoom,
   leaveStudyRoom,

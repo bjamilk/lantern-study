@@ -2,7 +2,7 @@
  * Phase 4 V — study rooms on the dormant study_sessions tables.
  *
  * Join-or-create reuses an active room for the same course (+ optional topic)
- * started in the last 4 hours so "23 medical students studying cardiology
+ * started while it is still open (24 hours) so "23 medical students studying cardiology
  * tonight" lands in one room instead of 23. Roster is pull-based; the client
  * may open ONE Supabase presence channel for the room it is in.
  */
@@ -12,8 +12,10 @@ import { logger } from '../utils/logger';
 import {
   isStudyRoomReusable,
   isStudyRoomExpired,
+  STUDY_ROOM_LIST_LIMIT,
   STUDY_ROOM_MAX_AGE_MS,
   STUDY_ROOM_PURGE_AFTER_DAYS,
+  type StudyRoomListItem,
   studyRoomPresenceChannel,
   type JoinOrCreateStudyRoomInput,
   type StudyRoom,
@@ -181,6 +183,82 @@ export class StudyRoomsService {
     return this.get(userId, data.id);
   }
 
+  /**
+   * The Room tab: every open room, newest first, with the viewer's own rooms
+   * first of all. Rooms are cross-university by design (Phase 4 · V), so
+   * there is no campus filter; the age cutoff matches isStudyRoomExpired so a
+   * room the sweep has not flipped yet is still left out.
+   *
+   * The viewer's open memberships are fetched before the newest-N page and
+   * unioned in, so "your rooms first" holds even when more than N rooms are
+   * open and theirs is not among the newest.
+   */
+  async list(userId: string): Promise<StudyRoomListItem[]> {
+    this.sweepExpired();
+    const cutoff = new Date(Date.now() - STUDY_ROOM_MAX_AGE_MS).toISOString();
+    const columns =
+      'id, title, course_id, community_id, topic_id, topic, kind, created_by, started_at, is_active';
+
+    const { data: memberships, error: memberError } = await this.db
+      .from('study_session_participants')
+      .select('session_id')
+      .eq('user_id', userId)
+      .is('left_at', null)
+      .limit(STUDY_ROOM_LIST_LIMIT);
+    if (memberError) throw memberError;
+    const mine = new Set(
+      ((memberships || []) as Array<{ session_id: string }>).map((m) => String(m.session_id)),
+    );
+
+    const { data, error } = await this.db
+      .from('study_sessions')
+      .select(columns)
+      .eq('is_active', true)
+      .eq('kind', 'room')
+      .gt('started_at', cutoff)
+      .order('started_at', { ascending: false })
+      .limit(STUDY_ROOM_LIST_LIMIT);
+    if (error) throw error;
+    const rows = [...((data || []) as SessionRow[])];
+    const onPage = new Set(rows.map((row) => row.id));
+    const missing = [...mine].filter((id) => !onPage.has(id));
+    if (missing.length) {
+      const { data: extra, error: extraError } = await this.db
+        .from('study_sessions')
+        .select(columns)
+        .in('id', missing)
+        .eq('is_active', true)
+        .eq('kind', 'room')
+        .gt('started_at', cutoff);
+      if (extraError) throw extraError;
+      rows.push(...((extra || []) as SessionRow[]));
+    }
+    if (!rows.length) return [];
+
+    const { data: roster, error: rosterError } = await this.db
+      .from('study_session_participants')
+      .select('session_id, user_id')
+      .in(
+        'session_id',
+        rows.map((row) => row.id),
+      )
+      .is('left_at', null)
+      // 50 rooms × the roster cap loadRoster uses; explicit rather than
+      // PostgREST's silent max-rows.
+      .limit(STUDY_ROOM_LIST_LIMIT * 80);
+    if (rosterError) throw rosterError;
+    const counts = new Map<string, number>();
+    for (const entry of (roster || []) as Array<{ session_id: string; user_id: string }>) {
+      counts.set(entry.session_id, (counts.get(entry.session_id) ?? 0) + 1);
+      if (entry.user_id === userId) mine.add(entry.session_id);
+    }
+    return rows
+      .map((row) => ({ ...mapRoom(row, counts.get(row.id) ?? 0), joined: mine.has(row.id) }))
+      .filter((room) => room.isActive)
+      // Your rooms first, then newest.
+      .sort((a, b) => Number(b.joined) - Number(a.joined) || b.startedAt.localeCompare(a.startedAt));
+  }
+
   async get(userId: string, roomId: string): Promise<StudyRoomDetail> {
     this.sweepExpired();
     if (!UUID_RE.test(String(roomId))) notFound();
@@ -242,7 +320,7 @@ export class StudyRoomsService {
       .eq('is_active', true)
       .eq('kind', 'room')
       .order('started_at', { ascending: false })
-      .limit(20);
+      .limit(STUDY_ROOM_LIST_LIMIT);
     if (courseId) query = query.eq('course_id', courseId);
     else if (communityId) query = query.eq('community_id', communityId);
 
