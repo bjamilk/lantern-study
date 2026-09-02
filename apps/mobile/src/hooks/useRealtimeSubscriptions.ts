@@ -17,6 +17,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useGroupStore, Message, type DirectMessage } from '../stores/groupStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useNotificationStore } from '../stores/notificationStore';
+import { useMarketplaceStore } from '../stores/marketplaceStore';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 // ============================================
@@ -513,6 +514,13 @@ export function useRealtimeSubscriptions(
     // on another device is never subtracted, so the badge drifts and stays wrong.
     if (user?.id) {
       void loadUnreadCount(user.id);
+    }
+    // A marketplace notification — new offer, inquiry, order, payment — is by
+    // definition a change to what the Shop badges count. This is the only push
+    // signal mobile has; without it the badges move only on screen focus or
+    // the 45s freshness window, so a seller learns of an offer late.
+    if (String(notification.type ?? '').startsWith('marketplace_')) {
+      void useMarketplaceStore.getState().fetchShopSummary({ force: true });
     }
     onNotification?.(notification);
   }, [onNotification, user?.id]);

@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { SellerPayoutSetup } from './SellerPayoutSetup';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 
 type NavigationProp = {
   goBack: () => void;
@@ -196,6 +197,10 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
         <Text className="flex-1 text-xl font-bold text-lantern-text">
           {firstName ? `Hello, ${firstName}` : 'You'}
         </Text>
+        <ShopHeaderActions
+          navigate={(screen, params) => navigation.navigate(screen, params)}
+          hide={['you']}
+        />
         <Pressable
           onPress={go('CreateListing')}
           accessibilityRole="button"

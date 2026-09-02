@@ -21,6 +21,7 @@ import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { buildOrderReceiptText } from './orderReceipt';
 import { OpenDisputeModal } from './OpenDisputeModal';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 
 const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
 
@@ -248,6 +249,7 @@ export function OrderDetailScreen({
         <Text className="text-lg font-bold flex-1 ml-2" numberOfLines={1}>
           {order.listing?.title || 'Order'}
         </Text>
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
       </View>
       <ScrollView className="px-4 pb-8" contentContainerStyle={{ gap: 16 }}>
         <View className="p-4 rounded-xl bg-lantern-surface">
