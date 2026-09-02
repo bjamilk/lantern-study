@@ -1,11 +1,12 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
+  RefreshControl,
   Text,
   TextInput,
   View,
@@ -34,13 +35,26 @@ const isPayable = (order: OfferOrder): boolean =>
   order.status === 'awaiting_payment' ||
   (order.status === 'pending_payment' && Boolean(order.paymentId));
 
-export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
+export function OffersScreen({
+  navigation,
+  route,
+}: {
+  navigation: NavigationProp;
+  route?: { params?: { tab?: Tab } };
+}) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const { buyerOffers, sellerOffers, isLoading, fetchOffers, respondToOffer } = useMarketplaceStore();
-  const [tab, setTab] = useState<Tab>('seller');
+  // The You hub sends buyers to their own offers (`tab: 'buyer'`) and the
+  // seller strip to received ones; seller stays the default for bare entries.
+  const [tab, setTab] = useState<Tab>(route?.params?.tab ?? 'seller');
+  // The Market stack keeps screens mounted, so navigating here with a param
+  // while already open changes the params, not the state the tabs read.
+  useEffect(() => {
+    if (route?.params?.tab) setTab(route.params.tab);
+  }, [route?.params?.tab]);
   const [counterOfferId, setCounterOfferId] = useState<string | null>(null);
   const [counterAmount, setCounterAmount] = useState('');
   const [busyOfferId, setBusyOfferId] = useState<string | null>(null);
@@ -302,6 +316,13 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
           keyExtractor={item => item.id}
           renderItem={renderOffer}
           contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoading && offers.length > 0}
+              onRefresh={() => void load()}
+              tintColor="#6366f1"
+            />
+          }
           ListEmptyComponent={
             <Text className="text-center text-lantern-text-secondary mt-12 px-6">
               No {tab === 'seller' ? 'received' : 'sent'} offers yet.

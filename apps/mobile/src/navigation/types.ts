@@ -94,8 +94,10 @@ export type MarketStackParamList = {
   /** The Amazon-style "You" hub: orders, saved, cart, and everything a seller runs. */
   ShopAccount: undefined;
   ListingDetail: { listingId: string; quantity?: number };
-  MyListings: undefined;
-  Inquiries: undefined;
+  /** The seller's home; openInsights lands straight in the insights sheet. */
+  MyListings: { openInsights?: boolean } | undefined;
+  /** Which side of the conversation to show; defaults to seller (buyer questions). */
+  Inquiries: { tab?: 'seller' | 'buyer' } | undefined;
   CreateListing: undefined;
   EditListing: { listingId: string };
   MakeOffer: {
@@ -104,10 +106,15 @@ export type MarketStackParamList = {
     listingPrice?: number;
   };
   SellerProfile: { sellerId: string; sellerName?: string };
-  Offers: undefined;
+  /** Received (seller) or made (buyer); defaults to seller. */
+  Offers: { tab?: 'seller' | 'buyer' } | undefined;
   Favorites: undefined;
-  /** Which side of the order the viewer is on; defaults to buyer. */
-  Orders: { role?: 'buyer' | 'seller' } | undefined;
+  /**
+   * Which side of the order the viewer is on; defaults to buyer. `buy_again`
+   * is the Amazon shelf: completed buyer orders only, each row leading with
+   * "Buy again". All optional so every bare `navigate('Orders')` still compiles.
+   */
+  Orders: { role?: 'buyer' | 'seller'; view?: 'buy_again' } | undefined;
   Cart: undefined;
   Purchases: undefined;
   StudyProductDrafts:
