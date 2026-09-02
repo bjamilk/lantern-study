@@ -172,7 +172,11 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
                       {p.title}
                     </Text>
                     <Text className="text-sm font-semibold text-lantern-text">
-                      {formatPrice(Math.round(p.sellerPayoutKobo / 100))}
+                      {p.status === 'refunded' || p.status === 'failed'
+                        ? // Nothing reached the seller; showing the would-be
+                          // payout under an "Earnings" heading overstated it.
+                          formatPrice(0)
+                        : formatPrice(Math.round(p.sellerPayoutKobo / 100))}
                     </Text>
                   </View>
                   <View className="flex-row items-center gap-2 mt-1">
@@ -184,11 +188,15 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
                       </Text>
                     </View>
                     <Text className="flex-1 text-[11px] text-lantern-text-tertiary" numberOfLines={1}>
-                      {paidOutOn
-                        ? `Paid out ${paidOutOn}`
-                        : paidOn
-                          ? `Paid ${paidOn}`
-                          : 'Not paid yet'}
+                      {p.status === 'refunded'
+                        ? 'Refunded — nothing paid'
+                        : p.status === 'failed'
+                          ? 'Failed — nothing paid'
+                          : paidOutOn
+                            ? `Paid out ${paidOutOn}`
+                            : paidOn
+                              ? `Paid ${paidOn}`
+                              : 'Not paid yet'}
                       {p.platformFeeKobo > 0
                         ? ` · fee −${formatPrice(Math.round(p.platformFeeKobo / 100))}`
                         : ''}

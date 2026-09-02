@@ -2232,6 +2232,15 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         },
         shopSummaryLoadedAt: null,
       }));
+      // The bump above was a guess: the server may have merged into an existing
+      // line or capped the quantity. Read the real count back; a failure here
+      // just leaves the guess until the next summary.
+      try {
+        const rows = await api.fetchMarketplaceCart();
+        get().setCartCount(rows.reduce((n, r) => n + Math.max(1, Number(r.quantity) || 1), 0));
+      } catch {
+        /* keep the optimistic count */
+      }
     } catch (error: any) {
       console.error('Failed to add to cart:', error);
       set({ error: error.message });

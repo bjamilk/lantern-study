@@ -71,6 +71,9 @@ export function OffersScreen({
   useFocusEffect(
     useCallback(() => {
       void load();
+      // The header badge on THIS screen must reflect the action just taken;
+      // the summary is TTL-cached, and an invalidate makes this a real refetch.
+      void useMarketplaceStore.getState().fetchShopSummary();
     }, [load])
   );
 

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { fetchMarketplaceOrders, resumeMarketplaceOrderCheckout } from '../../services/api';
@@ -85,6 +86,9 @@ export function OrdersScreen({
   useFocusEffect(
     useCallback(() => {
       void load();
+      // The header badge on THIS screen must reflect the action just taken;
+      // the summary is TTL-cached, and an invalidate makes this a real refetch.
+      void useMarketplaceStore.getState().fetchShopSummary();
     }, [load])
   );
 

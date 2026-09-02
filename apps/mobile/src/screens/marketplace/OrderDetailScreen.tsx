@@ -1,5 +1,6 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,6 +78,14 @@ export function OrderDetailScreen({
       setLoading(false);
     }
   }, [route.params.orderId]);
+
+  // Header badge on this screen must move after Confirm / Hand over; the
+  // summary is TTL-cached and every action invalidates it, so this refetches.
+  useFocusEffect(
+    useCallback(() => {
+      void useMarketplaceStore.getState().fetchShopSummary();
+    }, [])
+  );
 
   useEffect(() => {
     void load();

@@ -189,7 +189,11 @@ export default function NotificationsScreen() {
         return;
       }
       if (parsed.type === "inquiry") {
-        navigateToMarket("Inquiries");
+        // Same rule as offers: a question on YOUR listing is the seller tab; a
+        // reply to a question you asked is the buyer tab.
+        const buyerId = (item.data?.buyerId ?? item.data?.buyer_id) as string | undefined;
+        const meId = useAuthStore.getState().user?.id;
+        navigateToMarket("Inquiries", { tab: buyerId && meId && buyerId === meId ? "buyer" : "seller" });
         return;
       }
       // Order updates parsed as `generic` and no branch handled them, so a

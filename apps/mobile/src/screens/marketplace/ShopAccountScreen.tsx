@@ -15,7 +15,7 @@ import { buildQuickActions, ShopQuickActions, type QuickAction } from './compone
 
 type NavigationProp = {
   goBack: () => void;
-  navigate: (screen: string, params?: Record<string, unknown>) => void;
+  navigate: (screen: string, params?: Record<string, unknown>, options?: { pop?: boolean }) => void;
 };
 
 type Side = 'buying' | 'selling';
@@ -101,8 +101,11 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
     }, [fetchShopSummary, fetchServerFavorites, user?.id]),
   );
 
+  // React Navigation 7 pushes a fresh copy of a screen that is already in the
+  // stack unless told to pop back to it; without `pop` every hub tap stacked a
+  // duplicate and the param-sync effects never saw the new params.
   const go = (screen: string, params?: Record<string, unknown>) => () =>
-    navigation.navigate(screen, params);
+    navigation.navigate(screen, params, { pop: true });
 
   // Payouts matter only once there is something to be paid for: a buyer who
   // never listed must not see a red "Not set up".
@@ -215,7 +218,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
         payoutActive === true
           ? 'Active — bank on file'
           : payoutMissing
-            ? 'Not set up — buyers cannot check out'
+            ? 'Not set up — Buy Now and Cart checkout are off'
             : 'Where your earnings go',
       icon: 'card-outline',
       badge: payoutMissing ? 1 : 0,
@@ -325,7 +328,10 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
   // never a guess: a buyer sees "Selling · 3" and knows something is waiting.
   const sideAttention: Record<Side, number> = {
     buying: badges.buyerActionOrders + badges.offersAwaitingYou + badges.unreadBuyerInquiries,
-    selling: badges.sellerAttention + (payoutMissing ? 1 : 0),
+    // Deliberately the same number the header, band and Your Listings show.
+    // Adding the missing payout profile here made the hub disagree with all
+    // three; the Payouts row carries its own badge and red text instead.
+    selling: badges.sellerAttention,
   };
 
   return (
@@ -344,7 +350,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           {firstName ? `Hello, ${firstName}` : 'You'}
         </Text>
         <ShopHeaderActions
-          navigate={(screen, params) => navigation.navigate(screen, params)}
+          navigate={(screen, params) => navigation.navigate(screen, params, { pop: true })}
           hide={['you']}
         />
         <Pressable
@@ -397,7 +403,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
               badges={badges}
               layout="grid"
               actions={buyingCards}
-              onNavigate={(screen, params) => navigation.navigate(screen, params)}
+              onNavigate={(screen, params) => navigation.navigate(screen, params, { pop: true })}
             />
             {sectionTitle('Buying')}
             <View className="bg-lantern-surface border-t border-lantern-border">{buying.map(renderRow)}</View>
@@ -408,7 +414,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
               badges={badges}
               layout="grid"
               actions={sellingCards}
-              onNavigate={(screen, params) => navigation.navigate(screen, params)}
+              onNavigate={(screen, params) => navigation.navigate(screen, params, { pop: true })}
             />
             {sectionTitle('Your Seller Account')}
             <View className="bg-lantern-surface border-t border-lantern-border">{selling.map(renderRow)}</View>

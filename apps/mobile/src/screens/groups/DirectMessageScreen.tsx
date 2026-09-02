@@ -780,8 +780,12 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   }, [inquiry, navigation]);
 
   const openOffers = useCallback(() => {
-    navigation.getParent?.()?.navigate('MarketTab', { screen: 'Offers' });
-  }, [navigation]);
+    // Offers defaults to the seller's Received tab; a buyer opening it from
+    // their own inquiry would land on an empty list while the seller's counter
+    // sat under Sent. The inquiry says which side this viewer is.
+    const tab = inquiry?.buyer_id === user?.id ? 'buyer' : 'seller';
+    navigation.getParent?.()?.navigate('MarketTab', { screen: 'Offers', params: { tab } });
+  }, [navigation, inquiry?.buyer_id, user?.id]);
 
   const handleSend = async (overrideText?: string) => {
     const trimmed = (overrideText ?? text).trim();

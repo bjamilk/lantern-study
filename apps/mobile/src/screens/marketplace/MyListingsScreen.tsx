@@ -47,7 +47,7 @@ type StatusTab = 'active' | 'sold' | 'inactive';
 
 type NavigationProp = {
   goBack: () => void;
-  navigate: (screen: string, params?: Record<string, unknown>) => void;
+  navigate: (screen: string, params?: Record<string, unknown>, options?: { pop?: boolean }) => void;
 };
 
 // Per user: a second seller on the same phone still gets the walkthrough.
@@ -263,7 +263,7 @@ export function MyListingsScreen({
         inquiries={badges.unreadSellerInquiries}
         openInquiries={badges.openInquiries}
         awaitingBuyerPayment={badges.sellerAwaitingBuyerPayment}
-        onNavigate={(screen, params) => navigation.navigate(screen, params)}
+        onNavigate={(screen, params) => navigation.navigate(screen, params, { pop: true })}
       />
 
       <Text className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-1.5">
@@ -354,7 +354,7 @@ export function MyListingsScreen({
         </View>
 
         <SellerToolsRow
-          onNavigate={(screen, params) => navigation.navigate(screen, params)}
+          onNavigate={(screen, params) => navigation.navigate(screen, params, { pop: true })}
           onOpenTool={tool => {
             if (tool === 'coupons') setShowCoupons(true);
             else if (tool === 'bundles') setShowBundle(true);
