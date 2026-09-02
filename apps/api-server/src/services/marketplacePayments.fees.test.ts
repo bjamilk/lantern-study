@@ -98,14 +98,16 @@ describe('createCheckoutForExistingOrder fee model', () => {
     expect(payment.seller_payout_kobo).toBe(425_000);
   });
 
-  it('physical order keeps the 5% buyer fee and the full seller payout', async () => {
+  it('physical order charges the buyer the list price and pays the seller 95% of it', async () => {
     const { self, inserts } = makeSelf('single', 5000);
     await run(self);
     const payment = inserts.find((i) => i.table === 'marketplace_payments')!.payload;
-    expect(payment.service_fee_kobo).toBe(25_000);
-    expect(payment.total_charged_kobo).toBe(525_000);
-    expect(payment.platform_fee_kobo).toBe(0);
-    expect(payment.seller_payout_kobo).toBe(500_000);
+    // Until 2026-09-02 this was +25_000 on the buyer and the full 500_000 to the
+    // seller. The 5% moved into the price: nothing on top, Lantern keeps 25_000.
+    expect(payment.service_fee_kobo).toBe(0);
+    expect(payment.total_charged_kobo).toBe(500_000);
+    expect(payment.platform_fee_kobo).toBe(25_000);
+    expect(payment.seller_payout_kobo).toBe(475_000);
   });
 
   it('always satisfies the DB split invariant', async () => {

@@ -82,8 +82,8 @@ export function SellerPayoutSetup({ showToast }: Props) {
         </p>
         <ul className="text-sm text-slate-600 mt-2 space-y-1 list-disc pl-5">
           <li>
-            <span className="font-medium text-slate-900">Items you hand over</span> — buyers pay a 5%
-            service charge on top; you receive the full listing amount once they confirm delivery.
+            <span className="font-medium text-slate-900">Items you hand over</span> — buyers pay your
+            list price and Lantern keeps a 5% fee, so you receive 95% once they confirm delivery.
           </li>
           <li>
             <span className="font-medium text-slate-900">Study packs &amp; question banks</span> — buyers

@@ -4,19 +4,34 @@ import {
   koboToNaira,
   nairaToKobo,
   resolveMarketplaceServiceFeeBps,
+  resolveMarketplacePhysicalCommissionBps,
   resolveMarketplaceFees,
 } from './fees';
 
 describe('resolveMarketplaceFees', () => {
-  it('physical: buyer pays list + 5%, seller gets the full item, no platform fee', () => {
+  it('physical: buyer pays the list price, Lantern keeps 5% of it, seller gets 95%', () => {
     const f = resolveMarketplaceFees({ listingKind: 'single', itemAmountKobo: 200_000, env: {} });
     expect(f).toMatchObject({
       isDigital: false,
-      buyerFeeBps: 500,
-      creatorFeeBps: 0,
+      buyerFeeBps: 0,
+      creatorFeeBps: 500,
+      buyerFeeKobo: 0,
+      platformFeeKobo: 10_000,
+      sellerPayoutKobo: 190_000,
+      totalChargedKobo: 200_000,
+    });
+  });
+
+  it('physical: the old buyer surcharge can be re-enabled by env, and the commission knob is separate', () => {
+    const f = resolveMarketplaceFees({
+      listingKind: 'single',
+      itemAmountKobo: 200_000,
+      env: { MARKETPLACE_SERVICE_FEE_BPS: '500', MARKETPLACE_PHYSICAL_COMMISSION_BPS: '250' },
+    });
+    expect(f).toMatchObject({
       buyerFeeKobo: 10_000,
-      platformFeeKobo: 0,
-      sellerPayoutKobo: 200_000,
+      platformFeeKobo: 5_000,
+      sellerPayoutKobo: 195_000,
       totalChargedKobo: 210_000,
     });
   });
@@ -66,8 +81,8 @@ describe('marketplace fees', () => {
     expect(koboToNaira(1050)).toBe(10.5);
   });
 
-  it('adds 5% buyer service charge in kobo', () => {
-    const fees = computeMarketplaceCheckoutFees(100_000);
+  it('computes a 5% buyer surcharge in kobo when asked for one', () => {
+    const fees = computeMarketplaceCheckoutFees(100_000, 500);
     expect(fees.serviceFeeKobo).toBe(5_000);
     expect(fees.totalChargeKobo).toBe(105_000);
     expect(fees.serviceFeeBps).toBe(500);
@@ -75,7 +90,7 @@ describe('marketplace fees', () => {
 
   it('rounds fee to nearest kobo', () => {
     // 333 kobo * 5% = 16.65 → 17
-    expect(computeMarketplaceCheckoutFees(333).serviceFeeKobo).toBe(17);
+    expect(computeMarketplaceCheckoutFees(333, 500).serviceFeeKobo).toBe(17);
   });
 
   it('rejects invalid amounts', () => {
@@ -87,6 +102,10 @@ describe('marketplace fees', () => {
     expect(isMarketplacePaystackCheckoutEnabled('true')).toBe(true);
     expect(isMarketplacePaystackCheckoutEnabled('0')).toBe(false);
     expect(resolveMarketplaceServiceFeeBps('500')).toBe(500);
-    expect(resolveMarketplaceServiceFeeBps('nope')).toBe(500);
+    // An unparseable value falls back to the DEFAULT, which is 0 since the 5%
+    // moved from the buyer's total into the seller's payout (2026-09-02).
+    expect(resolveMarketplaceServiceFeeBps('nope')).toBe(0);
+    expect(resolveMarketplacePhysicalCommissionBps('nope')).toBe(500);
+    expect(resolveMarketplacePhysicalCommissionBps('250')).toBe(250);
   });
 });

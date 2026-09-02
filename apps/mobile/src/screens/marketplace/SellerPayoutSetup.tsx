@@ -98,8 +98,8 @@ export function SellerPayoutSetup() {
           Buyers pay via Paystack and your earnings are transferred here.
         </Text>
         <Text className="text-xs text-lantern-text-secondary mt-1.5">
-          <Text className="font-semibold text-lantern-text">Items you hand over:</Text> buyers pay a
-          5% service charge on top; you receive the full listing amount once they confirm delivery.
+          <Text className="font-semibold text-lantern-text">Items you hand over:</Text> buyers pay your
+          list price and Lantern keeps 5%, so you receive 95% once they confirm delivery.
         </Text>
         <Text className="text-xs text-lantern-text-secondary mt-1">
           <Text className="font-semibold text-lantern-text">Study packs & question banks:</Text>{' '}

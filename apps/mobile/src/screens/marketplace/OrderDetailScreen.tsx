@@ -348,7 +348,7 @@ export function OrderDetailScreen({
               Pay with Paystack
             </Text>
             <Text className="text-sm text-indigo-800 dark:text-indigo-300">
-              Item total plus a 5% Lantern service charge. Funds go to the seller after you confirm
+              You pay the listed price — no extra charge. Funds go to the seller after you confirm
               delivery.
             </Text>
             <Button loading={acting} onPress={() => void continuePaystack()}>

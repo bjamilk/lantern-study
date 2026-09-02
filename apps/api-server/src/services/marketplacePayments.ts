@@ -132,8 +132,8 @@ export class MarketplacePaymentsService {
     const order = await this.createAwaitingPaymentBuyNowOrder(input);
 
     const itemAmountKobo = nairaToKobo(Number(order.amount));
-    // Fee split by listing kind: digital takes a creator commission out of the
-    // payout (buyer pays list); physical charges the buyer a service fee.
+    // Fee split by listing kind: the buyer pays the list price either way; the
+    // platform's cut comes out of the payout — 15% digital, 5% hand-over.
     const resolved = resolveMarketplaceFees({
       listingKind: listing.listing_kind,
       itemAmountKobo,
@@ -446,7 +446,28 @@ export class MarketplacePaymentsService {
         .select('*')
         .eq('id', order.payment_id)
         .maybeSingle();
-      if (existing?.status === 'initialized' && existing.paystack_access_code) {
+      // A session initialized before the fee model changed carries the old split
+      // (buyer surcharge, full seller payout). Reusing it would charge the old
+      // total and pay out the old amount, so only a row whose split matches
+      // what we would write today is resumed; anything else is re-initialized.
+      const splitMatchesCurrentModel = await (async () => {
+        if (!existing) return false;
+        const { data: kind } = await this.db
+          .from('marketplace_listings')
+          .select('listing_kind')
+          .eq('id', order.listing_id)
+          .maybeSingle();
+        const current = resolveMarketplaceFees({
+          listingKind: (kind as { listing_kind?: string } | null)?.listing_kind,
+          itemAmountKobo: Number(existing.item_amount_kobo),
+          env: process.env,
+        });
+        return (
+          Number(existing.total_charged_kobo) === current.totalChargedKobo &&
+          Number(existing.seller_payout_kobo ?? existing.item_amount_kobo) === current.sellerPayoutKobo
+        );
+      })();
+      if (existing?.status === 'initialized' && existing.paystack_access_code && splitMatchesCurrentModel) {
         const meta = (existing.metadata || {}) as Record<string, unknown>;
         const authorizationUrl =
           (typeof meta.authorizationUrl === 'string' && meta.authorizationUrl) ||
@@ -768,7 +789,8 @@ export class MarketplacePaymentsService {
   }
 
   /**
-   * After buyer confirms receipt: transfer item amount to seller; keep service fee.
+   * After buyer confirms receipt: transfer seller_payout_kobo (item minus the
+   * platform commission) to the seller; Lantern keeps platform_fee_kobo.
    */
   async payoutOnConfirmReceived(orderId: string, buyerId: string) {
     const order = await this.orders.getOrderById(orderId, buyerId);

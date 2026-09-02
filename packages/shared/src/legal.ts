@@ -297,7 +297,7 @@ Marketplace listings are user-generated and intended for **Nigerian campus commu
 
 You must be at least **16 years old** to buy or sell on the marketplace. You are responsible for meeting safely on campus, verifying items, and complying with your institution's rules.
 
-We do not guarantee the quality, safety, or legality of items or services offered. Marketplace checkout is processed by Paystack on Lantern’s behalf: buyers pay the item total plus a **5% service charge**. After the buyer confirms receipt, Lantern transfers the item amount to the seller’s registered Nigerian bank account and retains the service charge. Refunds before seller payout follow our dispute process; after payout, remedies may be limited.
+We do not guarantee the quality, safety, or legality of items or services offered. Marketplace checkout is processed by Paystack on Lantern’s behalf: buyers pay the **listed price**, with no charge added. After the buyer confirms receipt, Lantern transfers 95% of the item amount to the seller’s registered Nigerian bank account and retains a **5% marketplace fee**. Refunds before seller payout follow our dispute process; after payout, remedies may be limited.
 
 If you publish or sell study material (question banks, notes, past questions, projects, textbooks), the [Seller & Creator Terms](/legal/seller-terms) also apply: you confirm at publish time that you hold the rights to the material, takedowns on complaint, counter-notice and appeal, a repeat-infringer policy (three active strikes lead to suspension), and payouts subject to disputes.
 

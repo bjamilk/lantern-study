@@ -70,12 +70,16 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   const cartTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
+  // The buyer pays the list price; Lantern's 5% comes out of the seller's
+  // payout, so there is no surcharge line here. The default surcharge is 0 and
+  // the server is the source of truth for what Paystack charges.
   const fees = computeMarketplaceCheckoutFees(
     nairaToKobo(cartTotal),
     MARKETPLACE_DEFAULT_SERVICE_FEE_BPS
   );
   const serviceFeeNaira = koboToNaira(fees.serviceFeeKobo);
   const payTotalNaira = koboToNaira(fees.totalChargeKobo);
+  const showServiceFee = fees.serviceFeeKobo > 0;
 
   const handleCheckout = async () => {
     setCheckingOut(true);
@@ -249,10 +253,14 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
             <Text className="text-lantern-text-secondary">Items</Text>
             <Text className="text-lantern-text">{formatPrice(cartTotal)}</Text>
           </View>
-          <View className="flex-row justify-between mb-1">
-            <Text className="text-lantern-text-secondary">Service charge (5%)</Text>
-            <Text className="text-lantern-text">{formatPrice(serviceFeeNaira)}</Text>
-          </View>
+          {showServiceFee ? (
+            <View className="flex-row justify-between mb-1">
+              <Text className="text-lantern-text-secondary">
+                Service charge ({MARKETPLACE_DEFAULT_SERVICE_FEE_BPS / 100}%)
+              </Text>
+              <Text className="text-lantern-text">{formatPrice(serviceFeeNaira)}</Text>
+            </View>
+          ) : null}
           <View className="flex-row justify-between mb-2">
             <Text className="font-medium text-lantern-text">You pay</Text>
             <Text className="font-bold text-lantern-primary">{formatPrice(payTotalNaira)}</Text>

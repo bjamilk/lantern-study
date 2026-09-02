@@ -2070,7 +2070,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button type="button" onClick={() => setActiveTab(activeTab === 'offers' ? 'chat' : 'offers')} className="ml-auto text-[11px] font-medium text-lantern-primary hover:underline">
                   {activeTab === 'offers' ? 'View chat' : 'View details'}
                 </button>
-                <span className="basis-full text-[10px] text-lantern-text-tertiary">Paystack-protected · 5% service charge on purchase</span>
+                <span className="basis-full text-[10px] text-lantern-text-tertiary">Paystack-protected · you pay the listed price</span>
               </div>
             );
           })()}

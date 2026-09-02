@@ -9,7 +9,7 @@ export const MARKETPLACE_DEFAULT_CURRENCY = 'NGN';
 // promises money-handling that does not happen. Clients should default to the
 // DIRECT strings until the config confirms otherwise.
 export const MARKETPLACE_COMPLIANCE_BANNER =
-  'Lantern Study Marketplace is available across Nigeria. Campus or city details help with local discovery and logistics. Checkout is processed in-app via Paystack: items you collect add a 5% service charge and funds are released to the seller after you confirm receipt, while study packs and question banks are the listed price and are delivered instantly.';
+  'Lantern Study Marketplace is available across Nigeria. Campus or city details help with local discovery and logistics. Buyers pay the listed price; Lantern keeps a 5% marketplace fee from the seller’s payout once delivery is confirmed.';
 
 export const MARKETPLACE_COMPLIANCE_BANNER_DIRECT =
   'Lantern Study Marketplace is available across Nigeria. Campus or city details help with local discovery and logistics. In-app checkout is not yet available: payment, pickup and delivery are arranged directly between buyer and seller. Meet safely and only pay when you can verify the item.';
@@ -21,7 +21,7 @@ export const MARKETPLACE_CREATE_CONFIRMATION_DIRECT =
   'I confirm this listing is in Nigeria, its campus or city details are accurate, and the pickup or delivery terms are clear. Buyers pay me directly; Lantern does not process payment for this order.';
 
 export const MARKETPLACE_SERVICE_FEE_DISCLOSURE =
-  'A 5% Lantern service charge is added at checkout. The seller receives the listing amount after you confirm delivery; Lantern retains the service charge.';
+  'You pay the listed price — no service charge is added. After you confirm delivery the seller receives the amount minus Lantern’s 5% marketplace fee.';
 
 /**
  * Digital products (study packs, question banks) price differently: the buyer

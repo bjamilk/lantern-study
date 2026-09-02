@@ -310,14 +310,15 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     const itemTotal = Math.round(unitPay * qty * 100) / 100;
     // Digital products charge the buyer the LIST price — the platform's cut is
     // taken from the creator's payout — so only physical listings add the 5%.
+    // Every kind charges the list price; Lantern's cut comes out of the seller's
+    // payout (5% hand-over, 15% digital). The buyer never sees a surcharge.
     const digital = isDigitalListingKind(listing.listing_kind);
-    const serviceFee = digital ? 0 : Math.round(itemTotal * 0.05 * 100) / 100;
-    const payAmount = Math.round((itemTotal + serviceFee) * 100) / 100;
+    const payAmount = Math.round(itemTotal * 100) / 100;
     Alert.alert(
       'Buy Now',
       digital
         ? `Purchase "${listing.title}"?\n\nTotal: ${formatPrice(payAmount)}`
-        : `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nItem: ${formatPrice(itemTotal)}\nService charge (5%): ${formatPrice(serviceFee)}\nTotal: ${formatPrice(payAmount)}`,
+        : `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nTotal: ${formatPrice(payAmount)}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

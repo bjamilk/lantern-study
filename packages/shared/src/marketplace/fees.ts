@@ -1,5 +1,16 @@
-/** Default marketplace service fee: 5% (500 basis points). */
-export const MARKETPLACE_DEFAULT_SERVICE_FEE_BPS = 500;
+/**
+ * Buyer-side surcharge on hand-over items. Default 0: the buyer pays the LIST
+ * price. It was 500 (5% on top) until 2026-09-02, when the fee moved into the
+ * price — Lantern's 5% now comes out of the seller's payout instead (see
+ * MARKETPLACE_DEFAULT_PHYSICAL_COMMISSION_BPS). Env MARKETPLACE_SERVICE_FEE_BPS
+ * can re-enable a surcharge; nothing in the app assumes it is non-zero.
+ */
+export const MARKETPLACE_DEFAULT_SERVICE_FEE_BPS = 0;
+/**
+ * Platform commission taken from the SELLER's payout on hand-over items.
+ * Default 500 = 5%. This is the fee that used to be charged to the buyer on top.
+ */
+export const MARKETPLACE_DEFAULT_PHYSICAL_COMMISSION_BPS = 500;
 
 export type MarketplaceFeeBreakdown = {
   itemAmountKobo: number;
@@ -24,8 +35,9 @@ export function koboToNaira(kobo: number): number {
 }
 
 /**
- * Buyer-facing 5% service charge on top of item total.
- * All math in integer kobo — never use float Naira for settlement.
+ * Optional buyer-side surcharge on top of the item total — display math for
+ * clients. The default rate is 0 since the hand-over fee moved into the price;
+ * pass a rate explicitly to quote one. All math in integer kobo.
  */
 export function computeMarketplaceCheckoutFees(
   itemAmountKobo: number,
@@ -68,10 +80,10 @@ export function resolveMarketplaceServiceFeeBps(
 }
 
 // ── Fee model (Phase 2 · I) — configuration, not a fork ──────────────────────
-// Digital listings (question banks, study packs): students pay the LIST price
-// (no buyer surcharge by default) and the platform takes a 15% commission out
-// of the creator's payout. Physical listings keep today's maths exactly (buyer
-// pays list + 5% service fee; seller receives the full item amount).
+// Every listing: the buyer pays the LIST price and the platform's cut comes out
+// of the seller's payout — 15% on digital (question banks, study packs), 5% on
+// hand-over items. Until 2026-09-02 physical items instead charged the buyer 5%
+// on top and paid the seller the full amount; that surcharge is now 0 by default.
 
 /** Buyer surcharge on DIGITAL listings. Default 0 — students pay list price. */
 export const MARKETPLACE_DEFAULT_DIGITAL_BUYER_FEE_BPS = 0;
@@ -93,6 +105,13 @@ export function resolveMarketplaceDigitalBuyerFeeBps(
   return resolveBpsEnv(raw, MARKETPLACE_DEFAULT_DIGITAL_BUYER_FEE_BPS);
 }
 
+export function resolveMarketplacePhysicalCommissionBps(
+  raw: string | undefined | null = typeof process !== 'undefined'
+    ? process.env?.MARKETPLACE_PHYSICAL_COMMISSION_BPS
+    : undefined
+): number {
+  return resolveBpsEnv(raw, MARKETPLACE_DEFAULT_PHYSICAL_COMMISSION_BPS);
+}
 export function resolveMarketplaceCreatorFeeBps(
   raw: string | undefined | null = typeof process !== 'undefined'
     ? process.env?.MARKETPLACE_CREATOR_FEE_BPS
@@ -107,7 +126,7 @@ export type MarketplaceResolvedFees = {
   itemAmountKobo: number;
   /** Buyer surcharge rate applied (physical = service fee; digital = digital buyer fee). */
   buyerFeeBps: number;
-  /** Platform commission rate taken from the seller's payout (digital only; 0 for physical). */
+  /** Platform commission rate taken from the seller's payout (15% digital, 5% physical by default). */
   creatorFeeBps: number;
   buyerFeeKobo: number;
   platformFeeKobo: number;
@@ -128,10 +147,10 @@ const DIGITAL_KINDS = ['question_bank', 'study_pack'];
 export type ResolveMarketplaceFeesEnv = Record<string, string | undefined>;
 
 /**
- * The one place the fee split is decided, from three env knobs. Physical and
- * digital differ only in configuration: physical charges the buyer a service
- * fee and pays the seller the full item; digital charges the buyer nothing
- * extra (by default) and pays the creator the item minus a 15% commission.
+ * The one place the fee split is decided, from four env knobs. Physical and
+ * digital differ only in configuration: both charge the buyer the list price
+ * (surcharges default to 0) and pay the seller the item minus a commission —
+ * 5% physical, 15% digital.
  */
 export function resolveMarketplaceFees(input: {
   listingKind: string | null | undefined;
@@ -150,9 +169,11 @@ export function resolveMarketplaceFees(input: {
   const buyerFeeBps = isDigital
     ? resolveMarketplaceDigitalBuyerFeeBps(env.MARKETPLACE_DIGITAL_BUYER_FEE_BPS)
     : resolveMarketplaceServiceFeeBps(env.MARKETPLACE_SERVICE_FEE_BPS);
+  // Both kinds now take the platform's cut out of the seller's payout; they
+  // differ only in the rate. The buyer pays the list price either way.
   const creatorFeeBps = isDigital
     ? resolveMarketplaceCreatorFeeBps(env.MARKETPLACE_CREATOR_FEE_BPS)
-    : 0;
+    : resolveMarketplacePhysicalCommissionBps(env.MARKETPLACE_PHYSICAL_COMMISSION_BPS);
 
   const buyerFeeKobo = Math.round((itemAmountKobo * buyerFeeBps) / 10_000);
   const platformFeeKobo = Math.min(

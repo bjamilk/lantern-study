@@ -346,7 +346,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
               Pay with Paystack
             </h2>
             <p className="text-sm text-indigo-800 dark:text-indigo-300">
-              Complete checkout to pay the item total plus a 5% Lantern service charge. Funds are
+              Complete checkout to pay the listed price — no extra charge. Funds are
               released to the seller after you confirm delivery.
             </p>
             <Button

@@ -3371,6 +3371,7 @@ router.get(
       resolveMarketplaceServiceFeeBps,
       resolveMarketplaceDigitalBuyerFeeBps,
       resolveMarketplaceCreatorFeeBps,
+      resolveMarketplacePhysicalCommissionBps,
     } = await import('@lantern/shared/marketplace');
     res.json({
       success: true,
@@ -3382,6 +3383,9 @@ router.get(
         // and the creator commission taken from the payout (default 1500 = 15%).
         digitalBuyerFeeBps: resolveMarketplaceDigitalBuyerFeeBps(process.env.MARKETPLACE_DIGITAL_BUYER_FEE_BPS),
         creatorFeeBps: resolveMarketplaceCreatorFeeBps(process.env.MARKETPLACE_CREATOR_FEE_BPS),
+        // Hand-over items: buyer pays list price (serviceFeeBps above is 0 by
+        // default now); Lantern keeps this share of the seller's payout.
+        physicalCommissionBps: resolveMarketplacePhysicalCommissionBps(process.env.MARKETPLACE_PHYSICAL_COMMISSION_BPS),
       },
     });
   })
