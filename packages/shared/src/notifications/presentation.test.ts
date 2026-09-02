@@ -206,3 +206,24 @@ describe("marketplace type families without tuple links", () => {
     expect(meta.accentColor).toBe("#d97706");
   });
 });
+
+describe("marketplace links that used to be dead taps", () => {
+  it("routes an order tuple to the order, not to generic", () => {
+    expect(parseNotificationLink("marketplace:order:ord-1")).toEqual({ type: "order", id: "ord-1" });
+  });
+
+  it("routes the API's inquiry PATH form, which parsed as null", () => {
+    expect(parseNotificationLink("/marketplace/inquiries/inq-9")).toEqual({
+      type: "inquiry",
+      id: "inq-9",
+    });
+    expect(parseNotificationLink("/marketplace/inquiries/inq-9?x=1")).toEqual({
+      type: "inquiry",
+      id: "inq-9",
+    });
+  });
+
+  it("still routes an offer tuple to offer", () => {
+    expect(parseNotificationLink("marketplace:offer:off-3")).toEqual({ type: "offer", id: "off-3" });
+  });
+});

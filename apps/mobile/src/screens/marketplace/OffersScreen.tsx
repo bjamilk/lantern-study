@@ -175,6 +175,11 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
         accessibilityLabel={`Offer ${formatPrice(item.amount)}, status ${item.status}`}
         className="mx-4 mb-3 p-4 rounded-2xl bg-lantern-surface border border-lantern-border"
       >
+        {item.listing?.title ? (
+          <Text className="text-xs text-lantern-text-secondary mb-0.5" numberOfLines={1}>
+            {item.listing.title}
+          </Text>
+        ) : null}
         <Text className="text-sm font-semibold text-lantern-text">
           {formatPrice(item.amount)}
         </Text>

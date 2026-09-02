@@ -3,6 +3,7 @@ import type { AppNotification } from "../types";
 export type NotificationLinkType =
   | "challenge"
   | "offer"
+  | "order"
   | "inquiry"
   | "listing"
   | "dm"
@@ -172,10 +173,22 @@ export function parseNotificationLink(
     if (groupId) return { type: "group", id: groupId };
   }
   if (!link) return null;
+  // The API writes inquiry notifications as a PATH, not a tuple
+  // (`/marketplace/inquiries/<id>`); without this branch they parsed as null
+  // and a tap on "new question about your listing" did nothing at all.
+  {
+    const inquiryId = link.match(/^\/marketplace\/inquiries\/([^/?#]+)/)?.[1];
+    if (inquiryId) return { type: "inquiry", id: inquiryId };
+  }
   const parts = link.split(":");
   if (parts[0] !== "marketplace" || parts.length < 3) return null;
   const subType = parts[1];
-  if (subType === "offer" || subType === "inquiry" || subType === "listing") {
+  if (
+    subType === "offer" ||
+    subType === "inquiry" ||
+    subType === "listing" ||
+    subType === "order"
+  ) {
     return { type: subType, id: parts[2] };
   }
   return { type: "generic", id: parts[2] };

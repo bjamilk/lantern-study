@@ -136,7 +136,7 @@ export default function NotificationsScreen() {
         | "ListingDetail"
         | "JobDetail"
         | "MyJobApplications"
-        | "JobApplicants",
+        | "JobApplicants" | "Offers" | "OrderDetail",
       params?: Record<string, string>,
     ) => {
       navigation.dispatch(
@@ -175,8 +175,20 @@ export default function NotificationsScreen() {
       const parsed = parseNotificationLink(item.link, item);
       if (!parsed) return;
 
-      if (parsed.type === "offer" || parsed.type === "inquiry") {
+      // An offer notification used to open Inquiries, which has no offers view;
+      // the seller landed on the wrong list and had to find Offers themselves.
+      if (parsed.type === "offer") {
+        navigateToMarket("Offers");
+        return;
+      }
+      if (parsed.type === "inquiry") {
         navigateToMarket("Inquiries");
+        return;
+      }
+      // Order updates parsed as `generic` and no branch handled them, so a
+      // "your order is ready" notification was a dead tap.
+      if (parsed.type === "order" && parsed.id) {
+        navigateToMarket("OrderDetail", { orderId: parsed.id });
         return;
       }
       if (parsed.type === "listing" && parsed.id) {

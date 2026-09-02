@@ -174,7 +174,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
   const openListingActions = (item: (typeof filtered)[number]) => {
     if (item.status === 'reserved') {
       Alert.alert(item.title, 'Sale in progress', [
-        { text: 'View orders', onPress: () => navigation.navigate('Orders') },
+        { text: 'View orders', onPress: () => navigation.navigate('Orders', { role: 'seller' }) },
         { text: 'Cancel', style: 'cancel' },
       ]);
       return;
@@ -435,7 +435,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
                     <ListingTakedownNotice listing={item} compact />
                   ) : null}
                   {item.status === 'reserved' ? (
-                    <Pressable onPress={() => navigation.navigate('Orders')} className="mt-1 self-start">
+                    <Pressable onPress={() => navigation.navigate('Orders', { role: 'seller' })} className="mt-1 self-start">
                       <Text className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                         Sale in progress · View orders
                       </Text>

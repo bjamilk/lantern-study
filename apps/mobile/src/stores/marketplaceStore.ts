@@ -11,6 +11,7 @@ import type { MarketplaceListingStatus } from '@lantern/shared/marketplace';
 import type { ListingAppealStatus, ListingRightsStatus } from '@lantern/shared/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RateLimitError } from '@lantern/shared';
+import { canRespondToOffer } from '@lantern/shared/utils';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
 import { useBudgetStore } from './budgetStore';
@@ -320,6 +321,8 @@ export interface MarketplaceInquiry {
 }
 
 export interface MarketplaceOffer {
+  /** The listing the offer is on; the API selects it so cards can name it. */
+  listing?: { id: string; title: string; images?: string[] } | null;
   id: string;
   listing_id: string;
   buyer_id: string;
@@ -485,12 +488,32 @@ function orderNeedsSeller(order: { status: string; payment_id?: string | null })
   if (order.status === 'paid') return true;
   return order.status === 'pending_payment' && !order.payment_id;
 }
-/** An offer still on the table: pending, and not past its expiry. */
-function offerIsOpen(offer: { status: string; expires_at?: string | null }): boolean {
+/**
+ * An offer that needs THIS user: pending, not past its expiry, and it is their
+ * turn. Counting every pending offer badged a seller for their own counter —
+ * the ball was in the buyer's court, yet the seller was told to act.
+ */
+function offerAwaitsUser(
+  offer: {
+    status: string;
+    expires_at?: string | null;
+    proposed_by?: string | null;
+    parent_offer_id?: string | null;
+    buyer_id: string;
+    seller_id: string;
+  },
+  userId: string | undefined,
+): boolean {
   if (offer.status !== 'pending') return false;
-  if (!offer.expires_at) return true;
-  const expires = Date.parse(offer.expires_at);
-  return Number.isNaN(expires) || expires > Date.now();
+  if (offer.expires_at) {
+    const expires = Date.parse(offer.expires_at);
+    if (!Number.isNaN(expires) && expires <= Date.now()) return false;
+  }
+  if (!userId) return true;
+  return canRespondToOffer(
+    offer as Parameters<typeof canRespondToOffer>[0],
+    userId,
+  );
 }
 /** How long a summary stays fresh before a screen focus refetches it. */
 const SHOP_SUMMARY_TTL_MS = 45_000;
@@ -1870,7 +1893,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           prev.buyerActionOrders,
         ),
         sellerActionOrders: count(sellerOrders, orderNeedsSeller, prev.sellerActionOrders),
-        pendingOffersReceived: count(offers, offerIsOpen, prev.pendingOffersReceived),
+        pendingOffersReceived: count(
+          offers,
+          (o) => offerAwaitsUser(o, useAuthStore.getState().user?.id),
+          prev.pendingOffersReceived,
+        ),
         openInquiries: count(
           inquiries,
           (i) => i.status === 'open' || i.status === 'negotiating',
