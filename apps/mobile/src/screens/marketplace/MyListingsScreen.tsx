@@ -350,7 +350,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
 
         <MarketplaceWorkspaceBar
           active="selling"
-          onNavigate={screen => navigation.navigate(screen)}
+          onNavigate={(screen, params) => navigation.navigate(screen, params)}
           onSell={() => navigation.navigate('CreateListing')}
           primaryLabel="New"
           moreItems={[
