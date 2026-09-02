@@ -30,6 +30,8 @@ async function adminRequest<T>(endpoint: string, init?: RequestInit): Promise<T>
 }
 
 export interface AdminStats {
+  /** False when the server has role management switched off; undefined until stats load. */
+  roleManagementEnabled?: boolean;
   totalUsers: number;
   totalListings: number;
   activeListings: number;

@@ -18,6 +18,12 @@ interface AdminUsersProps {
   onSelectUser: (userId: string) => void;
   onToggleBan: (user: AdminUser, reason?: string) => void;
   onToggleAdmin: (user: AdminUser) => void;
+  /**
+   * From the server. Undefined means "not loaded yet" and must not disable the
+   * button — only an explicit false does, so a slow stats call never looks
+   * like a withdrawn permission.
+   */
+  roleManagementEnabled?: boolean;
 }
 
 export const AdminUsers: React.FC<AdminUsersProps> = ({
@@ -31,7 +37,13 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({
   onSelectUser,
   onToggleBan,
   onToggleAdmin,
-}) => (
+  roleManagementEnabled,
+}) => {
+  const roleDisabled = roleManagementEnabled === false;
+  const roleHint = roleDisabled
+    ? 'Role management is switched off on the server (ENABLE_ADMIN_ROLE_MANAGEMENT=false).'
+    : undefined;
+  return (
   <Card className="space-y-3">
     <div className="flex flex-wrap gap-2 items-center justify-between">
       <Input
@@ -81,20 +93,27 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({
                 >
                   {user.is_banned ? 'Unban' : 'Ban'}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={actionLoading[`role:${user.id}`]}
-                  onClick={() => onToggleAdmin(user)}
-                >
-                  {user.is_platform_admin ? 'Revoke admin' : 'Make admin'}
-                </Button>
+                <span title={roleHint}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={roleDisabled}
+                    loading={actionLoading[`role:${user.id}`]}
+                    onClick={() => onToggleAdmin(user)}
+                  >
+                    {user.is_platform_admin ? 'Revoke admin' : 'Make admin'}
+                  </Button>
+                </span>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+    {roleDisabled ? (
+      <p className="text-xs text-lantern-text-muted">{roleHint}</p>
+    ) : null}
     <PaginationBar pagination={pagination} onPrev={onPrev} onNext={onNext} />
   </Card>
-);
+  );
+};

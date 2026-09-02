@@ -710,6 +710,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           onSelectUser={setSelectedUserId}
           onToggleBan={onToggleBan}
           onToggleAdmin={onTogglePlatformAdmin}
+          roleManagementEnabled={stats?.roleManagementEnabled}
         />
       </TabPanel>
 

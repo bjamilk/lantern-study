@@ -98,7 +98,25 @@ export function initializeAdminRoutes(svc: SupabaseService, cache: CacheService)
 }
 
 const AI_EVENT_ESTIMATED_COST_USD = parseFloat(process.env.ADMIN_AI_EVENT_COST_USD || '0.0025');
-const ENABLE_ADMIN_ROLE_MANAGEMENT = process.env.ENABLE_ADMIN_ROLE_MANAGEMENT === 'true';
+/**
+ * Platform-admin role management from the admin console.
+ *
+ * This was opt-in (ENABLE_ADMIN_ROLE_MANAGEMENT=true) and therefore off
+ * everywhere, so the console's "Make admin" button always 403'd and the only
+ * way to grant admin was the Supabase dashboard. The rails that actually
+ * matter live on the route itself — platform-admin auth, a typed confirmation
+ * phrase, no revoking your own role, no removing the last admin, an audit
+ * entry, and a forced global sign-out on revoke — so the default is now ON.
+ * The variable stays as a kill switch: set it to "false" to disable.
+ *
+ * Read per request rather than at module load so the console's reported state
+ * and the route's behaviour can never disagree.
+ */
+export function resolveRoleManagementEnabled(
+  raw: string | undefined = process.env.ENABLE_ADMIN_ROLE_MANAGEMENT
+): boolean {
+  return String(raw ?? '').trim().toLowerCase() !== 'false';
+}
 
 function startOfDayIso(date = new Date()) {
   const d = new Date(date);
@@ -260,6 +278,9 @@ router.get('/stats', async (req: any, res: any) => {
     res.json({
       success: true,
       data: {
+        // The console disables its Make admin / Revoke admin buttons and says
+        // why when this is false, instead of failing on click with a 403.
+        roleManagementEnabled: resolveRoleManagementEnabled(),
         totalUsers: userCount ?? 0,
         totalListings: listingCount ?? 0,
         activeListings: activeListingCount ?? 0,
@@ -581,10 +602,11 @@ router.get('/users/:id/strikes', validateUuidParam('id'), handleValidationErrors
 
 router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, async (req: any, res: any) => {
   try {
-    if (!ENABLE_ADMIN_ROLE_MANAGEMENT) {
+    if (!resolveRoleManagementEnabled()) {
       return res.status(403).json({
         success: false,
-        error: 'Role management is disabled. Use Supabase dashboard or set ENABLE_ADMIN_ROLE_MANAGEMENT=true.',
+        error:
+          'Role management is switched off on this server (ENABLE_ADMIN_ROLE_MANAGEMENT=false). Remove that variable to allow it.',
       });
     }
 
