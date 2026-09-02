@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import {
   createStudyPackDraft,
   fetchStudyPackDrafts,
@@ -151,6 +152,8 @@ export function StudyProductDraftsScreen({
             Turn your notes into a sellable study pack
           </Text>
         </View>
+        {/* Seller tool: You carries the seller's own badges, Cart would only be clutter here. */}
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} hide={['cart']} />
         <Pressable onPress={() => void load()} hitSlop={8} className="p-1">
           <Ionicons name="refresh" size={20} color="#64748b" />
         </Pressable>

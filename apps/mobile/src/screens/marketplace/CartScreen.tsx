@@ -25,7 +25,8 @@ import {
 } from '@lantern/shared/marketplace';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { Button } from '../../components/ui';
-import { formatPrice } from './marketplaceHelpers';
+import { formatPrice, ListingImage } from './marketplaceHelpers';
+import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
@@ -44,7 +45,16 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setItems(await fetchMarketplaceCart());
+      const rows = await fetchMarketplaceCart();
+      setItems(rows);
+      // The header badge reads shopSummary.cartCount, which only refreshes on a
+      // stale focus; the rows we just loaded are the truth, so push them in. Same
+      // quantity-weighted reduce as fetchShopSummary so the two never disagree.
+      // Guarded because setCartCount lands in the store from a parallel change.
+      const store = useMarketplaceStore.getState() as { setCartCount?: (n: number) => void };
+      if (typeof store.setCartCount === 'function') {
+        store.setCartCount(rows.reduce((n, item) => n + Math.max(1, Number(item.quantity) || 1), 0));
+      }
     } catch {
       setItems([]);
     } finally {
@@ -73,6 +83,10 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
     setCheckingOut(true);
     try {
       const result = await checkoutMarketplaceCart();
+      // Checkout just emptied the cart and created orders; the cached summary
+      // still counts both until its TTL lapses. Same guard as setCartCount above.
+      const store = useMarketplaceStore.getState() as { invalidateShopSummary?: () => void };
+      if (typeof store.invalidateShopSummary === 'function') store.invalidateShopSummary();
       const orderCount = result?.orders?.length || 0;
       const failCount = result?.failures?.length || 0;
       const payUrl =
@@ -136,9 +150,25 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance + 160 }}
           ListEmptyComponent={
-            <Text className="text-center text-lantern-text-secondary mt-12">
-              Your cart is empty
-            </Text>
+            <View className="mt-12 items-center">
+              <Text className="text-center text-lantern-text-secondary">Your cart is empty</Text>
+              {/* An empty cart is a dead end without a way back into the shop. */}
+              <Button
+                variant="secondary"
+                className="mt-4"
+                onPress={() => navigation.navigate('MarketplaceHome')}
+              >
+                Continue shopping
+              </Button>
+              <Pressable
+                onPress={() => navigation.navigate('Favorites')}
+                accessibilityRole="link"
+                hitSlop={8}
+                className="mt-3"
+              >
+                <Text className="text-sm font-semibold text-lantern-primary">See your Saved items</Text>
+              </Pressable>
+            </View>
           }
           renderItem={({ item }) => {
             const stock = item.listing?.quantity;
@@ -149,13 +179,18 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
                   onPress={() =>
                     navigation.navigate('ListingDetail', { listingId: item.listing_id })
                   }
+                  className="flex-row gap-3"
                 >
-                  <Text className="font-semibold text-lantern-text" numberOfLines={2}>
-                    {item.listing?.title || 'Listing'}
-                  </Text>
-                  <Text className="text-lantern-primary font-bold mt-1">
-                    {formatPrice(lineTotal(item))}
-                  </Text>
+                  {/* ListingImage falls back to the bag icon when the listing has no photo. */}
+                  <ListingImage uri={item.listing?.images?.[0]} className="w-16 h-16 rounded-lg" />
+                  <View className="flex-1">
+                    <Text className="font-semibold text-lantern-text" numberOfLines={2}>
+                      {item.listing?.title || 'Listing'}
+                    </Text>
+                    <Text className="text-lantern-primary font-bold mt-1">
+                      {formatPrice(lineTotal(item))}
+                    </Text>
+                  </View>
                 </Pressable>
                 <View className="flex-row items-center justify-between mt-3">
                   {stock != null ? (

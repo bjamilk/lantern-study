@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { createStudyPackDraft, fetchSemesterPackProposals } from '../../services/api';
 import {
   enqueueSemesterDraftsSequentially,
@@ -85,6 +86,8 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-lg font-semibold text-lantern-text">Semester products</Text>
+        {/* Seller tool: You carries the seller's own badges, Cart would only be clutter here. */}
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} hide={['cart']} />
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         <Text className="text-sm text-lantern-text-secondary mb-4">

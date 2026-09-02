@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { fetchSellerBuyers } from '../../services/api';
 import type { SellerBuyerContact, SellerCustomerSegment } from '@lantern/shared/types';
 import { formatPrice } from './marketplaceHelpers';
@@ -69,6 +70,8 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-xl font-bold ml-2 flex-1">Customers</Text>
+        {/* Seller tool: You carries the seller's own badges, Cart would only be clutter here. */}
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} hide={['cart']} />
         <Pressable
           onPress={() => {
             setCampaignBuyerIds(undefined);

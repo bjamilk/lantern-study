@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
-import { formatPrice, ListingImage } from './marketplaceHelpers';
+import { Button } from '../../components/ui';
+import { formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { getFavoritePriceSnapshots } from './marketplaceFavoritePrices';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
@@ -17,7 +18,8 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
-  const { favoriteListings, favorites, listings, fetchServerFavorites, toggleFavorite } = useMarketplaceStore();
+  const { favoriteListings, favorites, listings, fetchServerFavorites, toggleFavorite, addToCart } =
+    useMarketplaceStore();
 
   const [priceSnapshots, setPriceSnapshots] = useState<Record<string, number>>({});
 
@@ -34,6 +36,21 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
     favoriteListings.length > 0
       ? favoriteListings
       : listings.filter(l => favorites.has(l.id));
+
+  const handleAddToCart = (listingId: string) => {
+    void addToCart(listingId, 1)
+      .then(() =>
+        // Alert, not toast: showToast(message, type?) has no action slot, so a
+        // toast cannot offer "View cart" (same call as ListingDetail).
+        Alert.alert('Added to cart', 'Item added to cart.', [
+          { text: 'Keep shopping', style: 'cancel' },
+          { text: 'View cart', onPress: () => navigation.navigate('Cart') },
+        ])
+      )
+      .catch((err: unknown) =>
+        Alert.alert('Error', err instanceof Error ? err.message : 'Could not add to cart')
+      );
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
@@ -86,6 +103,37 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
                           Price drop · was {formatPrice(seen)}
                         </Text>
                       </View>
+                    ) : null}
+                  </View>
+                );
+              })()}
+              {(() => {
+                // Amazon's Lists -> Add to Cart. A saved listing can go stale under
+                // the user, so say why instead of hiding the button.
+                if (typeof item.price !== 'number') return null;
+                const own = isOwnListing(item, user?.id);
+                const reason = own
+                  ? 'This is your listing'
+                  : item.status !== 'active'
+                    ? 'No longer available'
+                    : item.quantity != null && Number(item.quantity) <= 0
+                      ? 'Sold out'
+                      : null;
+                return (
+                  <View className="mt-2 flex-row items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={reason != null}
+                      accessibilityLabel={reason ? `Add to cart, unavailable: ${reason}` : 'Add to cart'}
+                      onPress={() => handleAddToCart(item.id)}
+                    >
+                      Add to cart
+                    </Button>
+                    {reason ? (
+                      <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>
+                        {reason}
+                      </Text>
                     ) : null}
                   </View>
                 );
