@@ -1931,6 +1931,35 @@ export function createApiEndpoints(client: ApiClient) {
      * goods marketplace at all. The server enforces the gate with 403s
      * (code MARKETPLACE_PRIVATE) regardless; this only drives which UI to show.
      */
+    /**
+     * Every Shop badge and the seller's payout balances, one request. The
+     * client used to make eight and count them itself; this is the server's
+     * count, with the same status sets (see services/marketplaceSummary.ts).
+     */
+    fetchShopSummary: () =>
+      apiRequest<{
+        cartCount: number | null;
+        buyerActionOrders: number | null;
+        sellerActionOrders: number | null;
+        sellerAwaitingBuyerPayment: number | null;
+        offersAwaitingMe: number | null;
+        offersAwaitingYou: number | null;
+        openInquiries: number | null;
+        unreadSellerInquiries: number | null;
+        unreadBuyerInquiries: number | null;
+        sellerInquiryThreadIds: string[] | null;
+        buyerInquiryThreadIds: string[] | null;
+        activeListings: number | null;
+        savedCount: number | null;
+        /** Null: that section failed; keep the last value. */
+        payouts: null | {
+          awaitingPayoutKobo: number;
+          paidOutKobo: number;
+          awaitingPayoutCount: number;
+          paidOutCount: number;
+        };
+      }>("/marketplace/summary", {}, 10000),
+
     fetchMarketplaceAccess: () =>
       // `authenticated` reports whether the server actually saw a credential;
       // without it, an anonymous-race answer is indistinguishable from a real

@@ -189,6 +189,7 @@ export const {
   fetchListingReviews,
   setMarketplaceReviewHelpful,
   fetchMarketplaceAccess,
+  fetchShopSummary,
   fetchSimilarListings,
   reportMarketplaceListing,
   createMarketplaceOffer,

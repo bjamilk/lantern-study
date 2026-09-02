@@ -1744,6 +1744,26 @@ router.get(
   })
 );
 
+// GET /api/v1/marketplace/summary - Every Shop badge and the seller's payout
+// balances in one round-trip. Replaces the eight reads the client used to make.
+router.get(
+  '/summary',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const { computeShopSummary } = await import('../services/marketplaceSummary');
+    const data = await computeShopSummary(
+      supabaseService.getClient(),
+      userId,
+      (id) => supabaseService.getAllDMUnreadCounts(id),
+    );
+    res.json({ success: true, data });
+  })
+);
+
 // GET /api/v1/marketplace/stats - Get seller stats
 router.get(
   '/stats',

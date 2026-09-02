@@ -484,6 +484,16 @@ export interface ShopSummary {
    * nothing the seller can do — so it is rendered grey, never as a badge.
    */
   sellerAwaitingBuyerPayment: number;
+  /**
+   * Seller share awaiting payout / already paid out, in kobo — the server's
+   * sum over marketplace_payments. Null until the first summary lands.
+   */
+  payouts: {
+    awaitingPayoutKobo: number;
+    paidOutKobo: number;
+    awaitingPayoutCount: number;
+    paidOutCount: number;
+  } | null;
   /** Listings currently live. */
   activeListings: number;
 }
@@ -499,6 +509,7 @@ export const EMPTY_SHOP_SUMMARY: ShopSummary = {
   buyerInquiryThreadIds: [],
   sellerAwaitingBuyerPayment: 0,
   activeListings: 0,
+  payouts: null,
 };
 
 /**
@@ -1933,77 +1944,40 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     // written over the fresh account's empty counts with the old ones.
     const forUserId = useAuthStore.getState().user?.id;
 
-    // Eight reads, each allowed to fail on its own. A badge that cannot be
-    // counted shows nothing; it must never take the other badges down with it.
-    // Cost: orders x2 are unbounded with four joins, offers x2 each attach
-    // their orders — fine for a founder-only pilot, but the first server change
-    // before widening it is a GET /marketplace/badge-counts that head-counts
     // these instead of shipping the rows.
-    const settle = async <T,>(work: Promise<T>): Promise<T | null> => {
-      try {
-        return await work;
-      } catch {
-        return null;
-      }
-    };
-    const userId = getCurrentUserId() ?? undefined;
-    const [cart, buyerOrders, sellerOrders, offers, buyerOffers, inquiries, buyerInquiries, stats] =
-      await Promise.all([
-        settle(api.fetchMarketplaceCart()),
-        settle(api.fetchMarketplaceOrders('buyer')),
-        settle(api.fetchMarketplaceOrders('seller')),
-        settle(api.fetchMarketplaceOffers('seller')),
-        settle(api.fetchMarketplaceOffers('buyer')),
-        settle(api.fetchMyInquiries('seller')),
-        settle(api.fetchMyInquiries('buyer')),
-        settle(api.fetchSellerStats()),
-      ]);
-
-    const prev = get().shopSummary;
-    const count = <T,>(rows: T[] | null, keep: (row: T) => boolean, fallback: number) =>
-      rows ? rows.filter(keep).length : fallback;
-    const inquiryIsOpen = (i: { status: string }) => i.status === 'open' || i.status === 'negotiating';
-    // Only live conversations feed the unread join: a closed or purchased
-    // inquiry's thread can still receive messages, but they are chat, not work.
-    const openThreadIds = (
-      rows: Array<{ status: string; dm_thread_id: string | null }> | null,
-      fallback: string[],
-    ) => (rows ? rows.filter(inquiryIsOpen).map((i) => i.dm_thread_id).filter((id): id is string => !!id) : fallback);
+    // One request. The server counts with the same status sets this store used
+    // to apply to eight full-row reads; a section it could not count comes back
+    // null and the number we already had stands (see services/marketplaceSummary.ts).
+    let data: Awaited<ReturnType<typeof api.fetchShopSummary>> | null = null;
+    try {
+      data = await api.fetchShopSummary();
+    } catch {
+      data = null;
+    }
 
     if (useAuthStore.getState().user?.id !== forUserId) {
       set({ shopSummaryLoading: false });
       return;
     }
+    if (!data) {
+      set({ shopSummaryLoading: false });
+      return;
+    }
+    const prev = get().shopSummary;
+    const keep = <T,>(next: T | null | undefined, fallback: T): T => (next == null ? fallback : next);
     set({
       shopSummary: {
-        cartCount: cart
-          ? cart.reduce((n, item) => n + Math.max(1, Number(item.quantity) || 1), 0)
-          : prev.cartCount,
-        buyerActionOrders: count(
-          buyerOrders,
-          (o) => BUYER_ACTION_ORDER_STATUSES.has(o.status),
-          prev.buyerActionOrders,
-        ),
-        sellerActionOrders: count(sellerOrders, orderNeedsSeller, prev.sellerActionOrders),
-        sellerAwaitingBuyerPayment: count(
-          sellerOrders,
-          orderAwaitsBuyerPayment,
-          prev.sellerAwaitingBuyerPayment,
-        ),
-        pendingOffersReceived: count(
-          offers,
-          (o) => offerAwaitsUser(o, userId),
-          prev.pendingOffersReceived,
-        ),
-        offersAwaitingYou: count(
-          buyerOffers,
-          (o) => offerAwaitsUser(o, userId),
-          prev.offersAwaitingYou,
-        ),
-        openInquiries: count(inquiries, inquiryIsOpen, prev.openInquiries),
-        sellerInquiryThreadIds: openThreadIds(inquiries, prev.sellerInquiryThreadIds),
-        buyerInquiryThreadIds: openThreadIds(buyerInquiries, prev.buyerInquiryThreadIds),
-        activeListings: stats ? stats.activeListings : prev.activeListings,
+        cartCount: keep(data.cartCount, prev.cartCount),
+        buyerActionOrders: keep(data.buyerActionOrders, prev.buyerActionOrders),
+        sellerActionOrders: keep(data.sellerActionOrders, prev.sellerActionOrders),
+        sellerAwaitingBuyerPayment: keep(data.sellerAwaitingBuyerPayment, prev.sellerAwaitingBuyerPayment),
+        pendingOffersReceived: keep(data.offersAwaitingMe, prev.pendingOffersReceived),
+        offersAwaitingYou: keep(data.offersAwaitingYou, prev.offersAwaitingYou),
+        openInquiries: keep(data.openInquiries, prev.openInquiries),
+        sellerInquiryThreadIds: keep(data.sellerInquiryThreadIds, prev.sellerInquiryThreadIds),
+        buyerInquiryThreadIds: keep(data.buyerInquiryThreadIds, prev.buyerInquiryThreadIds),
+        activeListings: keep(data.activeListings, prev.activeListings),
+        payouts: keep(data.payouts, prev.payouts),
       },
       shopSummaryLoadedAt: Date.now(),
       shopSummaryLoading: false,

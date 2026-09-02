@@ -1,3 +1,4 @@
+import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +9,7 @@ import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { formatPrice } from './marketplaceHelpers';
 import { SellerPayoutSetup } from './SellerPayoutSetup';
+import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 
 type NavigationProp = {
@@ -67,6 +69,13 @@ const shortDate = (iso: string | null): string | null => {
  * that answers that.
  */
 export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp }) {
+  const payouts = useMarketplaceStore((st) => st.shopSummary.payouts);
+  // The balance rides on the shared summary; make sure it is fresh on arrival.
+  useFocusEffect(
+    useCallback(() => {
+      void useMarketplaceStore.getState().fetchShopSummary();
+    }, []),
+  );
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(16);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
@@ -129,6 +138,33 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
       >
         <SellerPayoutSetup />
+
+        {/* The balance is the server's sum over marketplace_payments — the same
+            rows the ledger below pages through — so the two cannot disagree.
+            Awaiting = paid or payout-pending (payout-pending can bounce back to
+            paid, so both are still owed); paid out is terminal. */}
+        {payouts ? (
+          <View className="flex-row gap-3 mb-3">
+            <View className="flex-1 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-[11px] text-lantern-text-secondary">Awaiting payout</Text>
+              <Text className="text-lg font-bold text-lantern-text">
+                {formatPrice(Math.round(payouts.awaitingPayoutKobo / 100))}
+              </Text>
+              <Text className="text-[11px] text-lantern-text-tertiary">
+                {payouts.awaitingPayoutCount} {payouts.awaitingPayoutCount === 1 ? 'sale' : 'sales'}
+              </Text>
+            </View>
+            <View className="flex-1 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-[11px] text-lantern-text-secondary">Paid out</Text>
+              <Text className="text-lg font-bold text-lantern-text">
+                {formatPrice(Math.round(payouts.paidOutKobo / 100))}
+              </Text>
+              <Text className="text-[11px] text-lantern-text-tertiary">
+                {payouts.paidOutCount} {payouts.paidOutCount === 1 ? 'sale' : 'sales'}, all time
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         <View className="p-3 rounded-xl bg-lantern-surface border border-lantern-border mb-3">
           <Text className="text-sm font-semibold text-lantern-text mb-1">Earnings</Text>
