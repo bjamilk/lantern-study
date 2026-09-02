@@ -10,7 +10,7 @@ import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
 import { useFeatureTipStore } from './stores/featureTipStore';
 import { setSessionExpiredHandler } from './services/sessionHandler';
-import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle } from './services/supabase';
+import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle, fetchGroups } from './services/supabase';
 import {
     ONBOARDING_COMPLETE_STORAGE_KEY,
     ONBOARDING_COMPLETE_VALUE,
@@ -1363,6 +1363,22 @@ export const App: React.FC = () => {
                         setActiveCommunity({ ...current, loungeGroupId: lounge.groupId });
                     }
                     useCommunityStore.getState().invalidate(communityId);
+                    // Pull the real group in before selecting it. Minting the
+                    // lounge joins the caller server-side, but the local groups
+                    // list does not know that yet, so without this the first tap
+                    // selected a stub with no members or messages and the pane
+                    // stayed on the community home while the URL said channel.
+                    // Mobile has always done this (CommunityDetailScreen).
+                    const userId = useAuthStore.getState().currentUser?.id;
+                    if (userId) {
+                        try {
+                            const refreshed = await fetchGroups(userId);
+                            if (refreshed) useGroupStore.getState().setGroups(refreshed);
+                        } catch {
+                            // A failed refresh still opens the channel: the stub
+                            // below keeps the tap working, and hydration retries.
+                        }
+                    }
                     openCommunityChannel({
                         groupId: lounge.groupId,
                         groupName: lounge.name,
