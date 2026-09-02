@@ -6,7 +6,9 @@ import * as WebBrowser from 'expo-web-browser';
 import { fetchMarketplaceOrders, resumeMarketplaceOrderCheckout } from '../../services/api';
 import type { MarketplaceOrder } from '@lantern/shared/types';
 import { Button } from '../../components/ui';
-import { formatPrice } from './marketplaceHelpers';
+import { formatPrice, ListingImage } from './marketplaceHelpers';
+import { OrderStatusPill } from './components/OrderStatusPill';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 
 type NavigationProp = {
   goBack: () => void;
@@ -95,9 +97,10 @@ export function OrdersScreen({
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
-        <Text className="text-xl font-bold text-lantern-text ml-2">
-          {role === 'buyer' ? 'Purchase history' : 'Orders'}
+        <Text className="flex-1 text-xl font-bold text-lantern-text ml-2">
+          {role === 'buyer' ? 'Your Orders' : 'Orders to Hand Over'}
         </Text>
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
       </View>
       <View className="flex-row gap-2 px-4 mb-3">
         {(['buyer', 'seller'] as const).map((r) => (
@@ -125,22 +128,38 @@ export function OrdersScreen({
             </Text>
           }
           renderItem={({ item }) => (
-            <View className="p-4 rounded-xl bg-lantern-surface border border-lantern-border">
-              <Pressable onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}>
-                <Text className="font-semibold text-lantern-text" numberOfLines={1}>
-                  {item.listing?.title || 'Listing'}
-                </Text>
-                <Text className="text-sm text-lantern-text-secondary mt-1 capitalize">
-                  {item.status.replace(/_/g, ' ')}
-                </Text>
-                {(item.quantity || 1) > 1 ? (
-                  <Text className="text-xs text-lantern-text-tertiary mt-0.5">
-                    Qty {item.quantity}
+            <View className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              {/* Amazon's order row: thumbnail, a status word that says whether
+                  anything is on you, then the details. The status used to be
+                  the raw enum with underscores swapped for spaces. */}
+              <Pressable
+                onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}
+                className="flex-row gap-3"
+                accessibilityRole="button"
+                accessibilityLabel={`Order: ${item.listing?.title || 'Listing'}`}
+              >
+                <ListingImage
+                  uri={item.listing?.images?.[0]}
+                  className="w-16 h-16 rounded-lg bg-lantern-background-secondary"
+                />
+                <View className="flex-1">
+                  <OrderStatusPill
+                    status={item.status}
+                    role={role}
+                    hasPaymentId={Boolean(item.payment_id)}
+                  />
+                  <Text className="font-semibold text-lantern-text mt-1.5" numberOfLines={2}>
+                    {item.listing?.title || 'Listing'}
                   </Text>
-                ) : null}
-                <Text className="text-lantern-primary font-bold mt-2">
-                  {formatPrice(Number(item.amount))}
-                </Text>
+                  <View className="flex-row items-center gap-2 mt-1">
+                    <Text className="text-lantern-primary font-bold">
+                      {formatPrice(Number(item.amount))}
+                    </Text>
+                    {(item.quantity || 1) > 1 ? (
+                      <Text className="text-xs text-lantern-text-tertiary">Qty {item.quantity}</Text>
+                    ) : null}
+                  </View>
+                </View>
               </Pressable>
               {role === 'buyer' && isPayable(item) ? (
                 <View className="mt-3 pt-3 border-t border-lantern-border">

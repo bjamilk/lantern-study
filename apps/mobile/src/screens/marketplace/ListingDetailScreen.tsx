@@ -20,6 +20,7 @@ import {
   type MarketplaceListing,
 } from '../../stores';
 import { Avatar, Button, Card } from '../../components/ui';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { addRecentlyViewedListing } from './marketplaceRecentlyViewed';
 import { SaleCountdown } from './SaleCountdown';
@@ -512,6 +513,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-row items-center gap-1">
+          {/* Cart and You on the product page, as on every Amazon page. */}
+          <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
           {!own && user?.id ? (
             <Pressable onPress={() => void toggleFavorite(listing.id, user.id)} className="p-2">
               <Ionicons

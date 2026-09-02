@@ -28,6 +28,7 @@ import { CreateBundleModal } from './modals/CreateBundleModal';
 import { SellerCampaignModal } from './modals/SellerCampaignModal';
 import { SellerInsightsModal } from './modals/SellerInsightsModal';
 import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import type { SellerAnalytics, SellerOnboardingStatus } from '@lantern/shared/types';
 import {
   canSellerSetListingStatus,
@@ -320,6 +321,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
               )}
             </View>
           </View>
+          <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
           {user?.id ? (
             <View className="flex-row gap-2">
               <Pressable

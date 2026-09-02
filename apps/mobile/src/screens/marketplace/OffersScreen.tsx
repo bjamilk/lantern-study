@@ -17,6 +17,7 @@ import { useMarketplaceStore, useAuthStore, type MarketplaceOffer } from '../../
 import { resumeMarketplaceOrderCheckout } from '../../services/api';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
@@ -267,7 +268,8 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
         >
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
-        <Text className="text-xl font-bold text-lantern-text">Offers</Text>
+        <Text className="flex-1 text-xl font-bold text-lantern-text">Offers</Text>
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
       </View>
 
       <View className="flex-row mx-4 mb-3 p-1 rounded-xl bg-lantern-background-secondary/70 dark:bg-lantern-surface">

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -133,6 +134,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
             Study packs and question banks you own
           </Text>
         </View>
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
         <Pressable onPress={() => void load()} hitSlop={8} className="p-1">
           <Ionicons name="refresh" size={20} color="#64748b" />
         </Pressable>

@@ -26,6 +26,7 @@ import {
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
@@ -123,7 +124,8 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
-        <Text className="text-xl font-bold text-lantern-text ml-2">Cart</Text>
+        <Text className="flex-1 text-xl font-bold text-lantern-text ml-2">Cart</Text>
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} hide={['cart']} />
       </View>
 
       {loading ? (

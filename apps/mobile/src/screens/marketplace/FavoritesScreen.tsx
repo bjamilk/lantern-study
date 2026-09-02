@@ -6,6 +6,7 @@ import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { getFavoritePriceSnapshots } from './marketplaceFavoritePrices';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 
 type NavigationProp = {
   goBack: () => void;
@@ -45,7 +46,8 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
         >
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
-        <Text className="text-xl font-bold text-lantern-text">Saved Listings</Text>
+        <Text className="flex-1 text-xl font-bold text-lantern-text">Saved Items</Text>
+        <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
       </View>
 
       <FlatList
