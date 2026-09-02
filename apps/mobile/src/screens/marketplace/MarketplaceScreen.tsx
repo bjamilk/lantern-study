@@ -46,6 +46,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { ShopQuickActions } from './components/ShopQuickActions';
+import { useShopBadges } from '../../hooks/useShopBadges';
 import { useFocusEffect } from '@react-navigation/native';
 import { DiscoverWorkspaceBar } from '../discover/DiscoverWorkspaceBar';
 import { shouldShowTrustChip, trustLabel, canAccessDiscoverHub } from '@lantern/shared/network';
@@ -115,9 +116,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     resetFilters,
     toggleFavorite,
     loadFromStorage,
-    shopSummary,
     fetchShopSummary,
   } = useMarketplaceStore();
+  // One read feeds the header icons and the band; nothing on this screen sums
+  // summary fields itself.
+  const badges = useShopBadges();
 
   const [showCategories, setShowCategories] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -291,6 +294,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     if (user?.id) await fetchServerFavorites();
     await fetchSavedSearches();
     await loadSavedSearchMatches();
+    // A pull is the user asking "what is true now"; skip the 45s TTL.
+    await fetchShopSummary({ force: true });
     await fetchListings({ page: 1 });
     await loadRecent();
     setRefreshing(false);
@@ -496,8 +501,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     <View>
       {!showFavoritesOnly && !searchQuery.trim() ? (
         <ShopQuickActions
-          summary={shopSummary}
-          savedCount={favorites.size}
+          badges={badges}
           onNavigate={(screen, params) => navigation.navigate(screen, params)}
         />
       ) : null}
@@ -590,12 +594,12 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             onPress={() => navigation.navigate('Cart')}
             accessibilityRole="button"
             accessibilityLabel={
-              shopSummary.cartCount > 0 ? `Cart, ${shopSummary.cartCount} items` : 'Cart'
+              badges.cartCount > 0 ? `Cart, ${badges.cartCount} items` : 'Cart'
             }
             className="h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary"
           >
             <Ionicons name="cart-outline" size={19} color="#64748b" />
-            <Badge count={shopSummary.cartCount} />
+            <Badge count={badges.cartCount} />
           </Pressable>
           <Pressable
             onPress={() => navigation.navigate('ShopAccount')}
@@ -604,14 +608,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             className="h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary"
           >
             <Ionicons name="person-circle-outline" size={20} color="#64748b" />
-            <Badge
-              count={
-                shopSummary.buyerActionOrders +
-                shopSummary.sellerActionOrders +
-                shopSummary.pendingOffersReceived +
-                shopSummary.openInquiries
-              }
-            />
+            <Badge count={badges.needsYou} />
           </Pressable>
           <Pressable
             onPress={() => navigation.navigate('CreateListing')}
@@ -786,8 +783,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             onPress={() => setShowSavedSearches(v => !v)}
             className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
           >
-            <Ionicons name="bookmark-outline" size={14} color="#64748b" />
-            <Text className="text-[11px] text-lantern-text-secondary">Saved</Text>
+            {/* "Alerts", not "Saved": this chip is saved SEARCHES and their new
+                matches. The band's Saved card is saved listings, and two chips
+                called Saved a thumb apart meant nobody knew which was which. */}
+            <Ionicons name="notifications-outline" size={14} color="#64748b" />
+            <Text className="text-[11px] text-lantern-text-secondary">Alerts</Text>
             {savedSearchNewMatches > 0 ? (
               <View className="ml-0.5 px-1.5 py-0.5 rounded-full bg-lantern-primary">
                 <Text className="text-[9px] font-bold text-white">{savedSearchNewMatches}</Text>
