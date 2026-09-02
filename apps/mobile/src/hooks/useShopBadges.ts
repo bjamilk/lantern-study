@@ -74,10 +74,14 @@ export function useShopBadges(): ShopBadges {
     sellerAttention,
     // Buyer and seller order sets are disjoint for one user (the server filters
     // by buyer_id or seller_id, never both), so this never double counts.
+    // A seller's counter-offer is the buyer's to answer, so offersAwaitingYou
+    // is attention too — leaving it out told a buyer "nothing needs you" while
+    // a counter sat waiting to expire.
     needsYou:
       summary.sellerActionOrders +
       summary.buyerActionOrders +
       summary.pendingOffersReceived +
+      summary.offersAwaitingYou +
       unreadInquiries,
     activeListings: summary.activeListings,
     savedCount,

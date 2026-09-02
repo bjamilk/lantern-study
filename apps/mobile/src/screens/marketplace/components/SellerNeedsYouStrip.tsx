@@ -2,7 +2,7 @@
  * The seller's "Needs you" strip at the top of Your Listings.
  *
  * Three tiles, one per queue a seller can be behind on — orders to hand over,
- * offers waiting on a reply, open buyer questions — each carrying a count and
+ * offers waiting on a reply, unread buyer questions — each carrying a count and
  * the params that land on the SELLER side of the destination (Orders used to
  * open on the buyer's purchase history from here). When every count is zero
  * the strip collapses to "You're all caught up", so a quiet shop reads as
@@ -23,8 +23,10 @@ export interface SellerNeedsYouStripProps {
   handOver: number;
   /** Received offers where it is the seller's turn. */
   offers: number;
-  /** Open or negotiating inquiries on the seller's listings. */
+  /** Unread buyer messages on the seller's open inquiries — the badge. */
   inquiries: number;
+  /** Open or negotiating inquiries, shown as grey context under the tile; not a badge. */
+  openInquiries?: number;
   /** Seller orders where the buyer still has to pay online; shown, not badged. */
   awaitingBuyerPayment: number;
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -37,12 +39,15 @@ type Tile = {
   count: number;
   screen: string;
   params: Record<string, unknown>;
+  /** Grey context under the label (e.g. "3 open"); never counted. */
+  sub?: string;
 };
 
 export function SellerNeedsYouStrip({
   handOver,
   offers,
   inquiries,
+  openInquiries = 0,
   awaitingBuyerPayment,
   onNavigate,
 }: SellerNeedsYouStripProps) {
@@ -71,9 +76,13 @@ export function SellerNeedsYouStrip({
       count: inquiries,
       screen: 'Inquiries',
       params: { tab: 'seller' },
+      // Unread is what needs you; open is what exists. Show both so a quiet
+      // seller with three open threads is not told there is nothing.
+      sub: openInquiries > 0 ? `${openInquiries} open` : undefined,
     },
   ];
   const caughtUp = tiles.every((t) => t.count <= 0);
+  const caughtUpSub = openInquiries > 0 ? ` · ${openInquiries} open question${openInquiries === 1 ? '' : 's'}` : '';
 
   return (
     <View className="mb-3">
@@ -87,7 +96,7 @@ export function SellerNeedsYouStrip({
           accessibilityLabel="You're all caught up"
         >
           <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-          <Text className="text-sm font-medium text-lantern-text">You're all caught up</Text>
+          <Text className="text-sm font-medium text-lantern-text">You're all caught up{caughtUpSub}</Text>
         </View>
       ) : (
         <View className="flex-row gap-2">
@@ -120,6 +129,7 @@ export function SellerNeedsYouStrip({
                 </Text>
                 <Text className="text-[11px] text-lantern-text-secondary" numberOfLines={1}>
                   {tile.label}
+                  {tile.sub ? <Text className="text-lantern-text-tertiary"> · {tile.sub}</Text> : null}
                 </Text>
               </Pressable>
             );

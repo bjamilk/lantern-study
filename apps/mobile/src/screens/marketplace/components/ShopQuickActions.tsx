@@ -14,9 +14,15 @@ interface Props {
    * is the You hub's card row: the first four cards, equal width, no scroll.
    */
   layout?: 'scroll' | 'grid';
+  /**
+   * Replaces the built-in list. The You hub's Selling side renders seller
+   * cards (hand-overs, offers, questions, payouts) through this same tile so
+   * both sides of the hub look alike; the band never passes it.
+   */
+  actions?: QuickAction[];
 }
 
-interface QuickAction {
+export interface QuickAction {
   key: string;
   label: string;
   hint: string;
@@ -34,10 +40,12 @@ const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
  * instead of behind an overflow menu. Each card carries a live count of what
  * needs you, not a lifetime total: a badge that never clears is noise.
  */
-export function ShopQuickActions({ badges, onNavigate, layout = 'scroll' }: Props) {
-  const { colors } = useTheme();
-
-  const actions: QuickAction[] = [
+/**
+ * The band's cards, in Amazon's order. Exported so the hub can pick and
+ * reorder a subset with the same hints and badges as the band.
+ */
+export function buildQuickActions(badges: ShopBadges): QuickAction[] {
+  return [
     {
       key: 'orders',
       label: 'Your Orders',
@@ -89,6 +97,11 @@ export function ShopQuickActions({ badges, onNavigate, layout = 'scroll' }: Prop
       screen: 'MyListings',
     },
   ];
+}
+
+export function ShopQuickActions({ badges, onNavigate, layout = 'scroll', actions: override }: Props) {
+  const { colors } = useTheme();
+  const actions = override ?? buildQuickActions(badges);
 
   const renderCard = (action: QuickAction) => (
     <Pressable

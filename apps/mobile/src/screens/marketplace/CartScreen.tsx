@@ -50,11 +50,9 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
       // The header badge reads shopSummary.cartCount, which only refreshes on a
       // stale focus; the rows we just loaded are the truth, so push them in. Same
       // quantity-weighted reduce as fetchShopSummary so the two never disagree.
-      // Guarded because setCartCount lands in the store from a parallel change.
-      const store = useMarketplaceStore.getState() as { setCartCount?: (n: number) => void };
-      if (typeof store.setCartCount === 'function') {
-        store.setCartCount(rows.reduce((n, item) => n + Math.max(1, Number(item.quantity) || 1), 0));
-      }
+      useMarketplaceStore
+        .getState()
+        .setCartCount(rows.reduce((n, item) => n + Math.max(1, Number(item.quantity) || 1), 0));
     } catch {
       setItems([]);
     } finally {
@@ -84,9 +82,9 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
     try {
       const result = await checkoutMarketplaceCart();
       // Checkout just emptied the cart and created orders; the cached summary
-      // still counts both until its TTL lapses. Same guard as setCartCount above.
-      const store = useMarketplaceStore.getState() as { invalidateShopSummary?: () => void };
-      if (typeof store.invalidateShopSummary === 'function') store.invalidateShopSummary();
+      // still counts both until its TTL lapses, so mark it stale now and the
+      // next Shop focus refetches.
+      useMarketplaceStore.getState().invalidateShopSummary();
       const orderCount = result?.orders?.length || 0;
       const failCount = result?.failures?.length || 0;
       const payUrl =

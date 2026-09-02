@@ -28,6 +28,7 @@ export { CreatorProfileScreen } from './CreatorProfileScreen';
 export { OrderDetailScreen } from './OrderDetailScreen';
 
 export { SellerCustomersScreen } from './SellerCustomersScreen';
+export { SellerPayoutScreen } from './SellerPayoutScreen';
 export { JobsHomeScreen } from './JobsHomeScreen';
 export { JobDetailScreen } from './JobDetailScreen';
 export { CreateJobScreen } from './CreateJobScreen';

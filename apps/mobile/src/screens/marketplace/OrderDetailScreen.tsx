@@ -22,6 +22,7 @@ import { formatPrice } from './marketplaceHelpers';
 import { buildOrderReceiptText } from './orderReceipt';
 import { OpenDisputeModal } from './OpenDisputeModal';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
+import { OrderStatusPill, orderNextStep } from './components/OrderStatusPill';
 
 const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
 
@@ -135,6 +136,9 @@ export function OrderDetailScreen({
     setActing(true);
     try {
       setOrder(await updateMarketplaceOrder(route.params.orderId, { action, ...extra }));
+      // Every action moves this order between the "needs you" buckets the You
+      // badge counts; stale-mark the summary so the next Shop focus refetches.
+      useMarketplaceStore.getState().invalidateShopSummary();
       if (['confirm_received', 'mark_ready', 'mark_paid', 'cancel'].includes(action)) {
         await refreshSellerData();
       }
@@ -260,15 +264,21 @@ export function OrderDetailScreen({
               {formatPrice(Number(order.amount) / Math.max(1, Number(order.quantity) || 1))}
             </Text>
           ) : null}
-          <Text className="text-lantern-text-secondary capitalize mt-1">
-            {order.status === 'completed'
-              ? 'Completed — receipt available'
-              : order.status === 'cancelled'
-                ? 'Cancelled'
-                : order.status === 'awaiting_payment'
-                  ? 'Awaiting Paystack payment'
-                  : `Sale in progress — ${order.status.replace(/_/g, ' ')}`}
-          </Text>
+          {/* Same pill and next-step copy as the Orders list, phrased for the
+              side you are on: a seller on awaiting_payment used to read only
+              "Awaiting Paystack payment" and wonder whether it was theirs to do. */}
+          <View className="mt-2">
+            <OrderStatusPill
+              status={order.status}
+              role={isSeller ? 'seller' : 'buyer'}
+              hasPaymentId={Boolean(order.payment_id)}
+            />
+          </View>
+          {orderNextStep(order.status, isSeller ? 'seller' : 'buyer', Boolean(order.payment_id)) ? (
+            <Text className="text-sm text-lantern-text-secondary mt-1">
+              {orderNextStep(order.status, isSeller ? 'seller' : 'buyer', Boolean(order.payment_id))}
+            </Text>
+          ) : null}
           {order.discount_amount ? (
             <Text className="text-sm text-emerald-600 mt-1">
               Discount: {formatPrice(Number(order.discount_amount))}

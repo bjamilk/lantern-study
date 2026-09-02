@@ -341,6 +341,12 @@ export interface MarketplaceOffer {
     name: string;
     avatarUrl?: string;
   };
+  /** The listing's owner; a buyer's "Sent" card names who they are haggling with. */
+  seller?: {
+    id: string;
+    name: string;
+    avatarUrl?: string;
+  };
   /**
    * Order created when this offer was accepted. The server only attaches it for
    * a party to that order, and older API builds omit it entirely — so callers
@@ -1764,6 +1770,17 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         expires_at: o.expires_at,
         created_at: o.created_at,
         updated_at: o.updated_at,
+        // Kept, not dropped: without these an offer card is an amount and a
+        // date, and a seller with three listings cannot tell which one it is on.
+        listing: o.listing
+          ? { id: o.listing.id, title: o.listing.title, images: o.listing.images ?? undefined }
+          : undefined,
+        buyer: o.buyer
+          ? { id: o.buyer.id, name: o.buyer.name, avatarUrl: o.buyer.avatar_url ?? undefined }
+          : undefined,
+        seller: o.seller
+          ? { id: o.seller.id, name: o.seller.name, avatarUrl: o.seller.avatar_url ?? undefined }
+          : undefined,
         order: mapOfferOrder((o as { order?: unknown }).order),
       }));
       if (role === 'buyer') {

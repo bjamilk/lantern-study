@@ -179,6 +179,7 @@ import {
   OrderDetailScreen,
 
   SellerCustomersScreen,
+  SellerPayoutScreen,
 
   JobsHomeScreen,
 
@@ -235,6 +236,7 @@ const GatedStudyProductDrafts = withMarketplaceGate(StudyProductDraftsScreen);
 const GatedSemesterProducts = withMarketplaceGate(SemesterProductsScreen);
 const GatedOrderDetail = withMarketplaceGate(OrderDetailScreen);
 const GatedSellerCustomers = withMarketplaceGate(SellerCustomersScreen);
+const GatedSellerPayout = withMarketplaceGate(SellerPayoutScreen);
 import {
   DiscoverScreen,
   CommunityDetailScreen,
@@ -491,6 +493,8 @@ function MarketNavigator() {
       <MarketStack.Screen name="OrderDetail" component={GatedOrderDetail} />
 
       <MarketStack.Screen name="SellerCustomers" component={GatedSellerCustomers} />
+
+      <MarketStack.Screen name="SellerPayout" component={GatedSellerPayout} />
 
     </MarketStack.Navigator>
 

@@ -13,6 +13,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { fetchMarketplaceOrders, resumeMarketplaceOrderCheckout } from '../../services/api';
+// The same predicates drive the You badge count, so a row sorted to the top is
+// always a row that was counted — one definition, two consumers.
+import { BUYER_ACTION_ORDER_STATUSES, orderNeedsSeller } from '../../stores/marketplaceStore';
 import type { MarketplaceOrder } from '@lantern/shared/types';
 import { Button } from '../../components/ui';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
@@ -32,20 +35,6 @@ type OrdersView = 'all' | 'buy_again';
 const isPayable = (order: MarketplaceOrder): boolean =>
   order.status === 'awaiting_payment' ||
   (order.status === 'pending_payment' && Boolean(order.payment_id));
-
-// These mirror marketplaceStore's BUYER_ACTION_ORDER_STATUSES / orderNeedsSeller,
-// which drive the You badge but are module-private there. Kept identical so the
-// badge count and the rows sorted to the top never disagree; if the store
-// exports them, import instead of duplicating.
-/** Orders that need the buyer: pay for it, or confirm you collected it. */
-const BUYER_ACTION_ORDER_STATUSES = new Set(['pending_payment', 'awaiting_payment', 'ready_for_pickup']);
-/**
- * Orders that need the seller. `paid` is the online-payment case: money is in,
- * item still to hand over. A cash or transfer order sits in `pending_payment`
- * with no payment_id until the seller confirms, so that state is theirs too.
- */
-const orderNeedsSeller = (order: { status: string; payment_id?: string | null }): boolean =>
-  order.status === 'paid' || (order.status === 'pending_payment' && !order.payment_id);
 
 const needsAction = (order: MarketplaceOrder, role: Role): boolean =>
   role === 'seller' ? orderNeedsSeller(order) : BUYER_ACTION_ORDER_STATUSES.has(order.status);

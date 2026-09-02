@@ -2598,6 +2598,18 @@ export function createApiEndpoints(client: ApiClient) {
           // Drives client-side expiry gating so an expired offer's Accept/
           // Decline/Counter buttons are hidden instead of hitting the 409.
           expires_at?: string;
+          // The route joins these (routes/marketplace.ts GET /offers) so a card
+          // can name the listing and the other party; the type used to hide them.
+          listing?: {
+            id: string;
+            title: string;
+            price: number;
+            images?: string[] | null;
+            status: string;
+            category: string;
+          } | null;
+          buyer?: { id: string; name: string; avatar_url?: string | null } | null;
+          seller?: { id: string; name: string; avatar_url?: string | null } | null;
         }>
       >(`/marketplace/offers?role=${role}`, {}, 5000),
 

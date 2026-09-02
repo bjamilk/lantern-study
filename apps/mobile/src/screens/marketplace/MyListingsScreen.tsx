@@ -15,7 +15,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useMarketplaceStore, useAuthStore, getCategoryInfo } from '../../stores';
 import {
-  fetchMarketplaceOrders,
   fetchSellerAnalytics,
   fetchSellerOnboarding,
   fetchSellerPreferences,
@@ -28,6 +27,7 @@ import { CreateBundleModal } from './modals/CreateBundleModal';
 import { SellerCampaignModal } from './modals/SellerCampaignModal';
 import { SellerInsightsModal } from './modals/SellerInsightsModal';
 import { SellerNeedsYouStrip } from './components/SellerNeedsYouStrip';
+import { useShopBadges } from '../../hooks/useShopBadges';
 import { SellerToolsRow } from './components/SellerToolsRow';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import type { SellerAnalytics, SellerOnboardingStatus } from '@lantern/shared/types';
@@ -53,14 +53,6 @@ type NavigationProp = {
 // Per user: a second seller on the same phone still gets the walkthrough.
 const onboardingDismissedKey = (userId: string) => `lantern_seller_onboarding_dismissed_${userId}`;
 
-/**
- * Seller orders where the buyer still has to pay online. Not the seller's to
- * act on, so the strip shows it as a grey line rather than a badge. Computed
- * here because ShopSummary has no such field; if it grows one, read that.
- */
-const awaitsBuyerPayment = (order: { status: string; payment_id?: string | null }): boolean =>
-  order.status === 'awaiting_payment' || (order.status === 'pending_payment' && !!order.payment_id);
-
 export function MyListingsScreen({
   navigation,
   route,
@@ -74,8 +66,9 @@ export function MyListingsScreen({
   const { myListings, sellerStats, isLoading, fetchMyListings, fetchSellerStats, updateListing, deleteListing } =
     useMarketplaceStore();
   // The strip reads the same counts the You badge does, so the two never
-  // disagree about what needs the seller.
-  const shopSummary = useMarketplaceStore(s => s.shopSummary);
+  // disagree about what needs the seller. Inquiry unread is real DM unread
+  // (joined with groupStore in the hook), not "open" status.
+  const badges = useShopBadges();
   const fetchShopSummary = useMarketplaceStore(s => s.fetchShopSummary);
   const [activeTab, setActiveTab] = useState<StatusTab>('active');
   const [refreshing, setRefreshing] = useState(false);
@@ -87,7 +80,6 @@ export function MyListingsScreen({
   const [showBundle, setShowBundle] = useState(false);
   const [showCampaign, setShowCampaign] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
-  const [awaitingBuyerPayment, setAwaitingBuyerPayment] = useState(0);
   // The row "..." menu. Alert.alert cannot hold it: Android caps a native
   // dialog at three buttons and silently drops the rest, so Reactivate and
   // Delete were unreachable there.
@@ -106,11 +98,6 @@ export function MyListingsScreen({
       setAnalytics(await fetchSellerAnalytics());
     } catch {
       setAnalytics(null);
-    }
-    try {
-      setAwaitingBuyerPayment((await fetchMarketplaceOrders('seller')).filter(awaitsBuyerPayment).length);
-    } catch {
-      /* keep the last count; a missing grey line is not worth an error */
     }
     try {
       const prefs = await fetchSellerPreferences();
@@ -280,10 +267,11 @@ export function MyListingsScreen({
   const listHeader = (
     <View>
       <SellerNeedsYouStrip
-        handOver={shopSummary.sellerActionOrders}
-        offers={shopSummary.pendingOffersReceived}
-        inquiries={shopSummary.openInquiries}
-        awaitingBuyerPayment={awaitingBuyerPayment}
+        handOver={badges.sellerActionOrders}
+        offers={badges.offersAwaitingMe}
+        inquiries={badges.unreadSellerInquiries}
+        openInquiries={badges.openInquiries}
+        awaitingBuyerPayment={badges.sellerAwaitingBuyerPayment}
         onNavigate={(screen, params) => navigation.navigate(screen, params)}
       />
 

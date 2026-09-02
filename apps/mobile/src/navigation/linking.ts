@@ -58,6 +58,10 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               OrderDetail: 'marketplace/orders/:orderId',
               CreateListing: 'marketplace/create',
               ShopBrowse: 'marketplace/browse',
+              Cart: 'marketplace/cart',
+              ShopAccount: 'marketplace/you',
+              StudyProductDrafts: 'marketplace/products',
+              SellerPayout: 'marketplace/payouts',
             },
           },
           // Jobs owns its own stack, so its links must resolve under JobsTab.

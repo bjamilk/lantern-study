@@ -138,6 +138,8 @@ export type MarketStackParamList = {
     trxref?: string;
   };
   SellerCustomers: undefined;
+  /** Payout bank setup plus the earnings ledger; the only place status/payoutAt render. */
+  SellerPayout: undefined;
 };
 
 /**

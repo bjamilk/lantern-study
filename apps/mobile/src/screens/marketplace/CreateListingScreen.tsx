@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,7 +20,9 @@ import {
   type MarketplaceListing,
   type MarketplaceCategory,
 } from '../../stores';
-import { fetchMarketplaceCampuses } from '../../services/api';
+import { fetchMarketplaceCampuses, fetchSellerPayoutProfile } from '../../services/api';
+import { useShopBadges } from '../../hooks/useShopBadges';
+import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { aiGenerateListingDescription } from '../../services/ai';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import {
@@ -82,6 +85,30 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const tabBarClearance = useTabBarClearance(32);
   const { user } = useAuthStore();
   const { createListing, isLoading } = useMarketplaceStore();
+  const badges = useShopBadges();
+  // null = unknown (request failed or not back yet); never nag on unknown.
+  const [payoutActive, setPayoutActive] = useState<boolean | null>(null);
+  // A listing published from this mount counts even before the summary
+  // refetches activeListings — the nudge must not wait on a second request.
+  const [publishedSinceMount, setPublishedSinceMount] = useState(false);
+
+  // Re-read on every focus: the nudge links to SellerPayout, and coming back
+  // from it with a bank on file must clear the nudge without a remount.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      fetchSellerPayoutProfile()
+        .then((p) => {
+          if (!cancelled) setPayoutActive(p?.status === 'active');
+        })
+        .catch(() => {
+          if (!cancelled) setPayoutActive(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<MarketplaceCategory>('textbook_exchange');
@@ -483,6 +510,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
       setUploading(false);
       await clearDraft();
+      // The listing exists now. Reset the form so Back from the new listing
+      // does not land on a filled form whose second Publish duplicates it,
+      // and stale-mark the summary so the Selling card's live count moves.
+      resetForm();
+      useMarketplaceStore.getState().invalidateShopSummary();
+      setPublishedSinceMount(true);
       if (queued) {
         Alert.alert(
           'Saved for publishing',
@@ -527,7 +560,30 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-xl font-bold text-lantern-text flex-1">Create Listing</Text>
+        {/* Mid-flow seller form: the cart is noise here, You keeps the seller's badges. */}
+        <ShopHeaderActions
+          navigate={(screen, params) => navigation.navigate(screen, params)}
+          hide={['cart']}
+        />
       </View>
+
+      {/* Not a gate — cash and transfer sales never need Paystack, so publishing
+          is never blocked. Shown only to someone who has actually listed: a
+          buyer who never sold must not be told to add a bank account. */}
+      {payoutActive === false && (badges.activeListings > 0 || publishedSinceMount) ? (
+        <Pressable
+          onPress={() => navigation.navigate('SellerPayout')}
+          accessibilityRole="button"
+          accessibilityLabel="Set up payouts to get paid"
+          className="mx-4 mb-3 flex-row items-center gap-2 px-3 py-2 rounded-xl bg-lantern-primary-background"
+        >
+          <Ionicons name="card-outline" size={16} color="#64748b" />
+          <Text className="flex-1 text-xs text-lantern-text" numberOfLines={1}>
+            Set up payouts to get paid
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color="#64748b" />
+        </Pressable>
+      ) : null}
 
       <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
         {draftRestored ? (

@@ -38,3 +38,5 @@ export { useLowDataMode } from './useLowDataMode';
 export { useConfirmBeforeExit } from './useConfirmBeforeExit';
 export type { ConfirmBeforeExitOptions } from './useConfirmBeforeExit';
 export { usePlatformAdmin } from './usePlatformAdmin';
+export { useShopBadges } from './useShopBadges';
+export type { ShopBadges } from './useShopBadges';
