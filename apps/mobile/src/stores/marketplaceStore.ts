@@ -557,8 +557,14 @@ export function offerAwaitsUser(
  * groupStore (it would be a cycle); the hook passes the unread map in. A thread
  * missing from the map counts 0 — conservative, never over-badged.
  */
+/**
+ * Unread DM count across the inquiry threads. A thread id is derived from the two
+ * user ids alone (routes/marketplace.ts), so a buyer with two open inquiries on
+ * one seller's listings shares ONE thread — summing per inquiry double-counted
+ * it. Dedupe the ids first.
+ */
 export const sumUnread = (ids: string[], counts: Record<string, number>): number =>
-  ids.reduce((n, id) => n + (counts[id] ?? 0), 0);
+  Array.from(new Set(ids)).reduce((n, id) => n + (counts[id] ?? 0), 0);
 /** How long a summary stays fresh before a screen focus refetches it. */
 const SHOP_SUMMARY_TTL_MS = 45_000;
 
@@ -1922,6 +1928,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       shopSummaryLoadedAt != null && Date.now() - shopSummaryLoadedAt < SHOP_SUMMARY_TTL_MS;
     if (fresh && !options?.force) return;
     set({ shopSummaryLoading: true });
+    // The account this summary is FOR. Eight reads take a while; if the user
+    // signs out (or switches) meanwhile, the result must be dropped, not
+    // written over the fresh account's empty counts with the old ones.
+    const forUserId = useAuthStore.getState().user?.id;
 
     // Eight reads, each allowed to fail on its own. A badge that cannot be
     // counted shows nothing; it must never take the other badges down with it.
@@ -1960,6 +1970,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       fallback: string[],
     ) => (rows ? rows.filter(inquiryIsOpen).map((i) => i.dm_thread_id).filter((id): id is string => !!id) : fallback);
 
+    if (useAuthStore.getState().user?.id !== forUserId) {
+      set({ shopSummaryLoading: false });
+      return;
+    }
     set({
       shopSummary: {
         cartCount: cart
@@ -2212,6 +2226,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       set((s) => ({
         shopSummary: {
           ...s.shopSummary,
+          // Optimistic only until the server answers below; it may merge into an
+          // existing line or cap the quantity, so the true count is read back.
           cartCount: s.shopSummary.cartCount + Math.max(1, quantity ?? 1),
         },
         shopSummaryLoadedAt: null,

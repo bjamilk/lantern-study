@@ -84,6 +84,9 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
       // Checkout just emptied the cart and created orders; the cached summary
       // still counts both until its TTL lapses, so mark it stale now and the
       // next Shop focus refetches.
+      // The cart is empty now; the badge must not keep the old count until the
+      // next summary fetch lands.
+      useMarketplaceStore.getState().setCartCount(0);
       useMarketplaceStore.getState().invalidateShopSummary();
       const orderCount = result?.orders?.length || 0;
       const failCount = result?.failures?.length || 0;
@@ -106,7 +109,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
             paymentReturn: true,
           });
         } else {
-          navigation.navigate('Orders');
+          navigation.navigate('Orders', { role: 'buyer' });
         }
         return;
       }
@@ -120,7 +123,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
       if (orderCount === 1 && firstOrderId) {
         navigation.navigate('OrderDetail', { orderId: firstOrderId });
       } else {
-        navigation.navigate('Orders');
+        navigation.navigate('Orders', { role: 'buyer' });
       }
     } catch (e: unknown) {
       Alert.alert('Checkout failed', e instanceof Error ? e.message : 'Try again');

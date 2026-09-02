@@ -55,10 +55,8 @@ const onboardingDismissedKey = (userId: string) => `lantern_seller_onboarding_di
 
 export function MyListingsScreen({
   navigation,
-  route,
 }: {
   navigation: NavigationProp;
-  route?: { params?: { openInsights?: boolean } };
 }) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
@@ -132,13 +130,6 @@ export function MyListingsScreen({
       void load();
     }, [load])
   );
-
-  // The You hub's Insights row lands here with openInsights; a screen that is
-  // already mounted only sees the param change, so this is not a mount effect.
-  const openInsights = route?.params?.openInsights;
-  useEffect(() => {
-    if (openInsights) setShowInsights(true);
-  }, [openInsights]);
 
   const filtered = useMemo(
     () =>

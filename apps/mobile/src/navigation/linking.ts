@@ -45,6 +45,9 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
             },
           },
           MarketTab: {
+            // A cold link straight to Cart/Payouts/You must have the Shop home
+            // beneath it, or Back exits the tab instead of going to the shop.
+            initialRouteName: 'MarketplaceHome',
             screens: {
               MarketplaceHome: 'marketplace',
               ListingDetail: 'listing/:listingId',

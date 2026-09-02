@@ -94,8 +94,7 @@ export type MarketStackParamList = {
   /** The Amazon-style "You" hub: orders, saved, cart, and everything a seller runs. */
   ShopAccount: undefined;
   ListingDetail: { listingId: string; quantity?: number };
-  /** The seller's home; openInsights lands straight in the insights sheet. */
-  MyListings: { openInsights?: boolean } | undefined;
+  MyListings: undefined;
   /** Which side of the conversation to show; defaults to seller (buyer questions). */
   Inquiries: { tab?: 'seller' | 'buyer' } | undefined;
   CreateListing: undefined;

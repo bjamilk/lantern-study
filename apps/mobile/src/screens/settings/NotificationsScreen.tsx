@@ -178,7 +178,14 @@ export default function NotificationsScreen() {
       // An offer notification used to open Inquiries, which has no offers view;
       // the seller landed on the wrong list and had to find Offers themselves.
       if (parsed.type === "offer") {
-        navigateToMarket("Offers");
+        // The server sends the same link to whichever side must respond, so the
+        // tab has to come from who the viewer is: an offer notification you did
+        // not make is one you received (seller tab); one on your own offer is a
+        // counter you must answer (buyer tab). The data carries the buyer id.
+        const buyerId = (item.data?.buyerId ?? item.data?.buyer_id) as string | undefined;
+        const meId = useAuthStore.getState().user?.id;
+        const tab = buyerId && meId && buyerId === meId ? "buyer" : "seller";
+        navigateToMarket("Offers", { tab });
         return;
       }
       if (parsed.type === "inquiry") {
