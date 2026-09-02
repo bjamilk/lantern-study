@@ -10,6 +10,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -50,17 +51,16 @@ import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { ShopQuickActions } from './components/ShopQuickActions';
 import { useShopBadges } from '../../hooks/useShopBadges';
 import { useFocusEffect } from '@react-navigation/native';
-import { DiscoverWorkspaceBar } from '../discover/DiscoverWorkspaceBar';
-import { shouldShowTrustChip, trustLabel, canAccessDiscoverHub } from '@lantern/shared/network';
+import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 import {
   CONDITION_ATTRIBUTE,
   getTaxonomyPath,
   listingTypeLabel,
   suggestMarketplaceSearch,
 } from '@lantern/shared/marketplace';
-import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTheme } from '../../theme';
+import { getFontScaleValue } from '../../theme/installFontScale';
 import {
   alertsLabel,
   countActiveFilters,
@@ -70,6 +70,23 @@ import {
 
 /** Byte-identical to the inline Cart/You so parity with ShopHeaderActions holds. */
 const ICON_BTN = 'h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary';
+/**
+ * The collapsed row has no search field, so Alerts, Cart, You and Sell share
+ * its width instead of huddling at the right edge with a gap beside a lone
+ * icon. Same height and tone as ICON_BTN; only the width rule differs.
+ */
+const STRETCH_BTN =
+  'h-9 flex-1 flex-row items-center justify-center gap-1.5 rounded-lg bg-lantern-background-secondary';
+/**
+ * Below this width (at font scale 1) four icon+label pairs do not fit their
+ * equal shares of the row. The label Text keeps Yoga's default flexShrink 0,
+ * so an overlong pair does not ellipsise: justify-center spills it past both
+ * edges of its pill into the neighbouring buttons. Icons render through the
+ * patched Text too, so the pair grows with the whole font scale (app setting
+ * x OS Dynamic Type); the gate divides the width by that scale so large text
+ * degrades to the icon-only row a narrow device gets.
+ */
+const HEADER_LABELS_MIN_WIDTH = 380;
 
 type ShopPanel = 'filters' | 'alerts';
 
@@ -81,7 +98,6 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   const tabBarClearance = useTabBarClearance(16);
   const { onScroll: chromeOnScroll } = useChrome();
   const { user } = useAuthStore();
-  const isPlatformAdmin = usePlatformAdmin();
   const savedCampusId = useSettingsStore(
     state => state.settings.marketplace?.campus_id || undefined
   );
@@ -177,6 +193,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   const selectedCampus = campuses.find(campus => campus.id === campusIdFilter);
   // Derived every render, never stored: searchOpen || searchQuery.length > 0.
   const searchExpanded = isSearchExpanded(searchOpen, searchQuery);
+  const { width: windowWidth } = useWindowDimensions();
+  // Collapsed: the four buttons stretch across the row, with a label beside
+  // each icon when the row is wide enough for four labels at the current font
+  // scale. getFontScaleValue() is safe to read during render: ThemeProvider
+  // remounts the whole tree whenever it changes.
+  const headerButton = searchExpanded ? ICON_BTN : STRETCH_BTN;
+  const showHeaderLabels =
+    !searchExpanded && windowWidth / getFontScaleValue() >= HEADER_LABELS_MIN_WIDTH;
+  const hasRecentSuggestions = searchSuggestions.some(item => item.kind === 'recent');
   const activeFilterCount = countActiveFilters({
     minPrice,
     maxPrice,
@@ -684,15 +709,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="pt-1 pb-2 gap-2">
-        {canAccessDiscoverHub(isPlatformAdmin) ? (
-          <DiscoverWorkspaceBar
-            active="marketplace"
-            onSelect={(section) => {
-              if (section === 'marketplace') return;
-              navigation.navigate('Discover', { section });
-            }}
-          />
-        ) : null}
+        {/* No Discover section bar here. With Community switched back on it
+            would put a Community | Market tab row above the Shop header for
+            admins; Community has its own entry in the profile drawer and the
+            Shop icon in the top bar comes straight here. */}
 
         {/* 36dp row in both states so Cart never jumps. gap-2 (8px) means
             hitSlop={4} on adjacent 36px buttons yields exact 44px targets that
@@ -743,19 +763,17 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               ) : null}
             </View>
           ) : (
-            <View className="flex-1 flex-row items-center">
-              <Pressable
-                onPress={openSearch}
-                accessibilityRole="button"
-                accessibilityLabel="Search"
-                accessibilityHint="Opens the search box"
-                accessibilityState={{ expanded: false }}
-                hitSlop={4}
-                className={ICON_BTN}
-              >
-                <Ionicons name="search" size={19} color={colors.textSecondary} />
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={openSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Search"
+              accessibilityHint="Opens the search box"
+              accessibilityState={{ expanded: false }}
+              hitSlop={4}
+              className={ICON_BTN}
+            >
+              <Ionicons name="search" size={19} color={colors.textSecondary} />
+            </Pressable>
           )}
           {/* Alerts, Cart and You stay mounted in BOTH states. searchExpanded
               is pinned true for as long as a query sits in the store (results
@@ -763,14 +781,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               typing, and ShopQuickActions (the other Cart/You entry) hides on
               any query. Unmounting these here would leave a buyer with an
               active search no route to alerts or the You hub except Close,
-              which wipes the query. Only the Sell pill yields its width. */}
+              which wipes the query. Expanded, they shrink to icons and Sell
+              yields; collapsed, all four stretch to fill the row. */}
           <Pressable
             onPress={() => togglePanel('alerts')}
             accessibilityRole="button"
             accessibilityLabel={alertsLabel(savedSearchNewMatches)}
             accessibilityState={{ expanded: openPanel === 'alerts' }}
             hitSlop={4}
-            className={ICON_BTN}
+            className={headerButton}
           >
             {/* "Alerts", not "Saved": this is saved SEARCHES and their new
                 matches. The band's Saved card is saved listings, and two
@@ -782,6 +801,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               size={20}
               color={openPanel === 'alerts' ? '#6366f1' : colors.textSecondary}
             />
+            {showHeaderLabels ? (
+              <Text numberOfLines={1} className="text-xs font-medium text-lantern-text-secondary">
+                Alerts
+              </Text>
+            ) : null}
             <Badge count={savedSearchNewMatches} />
           </Pressable>
           {/* Amazon keeps the cart and your account one tap away on every
@@ -794,9 +818,14 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               badges.cartCount > 0 ? `Cart, ${badges.cartCount} items` : 'Cart'
             }
             hitSlop={4}
-            className={ICON_BTN}
+            className={headerButton}
           >
             <Ionicons name="cart-outline" size={19} color={colors.textSecondary} />
+            {showHeaderLabels ? (
+              <Text numberOfLines={1} className="text-xs font-medium text-lantern-text-secondary">
+                Cart
+              </Text>
+            ) : null}
             <Badge count={badges.cartCount} />
           </Pressable>
           <Pressable
@@ -808,20 +837,26 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 : 'Your orders, saved items and selling'
             }
             hitSlop={4}
-            className={ICON_BTN}
+            className={headerButton}
           >
             <Ionicons name="person-circle-outline" size={20} color={colors.textSecondary} />
+            {showHeaderLabels ? (
+              <Text numberOfLines={1} className="text-xs font-medium text-lantern-text-secondary">
+                You
+              </Text>
+            ) : null}
             <Badge count={badges.needsYou} />
           </Pressable>
           {/* Sell is the one control that yields to the box: it is the widest
-              and stays reachable through the You hub's Selling section. */}
+              and stays reachable through the You hub's Selling section. While
+              collapsed it takes an equal share of the row like the others. */}
           {searchExpanded ? null : (
             <Pressable
               onPress={() => navigation.navigate('CreateListing')}
               accessibilityRole="button"
               accessibilityLabel="Sell an item"
               hitSlop={4}
-              className="h-9 flex-row items-center gap-1 px-3 rounded-lg bg-lantern-primary"
+              className="h-9 flex-1 flex-row items-center justify-center gap-1 px-2 rounded-lg bg-lantern-primary"
             >
               <Ionicons name="add" size={16} color="#fff" />
               <Text className="text-sm font-semibold text-white">Sell</Text>
@@ -843,54 +878,48 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   dismissSearchKeyboard();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={suggestion.label}
-                className="px-3 py-2 border-b border-lantern-border last:border-b-0"
+                accessibilityLabel={
+                  suggestion.kind === 'recent' ? `Search again for ${suggestion.label}` : suggestion.label
+                }
+                className="min-h-[44px] flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border last:border-b-0"
               >
-                <Text className="text-sm text-lantern-text">{suggestion.label}</Text>
-                {suggestion.kind === 'type' ? (
-                  <Text className="text-[11px] text-lantern-text-tertiary">{suggestion.pathLabel}</Text>
+                {/* Recent searches live here, in the temporary dropdown, not in
+                    a band of their own: history is only useful while the
+                    buyer is deciding what to type, and the dropdown goes away
+                    with the keyboard. The clock is how a buyer tells a recent
+                    search from a category or a fresh "Search for" row. */}
+                {suggestion.kind === 'recent' ? (
+                  <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
                 ) : null}
+                <View className="flex-1">
+                  <Text className="text-sm text-lantern-text">{suggestion.label}</Text>
+                  {suggestion.kind === 'type' ? (
+                    <Text className="text-[11px] text-lantern-text-tertiary">{suggestion.pathLabel}</Text>
+                  ) : null}
+                </View>
               </Pressable>
             ))}
+            {hasRecentSuggestions ? (
+              <Pressable
+                onPress={() => {
+                  void clearRecentMarketplaceSearches();
+                  setRecentSearches([]);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear recent searches"
+                // 44px floor: the dropdown is overflow-hidden and the rows are
+                // stacked edge to edge, so hitSlop would be clipped below and
+                // handed to the neighbouring row above.
+                className="min-h-[44px] justify-center px-3 py-2"
+              >
+                <Text className="text-xs font-medium text-lantern-primary">Clear recent searches</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
       </View>
 
       <View className="bg-lantern-surface border-b border-lantern-border">
-        {searchExpanded && !searchQuery.trim() && recentSearches.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            // The keyboard is always up when this appears; RN's default 'never'
-            // swallows the first chip tap.
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, gap: 6, alignItems: 'center' }}
-          >
-            <Text className="text-[11px] text-lantern-text-tertiary mr-1">Recent</Text>
-            {recentSearches.map(q => (
-              <Pressable
-                key={q}
-                onPress={() => setSearchQuery(q)}
-                accessibilityRole="button"
-                accessibilityLabel={`Search again for ${q}`}
-                className="px-2.5 py-1 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
-              >
-                <Text className="text-[11px] text-lantern-text-secondary">{q}</Text>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={() => {
-                void clearRecentMarketplaceSearches();
-                setRecentSearches([]);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Clear recent searches"
-              className="px-2 py-1"
-            >
-              <Ionicons name="close-circle-outline" size={14} color="#94a3b8" />
-            </Pressable>
-          </ScrollView>
-        ) : null}
         {/* Departments scroll horizontally, Amazon-style: nine of them cannot
             share a row of equal thirds, and squeezing them would truncate every
             label. Shops sits last because it browses sellers, not products. */}

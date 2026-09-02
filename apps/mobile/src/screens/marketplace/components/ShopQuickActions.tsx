@@ -112,7 +112,7 @@ export function ShopQuickActions({ badges, onNavigate, layout = 'scroll', action
         action.badge > 0 ? `${action.label}, ${action.badge} need attention` : action.label
       }
       className={`${layout === 'grid' ? 'flex-1' : 'w-[132px]'} rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2.5`}
-      style={{ minHeight: 64 }}
+      style={{ minHeight: layout === 'grid' ? 64 : 56 }}
     >
       <View className="flex-row items-center justify-between">
         <View className="w-8 h-8 rounded-lg items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
@@ -124,9 +124,14 @@ export function ShopQuickActions({ badges, onNavigate, layout = 'scroll', action
       <Text numberOfLines={1} className="mt-1.5 text-xs font-semibold text-lantern-text">
         {action.label}
       </Text>
-      <Text numberOfLines={1} className="text-[10px] text-lantern-text-tertiary">
-        {action.hint}
-      </Text>
+      {/* The band shows the label alone: "Track & buy again", "Reorder in a
+          tap" and "Tap ♡ to save" repeated what the label already said. The
+          hub's grid keeps the hint, where it carries live counts. */}
+      {layout === 'grid' ? (
+        <Text numberOfLines={1} className="text-[10px] text-lantern-text-tertiary">
+          {action.hint}
+        </Text>
+      ) : null}
     </Pressable>
   );
 

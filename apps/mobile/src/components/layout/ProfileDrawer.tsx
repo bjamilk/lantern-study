@@ -21,6 +21,9 @@ interface Props {
   subtitle: string | null;
   avatarUri: string | null;
   onEditProfile: () => void;
+  onCommunity: () => void;
+  /** False hides Community for accounts outside the Discover hub's admin gate. */
+  showCommunity: boolean;
   onJobs: () => void;
   /** False hides Jobs for accounts outside the private pilot. */
   showJobs: boolean;
@@ -48,6 +51,8 @@ export function ProfileDrawer({
   subtitle,
   avatarUri,
   onEditProfile,
+  onCommunity,
+  showCommunity,
   onJobs,
   showJobs,
   onSettings,
@@ -206,10 +211,12 @@ export function ProfileDrawer({
           </Pressable>
 
           <View className="flex-1 pt-2 px-1">
-            {/* Jobs moved off the bottom bar to here: it is a private-pilot
-                surface, so it is listed only for accounts that can open it. */}
+            {/* Order is the founder's: destinations first (Community, Jobs),
+                then the two quick toggles, then Settings last so it sits
+                nearest Log out. Community and Jobs are gated surfaces, so
+                each is listed only for accounts that can open it. */}
+            {showCommunity ? row('people-outline', 'Community', onCommunity) : null}
             {showJobs ? row('briefcase-outline', 'Jobs', onJobs) : null}
-            {row('settings-outline', 'Settings', onSettings)}
             {row(
               lowDataMode ? 'cellular-outline' : 'wifi-outline',
               lowDataMode ? 'Low-data mode: ON' : 'Low-data mode: OFF',
@@ -220,6 +227,7 @@ export function ProfileDrawer({
               theme === 'dark' ? 'Light mode' : 'Dark mode',
               onToggleTheme
             )}
+            {row('settings-outline', 'Settings', onSettings)}
           </View>
 
           <View className="px-1 border-t border-lantern-border pt-2">

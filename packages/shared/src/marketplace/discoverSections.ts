@@ -7,12 +7,17 @@
  * behind those sections is untouched, so flipping a flag back to true
  * restores them.
  *
+ * 2026-09-02: Community is back on. It is reached from the mobile profile
+ * drawer (Community · Jobs · Low-data · Dark mode · Settings), still behind
+ * the platform-admin gate the Discover hub has always had. Groups and People
+ * stay hidden.
+ *
  * Web and mobile both read this so the two cannot drift.
  */
 export type DiscoverSectionId = 'communities' | 'groups' | 'people' | 'marketplace';
 
 export const DISCOVER_SECTION_ENABLED: Record<DiscoverSectionId, boolean> = {
-  communities: false,
+  communities: true,
   groups: false,
   people: false,
   marketplace: true,

@@ -7,6 +7,9 @@ import {
   ONBOARDING_COMPLETE_STORAGE_KEY,
   isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
+import { canAccessDiscoverHub } from '@lantern/shared/network';
+import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
+import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 
 import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, type NavigationState } from '@react-navigation/native';
 import { navigationRef, navigate as navigateFromRoot } from './navigationRef';
@@ -850,6 +853,11 @@ function MainTabsShell() {
   const { updateSettings } = useSettingsStore();
 
   const { lowDataMode, toggleLowDataMode } = useLowDataMode();
+  // The Discover hub (Community) has always been platform-admin only; the
+  // drawer row follows the same gate and the section flag, so it never lists
+  // a destination that would bounce the viewer back to the Shop.
+  const isPlatformAdmin = usePlatformAdmin();
+  const showCommunity = canAccessDiscoverHub(isPlatformAdmin) && isDiscoverSectionEnabled('communities');
 
   const openCompanion = useCompanionStore(s => s.open);
 
@@ -983,6 +991,13 @@ function MainTabsShell() {
           setDrawerOpen(false);
           navigateFromRoot('EditProfile');
         }}
+        // Community lives on the Market stack's Discover screen; the section
+        // param lands it on Communities rather than the default section.
+        onCommunity={() => {
+          setDrawerOpen(false);
+          goTab('MarketTab', { screen: 'Discover', params: { section: 'communities' } });
+        }}
+        showCommunity={showCommunity}
         onJobs={() => {
           setDrawerOpen(false);
           goTab('JobsTab', { screen: 'JobsHome' });
