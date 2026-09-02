@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
+  Keyboard,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -58,6 +60,18 @@ import {
 } from '@lantern/shared/marketplace';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useChrome } from '../../components/layout/ChromeContext';
+import { useTheme } from '../../theme';
+import {
+  alertsLabel,
+  countActiveFilters,
+  filtersLabel,
+  isSearchExpanded,
+} from './marketplaceSearchChrome';
+
+/** Byte-identical to the inline Cart/You so parity with ShopHeaderActions holds. */
+const ICON_BTN = 'h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary';
+
+type ShopPanel = 'filters' | 'alerts';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -121,16 +135,21 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   // One read feeds the header icons and the band; nothing on this screen sums
   // summary fields itself.
   const badges = useShopBadges();
+  const { colors } = useTheme();
 
-  const [showCategories, setShowCategories] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [showSavedSearches, setShowSavedSearches] = useState(false);
+  // Exactly one of the Filters / Alerts panels is open at a time.
+  const [openPanel, setOpenPanel] = useState<ShopPanel | null>(null);
+  // "The buyer asked for the box." Whether it is actually shown is derived
+  // below (searchExpanded) so a store query can never desync from the chrome.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [recentListings, setRecentListings] = useState<MarketplaceListing[]>([]);
   const [savedSearchNewMatches, setSavedSearchNewMatches] = useState(0);
   const [campuses, setCampuses] = useState<MarketplaceCampusOption[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [searchFocused, setSearchFocused] = useState(false);
   const [dealListings, setDealListings] = useState<MarketplaceListing[]>([]);
 
   useEffect(() => {
@@ -156,15 +175,129 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     ? getCategoryInfo(selectedCategory).name
     : 'All categories';
   const selectedCampus = campuses.find(campus => campus.id === campusIdFilter);
-  const activeFilterCount = [
+  // Derived every render, never stored: searchOpen || searchQuery.length > 0.
+  const searchExpanded = isSearchExpanded(searchOpen, searchQuery);
+  const activeFilterCount = countActiveFilters({
     minPrice,
     maxPrice,
     locationFilter,
     campusIdFilter,
     conditionFilter,
-  ].filter(Boolean).length +
-    (minRating != null ? 1 : 0) +
-    (sortBy !== 'trending' || sortOrder !== 'desc' ? 1 : 0);
+    minRating,
+    sortBy,
+    sortOrder,
+    selectedCategory,
+  });
+
+  const clearBlurTimer = () => {
+    if (blurTimerRef.current) {
+      clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+  };
+  const openSearch = () => setSearchOpen(true);
+  // Invariant: focused ⇒ searchOpen, so a box expanded only by a store query
+  // cannot unmount under the finger when the last character is deleted.
+  const onSearchFocus = () => {
+    clearBlurTimer();
+    setSearchFocused(true);
+    setSearchOpen(true);
+  };
+  const onSearchBlur = () => {
+    clearBlurTimer();
+    blurTimerRef.current = setTimeout(() => {
+      blurTimerRef.current = null;
+      setSearchFocused(false);
+    }, 200);
+  };
+  const dismissSearchKeyboard = () => {
+    clearBlurTimer();
+    Keyboard.dismiss();
+    setSearchFocused(false);
+  };
+  // setSearchOpen(true) BEFORE setSearchQuery('') so searchExpanded never flips
+  // false mid-gesture; the box stays open, focused and empty.
+  const clearSearch = () => {
+    setSearchOpen(true);
+    setSearchQuery('');
+    searchInputRef.current?.focus();
+  };
+  const collapseSearch = useCallback(() => {
+    if (blurTimerRef.current) {
+      clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+    // Before the input unmounts, or Android can leave the IME up with no
+    // focused input.
+    Keyboard.dismiss();
+    setSearchFocused(false);
+    setSearchOpen(false);
+    // Collapsing clears; the existing 350ms debounced effect refetches ''.
+    // Read through getState so this callback is stable across keystrokes and
+    // the focus-scoped BackHandler below subscribes once per expand.
+    if (useMarketplaceStore.getState().searchQuery) setSearchQuery('');
+  }, [setSearchQuery]);
+  // Every card/row that leaves this screen goes through here: with
+  // keyboardShouldPersistTaps="handled" on the lists the tap no longer
+  // dismisses the keyboard, and the input stays mounted (and focused) under
+  // the pushed screen, so Android would otherwise leave the IME up over it.
+  const dismissKeyboardThen = (go: () => void) => {
+    dismissSearchKeyboard();
+    go();
+  };
+  const openListing = (listingId: string) =>
+    dismissKeyboardThen(() => navigation.navigate('ListingDetail', { listingId }));
+  const togglePanel = (panel: ShopPanel) => setOpenPanel(cur => (cur === panel ? null : panel));
+  // The store's resetFilters deliberately leaves selectedCategory alone; with
+  // its chip gone the category now counts as a filter, so reset it here too.
+  const handleResetFilters = () => {
+    resetFilters();
+    if (selectedCategory) setSelectedCategory(null);
+  };
+
+  // Hardware back collapses the box. MUST be focus-scoped: BackHandler
+  // listeners are global/LIFO and this screen stays mounted under
+  // ListingDetail/Cart, so a plain useEffect would steal their back press
+  // whenever a query is active.
+  useFocusEffect(
+    useCallback(() => {
+      if (!searchExpanded) return undefined;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        collapseSearch();
+        return true;
+      });
+      return () => sub.remove();
+    }, [searchExpanded, collapseSearch]),
+  );
+
+  // Abandon an empty open box on leave. Reads the store via getState so the
+  // cleanup has no stale closure; a box with a query is kept and re-shows.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        if (!useMarketplaceStore.getState().searchQuery) {
+          setSearchOpen(false);
+          setSearchFocused(false);
+        }
+      },
+      [],
+    ),
+  );
+
+  // Android can ignore autoFocus when a TextInput mounts during a native-stack
+  // layout pass; focusing an already-focused input is a no-op.
+  useEffect(() => {
+    if (!searchOpen) return undefined;
+    const id = requestAnimationFrame(() => searchInputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [searchOpen]);
+
+  useEffect(
+    () => () => {
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    },
+    [],
+  );
 
   // Breadcrumb for the drilled-in node, department first.
   const taxonomyPath = useMemo(
@@ -425,7 +558,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
     return (
       <Pressable
-        onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+        onPress={() => openListing(item.id)}
         accessibilityRole="button"
         accessibilityLabel={`View listing ${item.title}`}
         className={`flex-1 m-1.5 rounded-lantern-xl overflow-hidden border ${
@@ -514,7 +647,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             {recentListings.map(item => (
               <Pressable
                 key={item.id}
-                onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+                onPress={() => openListing(item.id)}
                 className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
               >
                 <ListingImage uri={item.images?.[0]} className="w-full h-20" />
@@ -533,7 +666,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             {dealListings.map(item => (
               <Pressable
                 key={item.id}
-                onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+                onPress={() => openListing(item.id)}
                 className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
               >
                 <ListingImage uri={item.images?.[0]} className="w-full h-20" />
@@ -561,32 +694,96 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           />
         ) : null}
 
-        <View className="px-4 flex-row items-center gap-1.5">
-          <View className="flex-1 flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern px-3 py-1.5">
-            <Ionicons name="search" size={18} color="#94a3b8" />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
-              placeholder="Search listings…"
-              placeholderTextColor="#94a3b8"
-              accessibilityLabel="Search listings"
-              className="flex-1 ml-2 text-sm text-lantern-text"
-            />
-            <Pressable
-              onPress={() => setShowFilters(v => !v)}
-              className="p-2 min-w-[44px] min-h-[44px] items-center justify-center"
-              accessibilityRole="button"
-              accessibilityLabel="Marketplace filters"
-            >
-              <Ionicons
-                name="options-outline"
-                size={18}
-                color={activeFilterCount > 0 ? '#6366f1' : '#64748b'}
+        {/* 36dp row in both states so Cart never jumps. gap-2 (8px) means
+            hitSlop={4} on adjacent 36px buttons yields exact 44px targets that
+            touch without overlapping. */}
+        <View className="px-4 flex-row items-center gap-2">
+          {searchExpanded ? (
+            <View className="flex-1 min-h-[36px] flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern pl-0.5 pr-1">
+              {/* Material SearchView leading action: the box has exactly one
+                  X-shaped glyph (Clear), so Close and Clear cannot be confused. */}
+              <Pressable
+                onPress={collapseSearch}
+                accessibilityRole="button"
+                accessibilityLabel="Close search"
+                accessibilityHint="Clears the search and collapses the box"
+                hitSlop={4}
+                className="h-9 w-9 items-center justify-center"
+              >
+                <Ionicons name="arrow-back" size={20} color={colors.textSecondary} />
+              </Pressable>
+              <TextInput
+                ref={searchInputRef}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onFocus={onSearchFocus}
+                onBlur={onSearchBlur}
+                onSubmitEditing={dismissSearchKeyboard}
+                // Read only at mount: true when opened by the icon (keyboard
+                // up), false when the screen remounts with a store query.
+                autoFocus={searchOpen}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                placeholder="Search listings…"
+                placeholderTextColor={colors.inputPlaceholder}
+                accessibilityLabel="Search listings"
+                className="flex-1 ml-1 py-0 text-sm text-lantern-text"
               />
-            </Pressable>
-          </View>
+              {searchQuery.length > 0 ? (
+                <Pressable
+                  onPress={clearSearch}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  hitSlop={4}
+                  className="h-9 w-9 items-center justify-center"
+                >
+                  <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : (
+            <View className="flex-1 flex-row items-center">
+              <Pressable
+                onPress={openSearch}
+                accessibilityRole="button"
+                accessibilityLabel="Search"
+                accessibilityHint="Opens the search box"
+                accessibilityState={{ expanded: false }}
+                hitSlop={4}
+                className={ICON_BTN}
+              >
+                <Ionicons name="search" size={19} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+          )}
+          {/* Alerts, Cart and You stay mounted in BOTH states. searchExpanded
+              is pinned true for as long as a query sits in the store (results
+              browsing, returning from ListingDetail/Cart), not just while
+              typing, and ShopQuickActions (the other Cart/You entry) hides on
+              any query. Unmounting these here would leave a buyer with an
+              active search no route to alerts or the You hub except Close,
+              which wipes the query. Only the Sell pill yields its width. */}
+          <Pressable
+            onPress={() => togglePanel('alerts')}
+            accessibilityRole="button"
+            accessibilityLabel={alertsLabel(savedSearchNewMatches)}
+            accessibilityState={{ expanded: openPanel === 'alerts' }}
+            hitSlop={4}
+            className={ICON_BTN}
+          >
+            {/* "Alerts", not "Saved": this is saved SEARCHES and their new
+                matches. The band's Saved card is saved listings, and two
+                controls called Saved a thumb apart meant nobody knew which
+                was which. Sits left of Cart so Cart+You remain the trailing
+                pair every other Shop screen shows. */}
+            <Ionicons
+              name="notifications-outline"
+              size={20}
+              color={openPanel === 'alerts' ? '#6366f1' : colors.textSecondary}
+            />
+            <Badge count={savedSearchNewMatches} />
+          </Pressable>
           {/* Amazon keeps the cart and your account one tap away on every
               page. These replace a favourites toggle and a "..." sheet that
               hid orders, cart, inquiries and offers behind an extra tap. */}
@@ -596,31 +793,42 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             accessibilityLabel={
               badges.cartCount > 0 ? `Cart, ${badges.cartCount} items` : 'Cart'
             }
-            className="h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary"
+            hitSlop={4}
+            className={ICON_BTN}
           >
-            <Ionicons name="cart-outline" size={19} color="#64748b" />
+            <Ionicons name="cart-outline" size={19} color={colors.textSecondary} />
             <Badge count={badges.cartCount} />
           </Pressable>
           <Pressable
             onPress={() => navigation.navigate('ShopAccount')}
             accessibilityRole="button"
-            accessibilityLabel="Your orders, saved items and selling"
-            className="h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary"
+            accessibilityLabel={
+              badges.needsYou > 0
+                ? `Your orders, saved items and selling, ${badges.needsYou} need you`
+                : 'Your orders, saved items and selling'
+            }
+            hitSlop={4}
+            className={ICON_BTN}
           >
-            <Ionicons name="person-circle-outline" size={20} color="#64748b" />
+            <Ionicons name="person-circle-outline" size={20} color={colors.textSecondary} />
             <Badge count={badges.needsYou} />
           </Pressable>
-          <Pressable
-            onPress={() => navigation.navigate('CreateListing')}
-            accessibilityRole="button"
-            accessibilityLabel="Sell an item"
-            className="h-9 flex-row items-center gap-1 px-3 rounded-lg bg-lantern-primary"
-          >
-            <Ionicons name="add" size={16} color="#fff" />
-            <Text className="text-sm font-semibold text-white">Sell</Text>
-          </Pressable>
+          {/* Sell is the one control that yields to the box: it is the widest
+              and stays reachable through the You hub's Selling section. */}
+          {searchExpanded ? null : (
+            <Pressable
+              onPress={() => navigation.navigate('CreateListing')}
+              accessibilityRole="button"
+              accessibilityLabel="Sell an item"
+              hitSlop={4}
+              className="h-9 flex-row items-center gap-1 px-3 rounded-lg bg-lantern-primary"
+            >
+              <Ionicons name="add" size={16} color="#fff" />
+              <Text className="text-sm font-semibold text-white">Sell</Text>
+            </Pressable>
+          )}
         </View>
-        {searchSuggestions.length > 0 && searchFocused ? (
+        {searchExpanded && searchFocused && searchSuggestions.length > 0 ? (
           <View className="mx-4 rounded-xl border border-lantern-border bg-lantern-surface overflow-hidden">
             {searchSuggestions.map(suggestion => (
               <Pressable
@@ -632,8 +840,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   } else {
                     setSearchQuery(suggestion.query);
                   }
-                  setSearchFocused(false);
+                  dismissSearchKeyboard();
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={suggestion.label}
                 className="px-3 py-2 border-b border-lantern-border last:border-b-0"
               >
                 <Text className="text-sm text-lantern-text">{suggestion.label}</Text>
@@ -647,10 +857,13 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       </View>
 
       <View className="bg-lantern-surface border-b border-lantern-border">
-        {!searchQuery.trim() && recentSearches.length > 0 ? (
+        {searchExpanded && !searchQuery.trim() && recentSearches.length > 0 ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            // The keyboard is always up when this appears; RN's default 'never'
+            // swallows the first chip tap.
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, gap: 6, alignItems: 'center' }}
           >
             <Text className="text-[11px] text-lantern-text-tertiary mr-1">Recent</Text>
@@ -694,6 +907,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingHorizontal: 8 }}
           className="max-h-12"
         >
@@ -703,7 +917,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               onPress={() => {
                 setActiveTab(tab);
                 setSelectedCategory(null);
-                setShowCategories(false);
+                setOpenPanel(null);
               }}
               accessibilityRole="tab"
               accessibilityState={{ selected: activeTab === tab }}
@@ -763,65 +977,137 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
         {activeTab !== 'shops' ? (
         <View className="flex-row px-3 pb-2 gap-2 flex-wrap">
+          {/* Two complete static class strings per branch, never an
+              interpolated tone fragment: NativeWind drops unknown classes
+              silently. Indigo count pill, not the red Badge: a filter is a
+              setting, not attention. 32px + hitSlop 6 = 44px. */}
           <Pressable
-            onPress={() => setShowCategories(v => !v)}
-            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
+            onPress={() => togglePanel('filters')}
+            accessibilityRole="button"
+            accessibilityLabel={filtersLabel(activeFilterCount)}
+            accessibilityState={{ expanded: openPanel === 'filters' }}
+            hitSlop={6}
+            className={
+              openPanel === 'filters' || activeFilterCount > 0
+                ? 'flex-row items-center gap-1 min-h-[32px] px-2.5 rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-dark/40'
+                : 'flex-row items-center gap-1 min-h-[32px] px-2.5 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
+            }
           >
-            <Text className="text-[11px] font-medium text-lantern-text-secondary">{activeCategoryLabel}</Text>
-            <Ionicons name={showCategories ? 'chevron-up' : 'chevron-down'} size={14} color="#64748b" />
-          </Pressable>
-          <Pressable
-            onPress={() => setShowFilters(true)}
-            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
-          >
-            <Ionicons name="location-outline" size={13} color="#64748b" />
-            <Text numberOfLines={1} className="max-w-[120px] text-[11px] font-medium text-lantern-text-secondary">
-              {selectedCampus?.name || 'All Nigeria'}
+            <Ionicons
+              name="options-outline"
+              size={14}
+              color={activeFilterCount > 0 || openPanel === 'filters' ? '#6366f1' : colors.textSecondary}
+            />
+            <Text
+              className={
+                activeFilterCount > 0
+                  ? 'text-[11px] font-medium text-lantern-primary'
+                  : 'text-[11px] font-medium text-lantern-text-secondary'
+              }
+            >
+              Filters
             </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setShowSavedSearches(v => !v)}
-            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
-          >
-            {/* "Alerts", not "Saved": this chip is saved SEARCHES and their new
-                matches. The band's Saved card is saved listings, and two chips
-                called Saved a thumb apart meant nobody knew which was which. */}
-            <Ionicons name="notifications-outline" size={14} color="#64748b" />
-            <Text className="text-[11px] text-lantern-text-secondary">Alerts</Text>
-            {savedSearchNewMatches > 0 ? (
+            {activeFilterCount > 0 ? (
               <View className="ml-0.5 px-1.5 py-0.5 rounded-full bg-lantern-primary">
-                <Text className="text-[9px] font-bold text-white">{savedSearchNewMatches}</Text>
+                <Text className="text-[9px] font-bold text-white">{activeFilterCount}</Text>
               </View>
             ) : null}
+            <Ionicons
+              name={openPanel === 'filters' ? 'chevron-up' : 'chevron-down'}
+              size={14}
+              color={colors.textSecondary}
+            />
           </Pressable>
-          <Pressable onPress={handleSaveSearch} className="px-2 py-1 rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-dark/40">
-            <Text className="text-[11px] font-medium text-lantern-primary">Save</Text>
+          {/* "Save search", not "Save": with Alerts gone from beside it, "Save"
+              alone no longer says what it saves (the band's Saved card is
+              saved listings). */}
+          <Pressable
+            onPress={handleSaveSearch}
+            accessibilityRole="button"
+            accessibilityLabel="Save this search as an alert"
+            hitSlop={6}
+            className="min-h-[32px] px-2.5 justify-center rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-dark/40"
+          >
+            <Text className="text-[11px] font-medium text-lantern-primary">Save search</Text>
           </Pressable>
         </View>
         ) : null}
 
-        {activeTab !== 'shops' && showFilters ? (
+        {activeTab !== 'shops' && openPanel === 'filters' ? (
           <View className="px-3 pb-3 gap-2">
             <View className="flex-row items-center justify-between">
-              <Text className="text-xs font-semibold text-lantern-text">Browse area</Text>
+              <Text accessibilityRole="header" className="text-xs font-semibold text-lantern-text">
+                Filters
+              </Text>
               {activeFilterCount > 0 ? (
-                <Pressable onPress={resetFilters} className="min-h-[32px] px-2 justify-center">
+                <Pressable
+                  onPress={handleResetFilters}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reset filters"
+                  hitSlop={{ top: 6, bottom: 6 }}
+                  className="min-h-[32px] px-2 justify-center"
+                >
                   <Text className="text-xs font-semibold text-lantern-primary">Reset filters</Text>
                 </Pressable>
               ) : null}
             </View>
-            <CampusPicker
-              campuses={campuses}
-              value={campusIdFilter}
-              onChange={setCampusIdFilter}
-              emptyLabel="All Nigeria"
-              allowEmpty
-            />
+            {/* Category first, campus second: the order the two chips they
+                replace used to sit in. Selecting leaves the panel open. */}
+            <View className="gap-1.5">
+              <Text className="text-[11px] text-lantern-text-tertiary">Category</Text>
+              {/* px literals, not rem classes: NativeWind inlines rem at 14, so
+                  text-xs + py-1.5 is a 26.5px pill. min-h-[32px] + hitSlop 6
+                  = 44px, and a 12px gap on both axes keeps neighbouring slops
+                  from overlapping (RN hands an overlap to the later sibling,
+                  i.e. the wrong row's pill). */}
+              <View className="flex-row flex-wrap gap-[12px]">
+                <Pressable
+                  onPress={() => setSelectedCategory(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="All categories"
+                  accessibilityState={{ selected: !selectedCategory }}
+                  hitSlop={6}
+                  className={`min-h-[32px] justify-center px-3 py-1.5 rounded-full border ${!selectedCategory ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'}`}
+                >
+                  <Text className={`text-xs font-medium ${!selectedCategory ? 'text-white' : 'text-lantern-text-secondary'}`}>All</Text>
+                </Pressable>
+                {categories.map(cat => (
+                  <Pressable
+                    key={cat.id}
+                    onPress={() => setSelectedCategory(cat.id as MarketplaceCategory)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Category ${cat.name}`}
+                    accessibilityState={{ selected: selectedCategory === cat.id }}
+                    hitSlop={6}
+                    className={`min-h-[32px] justify-center px-3 py-1.5 rounded-full border ${
+                      selectedCategory === cat.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+                    }`}
+                  >
+                    <Text className={`text-xs font-medium ${selectedCategory === cat.id ? 'text-white' : 'text-lantern-text-secondary'}`}>
+                      {cat.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            {/* This is where "All Nigeria" now lives. */}
+            <View className="gap-1.5">
+              <Text className="text-[11px] text-lantern-text-tertiary">Campus</Text>
+              <CampusPicker
+                campuses={campuses}
+                value={campusIdFilter}
+                onChange={setCampusIdFilter}
+                emptyLabel="All Nigeria"
+                allowEmpty
+              />
+            </View>
             <View className="flex-row gap-2">
               <TextInput
                 value={minPrice}
                 onChangeText={setMinPrice}
                 placeholder="Min ₦"
+                placeholderTextColor={colors.inputPlaceholder}
+                accessibilityLabel="Minimum price"
                 keyboardType="numeric"
                 className="flex-1 p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
               />
@@ -829,6 +1115,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 value={maxPrice}
                 onChangeText={setMaxPrice}
                 placeholder="Max ₦"
+                placeholderTextColor={colors.inputPlaceholder}
+                accessibilityLabel="Maximum price"
                 keyboardType="numeric"
                 className="flex-1 p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
               />
@@ -837,15 +1125,19 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               value={locationFilter}
               onChangeText={setLocationFilter}
               placeholder="Pickup or delivery area"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={colors.inputPlaceholder}
+              accessibilityLabel="Pickup or delivery area"
               className="p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
             />
-            <View className="flex-row gap-2 flex-wrap">
+            <View className="flex-row items-center gap-2 flex-wrap">
+              <Text className="text-[11px] text-lantern-text-tertiary">Sort</Text>
               <Pressable
                 onPress={() => {
                   setSortBy('trending');
                   setSortOrder('desc');
                 }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: sortBy === 'trending' }}
                 className={`px-3 py-1.5 rounded-lg ${sortBy === 'trending' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
                 <Text className={`text-xs ${sortBy === 'trending' ? 'text-white' : 'text-lantern-text-secondary'}`}>
@@ -857,6 +1149,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   setSortBy('created_at');
                   setSortOrder(sortBy === 'created_at' && sortOrder === 'desc' ? 'asc' : 'desc');
                 }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: sortBy === 'created_at' }}
                 className={`px-3 py-1.5 rounded-lg ${sortBy === 'created_at' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
                 <Text className={`text-xs ${sortBy === 'created_at' ? 'text-white' : 'text-lantern-text-secondary'}`}>
@@ -865,6 +1159,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               </Pressable>
               <Pressable
                 onPress={() => setSortBy('price')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: sortBy === 'price' }}
                 className={`px-3 py-1.5 rounded-lg ${sortBy === 'price' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
                 <Text className={`text-xs ${sortBy === 'price' ? 'text-white' : 'text-lantern-text-secondary'}`}>
@@ -930,52 +1226,43 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           </View>
         ) : null}
 
-        {activeTab !== 'shops' && showCategories ? (
-          <View className="px-3 pb-3 flex-row flex-wrap gap-2">
-            <Pressable
-              onPress={() => setSelectedCategory(null)}
-              className={`px-3 py-1.5 rounded-full border ${!selectedCategory ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'}`}
-            >
-              <Text className={`text-xs font-medium ${!selectedCategory ? 'text-white' : 'text-lantern-text-secondary'}`}>All</Text>
-            </Pressable>
-            {categories.map(cat => (
-              <Pressable
-                key={cat.id}
-                onPress={() => setSelectedCategory(cat.id as MarketplaceCategory)}
-                className={`px-3 py-1.5 rounded-full border ${
-                  selectedCategory === cat.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
-                }`}
-              >
-                <Text className={`text-xs font-medium ${selectedCategory === cat.id ? 'text-white' : 'text-lantern-text-secondary'}`}>
-                  {cat.name}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-
-        {showSavedSearches && savedSearches.length > 0 ? (
+        {/* No tab gate: the header Alerts button works on Shops too, and it is
+            never a silent no-op — with nothing saved it explains itself. */}
+        {openPanel === 'alerts' ? (
           <View className="px-3 pb-3">
-            {savedSearches.map(s => (
-              <View key={s.id} className="flex-row items-center justify-between py-2 border-b border-lantern-border">
-                <Pressable
-                  className="flex-1"
-                  onPress={() => {
-                    applySavedSearch(s.filters);
-                    setShowSavedSearches(false);
-                  }}
-                >
-                  <Text className="text-sm text-lantern-text">{s.name}</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void deleteSavedSearch(s.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Delete saved search ${s.name}`}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#94a3b8" />
-                </Pressable>
-              </View>
-            ))}
+            {savedSearches.length === 0 ? (
+              <Text className="text-sm text-lantern-text-secondary">
+                No alerts yet. Save a search and we'll tell you when new listings match it.
+              </Text>
+            ) : (
+              savedSearches.map(s => (
+                <View key={s.id} className="flex-row items-center justify-between py-0.5 border-b border-lantern-border">
+                  <Pressable
+                    className="flex-1 min-h-[44px] justify-center"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Apply saved search ${s.name}`}
+                    onPress={() => {
+                      applySavedSearch(s.filters);
+                      setOpenPanel(null);
+                    }}
+                  >
+                    <Text className="text-sm text-lantern-text">{s.name}</Text>
+                  </Pressable>
+                  {/* A real 44px box, not a glyph plus hitSlop: NativeWind
+                      inlines rem at 14 (h-9 = 31.5px), and slop past the
+                      row's right edge is clipped by the parent anyway. A miss
+                      here would land on the flex-1 Apply Pressable. */}
+                  <Pressable
+                    onPress={() => void deleteSavedSearch(s.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete saved search ${s.name}`}
+                    className="h-[44px] w-[44px] items-center justify-center"
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                  </Pressable>
+                </View>
+              ))
+            )}
           </View>
         ) : null}
       </View>
@@ -990,6 +1277,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             data={shops}
             onScroll={chromeOnScroll}
             scrollEventThrottle={16}
+            keyboardShouldPersistTaps="handled"
             keyExtractor={(item) => item.sellerId}
             contentContainerStyle={{ padding: 12, paddingBottom: tabBarClearance }}
             refreshControl={
@@ -1017,7 +1305,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             }
             renderItem={({ item }) => (
               <Pressable
-                onPress={() => navigation.navigate('SellerProfile', { sellerId: item.sellerId })}
+                onPress={() =>
+                  dismissKeyboardThen(() =>
+                    navigation.navigate('SellerProfile', { sellerId: item.sellerId }),
+                  )
+                }
                 className="mb-3 rounded-2xl overflow-hidden border border-lantern-border bg-lantern-surface"
               >
                 <View className="h-16 bg-indigo-600">
@@ -1072,6 +1364,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           data={displayListings}
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
+          // "handled", as on the Recent strip and tabs: the search keyboard is
+          // up while typed results render, and RN's default "never" swallows
+          // the first card tap to dismiss it.
+          keyboardShouldPersistTaps="handled"
           keyExtractor={item => item.id}
           numColumns={2}
           ListHeaderComponent={listHeader}
