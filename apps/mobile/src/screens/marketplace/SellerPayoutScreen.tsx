@@ -7,7 +7,6 @@ import { fetchSellerPayments } from '../../services/api';
 import { Button } from '../../components/ui';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
-import { formatPrice } from './marketplaceHelpers';
 import { SellerPayoutSetup } from './SellerPayoutSetup';
 import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
@@ -68,6 +67,12 @@ const shortDate = (iso: string | null): string | null => {
  * the buyer confirms" from "already in my account". This is the one screen
  * that answers that.
  */
+/**
+ * Money on a ledger, not a price tag. formatPrice renders 0 as "Free", which is
+ * right on a listing and wrong beside "Paid out" or a failed sale.
+ */
+const naira = (kobo: number): string => `₦${Math.round(kobo / 100).toLocaleString()}`;
+
 export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp }) {
   const payouts = useMarketplaceStore((st) => st.shopSummary.payouts);
   // The balance rides on the shared summary; make sure it is fresh on arrival.
@@ -148,7 +153,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
             <View className="flex-1 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
               <Text className="text-[11px] text-lantern-text-secondary">Awaiting payout</Text>
               <Text className="text-lg font-bold text-lantern-text">
-                {formatPrice(Math.round(payouts.awaitingPayoutKobo / 100))}
+                {naira(payouts.awaitingPayoutKobo)}
               </Text>
               <Text className="text-[11px] text-lantern-text-tertiary">
                 {payouts.awaitingPayoutCount} {payouts.awaitingPayoutCount === 1 ? 'sale' : 'sales'}
@@ -157,7 +162,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
             <View className="flex-1 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
               <Text className="text-[11px] text-lantern-text-secondary">Paid out</Text>
               <Text className="text-lg font-bold text-lantern-text">
-                {formatPrice(Math.round(payouts.paidOutKobo / 100))}
+                {naira(payouts.paidOutKobo)}
               </Text>
               <Text className="text-[11px] text-lantern-text-tertiary">
                 {payouts.paidOutCount} {payouts.paidOutCount === 1 ? 'sale' : 'sales'}, all time
@@ -200,7 +205,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
                   key={p.orderId}
                   onPress={() => navigation.navigate('OrderDetail', { orderId: p.orderId })}
                   accessibilityRole="button"
-                  accessibilityLabel={`${p.title}, ${formatPrice(Math.round(p.sellerPayoutKobo / 100))}, ${label}`}
+                  accessibilityLabel={`${p.title}, ${naira(p.sellerPayoutKobo)}, ${label}`}
                   className="py-2.5 border-b border-lantern-border/60"
                 >
                   <View className="flex-row items-center gap-2">
@@ -211,8 +216,8 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
                       {p.status === 'refunded' || p.status === 'failed'
                         ? // Nothing reached the seller; showing the would-be
                           // payout under an "Earnings" heading overstated it.
-                          formatPrice(0)
-                        : formatPrice(Math.round(p.sellerPayoutKobo / 100))}
+                          naira(0)
+                        : naira(p.sellerPayoutKobo)}
                     </Text>
                   </View>
                   <View className="flex-row items-center gap-2 mt-1">
@@ -234,7 +239,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
                               ? `Paid ${paidOn}`
                               : 'Not paid yet'}
                       {p.platformFeeKobo > 0
-                        ? ` · fee −${formatPrice(Math.round(p.platformFeeKobo / 100))}`
+                        ? ` · fee −${naira(p.platformFeeKobo)}`
                         : ''}
                     </Text>
                   </View>
