@@ -17,7 +17,9 @@ import type {
 } from "../marketplace/studyPacks";
 import type {
   Community,
+  CommunityChannels,
   CommunityDetail,
+  CommunityMembersPage,
   CourseClassSignal,
   CourseReadiness,
   DiscoverGroup,
@@ -3088,12 +3090,26 @@ export function createApiEndpoints(client: ApiClient) {
     fetchCommunity: (slug: string) =>
       apiRequest<CommunityDetail>(`/communities/${encodeURIComponent(slug)}`, {}, 10000),
 
-    fetchCommunityMembers: (communityId: string, limit?: number) =>
-      apiRequest<Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>>(
-        `/communities/${communityId}/members${limit ? `?limit=${limit}` : ''}`,
+    /** The community "server" view: lounge, text channels, open rooms, counts. */
+    fetchCommunityChannels: (communityId: string) =>
+      apiRequest<CommunityChannels>(
+        `/communities/${encodeURIComponent(communityId)}/channels`,
         {},
-        10000
+        10000,
       ),
+
+    /** Paged roster (members only); keep paging while `nextCursor` is set. */
+    fetchCommunityMembers: (communityId: string, opts?: { limit?: number; cursor?: string }) => {
+      const params = new URLSearchParams();
+      if (opts?.limit) params.set('limit', String(opts.limit));
+      if (opts?.cursor) params.set('cursor', opts.cursor);
+      const qs = params.toString();
+      return apiRequest<CommunityMembersPage>(
+        `/communities/${encodeURIComponent(communityId)}/members${qs ? `?${qs}` : ''}`,
+        {},
+        10000,
+      );
+    },
 
     joinCommunity: (communityId: string) =>
       apiRequest<{ joined: true }>(`/communities/${communityId}/join`, { method: 'POST' }, 10000),
@@ -3240,8 +3256,17 @@ export function createApiEndpoints(client: ApiClient) {
         15000,
       ),
 
-    listStudyRooms: () =>
-      apiRequest<import('../network').StudyRoomListItem[]>('/study-rooms', {}, 8000),
+    listStudyRooms: (params?: { communityId?: string; courseId?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.communityId) query.set('communityId', params.communityId);
+      if (params?.courseId) query.set('courseId', params.courseId);
+      const qs = query.toString();
+      return apiRequest<import('../network').StudyRoomListItem[]>(
+        `/study-rooms${qs ? `?${qs}` : ''}`,
+        {},
+        8000,
+      );
+    },
 
     fetchStudyRoom: (roomId: string) =>
       apiRequest<import('../network').StudyRoomDetail>(

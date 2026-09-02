@@ -85,6 +85,10 @@ export function buildParamsFromState(mode: AppMode): AppRouteParams {
       return { libraryTab: state.libraryTab };
     case AppMode.STUDY_ROOM:
       return state.selectedStudyRoomId ? { roomId: state.selectedStudyRoomId } : {};
+    case AppMode.COMMUNITY_DETAIL:
+      // Without a slug the path collapses to /discover, which then hydrates as
+      // the hub — so a bare setAppMode(COMMUNITY_DETAIL) follows the column.
+      return state.activeCommunity ? { slug: state.activeCommunity.slug } : {};
     default:
       return {};
   }
@@ -135,6 +139,12 @@ export function applyPreNavigationEffects(mode: AppMode, params?: AppRouteParams
   }
   if (mode === AppMode.STUDY_ROOM && params?.roomId) {
     ui.setSelectedStudyRoomId(params.roomId);
+  }
+  if (mode === AppMode.COMMUNITY_DETAIL && !params?.groupId) {
+    // Back from a channel to the community home deselects it, exactly as the
+    // chat screen's back does — otherwise realtime would keep treating that
+    // channel as "being viewed" and never badge it.
+    ui.setSelectedChat(null);
   }
 }
 

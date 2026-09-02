@@ -18,6 +18,7 @@ import {
   MIN_LECTURE_RECORD_MS,
 } from '../../services/lectureRecording';
 import { fetchAIUsage } from '../../services/ai';
+import { resolveSideColumn } from '../../utils/sideColumn';
 
 interface AppShellProps {
     children: React.ReactNode;
@@ -48,7 +49,7 @@ const AppShell: React.FC<AppShellProps> = ({
     onOpenLectureNote,
     hideMobileAiUsageBadge = false,
 }) => {
-    const { appMode, isSidebarExpanded, isChatsSectionExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
+    const { appMode, isSidebarExpanded, isChatsSectionExpanded, activeCommunity, lowDataMode, importProgress, clearImportProgress } = useUIStore();
     const uploadJobList = useNoteUploadStore((s) => s.jobs);
     const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
     const activeUploadJob = useMemo(() => getActiveUploadJob(uploadJobList), [uploadJobList]);
@@ -173,12 +174,11 @@ const AppShell: React.FC<AppShellProps> = ({
 
             {/* Main content area */}
             <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'safe-area-pb'} md:pb-0 ${
-                // While the chats flyout column is out, the sidebar renders as
-                // its 5rem icon rail (Sidebar derives this), so the offset is
-                // always rail + 20rem column = 25rem. The flyout yields on the
-                // chat screen (ChatWindow has its own list); this must mirror
-                // Sidebar's chatsFlyoutOpen.
-                isChatsSectionExpanded && appMode !== AppMode.CHAT
+                // While a column (chats flyout or community channels) is out,
+                // the sidebar renders as its 5rem icon rail (Sidebar derives
+                // this), so the offset is always rail + 20rem column = 25rem.
+                // Sidebar decides from the same resolveSideColumn call.
+                resolveSideColumn({ isChatsSectionExpanded, appMode, activeCommunity }) !== null
                   ? 'md:ml-[25rem]'
                   : isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'
             } ${isSessionPaused || lectureBannerVisible ? 'pt-12' : ''}`}>

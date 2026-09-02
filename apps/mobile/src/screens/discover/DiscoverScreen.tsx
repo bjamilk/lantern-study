@@ -10,6 +10,7 @@ import {
   canAccessDiscoverHub,
   communityKindLabel,
   communityMembershipAction,
+  communityUnreadTotal,
   memberCountLabel,
   presenceLabel,
   shouldShowTrustChip,
@@ -31,7 +32,6 @@ import {
   joinDiscoverableGroup,
   leaveCommunity,
   listStudyRooms,
-  openCommunityLounge,
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
@@ -41,6 +41,8 @@ import { DiscoverComingSoon } from './DiscoverComingSoon';
 import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { BackButton } from '../../components/ui';
+import { UnreadPill } from '../../components/community';
+import { toChannelOverlayGroups } from '../../utils/communityOverlay';
 
 type NavigationProp = {
   goBack: () => void;
@@ -87,13 +89,15 @@ function DiscoverHub({
   const [now, setNow] = useState(() => Date.now());
   const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [loungePendingId, setLoungePendingId] = useState<string | null>(null);
   const [creatingCommunity, setCreatingCommunity] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
   const fetchGroups = useGroupStore((s) => s.fetchGroups);
+  const storeGroups = useGroupStore((s) => s.groups);
   const userId = useAuthStore((s) => s.user?.id);
+  // Unread rollup per community card = joined, non-archived channels in it.
+  const overlayGroups = useMemo(() => toChannelOverlayGroups(storeGroups), [storeGroups]);
 
   const myById = useMemo(() => new Map(mine.map((c) => [c.id, c])), [mine]);
   const myIds = useMemo(() => new Set(mine.map((c) => c.id)), [mine]);
@@ -293,26 +297,10 @@ function DiscoverHub({
     return items;
   }, [mine, communities, myIds]);
 
-  const openLounge = async (community: Community) => {
-    if (loungePendingId) return;
-    setLoungePendingId(community.id);
-    try {
-      const lounge = await openCommunityLounge(community.id);
-      if (userId) await fetchGroups(userId).catch(() => undefined);
-      tabNav?.navigate('ChatTab', {
-        screen: 'GroupChat',
-        params: { groupId: lounge.groupId, groupName: lounge.name },
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open the community chat');
-    } finally {
-      setLoungePendingId(null);
-    }
-  };
-
   const renderCommunityCard = (item: Community) => {
     const isMember = myIds.has(item.id);
     const action = communityMembershipAction(isMember, myById.get(item.id)?.source);
+    const unread = isMember ? communityUnreadTotal(overlayGroups, item.id) : 0;
     return (
       <View className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3">
         <View className="flex-row items-start">
@@ -320,15 +308,17 @@ function DiscoverHub({
             className="flex-1 pr-2"
             onPress={() => navigation.navigate('CommunityDetail', { slug: item.slug })}
             accessibilityRole="button"
-            accessibilityLabel={`Open ${item.name}`}
+            accessibilityLabel={`Open ${item.name}${unread > 0 ? `, ${unread} unread` : ''}`}
           >
             <View className="flex-row items-center" style={{ gap: 4 }}>
-              <Text className="flex-1 text-sm font-semibold text-lantern-text" numberOfLines={1}>
+              <Text className="shrink text-sm font-semibold text-lantern-text" numberOfLines={1}>
                 {item.name}
               </Text>
               {item.is_official ? (
                 <Ionicons name="checkmark-circle" size={16} color="#6366f1" />
               ) : null}
+              <UnreadPill unread={unread} />
+              <View className="flex-1" />
             </View>
             <Text className="text-xs text-lantern-text-tertiary mt-0.5">
               {communityKindLabel(item.kind)} · {memberCountLabel(item.member_count)}
@@ -357,22 +347,7 @@ function DiscoverHub({
             </Text>
           </Pressable>
         </View>
-        {isMember ? (
-          <Pressable
-            onPress={() => void openLounge(item)}
-            disabled={loungePendingId === item.id}
-            hitSlop={6}
-            className="mt-2 flex-row items-center self-start rounded-full bg-lantern-primary/10 px-2.5 py-1.5"
-            style={{ opacity: loungePendingId === item.id ? 0.6 : 1 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${item.name} community chat`}
-          >
-            <Ionicons name="chatbubbles-outline" size={13} color="#6366f1" />
-            <Text className="ml-1 text-[11px] font-semibold text-lantern-primary">
-              {loungePendingId === item.id ? 'Opening…' : 'Community chat'}
-            </Text>
-          </Pressable>
-        ) : null}
+        {/* The lounge lives inside the community now (spec §4.8) — no chip here. */}
       </View>
     );
   };

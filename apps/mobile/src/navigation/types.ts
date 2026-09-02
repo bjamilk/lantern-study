@@ -72,8 +72,24 @@ export type StudyStackParamList = {
 
 export type ChatStackParamList = {
   GroupsList: undefined;
-  CreateGroup: { parentId?: string; parentName?: string } | undefined;
-  GroupChat: { groupId: string; groupName?: string; openAddMembers?: boolean };
+  /** `communityId/communityName/communitySlug` lock the new group to a community as a channel (spec §4.6). */
+  CreateGroup:
+    | {
+        parentId?: string;
+        parentName?: string;
+        communityId?: string;
+        communityName?: string;
+        communitySlug?: string;
+      }
+    | undefined;
+  /** `communitySlug/communityName` only drive the `in <Community> ›` link when a channel is opened from the plain chat list. */
+  GroupChat: {
+    groupId: string;
+    groupName?: string;
+    openAddMembers?: boolean;
+    communitySlug?: string;
+    communityName?: string;
+  };
   DirectMessage: {
     threadId: string;
     recipientId: string;
@@ -130,10 +146,42 @@ export type MarketStackParamList = {
       }
     | undefined;
   CommunityDetail: { slug: string };
+  // Founder rule (spec §0a): a community's channels, rooms and roster live on
+  // THIS stack, never on the Chat tab, so back always returns to the community.
+  CommunityMembers: { slug: string; communityId?: string; name?: string };
+  CommunityChannel: {
+    groupId: string;
+    groupName?: string;
+    /**
+     * In-app pushes carry all three; a deep link carries only the slug (the
+     * screen resolves the rest from the community store).
+     */
+    communitySlug?: string;
+    communityName?: string;
+    communityId?: string;
+  };
+  /** Create a channel from inside a community (same component as the Chat stack's CreateGroup). */
+  CreateGroup:
+    | {
+        parentId?: string;
+        parentName?: string;
+        communityId?: string;
+        communityName?: string;
+        communitySlug?: string;
+      }
+    | undefined;
   Feed: undefined;
   Mastery: { courseId?: string } | undefined;
   SemesterProducts: undefined;
-  StudyRoom: { roomId?: string; courseId?: string; topic?: string } | undefined;
+  StudyRoom:
+    | {
+        roomId?: string;
+        courseId?: string;
+        topic?: string;
+        communityId?: string;
+        communityName?: string;
+      }
+    | undefined;
   OrderDetail: {
     orderId: string;
     paymentReturn?: boolean;
@@ -205,6 +253,8 @@ const IMMERSIVE_SCREENS = new Set([
   "CreateGroup",
   "GroupChat",
   "DirectMessage",
+  // A community channel is the same chat UI as GroupChat, on the Market stack.
+  "CommunityChannel",
 ]);
 
 export function shouldHideTabBar(routeName: string | undefined): boolean {

@@ -31,7 +31,11 @@ import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
-import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache } from './services/supabase';
+import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge } from './services/supabase';
+import { useCommunityStore } from './stores/communityStore';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
+import { useCommunityPresence } from './hooks/useCommunityPresence';
+import type { CommunityNavigate } from './components/community/communityNavigation';
 import MarketplacePrivatePilot, { GOODS_MARKETPLACE_MODES } from './components/marketplace/MarketplacePrivatePilot';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
@@ -291,6 +295,7 @@ export const App: React.FC = () => {
         selectedCompanyId, setSelectedCompanyId,
         selectedStudyRoomId, setSelectedStudyRoomId,
         studyRoomJoin, setStudyRoomJoin,
+        activeCommunity, setActiveCommunity,
         isOnline,
         libraryTab, setLibraryTab,
     } = useUIStore();
@@ -304,14 +309,46 @@ export const App: React.FC = () => {
     // Phase 3 L: which Discover tab to land on. Set when leaving the nested
     // marketplace so the user returns to the tab they clicked, not to the top.
     const [discoverSection, setDiscoverSection] = useState<
-        'communities' | 'groups' | 'people' | 'marketplace'
+        'communities' | 'groups' | 'people' | 'marketplace' | 'rooms'
     >('communities');
-    const [communitySlug, setCommunitySlug] = useState<string | null>(null);
     const [createLabOpen, setCreateLabOpen] = useState(false);
+    // Community server view (spec §5): "Start a room" / "New channel" from
+    // inside a community carry the community into the modal / screen.
+    const [createLabCommunity, setCreateLabCommunity] = useState<
+        { id: string; name: string; courseId: string | null } | null
+    >(null);
+    const [createGroupPreset, setCreateGroupPreset] = useState<
+        { communityId: string; communityName: string; communitySlug: string } | null
+    >(null);
+    const communityActionBusy = React.useRef(false);
 
     useEffect(() => {
         if (isCompanionOpen) markChecklist('tryCompanion');
     }, [isCompanionOpen, markChecklist]);
+
+    // The community column lives only on the community's own modes (its home,
+    // its channels, a room opened from it). Anything else closes it.
+    useEffect(() => {
+        if (appMode === AppMode.COMMUNITY_DETAIL || appMode === AppMode.STUDY_ROOM) return;
+        // Route hydration seeds the community a microtask before it flips the
+        // mode; a render in between must not wipe what it just set.
+        if (parseAppRoute(window.location.pathname).mode === AppMode.COMMUNITY_DETAIL) return;
+        if (useUIStore.getState().activeCommunity) setActiveCommunity(null);
+    }, [appMode, setActiveCommunity]);
+    // The ONE live-presence subscription for the active community (spec §3).
+    useCommunityPresence();
+    const myCommunities = useCommunityStore((s) => s.myCommunities);
+    const activeCommunityDetail = useCommunityStore((s) =>
+        activeCommunity ? s.detailBySlug[activeCommunity.slug] : undefined
+    );
+    // A community channel opened from the plain chats list shows `in <Community>`
+    // in its header; memberships resolve the id to a name + slug.
+    const selectedChatCommunityId =
+        selectedChat?.chatType === 'group' ? (selectedChat.communityId ?? null) : null;
+    useEffect(() => {
+        if (!selectedChatCommunityId || !currentUser?.id) return;
+        void useCommunityStore.getState().loadMine().catch(() => {});
+    }, [selectedChatCommunityId, currentUser?.id]);
 
     useEffect(() => {
         if (
@@ -496,6 +533,21 @@ export const App: React.FC = () => {
         : 'Are you sure you want to quit this duel? Your opponent will win by default and your progress will be lost.';
 
     const location = useLocation();
+    // `/discover/c/:slug/ch/:groupId` — the community owns its chat, so the
+    // channel id is read from the URL, never from a switch to AppMode.CHAT.
+    const communityRoute = appMode === AppMode.COMMUNITY_DETAIL ? parseAppRoute(location.pathname) : null;
+    const communityChannelId = communityRoute?.params?.groupId ?? null;
+    const communityRouteSlug = communityRoute?.params?.slug ?? null;
+    // Belt and braces for the column: whatever path led here, the community
+    // page always has an active community matching its URL (the column then
+    // resolves the placeholder by slug).
+    useEffect(() => {
+        if (!communityRouteSlug) return;
+        const current = useUIStore.getState().activeCommunity;
+        if (!current || current.slug !== communityRouteSlug) {
+            setActiveCommunity({ id: '', slug: communityRouteSlug, name: '', loungeGroupId: null });
+        }
+    }, [communityRouteSlug, setActiveCommunity]);
     const [showOnboarding, setShowOnboarding] = React.useState(() => {
         if (typeof window === 'undefined') return false;
         return !isOnboardingCompleteFlag(localStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY));
@@ -1159,6 +1211,21 @@ export const App: React.FC = () => {
         }
     };
 
+    // A just-joined discoverable group is not in `groups[]` until the next
+    // fetch; this stand-in carries enough (communityId above all) for the
+    // chat and the community column to render until the store reconciles.
+    const buildDiscoverGroupStub = (params: Record<string, unknown>) => ({
+        id: String(params.groupId),
+        name: String(params.groupName || 'Group'),
+        members: [] as User[],
+        adminIds: [] as string[],
+        unreadCount: 0,
+        description: '',
+        communityId: params.communityId ? String(params.communityId) : null,
+        visibility: (params.communityId ? 'community' : 'public') as 'community' | 'public',
+        memberCount: typeof params.memberCount === 'number' ? params.memberCount : undefined,
+    });
+
     const openDiscoverGroup = (params?: Record<string, unknown>) => {
         const groupId = String(params?.groupId || '');
         if (!groupId) return;
@@ -1169,20 +1236,220 @@ export const App: React.FC = () => {
             return;
         }
         if (!params?.joined) return;
-        const stub = {
-            id: groupId,
-            name: String(params.groupName || 'Group'),
-            members: [] as User[],
-            adminIds: [] as string[],
-            unreadCount: 0,
-            description: '',
-        };
+        const stub = buildDiscoverGroupStub(params);
         useGroupStore.getState().updateGroups((prev) =>
             prev.some((g) => g.id === groupId) ? prev : [...prev, stub]
         );
         handleSelectChat({ ...stub, chatType: 'group' });
         setAppMode(AppMode.CHAT);
     };
+
+    /**
+     * Open a channel INSIDE its community (founder rule §0a): the group is
+     * selected through the same path the chats list uses — read-marking,
+     * unread reset and realtime attach behave identically — but the app stays
+     * on the community's own URL, `/discover/c/:slug/ch/:groupId`.
+     */
+    const openCommunityChannel = (params: Record<string, unknown>) => {
+        const groupId = String(params.groupId || '');
+        if (!groupId) return;
+        const slug = String(
+            params.communitySlug || activeCommunity?.slug || parseAppRoute(location.pathname).params?.slug || ''
+        );
+        if (!slug) {
+            openDiscoverGroup(params);
+            return;
+        }
+        let target = useGroupStore.getState().groups.find((x) => x.id === groupId);
+        if (!target) {
+            if (!params.joined) return;
+            const stub = buildDiscoverGroupStub(params);
+            useGroupStore.getState().updateGroups((prev) =>
+                prev.some((g) => g.id === groupId) ? prev : [...prev, stub]
+            );
+            target = stub;
+        }
+        handleSelectChat({ ...target, chatType: 'group' }, { keepSurface: true });
+        navigateTo(AppMode.COMMUNITY_DETAIL, { slug, groupId });
+    };
+
+    const scrollToCommunityMembers = () => {
+        let tries = 0;
+        const tick = () => {
+            const el = document.getElementById('community-members');
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+            }
+            if (tries++ < 20) window.setTimeout(tick, 100);
+        };
+        tick();
+    };
+
+    // The one navigation contract for the community column and page (spec §5.1).
+    const handleCommunityNavigate: CommunityNavigate = async (screen, params = {}) => {
+        const slugParam = String(params.slug || params.communitySlug || activeCommunity?.slug || '');
+        switch (screen) {
+            case 'Dashboard':
+                navigateTo(AppMode.DASHBOARD);
+                return;
+            case 'Discover':
+                setDiscoverSection('communities');
+                navigateTo(AppMode.DISCOVER);
+                return;
+            case 'Home':
+                if (slugParam) navigateTo(AppMode.COMMUNITY_DETAIL, { slug: slugParam });
+                return;
+            case 'CloseCommunity':
+                setActiveCommunity(null);
+                navigateTo(AppMode.CHAT, {});
+                return;
+            case 'Members':
+                if (!slugParam) return;
+                if (appMode !== AppMode.COMMUNITY_DETAIL || communityChannelId) {
+                    navigateTo(AppMode.COMMUNITY_DETAIL, { slug: slugParam });
+                }
+                scrollToCommunityMembers();
+                return;
+            case 'GroupChat':
+                openCommunityChannel(params);
+                return;
+            case 'JoinChannel': {
+                const groupId = String(params.groupId || '');
+                const communityId = String(params.communityId || '');
+                if (!groupId || communityActionBusy.current) return;
+                // Guests see public channels but join the community first (§6,
+                // same as mobile's "Join the community to open" alert).
+                if (activeCommunityDetail && activeCommunityDetail.id === communityId && !activeCommunityDetail.isMember) {
+                    showToast(COMMUNITY_COPY.joinToOpen, 'info');
+                    return;
+                }
+                communityActionBusy.current = true;
+                try {
+                    await joinDiscoverableGroup(groupId);
+                    if (communityId) useCommunityStore.getState().invalidate(communityId);
+                    openCommunityChannel({ ...params, joined: true });
+                } catch (err) {
+                    showToast(err instanceof Error ? err.message : 'Could not join this channel', 'error');
+                } finally {
+                    communityActionBusy.current = false;
+                }
+                return;
+            }
+            case 'OpenLounge': {
+                const communityId = String(params.communityId || activeCommunity?.id || '');
+                if (!communityId || communityActionBusy.current) return;
+                const known = useUIStore.getState().activeCommunity;
+                const loungeId = known?.id === communityId ? known.loungeGroupId : null;
+                const inStore = loungeId
+                    ? useGroupStore.getState().groups.find((g) => g.id === loungeId && !g.isArchived)
+                    : undefined;
+                if (inStore) {
+                    openCommunityChannel({
+                        groupId: inStore.id,
+                        groupName: inStore.name,
+                        communityId,
+                        communitySlug: slugParam,
+                        joined: true,
+                    });
+                    return;
+                }
+                communityActionBusy.current = true;
+                try {
+                    // Idempotent: mints on first use, joins the caller either way.
+                    const lounge = await openCommunityLounge(communityId);
+                    const current = useUIStore.getState().activeCommunity;
+                    if (current && current.id === communityId && current.loungeGroupId !== lounge.groupId) {
+                        setActiveCommunity({ ...current, loungeGroupId: lounge.groupId });
+                    }
+                    useCommunityStore.getState().invalidate(communityId);
+                    openCommunityChannel({
+                        groupId: lounge.groupId,
+                        groupName: lounge.name,
+                        communityId,
+                        communitySlug: slugParam,
+                        joined: true,
+                    });
+                } catch (err) {
+                    showToast(err instanceof Error ? err.message : 'Could not open the community chat', 'error');
+                } finally {
+                    communityActionBusy.current = false;
+                }
+                return;
+            }
+            case 'StudyRoom':
+                if (params.roomId) {
+                    setStudyRoomJoin(null);
+                    setSelectedStudyRoomId(String(params.roomId));
+                    navigateTo(AppMode.STUDY_ROOM, { roomId: String(params.roomId) });
+                } else {
+                    setSelectedStudyRoomId(null);
+                    setStudyRoomJoin({
+                        communityId: params.communityId ? String(params.communityId) : null,
+                        courseId: params.courseId ? String(params.courseId) : null,
+                        topic: params.topic ? String(params.topic) : null,
+                    });
+                    navigateTo(AppMode.STUDY_ROOM, {});
+                }
+                return;
+            case 'CreateLab':
+                setCreateLabCommunity({
+                    id: String(params.communityId || activeCommunity?.id || ''),
+                    name: String(params.communityName || activeCommunity?.name || activeCommunityDetail?.name || 'Community'),
+                    courseId: params.courseId ? String(params.courseId) : null,
+                });
+                setCreateLabOpen(true);
+                return;
+            case 'CreateGroup':
+                setCreateGroupPreset({
+                    communityId: String(params.communityId || activeCommunity?.id || ''),
+                    communityName: String(params.communityName || activeCommunity?.name || activeCommunityDetail?.name || 'Community'),
+                    communitySlug: slugParam,
+                });
+                setCreateGroupReturnMode(AppMode.COMMUNITY_DETAIL);
+                navigateTo(AppMode.CREATE_GROUP);
+                return;
+            default:
+                return;
+        }
+    };
+
+    // The ONE ChatWindow wiring, hosted by the chat screen and by the community
+    // page (a channel renders inside COMMUNITY_DETAIL — never AppMode.CHAT).
+    const renderChatWindow = (opts?: {
+        communityContext?: { name: string; onOpen: () => void };
+        onBack?: () => void;
+    }) => (
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <ChatWindow chat={selectedChat} messages={messagesForChat} currentUser={currentUser} userVotes={userVotes}
+        onSendMessage={onSendMessage} onOpenQuestionModal={onOpenQuestionModal}
+        onEditMessage={handleEditChatMessage} onRemoveMessage={handleRemoveChatMessage}
+        onOpenGroupInfoModal={() => selectedChat && selectedChat.chatType === 'group' && onOpenGroupInfoModal()}
+        onOpenTestConfigModal={onOpenTestConfigModal} onOpenStudyConfigModal={onOpenStudyConfigModal}
+        onVoteQuestion={onVoteQuestion} onFlagAsSimilar={onFlagAsSimilar}
+        onOpenCreateSubGroupModal={onOpenCreateSubGroupModal}
+        groups={groups} onToggleArchiveGroup={handleToggleArchiveGroup}
+        onOpenAIGenerateModal={() => openModal('aiGenerateQuestions')}
+        onAIQuery={handleAIAskTutor}
+        dmThreads={dmThreads}
+        onSelectChat={handleSelectChat}
+        onBack={opts?.onBack ?? handleChatBack}
+        onCreateGroup={() => {
+            setCreateGroupReturnMode(AppMode.CHAT);
+            navigateTo(AppMode.CREATE_GROUP);
+        }}
+        onOpenNewDmModal={() => openModal('newDm')}
+        onDeleteDmThread={handleDeleteDmThread}
+        onArchiveDmThread={handleArchiveDmThread}
+        onUnarchiveDmThread={handleUnarchiveDmThread}
+        onDmThreadStatusChange={handleDmThreadStatusChange}
+        onLoadMoreMessages={handleLoadMoreMessages}
+        onLoadMoreDirectMessages={handleLoadMoreDirectMessages}
+        unreadAnchorAt={unreadAnchorAt}
+        onPeerChatRead={onPeerChatRead}
+        communityContext={opts?.communityContext} />
+        </div>
+    );
 
     const mainContent = () => {
         // Marketplace private pilot: every goods-commerce mode renders the
@@ -1205,41 +1472,58 @@ export const App: React.FC = () => {
                         currentUser={currentUser}
                         allUsers={users}
                         onCreateGroup={handleCreateGroup}
-                        onEnterGroup={handleEnterCreatedGroup}
-                        onBack={() => navigateTo(createGroupReturnMode || AppMode.CHAT)}
+                        initialDiscovery={createGroupPreset
+                            ? { visibility: 'community', communityId: createGroupPreset.communityId }
+                            : undefined}
+                        lockedCommunity={createGroupPreset
+                            ? { id: createGroupPreset.communityId, name: createGroupPreset.communityName }
+                            : undefined}
+                        onEnterGroup={(group) => {
+                            if (createGroupPreset) {
+                                // A channel created from its community opens INSIDE the
+                                // community (founder rule §0a), not on the chat screen.
+                                const preset = createGroupPreset;
+                                setCreateGroupPreset(null);
+                                openCommunityChannel({
+                                    groupId: group.id,
+                                    groupName: group.name,
+                                    joined: true,
+                                    communityId: preset.communityId,
+                                    communitySlug: preset.communitySlug,
+                                });
+                                return;
+                            }
+                            handleEnterCreatedGroup(group);
+                        }}
+                        onBack={() => {
+                            if (createGroupReturnMode === AppMode.COMMUNITY_DETAIL && createGroupPreset) {
+                                const slug = createGroupPreset.communitySlug;
+                                setCreateGroupPreset(null);
+                                navigateTo(AppMode.COMMUNITY_DETAIL, { slug });
+                                return;
+                            }
+                            setCreateGroupPreset(null);
+                            navigateTo(createGroupReturnMode || AppMode.CHAT);
+                        }}
                     />
                 );
-            case AppMode.CHAT:
-                return (
-                    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                    <ChatWindow chat={selectedChat} messages={messagesForChat} currentUser={currentUser} userVotes={userVotes}
-                    onSendMessage={onSendMessage} onOpenQuestionModal={onOpenQuestionModal}
-                    onEditMessage={handleEditChatMessage} onRemoveMessage={handleRemoveChatMessage}
-                    onOpenGroupInfoModal={() => selectedChat && selectedChat.chatType === 'group' && onOpenGroupInfoModal()}
-                    onOpenTestConfigModal={onOpenTestConfigModal} onOpenStudyConfigModal={onOpenStudyConfigModal}
-                    onVoteQuestion={onVoteQuestion} onFlagAsSimilar={onFlagAsSimilar}
-                    onOpenCreateSubGroupModal={onOpenCreateSubGroupModal}
-                    groups={groups} onToggleArchiveGroup={handleToggleArchiveGroup}
-                    onOpenAIGenerateModal={() => openModal('aiGenerateQuestions')}
-                    onAIQuery={handleAIAskTutor}
-                    dmThreads={dmThreads}
-                    onSelectChat={handleSelectChat}
-                    onBack={handleChatBack}
-                    onCreateGroup={() => {
-                        setCreateGroupReturnMode(AppMode.CHAT);
-                        navigateTo(AppMode.CREATE_GROUP);
-                    }}
-                    onOpenNewDmModal={() => openModal('newDm')}
-                    onDeleteDmThread={handleDeleteDmThread}
-                    onArchiveDmThread={handleArchiveDmThread}
-                    onUnarchiveDmThread={handleUnarchiveDmThread}
-                    onDmThreadStatusChange={handleDmThreadStatusChange}
-                    onLoadMoreMessages={handleLoadMoreMessages}
-                    onLoadMoreDirectMessages={handleLoadMoreDirectMessages}
-                    unreadAnchorAt={unreadAnchorAt}
-                    onPeerChatRead={onPeerChatRead} />
-                    </div>
+            case AppMode.CHAT: {
+                // Reached from the chats flyout: a community channel keeps the
+                // chat surface but its header links back to the community.
+                const chatCommunity = selectedChatCommunityId
+                    ? myCommunities.find((c) => c.id === selectedChatCommunityId)
+                    : undefined;
+                return renderChatWindow(
+                    chatCommunity
+                        ? {
+                            communityContext: {
+                                name: chatCommunity.name,
+                                onOpen: () => navigateTo(AppMode.COMMUNITY_DETAIL, { slug: chatCommunity.slug }),
+                            },
+                        }
+                        : undefined
                 );
+            }
             case AppMode.TEST_ACTIVE:
                 if (!activeTestSession) return null;
                 return <TestTakingScreen mode="test" session={activeTestSession}
@@ -1802,21 +2086,30 @@ export const App: React.FC = () => {
             case AppMode.INVITE_FRIENDS:
                 return <InviteFriendsScreen onBack={() => setAppMode(AppMode.DASHBOARD)} />;
             case AppMode.COMMUNITY_DETAIL: {
-                // Slug comes from state when arriving from Discover, or straight
-                // from the URL on a cold load of /discover/c/:slug.
-                const slugFromRoute = String(parseAppRoute(window.location.pathname).params?.slug || '');
-                const slug = communitySlug || slugFromRoute;
+                // The URL is the authority: `/discover/c/:slug` is the community
+                // home, `/discover/c/:slug/ch/:groupId` is one of its channels
+                // rendered in this same mode with the column still out.
+                const slug = String(communityRoute?.params?.slug || '');
                 if (!slug) return null;
+                if (communityChannelId) {
+                    const backToCommunity = () => navigateTo(AppMode.COMMUNITY_DETAIL, { slug });
+                    if (selectedChat?.chatType !== 'group' || selectedChat.id !== communityChannelId) {
+                        // Route hydration selects the group (or redirects to the
+                        // home when it is not one of the user's groups).
+                        return <AppContentLoadingFallback />;
+                    }
+                    return renderChatWindow({
+                        communityContext: {
+                            name: activeCommunity?.name || activeCommunityDetail?.name || 'Community',
+                            onOpen: backToCommunity,
+                        },
+                        onBack: backToCommunity,
+                    });
+                }
                 return <CommunityDetailScreen
                     slug={slug}
-                    onBack={() => setAppMode(AppMode.DISCOVER)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'Dashboard') {
-                            navigateTo(AppMode.DASHBOARD);
-                        } else if (screen === 'GroupChat' && params?.groupId) {
-                            openDiscoverGroup(params);
-                        }
-                    }} />;
+                    onBack={() => void handleCommunityNavigate('Discover')}
+                    onNavigate={handleCommunityNavigate} />;
             }
             case AppMode.DISCOVER:
                 // Hub is gated inside DiscoverScreen: admins get the full
@@ -1828,8 +2121,7 @@ export const App: React.FC = () => {
                         if (screen === 'Marketplace') {
                             setAppMode(AppMode.MARKETPLACE);
                         } else if (screen === 'CommunityDetail' && params?.slug) {
-                            setCommunitySlug(String(params.slug));
-                            setAppMode(AppMode.COMMUNITY_DETAIL);
+                            navigateTo(AppMode.COMMUNITY_DETAIL, { slug: String(params.slug) });
                         } else if (screen === 'CreatorProfile' && params?.userId) {
                             setSelectedSellerId(String(params.userId));
                             setSellerProfileReturnMode(AppMode.DISCOVER);
@@ -1899,9 +2191,19 @@ export const App: React.FC = () => {
                     <StudyRoomScreen
                         roomId={selectedStudyRoomId}
                         join={studyRoomJoin}
-                        onBack={() => setAppMode(AppMode.DISCOVER)}
+                        onBack={() => {
+                            // Back returns to the community the room was opened
+                            // from; otherwise to the hub's Room tab.
+                            if (activeCommunity) {
+                                navigateTo(AppMode.COMMUNITY_DETAIL, { slug: activeCommunity.slug });
+                                return;
+                            }
+                            setDiscoverSection('rooms');
+                            navigateTo(AppMode.DISCOVER);
+                        }}
                         onNeedCourse={() => setCreateLabOpen(true)}
                         onRoomReady={(id) => setSelectedStudyRoomId(id)}
+                        communityName={activeCommunity?.name || activeCommunityDetail?.name}
                     />
                 );
             case AppMode.MARKETPLACE_FAVORITES:
@@ -2147,6 +2449,7 @@ export const App: React.FC = () => {
         theme, onToggleTheme: toggleTheme, dueCardsCount,
         onToggleCompanion: toggleCompanion,
         isCompanionOpen,
+        onCommunityNavigate: handleCommunityNavigate,
     };
     return (
         <ErrorBoundary>
@@ -2154,6 +2457,7 @@ export const App: React.FC = () => {
             unreadChatCount={getTotalActiveUnreadChatCount(groups, dmThreads)}
             hideMobileAiUsageBadge={
                 (appMode === AppMode.CHAT && !!selectedChat)
+                || (appMode === AppMode.COMMUNITY_DETAIL && !!communityChannelId)
                 || appMode === AppMode.GAME_ACTIVE
                 || appMode === AppMode.TEST_ACTIVE
                 || appMode === AppMode.STUDY_ACTIVE
@@ -2168,7 +2472,8 @@ export const App: React.FC = () => {
             <div className={`shrink-0 ${
                 appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
                     ? 'hidden'
-                    : appMode === AppMode.CHAT && selectedChat
+                    : (appMode === AppMode.CHAT && selectedChat)
+                        || (appMode === AppMode.COMMUNITY_DETAIL && communityChannelId)
                         ? 'hidden md:block'
                         : ''
             }`}>
@@ -2373,7 +2678,11 @@ export const App: React.FC = () => {
             )}
             <CreateLabModal
                 isOpen={createLabOpen}
-                onClose={() => setCreateLabOpen(false)}
+                community={createLabCommunity}
+                onClose={() => {
+                    setCreateLabOpen(false);
+                    setCreateLabCommunity(null);
+                }}
                 onCreated={(room) => {
                     setSelectedStudyRoomId(room.id);
                     setStudyRoomJoin(null);

@@ -258,6 +258,56 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
       }
       return { mode: AppMode.STUDY_ROOM };
 
+    // `/discover/c/:slug` and `/discover/c/:slug/ch/:groupId`. The column
+    // needs an active community before it can render, so a cold load seeds a
+    // placeholder from the slug (CommunityColumn resolves the full record)
+    // and, for a channel, selects the group through the same store path the
+    // chat screen uses — read-marking and realtime then behave identically.
+    case AppMode.COMMUNITY_DETAIL: {
+      if (!params.slug) {
+        return { mode: AppMode.DISCOVER, redirect: '/discover' };
+      }
+      const active = ui.activeCommunity;
+      if (!active || active.slug !== params.slug) {
+        ui.setActiveCommunity({ id: '', slug: params.slug, name: '', loungeGroupId: null });
+      }
+      if (params.groupId) {
+        let group = useGroupStore.getState().groups.find((g) => g.id === params.groupId);
+        if (!group) {
+          const userId = useAuthStore.getState().currentUser?.id;
+          if (userId) {
+            try {
+              const fetched = await fetchGroups(userId);
+              if (fetched) {
+                useGroupStore.getState().setGroups(fetched);
+              }
+            } catch {
+              // fall through to the community home
+            }
+          }
+          group = useGroupStore.getState().groups.find((g) => g.id === params.groupId);
+        }
+        if (!group) {
+          useUIStore.getState().setSelectedChat(null);
+          return {
+            mode: AppMode.COMMUNITY_DETAIL,
+            redirect: `/discover/c/${encodeURIComponent(params.slug)}`,
+          };
+        }
+        const current = useUIStore.getState().selectedChat;
+        if (!current || current.chatType !== 'group' || current.id !== group.id) {
+          ui.setSelectedChat({ ...group, chatType: 'group' });
+        }
+      } else if (useUIStore.getState().selectedChat) {
+        // The community home has no channel open. Browser Back/Forward comes
+        // through here instead of `applyPreNavigationEffects`, and leaving the
+        // channel selected makes realtime keep treating it as "being viewed",
+        // so its unread badge never increments again.
+        ui.setSelectedChat(null);
+      }
+      return { mode: AppMode.COMMUNITY_DETAIL };
+    }
+
     default:
       return { mode };
   }

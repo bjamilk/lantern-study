@@ -20,13 +20,64 @@ import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import { cacheService } from './cache';
-import { normalizeUserSettings } from '@lantern/shared/settings';
+import { CacheKeys } from './cachePolicy';
+import { getStudyRoomsService } from './studyRooms';
+import {
+  normalizeUserSettings,
+  ONLINE_THRESHOLD_MS,
+  resolvePublicOnlineStatus,
+  userShowsOnlineStatus,
+} from '@lantern/shared/settings';
 import {
   communityPageGroupVisibilities,
+  resolveCommunityRole,
   resolveGroupDiscovery,
+  sortCommunityChannels,
+  type CommunityChannel,
+  type CommunityChannels,
+  type CommunityMember,
+  type CommunityMembersPage,
+  type CommunityRole,
 } from '@lantern/shared/network';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+/** Roster pages (community server view). */
+export const MEMBERS_LIMIT_DEFAULT = 30;
+export const MEMBERS_LIMIT_MAX = 50;
+/** Online count: 30s cache, capped — above this the number is a vibe, not a fact. */
+const ONLINE_COUNT_TTL = 30;
+const ONLINE_COUNT_CAP = 1000;
+/** Text channels per community page. */
+const CHANNELS_LIMIT = 50;
+
+/** Strict ISO-8601 timestamptz as PostgREST emits it — the only shape a cursor may carry. */
+const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Roster cursor = base64url(`${joined_at}|${user_id}`) of the LAST RAW ROW of
+ * the previous page (before privacy filtering), so a page of hidden profiles
+ * still advances. The timestamp is kept verbatim (microsecond precision) so
+ * the `joined_at.eq` half of the keyset filter matches what Postgres stored.
+ */
+export function encodeMembersCursor(joinedAt: string, userId: string): string {
+  return Buffer.from(`${joinedAt}|${userId}`, 'utf8').toString('base64url');
+}
+
+export function decodeMembersCursor(cursor: string): { joinedAt: string; userId: string } {
+  const invalid = () => new PublicError('Invalid cursor');
+  if (typeof cursor !== 'string' || !cursor || cursor.length > 200 || !/^[A-Za-z0-9_-]+$/.test(cursor)) {
+    throw invalid();
+  }
+  const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+  const sep = decoded.lastIndexOf('|');
+  if (sep <= 0) throw invalid();
+  const joinedAt = decoded.slice(0, sep);
+  const userId = decoded.slice(sep + 1);
+  if (!TIMESTAMP_RE.test(joinedAt) || !UUID_RE.test(userId)) throw invalid();
+  return { joinedAt, userId };
+}
 
 export const COMMUNITY_KINDS = ['institution', 'programme', 'level', 'course', 'topic'] as const;
 export type CommunityKind = (typeof COMMUNITY_KINDS)[number];
@@ -68,6 +119,40 @@ export interface DiscoverGroup {
 
 const COMMUNITY_COLUMNS =
   'id, kind, slug, name, description, institution_id, programme, study_level, course_id, tags, visibility, is_official, member_count';
+/**
+ * The detail page's extra columns. `lounge_group_id` only exists once
+ * 20260829170000 is applied — every select that names it goes through
+ * selectCommunity(), which retries without it on 42703.
+ */
+const COMMUNITY_COLUMNS_FULL = `${COMMUNITY_COLUMNS}, lounge_group_id, created_by`;
+
+/** GET /communities/:slug — CommunityDetail on the wire. */
+export type CommunityDetailRow = CommunityRow & {
+  lounge_group_id: string | null;
+  created_by: string | null;
+  isMember: boolean;
+  source: 'auto' | 'joined' | null;
+  viewerRole: CommunityRole | null;
+  onlineCount: number;
+};
+
+type GroupChannelRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  avatar_url: string | null;
+  member_count: number | null;
+  question_count: number | null;
+  visibility: string | null;
+  course_id: string | null;
+  parent_id: string | null;
+  last_message: string | null;
+  last_message_time: string | null;
+};
+const GROUP_CHANNEL_COLUMNS =
+  'id, name, description, avatar_url, member_count, question_count, visibility, course_id, parent_id, last_message, last_message_time';
+
+type MembershipRow = { source: 'auto' | 'joined' | null; role: string | null };
 
 export class CommunitiesService {
   constructor(private supabaseService: SupabaseService) {}
@@ -84,6 +169,113 @@ export class CommunitiesService {
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return DISCOVER_LIMIT_DEFAULT;
     return Math.min(DISCOVER_LIMIT_MAX, Math.floor(n));
+  }
+
+  private clampMembersLimit(raw: unknown): number {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return MEMBERS_LIMIT_DEFAULT;
+    return Math.min(MEMBERS_LIMIT_MAX, Math.max(1, Math.floor(n)));
+  }
+
+  /**
+   * One community row by id or slug. Pre-migration (20260829170000 not
+   * applied) `lounge_group_id` does not exist: Postgres answers 42703, and we
+   * retry without that column and report the pointer as null so the page
+   * still renders (§3.1 degrade rule).
+   */
+  private async selectCommunity<T extends object>(
+    columns: string,
+    match: { column: 'id' | 'slug'; value: string }
+  ): Promise<T | null> {
+    const run = (cols: string) =>
+      this.db.from('communities').select(cols).eq(match.column, match.value).maybeSingle();
+    const { data, error } = await run(columns);
+    if (!error) return (data as unknown as T | null) ?? null;
+    if ((error as { code?: string }).code !== '42703') throw error;
+
+    const fallback = columns
+      .split(',')
+      .map((c) => c.trim())
+      .filter((c) => c && c !== 'lounge_group_id')
+      .join(', ');
+    const retry = await run(fallback);
+    if (retry.error) throw retry.error;
+    if (!retry.data) return null;
+    return { ...(retry.data as unknown as T), lounge_group_id: null } as T;
+  }
+
+  /** The viewer's active membership row, or null. */
+  private async viewerMembership(
+    viewerId: string,
+    communityId: string
+  ): Promise<MembershipRow | null> {
+    const { data } = await this.db
+      .from('community_members')
+      .select('user_id, source, role')
+      .eq('community_id', communityId)
+      .eq('user_id', viewerId)
+      .is('opted_out_at', null)
+      .maybeSingle();
+    if (!data) return null;
+    const raw = data as { source?: string | null; role?: string | null };
+    return {
+      source: raw.source === 'auto' || raw.source === 'joined' ? raw.source : null,
+      role: raw.role ?? null,
+    };
+  }
+
+  /** Active (not opted-out) member of the community? Used by the group routes' community guard. */
+  async isActiveMember(userId: string, communityId: string): Promise<boolean> {
+    if (!userId || !communityId || !UUID_RE.test(String(communityId))) return false;
+    const { data, error } = await this.db
+      .from('community_members')
+      .select('user_id')
+      .eq('community_id', communityId)
+      .eq('user_id', userId)
+      .is('opted_out_at', null)
+      .maybeSingle();
+    if (error) throw error;
+    return !!data;
+  }
+
+  /**
+   * Members seen in the last ONLINE_THRESHOLD_MS who share their online
+   * status. Cached 30s per community; capped so an institution-sized
+   * community never fans out a 40k-row read. Fails soft to 0 — a broken
+   * count must not take the community page down with it.
+   */
+  private async countOnline(communityId: string): Promise<number> {
+    const cacheKey = `communities:online:${communityId}`;
+    const cached = await cacheService.get<number>(cacheKey);
+    if (typeof cached === 'number') return cached;
+
+    let count = 0;
+    try {
+      const since = new Date(Date.now() - ONLINE_THRESHOLD_MS).toISOString();
+      const { data, error } = await this.db
+        .from('community_members')
+        .select('user_id, profiles!inner(settings, last_seen_at)')
+        .eq('community_id', communityId)
+        .is('opted_out_at', null)
+        .gt('profiles.last_seen_at', since)
+        .limit(ONLINE_COUNT_CAP);
+      if (error) throw error;
+      for (const r of (data || []) as Array<{ profiles: unknown }>) {
+        const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+        if (p && userShowsOnlineStatus(normalizeUserSettings((p as { settings?: unknown }).settings).privacy)) {
+          count += 1;
+        }
+      }
+      count = Math.min(count, ONLINE_COUNT_CAP);
+    } catch (err) {
+      logger.warn('community online count failed', {
+        communityId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return 0;
+    }
+    await cacheService.set(cacheKey, count, ONLINE_COUNT_TTL);
+    return count;
   }
 
   /**
@@ -327,39 +519,162 @@ export class CommunitiesService {
     return (global || []) as unknown as CommunityRow[];
   }
 
-  async getBySlug(
-    viewerId: string,
-    slug: string
-  ): Promise<CommunityRow & { isMember: boolean; source: 'auto' | 'joined' | null }> {
+  async getBySlug(viewerId: string, slug: string): Promise<CommunityDetailRow> {
     if (!slug || typeof slug !== 'string') throw new PublicError('Invalid community');
-    const { data, error } = await this.db
-      .from('communities')
-      .select(COMMUNITY_COLUMNS)
-      .eq('slug', slug)
-      .maybeSingle();
-    if (error) throw error;
+    const data = await this.selectCommunity<
+      CommunityRow & { lounge_group_id?: string | null; created_by?: string | null }
+    >(COMMUNITY_COLUMNS_FULL, { column: 'slug', value: slug });
     if (!data) throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
 
-    const community = data as unknown as CommunityRow;
-    const { data: membership } = await this.db
-      .from('community_members')
-      .select('user_id, source')
-      .eq('community_id', community.id)
-      .eq('user_id', viewerId)
-      .is('opted_out_at', null)
-      .maybeSingle();
+    const { lounge_group_id, created_by, ...community } = data;
+    const membership = await this.viewerMembership(viewerId, community.id);
 
     const isMember = !!membership;
-    const source =
-      membership && ((membership as { source?: string }).source === 'auto' ||
-        (membership as { source?: string }).source === 'joined')
-        ? ((membership as { source: 'auto' | 'joined' }).source)
-        : null;
     if (community.visibility === 'private' && !isMember) {
       // Do not confirm a private community exists to a non-member.
       throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
     }
-    return { ...community, isMember, source };
+    const createdBy = created_by ?? null;
+    return {
+      ...(community as CommunityRow),
+      lounge_group_id: lounge_group_id ?? null,
+      created_by: createdBy,
+      isMember,
+      source: membership?.source ?? null,
+      viewerRole: membership ? resolveCommunityRole(membership.role, viewerId, createdBy) : null,
+      onlineCount: isMember ? await this.countOnline(community.id) : 0,
+    };
+  }
+
+  /**
+   * The community as a server: its lounge, its text channels (top-level
+   * groups with community_id), its open study rooms and the head counts —
+   * one payload for both clients' community screens.
+   *
+   * Guests of a public community get the public channels only: no rooms, no
+   * roster, no online count, no unjoined-channel previews. Not cached — the
+   * unread counts must be fresh.
+   */
+  async listChannels(viewerId: string, communityId: string): Promise<CommunityChannels> {
+    this.assertUuid(communityId, 'community id');
+    const community = await this.selectCommunity<{
+      id: string;
+      name: string;
+      visibility: 'public' | 'private';
+      course_id: string | null;
+      member_count: number | null;
+      lounge_group_id?: string | null;
+      created_by?: string | null;
+    }>('id, name, visibility, course_id, member_count, lounge_group_id, created_by', {
+      column: 'id',
+      value: communityId,
+    });
+    if (!community) {
+      throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
+    }
+
+    const membership = await this.viewerMembership(viewerId, communityId);
+    const isMember = !!membership;
+    if (community.visibility === 'private' && !isMember) {
+      throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
+    }
+
+    const loungeGroupId = community.lounge_group_id ?? null;
+    const vis = communityPageGroupVisibilities(isMember);
+
+    const { data: channelData, error: channelError } = await this.db
+      .from('groups')
+      .select(GROUP_CHANNEL_COLUMNS)
+      .eq('community_id', communityId)
+      .neq('is_archived', true)
+      .is('parent_id', null)
+      .in('visibility', vis)
+      .neq('id', loungeGroupId ?? NIL_UUID)
+      .order('member_count', { ascending: false })
+      .limit(CHANNELS_LIMIT);
+    if (channelError) throw channelError;
+    const channelRows = (channelData || []) as GroupChannelRow[];
+
+    // An archived or deleted lounge reads as "not minted yet"; the next
+    // POST /lounge re-mints against the stale pointer's own guard.
+    let loungeRow: GroupChannelRow | null = null;
+    if (isMember && loungeGroupId) {
+      const { data, error } = await this.db
+        .from('groups')
+        .select(GROUP_CHANNEL_COLUMNS)
+        .eq('id', loungeGroupId)
+        .neq('is_archived', true)
+        .maybeSingle();
+      if (error) throw error;
+      loungeRow = (data as GroupChannelRow | null) ?? null;
+    }
+
+    const allIds = channelRows.map((g) => g.id);
+    if (loungeRow) allIds.push(loungeRow.id);
+
+    const joined = new Set<string>();
+    if (allIds.length > 0) {
+      const { data: memberships, error } = await this.db
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', viewerId)
+        .eq('pending', false)
+        .in('group_id', allIds);
+      if (error) throw error;
+      for (const m of (memberships || []) as Array<{ group_id: string }>) joined.add(m.group_id);
+    }
+
+    // Read-only on the unread cache: /groups/unread/all owns the write.
+    let unread: Record<string, number> = {};
+    if (joined.size > 0) {
+      unread =
+        (await cacheService.get<Record<string, number>>(CacheKeys.unreadGroups(viewerId))) ??
+        (await this.supabaseService.getAllGroupUnreadCounts(viewerId));
+    }
+
+    const rooms = isMember
+      ? await getStudyRoomsService(this.supabaseService).list(viewerId, {
+          communityId,
+          courseId: community.course_id ?? undefined,
+        })
+      : [];
+    const onlineCount = isMember ? await this.countOnline(communityId) : 0;
+
+    const toChannel = (g: GroupChannelRow, isLounge: boolean): CommunityChannel => {
+      const member = joined.has(g.id);
+      return {
+        id: g.id,
+        name: g.name,
+        description: g.description ?? null,
+        avatarUrl: g.avatar_url ?? null,
+        memberCount: g.member_count ?? 0,
+        questionCount: g.question_count ?? 0,
+        visibility: g.visibility === 'public' ? 'public' : 'community',
+        courseId: g.course_id ?? null,
+        isLounge,
+        isMember: member,
+        unreadCount: member ? Math.max(0, Number(unread[g.id]) || 0) : 0,
+        lastMessage: member ? g.last_message ?? null : null,
+        lastMessageTime: member ? g.last_message_time ?? null : null,
+      };
+    };
+
+    return {
+      communityId,
+      viewer: {
+        isMember,
+        source: membership?.source ?? null,
+        role: membership
+          ? resolveCommunityRole(membership.role, viewerId, community.created_by ?? null)
+          : null,
+      },
+      lounge: loungeRow ? toChannel(loungeRow, true) : null,
+      loungeGroupId,
+      channels: sortCommunityChannels(channelRows.map((g) => toChannel(g, false))),
+      rooms,
+      memberCount: community.member_count ?? 0,
+      onlineCount,
+    };
   }
 
   /**
@@ -501,11 +816,17 @@ export class CommunitiesService {
     return { left: true };
   }
 
+  /**
+   * The roster, keyset-paged by (joined_at, user_id). The cursor is taken
+   * from the last RAW row, before privacy filtering, so a page may come back
+   * shorter than `limit` while `nextCursor` is still set — clients keep paging
+   * until it is null.
+   */
   async listMembers(
     viewerId: string,
     communityId: string,
-    limit = DISCOVER_LIMIT_DEFAULT
-  ): Promise<Array<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>> {
+    opts: { limit?: number; cursor?: string } = {}
+  ): Promise<CommunityMembersPage> {
     this.assertUuid(communityId, 'community id');
     const { data: mine } = await this.db
       .from('community_members')
@@ -520,19 +841,44 @@ export class CommunitiesService {
       });
     }
     const viewerJoined = (mine as { source?: string }).source === 'joined';
+    const limit = this.clampMembersLimit(opts.limit);
+    const cursor = opts.cursor ? decodeMembersCursor(opts.cursor) : null;
 
-    const { data, error } = await this.db
+    // Owner badge needs the creator; membership already proved the row exists.
+    const community = await this.selectCommunity<{ created_by?: string | null }>(
+      'id, created_by',
+      { column: 'id', value: communityId }
+    );
+    const createdBy = community?.created_by ?? null;
+
+    let query = this.db
       .from('community_members')
-      .select('user_id, source, profiles!inner(id, name, avatar_url, programme, settings)')
+      .select(
+        'user_id, source, role, joined_at, profiles!inner(id, name, avatar_url, programme, settings, last_seen_at)'
+      )
       .eq('community_id', communityId)
-      .is('opted_out_at', null)
-      .limit(this.clampLimit(limit));
+      .is('opted_out_at', null);
+    if (cursor) {
+      query = query.or(
+        `joined_at.gt.${cursor.joinedAt},and(joined_at.eq.${cursor.joinedAt},user_id.gt.${cursor.userId})`
+      );
+    }
+    const { data, error } = await query
+      .order('joined_at', { ascending: true })
+      .order('user_id', { ascending: true })
+      .limit(limit);
     if (error) throw error;
+    const rawRows = (data || []) as any[];
+    const last = rawRows.length === limit ? rawRows[rawRows.length - 1] : null;
+    const nextCursor =
+      last && last.joined_at && last.user_id
+        ? encodeMembersCursor(String(last.joined_at), String(last.user_id))
+        : null;
 
     const blocked = await this.supabaseService.listBlockedUserIds(viewerId).catch(() => []);
     const blockedSet = new Set(blocked || []);
 
-    return (data || [])
+    const members = rawRows
       .map((r: any) => {
         const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
         if (!p || blockedSet.has(p.id)) return null;
@@ -554,19 +900,21 @@ export class CommunitiesService {
           }
         }
 
-        return {
+        const row: CommunityMember = {
           id: p.id,
           name: p.name,
           avatarUrl: p.avatar_url ?? null,
           programme: p.programme ?? null,
+          role: resolveCommunityRole(r.role, p.id, createdBy),
+          source: r.source === 'joined' ? 'joined' : 'auto',
+          joinedAt: String(r.joined_at ?? ''),
+          onlineStatus: resolvePublicOnlineStatus(p.settings, p.last_seen_at ?? null),
         };
+        return row;
       })
-      .filter(Boolean) as Array<{
-      id: string;
-      name: string;
-      avatarUrl: string | null;
-      programme: string | null;
-    }>;
+      .filter(Boolean) as CommunityMember[];
+
+    return { members, nextCursor };
   }
 
   /**

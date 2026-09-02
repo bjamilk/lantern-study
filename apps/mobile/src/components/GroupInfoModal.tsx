@@ -28,6 +28,8 @@ import { useTheme } from '../theme';
 import type { ThemeColors } from '../theme';
 import { ReportContentSheet } from './moderation/ReportContentSheet';
 import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../screens/discover/GroupDiscoverabilityFields';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
+import { selectIsLoungeGroup, useCommunityStore } from '../stores/communityStore';
 
 type TabType = 'details' | 'members' | 'danger';
 
@@ -84,6 +86,16 @@ export default function GroupInfoModal({
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // A community's `# lounge` (spec §4.5): nobody leaves, archives or deletes
+  // it, and it is never re-listed — it belongs to the community. The lounge
+  // id lives on the community detail, so resolve it once per open.
+  const isLounge = useCommunityStore((s) => selectIsLoungeGroup(s, group.id));
+  const resolveCommunity = useCommunityStore((s) => s.resolveCommunity);
+  useEffect(() => {
+    if (!visible || !group.communityId) return;
+    void resolveCommunity(group.communityId).catch(() => undefined);
+  }, [visible, group.communityId, resolveCommunity]);
 
   // The modal stays mounted and is reused for every group, so this state would
   // otherwise keep whichever group was opened first. That is not just cosmetic:
@@ -318,6 +330,9 @@ export default function GroupInfoModal({
           editable={isAdmin}
           placeholderTextColor={colors.inputPlaceholder}
         />
+        {isLounge ? (
+          <Text style={[styles.statLabel, { marginTop: 6 }]}>{COMMUNITY_COPY.loungeSubtitle}</Text>
+        ) : null}
       </View>
 
       {/* Description */}
@@ -338,7 +353,7 @@ export default function GroupInfoModal({
         />
       </View>
 
-      {isAdmin ? (
+      {isAdmin && !isLounge ? (
         <View style={{ marginBottom: 16 }}>
           <GroupDiscoverabilityFields
             value={discovery}
@@ -514,6 +529,7 @@ export default function GroupInfoModal({
 
   const renderDangerTab = () => (
     <View style={[styles.tabContent, { paddingBottom: insets.bottom + 40 }]}>
+      {isLounge ? null : (
       <View style={styles.dangerSection}>
         <View style={styles.dangerHeader}>
           <Ionicons name="exit-outline" size={24} color="#f97316" />
@@ -544,8 +560,10 @@ export default function GroupInfoModal({
           <Text style={styles.dangerButtonText}>Leave Group</Text>
         </TouchableOpacity>
       </View>
+      )}
 
-      {/* Archive Section — any member */}
+      {/* Archive Section — any member (never the community lounge) */}
+      {isLounge ? null : (
       <View style={styles.dangerSection}>
         <View style={styles.dangerHeader}>
           <Ionicons name="archive" size={24} color="#f59e0b" />
@@ -572,6 +590,7 @@ export default function GroupInfoModal({
           </Text>
         </TouchableOpacity>
       </View>
+      )}
 
       {/* Report Section — any member; routes to Lantern moderation (Phase 1 · E) */}
       <View style={styles.dangerSection}>
@@ -595,7 +614,7 @@ export default function GroupInfoModal({
         </TouchableOpacity>
       </View>
 
-      {isOwner ? (
+      {isOwner && !isLounge ? (
           <View style={[styles.dangerSection, styles.deleteSection]}>
             <View style={styles.dangerHeader}>
               <Ionicons name="trash" size={24} color="#ef4444" />

@@ -9,6 +9,26 @@ import type { NoteImportProgress } from '../services/notes';
 import { isEphemeralAppMode, isRoutableAppMode, type BudgetTabParam } from '../utils/appRoutes';
 import { navigateForAppMode } from '../utils/appNavigation';
 
+export interface ActiveCommunity {
+  id: string;
+  slug: string;
+  name: string;
+  loungeGroupId: string | null;
+}
+
+export interface CommunityPresenceState {
+  communityId: string;
+  onlineIds: string[];
+  connected: boolean;
+}
+
+export interface StudyRoomJoin {
+  courseId?: string | null;
+  topic?: string | null;
+  /** Start-a-room from inside a community: join-or-create lands everyone in its one open room. */
+  communityId?: string | null;
+}
+
 interface UIState {
   // App Mode
   appMode: AppMode;
@@ -149,9 +169,21 @@ interface UIState {
   setSelectedCompanyId: (id: string | null) => void;
   selectedStudyRoomId: string | null;
   setSelectedStudyRoomId: (id: string | null) => void;
-  studyRoomJoin: { courseId?: string | null; topic?: string | null } | null;
-  setStudyRoomJoin: (join: { courseId?: string | null; topic?: string | null } | null) => void;
-  
+  studyRoomJoin: StudyRoomJoin | null;
+  setStudyRoomJoin: (join: StudyRoomJoin | null) => void;
+
+  /**
+   * The community whose column is out (Discord-style "server"). Set while the
+   * community page or one of its channels/rooms is on screen; cleared by
+   * App.tsx the moment the app leaves those modes. Never persisted — a
+   * reload resolves it again from the URL.
+   */
+  activeCommunity: ActiveCommunity | null;
+  setActiveCommunity: (community: ActiveCommunity | null) => void;
+  /** Live presence for `activeCommunity`, written by the single useCommunityPresence hook. */
+  communityPresence: CommunityPresenceState | null;
+  setCommunityPresence: (presence: CommunityPresenceState | null) => void;
+
   // Online Status
   isOnline: boolean;
   setIsOnline: (online: boolean) => void;
@@ -359,7 +391,20 @@ export const useUIStore = create<UIState>()(
       setSelectedStudyRoomId: (id) => set({ selectedStudyRoomId: id }),
       studyRoomJoin: null,
       setStudyRoomJoin: (join) => set({ studyRoomJoin: join }),
-      
+
+      activeCommunity: null,
+      setActiveCommunity: (community) =>
+        set((state) => ({
+          activeCommunity: community,
+          // Presence belongs to one community; drop it when the community changes.
+          communityPresence:
+            community && state.communityPresence?.communityId === community.id
+              ? state.communityPresence
+              : null,
+        })),
+      communityPresence: null,
+      setCommunityPresence: (presence) => set({ communityPresence: presence }),
+
       // Online Status
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
       setIsOnline: (online) => set({ isOnline: online }),

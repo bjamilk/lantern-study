@@ -1,19 +1,36 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Share,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  COMMUNITY_COPY,
+  COMMUNITY_LOUNGE_CHANNEL_NAME,
+  buildCommunityChannelRows,
   canAccessDiscoverHub,
-  communityKindLabel,
+  channelDisplayName,
+  channelSubtitle,
+  communityHeaderLine,
   communityMembershipAction,
-  memberCountLabel,
-  type CommunityDetail,
-  type DiscoverGroup,
+  communityOnlineCount,
+  communityShareUrl,
+  presenceLabel,
+  shouldSubscribeCommunityPresence,
+  type CommunityChannel,
+  type CommunityChannelRow,
+  type PresenceSnapshot,
 } from '@lantern/shared/network';
 import {
-  discoverGroups,
-  fetchCommunity,
-  fetchCommunityMembers,
+  fetchStudyPresence,
   joinCommunity,
   joinDiscoverableGroup,
   leaveCommunity,
@@ -21,7 +38,15 @@ import {
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
+import { useCommunityStore } from '../../stores/communityStore';
+import { useCommunityPresence } from '../../hooks/useCommunityPresence';
+import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { useChrome } from '../../components/layout/ChromeContext';
+import { ActionSheet, BackButton, type ActionSheetItem } from '../../components/ui';
+import { ResolvedAvatar } from '../../components/ResolvedAvatar';
+import { ChannelRow, RoomRow } from '../../components/community';
+import { toChannelOverlayGroups } from '../../utils/communityOverlay';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
 
 type NavigationProp = {
@@ -30,15 +55,24 @@ type NavigationProp = {
   getParent?: () => { navigate: (screen: string, params?: Record<string, unknown>) => void } | undefined;
 };
 
-type Member = { id: string; name: string; avatarUrl: string | null; programme: string | null };
+/** Tile ring per community kind — the one visual cue that a course room is not a campus room. */
+const KIND_RING: Record<string, string> = {
+  institution: '#0ea5e9',
+  programme: '#8b5cf6',
+  level: '#f59e0b',
+  course: '#6366f1',
+  topic: '#ec4899',
+};
+
+const ROOM_TICK_MS = 60_000;
 
 /**
- * One community (Phase 3 · L): who is in it and which groups live inside it.
- *
- * The member list is members-only server-side — a non-member sees the
- * community and its groups but not the roster.
+ * One community as a SERVER (spec §4.3): `# lounge`, TEXT CHANNELS, STUDY
+ * ROOMS and MEMBERS, all opened on THIS stack (founder rule §0a) — a channel
+ * pushes CommunityChannel, a room pushes StudyRoom, the roster pushes
+ * CommunityMembers; back always returns here.
  */
-function CommunityDetailHub({
+function CommunityServer({
   navigation,
   route,
 }: {
@@ -46,106 +80,377 @@ function CommunityDetailHub({
   route: { params: { slug: string } };
 }) {
   const { slug } = route.params;
-  const [community, setCommunity] = useState<CommunityDetail | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [groups, setGroups] = useState<DiscoverGroup[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState(false);
-  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const fetchGroups = useGroupStore((s) => s.fetchGroups);
   const userId = useAuthStore((s) => s.user?.id);
+  const { lowDataMode } = useLowDataMode();
+  const { onScroll: chromeOnScroll } = useChrome();
+  const groups = useGroupStore((s) => s.groups);
+  const fetchGroups = useGroupStore((s) => s.fetchGroups);
+
+  const community = useCommunityStore((s) => s.detailBySlug[slug]);
+  const payload = useCommunityStore((s) => (community ? s.channelsById[community.id] : undefined));
+  const loadCommunity = useCommunityStore((s) => s.loadCommunity);
+  const loadChannels = useCommunityStore((s) => s.loadChannels);
+  const invalidate = useCommunityStore((s) => s.invalidate);
+
+  const [loading, setLoading] = useState(!community);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loungeError, setLoungeError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [loungeBusy, setLoungeBusy] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     setError(null);
+    let detail;
     try {
-      const detail = await fetchCommunity(slug);
-      setCommunity(detail);
-
-      // Groups and members are secondary — either failing must still leave the
-      // community header rendered rather than blanking the screen.
-      void discoverGroups({ communityId: detail.id })
-        .then(setGroups)
-        .catch(() => setGroups([]));
-      if (detail.isMember) {
-        void fetchCommunityMembers(detail.id, 30)
-          .then(setMembers)
-          .catch(() => setMembers([]));
-      } else {
-        setMembers([]);
-      }
+      detail = await loadCommunity(slug);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Community not found');
+      return;
     }
-  }, [slug]);
+    // The server view is secondary — if it fails the header still renders.
+    try {
+      await loadChannels(detail.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load this community');
+    }
+  }, [slug, loadCommunity, loadChannels]);
 
+  // Refetch on every focus: unread resets after returning from a channel and
+  // a room started from here shows up under STUDY ROOMS.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setNow(Date.now());
+      void load().finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [load])
+  );
+
+  // "Closes in Xh" ticks once a minute while focused — never in low-data mode.
+  useFocusEffect(
+    useCallback(() => {
+      if (lowDataMode) return undefined;
+      const tick = setInterval(() => setNow(Date.now()), ROOM_TICK_MS);
+      return () => clearInterval(tick);
+    }, [lowDataMode])
+  );
+
+  const courseId = community?.course_id ?? null;
   useEffect(() => {
-    void (async () => {
+    if (!courseId || lowDataMode) {
+      setPresence(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchStudyPresence({ courseId })
+      .then((snapshot) => {
+        if (!cancelled) setPresence(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setPresence(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, lowDataMode]);
+
+  const presenceEnabled =
+    !!community &&
+    shouldSubscribeCommunityPresence({
+      isMember: community.isMember,
+      lowDataMode,
+      memberCount: community.member_count,
+    });
+  const { onlineIds, connected } = useCommunityPresence(community?.id ?? null, {
+    enabled: presenceEnabled,
+  });
+
+  const onlineCount = communityOnlineCount(
+    payload?.onlineCount ?? community?.onlineCount ?? 0,
+    onlineIds,
+    connected
+  );
+
+  const overlayGroups = useMemo(() => toChannelOverlayGroups(groups), [groups]);
+  const rows = useMemo<CommunityChannelRow[]>(
+    () => (payload ? buildCommunityChannelRows(payload, overlayGroups, now) : []),
+    [payload, overlayGroups, now]
+  );
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setNow(Date.now());
       await load();
-      setLoading(false);
-    })();
+    } finally {
+      setRefreshing(false);
+    }
   }, [load]);
 
-  const toggle = async () => {
-    if (!community) return;
+  const toggleMembership = async () => {
+    if (!community || pending) return;
     setPending(true);
     const wasMember = community.isMember;
-    setCommunity({ ...community, isMember: !wasMember });
     try {
       if (wasMember) await leaveCommunity(community.id);
       else await joinCommunity(community.id);
+      invalidate(community.id);
       await load();
     } catch (err) {
-      setCommunity({ ...community, isMember: wasMember });
       setError(err instanceof Error ? err.message : 'Could not update membership');
     } finally {
       setPending(false);
     }
   };
 
-  const openOrJoinGroup = async (group: DiscoverGroup) => {
-    const tabNav = navigation.getParent?.();
-    if (group.isMember) {
-      tabNav?.navigate('ChatTab', {
-        screen: 'GroupChat',
-        params: { groupId: group.id, groupName: group.name },
+  const openChannel = useCallback(
+    (groupId: string, groupName: string) => {
+      if (!community) return;
+      navigation.navigate('CommunityChannel', {
+        groupId,
+        groupName,
+        communitySlug: community.slug,
+        communityName: community.name,
+        communityId: community.id,
       });
+    },
+    [community, navigation]
+  );
+
+  const openLounge = async () => {
+    if (!community || loungeBusy) return;
+    setLoungeError(null);
+    const loungeId = payload?.loungeGroupId ?? community.lounge_group_id;
+    if (loungeId && groups.some((g) => g.id === loungeId)) {
+      openChannel(loungeId, payload?.lounge?.name ?? community.name);
       return;
     }
-    setPendingGroupId(group.id);
+    setLoungeBusy(true);
     try {
-      await joinDiscoverableGroup(group.id);
-      if (userId) await fetchGroups(userId).catch(() => undefined);
-      tabNav?.navigate('ChatTab', {
-        screen: 'GroupChat',
-        params: { groupId: group.id, groupName: group.name },
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join this group');
-    } finally {
-      setPendingGroupId(null);
-    }
-  };
-
-  const [loungePending, setLoungePending] = useState(false);
-  const openLounge = async () => {
-    if (!community || loungePending) return;
-    setLoungePending(true);
-    try {
+      // Idempotent: mints on first use, joins the caller either way.
       const lounge = await openCommunityLounge(community.id);
       if (userId) await fetchGroups(userId).catch(() => undefined);
-      navigation.getParent?.()?.navigate('ChatTab', {
-        screen: 'GroupChat',
-        params: { groupId: lounge.groupId, groupName: lounge.name },
-      });
+      invalidate(community.id);
+      openChannel(lounge.groupId, lounge.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open the community chat');
+      const status = (err as { status?: number } | null)?.status;
+      setLoungeError(
+        status === 503
+          ? COMMUNITY_COPY.loungeUnavailable
+          : err instanceof Error
+            ? err.message
+            : COMMUNITY_COPY.loungeUnavailable
+      );
     } finally {
-      setLoungePending(false);
+      setLoungeBusy(false);
     }
   };
 
-  if (loading) {
+  const joinThenOpen = async (channel: CommunityChannel) => {
+    if (!community || joiningId) return;
+    setJoiningId(channel.id);
+    try {
+      await joinDiscoverableGroup(channel.id);
+      if (userId) await fetchGroups(userId).catch(() => undefined);
+      invalidate(community.id);
+      openChannel(channel.id, channel.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join this channel');
+    } finally {
+      setJoiningId(null);
+    }
+  };
+
+  const onChannelPress = (channel: CommunityChannel) => {
+    if (!community) return;
+    if (channel.isMember || groups.some((g) => g.id === channel.id)) {
+      openChannel(channel.id, channel.name);
+      return;
+    }
+    if (!community.isMember) {
+      Alert.alert(channelDisplayName(channel), COMMUNITY_COPY.joinToOpen);
+      return;
+    }
+    Alert.alert(`Join ${channelDisplayName(channel)}?`, channelSubtitle(channel), [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Join', onPress: () => void joinThenOpen(channel) },
+    ]);
+  };
+
+  const openMembers = () => {
+    if (!community) return;
+    navigation.navigate('CommunityMembers', {
+      slug: community.slug,
+      communityId: community.id,
+      name: community.name,
+    });
+  };
+
+  const createChannel = () => {
+    if (!community) return;
+    navigation.navigate('CreateGroup', {
+      communityId: community.id,
+      communityName: community.name,
+      communitySlug: community.slug,
+    });
+  };
+
+  const startRoom = () => {
+    if (!community) return;
+    navigation.navigate('StudyRoom', {
+      communityId: community.id,
+      courseId: community.course_id ?? undefined,
+      communityName: community.name,
+    });
+  };
+
+  const shareInvite = async () => {
+    if (!community) return;
+    try {
+      await Share.share({ message: communityShareUrl(community.slug) });
+    } catch {
+      // The share sheet was dismissed or is unavailable; nothing to surface.
+    }
+  };
+
+  const menuItems: ActionSheetItem[] = useMemo(() => {
+    if (!community?.isMember) return [];
+    const items: ActionSheetItem[] = [];
+    // Private communities have no invite in phase 1 (§6) — same rule as web.
+    if (community.visibility === 'public') {
+      items.push({ label: COMMUNITY_COPY.invite, icon: 'link-outline', onPress: () => void shareInvite() });
+    }
+    items.push(
+      { label: COMMUNITY_COPY.createChannel, icon: 'add-circle-outline', onPress: createChannel },
+      { label: COMMUNITY_COPY.startRoom, icon: 'volume-medium-outline', onPress: startRoom }
+    );
+    return items;
+    // Handlers close over `community` and `navigation`, both stable per render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [community?.isMember, community?.id, community?.visibility]);
+
+  const presenceLine = presenceLabel(presence);
+  const membershipLabel = community
+    ? communityMembershipAction(community.isMember, community.source)
+    : 'Join';
+
+  const renderRow = ({ item }: { item: CommunityChannelRow }) => {
+    switch (item.kind) {
+      case 'lounge': {
+        const lounge = item.channel;
+        return (
+          <View>
+            <ChannelRow
+              displayName={channelDisplayName({ isLounge: true, name: COMMUNITY_LOUNGE_CHANNEL_NAME })}
+              subtitle={lounge ? channelSubtitle(lounge) : COMMUNITY_COPY.loungeSubtitle}
+              unread={item.unread}
+              joined
+              busy={loungeBusy}
+              onPress={() => void openLounge()}
+            />
+            {loungeError ? (
+              <Text className="px-4 pb-2 text-xs text-red-500">{loungeError}</Text>
+            ) : null}
+          </View>
+        );
+      }
+      case 'section':
+        return (
+          <View className="flex-row items-center px-4 pt-4 pb-1">
+            <Text className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+              {item.title}
+            </Text>
+            {item.action ? (
+              <Pressable
+                onPress={item.action === 'create-channel' ? createChannel : startRoom}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  item.action === 'create-channel'
+                    ? COMMUNITY_COPY.createChannel
+                    : COMMUNITY_COPY.startRoom
+                }
+                className="min-h-[44px] min-w-[44px] items-center justify-center -mr-3"
+              >
+                <Ionicons name="add" size={20} color="#64748b" />
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      case 'channel':
+        return (
+          <ChannelRow
+            displayName={channelDisplayName(item.channel)}
+            subtitle={channelSubtitle(item.channel)}
+            unread={item.unread}
+            visibility={item.channel.visibility}
+            joined={item.channel.isMember}
+            busy={joiningId === item.channel.id}
+            onPress={() => onChannelPress(item.channel)}
+          />
+        );
+      case 'room':
+        return (
+          <RoomRow
+            room={item.room}
+            now={now}
+            onPress={() =>
+              navigation.navigate('StudyRoom', {
+                roomId: item.room.id,
+                communityName: community?.name,
+              })
+            }
+          />
+        );
+      case 'empty':
+        return <Text className="px-4 py-3 text-sm text-lantern-text-tertiary">{item.text}</Text>;
+      case 'members':
+        return (
+          <Pressable
+            onPress={openMembers}
+            accessibilityRole="button"
+            accessibilityLabel={`${COMMUNITY_COPY.sectionMembers}, ${item.count}`}
+            className="flex-row items-center px-4 pt-4 pb-3 min-h-[44px] active:bg-lantern-background-secondary"
+          >
+            <Text className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+              {COMMUNITY_COPY.sectionMembers} · {item.count.toLocaleString()}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
+          </Pressable>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const keyExtractor = (item: CommunityChannelRow, index: number) => {
+    switch (item.kind) {
+      case 'lounge':
+        return 'lounge';
+      case 'section':
+        return `section-${item.title}`;
+      case 'channel':
+        return `channel-${item.channel.id}`;
+      case 'room':
+        return `room-${item.room.id}`;
+      case 'members':
+        return 'members';
+      default:
+        return `row-${index}`;
+    }
+  };
+
+  if (loading && !community) {
     return (
       <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
         <ActivityIndicator color="#6366f1" />
@@ -155,125 +460,147 @@ function CommunityDetailHub({
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
-        <Pressable
-          onPress={() => navigation.goBack()}
-          hitSlop={8}
-          className="mr-2 -ml-1 p-1"
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
+      <View className="flex-row items-center h-[56px] pr-2 border-b border-lantern-border">
+        <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
+        <View
+          className="rounded-full"
+          style={{
+            padding: 2,
+            borderWidth: 2,
+            borderColor: KIND_RING[community?.kind ?? ''] ?? '#6366f1',
+          }}
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
-        </Pressable>
-        <Text className="flex-1 text-lg font-bold text-lantern-text" numberOfLines={1}>
-          {community?.name ?? 'Community'}
-        </Text>
+          <ResolvedAvatar name={community?.name ?? 'Community'} size={36} decorative />
+        </View>
+        <View className="flex-1 min-w-0 ml-2 flex-row items-center">
+          <Text className="text-lg font-semibold text-lantern-text shrink" numberOfLines={1}>
+            {community?.name ?? 'Community'}
+          </Text>
+          {community?.is_official ? (
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#6366f1"
+              style={{ marginLeft: 4 }}
+              accessibilityLabel="Official"
+            />
+          ) : null}
+        </View>
+        {community?.isMember ? (
+          <>
+            <Pressable
+              onPress={openMembers}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={`Members${onlineCount > 0 ? `, ${onlineCount} online` : ''}`}
+              className="flex-row items-center min-h-[44px] min-w-[44px] justify-center px-1.5"
+            >
+              <Ionicons name="people-outline" size={22} color="#64748b" />
+              {onlineCount > 0 ? (
+                <Text className="ml-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  {onlineCount.toLocaleString()}
+                </Text>
+              ) : null}
+            </Pressable>
+            <Pressable
+              onPress={() => setMenuOpen(true)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="More actions"
+              className="min-h-[44px] min-w-[44px] items-center justify-center"
+            >
+              <Ionicons name="ellipsis-vertical" size={20} color="#64748b" />
+            </Pressable>
+          </>
+        ) : null}
       </View>
 
       {error ? <Text className="mx-4 mt-3 text-xs text-red-500">{error}</Text> : null}
 
       {community ? (
         <FlatList
-          data={groups}
-          keyExtractor={(item) => item.id}
+          data={rows}
+          keyExtractor={keyExtractor}
+          renderItem={renderRow}
+          onScroll={chromeOnScroll}
+          scrollEventThrottle={16}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
           contentContainerStyle={{ paddingBottom: 32 }}
           ListHeaderComponent={
-            <View className="px-4 py-4">
+            <View className="px-4 pt-4 pb-1 border-b border-lantern-border">
               <Text className="text-xs text-lantern-text-tertiary">
-                {communityKindLabel(community.kind)} · {memberCountLabel(community.member_count)}
+                {communityHeaderLine(community.kind, community.member_count, onlineCount)}
               </Text>
               {community.description ? (
-                <Text className="text-sm text-lantern-text-secondary mt-2">
-                  {community.description}
-                </Text>
-              ) : null}
-
-              <Pressable
-                onPress={() => void toggle()}
-                disabled={pending}
-                className={`mt-3 self-start rounded-lg px-4 py-2 ${
-                  community.isMember ? 'bg-lantern-background-secondary' : 'bg-lantern-primary'
-                }`}
-                style={{ opacity: pending ? 0.5 : 1 }}
-                accessibilityRole="button"
-                accessibilityLabel={communityMembershipAction(community.isMember, community.source)}
-              >
-                <Text
-                  className={`text-xs font-semibold ${
-                    community.isMember ? 'text-lantern-text-secondary' : 'text-white'
-                  }`}
-                >
-                  {pending
-                    ? 'Working…'
-                    : communityMembershipAction(community.isMember, community.source)}
-                </Text>
-              </Pressable>
-
-              {community.isMember ? (
                 <Pressable
-                  onPress={() => void openLounge()}
-                  disabled={loungePending}
-                  className="mt-2 flex-row items-center self-start rounded-lg bg-lantern-primary px-4 py-2"
-                  style={{ opacity: loungePending ? 0.6 : 1 }}
+                  onPress={() => setDescriptionExpanded((open) => !open)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open ${community.name} community chat`}
+                  accessibilityLabel={
+                    descriptionExpanded ? 'Collapse description' : 'Expand description'
+                  }
                 >
-                  <Ionicons name="chatbubbles-outline" size={14} color="#ffffff" />
-                  <Text className="ml-1.5 text-xs font-semibold text-white">
-                    {loungePending ? 'Opening…' : 'Community chat'}
+                  <Text
+                    className="text-sm text-lantern-text-secondary mt-2"
+                    numberOfLines={descriptionExpanded ? undefined : 2}
+                  >
+                    {community.description}
                   </Text>
                 </Pressable>
               ) : null}
-
-              {members.length > 0 ? (
-                <View className="mt-5">
-                  <Text className="text-[11px] font-semibold uppercase text-lantern-text-tertiary">
-                    Members
-                  </Text>
-                  {members.slice(0, 10).map((member) => (
-                    <Text
-                      key={member.id}
-                      className="text-xs text-lantern-text mt-1.5"
-                      numberOfLines={1}
-                    >
-                      {member.name}
-                      {member.programme ? ` · ${member.programme}` : ''}
-                    </Text>
-                  ))}
-                </View>
+              {presenceLine ? (
+                <Text className="mt-2 text-[11px] text-lantern-primary">{presenceLine}</Text>
               ) : null}
 
-              <Text className="mt-5 text-[11px] font-semibold uppercase text-lantern-text-tertiary">
-                Groups
-              </Text>
+              <View className="flex-row items-center mt-3 mb-3">
+                <Pressable
+                  onPress={() => void toggleMembership()}
+                  disabled={pending}
+                  className={`min-h-[40px] justify-center rounded-lg px-4 ${
+                    community.isMember ? 'bg-lantern-background-secondary' : 'bg-lantern-primary'
+                  }`}
+                  style={{ opacity: pending ? 0.5 : 1 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={membershipLabel}
+                  accessibilityState={{ disabled: pending, busy: pending }}
+                >
+                  <Text
+                    className={`text-xs font-semibold ${
+                      community.isMember ? 'text-lantern-text-secondary' : 'text-white'
+                    }`}
+                  >
+                    {pending ? 'Working…' : membershipLabel}
+                  </Text>
+                </Pressable>
+                {!community.isMember ? (
+                  <Text className="ml-3 flex-1 text-xs text-lantern-text-tertiary">
+                    {COMMUNITY_COPY.joinToSeeMembers}
+                  </Text>
+                ) : null}
+              </View>
             </View>
           }
-          renderItem={({ item }) => (
-            <Pressable
-              className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-3"
-              onPress={() => void openOrJoinGroup(item)}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.isMember ? 'Open' : 'Join'} ${item.name}`}
-            >
-              <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
-                {item.name}
-              </Text>
-              <Text className="text-xs text-lantern-text-tertiary mt-0.5">
-                {memberCountLabel(item.memberCount)}
-                {item.isMember ? ' · Member · Open' : ' · Join'}
-                {pendingGroupId === item.id ? '…' : ''}
-              </Text>
-            </Pressable>
-          )}
           ListEmptyComponent={
-            <Text className="mx-4 text-xs text-lantern-text-tertiary">
-              {community?.isMember
-                ? 'No groups in this community yet. Create a study group and list it from Group info.'
-                : 'No public groups here yet. Join the community to see rooms listed just for members.'}
-            </Text>
+            loading ? (
+              <View className="py-8 items-center">
+                <ActivityIndicator color="#6366f1" />
+              </View>
+            ) : null
           }
         />
       ) : null}
+
+      <ActionSheet
+        visible={menuOpen}
+        title={community?.name}
+        items={menuItems.map((item) => ({
+          ...item,
+          onPress: () => {
+            setMenuOpen(false);
+            item.onPress();
+          },
+        }))}
+        onClose={() => setMenuOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -289,7 +616,7 @@ export function CommunityDetailScreen({
   if (!canAccessDiscoverHub(isPlatformAdmin)) {
     return <DiscoverComingSoon onBack={() => navigation.goBack()} />;
   }
-  return <CommunityDetailHub navigation={navigation} route={route} />;
+  return <CommunityServer navigation={navigation} route={route} />;
 }
 
 export default CommunityDetailScreen;

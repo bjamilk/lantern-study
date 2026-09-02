@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyReactionLocally } from '@lantern/shared/chat';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
 import {
   addMessageReaction,
   removeMessageReaction,
@@ -131,6 +132,12 @@ interface ChatWindowProps {
    * - string: scroll to first message after this timestamp
    */
   unreadAnchorAt?: string | null;
+  /**
+   * Set when the open group is a community channel: the header subtitle
+   * becomes the `in <Community>` link (no "Active group" dot) and the small-
+   * screen back button reads "Back to community". Nothing else changes.
+   */
+  communityContext?: { name: string; onOpen: () => void };
 }
 
 const NEAR_BOTTOM_PX = 120;
@@ -149,6 +156,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onCreateGroup,
   onOpenNewDmModal,
   unreadAnchorAt,
+  communityContext,
   onDeleteDmThread,
   onArchiveDmThread,
   onUnarchiveDmThread,
@@ -1716,7 +1724,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           <div className="flex items-center min-w-0 gap-3">
             {/* Mobile back button */}
             {onBack && (
-              <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-lantern-text-secondary hover:text-lantern-text rounded-lantern hover:bg-lantern-background-secondary relative z-20" aria-label="Back to chats">
+              <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-lantern-text-secondary hover:text-lantern-text rounded-lantern hover:bg-lantern-background-secondary relative z-20" aria-label={communityContext ? 'Back to community' : 'Back to chats'}>
                 <ArrowLeftIcon className="w-5 h-5" />
               </button>
             )}
@@ -1728,14 +1736,28 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 localOnly={lowDataMode}
                 className="ring-2 ring-white dark:ring-lantern-border"
               />
-              {isGroup && !isArchived && (
+              {isGroup && !isArchived && !communityContext && (
                 <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-lantern-border rounded-full" aria-label="Active group" />
               )}
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-semibold truncate text-lantern-text" title={name}>{name}</h2>
-              <p className="text-xs text-lantern-text-secondary truncate" title={headerSubtitle}>
-                {isArchived ? <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span> : headerSubtitle}
+              <p className="text-xs text-lantern-text-secondary truncate" title={communityContext && !isArchived ? undefined : headerSubtitle}>
+                {isArchived ? (
+                  <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span>
+                ) : communityContext ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={communityContext.onOpen}
+                      aria-label="Open community"
+                      className="text-xs text-lantern-primary hover:underline"
+                    >
+                      {COMMUNITY_COPY.inCommunity(communityContext.name)}
+                    </button>
+                    {isGroup && questionCount > 0 ? ` · ${questionCount} question${questionCount !== 1 ? 's' : ''}` : ''}
+                  </>
+                ) : headerSubtitle}
               </p>
             </div>
           </div>

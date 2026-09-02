@@ -13,16 +13,31 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type GroupPermissions } from '../../stores/groupStore';
+import { useCommunityStore } from '../../stores/communityStore';
 import * as api from '../../services/api';
 import { Button, ScreenHeader, Avatar } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
 import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../discover/GroupDiscoverabilityFields';
 import type { ChatStackParamList } from '../../navigation/types';
 
-type Props = NativeStackScreenProps<ChatStackParamList, 'CreateGroup'>;
+type CreateGroupParams = ChatStackParamList['CreateGroup'];
+
+/**
+ * Structural so the same screen registers on BOTH the Chat stack and the
+ * Market stack (a community's "New channel", spec §4.1/§4.6). `getState` is
+ * how we tell which stack we are on when it is time to land in the new chat.
+ */
+type Props = {
+  navigation: {
+    goBack: () => void;
+    replace: (screen: string, params?: Record<string, unknown>) => void;
+    getState: () => { routeNames?: string[] } | undefined;
+  };
+  route: { params?: CreateGroupParams };
+};
 
 interface SearchResult {
   id: string;
@@ -75,16 +90,25 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   const parentId = route.params?.parentId;
   const parentName = route.params?.parentName;
   const isSubGroup = !!parentId;
+  // A channel is a group locked to one community; the listing is not a choice.
+  const communityId = route.params?.communityId;
+  const communityName = route.params?.communityName;
+  const communitySlug = route.params?.communitySlug;
+  const lockedCommunity = useMemo(
+    () => (communityId && communityName ? { id: communityId, name: communityName } : null),
+    [communityId, communityName]
+  );
 
   const [step, setStep] = useState<'select_members' | 'group_details'>('select_members');
   const [selectedUsers, setSelectedUsers] = useState<SearchResult[]>([]);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [courseId, setCourseId] = useState<string | null>(null);
-  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>({
-    visibility: 'private',
-    communityId: null,
-  });
+  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>(() =>
+    communityId
+      ? { visibility: 'community', communityId }
+      : { visibility: 'private', communityId: null }
+  );
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [pickingAvatar, setPickingAvatar] = useState(false);
   const [permissions, setPermissions] = useState<GroupPermissions>(DEFAULT_PERMISSIONS);
@@ -219,6 +243,31 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         })),
       });
 
+      if (communityId) {
+        // The community's channel list is stale now; it refetches on focus.
+        useCommunityStore.getState().invalidate(communityId);
+        const onMarketStack = navigation
+          .getState()
+          ?.routeNames?.includes('CommunityChannel');
+        if (onMarketStack && communitySlug && communityName) {
+          // Founder rule (spec §0a): stay on the community's stack.
+          navigation.replace('CommunityChannel', {
+            groupId: created.id,
+            groupName: created.name,
+            communitySlug,
+            communityName,
+            communityId,
+          });
+          return;
+        }
+        navigation.replace('GroupChat', {
+          groupId: created.id,
+          groupName: created.name,
+          communitySlug,
+          communityName,
+        });
+        return;
+      }
       navigation.replace('GroupChat', {
         groupId: created.id,
         groupName: created.name,
@@ -241,13 +290,22 @@ export function CreateGroupScreen({ navigation, route }: Props) {
     parentId,
     createGroup,
     navigation,
+    communityId,
+    communityName,
+    communitySlug,
   ]);
 
   if (step === 'select_members') {
     return (
       <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
         <ScreenHeader
-          title={isSubGroup ? 'New Sub-group' : 'New Group'}
+          title={
+            lockedCommunity
+              ? COMMUNITY_COPY.newChannelTitle(lockedCommunity.name)
+              : isSubGroup
+                ? 'New Sub-group'
+                : 'New Group'
+          }
           subtitle={
             isSubGroup
               ? parentName
@@ -347,7 +405,13 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
       <ScreenHeader
-        title={isSubGroup ? 'Sub-group Details' : 'Group Details'}
+        title={
+          lockedCommunity
+            ? COMMUNITY_COPY.newChannelTitle(lockedCommunity.name)
+            : isSubGroup
+              ? 'Sub-group Details'
+              : 'Group Details'
+        }
         subtitle={
           isSubGroup && parentName
             ? `Inside "${parentName}" · ${selectedUsers.length + 1} members`
@@ -413,7 +477,11 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
         {!isSubGroup ? (
           <View className="p-4 rounded-2xl bg-lantern-surface border border-lantern-border mb-4">
-            <GroupDiscoverabilityFields value={discovery} onChange={setDiscovery} />
+            <GroupDiscoverabilityFields
+              value={discovery}
+              onChange={setDiscovery}
+              lockedCommunity={lockedCommunity}
+            />
           </View>
         ) : null}
 
@@ -469,7 +537,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
       <StepFooter>
         <Button fullWidth loading={isCreating} disabled={!groupName.trim()} onPress={handleCreate}>
-          {isSubGroup ? 'Create Sub-group' : 'Create Group'}
+          {lockedCommunity ? 'Create channel' : isSubGroup ? 'Create Sub-group' : 'Create Group'}
         </Button>
       </StepFooter>
     </SafeAreaView>

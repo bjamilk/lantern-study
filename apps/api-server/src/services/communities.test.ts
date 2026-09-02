@@ -17,8 +17,10 @@ const COMMUNITY = '33333333-3333-4333-8333-333333333333';
 type Row = Record<string, unknown>;
 
 /**
- * Minimal PostgREST double. `members` is consulted twice by listMembers: once
- * for the viewer's own row (maybeSingle) and once for the roster (limit).
+ * Minimal PostgREST double. listMembers consults maybeSingle twice (the
+ * viewer's own membership row, then the community row for created_by) and
+ * the roster once (limit). Every maybeSingle answers with the membership
+ * shape; the community read simply sees no created_by, which is 'member'.
  */
 function makeService(opts: { viewerSource?: string | null; roster: Row[] }) {
   const writes: Array<{ table: string; op: string; payload: unknown }> = [];
@@ -86,7 +88,7 @@ describe('listMembers privacy', () => {
       viewerSource: 'joined',
       roster: [member(OTHER, 'joined', 'private')],
     });
-    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toEqual([]);
+    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toEqual({ members: [], nextCursor: null });
   });
 
   it('shows a public profile', async () => {
@@ -94,13 +96,13 @@ describe('listMembers privacy', () => {
       viewerSource: 'auto',
       roster: [member(OTHER, 'auto', 'public')],
     });
-    const rows = await service.listMembers(VIEWER, COMMUNITY);
-    expect(rows).toHaveLength(1);
+    const { members } = await service.listMembers(VIEWER, COMMUNITY);
+    expect(members).toHaveLength(1);
   });
 
   it('treats an absent visibility setting as public (the product default)', async () => {
     const { service } = makeService({ viewerSource: 'auto', roster: [member(OTHER, 'auto')] });
-    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toHaveLength(1);
+    expect((await service.listMembers(VIEWER, COMMUNITY)).members).toHaveLength(1);
   });
 
   it('THE INVARIANT: a shared AUTO community does not expose a groups-tier profile', async () => {
@@ -110,7 +112,7 @@ describe('listMembers privacy', () => {
       viewerSource: 'auto',
       roster: [member(OTHER, 'auto', 'groups')],
     });
-    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toEqual([]);
+    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toEqual({ members: [], nextCursor: null });
   });
 
   it('a shared JOINED community does expose a groups-tier profile', async () => {
@@ -118,7 +120,7 @@ describe('listMembers privacy', () => {
       viewerSource: 'joined',
       roster: [member(OTHER, 'joined', 'groups')],
     });
-    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toHaveLength(1);
+    expect((await service.listMembers(VIEWER, COMMUNITY)).members).toHaveLength(1);
   });
 
   it('requires BOTH sides to have joined — viewer auto is not enough', async () => {
@@ -126,7 +128,7 @@ describe('listMembers privacy', () => {
       viewerSource: 'auto',
       roster: [member(OTHER, 'joined', 'groups')],
     });
-    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toEqual([]);
+    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toEqual({ members: [], nextCursor: null });
   });
 
   it('always shows the viewer their own row whatever their visibility', async () => {
@@ -134,7 +136,7 @@ describe('listMembers privacy', () => {
       viewerSource: 'auto',
       roster: [member(VIEWER, 'auto', 'private')],
     });
-    await expect(service.listMembers(VIEWER, COMMUNITY)).resolves.toHaveLength(1);
+    expect((await service.listMembers(VIEWER, COMMUNITY)).members).toHaveLength(1);
   });
 
   it('refuses the roster to a non-member', async () => {

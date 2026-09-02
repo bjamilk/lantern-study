@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
   MagnifyingGlassIcon,
-  ChatBubbleLeftRightIcon,
   CheckBadgeIcon,
   ArrowPathIcon,
   SparklesIcon,
@@ -12,6 +11,8 @@ import {
   canAccessDiscoverHub,
   communityKindLabel,
   communityMembershipAction,
+  communityUnreadTotal,
+  formatCommunityUnread,
   memberCountLabel,
   presenceLabel,
   shouldShowTrustChip,
@@ -27,7 +28,6 @@ import {
 import {
   createCommunity,
   discoverCommunities,
-  openCommunityLounge,
   discoverGroups,
   discoverPeople,
   fetchMyCommunities,
@@ -38,6 +38,7 @@ import {
   listStudyRooms,
 } from '../services/supabase';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import { useGroupStore } from '../stores/groupStore';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
 
@@ -303,24 +304,15 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   const yours = mine;
   const more = communities.filter((c) => !myIds.has(c.id));
 
-  const [loungePendingId, setLoungePendingId] = useState<string | null>(null);
-  const openLounge = async (community: Community) => {
-    if (loungePendingId) return;
-    setLoungePendingId(community.id);
-    try {
-      const lounge = await openCommunityLounge(community.id);
-      onNavigate('GroupChat', { groupId: lounge.groupId, groupName: lounge.name, joined: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open the community chat');
-    } finally {
-      setLoungePendingId(null);
-    }
-  };
+  // The lounge lives INSIDE the community now (founder rule §0a): the card
+  // carries the unread rollup of its joined channels instead of a chat chip.
+  const myGroups = useGroupStore((s) => s.groups);
 
   const renderCommunityCard = (community: Community) => {
     const isMember = myIds.has(community.id);
     const membership = myById.get(community.id);
     const action = communityMembershipAction(isMember, membership?.source);
+    const unread = communityUnreadTotal(myGroups, community.id);
     return (
       <article key={community.id} className={card}>
         <div className="flex items-start gap-2">
@@ -328,6 +320,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
             type="button"
             onClick={() => onNavigate('CommunityDetail', { slug: community.slug })}
             className="min-w-0 flex-1 text-left"
+            aria-label={unread > 0 ? `${community.name}, ${unread} unread` : undefined}
           >
             <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
               <span className="truncate">{community.name}</span>
@@ -336,6 +329,14 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                   className="h-4 w-4 shrink-0 text-lantern-primary"
                   aria-label="Official community"
                 />
+              ) : null}
+              {unread > 0 ? (
+                <span
+                  className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full shrink-0"
+                  aria-hidden="true"
+                >
+                  {formatCommunityUnread(unread)}
+                </span>
               ) : null}
             </h2>
             <p className="text-xs text-lantern-text-secondary">
@@ -361,17 +362,6 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
             {pendingId === community.id ? '…' : action}
           </button>
         </div>
-        {isMember ? (
-          <button
-            type="button"
-            onClick={() => void openLounge(community)}
-            disabled={loungePendingId === community.id}
-            className="self-start rounded-full bg-lantern-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-lantern-primary hover:bg-lantern-primary/20 disabled:opacity-60"
-          >
-            <ChatBubbleLeftRightIcon className="mr-1 inline h-3.5 w-3.5" aria-hidden />
-            {loungePendingId === community.id ? 'Opening…' : 'Community chat'}
-          </button>
-        ) : null}
       </article>
     );
   };

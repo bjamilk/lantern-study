@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, Switch, Text, View } from 'react-native';
-import { resolveGroupDiscovery, type MyCommunity } from '@lantern/shared/network';
+import { Ionicons } from '@expo/vector-icons';
+import { COMMUNITY_COPY, resolveGroupDiscovery, type MyCommunity } from '@lantern/shared/network';
 import { fetchMyCommunities } from '../../services/api';
 
 export type GroupDiscoveryValue = {
@@ -11,17 +12,40 @@ export type GroupDiscoveryValue = {
 export function GroupDiscoverabilityFields({
   value,
   onChange,
+  lockedCommunity,
 }: {
   value: GroupDiscoveryValue;
   onChange: (next: GroupDiscoveryValue) => void;
+  /**
+   * Creating a channel from inside a community (spec §4.6): the listing is
+   * fixed to that community, so this renders one read-only line and never
+   * calls `onChange`.
+   */
+  lockedCommunity?: { id: string; name: string } | null;
 }) {
   const [mine, setMine] = useState<MyCommunity[]>([]);
+  const locked = !!lockedCommunity;
 
   useEffect(() => {
+    if (locked) return;
     void fetchMyCommunities()
       .then(setMine)
       .catch(() => setMine([]));
-  }, []);
+  }, [locked]);
+
+  if (lockedCommunity) {
+    return (
+      <View>
+        <Text className="font-semibold text-lantern-text">Discover</Text>
+        <View className="mt-2 flex-row items-center">
+          <Ionicons name="people-outline" size={16} color="#6366f1" />
+          <Text className="ml-2 flex-1 text-sm text-lantern-text-secondary">
+            {COMMUNITY_COPY.listedIn(lockedCommunity.name)}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   const listed = value.visibility !== 'private';
 

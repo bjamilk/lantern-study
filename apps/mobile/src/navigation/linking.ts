@@ -65,6 +65,13 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               ShopAccount: 'marketplace/you',
               StudyProductDrafts: 'marketplace/products',
               SellerPayout: 'marketplace/payouts',
+              // Community server view (spec §4.1) — same paths as the web app.
+              CommunityDetail: 'discover/c/:slug',
+              CommunityMembers: 'discover/c/:slug/members',
+              // The path param is named for the screen's own param, or a deep
+              // link would arrive with `slug` and leave the community context
+              // (name, back link) undefined.
+              CommunityChannel: 'discover/c/:communitySlug/ch/:groupId',
             },
           },
           // Jobs owns its own stack, so its links must resolve under JobsTab.

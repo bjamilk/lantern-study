@@ -56,6 +56,13 @@ interface GroupChatHeaderProps {
   /** Tapping the avatar/title opens Group Info. */
   onTitlePress?: () => void;
   menuActions: GroupChatHeaderAction[];
+  /**
+   * Community channel context (spec §4.5): when set, the subtitle slot shows
+   * `${contextLabel} ›` as a link instead of the member count (which stays in
+   * Group Info). Low-data mode keeps precedence as before.
+   */
+  contextLabel?: string;
+  onContextPress?: () => void;
 }
 
 export function GroupChatHeader({
@@ -68,6 +75,8 @@ export function GroupChatHeader({
   addQuestionDisabled,
   onTitlePress,
   menuActions,
+  contextLabel,
+  onContextPress,
 }: GroupChatHeaderProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -237,6 +246,19 @@ export function GroupChatHeader({
             </Text>
             {lowDataMode ? (
               <Text className="text-[10px] text-amber-600">Low-data mode</Text>
+            ) : contextLabel ? (
+              <Pressable
+                onPress={onContextPress}
+                disabled={!onContextPress}
+                hitSlop={8}
+                accessibilityRole="link"
+                accessibilityLabel={`${contextLabel}, open community`}
+                className="self-start min-h-[24px] justify-center"
+              >
+                <Text className="text-xs text-lantern-primary" style={{ color: colors.primary }} numberOfLines={1}>
+                  {contextLabel} ›
+                </Text>
+              </Pressable>
             ) : memberCount ? (
               <Text className="text-xs text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
                 {memberCount} members

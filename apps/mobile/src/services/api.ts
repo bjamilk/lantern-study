@@ -228,6 +228,7 @@ export const {
   // Phase 3 — Network (communities, discovery, feed, presence, mastery)
   fetchMyCommunities,
   fetchCommunity,
+  fetchCommunityChannels,
   fetchCommunityMembers,
   joinCommunity,
   leaveCommunity,

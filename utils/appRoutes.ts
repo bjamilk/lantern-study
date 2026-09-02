@@ -92,7 +92,13 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
     case AppMode.DISCOVER:
       return '/discover';
     case AppMode.COMMUNITY_DETAIL:
-      return params.slug ? `/discover/c/${encodeURIComponent(params.slug)}` : '/discover';
+      // A channel opened from the community stays on the community's own
+      // path (founder rule: the community owns its chat), so it reloads
+      // with the column out rather than on the chat screen.
+      if (!params.slug) return '/discover';
+      return params.groupId
+        ? `/discover/c/${encodeURIComponent(params.slug)}/ch/${encodeURIComponent(params.groupId)}`
+        : `/discover/c/${encodeURIComponent(params.slug)}`;
     case AppMode.MARKETPLACE:
       return '/marketplace';
     case AppMode.MARKETPLACE_LISTING_DETAIL:
@@ -209,8 +215,17 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   }
   if (path === '/discover') return { mode: AppMode.DISCOVER, params: {} };
   if (path.startsWith('/discover/c/')) {
-    const slug = decodeURIComponent(path.slice('/discover/c/'.length));
-    return slug ? { mode: AppMode.COMMUNITY_DETAIL, params: { slug } } : { mode: AppMode.DISCOVER, params: {} };
+    const rest = path.slice('/discover/c/'.length).split('/').filter(Boolean);
+    const slug = decodeURIComponent(rest[0] || '');
+    if (!slug) return { mode: AppMode.DISCOVER, params: {} };
+    // `/discover/c/:slug/ch/:groupId` — a channel inside the community.
+    if (rest[1] === 'ch' && rest[2]) {
+      return {
+        mode: AppMode.COMMUNITY_DETAIL,
+        params: { slug, groupId: decodeURIComponent(rest[2]) },
+      };
+    }
+    return { mode: AppMode.COMMUNITY_DETAIL, params: { slug } };
   }
   if (path === '/marketplace') return { mode: AppMode.MARKETPLACE, params: {} };
   if (path === '/marketplace/orders') return { mode: AppMode.MARKETPLACE_ORDERS, params: {} };

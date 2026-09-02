@@ -22,7 +22,9 @@ import { normalizeTestResultSession, retryUncertainDelivery } from '@lantern/sha
 import type { StudyPackContentInput, StudyPackCounts, StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/marketplace'
 import type {
   Community,
+  CommunityChannels,
   CommunityDetail,
+  CommunityMembersPage,
   CourseClassSignal,
   CourseReadiness,
   DiscoverGroup,
@@ -5093,9 +5095,29 @@ export const fetchMyCommunities = () => networkGetList<MyCommunity>('/communitie
 export const fetchCommunity = (slug: string) =>
   networkGet<CommunityDetail>(`/communities/${encodeURIComponent(slug)}`, 10000, 'Community not found');
 
-export const fetchCommunityMembers = (communityId: string, limit?: number) =>
-  networkGetList<{ id: string; name: string; avatarUrl: string | null; programme: string | null }>(
-    `/communities/${encodeURIComponent(communityId)}/members${networkQuery({ limit })}`
+/**
+ * The community as a server: lounge, text channels, open rooms, viewer role,
+ * member + online counts. Uncached upstream so unread is fresh.
+ */
+export const fetchCommunityChannels = (communityId: string) =>
+  networkGet<CommunityChannels>(
+    `/communities/${encodeURIComponent(communityId)}/channels`,
+    10000,
+    'Could not load this community'
+  );
+
+/** Members-only roster, one page at a time; keep calling while `nextCursor` is set. */
+export const fetchCommunityMembers = (
+  communityId: string,
+  opts: { limit?: number; cursor?: string } = {}
+) =>
+  networkGet<CommunityMembersPage>(
+    `/communities/${encodeURIComponent(communityId)}/members${networkQuery({
+      limit: opts.limit,
+      cursor: opts.cursor,
+    })}`,
+    10000,
+    'Could not load members'
   );
 
 export const joinCommunity = (communityId: string) =>
@@ -5272,9 +5294,15 @@ export const joinOrCreateStudyRoom = (input: {
     'Could not open a study room'
   );
 
-/** The hub's Room tab: open rooms, newest first, the viewer's own first. */
-export const listStudyRooms = () =>
-  networkGet<import('@lantern/shared/network').StudyRoomListItem[]>('/study-rooms');
+/**
+ * The hub's Room tab: open rooms, newest first, the viewer's own first.
+ * Inside a community pass `communityId` (+ `courseId` for a course community,
+ * so hub-started course rooms show under it too).
+ */
+export const listStudyRooms = (params: { communityId?: string; courseId?: string } = {}) =>
+  networkGet<import('@lantern/shared/network').StudyRoomListItem[]>(
+    `/study-rooms${networkQuery(params)}`
+  );
 
 export const fetchStudyRoom = (roomId: string) =>
   networkGet<import('@lantern/shared/network').StudyRoomDetail>(

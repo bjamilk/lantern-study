@@ -27,6 +27,16 @@ function handle(err: unknown, res: Response): void {
   throw err;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+/** Non-uuid scope values are ignored, not rejected — the hub list stays reachable. */
+const uuidParam = (v: unknown): string | undefined => {
+  const s = str(v);
+  return s && UUID_RE.test(s) ? s : undefined;
+};
+
+// GET /api/v1/study-rooms?communityId=&courseId= — the Room tab (no params)
+// or a community's rooms (community_id OR the community's course_id).
 router.get(
   '/',
   authMiddleware,
@@ -34,7 +44,10 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudyRoomsService(supabaseService).list(userId);
+      const data = await getStudyRoomsService(supabaseService).list(userId, {
+        communityId: uuidParam(req.query.communityId),
+        courseId: uuidParam(req.query.courseId),
+      });
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);

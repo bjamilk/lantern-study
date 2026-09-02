@@ -243,6 +243,8 @@ const GatedSellerPayout = withMarketplaceGate(SellerPayoutScreen);
 import {
   DiscoverScreen,
   CommunityDetailScreen,
+  CommunityMembersScreen,
+  CommunityChannelScreen,
   FeedScreen,
   MasteryScreen,
 } from '../screens/discover';
@@ -488,6 +490,14 @@ function MarketNavigator() {
       <MarketStack.Screen name="Discover" component={DiscoverScreen} />
 
       <MarketStack.Screen name="CommunityDetail" component={CommunityDetailScreen} />
+
+      {/* Founder rule (spec §0a): a community's roster, channels and "new
+          channel" flow stay on this stack so back returns to the community. */}
+      <MarketStack.Screen name="CommunityMembers" component={CommunityMembersScreen} />
+
+      <MarketStack.Screen name="CommunityChannel" component={CommunityChannelScreen} />
+
+      <MarketStack.Screen name="CreateGroup" component={CreateGroupScreen} />
 
       <MarketStack.Screen name="Feed" component={FeedScreen} />
 

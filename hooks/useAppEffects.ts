@@ -1906,6 +1906,16 @@ export function useAppEffects({
                                     parentId: g.parent_id || g.parentId,
                                     isArchived: g.is_archived ?? g.isArchived ?? false,
                                     inviteId: g.invite_id || g.inviteId,
+                                    // Same fields as the bootstrap mapping above. Dropping
+                                    // them here blanked `communityId` on every membership
+                                    // change, which emptied the community column right
+                                    // after joining a channel.
+                                    courseId: g.courseId ?? g.course_id ?? existing?.courseId ?? null,
+                                    visibility: g.visibility || existing?.visibility || 'private',
+                                    communityId: g.communityId ?? g.community_id ?? existing?.communityId ?? null,
+                                    memberCount: g.memberCount ?? g.member_count ?? existing?.memberCount,
+                                    questionCount: g.questionCount ?? g.question_count ?? existing?.questionCount,
+                                    tags: g.tags ?? existing?.tags,
                                     unreadCount: unreadCounts[g.id] || 0,
                                     pendingMembers: existing?.pendingMembers || [],
                                     invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],

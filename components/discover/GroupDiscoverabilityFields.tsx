@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { resolveGroupDiscovery, type MyCommunity } from '@lantern/shared/network';
+import { LockClosedIcon } from '@heroicons/react/24/outline';
+import { COMMUNITY_COPY, resolveGroupDiscovery, type MyCommunity } from '@lantern/shared/network';
 import { fetchMyCommunities } from '../../services/supabase';
 
 export type GroupDiscoveryValue = {
@@ -11,6 +12,11 @@ interface GroupDiscoverabilityFieldsProps {
   value: GroupDiscoveryValue;
   onChange: (next: GroupDiscoveryValue) => void;
   disabled?: boolean;
+  /**
+   * A channel created from inside its community: the listing is fixed to that
+   * community, shown as one read-only line, and `onChange` is never called.
+   */
+  lockedCommunity?: { id: string; name: string };
 }
 
 /**
@@ -21,14 +27,29 @@ export const GroupDiscoverabilityFields: React.FC<GroupDiscoverabilityFieldsProp
   value,
   onChange,
   disabled,
+  lockedCommunity,
 }) => {
   const [mine, setMine] = useState<MyCommunity[]>([]);
+  const locked = !!lockedCommunity;
 
   useEffect(() => {
+    if (locked) return;
     void fetchMyCommunities()
       .then(setMine)
       .catch(() => setMine([]));
-  }, []);
+  }, [locked]);
+
+  if (lockedCommunity) {
+    return (
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-lantern-text">Discover</p>
+        <p className="flex items-start gap-1.5 text-xs text-lantern-text-secondary">
+          <LockClosedIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>{COMMUNITY_COPY.listedIn(lockedCommunity.name)}</span>
+        </p>
+      </div>
+    );
+  }
 
   const listed = value.visibility !== 'private';
   const setListed = (on: boolean) => {

@@ -72,19 +72,49 @@ import {
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
+import { selectMyCommunity, useCommunityStore } from '../../stores/communityStore';
 
-type NavigationProp = {
+export type GroupChatNavigation = {
   goBack: () => void;
   canGoBack?: () => boolean;
   getState?: () => { index?: number } | undefined;
   getParent: () => { navigate: (tab: string, params?: Record<string, unknown>) => void } | undefined;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
-  setParams: (params: Partial<{ groupId: string; groupName?: string; openAddMembers?: boolean }>) => void;
+  setParams: (params: Record<string, unknown>) => void;
 };
 
 interface Props {
-  navigation: NavigationProp;
-  route: { params: { groupId: string; groupName?: string; openAddMembers?: boolean } };
+  navigation: GroupChatNavigation;
+  route: {
+    params: {
+      groupId: string;
+      groupName?: string;
+      openAddMembers?: boolean;
+      /** Only for the `in <Community> ›` link when opened from the plain chat list. */
+      communitySlug?: string;
+      communityName?: string;
+    };
+  };
+}
+
+/** Where the chat UI is mounted: the Chat tab, or a community's own stack. */
+export type GroupChatHost = 'chat' | 'community';
+
+export interface GroupChatViewProps {
+  groupId: string;
+  groupName?: string;
+  openAddMembers?: boolean;
+  navigation: GroupChatNavigation;
+  /**
+   * On the Chat stack every navigation is local. On the community stack
+   * (founder rule §0a) the chat-only destinations — sub-group creation, the
+   * game screen, the groups list — hop to the Chat tab, and back is a plain
+   * goBack() to the community.
+   */
+  host?: GroupChatHost;
+  /** `in <Community> ›` under the title; tapping jumps to the community. */
+  communityContext?: { label: string; onPress: () => void } | null;
 }
 
 function mapModalQuestionToPayload(question: any, senderId: string, senderName: string) {
@@ -337,8 +367,14 @@ const MessageRow = React.memo(function MessageRow({
 
 const NEAR_BOTTOM_PX = 120;
 
-export function GroupChatScreen({ navigation, route }: Props) {
-  const { groupId, groupName, openAddMembers } = route.params;
+export function GroupChatView({
+  groupId,
+  groupName,
+  openAddMembers,
+  navigation,
+  host = 'chat',
+  communityContext,
+}: GroupChatViewProps) {
   const user = useAuthStore(s => s.user);
   const { colors } = useTheme();
   const { lowDataMode } = useLowDataMode();
@@ -438,6 +474,20 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const suppressLoadOlderRef = useRef(true);
 
   const displayName = groupName || currentGroup?.name || 'Group chat';
+
+  // The one place chat-only screens are reached from. On the community stack
+  // those screens do not exist, so hop to the Chat tab (leaving the community
+  // is fine for these — they are actions, not reading a channel).
+  const chatNavigate = useCallback(
+    (screen: string, params?: Record<string, unknown>) => {
+      if (host === 'chat') {
+        navigation.navigate(screen, params);
+      } else {
+        navigation.getParent()?.navigate('ChatTab', { screen, params });
+      }
+    },
+    [host, navigation]
+  );
 
   const downloadTest = useOfflineStore(s => s.downloadTest);
   const isDownloadingBundle = useOfflineStore(s => s.isDownloading);
@@ -1368,6 +1418,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, [isAdmin]);
 
   const handleBack = useCallback(() => {
+    // On the community stack the community always sits underneath.
+    if (host === 'community') {
+      navigation.goBack();
+      return;
+    }
     // canGoBack() also reports the parent tab's history, so a chat opened from a
     // notification or deep link would pop out of chat entirely. Only pop when a
     // chat screen actually sits underneath.
@@ -1377,7 +1432,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     } else {
       navigation.navigate('GroupsList');
     }
-  }, [navigation]);
+  }, [host, navigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1693,6 +1748,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
         addQuestionDisabled={isArchived}
         onTitlePress={() => setShowGroupInfo(true)}
         menuActions={headerMenuActions}
+        contextLabel={communityContext?.label}
+        onContextPress={communityContext?.onPress}
       />
       )}
 
@@ -2106,7 +2163,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
           }}
           onCreateSubgroup={() => {
             setShowGroupInfo(false);
-            navigation.navigate('CreateGroup', { parentId: groupId, parentName: displayName });
+            chatNavigate('CreateGroup', { parentId: groupId, parentName: displayName });
           }}
           onChallenge={member => {
             setShowGroupInfo(false);
@@ -2192,7 +2249,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onChallengeSent={() => setChallengeMember(null)}
           onSoloStart={() => {
             setChallengeMember(null);
-            navigation.navigate('GameScreen', {});
+            chatNavigate('GameScreen', {});
           }}
         />
       ) : null}
@@ -2236,6 +2293,53 @@ export function GroupChatScreen({ navigation, route }: Props) {
         groupId={groupId}
       />
     </SafeAreaView>
+  );
+}
+
+/**
+ * The Chat tab's group chat. When the group is a community channel the header
+ * carries `in <Community> ›`, which jumps to the community on the Market tab
+ * (the one allowed cross-tab hop, spec §0a). The slug/name come from the
+ * route when the channel was opened from the community, otherwise from the
+ * membership list via the group's `communityId`.
+ */
+export function GroupChatScreen({ navigation, route }: Props) {
+  const { groupId, groupName, openAddMembers, communitySlug, communityName } = route.params;
+  const groupCommunityId = useGroupStore(
+    s => s.groups.find(g => g.id === groupId)?.communityId ?? s.currentGroup?.communityId ?? null
+  );
+  const loadMine = useCommunityStore(s => s.loadMine);
+  const fromMine = useCommunityStore(s => selectMyCommunity(s, groupCommunityId));
+
+  useEffect(() => {
+    if (!groupCommunityId || (communitySlug && communityName)) return;
+    void loadMine().catch(() => undefined);
+  }, [groupCommunityId, communitySlug, communityName, loadMine]);
+
+  const resolved =
+    communitySlug && communityName ? { slug: communitySlug, name: communityName } : fromMine;
+
+  const communityContext = useMemo(() => {
+    if (!resolved) return null;
+    return {
+      label: COMMUNITY_COPY.inCommunity(resolved.name),
+      onPress: () =>
+        navigation.getParent()?.navigate('MarketTab', {
+          screen: 'CommunityDetail',
+          params: { slug: resolved.slug },
+        }),
+    };
+  }, [resolved?.slug, resolved?.name, navigation]);
+
+  return (
+    <GroupChatView
+      groupId={groupId}
+      groupName={groupName}
+      openAddMembers={openAddMembers}
+      navigation={navigation}
+      host="chat"
+      communityContext={communityContext}
+    />
   );
 }
 

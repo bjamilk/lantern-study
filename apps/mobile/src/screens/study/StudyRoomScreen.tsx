@@ -12,6 +12,7 @@ import {
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import { studyRoomPresenceChannel,
+  COMMUNITY_COPY,
   STUDY_ROOM_LIFETIME_COPY,
 } from '@lantern/shared/network';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -21,15 +22,26 @@ type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
+type Params = {
+  roomId?: string;
+  courseId?: string;
+  topic?: string;
+  /** Set when opened from inside a community (spec §4.7): join-or-create lands in that community's room. */
+  communityId?: string;
+  communityName?: string;
+};
+
 export function StudyRoomScreen({
   navigation,
   route,
 }: {
   navigation: NavigationProp;
-  route?: { params?: { roomId?: string; courseId?: string; topic?: string } };
+  route?: { params?: Params };
 }) {
   const user = useAuthStore((s) => s.user);
   const params = route?.params;
+  const communityId = params?.communityId;
+  const communityName = params?.communityName;
   const [room, setRoom] = useState<StudyRoomDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +58,10 @@ export function StudyRoomScreen({
         setRoom(await fetchStudyRoom(params.roomId));
         return;
       }
-      if (params?.courseId) {
+      // From the hub's "Join room" presence line: a course is enough to land
+      // straight in the room. Inside a community we show the picker first so
+      // the topic can be set (the course is already known for course rooms).
+      if (params?.courseId && !communityId) {
         setRoom(
           await joinOrCreateStudyRoom({
             courseId: params.courseId,
@@ -61,7 +76,7 @@ export function StudyRoomScreen({
     } finally {
       setLoading(false);
     }
-  }, [params?.roomId, params?.courseId, params?.topic]);
+  }, [params?.roomId, params?.courseId, params?.topic, communityId]);
 
   useEffect(() => {
     void load();
@@ -95,15 +110,42 @@ export function StudyRoomScreen({
     return () => clearInterval(interval);
   }, [room?.id]);
 
+  // Course communities carry their course in params; other communities may
+  // pick one (optional). Outside a community the course is required as today.
+  const pickerCourseId = params?.courseId ?? pickedCourseId;
+  const canStart = communityId ? true : !!pickedCourseId;
+
+  const startRoom = () => {
+    if (!canStart || starting) return;
+    setStarting(true);
+    void joinOrCreateStudyRoom({
+      communityId: communityId ?? null,
+      courseId: pickerCourseId ?? null,
+      topic: topicDraft.trim() || null,
+    })
+      .then(setRoom)
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : 'Could not open a study room'),
+      )
+      .finally(() => setStarting(false));
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border">
-        <Pressable hitSlop={10} onPress={() => navigation.goBack()} accessibilityRole="button" className="p-2">
+        <Pressable hitSlop={10} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Go back" className="p-2">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
-        <Text className="flex-1 text-lg font-semibold text-lantern-text" numberOfLines={1}>
-          {room?.title || 'Study room'}
-        </Text>
+        <View className="flex-1 min-w-0">
+          <Text className="text-lg font-semibold text-lantern-text" numberOfLines={1}>
+            {room?.title || 'Study room'}
+          </Text>
+          {communityName ? (
+            <Text className="text-xs text-lantern-text-tertiary" numberOfLines={1}>
+              {COMMUNITY_COPY.inCommunity(communityName)}
+            </Text>
+          ) : null}
+        </View>
       </View>
       <ScrollView className="flex-1 px-4 py-4">
         {loading ? (
@@ -115,37 +157,38 @@ export function StudyRoomScreen({
         ) : !room ? (
           <View>
             <Text className="text-sm text-lantern-text-secondary mb-3">
-              Pick a course. If a room is already open for it, you land there.
+              {communityId
+                ? communityName
+                  ? `${COMMUNITY_COPY.startRoomIn(communityName)}. If a room is already open here, you land there.`
+                  : 'If a room is already open here, you land there.'
+                : 'Pick a course. If a room is already open for it, you land there.'}
               {' '}Rooms are temporary — they close on their own.
             </Text>
-            <CoursePicker
-              value={pickedCourseId}
-              onChange={(course) => setPickedCourseId(course?.id ?? null)}
-              placeholder="Choose a course"
-            />
+            {/* A course community already knows its course; only ask otherwise. */}
+            {params?.courseId ? null : (
+              <CoursePicker
+                value={pickedCourseId}
+                onChange={(course) => setPickedCourseId(course?.id ?? null)}
+                placeholder={communityId ? 'Course (optional)' : 'Choose a course'}
+              />
+            )}
             <TextInput
               value={topicDraft}
               onChangeText={setTopicDraft}
               placeholder="Topic (optional), e.g. cardiology"
+              placeholderTextColor="#94a3b8"
               maxLength={80}
               className="mt-3 rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text"
+              accessibilityLabel="Room topic"
             />
             <Pressable
-              disabled={!pickedCourseId || starting}
-              onPress={() => {
-                if (!pickedCourseId || starting) return;
-                setStarting(true);
-                void joinOrCreateStudyRoom({
-                  courseId: pickedCourseId,
-                  topic: topicDraft.trim() || null,
-                })
-                  .then(setRoom)
-                  .catch((e: unknown) =>
-                    setError(e instanceof Error ? e.message : 'Could not open a study room'),
-                  )
-                  .finally(() => setStarting(false));
-              }}
-              className="mt-4 rounded-lg bg-lantern-primary px-4 py-3"
+              disabled={!canStart || starting}
+              onPress={startRoom}
+              accessibilityRole="button"
+              accessibilityLabel="Join or create a room"
+              accessibilityState={{ disabled: !canStart || starting, busy: starting }}
+              className="mt-4 min-h-[44px] justify-center rounded-lg bg-lantern-primary px-4"
+              style={{ opacity: !canStart || starting ? 0.6 : 1 }}
             >
               <Text className="text-center text-sm font-semibold text-white">
                 {starting ? 'Opening…' : 'Join or create'}
@@ -175,7 +218,9 @@ export function StudyRoomScreen({
                   void joinStudyRoom(room.id).then(setRoom);
                 }
               }}
-              className="mt-4 rounded-lg bg-lantern-primary px-4 py-3"
+              accessibilityRole="button"
+              accessibilityLabel={room.joined ? 'Leave room' : 'Join room'}
+              className="mt-4 min-h-[44px] justify-center rounded-lg bg-lantern-primary px-4"
             >
               <Text className="text-center text-sm font-semibold text-white">
                 {room.joined ? 'Leave room' : 'Join room'}

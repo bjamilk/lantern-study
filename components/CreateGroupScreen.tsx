@@ -13,7 +13,9 @@ import {
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import { normalizeUserSearchQuery } from '@lantern/shared';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { searchUsers } from '../services/supabase';
+import { useCommunityStore } from '../stores/communityStore';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
 import GroupDiscoverabilityFields, {
@@ -50,6 +52,10 @@ interface CreateGroupScreenProps {
   }) => Promise<CreatedGroupSummary | void>;
   onEnterGroup: (group: CreatedGroupSummary) => void;
   onBack: () => void;
+  /** Starting discoverability (a channel created inside a community starts as `community`). */
+  initialDiscovery?: GroupDiscoveryValue;
+  /** New channel in `<Community>`: title changes and the listing is read-only. */
+  lockedCommunity?: { id: string; name: string };
 }
 
 function buildInviteLink(inviteId: string): string {
@@ -76,6 +82,8 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   onCreateGroup,
   onEnterGroup,
   onBack,
+  initialDiscovery,
+  lockedCommunity,
 }) => {
   const [step, setStep] = useState<'select_members' | 'group_details' | 'success'>('select_members');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -97,10 +105,10 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   const [searchError, setSearchError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createdGroup, setCreatedGroup] = useState<CreatedGroupSummary | null>(null);
-  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>({
-    visibility: 'private',
-    communityId: null,
-  });
+  const [discovery, setDiscovery] = useState<GroupDiscoveryValue>(
+    () => initialDiscovery ?? { visibility: 'private', communityId: null }
+  );
+  const screenTitle = lockedCommunity ? COMMUNITY_COPY.newChannelTitle(lockedCommunity.name) : 'New Group';
 
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
@@ -171,6 +179,8 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         communityId: discovery.communityId,
       });
       if (result?.inviteId) {
+        // The community's channel list is cached; the new channel must show on return.
+        if (lockedCommunity) useCommunityStore.getState().invalidate(lockedCommunity.id);
         setCreatedGroup(result);
         setStep('success');
       }
@@ -229,7 +239,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             <ArrowLeftIcon className="w-6 h-6 text-lantern-text" />
           </button>
           <div>
-            <h1 className="text-xl font-semibold text-lantern-text dark:text-lantern-text">New Group</h1>
+            <h1 className="text-xl font-semibold text-lantern-text dark:text-lantern-text">{screenTitle}</h1>
             <p className="text-sm text-lantern-text-secondary">
               Add members by name or @username (e.g. <span className="font-medium text-lantern-text">@janedoe</span>)
             </p>
@@ -408,7 +418,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         </div>
 
         <div className="max-w-sm mx-auto p-4 bg-lantern-surface rounded-lg shadow-sm">
-          <GroupDiscoverabilityFields value={discovery} onChange={setDiscovery} />
+          <GroupDiscoverabilityFields value={discovery} onChange={setDiscovery} lockedCommunity={lockedCommunity} />
         </div>
 
         <div className="max-w-sm mx-auto p-4 bg-lantern-surface rounded-lg shadow-sm">

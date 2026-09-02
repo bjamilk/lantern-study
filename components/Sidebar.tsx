@@ -12,6 +12,8 @@ import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useUIStore } from '../stores/uiStore';
 import { formatUnreadBadgeCount, getTotalActiveUnreadChatCount } from '../utils/chatUnread';
 import { isInboundDmMessageRequest } from '../utils/dmThreads';
+import { resolveSideColumn } from '../utils/sideColumn';
+import CommunityColumn, { type CommunityNavigate } from './community/CommunityColumn';
 
 interface SidebarProps {
   currentUser: User;
@@ -52,6 +54,8 @@ interface SidebarProps {
   dueCardsCount: number;
   onToggleCompanion: () => void;
   isCompanionOpen?: boolean;
+  /** Community server view: the column's rows all go through App's one handler. */
+  onCommunityNavigate?: CommunityNavigate;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -91,13 +95,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   dueCardsCount,
   onToggleCompanion,
   isCompanionOpen,
+  onCommunityNavigate,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
   const isPlatformAdmin = usePlatformAdmin();
-  const { isChatsSectionExpanded, toggleChatsSection } = useUIStore();
+  const { isChatsSectionExpanded, toggleChatsSection, activeCommunity } = useUIStore();
   
   const canInteractWithChats = ![AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE].includes(currentAppMode);
   
@@ -259,11 +264,21 @@ const Sidebar: React.FC<SidebarProps> = ({
   // already renders the conversation list, so the flyout yields there rather
   // than doubling it; the persisted flag survives and the column returns on
   // any other screen.
-  const chatsFlyoutOpen = isChatsSectionExpanded && currentAppMode !== AppMode.CHAT;
-  // Width budget (Discord-style): while the chats column is out, the sidebar
-  // renders as its icon rail. Derived only — the user's persisted expanded
-  // preference is untouched and comes back the moment the column closes.
-  const effectiveExpanded = isExpanded && !chatsFlyoutOpen;
+  // While a community is open the same aside is its channel column instead
+  // (spec §5.3). One shared predicate decides which — AppShell offsets
+  // <main> from the very same call, so the two can never disagree.
+  const sideColumn = resolveSideColumn({
+    isChatsSectionExpanded,
+    appMode: currentAppMode,
+    activeCommunity,
+  });
+  const chatsFlyoutOpen = sideColumn === 'chats';
+  const communityColumnOpen = sideColumn === 'community';
+  const columnOpen = sideColumn !== null;
+  // Width budget (Discord-style): while a column is out, the sidebar renders
+  // as its icon rail. Derived only — the user's persisted expanded preference
+  // is untouched and comes back the moment the column closes.
+  const effectiveExpanded = isExpanded && !columnOpen;
   const showText = effectiveExpanded;
 
   const handleSidebarToggle = () => {
@@ -277,19 +292,21 @@ const Sidebar: React.FC<SidebarProps> = ({
     onToggleExpand();
   };
 
-  const NavButton = ({ navFunc, icon: Icon, label, appMode, badgeCount, tipId }: { navFunc: () => void, icon: React.ElementType, label: string, appMode?: AppMode, badgeCount?: number, tipId?: string }) => (
+  const NavButton = ({ navFunc, icon: Icon, label, appMode, activeModes, badgeCount, tipId }: { navFunc: () => void, icon: React.ElementType, label: string, appMode?: AppMode, activeModes?: AppMode[], badgeCount?: number, tipId?: string }) => {
+    const isActive = currentAppMode === appMode || (activeModes?.includes(currentAppMode) ?? false);
+    return (
     <button
       onClick={navFunc}
       data-tip-id={tipId}
       className={`w-full flex items-center p-3 rounded-xl text-lantern-text-secondary hover:bg-lantern-surface hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
-          currentAppMode === appMode
+          isActive
             ? 'bg-lantern-primary-background text-lantern-primary font-semibold shadow-lantern'
             : ''
       } ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''} ${!showText && 'justify-center'}`}
       disabled={!canInteractWithChats && !isSessionPaused}
       title={label}
     >
-      <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'} ${currentAppMode === appMode ? 'text-lantern-primary' : ''}`} />
+      <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'} ${isActive ? 'text-lantern-primary' : ''}`} />
       {showText && <span className="flex-grow text-left text-[15px] tracking-tight">{label}</span>}
       {(badgeCount !== undefined && badgeCount > 0) && (
           <span className={`absolute top-1.5 right-1.5 bg-lantern-error text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${!showText && 'px-1.5'}`}>
@@ -297,7 +314,8 @@ const Sidebar: React.FC<SidebarProps> = ({
           </span>
       )}
     </button>
-  );
+    );
+  };
 
   const SectionHeader = ({ title }: { title: string }) => (
     <div className={`px-3 pt-5 pb-2 ${!showText && 'hidden'}`}>
@@ -361,6 +379,9 @@ const Sidebar: React.FC<SidebarProps> = ({
               icon={GlobeAltIcon}
               label="Discover"
               appMode={onNavigateToDiscover ? AppMode.DISCOVER : AppMode.MARKETPLACE}
+              // A community (and its channels) is a Discover destination: the
+              // entry stays lit there, Chat does not (founder rule §0a).
+              activeModes={onNavigateToDiscover ? [AppMode.COMMUNITY_DETAIL] : undefined}
               tipId="nav.marketplace"
             />
           </div>
@@ -525,10 +546,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         slide into view instead of reflowing mid-animation. AppShell shifts
         <main> by the same 20rem (see its md:ml-* classes). */}
     <aside
-      aria-label="Chats"
-      aria-hidden={!chatsFlyoutOpen}
-      className={`fixed inset-y-0 z-30 bg-lantern-background-secondary/95 backdrop-blur-md border-r border-lantern-border overflow-hidden transition-all duration-300 ease-in-out ${effectiveExpanded ? 'left-72' : 'left-20'} ${chatsFlyoutOpen ? 'w-80' : 'w-0 border-r-0'}`}
+      aria-label={communityColumnOpen ? (activeCommunity?.name || 'Community') : 'Chats'}
+      aria-hidden={!columnOpen}
+      className={`fixed inset-y-0 z-30 bg-lantern-background-secondary/95 backdrop-blur-md border-r border-lantern-border overflow-hidden transition-all duration-300 ease-in-out ${effectiveExpanded ? 'left-72' : 'left-20'} ${columnOpen ? 'w-80' : 'w-0 border-r-0'}`}
     >
+      {communityColumnOpen && onCommunityNavigate && (
+        <CommunityColumn onNavigate={onCommunityNavigate} />
+      )}
       {chatsFlyoutOpen && (
         <div className="w-80 h-full flex flex-col">
           <div className="flex items-center justify-between gap-2 h-16 px-4 border-b border-lantern-border flex-shrink-0">

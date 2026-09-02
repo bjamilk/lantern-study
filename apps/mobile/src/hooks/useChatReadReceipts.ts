@@ -1,9 +1,12 @@
 import { useEffect } from 'react';
-import { supabase } from '../services/supabase';
+import { acquireBroadcastChannel } from '../services/sharedRealtimeChannel';
 
 /**
  * Peer mark-read broadcasts over Supabase, wire-compatible with web:
  * channel `chat-read:{chatId}`, event `read`, payload `{ userId, lastReadAt }`.
+ *
+ * The channel is shared and refcounted, so a community channel and the Chat
+ * tab holding the same group at once do not tear each other's receipts down.
  */
 export function useChatReadReceipts(
   chatId: string | undefined,
@@ -12,17 +15,14 @@ export function useChatReadReceipts(
 ): void {
   useEffect(() => {
     if (!chatId || !currentUserId) return;
-    const channel = supabase.channel(`chat-read:${chatId}`);
-    channel
-      .on('broadcast', { event: 'read' }, ({ payload }) => {
-        const userId = payload?.userId as string | undefined;
-        const lastReadAt = payload?.lastReadAt as string | undefined;
-        if (!userId || !lastReadAt || userId === currentUserId) return;
-        onPeerRead({ userId, lastReadAt });
-      })
-      .subscribe();
+    const { release } = acquireBroadcastChannel(`chat-read:${chatId}`, 'read', (payload) => {
+      const userId = payload?.userId as string | undefined;
+      const lastReadAt = payload?.lastReadAt as string | undefined;
+      if (!userId || !lastReadAt || userId === currentUserId) return;
+      onPeerRead({ userId, lastReadAt });
+    });
     return () => {
-      void supabase.removeChannel(channel);
+      release();
     };
   }, [chatId, currentUserId, onPeerRead]);
 }

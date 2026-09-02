@@ -142,12 +142,24 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, updateNotifications]);
 
-    const handleSelectChat = useCallback((chat: ChatItem) => {
+    /**
+     * The one chat-selection path. `keepSurface` is for a channel opened from
+     * INSIDE its community (founder rule: the community owns its chat): the
+     * group is selected exactly as from the chats list — same votes/members
+     * fetch, same read-marking through the selectedChat effect — but the app
+     * stays where it is; the caller navigates to the community's channel URL.
+     * Without it, selecting anything closes the community column and goes to
+     * the chat screen, as it always has.
+     */
+    const handleSelectChat = useCallback((chat: ChatItem, options?: { keepSurface?: boolean }) => {
         setSelectedChat(chat);
-        if (chat.chatType === 'group') {
-            navigateForAppMode(AppMode.CHAT, { groupId: chat.id });
-        } else {
-            navigateForAppMode(AppMode.CHAT, { threadId: chat.id });
+        if (!options?.keepSurface) {
+            useUIStore.getState().setActiveCommunity(null);
+            if (chat.chatType === 'group') {
+                navigateForAppMode(AppMode.CHAT, { groupId: chat.id });
+            } else {
+                navigateForAppMode(AppMode.CHAT, { threadId: chat.id });
+            }
         }
         if (chat.chatType === 'group') {
             if (currentUser) {

@@ -81,7 +81,8 @@ router.get(
   })
 );
 
-// GET /api/v1/communities/:communityId/members
+// GET /api/v1/communities/:communityId/members?limit&cursor — the roster,
+// keyset-paged (CommunityMembersPage). Members only.
 router.get(
   '/:communityId/members',
   authMiddleware,
@@ -92,7 +93,31 @@ router.get(
       const data = await getCommunitiesService(supabaseService).listMembers(
         userId,
         req.params.communityId,
-        req.query.limit ? Number(req.query.limit) : undefined
+        {
+          limit: req.query.limit ? Number(req.query.limit) : undefined,
+          cursor: str(req.query.cursor),
+        }
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// GET /api/v1/communities/:communityId/channels — the community as a server:
+// lounge, text channels, open study rooms, head counts (CommunityChannels).
+// Guests of a public community get public channels only. Uncached.
+router.get(
+  '/:communityId/channels',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getCommunitiesService(supabaseService).listChannels(
+        userId,
+        req.params.communityId
       );
       res.json({ success: true, data });
     } catch (err) {

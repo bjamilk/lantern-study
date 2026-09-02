@@ -3,7 +3,8 @@ import { normalizeUserSettings } from './userSettings';
 
 export type OnlineStatus = 'online' | 'offline' | 'hidden';
 
-const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+/** Stored-presence cutoff: last_seen_at within this window counts as online. Shared with the API's SQL. */
+export const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
 
 export function userSharesStudyActivity(settings: Pick<PrivacySettings, 'showStudyActivity'>): boolean {
   return settings.showStudyActivity !== false;

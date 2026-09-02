@@ -6,6 +6,7 @@ import { handleValidationErrors, validateGroupId, validateCreateGroup, validateU
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
+import { getCommunitiesService } from '../services/communities';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
@@ -13,6 +14,29 @@ import {
   mutedUntilFromMinutes,
   resolveChatMuteDurationMinutes,
 } from '@lantern/shared/utils/chatMute';
+import { resolveGroupDiscovery } from '@lantern/shared/network';
+
+/**
+ * A group listed in a community is a channel of that community, and only its
+ * members may open or move one there. Resolves through the same discovery
+ * normaliser the service uses, so `visibility: 'private'` never consults the
+ * community at all.
+ */
+async function isBarredFromCommunity(
+  userId: string,
+  input: { visibility?: unknown; communityId?: unknown },
+): Promise<boolean> {
+  const discovery = resolveGroupDiscovery({
+    visibility: input.visibility as 'private' | 'community' | 'public' | null | undefined,
+    communityId: input.communityId as string | null | undefined,
+  });
+  if (!discovery.communityId) return false;
+  const member = await getCommunitiesService(supabaseService).isActiveMember(
+    userId,
+    discovery.communityId,
+  );
+  return !member;
+}
 
 const router = Router();
 const DEFAULT_GROUP_PAGE_SIZE = 20;
@@ -246,6 +270,9 @@ router.post(
     if (!userId) return;
 
     const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds, courseId, visibility, communityId } = req.body;
+    if (await isBarredFromCommunity(userId, { visibility, communityId })) {
+      return res.status(403).json({ success: false, error: 'Join this community first' });
+    }
     const groupData = {
       name,
       description,
@@ -332,6 +359,23 @@ router.put(
         success: false,
         error: 'Access denied',
       });
+    }
+
+    // Moving a group into a community (or changing its listing there) needs
+    // community membership. Only checked when the body touches the listing;
+    // the half the body omits falls back to the group's current value so
+    // `{ communityId }` alone on a community-visible group is still guarded.
+    const touchesListing =
+      updateData?.visibility !== undefined || updateData?.communityId !== undefined;
+    if (
+      touchesListing &&
+      (await isBarredFromCommunity(userId, {
+        visibility: updateData.visibility ?? group.visibility,
+        communityId:
+          updateData.communityId === undefined ? group.communityId : updateData.communityId,
+      }))
+    ) {
+      return res.status(403).json({ success: false, error: 'Join this community first' });
     }
 
     const updatedGroup = await supabaseService.updateGroup(

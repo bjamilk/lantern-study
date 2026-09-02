@@ -192,12 +192,33 @@ export class StudyRoomsService {
    * The viewer's open memberships are fetched before the newest-N page and
    * unioned in, so "your rooms first" holds even when more than N rooms are
    * open and theirs is not among the newest.
+   *
+   * Inside a community the list narrows to that community's rooms — OR the
+   * community's course's rooms when `courseId` is given, because course rooms
+   * started from the hub carry only `course_id` and must still show up under
+   * the course community without a backfill. The filter applies to BOTH the
+   * newest-N page and the "mine not on page" union.
    */
-  async list(userId: string): Promise<StudyRoomListItem[]> {
+  async list(
+    userId: string,
+    opts: { communityId?: string; courseId?: string } = {},
+  ): Promise<StudyRoomListItem[]> {
     this.sweepExpired();
     const cutoff = new Date(Date.now() - STUDY_ROOM_MAX_AGE_MS).toISOString();
     const columns =
       'id, title, course_id, community_id, topic_id, topic, kind, created_by, started_at, is_active';
+    const communityId = uuidOrNull(opts.communityId);
+    const courseId = uuidOrNull(opts.courseId);
+    // Untyped on purpose: threading PostgREST's builder generics through a
+    // helper sends tsc into "excessively deep" territory.
+    const scope = (query: any): any => {
+      if (communityId && courseId) {
+        return query.or(`community_id.eq.${communityId},course_id.eq.${courseId}`);
+      }
+      if (communityId) return query.eq('community_id', communityId);
+      if (courseId) return query.eq('course_id', courseId);
+      return query;
+    };
 
     const { data: memberships, error: memberError } = await this.db
       .from('study_session_participants')
@@ -210,12 +231,14 @@ export class StudyRoomsService {
       ((memberships || []) as Array<{ session_id: string }>).map((m) => String(m.session_id)),
     );
 
-    const { data, error } = await this.db
-      .from('study_sessions')
-      .select(columns)
-      .eq('is_active', true)
-      .eq('kind', 'room')
-      .gt('started_at', cutoff)
+    const { data, error } = await scope(
+      this.db
+        .from('study_sessions')
+        .select(columns)
+        .eq('is_active', true)
+        .eq('kind', 'room')
+        .gt('started_at', cutoff),
+    )
       .order('started_at', { ascending: false })
       .limit(STUDY_ROOM_LIST_LIMIT);
     if (error) throw error;
@@ -223,13 +246,15 @@ export class StudyRoomsService {
     const onPage = new Set(rows.map((row) => row.id));
     const missing = [...mine].filter((id) => !onPage.has(id));
     if (missing.length) {
-      const { data: extra, error: extraError } = await this.db
-        .from('study_sessions')
-        .select(columns)
-        .in('id', missing)
-        .eq('is_active', true)
-        .eq('kind', 'room')
-        .gt('started_at', cutoff);
+      const { data: extra, error: extraError } = await scope(
+        this.db
+          .from('study_sessions')
+          .select(columns)
+          .in('id', missing)
+          .eq('is_active', true)
+          .eq('kind', 'room')
+          .gt('started_at', cutoff),
+      );
       if (extraError) throw extraError;
       rows.push(...((extra || []) as SessionRow[]));
     }

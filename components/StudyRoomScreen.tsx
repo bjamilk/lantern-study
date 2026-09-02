@@ -11,15 +11,18 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { studyRoomPresenceChannel,
+  COMMUNITY_COPY,
   STUDY_ROOM_LIFETIME_COPY,
 } from '@lantern/shared/network';
 
 export interface StudyRoomScreenProps {
   roomId?: string | null;
-  join?: { courseId?: string | null; topic?: string | null } | null;
+  join?: { courseId?: string | null; topic?: string | null; communityId?: string | null } | null;
   onBack: () => void;
   onNeedCourse: () => void;
   onRoomReady?: (roomId: string) => void;
+  /** Opened from inside a community: `in <Community>` under the title. */
+  communityName?: string;
 }
 
 /**
@@ -32,6 +35,7 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
   onBack,
   onNeedCourse,
   onRoomReady,
+  communityName,
 }) => {
   const currentUser = useAuthStore((s) => s.currentUser);
   const showToast = useToastStore((s) => s.showToast);
@@ -51,6 +55,18 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
         onRoomReadyRef.current?.(next.id);
         return;
       }
+      if (join?.communityId) {
+        // Community room: join-or-create keyed on the community (and its
+        // course for a course community) so everyone lands in the one room.
+        const next = await joinOrCreateStudyRoom({
+          communityId: join.communityId,
+          courseId: join.courseId ?? null,
+          topic: join.topic || null,
+        });
+        setRoom(next);
+        onRoomReadyRef.current?.(next.id);
+        return;
+      }
       if (join?.courseId) {
         const next = await joinOrCreateStudyRoom({
           courseId: join.courseId,
@@ -66,7 +82,7 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [roomId, join?.courseId, join?.topic]);
+  }, [roomId, join?.courseId, join?.topic, join?.communityId]);
 
   useEffect(() => {
     setLoading(true);
@@ -138,9 +154,14 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
           >
             <ArrowLeftIcon className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-semibold text-lantern-text">
-            {room?.title || 'Study room'}
-          </h1>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-lantern-text">
+              {room?.title || 'Study room'}
+            </h1>
+            {communityName ? (
+              <p className="text-xs text-lantern-text-tertiary">{COMMUNITY_COPY.inCommunity(communityName)}</p>
+            ) : null}
+          </div>
         </div>
 
         {loading && !room ? (

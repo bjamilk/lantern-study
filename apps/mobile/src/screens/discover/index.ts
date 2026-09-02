@@ -4,6 +4,8 @@ export type { DiscoverSection } from './DiscoverWorkspaceBar';
 export { DiscoverComingSoon } from './DiscoverComingSoon';
 
 export { CommunityDetailScreen } from './CommunityDetailScreen';
+export { CommunityMembersScreen } from './CommunityMembersScreen';
+export { CommunityChannelScreen } from './CommunityChannelScreen';
 
 export { FeedScreen } from './FeedScreen';
 

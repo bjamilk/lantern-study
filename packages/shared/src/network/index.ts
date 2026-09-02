@@ -44,6 +44,13 @@ export interface CommunityDetail extends Community {
   isMember: boolean;
   /** Present when the viewer is a member — drives Hide vs Leave. */
   source?: MyCommunity['source'] | null;
+  /** The `# lounge` group; null until minted or before the lounge migration. */
+  lounge_group_id: string | null;
+  created_by: string | null;
+  /** null for non-members. Display-only in phase 1. */
+  viewerRole: CommunityRole | null;
+  /** 0 for non-members (and when degraded). */
+  onlineCount: number;
 }
 
 export interface DiscoverGroup {
@@ -71,23 +78,8 @@ export interface DiscoverPerson {
   followerCount: number;
 }
 
-const COMMUNITY_KIND_LABELS: Record<CommunityKind, string> = {
-  institution: 'Campus',
-  programme: 'Programme',
-  level: 'Year',
-  course: 'Course',
-  topic: 'Interest',
-};
-
-export function communityKindLabel(kind: CommunityKind | string): string {
-  return COMMUNITY_KIND_LABELS[kind as CommunityKind] ?? 'Community';
-}
-
-/** "1,204 members" / "1 member" — used identically on both clients. */
-export function memberCountLabel(count: number): string {
-  const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
-  return `${n.toLocaleString()} ${n === 1 ? 'member' : 'members'}`;
-}
+export { communityKindLabel, memberCountLabel } from './communityLabels';
+import type { CommunityRole } from './communityServer';
 
 /**
  * One-line explainer under each Discover tab. Kept here so web and mobile
@@ -679,3 +671,4 @@ export const REFERRAL_ACTIVATION_EXPLAINER =
   'Your bonus lands once they have really started — about ten study actions across two different days.';
 
 export * from './studyRooms';
+export * from './communityServer';
