@@ -545,8 +545,9 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
               Transaction receipt
             </h2>
             <p className="text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
-              Logged for your records — {isBuyer ? 'you paid' : 'you received'}{' '}
+              Logged for your records — {isBuyer ? 'you paid' : 'the buyer paid'}{' '}
               ₦{Number(order.amount).toLocaleString()} for {order.listing?.title}.
+              {!isBuyer && ' Your payout, less Lantern\u2019s fee, is itemised in your earnings.'}
             </p>
             <OrderReceipt order={order} />
           </div>

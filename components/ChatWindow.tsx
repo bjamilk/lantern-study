@@ -600,7 +600,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           (acceptResult as { authorizationUrl?: string })?.authorizationUrl ||
           (acceptResult as { checkout?: { authorizationUrl?: string } })?.checkout?.authorizationUrl;
         dmContent = payUrl
-          ? `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! Complete Paystack checkout to pay (item + 5% service charge).`
+          ? `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! Complete Paystack checkout to pay — you pay the offer amount, nothing added.`
           : `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! An order has been created — arrange pickup or delivery in Orders.`;
       } else if (action === 'decline') {
         dmContent = `[Offer] I declined the offer of ₦${activeOffer.amount.toLocaleString()}.`;

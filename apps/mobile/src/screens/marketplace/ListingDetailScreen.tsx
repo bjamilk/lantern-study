@@ -55,6 +55,7 @@ import { ReportContentSheet } from '../../components/moderation/ReportContentShe
 import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 
+import { useMarketplacePaymentsConfig } from '../../hooks/useMarketplacePaymentsConfig';
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -106,6 +107,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     toggleReviewHelpful,
   } = useMarketplaceStore();
 
+  const paymentsConfig = useMarketplacePaymentsConfig();
   const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [imageIndex, setImageIndex] = useState(0);
   const [showContact, setShowContact] = useState(false);
@@ -308,17 +310,20 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     const qty = listing.quantity == null ? 1 : selectedQuantity;
     const unitPay = couponPreview?.finalAmount ?? pricing.effective;
     const itemTotal = Math.round(unitPay * qty * 100) / 100;
-    // Digital products charge the buyer the LIST price — the platform's cut is
-    // taken from the creator's payout — so only physical listings add the 5%.
     // Every kind charges the list price; Lantern's cut comes out of the seller's
-    // payout (5% hand-over, 15% digital). The buyer never sees a surcharge.
+    // payout (5% hand-over, 15% digital). A buyer-side surcharge exists only if
+    // the server's rate is non-zero (it defaults to 0), and applies to hand-over
+    // items alone — mirrors resolveMarketplaceFees on the server.
     const digital = isDigitalListingKind(listing.listing_kind);
-    const payAmount = Math.round(itemTotal * 100) / 100;
+    const surchargeBps = digital ? 0 : paymentsConfig?.serviceFeeBps ?? 0;
+    const surcharge = Math.round(itemTotal * surchargeBps) / 10_000;
+    const payAmount = Math.round((itemTotal + surcharge) * 100) / 100;
+    const quote = `${surcharge > 0 ? `Item: ${formatPrice(itemTotal)}\nService charge (${surchargeBps / 100}%): ${formatPrice(surcharge)}\n` : ''}Total: ${formatPrice(payAmount)}`;
     Alert.alert(
       'Buy Now',
       digital
-        ? `Purchase "${listing.title}"?\n\nTotal: ${formatPrice(payAmount)}`
-        : `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\nTotal: ${formatPrice(payAmount)}`,
+        ? `Purchase "${listing.title}"?\n\n${quote}`
+        : `Purchase "${listing.title}"${qty > 1 ? ` ×${qty}` : ''}?\n\n${quote}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

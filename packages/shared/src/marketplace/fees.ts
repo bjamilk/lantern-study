@@ -142,7 +142,8 @@ const DIGITAL_KINDS = ['question_bank', 'study_pack'];
 /**
  * Env source for the fee knobs. A plain record (assignable from process.env and
  * from a test's literal) — the keys read are MARKETPLACE_SERVICE_FEE_BPS,
- * MARKETPLACE_DIGITAL_BUYER_FEE_BPS and MARKETPLACE_CREATOR_FEE_BPS.
+ * MARKETPLACE_PHYSICAL_COMMISSION_BPS, MARKETPLACE_DIGITAL_BUYER_FEE_BPS and
+ * MARKETPLACE_CREATOR_FEE_BPS.
  */
 export type ResolveMarketplaceFeesEnv = Record<string, string | undefined>;
 

@@ -255,7 +255,7 @@ You may lodge a complaint with your local data protection authority.
 
 export const TERMS_OF_SERVICE_MD = `# Terms of Service
 
-**Last updated:** June 13, 2026
+**Last updated:** September 2, 2026
 
 These Terms of Service ("Terms") govern your use of Lantern Study web and mobile applications ("Service"). By creating an account or using the Service, you agree to these Terms.
 
@@ -483,7 +483,7 @@ We may update this policy. Material changes are announced in the app; continued 
 
 export const SELLER_TERMS_MD = `# Seller & Creator Terms
 
-**Last updated:** August 22, 2026
+**Last updated:** September 2, 2026
 
 **Important:** This document is a **draft for counsel review**. Have qualified legal counsel review it before relying on it as a binding agreement.
 
@@ -518,7 +518,7 @@ Serious or repeated violations earn **strikes**. A strike expires 180 days after
 
 ## 6. Payments, commission and payouts
 
-- Buyers pay in Nigerian Naira through Paystack. Lantern's service charge and any commission are shown at checkout and configured by Lantern; the current structure is described in the Terms of Service and on the seller dashboard.
+- Buyers pay the listed price in Nigerian Naira through Paystack; nothing is added at checkout. Lantern's commission (currently 5% on hand-over items) is deducted from your payout and itemised on your Payouts page; the structure is configured by Lantern and described in the Terms of Service.
 - Payouts go to the Nigerian bank account in your verified payout profile after the buyer confirms receipt (physical items) or instantly on delivery (digital items), less Lantern's charges.
 - **Payouts are subject to disputes.** If a buyer disputes an order, or Content is taken down for a rights breach, we may hold, reverse, or refund the related payment. Where a payout was already made for infringing Content, you agree to refund it on request.
 - We may withhold payouts for an account that is suspended or under investigation.

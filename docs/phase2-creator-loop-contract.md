@@ -4,6 +4,7 @@ Status: **queued** (written 2026-08-22 while Phase 1 E-client slices finish). Pa
 
 **Decisions applied (override any of these and the builders re-target):**
 - **D1 fee model → configuration, not a fork.** Three env knobs resolved in `packages/shared/src/marketplace/fees.ts`: `MARKETPLACE_SERVICE_FEE_BPS` (buyer surcharge on *physical* listings; stays 500), `MARKETPLACE_DIGITAL_BUYER_FEE_BPS` (buyer surcharge on digital listings; **default 0** — students pay list price), `MARKETPLACE_CREATOR_FEE_BPS` (platform commission taken from the creator's payout on digital listings; **default 1500** = 15 %). Physical listings keep today's maths exactly. Changing the split is a Render env edit.
+  - *Superseded 2026-09-02:* physical listings moved to the same shape as digital — the buyer pays the list price, and a fourth knob `MARKETPLACE_PHYSICAL_COMMISSION_BPS` (**default 500** = 5 %) is taken from the seller's payout. `MARKETPLACE_SERVICE_FEE_BPS` now **defaults to 0**; setting it adds a buyer surcharge *on top of* the commission, so leave it unset.
 - **D5** Study Pack = new `listing_kind = 'study_pack'` (not a sub-kind of question banks). **D6** content stays per-buyer JSON (the question-bank model); revisit if a pack approaches 2 MB. **D7** public creator profile shows university/programme/level, bio, packs, rating, learners helped, followers — **never earnings**. **D8** Verified v1 = confirmed email + active payout profile; v2/v3 later.
 
 ## 1. G — Study Pack product

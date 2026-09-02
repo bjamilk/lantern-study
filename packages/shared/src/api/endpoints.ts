@@ -3291,7 +3291,12 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<{
         paystackEnabled: boolean;
         publicKey: string | null;
+        /** Buyer-side surcharge on hand-over items; 0 unless deliberately re-enabled. */
         serviceFeeBps: number;
+        /** Lantern's cut of a hand-over sale, taken from the seller's payout. */
+        physicalCommissionBps?: number;
+        digitalBuyerFeeBps?: number;
+        creatorFeeBps?: number;
       }>("/marketplace/payments/config", {}, 5000),
 
     verifyMarketplacePayment: (reference: string) =>

@@ -109,3 +109,11 @@ describe('marketplace fees', () => {
     expect(resolveMarketplacePhysicalCommissionBps('250')).toBe(250);
   });
 });
+
+describe('buyer surcharge default', () => {
+  it('computeMarketplaceCheckoutFees adds nothing unless a rate is passed', () => {
+    const fees = computeMarketplaceCheckoutFees(100_000);
+    expect(fees.serviceFeeKobo).toBe(0);
+    expect(fees.totalChargeKobo).toBe(100_000);
+  });
+});

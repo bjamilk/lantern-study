@@ -27,6 +27,7 @@ import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { Button } from '../../components/ui';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { useMarketplaceStore } from '../../stores/marketplaceStore';
+import { useMarketplacePaymentsConfig } from '../../hooks/useMarketplacePaymentsConfig';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
@@ -71,12 +72,12 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
 
   const cartTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
   // The buyer pays the list price; Lantern's 5% comes out of the seller's
-  // payout, so there is no surcharge line here. The default surcharge is 0 and
-  // the server is the source of truth for what Paystack charges.
-  const fees = computeMarketplaceCheckoutFees(
-    nairaToKobo(cartTotal),
-    MARKETPLACE_DEFAULT_SERVICE_FEE_BPS
-  );
+  // payout, so normally there is no surcharge line. The rate is read from the
+  // server (default 0) so the quote stays honest if the knob is ever changed;
+  // the server remains the source of truth for what Paystack charges.
+  const paymentsConfig = useMarketplacePaymentsConfig();
+  const serviceFeeBps = paymentsConfig?.serviceFeeBps ?? MARKETPLACE_DEFAULT_SERVICE_FEE_BPS;
+  const fees = computeMarketplaceCheckoutFees(nairaToKobo(cartTotal), serviceFeeBps);
   const serviceFeeNaira = koboToNaira(fees.serviceFeeKobo);
   const payTotalNaira = koboToNaira(fees.totalChargeKobo);
   const showServiceFee = fees.serviceFeeKobo > 0;
@@ -256,7 +257,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
           {showServiceFee ? (
             <View className="flex-row justify-between mb-1">
               <Text className="text-lantern-text-secondary">
-                Service charge ({MARKETPLACE_DEFAULT_SERVICE_FEE_BPS / 100}%)
+                Service charge ({serviceFeeBps / 100}%)
               </Text>
               <Text className="text-lantern-text">{formatPrice(serviceFeeNaira)}</Text>
             </View>

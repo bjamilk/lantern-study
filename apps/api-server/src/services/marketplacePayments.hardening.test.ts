@@ -76,10 +76,22 @@ const PAYMENT = {
   paystack_reference: 'ls_buy_ref',
   status: 'initialized',
   currency: 'NGN',
-  total_charged_kobo: 105_000,
+  // Current model: the buyer pays the list price, Lantern keeps 5% of it.
+  total_charged_kobo: 100_000,
   item_amount_kobo: 100_000,
-  service_fee_kobo: 5_000,
+  service_fee_kobo: 0,
+  platform_fee_kobo: 5_000,
+  seller_payout_kobo: 95_000,
   metadata: {},
+};
+
+/** A session initialised before 2026-09-02: list + 5% charged, seller paid in full. */
+const OLD_SPLIT_PAYMENT = {
+  ...PAYMENT,
+  total_charged_kobo: 105_000,
+  service_fee_kobo: 5_000,
+  platform_fee_kobo: 0,
+  seller_payout_kobo: 100_000,
 };
 
 describe('settlement hardening', () => {
@@ -94,7 +106,7 @@ describe('settlement hardening', () => {
     mockVerifyPaystackTransaction.mockResolvedValue({
       status: 'success',
       reference: 'ls_buy_ref',
-      amount: 105_000, // matching minor units...
+      amount: 100_000, // matching minor units...
       currency: 'ZAR', // ...in the wrong currency
       id: 9,
     });
@@ -180,5 +192,118 @@ describe('settlement hardening', () => {
     // No new Paystack session, no orphan payment row.
     expect(mockInitializePaystackTransaction).not.toHaveBeenCalled();
     expect(db.writes.filter((w) => w.table === 'marketplace_payments' && w.op === 'insert')).toHaveLength(0);
+  });
+
+  it('a session initialised under the old split is retired and replaced, never resumed', async () => {
+    const order = {
+      id: 'ord_1',
+      buyer_id: 'buyer_1',
+      seller_id: 'seller_1',
+      listing_id: 'lst_1',
+      amount: 1000,
+      payment_id: 'pay_1',
+      status: 'awaiting_payment',
+    };
+    mockGetOrderById.mockResolvedValue(order);
+    mockInitializePaystackTransaction.mockResolvedValue({
+      authorizationUrl: 'https://checkout.paystack.com/AC_new',
+      accessCode: 'AC_new',
+      reference: 'ls_off_fresh_ref',
+    });
+    const db = makeDb({
+      marketplace_payments: {
+        ...OLD_SPLIT_PAYMENT,
+        paystack_access_code: 'AC_open',
+        metadata: { authorizationUrl: 'https://checkout.paystack.com/AC_open' },
+      },
+      marketplace_seller_payout_profiles: { paystack_recipient_code: 'RCP_1', status: 'active' },
+    });
+
+    const { MarketplacePaymentsService } = await import('./marketplacePayments');
+    const svc = new MarketplacePaymentsService({ getClient: () => db } as any);
+
+    await svc.createCheckoutForExistingOrder({
+      orderId: 'ord_1',
+      buyerId: 'buyer_1',
+      buyerEmail: 'buyer@example.com',
+    });
+
+    // The stale row is retired first, and linked from its replacement.
+    const retired = db.writes.find(
+      (w) =>
+        w.table === 'marketplace_payments' &&
+        w.op === 'update' &&
+        (w.payload as any)?.status === 'failed' &&
+        (w.payload as any)?.metadata?.superseded_reason === 'split_changed'
+    );
+    expect(retired).toBeTruthy();
+    const inserted = db.writes.find((w) => w.table === 'marketplace_payments' && w.op === 'insert');
+    expect(inserted).toBeTruthy();
+    const row = inserted!.payload as any;
+    expect(row.total_charged_kobo).toBe(100_000);
+    expect(row.service_fee_kobo).toBe(0);
+    expect(row.platform_fee_kobo).toBe(5_000);
+    expect(row.seller_payout_kobo).toBe(95_000);
+    expect(row.metadata.supersedes).toBe('pay_1');
+    expect(db.writes.indexOf(retired!)).toBeLessThan(db.writes.indexOf(inserted!));
+    // Paystack is asked for the list price, not the old total.
+    expect(mockInitializePaystackTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ amountKobo: 100_000 })
+    );
+  });
+
+  it('a late charge.success for a retired session is recorded as a mismatch, not settled', async () => {
+    mockVerifyPaystackSignature.mockReturnValue(true);
+    const db = makeDb({
+      marketplace_payments: {
+        ...OLD_SPLIT_PAYMENT,
+        status: 'failed',
+        metadata: { superseded_reason: 'split_changed' },
+      },
+      paystack_webhook_events: null,
+    });
+
+    const { MarketplacePaymentsService } = await import('./marketplacePayments');
+    const svc = new MarketplacePaymentsService({ getClient: () => db } as any);
+
+    const body = JSON.stringify({
+      event: 'charge.success',
+      data: { id: 43, reference: 'ls_buy_ref', amount: 105_000, currency: 'NGN' },
+    });
+    const result = await svc.handleWebhook(body, 'sig');
+
+    expect(result.ok).toBe(true);
+    const stamp = db.writes.find(
+      (w) =>
+        w.table === 'marketplace_payments' &&
+        (w.payload as any)?.metadata?.settlement_mismatch?.reason === 'payment_failed'
+    );
+    expect(stamp).toBeTruthy();
+    expect(db.writes.some((w) => (w.payload as any)?.status === 'paid')).toBe(false);
+  });
+
+  it('verify refuses to settle a retired session even when Paystack reports success', async () => {
+    const db = makeDb({
+      marketplace_payments: {
+        ...OLD_SPLIT_PAYMENT,
+        status: 'failed',
+        metadata: { superseded_reason: 'split_changed' },
+      },
+    });
+    mockVerifyPaystackTransaction.mockResolvedValue({
+      status: 'success',
+      reference: 'ls_buy_ref',
+      amount: 105_000,
+      currency: 'NGN',
+      id: 10,
+    });
+
+    const { MarketplacePaymentsService } = await import('./marketplacePayments');
+    const svc = new MarketplacePaymentsService({ getClient: () => db } as any);
+
+    await expect(svc.verifyPaymentByReference('ls_buy_ref', 'buyer_1')).rejects.toThrow(
+      /no longer open/i
+    );
+    expect(db.writes.some((w) => (w.payload as any)?.status === 'paid')).toBe(false);
   });
 });

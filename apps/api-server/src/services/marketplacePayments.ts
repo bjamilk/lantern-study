@@ -297,6 +297,23 @@ export class MarketplacePaymentsService {
 
     const itemAmountKobo = nairaToKobo(Number(order.amount));
 
+    // This path serves offer-accept AND the resume-checkout fall-through from
+    // getCheckoutSessionForOrder, which carries orders of ANY kind — so the fee
+    // model must be resolved from the listing, never assumed physical. It is
+    // resolved before the resume decision because a session is only worth
+    // resuming if its stored split is what we would write today.
+    const { data: kindRow } = await this.db
+      .from('marketplace_listings')
+      .select('listing_kind')
+      .eq('id', order.listing_id)
+      .maybeSingle();
+    const resolved = resolveMarketplaceFees({
+      listingKind: (kindRow as { listing_kind?: string } | null)?.listing_kind,
+      itemAmountKobo,
+      env: process.env,
+    });
+
+    let supersededPaymentId: string | null = null;
     if (order.payment_id) {
       const { data: existing } = await this.db
         .from('marketplace_payments')
@@ -312,11 +329,20 @@ export class MarketplacePaymentsService {
         (existing?.paystack_access_code
           ? `https://checkout.paystack.com/${existing.paystack_access_code}`
           : null);
+      // A session initialised under an earlier fee model carries the old split
+      // (buyer surcharge, full seller payout). Resuming it would charge the old
+      // total and pay out the old amount, so a row is reused only when its
+      // stored split is exactly what the resolver produces today. This is the
+      // ONLY resume site — getCheckoutSessionForOrder defers here.
+      const splitIsCurrent =
+        Number(existing?.item_amount_kobo) === itemAmountKobo &&
+        Number(existing?.total_charged_kobo) === resolved.totalChargedKobo &&
+        Number(existing?.seller_payout_kobo ?? existing?.item_amount_kobo) === resolved.sellerPayoutKobo;
       if (
         existing?.status === 'initialized' &&
         existing.paystack_access_code &&
         existingUrl &&
-        Number(existing.item_amount_kobo) === itemAmountKobo
+        splitIsCurrent
       ) {
         const refreshedOrder = await this.orders.getOrderById(order.id, input.buyerId);
         return {
@@ -335,21 +361,30 @@ export class MarketplacePaymentsService {
           publicKey: getPaystackPublicKey(),
         };
       }
+      if (existing?.status === 'initialized') {
+        // The open session is stale (split or amount changed). Retire it BEFORE
+        // a replacement exists: its Paystack page may still be open in a tab,
+        // and a late charge.success for its reference must not settle the
+        // order on the old split. The webhook and verify paths treat a charge
+        // against a retired row as a settlement mismatch, which is loud.
+        supersededPaymentId = existing.id;
+        const now = new Date().toISOString();
+        await this.db
+          .from('marketplace_payments')
+          .update({
+            status: 'failed',
+            metadata: {
+              ...((existing.metadata as Record<string, unknown> | null) || {}),
+              superseded_reason: 'split_changed',
+              superseded_at: now,
+            },
+            updated_at: now,
+          })
+          .eq('id', existing.id)
+          .eq('status', 'initialized');
+      }
     }
 
-    // This path serves offer-accept AND the resume-checkout fall-through from
-    // getCheckoutSessionForOrder, which carries orders of ANY kind — so the fee
-    // model must be resolved from the listing, never assumed physical.
-    const { data: kindRow } = await this.db
-      .from('marketplace_listings')
-      .select('listing_kind')
-      .eq('id', order.listing_id)
-      .maybeSingle();
-    const resolved = resolveMarketplaceFees({
-      listingKind: (kindRow as { listing_kind?: string } | null)?.listing_kind,
-      itemAmountKobo,
-      env: process.env,
-    });
     const fees = {
       itemAmountKobo: resolved.itemAmountKobo,
       serviceFeeKobo: resolved.buyerFeeKobo,
@@ -371,7 +406,11 @@ export class MarketplacePaymentsService {
         currency: 'NGN',
         paystack_reference: reference,
         status: 'initialized',
-        metadata: { source: 'offer_accept', listingId: order.listing_id },
+        metadata: {
+          source: 'offer_accept',
+          listingId: order.listing_id,
+          ...(supersededPaymentId ? { supersedes: supersededPaymentId } : {}),
+        },
       })
       .select('*')
       .single();
@@ -443,56 +482,16 @@ export class MarketplacePaymentsService {
     if (order.payment_id) {
       const { data: existing } = await this.db
         .from('marketplace_payments')
-        .select('*')
+        .select('status')
         .eq('id', order.payment_id)
         .maybeSingle();
-      // A session initialized before the fee model changed carries the old split
-      // (buyer surcharge, full seller payout). Reusing it would charge the old
-      // total and pay out the old amount, so only a row whose split matches
-      // what we would write today is resumed; anything else is re-initialized.
-      const splitMatchesCurrentModel = await (async () => {
-        if (!existing) return false;
-        const { data: kind } = await this.db
-          .from('marketplace_listings')
-          .select('listing_kind')
-          .eq('id', order.listing_id)
-          .maybeSingle();
-        const current = resolveMarketplaceFees({
-          listingKind: (kind as { listing_kind?: string } | null)?.listing_kind,
-          itemAmountKobo: Number(existing.item_amount_kobo),
-          env: process.env,
-        });
-        return (
-          Number(existing.total_charged_kobo) === current.totalChargedKobo &&
-          Number(existing.seller_payout_kobo ?? existing.item_amount_kobo) === current.sellerPayoutKobo
-        );
-      })();
-      if (existing?.status === 'initialized' && existing.paystack_access_code && splitMatchesCurrentModel) {
-        const meta = (existing.metadata || {}) as Record<string, unknown>;
-        const authorizationUrl =
-          (typeof meta.authorizationUrl === 'string' && meta.authorizationUrl) ||
-          `https://checkout.paystack.com/${existing.paystack_access_code}`;
-        return {
-          order,
-          payment: {
-            id: existing.id,
-            reference: existing.paystack_reference,
-            status: existing.status,
-            itemAmountKobo: Number(existing.item_amount_kobo),
-            serviceFeeKobo: Number(existing.service_fee_kobo),
-            totalChargeKobo: Number(existing.total_charged_kobo),
-            currency: existing.currency || 'NGN',
-          },
-          authorizationUrl,
-          accessCode: existing.paystack_access_code,
-          publicKey: getPaystackPublicKey(),
-        };
-      }
       if (existing?.status === 'paid' || existing?.status === 'paid_out' || existing?.status === 'payout_pending') {
         throw new Error('Order is already paid');
       }
     }
 
+    // Resuming the open session, or retiring a stale one and replacing it, is
+    // decided in exactly one place: createCheckoutForExistingOrder.
     return this.createCheckoutForExistingOrder({ orderId, buyerId, buyerEmail });
   }
 
@@ -519,9 +518,13 @@ export class MarketplacePaymentsService {
     if (verified.status !== 'success') {
       throw new Error(`Payment not successful (${verified.status})`);
     }
+    // A retired row (superseded as stale, failed, refunded) must not be settled
+    // by a late success either — see the webhook path for the reasoning.
+    const retiredRow = payment.status !== 'initialized';
     if (
       Number(verified.amount) !== Number(payment.total_charged_kobo) ||
-      (verified.currency && verified.currency !== payment.currency)
+      (verified.currency && verified.currency !== payment.currency) ||
+      retiredRow
     ) {
       await this.recordSettlementMismatch(payment, {
         source: 'verify',
@@ -530,8 +533,9 @@ export class MarketplacePaymentsService {
         gotAmount: Number(verified.amount),
         expectedCurrency: payment.currency,
         gotCurrency: verified.currency,
+        ...(retiredRow ? { reason: `payment_${payment.status}` } : {}),
       });
-      throw new Error('Payment amount mismatch');
+      throw new Error(retiredRow ? 'Payment session is no longer open' : 'Payment amount mismatch');
     }
 
     await this.markPaymentPaid(payment.id, String(verified.id), verified.paidAt || undefined);
@@ -978,6 +982,7 @@ export class MarketplacePaymentsService {
       gotAmount: number;
       expectedCurrency?: string;
       gotCurrency?: string;
+      reason?: string;
     }
   ): Promise<void> {
     logger.error('Paystack settlement mismatch', details);
@@ -1047,7 +1052,13 @@ export class MarketplacePaymentsService {
       if (payment) {
         const amountMismatch = Number(data.amount) !== Number(payment.total_charged_kobo);
         const currencyMismatch = Boolean(data.currency && data.currency !== payment.currency);
-        if (amountMismatch || currencyMismatch) {
+        // A row that is neither open nor already settled (retired as stale,
+        // failed, refunded) can still receive a charge.success from a Paystack
+        // page the buyer kept open. markPaymentPaid would silently no-op on it,
+        // so money would be captured with no trace — record it instead.
+        const settled = ['paid', 'payout_pending', 'paid_out'].includes(String(payment.status));
+        const retiredRow = !settled && payment.status !== 'initialized';
+        if (amountMismatch || currencyMismatch || retiredRow) {
           // The event is already consumed by the dedupe row above and Paystack
           // gets a 200, so this is the ONLY trace that money was captured
           // without settling the order. Make it impossible to miss: Sentry
@@ -1059,6 +1070,7 @@ export class MarketplacePaymentsService {
             gotAmount: Number(data.amount),
             expectedCurrency: payment.currency,
             gotCurrency: data.currency,
+            ...(retiredRow ? { reason: `payment_${payment.status}` } : {}),
           });
         } else {
           await this.markPaymentPaid(payment.id, String(data.id || reference), data.paid_at);
