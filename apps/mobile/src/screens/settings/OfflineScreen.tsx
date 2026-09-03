@@ -407,7 +407,7 @@ export default function OfflineScreen() {
         }
       >
         {/* Storage Status */}
-        <View style={[styles.storageCard, { borderLeftColor: featureAccents.offline, backgroundColor: colors.card }]}>
+        <View style={[styles.storageCard, { backgroundColor: colors.card }]}>
           <View style={styles.storageHeader}>
             <Ionicons name="folder" size={24} color={featureAccents.offline} />
             <View style={styles.storageInfo}>
@@ -674,7 +674,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
-    borderLeftWidth: 3,
   },
   storageHeader: {
     flexDirection: 'row',

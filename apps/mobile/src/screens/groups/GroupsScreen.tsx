@@ -40,7 +40,6 @@ import NewDirectMessageModal from '../../components/NewDirectMessageModal';
 import { useGroupHandlers } from '../../hooks/useGroupHandlers';
 import { useToastStore } from '../../stores/toastStore';
 import { confirmSheet } from '../../stores/confirmStore';
-import { featureAccents } from '@lantern/shared/design';
 import type { ChatStackParamList } from '../../navigation/types';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useChrome } from '../../components/layout/ChromeContext';
@@ -141,7 +140,8 @@ function ChatRow({
       style={{
         paddingLeft: 16 + nestingLevel * 20,
         borderLeftWidth: nestingLevel > 0 ? 3 : 0,
-        borderLeftColor: nestingLevel > 0 ? `${featureAccents.groups}55` : 'transparent',
+        // Neutral, not the feature hue: this marks nesting, it is not an accent.
+        borderLeftColor: nestingLevel > 0 ? colors.border : 'transparent',
         opacity: isArchived ? 0.6 : 1,
       }}
       // No row divider: avatars + generous row padding already separate chats,

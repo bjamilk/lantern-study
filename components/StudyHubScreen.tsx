@@ -80,7 +80,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             compact
           />
         ) : hasPausedSession && onResumeSession ? (
-          <Card padding="md" className="border-l-4 border-l-amber-500">
+          <Card padding="md">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600">
@@ -103,7 +103,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           </Card>
         ) : null}
 
-        <Card padding="lg" className="border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/5 to-lantern-accent/5">
+        <Card padding="lg">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-lantern-text">

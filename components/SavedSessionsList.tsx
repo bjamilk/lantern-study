@@ -33,7 +33,7 @@ const SavedSessionsList: React.FC<SavedSessionsListProps> = ({
   if (!sessions.length) return null;
 
   return (
-    <Card padding={compact ? 'md' : 'lg'} className="border-l-4 border-l-amber-500">
+    <Card padding={compact ? 'md' : 'lg'}>
       <div className="flex items-center gap-2 mb-3">
         <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600">
           <ClockIcon className="w-5 h-5" />

@@ -73,7 +73,8 @@ import {
   type ChatMuteDurationId,
 } from '@lantern/shared';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
-import { selectMyCommunity, useCommunityStore } from '../../stores/communityStore';
+import { useCommunityStore } from '../../stores/communityStore';
+import { findMyCommunity } from '../../utils/communityOverlay';
 
 export type GroupChatNavigation = {
   goBack: () => void;
@@ -2309,7 +2310,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
     s => s.groups.find(g => g.id === groupId)?.communityId ?? s.currentGroup?.communityId ?? null
   );
   const loadMine = useCommunityStore(s => s.loadMine);
-  const fromMine = useCommunityStore(s => selectMyCommunity(s, groupCommunityId));
+  // Subscribe to the ARRAY, then derive. `selectMyCommunity` builds a fresh
+  // `{ slug, name }` on every call, and a zustand selector that returns a new
+  // object every render makes React see a changed snapshot forever: opening a
+  // chat that belongs to a community froze the app until it was killed.
+  const myCommunities = useCommunityStore(s => s.myCommunities);
+  const fromMine = useMemo(
+    () => findMyCommunity(myCommunities, groupCommunityId),
+    [myCommunities, groupCommunityId]
+  );
 
   useEffect(() => {
     if (!groupCommunityId || (communitySlug && communityName)) return;

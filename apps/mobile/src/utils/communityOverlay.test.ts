@@ -81,4 +81,16 @@ describe('findMyCommunity', () => {
     expect(findMyCommunity(mine, null)).toBeNull();
     expect(findMyCommunity(mine, undefined)).toBeNull();
   });
+
+  it('returns a fresh object each call, so callers must memoize it', () => {
+    // Used directly as a zustand selector this froze the app: a new object
+    // every render is a changed snapshot forever, so React re-rendered without
+    // end and the chat screen stopped responding. Subscribe to the array and
+    // derive with useMemo instead.
+    const mine = [{ id: 'c2', slug: 'anatomy', name: 'Anatomy' }];
+    const a = findMyCommunity(mine, 'c2');
+    const b = findMyCommunity(mine, 'c2');
+    expect(a).toEqual(b);
+    expect(a).not.toBe(b);
+  });
 });

@@ -39,7 +39,7 @@ export function StudyHubScreen({ navigation }: Props) {
       >
         <ScreenHeader title="Study" subtitle="Review due cards and jump back in" />
 
-        <Card className="mb-4 border-l-4 border-l-emerald-500">
+        <Card className="mb-4">
           <Text className="text-xl font-bold text-lantern-text mb-1">
             {dueCardsCount > 0 ? `${dueCardsCount} cards due` : 'All caught up!'}
           </Text>

@@ -54,8 +54,8 @@ export function NotificationRow({
       className={`p-4 rounded-lantern-xl border border-lantern-border mb-2 ${
         read ? 'bg-lantern-surface' : 'bg-lantern-primary-background'
       } ${className}`}
-      // The left accent is the colour-coding cue: one hue per feature family.
-      style={{ borderLeftWidth: 3, borderLeftColor: meta.accentColor }}
+      // No accent rail: the icon already carries the feature's colour, and a
+      // coloured edge on every row made the list read as a warning list.
     >
       <View className="flex-row items-start gap-3">
         <View

@@ -41,8 +41,10 @@ export function DashboardHeroCard({
         ? `You've completed ${totalTests} test${totalTests !== 1 ? 's' : ''}. What's next?`
         : 'Import material or review flashcards to get started.';
 
+  // Plain surface: no accent rail, no tinted fill. The greeting is the first
+  // thing on the dashboard and a coloured edge made it shout.
   return (
-    <Card className={`border-l-4 border-l-lantern-primary border border-lantern-primary/20 bg-lantern-primary-background ${className ?? 'mb-4'}`}>
+    <Card className={className ?? 'mb-4'}>
       <Text className="font-display text-xl font-semibold text-lantern-text">
         {getGreeting()}, {userName}
       </Text>

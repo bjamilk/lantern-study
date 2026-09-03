@@ -5,7 +5,6 @@ import { ArchiveBoxIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
-import { featureAccents } from '@lantern/shared/design';
 import { chatMessagePreview } from '@lantern/shared/utils';
 import { formatUnreadBadgeCount } from '../utils/chatUnread';
 
@@ -79,7 +78,9 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
   const timeLabel = formatRowTime(lastMessageAt);
   
   const baseClasses = `flex items-center w-full p-3 md:p-3 py-3.5 md:py-3 border-l-4 transition-colors duration-200 min-h-[52px]`;
-  const accentBorder = isSubGroup || nestingLevel > 0 ? featureAccents.groups : undefined;
+  // The left border marks the SELECTED chat only. Sub-groups are shown by
+  // indentation, not by a coloured edge.
+  const accentBorder = undefined;
   const selectedClasses = isSelected
     ? `bg-lantern-primary-background ${accentBorder ? '' : 'border-lantern-primary'}`
     : 'border-transparent hover:bg-lantern-background-secondary';

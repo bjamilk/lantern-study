@@ -49,7 +49,8 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
 
   return (
     <Card
-      className={`h-full ${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary border border-lantern-primary/20 bg-gradient-to-br from-lantern-primary/[0.14] via-lantern-primary-background/80 to-lantern-accent/[0.12]'}`}
+      // Plain surface: no accent rail, no gradient fill.
+      className="h-full"
       padding="lg"
       variant="elevated"
     >
