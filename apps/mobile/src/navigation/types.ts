@@ -80,9 +80,15 @@ export type ChatStackParamList = {
         communityId?: string;
         communityName?: string;
         communitySlug?: string;
+        /** Defaults to 'board' when communityId is set; ignored otherwise. */
+        communitySurface?: 'board' | 'study_group';
+        /** Prefilled name from "Start a study group about this". */
+        seedName?: string;
+        /** The board that spawned it — it gets a plain TEXT pointer back. */
+        announceInGroupId?: string;
       }
     | undefined;
-  /** `communitySlug/communityName` only drive the `in <Community> ›` link when a channel is opened from the plain chat list. */
+  /** `communitySlug/communityName` only drive the `in <Community> ›` link when a board or study group is opened from the plain chat list. */
   GroupChat: {
     groupId: string;
     groupName?: string;
@@ -149,6 +155,12 @@ export type MarketStackParamList = {
   // Founder rule (spec §0a): a community's channels, rooms and roster live on
   // THIS stack, never on the Chat tab, so back always returns to the community.
   CommunityMembers: { slug: string; communityId?: string; name?: string };
+  /**
+   * One community room. The route name is unchanged so deep links and every
+   * existing navigation param keep working: the screen routes the community's
+   * lounge to the live chat and everything else to the BOARD (founder
+   * decision 1, 2026-09-02).
+   */
   CommunityChannel: {
     groupId: string;
     groupName?: string;
@@ -159,8 +171,17 @@ export type MarketStackParamList = {
     communitySlug?: string;
     communityName?: string;
     communityId?: string;
+    /** Set by the community page so the router need not wait on the detail. */
+    isLounge?: boolean;
   };
-  /** Create a channel from inside a community (same component as the Chat stack's CreateGroup). */
+  /** One board post and its comments. */
+  CommunityPost: {
+    groupId: string;
+    rootId: string;
+    communitySlug?: string;
+    communityName?: string;
+  };
+  /** Create a board or a study group from inside a community (same component as the Chat stack's CreateGroup). */
   CreateGroup:
     | {
         parentId?: string;
@@ -168,6 +189,12 @@ export type MarketStackParamList = {
         communityId?: string;
         communityName?: string;
         communitySlug?: string;
+        /** Defaults to 'board' when communityId is set; ignored otherwise. */
+        communitySurface?: 'board' | 'study_group';
+        /** Prefilled name from "Start a study group about this". */
+        seedName?: string;
+        /** The board that spawned it — it gets a plain TEXT pointer back. */
+        announceInGroupId?: string;
       }
     | undefined;
   Feed: undefined;
@@ -253,8 +280,9 @@ const IMMERSIVE_SCREENS = new Set([
   "CreateGroup",
   "GroupChat",
   "DirectMessage",
-  // A community channel is the same chat UI as GroupChat, on the Market stack.
+  // A community room — the lounge chat or a board — on the Market stack.
   "CommunityChannel",
+  "CommunityPost",
 ]);
 
 export function shouldHideTabBar(routeName: string | undefined): boolean {

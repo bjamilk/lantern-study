@@ -15,6 +15,19 @@ interface MessageReactionsProps {
   /** Read-only (removed messages, or a viewer who cannot post here). */
   disabled?: boolean;
   align?: 'start' | 'end';
+  /**
+   * Override the chip's accessible name. Community boards pass
+   * `reactionAccessibilityLabel` so both clients announce a chip identically
+   * (spec §9); chat keeps the default wording.
+   */
+  labelFor?: (emoji: string, count: number, mine: boolean) => string;
+  /** Accessible name + visible label for the picker trigger. */
+  addLabel?: string;
+  /**
+   * 'touch' grows every control to a 44px target — required on the board,
+   * where a card is the tap surface. Chat keeps the compact strip.
+   */
+  size?: 'compact' | 'touch';
 }
 
 /**
@@ -31,11 +44,15 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
   onToggle,
   disabled = false,
   align = 'start',
+  labelFor,
+  addLabel = 'Add a reaction',
+  size = 'compact',
 }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const entries = sortedReactionEntries(reactions);
   const total = totalReactionCount(reactions);
   const mineSet = new Set(mine);
+  const touch = size === 'touch';
 
   if (disabled && total === 0) return null;
 
@@ -54,10 +71,16 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
             disabled={disabled}
             onClick={() => onToggle(emoji, !isMine)}
             aria-pressed={isMine}
-            aria-label={`${emoji} ${count} ${count === 1 ? 'reaction' : 'reactions'}${
-              isMine ? ', including yours' : ''
-            }`}
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+            aria-label={
+              labelFor
+                ? labelFor(emoji, count, isMine)
+                : `${emoji} ${count} ${count === 1 ? 'reaction' : 'reactions'}${
+                    isMine ? ', including yours' : ''
+                  }`
+            }
+            className={`inline-flex items-center gap-1 rounded-full border text-xs transition-colors disabled:cursor-default disabled:opacity-60 ${
+              touch ? 'min-h-[44px] px-3 py-1' : 'px-2 py-0.5'
+            } ${
               isMine
                 ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
                 : 'border-lantern-border bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border'
@@ -74,12 +97,15 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
           <button
             type="button"
             onClick={() => setPickerOpen((open) => !open)}
-            aria-label="Add a reaction"
+            aria-label={addLabel}
             aria-expanded={pickerOpen}
-            title="Add a reaction"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-lantern-border bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border"
+            title={addLabel}
+            className={`inline-flex items-center justify-center gap-1 rounded-full border border-lantern-border bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border ${
+              touch ? 'min-h-[44px] px-3 text-xs font-medium' : 'h-6 w-6'
+            }`}
           >
             <FaceSmileIcon className="h-3.5 w-3.5" aria-hidden />
+            {touch ? <span>{addLabel}</span> : null}
           </button>
 
           {pickerOpen ? (
@@ -107,9 +133,9 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
                       setPickerOpen(false);
                       onToggle(emoji, !mineSet.has(emoji));
                     }}
-                    className={`rounded-full px-1.5 py-0.5 text-base leading-none transition-transform hover:scale-125 ${
-                      mineSet.has(emoji) ? 'bg-lantern-primary-background' : ''
-                    }`}
+                    className={`rounded-full text-base leading-none transition-transform hover:scale-125 ${
+                      touch ? 'min-h-[44px] min-w-[44px] px-2' : 'px-1.5 py-0.5'
+                    } ${mineSet.has(emoji) ? 'bg-lantern-primary-background' : ''}`}
                   >
                     <span aria-hidden>{emoji}</span>
                   </button>

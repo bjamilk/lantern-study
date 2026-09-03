@@ -29,6 +29,7 @@ jest.mock('./studyRooms', () => ({
 }));
 
 import { CommunitiesService, encodeMembersCursor } from './communities';
+import { setSchemaCapabilities } from './schemaCapabilities';
 
 const VIEWER = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -110,7 +111,12 @@ const onlineProfile = (showOnlineStatus: boolean) => ({
   profiles: { settings: { privacy: { showOnlineStatus } }, last_seen_at: new Date().toISOString() },
 });
 
-beforeEach(() => listRooms.mockClear());
+beforeEach(() => {
+  listRooms.mockClear();
+  // The capability probe is a real query; presetting it keeps the scripted
+  // database deterministic. Individual tests flip it to pin the degrade.
+  setSchemaCapabilities({ groupCommunitySurface: true, messageBoardColumns: true });
+});
 
 describe('listChannels', () => {
   it('member: lounge row, unread/preview only on joined channels, joined first, rooms and online count', async () => {
@@ -128,6 +134,7 @@ describe('listChannels', () => {
             ],
           },
         },
+        { table: 'groups', result: { data: [] } },
         { table: 'groups', result: { data: groupRow(LOUNGE, { name: 'PHARM 101 Lounge' }) } },
         { table: 'group_members', result: { data: [{ group_id: CH_A }, { group_id: LOUNGE }] } },
         { table: 'community_members', result: { data: [onlineProfile(true), onlineProfile(false)] } },
@@ -142,8 +149,11 @@ describe('listChannels', () => {
     expect(payload.loungeGroupId).toBe(LOUNGE);
     expect(payload.lounge).toMatchObject({ id: LOUNGE, isLounge: true, isMember: true, unreadCount: 1 });
 
-    expect(payload.channels.map((c) => c.id)).toEqual([CH_A, CH_B]);
-    const [a, b] = payload.channels;
+    expect(payload.boards.map((c) => c.id)).toEqual([CH_A, CH_B]);
+    // `channels` is the deprecated alias and must stay the identical array.
+    expect(payload.channels).toBe(payload.boards);
+    expect(payload.studyGroups).toEqual([]);
+    const [a, b] = payload.boards;
     expect(a).toMatchObject({ isMember: true, unreadCount: 3, lastMessage: 'last in 66', visibility: 'community' });
     // Unjoined: no count, no preview, ever.
     expect(b).toMatchObject({ isMember: false, unreadCount: 0, lastMessage: null, lastMessageTime: null, visibility: 'public' });
@@ -161,6 +171,8 @@ describe('listChannels', () => {
         ['is', 'parent_id', null],
         ['neq', 'id', LOUNGE],
         ['in', 'visibility', ['public', 'community']],
+        // NULL is legacy and means board, so both halves must match.
+        ['or', 'community_surface.is.null,community_surface.eq.board'],
       ]),
     );
   });
@@ -181,10 +193,119 @@ describe('listChannels', () => {
     expect(payload.rooms).toEqual([]);
     expect(listRooms).not.toHaveBeenCalled();
     expect(payload.onlineCount).toBe(0);
-    expect(payload.channels).toHaveLength(1);
-    expect(payload.channels[0]).toMatchObject({ isMember: false, unreadCount: 0, lastMessage: null });
+    expect(payload.boards).toHaveLength(1);
+    expect(payload.boards[0]).toMatchObject({ isMember: false, unreadCount: 0, lastMessage: null });
+    // A guest gets boards and nothing else: no study groups query is issued.
+    expect(payload.studyGroups).toEqual([]);
+    expect(queries.filter((q) => q.table === 'groups')).toHaveLength(1);
     const channelQuery = queries.filter((q) => q.table === 'groups')[0];
     expect(channelQuery.filters).toEqual(expect.arrayContaining([['in', 'visibility', ['public']]]));
+  });
+
+  it('splits the surfaces: study_group rows land in studyGroups, NULL rows in boards', async () => {
+    const { service, queries } = makeDb(
+      [
+        { table: 'communities', result: { data: communityRow() } },
+        { table: 'community_members', result: { data: { user_id: VIEWER, source: 'joined', role: 'member' } } },
+        // The board half: community_surface IS NULL (legacy) is a board.
+        { table: 'groups', result: { data: [groupRow(CH_A, { community_surface: null })] } },
+        {
+          table: 'groups',
+          result: {
+            data: [
+              groupRow(CH_B, {
+                name: 'Pharmacology crew',
+                community_surface: 'study_group',
+                member_count: 12,
+                question_count: 40,
+              }),
+            ],
+          },
+        },
+        { table: 'groups', result: { data: null } },
+        { table: 'group_members', result: { data: [{ group_id: CH_A }, { group_id: CH_B }] } },
+        { table: 'community_members', result: { data: [] } },
+      ],
+      { [CH_A]: 2 },
+    );
+
+    const payload = await service.listChannels(VIEWER, COMMUNITY);
+
+    expect(payload.boards.map((b) => b.id)).toEqual([CH_A]);
+    expect(payload.studyGroups).toEqual([
+      {
+        id: CH_B,
+        name: 'Pharmacology crew',
+        description: null,
+        avatarUrl: null,
+        memberCount: 12,
+        questionCount: 40,
+        isMember: true,
+        visibility: 'community',
+        lastMessageTime: '2026-09-01T10:00:00+00:00',
+      },
+    ]);
+    // A study group is never also a board, and vice versa.
+    expect(payload.boards.some((b) => b.id === CH_B)).toBe(false);
+
+    const studyQuery = queries.filter((q) => q.table === 'groups')[1];
+    expect(studyQuery.filters).toEqual(
+      expect.arrayContaining([['eq', 'community_surface', 'study_group']]),
+    );
+    // One membership read covers boards, study groups and the lounge.
+    const membership = queries.find((q) => q.table === 'group_members')!;
+    expect(membership.filters).toEqual(
+      expect.arrayContaining([['in', 'group_id', [CH_A, CH_B]]]),
+    );
+  });
+
+  it('pre-migration (42703 on community_surface): every community group is a board, studyGroups empty, no throw', async () => {
+    setSchemaCapabilities({ groupCommunitySurface: true });
+    const { service, queries } = makeDb([
+      { table: 'communities', result: { data: communityRow() } },
+      { table: 'community_members', result: { data: { user_id: VIEWER, source: 'joined', role: 'member' } } },
+      // The probe said "present"; the real query disagrees.
+      {
+        table: 'groups',
+        result: { error: { code: '42703', message: 'column groups.community_surface does not exist' } },
+      },
+      { table: 'groups', result: { data: [groupRow(CH_A), groupRow(CH_B)] } },
+      { table: 'groups', result: { data: null } },
+      { table: 'group_members', result: { data: [] } },
+      { table: 'community_members', result: { data: [] } },
+    ]);
+
+    const payload = await service.listChannels(VIEWER, COMMUNITY);
+
+    expect(payload.boards.map((b) => b.id).sort()).toEqual([CH_A, CH_B].sort());
+    expect(payload.studyGroups).toEqual([]);
+    // The retry drops the surface filter, and no study-group query is issued.
+    const groupQueries = queries.filter((q) => q.table === 'groups');
+    expect(groupQueries).toHaveLength(3);
+    expect(groupQueries[1].filters.some(([m]) => m === 'or')).toBe(false);
+    expect(groupQueries[1].filters.some(([m, col]) => m === 'eq' && col === 'community_surface')).toBe(
+      false,
+    );
+  });
+
+  it('pre-migration, resolved by the probe: no surface filter and no study-group query at all', async () => {
+    setSchemaCapabilities({ groupCommunitySurface: false });
+    const { service, queries } = makeDb([
+      { table: 'communities', result: { data: communityRow() } },
+      { table: 'community_members', result: { data: { user_id: VIEWER, source: 'joined', role: 'member' } } },
+      { table: 'groups', result: { data: [groupRow(CH_A)] } },
+      { table: 'groups', result: { data: null } },
+      { table: 'group_members', result: { data: [{ group_id: CH_A }] } },
+      { table: 'community_members', result: { data: [] } },
+    ]);
+
+    const payload = await service.listChannels(VIEWER, COMMUNITY);
+    expect(payload.boards.map((b) => b.id)).toEqual([CH_A]);
+    expect(payload.studyGroups).toEqual([]);
+    expect(queries.filter((q) => q.table === 'groups')).toHaveLength(2);
+    expect(queries[2].filters.some(([m]) => m === 'or')).toBe(false);
+    // The column is never selected either.
+    expect(queries[2].filters[0]).toEqual(['select', expect.not.stringContaining('community_surface')]);
   });
 
   it('guest of a private community: 404, before any channel read', async () => {

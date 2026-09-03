@@ -33,12 +33,20 @@ import {
   resolveCommunityRole,
   resolveGroupDiscovery,
   sortCommunityChannels,
+  sortCommunityStudyGroups,
   type CommunityChannel,
   type CommunityChannels,
   type CommunityMember,
   type CommunityMembersPage,
   type CommunityRole,
+  type CommunityStudyGroup,
 } from '@lantern/shared/network';
+import {
+  groupColumns,
+  hasGroupCommunitySurface,
+  isMissingColumnError,
+  markGroupCommunitySurfaceMissing,
+} from './schemaCapabilities';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -101,6 +109,14 @@ export interface CommunityRow {
   visibility: 'public' | 'private';
   is_official: boolean;
   member_count: number;
+  /**
+   * The community's one live chat. Carried on the membership list so a client
+   * can tell a lounge from a board BEFORE it has opened the community page —
+   * without it, a cold-started chat list classifies every lounge as a board
+   * and drops the community's one chat (founder decision 1). Null pre-
+   * 20260829170000, and for a community whose lounge has not been minted.
+   */
+  lounge_group_id?: string | null;
 }
 
 export interface DiscoverGroup {
@@ -148,9 +164,17 @@ type GroupChannelRow = {
   parent_id: string | null;
   last_message: string | null;
   last_message_time: string | null;
+  community_surface?: 'board' | 'study_group' | null;
 };
 const GROUP_CHANNEL_COLUMNS =
   'id, name, description, avatar_url, member_count, question_count, visibility, course_id, parent_id, last_message, last_message_time';
+
+/**
+ * A board is `community_surface IS NULL OR 'board'` — NULL is legacy and every
+ * group that has a community_id today IS a channel, so the backfill is a
+ * no-op and this filter is what keeps study groups out of the board list.
+ */
+const BOARD_SURFACE_FILTER = 'community_surface.is.null,community_surface.eq.board';
 
 type MembershipRow = { source: 'auto' | 'joined' | null; role: string | null };
 
@@ -324,19 +348,36 @@ export class CommunitiesService {
   private async queryMemberships(
     userId: string
   ): Promise<Array<CommunityRow & { role: string; source: string }>> {
-    const { data, error } = await this.db
-      .from('community_members')
-      .select(`role, source, communities!inner(${COMMUNITY_COLUMNS})`)
-      .eq('user_id', userId)
-      .is('opted_out_at', null)
-      .order('joined_at', { ascending: false })
-      .limit(100);
+    const run = (columns: string) =>
+      this.db
+        .from('community_members')
+        .select(`role, source, communities!inner(${columns})`)
+        .eq('user_id', userId)
+        .is('opted_out_at', null)
+        .order('joined_at', { ascending: false })
+        .limit(100);
+
+    // `lounge_group_id` only exists once 20260829170000 is applied; the same
+    // 42703 retry `selectCommunity` uses keeps the membership list working
+    // before it lands, with the pointer reported as null.
+    let loungeAvailable = true;
+    let { data, error } = await run(`${COMMUNITY_COLUMNS}, lounge_group_id`);
+    if (error && (error as { code?: string }).code === '42703') {
+      loungeAvailable = false;
+      ({ data, error } = await run(COMMUNITY_COLUMNS));
+    }
     if (error) throw error;
 
     return (data || [])
       .map((r: any) => {
         const c = Array.isArray(r.communities) ? r.communities[0] : r.communities;
-        return c ? { ...(c as CommunityRow), role: r.role, source: r.source } : null;
+        if (!c) return null;
+        return {
+          ...(c as CommunityRow),
+          lounge_group_id: loungeAvailable ? ((c as CommunityRow).lounge_group_id ?? null) : null,
+          role: r.role,
+          source: r.source,
+        };
       })
       .filter(Boolean) as Array<CommunityRow & { role: string; source: string }>;
   }
@@ -581,19 +622,66 @@ export class CommunitiesService {
 
     const loungeGroupId = community.lounge_group_id ?? null;
     const vis = communityPageGroupVisibilities(isMember);
+    const columns = await groupColumns(this.db, GROUP_CHANNEL_COLUMNS);
 
-    const { data: channelData, error: channelError } = await this.db
-      .from('groups')
-      .select(GROUP_CHANNEL_COLUMNS)
-      .eq('community_id', communityId)
-      .neq('is_archived', true)
-      .is('parent_id', null)
-      .in('visibility', vis)
-      .neq('id', loungeGroupId ?? NIL_UUID)
-      .order('member_count', { ascending: false })
-      .limit(CHANNELS_LIMIT);
+    /**
+     * One shape for both community-group queries. `surface` picks the half:
+     * 'board' adds the NULL-or-board filter, 'study_group' the equality one.
+     * Pre-migration neither filter is applied and everything is a board.
+     */
+    const selectCommunityGroups = async (
+      surface: 'board' | 'study_group',
+      withSurfaceFilter: boolean,
+    ) => {
+      // `columns` is resolved at runtime (it grows a column only once the
+      // migration is applied), so the generated select type is intractable.
+      let query = (this.db as any)
+        .from('groups')
+        .select(columns)
+        .eq('community_id', communityId)
+        .neq('is_archived', true)
+        .is('parent_id', null)
+        .in('visibility', vis)
+        .neq('id', loungeGroupId ?? NIL_UUID);
+      if (withSurfaceFilter) {
+        query =
+          surface === 'board'
+            ? query.or(BOARD_SURFACE_FILTER)
+            : query.eq('community_surface', 'study_group');
+      }
+      return query.order('member_count', { ascending: false }).limit(CHANNELS_LIMIT);
+    };
+
+    // The probe can race a migration in either direction, so a query that
+    // still sees 42703 flips the flag and retries once without the filter.
+    let hasSurface = await hasGroupCommunitySurface(this.db);
+    let { data: channelData, error: channelError } = await selectCommunityGroups('board', hasSurface);
+    if (channelError && hasSurface && isMissingColumnError(channelError)) {
+      markGroupCommunitySurfaceMissing();
+      hasSurface = false;
+      ({ data: channelData, error: channelError } = await selectCommunityGroups(
+        'board',
+        false,
+      ));
+    }
     if (channelError) throw channelError;
     const channelRows = (channelData || []) as GroupChannelRow[];
+
+    // Study groups are listed here but opened in Chat. Members only: a guest
+    // of a public community gets boards and nothing else.
+    let studyGroupRows: GroupChannelRow[] = [];
+    if (hasSurface && isMember) {
+      const { data, error } = await selectCommunityGroups('study_group', true);
+      if (error) {
+        if (isMissingColumnError(error)) {
+          markGroupCommunitySurfaceMissing();
+        } else {
+          throw error;
+        }
+      } else {
+        studyGroupRows = (data || []) as GroupChannelRow[];
+      }
+    }
 
     // An archived or deleted lounge reads as "not minted yet"; the next
     // POST /lounge re-mints against the stale pointer's own guard.
@@ -609,7 +697,9 @@ export class CommunitiesService {
       loungeRow = (data as GroupChannelRow | null) ?? null;
     }
 
+    // One membership read covers boards, study groups and the lounge.
     const allIds = channelRows.map((g) => g.id);
+    for (const g of studyGroupRows) allIds.push(g.id);
     if (loungeRow) allIds.push(loungeRow.id);
 
     const joined = new Set<string>();
@@ -659,6 +749,28 @@ export class CommunitiesService {
       };
     };
 
+    /**
+     * A study group is listed here and opened in Chat, so it carries no
+     * unread and no message preview — the same unjoined-privacy rule as a
+     * board, applied to `lastMessageTime` because that is all this row shows.
+     */
+    const toStudyGroup = (g: GroupChannelRow): CommunityStudyGroup => {
+      const member = joined.has(g.id);
+      return {
+        id: g.id,
+        name: g.name,
+        description: g.description ?? null,
+        avatarUrl: g.avatar_url ?? null,
+        memberCount: g.member_count ?? 0,
+        questionCount: g.question_count ?? 0,
+        isMember: member,
+        visibility: g.visibility === 'public' ? 'public' : 'community',
+        lastMessageTime: member ? g.last_message_time ?? null : null,
+      };
+    };
+
+    const boards = sortCommunityChannels(channelRows.map((g) => toChannel(g, false)));
+
     return {
       communityId,
       viewer: {
@@ -670,7 +782,11 @@ export class CommunitiesService {
       },
       lounge: loungeRow ? toChannel(loungeRow, true) : null,
       loungeGroupId,
-      channels: sortCommunityChannels(channelRows.map((g) => toChannel(g, false))),
+      boards,
+      // @deprecated one release only — the identical array to `boards`, kept
+      // so a client shipped before this deploy still renders.
+      channels: boards,
+      studyGroups: sortCommunityStudyGroups(studyGroupRows.map(toStudyGroup)),
       rooms,
       memberCount: community.member_count ?? 0,
       onlineCount,

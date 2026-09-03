@@ -13,6 +13,17 @@ interface Props {
   mine?: string[];
   onToggle?: (emoji: string, added: boolean) => void;
   align?: 'start' | 'end';
+  /**
+   * Override the chip's accessible name. Community boards pass
+   * `reactionAccessibilityLabel` so both clients announce a chip identically
+   * (spec §9); chat keeps the default wording.
+   */
+  labelFor?: (emoji: string, count: number, mine: boolean) => string;
+  /**
+   * 'touch' grows every chip to a 44pt target — required on the board, where a
+   * card is the tap surface. Chat keeps the compact strip.
+   */
+  size?: 'compact' | 'touch';
 }
 
 /**
@@ -24,10 +35,18 @@ interface Props {
  * lantern colour — those compile to nothing here (var()-backed palette; see
  * theme/withAlpha).
  */
-export function MessageReactions({ reactions, mine = [], onToggle, align = 'start' }: Props) {
+export function MessageReactions({
+  reactions,
+  mine = [],
+  onToggle,
+  align = 'start',
+  labelFor,
+  size = 'compact',
+}: Props) {
   const { colors } = useTheme();
   if (totalReactionCount(reactions) === 0) return null;
   const mineSet = new Set(mine);
+  const touch = size === 'touch';
 
   return (
     <View
@@ -44,10 +63,18 @@ export function MessageReactions({ reactions, mine = [], onToggle, align = 'star
             hitSlop={6}
             accessibilityRole="button"
             accessibilityState={{ selected: isMine }}
-            accessibilityLabel={`${emoji} ${count} ${count === 1 ? 'reaction' : 'reactions'}${
-              isMine ? ', including yours' : ''
-            }`}
-            className="flex-row items-center rounded-full border px-2 py-0.5"
+            accessibilityLabel={
+              labelFor
+                ? labelFor(emoji, count, isMine)
+                : `${emoji} ${count} ${count === 1 ? 'reaction' : 'reactions'}${
+                    isMine ? ', including yours' : ''
+                  }`
+            }
+            className={
+              touch
+                ? 'flex-row items-center justify-center rounded-full border px-3 min-h-[44px] min-w-[44px]'
+                : 'flex-row items-center rounded-full border px-2 py-0.5'
+            }
             style={{
               borderColor: isMine ? colors.primary : colors.border,
               backgroundColor: isMine

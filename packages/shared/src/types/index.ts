@@ -292,6 +292,13 @@ export interface Group {
   /** Phase 3 L — discovery. Private by default; only an admin can widen it. */
   visibility?: 'private' | 'community' | 'public';
   communityId?: string | null;
+  /**
+   * Which surface a community group renders as. NULL/undefined = legacy =
+   * 'board'; only 'study_group' opts out. Irrelevant without a communityId.
+   * Never decide the surface from the screen that mounted the group — use
+   * `isCommunityBoard` from `@lantern/shared/network`.
+   */
+  communitySurface?: 'board' | 'study_group' | null;
   tags?: string[];
   memberCount?: number;
   questionCount?: number;
@@ -388,6 +395,12 @@ export interface Message {
   seenByTotal?: number;
   /** Optimistic reconcile key from messages.client_message_id. */
   clientMessageId?: string;
+  /** Board post title (messages.subject), ≤120 chars. Undefined pre-migration. */
+  subject?: string | null;
+  /** Server-side board pin — one per board, enforced by a unique partial index. */
+  pinnedAt?: string | null;
+  /** Who pinned it (profiles.id). */
+  pinnedBy?: string | null;
 }
 
 export type ChatItem = (Group & { chatType: 'group' }) | (DMThread & { chatType: 'dm' });

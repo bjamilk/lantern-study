@@ -35,6 +35,12 @@ interface MessageInputBarProps {
   onClearEdit?: () => void;
   groupId?: string;
   threadId?: string;
+  /** Overrides the idle placeholder (a board composer says "Write a post"). */
+  placeholder?: string;
+  /** Accessible name for the send button (a board says "Post"). */
+  sendLabel?: string;
+  /** Focus the body field on mount — the board composer expands into it (§9). */
+  autoFocus?: boolean;
 }
 
 const MAX_VOICE_MS = 120_000;
@@ -53,6 +59,9 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   onClearEdit,
   groupId,
   threadId,
+  placeholder,
+  sendLabel,
+  autoFocus = false,
 }) => {
   const [inputText, setInputText] = useState('');
   const [isAIThinking, setIsAIThinking] = useState(false);
@@ -66,6 +75,11 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Expanding the board composer moves focus into the body field (spec §9).
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
   const lastTypingRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
@@ -601,7 +615,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                       ? 'AI is thinking...'
                       : isSending
                         ? 'Sending...'
-                        : 'Type a message… (@ to mention)'
+                        : (placeholder ?? 'Type a message… (@ to mention)')
             }
             rows={1}
             disabled={busy || isRecording}
@@ -638,7 +652,9 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             onClick={() => void handleSend()}
             disabled={!inputText.trim() || busy}
             className="flex-shrink-0 p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-background-secondary text-white disabled:text-lantern-text-tertiary rounded-lantern-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:cursor-not-allowed"
-            aria-label={editingMessage ? 'Save message changes' : 'Send message'}
+            aria-label={
+              editingMessage ? 'Save message changes' : (sendLabel ?? 'Send message')
+            }
           >
             <PaperAirplaneIcon className="w-5 h-5" />
           </button>

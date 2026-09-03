@@ -53,6 +53,12 @@ interface GroupInfoModalProps {
   onAddMembers: () => void;
   onChallenge: (member: GroupMember) => void;
   onCreateSubgroup?: () => void;
+  /**
+   * The community lounge is a chat without the study/test apparatus (founder
+   * decision 1, 2026-09-02): challenges are a study affordance and live in a
+   * study group, which opens in Chat.
+   */
+  hideStudyActions?: boolean;
   onAvatarUpdated?: (groupId: string, avatarUrl: string) => void;
 }
 
@@ -71,6 +77,7 @@ export default function GroupInfoModal({
   onAddMembers,
   onChallenge,
   onCreateSubgroup,
+  hideStudyActions,
   onAvatarUpdated,
 }: GroupInfoModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('details');
@@ -471,15 +478,17 @@ export default function GroupInfoModal({
           {member.userId !== currentUserId && (
             <View style={styles.memberActions}>
               {/* Challenge Button */}
-              <TouchableOpacity
-                style={styles.actionIcon}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={`Challenge ${member.name}`}
-                onPress={() => onChallenge(member)}
-              >
-                <Ionicons name="game-controller" size={18} color="#ef4444" />
-              </TouchableOpacity>
+              {hideStudyActions ? null : (
+                <TouchableOpacity
+                  style={styles.actionIcon}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Challenge ${member.name}`}
+                  onPress={() => onChallenge(member)}
+                >
+                  <Ionicons name="game-controller" size={18} color="#ef4444" />
+                </TouchableOpacity>
+              )}
 
               {/* Admin Actions */}
               {isOwner && member.role !== 'owner' && (

@@ -15,10 +15,10 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   COMMUNITY_COPY,
   COMMUNITY_LOUNGE_CHANNEL_NAME,
+  boardDisplayName,
+  boardSubtitle,
   buildCommunityChannelRows,
   canAccessDiscoverHub,
-  channelDisplayName,
-  channelSubtitle,
   communityHeaderLine,
   communityMembershipAction,
   communityOnlineCount,
@@ -27,6 +27,7 @@ import {
   shouldSubscribeCommunityPresence,
   type CommunityChannel,
   type CommunityChannelRow,
+  type CommunityStudyGroup,
   type PresenceSnapshot,
 } from '@lantern/shared/network';
 import {
@@ -45,7 +46,7 @@ import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { ActionSheet, BackButton, type ActionSheetItem } from '../../components/ui';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
-import { ChannelRow, RoomRow } from '../../components/community';
+import { ChannelRow, RoomRow, StudyGroupRow } from '../../components/community';
 import { toChannelOverlayGroups } from '../../utils/communityOverlay';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
 
@@ -67,10 +68,16 @@ const KIND_RING: Record<string, string> = {
 const ROOM_TICK_MS = 60_000;
 
 /**
- * One community as a SERVER (spec §4.3): `# lounge`, TEXT CHANNELS, STUDY
- * ROOMS and MEMBERS, all opened on THIS stack (founder rule §0a) — a channel
- * pushes CommunityChannel, a room pushes StudyRoom, the roster pushes
- * CommunityMembers; back always returns here.
+ * One community as a SERVER: the `General` chat, BOARDS, STUDY GROUPS, STUDY
+ * ROOMS and MEMBERS, in the one order `buildCommunityChannelRows` emits (§8
+ * parity rule 2 — this screen never sorts, filters or inserts a row of its
+ * own).
+ *
+ * Everything opens on THIS stack (founder rule §0a) — a board pushes
+ * CommunityChannel, a room pushes StudyRoom, the roster pushes
+ * CommunityMembers, and back always returns here. The ONE exception is a study
+ * group, which lives in Chat by design (§7) and therefore changes tab: the
+ * move is shown, not inferred.
  */
 function CommunityServer({
   navigation,
@@ -214,14 +221,17 @@ function CommunityServer({
   };
 
   const openChannel = useCallback(
-    (groupId: string, groupName: string) => {
+    (groupId: string, groupName: string, isLounge = false) => {
       if (!community) return;
+      // `isLounge` is what tells CommunityChannel to render the live chat
+      // rather than a board, without waiting for the detail to resolve.
       navigation.navigate('CommunityChannel', {
         groupId,
         groupName,
         communitySlug: community.slug,
         communityName: community.name,
         communityId: community.id,
+        isLounge,
       });
     },
     [community, navigation]
@@ -232,7 +242,7 @@ function CommunityServer({
     setLoungeError(null);
     const loungeId = payload?.loungeGroupId ?? community.lounge_group_id;
     if (loungeId && groups.some((g) => g.id === loungeId)) {
-      openChannel(loungeId, payload?.lounge?.name ?? community.name);
+      openChannel(loungeId, payload?.lounge?.name ?? community.name, true);
       return;
     }
     setLoungeBusy(true);
@@ -241,7 +251,7 @@ function CommunityServer({
       const lounge = await openCommunityLounge(community.id);
       if (userId) await fetchGroups(userId).catch(() => undefined);
       invalidate(community.id);
-      openChannel(lounge.groupId, lounge.name);
+      openChannel(lounge.groupId, lounge.name, true);
     } catch (err) {
       const status = (err as { status?: number } | null)?.status;
       setLoungeError(
@@ -278,10 +288,10 @@ function CommunityServer({
       return;
     }
     if (!community.isMember) {
-      Alert.alert(channelDisplayName(channel), COMMUNITY_COPY.joinToOpen);
+      Alert.alert(boardDisplayName(channel), COMMUNITY_COPY.joinToOpen);
       return;
     }
-    Alert.alert(`Join ${channelDisplayName(channel)}?`, channelSubtitle(channel), [
+    Alert.alert(`Join ${boardDisplayName(channel)}?`, boardSubtitle(channel, now), [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Join', onPress: () => void joinThenOpen(channel) },
     ]);
@@ -296,13 +306,58 @@ function CommunityServer({
     });
   };
 
-  const createChannel = () => {
+  const createBoard = () => {
     if (!community) return;
     navigation.navigate('CreateGroup', {
       communityId: community.id,
       communityName: community.name,
       communitySlug: community.slug,
+      communitySurface: 'board',
     });
+  };
+
+  /**
+   * §7 entry point 1. A study group is a `groups` row with
+   * `community_surface = 'study_group'`: it keeps the full study surface, opens
+   * in Chat, and stays listed here so members can find and join it.
+   */
+  const startStudyGroup = () => {
+    if (!community) return;
+    navigation.navigate('CreateGroup', {
+      communityId: community.id,
+      communityName: community.name,
+      communitySlug: community.slug,
+      communitySurface: 'study_group',
+    });
+  };
+
+  /** A study group row taps into CHAT — never into a board. */
+  const openStudyGroup = (group: CommunityStudyGroup) => {
+    if (!community) return;
+    navigation.getParent?.()?.navigate('ChatTab', {
+      screen: 'GroupChat',
+      params: {
+        groupId: group.id,
+        groupName: group.name,
+        communitySlug: community.slug,
+        communityName: community.name,
+      },
+    });
+  };
+
+  const joinThenOpenStudyGroup = async (group: CommunityStudyGroup) => {
+    if (!community || joiningId) return;
+    setJoiningId(group.id);
+    try {
+      await joinDiscoverableGroup(group.id);
+      if (userId) await fetchGroups(userId).catch(() => undefined);
+      invalidate(community.id);
+      openStudyGroup(group);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join this study group');
+    } finally {
+      setJoiningId(null);
+    }
   };
 
   const startRoom = () => {
@@ -331,7 +386,8 @@ function CommunityServer({
       items.push({ label: COMMUNITY_COPY.invite, icon: 'link-outline', onPress: () => void shareInvite() });
     }
     items.push(
-      { label: COMMUNITY_COPY.createChannel, icon: 'add-circle-outline', onPress: createChannel },
+      { label: COMMUNITY_COPY.createBoard, icon: 'add-circle-outline', onPress: createBoard },
+      { label: COMMUNITY_COPY.startStudyGroup, icon: 'people-outline', onPress: startStudyGroup },
       { label: COMMUNITY_COPY.startRoom, icon: 'volume-medium-outline', onPress: startRoom }
     );
     return items;
@@ -351,10 +407,11 @@ function CommunityServer({
         return (
           <View>
             <ChannelRow
-              displayName={channelDisplayName({ isLounge: true, name: COMMUNITY_LOUNGE_CHANNEL_NAME })}
-              subtitle={lounge ? channelSubtitle(lounge) : COMMUNITY_COPY.loungeSubtitle}
+              displayName={boardDisplayName({ isLounge: true, name: COMMUNITY_LOUNGE_CHANNEL_NAME })}
+              subtitle={lounge ? boardSubtitle(lounge, now) : COMMUNITY_COPY.loungeSubtitle}
               unread={item.unread}
               joined
+              chat
               busy={loungeBusy}
               onPress={() => void openLounge()}
             />
@@ -372,13 +429,21 @@ function CommunityServer({
             </Text>
             {item.action ? (
               <Pressable
-                onPress={item.action === 'create-channel' ? createChannel : startRoom}
+                onPress={
+                  item.action === 'create-board'
+                    ? createBoard
+                    : item.action === 'start-study-group'
+                      ? startStudyGroup
+                      : startRoom
+                }
                 hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel={
-                  item.action === 'create-channel'
-                    ? COMMUNITY_COPY.createChannel
-                    : COMMUNITY_COPY.startRoom
+                  item.action === 'create-board'
+                    ? COMMUNITY_COPY.createBoard
+                    : item.action === 'start-study-group'
+                      ? COMMUNITY_COPY.startStudyGroup
+                      : COMMUNITY_COPY.startRoom
                 }
                 className="min-h-[44px] min-w-[44px] items-center justify-center -mr-3"
               >
@@ -390,13 +455,25 @@ function CommunityServer({
       case 'channel':
         return (
           <ChannelRow
-            displayName={channelDisplayName(item.channel)}
-            subtitle={channelSubtitle(item.channel)}
+            displayName={boardDisplayName(item.channel)}
+            subtitle={boardSubtitle(item.channel, now)}
             unread={item.unread}
             visibility={item.channel.visibility}
             joined={item.channel.isMember}
             busy={joiningId === item.channel.id}
             onPress={() => onChannelPress(item.channel)}
+          />
+        );
+      case 'study-group':
+        return (
+          <StudyGroupRow
+            group={item.group}
+            busy={joiningId === item.group.id}
+            onPress={() =>
+              item.group.isMember || groups.some((g) => g.id === item.group.id)
+                ? openStudyGroup(item.group)
+                : void joinThenOpenStudyGroup(item.group)
+            }
           />
         );
       case 'room':
@@ -441,6 +518,8 @@ function CommunityServer({
         return `section-${item.title}`;
       case 'channel':
         return `channel-${item.channel.id}`;
+      case 'study-group':
+        return `study-group-${item.group.id}`;
       case 'room':
         return `room-${item.room.id}`;
       case 'members':

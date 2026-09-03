@@ -91,6 +91,15 @@ export interface Group {
    */
   visibility?: 'private' | 'community' | 'public';
   communityId?: string | null;
+  /**
+   * Which surface this group renders as inside its community
+   * (20260903120000). NULL = legacy = board; 'study_group' is listed on the
+   * community page but opens in Chat with the full study surface. Absent
+   * (undefined) until the migration is applied. Irrelevant without a
+   * communityId, and the community lounge is deliberately NOT marked — it is
+   * derived from communities.lounge_group_id and stays a live chat.
+   */
+  communitySurface?: 'board' | 'study_group' | null;
   tags?: string[];
   memberCount?: number;
   questionCount?: number;
@@ -140,6 +149,11 @@ export interface Message {
   receiptStatus?: 'sent' | 'read';
   seenByCount?: number;
   seenByTotal?: number;
+  /** Board post title, <=120 chars (20260903120000). Absent pre-migration. */
+  subject?: string | null;
+  /** The board's server-side pin — one per group, enforced by a unique index. */
+  pinnedAt?: string | null;
+  pinnedBy?: string | null;
 }
 
 export interface TestResult {

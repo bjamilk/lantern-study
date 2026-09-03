@@ -39,15 +39,44 @@ export interface CommunityChannel {
   lastMessageTime: string | null;
 }
 
+/**
+ * A study group listed on a community page but living in Chat. It is a
+ * `groups` row with `community_surface = 'study_group'`: the full study
+ * surface (questions, tests, games, offline bundles, sub-groups) stays intact,
+ * and it never renders as a board.
+ */
+export interface CommunityStudyGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  avatarUrl: string | null;
+  memberCount: number;
+  questionCount: number;
+  isMember: boolean;
+  visibility: 'community' | 'public';
+  lastMessageTime: string | null;
+}
+
 export interface CommunityChannels {
   communityId: string;
   viewer: { isMember: boolean; source: 'auto' | 'joined' | null; role: CommunityRole | null };
-  /** null until minted (or viewer is not a member). */
+  /**
+   * The community's ONE live chat, rendered as `General` (founder decision 1:
+   * the lounge stays a chat, it is not a board). null until minted, or when
+   * the viewer is not a member.
+   */
   lounge: CommunityChannel | null;
   /** Pointer even when `lounge` is null for non-members. */
   loungeGroupId: string | null;
-  /** Top-level (parent_id IS NULL), sorted by sortCommunityChannels. */
+  /**
+   * `community_surface IS NULL OR 'board'`, top-level (parent_id IS NULL),
+   * sorted by sortCommunityChannels. The lounge is never in this array.
+   */
+  boards: CommunityChannel[];
+  /** @deprecated One release only — the identical array to `boards`. */
   channels: CommunityChannel[];
+  /** `community_surface = 'study_group'`. Listed here, opened in Chat. [] for non-members. */
+  studyGroups: CommunityStudyGroup[];
   /** [] for non-members. */
   rooms: StudyRoomListItem[];
   memberCount: number;
@@ -81,34 +110,78 @@ export const COMMUNITY_PRESENCE_CHANNEL_PREFIX = 'community:';
 /** Presence sync fans out to every subscriber; above this the API count is enough. */
 export const COMMUNITY_PRESENCE_MAX_MEMBERS = 1500;
 export const COMMUNITY_MEMBERS_PAGE = 30;
-/** Rendered "# lounge". */
-export const COMMUNITY_LOUNGE_CHANNEL_NAME = 'lounge';
+/**
+ * The community's one live chat, rendered as `General` and WITHOUT the `#`
+ * glyph the boards use, so the chat room reads differently from the boards at
+ * a glance (founder decision 4, 2026-09-02).
+ */
+export const COMMUNITY_LOUNGE_CHANNEL_NAME = 'General';
+
+const EMPTY_BOARDS_MEMBER =
+  'No boards yet. Create the first one — a topic, a past-questions drive, exam week.';
+const EMPTY_BOARDS_GUEST = 'Join the community to see its boards.';
+const SECTION_BOARDS = 'BOARDS';
+const CREATE_BOARD = 'New board';
+const newBoardTitle = (name: string): string => `New board in ${name}`;
 
 export const COMMUNITY_COPY = {
   loungeSubtitle: 'Everyone in this community',
-  sectionText: 'TEXT CHANNELS',
+  sectionBoards: SECTION_BOARDS,
+  sectionStudyGroups: 'STUDY GROUPS',
   sectionRooms: 'STUDY ROOMS',
   sectionMembers: 'MEMBERS',
-  createChannel: 'New channel',
+  createBoard: CREATE_BOARD,
+  startStudyGroup: 'Start a study group',
   startRoom: 'Start a room',
   invite: 'Copy invite link',
   inviteCopied: 'Link copied',
   tapToJoin: 'Tap to join',
   joinToOpen: 'Join the community to open',
-  emptyChannelsMember:
-    'No channels yet. Create the first one — a topic, a past-questions drive, exam week.',
-  emptyChannelsGuest: 'Join the community to see its channels.',
+  emptyBoardsMember: EMPTY_BOARDS_MEMBER,
+  emptyBoardsGuest: EMPTY_BOARDS_GUEST,
+  emptyStudyGroups:
+    'No study groups yet. Start one — it opens in Chat with questions, tests and games.',
   emptyRooms: 'No open rooms. Start one — it closes 24 hours after it opens.',
   joinToSeeMembers: 'Join to see who is here.',
   online: (n: number) => `Online — ${n}`,
   offline: (n: number) => `Offline — ${n}`,
   inCommunity: (name: string) => `in ${name}`,
-  newChannelTitle: (name: string) => `New channel in ${name}`,
+  newBoardTitle,
+  newStudyGroupTitle: (name: string) => `Start a study group in ${name}`,
+  /**
+   * The no-silent-disappearance contract in copy: the only place a member is
+   * told where the study apparatus went. `{community}` is substituted by the
+   * client with the community's name.
+   */
+  studyGroupsLiveInChat:
+    'Study groups live in Chat. Questions, tests, games and challenges happen there. This one stays listed in {community} so members can find and join it.',
+  createdInChat: (name: string) => `${name} is in your Chat · listed in this community`,
+  opensInChat: 'Opens in Chat',
   listedIn: (name: string) => `Listed in ${name} · members can find and join it`,
   startRoomIn: (name: string) => `In ${name}`,
   loungeUnavailable: 'Community chat is not available yet',
   membersOnly: 'Members only',
+
+  // -------------------------------------------------------------------------
+  // Deprecated keys — one release only, so no call site breaks mid-refactor.
+  // They carry the NEW board vocabulary, not the old channel wording.
+  // -------------------------------------------------------------------------
+  /** @deprecated Use `sectionBoards`. */
+  sectionText: SECTION_BOARDS,
+  /** @deprecated Use `createBoard`. */
+  createChannel: CREATE_BOARD,
+  /** @deprecated Use `emptyBoardsMember`. */
+  emptyChannelsMember: EMPTY_BOARDS_MEMBER,
+  /** @deprecated Use `emptyBoardsGuest`. */
+  emptyChannelsGuest: EMPTY_BOARDS_GUEST,
+  /** @deprecated Use `newBoardTitle`. */
+  newChannelTitle: newBoardTitle,
 } as const;
+
+/** Substitute `{community}` in `studyGroupsLiveInChat`. */
+export function studyGroupsLiveInChatCopy(communityName: string): string {
+  return COMMUNITY_COPY.studyGroupsLiveInChat.replace('{community}', communityName);
+}
 
 /** `community:${id}` — one Supabase Presence topic per open community. */
 export function communityPresenceChannel(communityId: string): string {
@@ -156,21 +229,6 @@ export function communityHeaderLine(kind: string, memberCount: number, onlineCou
       ? ` · ${Math.floor(onlineCount).toLocaleString()} online`
       : '';
   return `${base}${online}`;
-}
-
-/** '# lounge' | `# ${name}` */
-export function channelDisplayName(ch: Pick<CommunityChannel, 'isLounge' | 'name'>): string {
-  return ch.isLounge ? `# ${COMMUNITY_LOUNGE_CHANNEL_NAME}` : `# ${ch.name}`;
-}
-
-/**
- * lounge → loungeSubtitle; joined → last message (or member count);
- * unjoined → member count + "Tap to join".
- */
-export function channelSubtitle(ch: CommunityChannel): string {
-  if (ch.isLounge) return COMMUNITY_COPY.loungeSubtitle;
-  if (ch.isMember) return ch.lastMessage ?? memberCountLabel(ch.memberCount);
-  return `${memberCountLabel(ch.memberCount)} · ${COMMUNITY_COPY.tapToJoin}`;
 }
 
 /** "3 in room · Closes in 23h · You are in" */
@@ -230,21 +288,36 @@ export function decorateChannels(channels: CommunityChannel[], groups: Group[]):
   });
 }
 
+export type CommunityChannelSectionAction = 'create-board' | 'start-study-group' | 'start-room';
+
 export type CommunityChannelRow =
   | { kind: 'lounge'; channel: CommunityChannel | null; unread: number }
-  | { kind: 'section'; title: string; action?: 'create-channel' | 'start-room' }
+  | { kind: 'section'; title: string; action?: CommunityChannelSectionAction }
   | { kind: 'channel'; channel: CommunityChannel; unread: number }
+  | { kind: 'study-group'; group: CommunityStudyGroup }
   | { kind: 'room'; room: StudyRoomListItem }
   | { kind: 'empty'; text: string }
   | { kind: 'members'; count: number };
 
 /**
- * The row model both clients render, in the one shared order:
- * lounge → TEXT CHANNELS → STUDY ROOMS → MEMBERS.
+ * The row model both clients render, in the one shared order (§8 parity rule
+ * 2 — neither client sorts, filters or inserts rows of its own):
  *
- * Non-member: [section TEXT CHANNELS (no action)] + public channels (or the
- * guest empty copy). Member: lounge row, TEXT CHANNELS (create-channel),
- * channels | empty, STUDY ROOMS (start-room), rooms | empty, members row.
+ *   lounge                              (rendered as the "General" chat)
+ *   section BOARDS        create-board
+ *   boards | empty(emptyBoardsMember)
+ *   section STUDY GROUPS  start-study-group
+ *   study-group rows | empty(emptyStudyGroups)
+ *   section STUDY ROOMS   start-room
+ *   rooms | empty(emptyRooms)
+ *   members
+ *
+ * Guest of a public community: `section BOARDS` with no action, then the
+ * public boards (or the guest empty copy). No study groups, no rooms, no
+ * roster, no previews.
+ *
+ * `payload.boards` falls back to the deprecated `payload.channels` so a client
+ * shipped ahead of the API still renders.
  */
 export function buildCommunityChannelRows(
   payload: CommunityChannels,
@@ -252,15 +325,16 @@ export function buildCommunityChannelRows(
   now: number
 ): CommunityChannelRow[] {
   const rows: CommunityChannelRow[] = [];
-  const channels = sortCommunityChannels(decorateChannels(payload.channels, groups));
+  const source = payload.boards ?? payload.channels ?? [];
+  const boards = sortCommunityChannels(decorateChannels(source, groups));
 
   if (!payload.viewer.isMember) {
-    rows.push({ kind: 'section', title: COMMUNITY_COPY.sectionText });
-    const visible = channels.filter((ch) => ch.visibility === 'public');
+    rows.push({ kind: 'section', title: COMMUNITY_COPY.sectionBoards });
+    const visible = boards.filter((b) => b.visibility === 'public');
     if (visible.length === 0) {
-      rows.push({ kind: 'empty', text: COMMUNITY_COPY.emptyChannelsGuest });
+      rows.push({ kind: 'empty', text: COMMUNITY_COPY.emptyBoardsGuest });
     } else {
-      for (const ch of visible) rows.push({ kind: 'channel', channel: ch, unread: 0 });
+      for (const b of visible) rows.push({ kind: 'channel', channel: b, unread: 0 });
     }
     return rows;
   }
@@ -270,13 +344,25 @@ export function buildCommunityChannelRows(
     : null;
   rows.push({ kind: 'lounge', channel: lounge, unread: lounge?.unreadCount ?? 0 });
 
-  rows.push({ kind: 'section', title: COMMUNITY_COPY.sectionText, action: 'create-channel' });
-  if (channels.length === 0) {
-    rows.push({ kind: 'empty', text: COMMUNITY_COPY.emptyChannelsMember });
+  rows.push({ kind: 'section', title: COMMUNITY_COPY.sectionBoards, action: 'create-board' });
+  if (boards.length === 0) {
+    rows.push({ kind: 'empty', text: COMMUNITY_COPY.emptyBoardsMember });
   } else {
-    for (const ch of channels) {
-      rows.push({ kind: 'channel', channel: ch, unread: ch.isMember ? ch.unreadCount : 0 });
+    for (const b of boards) {
+      rows.push({ kind: 'channel', channel: b, unread: b.isMember ? b.unreadCount : 0 });
     }
+  }
+
+  rows.push({
+    kind: 'section',
+    title: COMMUNITY_COPY.sectionStudyGroups,
+    action: 'start-study-group',
+  });
+  const studyGroups = sortCommunityStudyGroups(payload.studyGroups ?? []);
+  if (studyGroups.length === 0) {
+    rows.push({ kind: 'empty', text: COMMUNITY_COPY.emptyStudyGroups });
+  } else {
+    for (const group of studyGroups) rows.push({ kind: 'study-group', group });
   }
 
   rows.push({ kind: 'section', title: COMMUNITY_COPY.sectionRooms, action: 'start-room' });
@@ -289,6 +375,24 @@ export function buildCommunityChannelRows(
 
   rows.push({ kind: 'members', count: payload.memberCount });
   return rows;
+}
+
+/**
+ * Joined study groups first (most recently active, nulls last, then name),
+ * then unjoined by member count desc then name — the same shape as
+ * `sortCommunityChannels`, so the two sections read consistently.
+ */
+export function sortCommunityStudyGroups(groups: CommunityStudyGroup[]): CommunityStudyGroup[] {
+  return [...groups].sort((a, b) => {
+    if (a.isMember !== b.isMember) return a.isMember ? -1 : 1;
+    if (a.isMember) {
+      const byTime = timeDesc(a.lastMessageTime, b.lastMessageTime);
+      if (byTime !== 0) return byTime;
+      return a.name.localeCompare(b.name);
+    }
+    if (a.memberCount !== b.memberCount) return b.memberCount - a.memberCount;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 /** hidden → never online; else live presence OR the stored 5-minute window. */

@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
 import { chatMessagePreview, resolveAvatarSrc } from '@lantern/shared/utils';
+import { isCommunityBoardGroupIn } from '@lantern/shared/network';
+import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type Group } from '../../stores/groupStore';
 import {
@@ -313,6 +315,30 @@ export function GroupsScreen({ navigation }: Props) {
   const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
   const [contactsLoading, setContactsLoading] = useState(false);
 
+  // §4.5 — a community BOARD is not a chat and must not appear in the chat
+  // list. Its group row is still in GET /groups, so the filter has to be here,
+  // beside the archived / non-top-level ones. The community's lounge and its
+  // study groups stay: both are genuinely chats.
+  const detailBySlug = useCommunityStore((s) => s.detailBySlug);
+  const channelsById = useCommunityStore((s) => s.channelsById);
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
+  const loadMyCommunities = useCommunityStore((s) => s.loadMine);
+  // The membership list carries each community's lounge pointer, so the chat
+  // list can tell a lounge from a board without the user having opened the
+  // community page. Until it lands, `knownLounges` reports the community as
+  // unresolved and every one of its groups stays a chat — never the reverse.
+  useEffect(() => {
+    void loadMyCommunities().catch(() => undefined);
+  }, [loadMyCommunities]);
+  const knownLounges = useMemo(
+    () => collectKnownLounges(detailBySlug, channelsById, myCommunities),
+    [detailBySlug, channelsById, myCommunities]
+  );
+  const isBoardGroup = useCallback(
+    (group: Group) => isCommunityBoardGroupIn(group, knownLounges),
+    [knownLounges]
+  );
+
   const subGroupsMap = useMemo(() => {
     const map: Record<string, Group[]> = {};
     for (const g of groups) {
@@ -408,6 +434,7 @@ export function GroupsScreen({ navigation }: Props) {
     };
 
     for (const group of getTopLevelGroups()) {
+      if (isBoardGroup(group)) continue;
       appendGroupEntries(group, 0);
     }
 
@@ -439,7 +466,7 @@ export function GroupsScreen({ navigation }: Props) {
     // of the list, right below the search bar.
     const archivedItems: ListItem[] = [
       ...groups
-        .filter((g) => g.isArchived)
+        .filter((g) => g.isArchived && !isBoardGroup(g))
         .map((group): ListItem => ({
           kind: 'group',
           group,
@@ -542,6 +569,7 @@ export function GroupsScreen({ navigation }: Props) {
     dmThreads,
     groups,
     getTopLevelGroups,
+    isBoardGroup,
     subGroupsMap,
     expandedParentGroups,
     archivedExpanded,

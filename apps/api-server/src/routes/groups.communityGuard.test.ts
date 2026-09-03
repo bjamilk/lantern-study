@@ -37,6 +37,10 @@ const isActiveMember = jest.fn<Promise<boolean>, [string, string]>();
 jest.mock('../services/communities', () => ({
   getCommunitiesService: () => ({ isActiveMember }),
 }));
+const hasGroupCommunitySurface = jest.fn(async () => true);
+jest.mock('../services/schemaCapabilities', () => ({
+  hasGroupCommunitySurface: (...args: unknown[]) => (hasGroupCommunitySurface as any)(...args),
+}));
 
 import express from 'express';
 import http from 'http';
@@ -50,15 +54,24 @@ const createGroup = jest.fn(async (data: any) => ({
   name: data.name,
   pendingInviteUserIds: [] as string[],
 }));
-const getGroupById = jest.fn(async () => ({
+const getGroupById = jest.fn(async (..._args: any[]): Promise<any> => ({
   id: GROUP,
   name: 'Exam week',
   adminIds: [USER],
   permissions: {},
   visibility: 'community',
   communityId: COMMUNITY,
+  communitySurface: 'study_group',
 }));
 const updateGroup = jest.fn(async (id: string, data: any) => ({ id, ...data }));
+const addGroupMember = jest.fn(async () => undefined);
+const addGroupMembersBatch = jest.fn(async (_g: string, ids: string[]) => ({
+  invited: ids,
+  alreadyMembers: [] as string[],
+  alreadyPending: [] as string[],
+}));
+const getUserById = jest.fn(async () => ({ id: USER, name: 'Ada', username: 'ada' }));
+const createNotification = jest.fn(async () => undefined);
 
 describe('community guard on group create/update', () => {
   let server: http.Server;
@@ -76,7 +89,16 @@ describe('community guard on group create/update', () => {
   beforeAll(async () => {
     const mod = require('./groups');
     mod.initializeGroupRoutes(
-      { createGroup, getGroupById, updateGroup } as any,
+      {
+        createGroup,
+        getGroupById,
+        updateGroup,
+        addGroupMember,
+        addGroupMembersBatch,
+        getUserById,
+        createNotification,
+        getClient: () => ({}),
+      } as any,
       {
         get: async () => null,
         set: async () => undefined,
@@ -103,6 +125,18 @@ describe('community guard on group create/update', () => {
     isActiveMember.mockReset();
     createGroup.mockClear();
     updateGroup.mockClear();
+    addGroupMember.mockClear();
+    addGroupMembersBatch.mockClear();
+    hasGroupCommunitySurface.mockClear().mockResolvedValue(true);
+    getGroupById.mockClear().mockResolvedValue({
+      id: GROUP,
+      name: 'Exam week',
+      adminIds: [USER],
+      permissions: {},
+      visibility: 'community',
+      communityId: COMMUNITY,
+      communitySurface: 'study_group',
+    } as any);
   });
 
   describe('POST /groups', () => {
@@ -183,6 +217,197 @@ describe('community guard on group create/update', () => {
       const res = await call('PUT', `/api/v1/groups/${GROUP}`, { visibility: 'private' });
       expect(res.status).toBe(200);
       expect(isActiveMember).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Spec §3.7. `communitySurface` decides board vs study group, and it is the
+   * ONLY thing that does — never which screen created the group. Phase 1 does
+   * not gate 'board' on a role: community_members.role is display-only, there
+   * is no promote/demote endpoint, and auto-derived campus communities have
+   * created_by = NULL, so a role gate would make board creation impossible
+   * there.
+   */
+  describe('POST /groups communitySurface', () => {
+    it('defaults to board when a communityId is present', async () => {
+      isActiveMember.mockResolvedValue(true);
+      const res = await call('POST', '/api/v1/groups', {
+        name: 'Exam week',
+        visibility: 'community',
+        communityId: COMMUNITY,
+      });
+      expect(res.status).toBe(201);
+      expect(createGroup.mock.calls[0][0]).toMatchObject({ communitySurface: 'board' });
+    });
+
+    it('passes study_group through, and any member may create either', async () => {
+      isActiveMember.mockResolvedValue(true);
+      const res = await call('POST', '/api/v1/groups', {
+        name: 'Pharmacology crew',
+        visibility: 'community',
+        communityId: COMMUNITY,
+        communitySurface: 'study_group',
+      });
+      expect(res.status).toBe(201);
+      expect(createGroup.mock.calls[0][0]).toMatchObject({ communitySurface: 'study_group' });
+    });
+
+    it('ignores the surface entirely without a communityId', async () => {
+      const res = await call('POST', '/api/v1/groups', {
+        name: 'Just us',
+        communitySurface: 'study_group',
+      });
+      expect(res.status).toBe(201);
+      expect(createGroup.mock.calls[0][0].communitySurface).toBeUndefined();
+      expect(hasGroupCommunitySurface).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown surface', async () => {
+      const res = await call('POST', '/api/v1/groups', {
+        name: 'Exam week',
+        communityId: COMMUNITY,
+        communitySurface: 'lounge_chat',
+      });
+      expect(res.status).toBe(400);
+      expect(createGroup).not.toHaveBeenCalled();
+    });
+
+    it('503s study_group pre-migration rather than silently creating a board', async () => {
+      isActiveMember.mockResolvedValue(true);
+      hasGroupCommunitySurface.mockResolvedValue(false);
+      const res = await call('POST', '/api/v1/groups', {
+        name: 'Pharmacology crew',
+        visibility: 'community',
+        communityId: COMMUNITY,
+        communitySurface: 'study_group',
+      });
+      expect(res.status).toBe(503);
+      expect(res.json).toEqual({ success: false, error: 'Study groups are not available yet' });
+      expect(createGroup).not.toHaveBeenCalled();
+    });
+
+    it('still creates a board pre-migration — NULL already means board', async () => {
+      isActiveMember.mockResolvedValue(true);
+      hasGroupCommunitySurface.mockResolvedValue(false);
+      const res = await call('POST', '/api/v1/groups', {
+        name: 'Exam week',
+        visibility: 'community',
+        communityId: COMMUNITY,
+      });
+      expect(res.status).toBe(201);
+      expect(createGroup).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * Spec §3.8 — a live hole, not a new rule. Both member-add endpoints checked
+   * GROUP admin only, so a channel admin could pull people who are not in the
+   * community straight into one of its channels.
+   */
+  describe('adding members to a community group', () => {
+    const OUTSIDER = '99999999-9999-4999-8999-999999999999';
+
+    it('batch: 403s a target who is not in the community, and adds nobody', async () => {
+      isActiveMember.mockResolvedValue(false);
+      const res = await call('POST', `/api/v1/groups/${GROUP}/members/batch`, {
+        userIds: [OUTSIDER],
+      });
+      expect(res.status).toBe(403);
+      expect(res.json).toEqual({
+        success: false,
+        error: 'They need to join this community first',
+      });
+      expect(isActiveMember).toHaveBeenCalledWith(OUTSIDER, COMMUNITY);
+      expect(addGroupMembersBatch).not.toHaveBeenCalled();
+    });
+
+    it('batch: 403s ANY add into a board, even for a community member', async () => {
+      isActiveMember.mockResolvedValue(true);
+      getGroupById.mockResolvedValue({
+        id: GROUP,
+        name: 'exam-week',
+        adminIds: [USER],
+        permissions: {},
+        visibility: 'community',
+        communityId: COMMUNITY,
+        communitySurface: 'board',
+      });
+      const res = await call('POST', `/api/v1/groups/${GROUP}/members/batch`, {
+        userIds: [OUTSIDER],
+      });
+      expect(res.status).toBe(403);
+      expect(res.json).toEqual({
+        success: false,
+        error: 'Members join the community, then the board',
+      });
+      expect(addGroupMembersBatch).not.toHaveBeenCalled();
+    });
+
+    it('batch: a legacy community group with a NULL surface is a board too', async () => {
+      isActiveMember.mockResolvedValue(true);
+      getGroupById.mockResolvedValue({
+        id: GROUP,
+        name: 'exam-week',
+        adminIds: [USER],
+        permissions: {},
+        visibility: 'community',
+        communityId: COMMUNITY,
+        communitySurface: null,
+      });
+      const res = await call('POST', `/api/v1/groups/${GROUP}/members/batch`, {
+        userIds: [OUTSIDER],
+      });
+      expect(res.status).toBe(403);
+      expect(res.json.error).toBe('Members join the community, then the board');
+    });
+
+    it('batch: a study group takes members who are already in the community', async () => {
+      isActiveMember.mockResolvedValue(true);
+      const res = await call('POST', `/api/v1/groups/${GROUP}/members/batch`, {
+        userIds: [OUTSIDER],
+      });
+      expect(res.status).toBe(200);
+      expect(addGroupMembersBatch).toHaveBeenCalledWith(GROUP, [OUTSIDER]);
+    });
+
+    it('batch: a private group is unaffected and never consults the community', async () => {
+      getGroupById.mockResolvedValue({
+        id: GROUP,
+        name: 'Just us',
+        adminIds: [USER],
+        permissions: {},
+        visibility: 'private',
+        communityId: null,
+        communitySurface: null,
+      });
+      const res = await call('POST', `/api/v1/groups/${GROUP}/members/batch`, {
+        userIds: [OUTSIDER],
+      });
+      expect(res.status).toBe(200);
+      expect(isActiveMember).not.toHaveBeenCalled();
+      expect(addGroupMembersBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('single add: the same two rules apply', async () => {
+      isActiveMember.mockResolvedValue(false);
+      const barred = await call('POST', `/api/v1/groups/${GROUP}/members`, { userId: OUTSIDER });
+      expect(barred.status).toBe(403);
+      expect(barred.json.error).toBe('They need to join this community first');
+
+      isActiveMember.mockResolvedValue(true);
+      getGroupById.mockResolvedValue({
+        id: GROUP,
+        name: 'exam-week',
+        adminIds: [USER],
+        permissions: {},
+        visibility: 'community',
+        communityId: COMMUNITY,
+        communitySurface: 'board',
+      });
+      const board = await call('POST', `/api/v1/groups/${GROUP}/members`, { userId: OUTSIDER });
+      expect(board.status).toBe(403);
+      expect(board.json.error).toBe('Members join the community, then the board');
+      expect(addGroupMember).not.toHaveBeenCalled();
     });
   });
 });

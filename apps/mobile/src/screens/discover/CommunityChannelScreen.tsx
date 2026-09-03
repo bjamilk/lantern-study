@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { COMMUNITY_COPY, canAccessDiscoverHub } from '@lantern/shared/network';
-import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
-import { useCommunityStore } from '../../stores/communityStore';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, SafeAreaView } from 'react-native';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
+import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { GroupChatView, type GroupChatNavigation } from '../groups/GroupChatScreen';
-import { DiscoverComingSoon } from './DiscoverComingSoon';
+import { CommunityBoardScreen } from './CommunityBoardScreen';
 
 type Params = {
   groupId: string;
@@ -12,18 +12,24 @@ type Params = {
   communitySlug?: string;
   communityName?: string;
   communityId?: string;
+  /** Set by the community page when it opens the lounge, so the router does
+   *  not have to wait for the community detail to resolve. */
+  isLounge?: boolean;
 };
 
 /**
- * A community text channel, on the community's OWN stack (founder rule §0a):
- * the same GroupChatView the Chat tab renders, with the `in <Community> ›`
- * subtitle that pops back to CommunityDetail. Back is a plain goBack(), so
- * hardware back lands on the community, never on the Chat tab.
+ * One community room on the community's OWN stack — the router between the
+ * community's two surfaces (founder decision 1, 2026-09-02):
  *
- * A deep link (`discover/c/:communitySlug/ch/:groupId`) carries the slug but
- * no name, so the community is resolved from the store the way
- * CommunityMembers does; until it resolves there is no context link at all,
- * rather than one reading "in undefined" that navigates to an undefined slug.
+ *  - the LOUNGE stays a live chat. It keeps `GroupChatView` with
+ *    `host="community"`, which now strips the study/test apparatus.
+ *  - every other community group is a BOARD: a top-down list of post cards.
+ *
+ * The route name and the file name are unchanged so the deep link
+ * `discover/c/:communitySlug/ch/:groupId` and every existing navigation param
+ * keep working. There is no `canAccessDiscoverHub` gate here: the gate stays on
+ * `DiscoverScreen` and `CommunityDetailScreen`, and refusing a room to a member
+ * of the group is what would force the chat fallback (§4.1).
  */
 export function CommunityChannelScreen({
   navigation,
@@ -32,18 +38,56 @@ export function CommunityChannelScreen({
   navigation: GroupChatNavigation;
   route: { params: Params };
 }) {
-  const isPlatformAdmin = usePlatformAdmin();
   const { groupId, groupName, communitySlug } = route.params;
 
-  const detail = useCommunityStore((s) => (communitySlug ? s.detailBySlug[communitySlug] : undefined));
+  const detailBySlug = useCommunityStore((s) => s.detailBySlug);
+  const channelsById = useCommunityStore((s) => s.channelsById);
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
   const loadCommunity = useCommunityStore((s) => s.loadCommunity);
+  const loadMine = useCommunityStore((s) => s.loadMine);
+  const detail = communitySlug ? detailBySlug[communitySlug] : undefined;
   const communityName = route.params.communityName ?? detail?.name ?? null;
+  const communityId = route.params.communityId ?? detail?.id ?? null;
+
+  // A fresh Set from a zustand selector never settles (see GroupChatScreen's
+  // `selectMyCommunity` note); memoise on the store records instead.
+  const knownLounges = useMemo(
+    () => collectKnownLounges(detailBySlug, channelsById, myCommunities),
+    [detailBySlug, channelsById, myCommunities]
+  );
+  // Deciding the surface needs the community's `lounge_group_id`. Knowing its
+  // NAME is not enough, and guessing "board" is the one unrecoverable mistake
+  // here: it would render the community's single live chat as a board
+  // (founder decision 1). A MISSING slug is not an answer either — a
+  // notification or a Chat-tab redirect arrives with only a group id — so
+  // resolve through whatever pointer we do have and show a spinner until the
+  // answer is real.
+  const [resolveAttempted, setResolveAttempted] = useState(false);
+  const toldLounge = route.params.isLounge === true;
+  const toldBoard = route.params.isLounge === false;
+  const knownLounge = toldLounge || knownLounges.loungeGroupIds.has(groupId);
+  const isLounge = knownLounge;
+  const communityResolved =
+    !!detail || (!!communityId && knownLounges.resolvedCommunityIds.has(communityId));
+  const canDecide =
+    toldLounge || toldBoard || knownLounge || communityResolved || resolveAttempted;
 
   useEffect(() => {
-    if (!canAccessDiscoverHub(isPlatformAdmin)) return;
-    if (!communitySlug || detail || route.params.communityName) return;
-    void loadCommunity(communitySlug).catch(() => undefined);
-  }, [isPlatformAdmin, communitySlug, detail, route.params.communityName, loadCommunity]);
+    if (canDecide) return;
+    let cancelled = false;
+    // The slug is the direct route; without one, the membership list carries
+    // every community's lounge pointer. Either way, an answer we cannot get
+    // falls back to the CHAT surface below, never to the board.
+    const attempt = communitySlug ? loadCommunity(communitySlug) : loadMine();
+    void attempt
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setResolveAttempted(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canDecide, communitySlug, loadCommunity, loadMine]);
 
   const onContextPress = useCallback(() => {
     if (!communitySlug) return;
@@ -60,10 +104,22 @@ export function CommunityChannelScreen({
     [communitySlug, communityName, onContextPress]
   );
 
-  if (!canAccessDiscoverHub(isPlatformAdmin)) {
-    return <DiscoverComingSoon onBack={() => navigation.goBack()} />;
+  if (!canDecide) {
+    return (
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
+        <ActivityIndicator color="#6366f1" />
+      </SafeAreaView>
+    );
   }
 
+  if (!isLounge && (toldBoard || communityResolved)) {
+    return <CommunityBoardScreen navigation={navigation} route={route} />;
+  }
+
+  // A community we tried and failed to resolve lands here too: it falls back to
+  // the CHAT surface, never to the board — the same call web's
+  // CommunityChannelPane makes. `host="community"` keeps the study apparatus
+  // stripped either way, so the failure mode is safe in both directions.
   return (
     <GroupChatView
       groupId={groupId}

@@ -770,7 +770,7 @@ export async function ensureNotesUploadSession(): Promise<{ userId: string }> {
 
 // For local development, the keys are default, but in production, set env vars.
 
-export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null }, userId: string, memberIds: string[]) => {
+export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null; communitySurface?: 'board' | 'study_group' }, userId: string, memberIds: string[]) => {
   console.log('Creating group with data:', groupData, 'userId:', userId, 'memberIds:', memberIds);
   
   const response = await fetch(`${getApiRoot()}/api/v1/groups`, {
@@ -808,6 +808,11 @@ export function mapGroupListFromApi(
     courseId: g.courseId !== undefined ? g.courseId : (g.course_id ?? null),
     visibility: g.visibility || 'private',
     communityId: g.communityId !== undefined ? g.communityId : (g.community_id ?? null),
+    // Which surface the group renders as inside a community (spec §1).
+    // Absent (undefined) before the 20260903120000 migration — NULL means
+    // 'board', so `isCommunityBoard` reads a legacy channel correctly.
+    communitySurface:
+      g.communitySurface !== undefined ? g.communitySurface : (g.community_surface ?? null),
     unreadCount: unreadCounts[g.id] ?? g.unread_count ?? g.unreadCount ?? 0,
     pendingMembers: [],
     invitedPhoneNumbers: [],
@@ -1047,7 +1052,7 @@ export const sendMessage = async (
   userId: string,
   content: string,
   clientMessageId?: string,
-  options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
+  options?: { replyToMessageId?: string; mentionedUserIds?: string[]; subject?: string | null }
 ) => {
   const body = JSON.stringify({
     content,
@@ -1055,6 +1060,9 @@ export const sendMessage = async (
     clientMessageId,
     replyToMessageId: options?.replyToMessageId,
     mentionedUserIds: options?.mentionedUserIds,
+    // Board post title (spec §3.4). Dropped server-side — not rejected —
+    // before the 20260903120000 migration; validate with `validateBoardSubject`.
+    ...(options?.subject !== undefined ? { subject: options.subject } : {}),
   });
   const request = async () => {
     const response = await fetch(`${getApiRoot()}/api/v1/messages/group/${groupId}`, {
@@ -1234,6 +1242,77 @@ export const fetchGroupThread = async (groupId: string, rootId: string) => {
   }
   const result = await response.json();
   return Array.isArray(result?.data) ? result.data : [];
+};
+
+// ========== COMMUNITY BOARDS ==========
+// A board is the same `messages` table read roots-only (spec §3.3). Every
+// helper degrades rather than throws where the 20260903120000 migration has
+// not been applied yet, so a board screen still loads pre-migration (§11.15).
+
+/** One page of board posts: roots only, newest first. */
+export const fetchBoardPosts = async (
+  groupId: string,
+  options: { page?: number; limit?: number } = {}
+) => {
+  const params = new URLSearchParams({ rootsOnly: '1' });
+  if (options.page !== undefined) params.set('page', String(options.page));
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/group/${encodeURIComponent(groupId)}?${params.toString()}`,
+    {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error((error as any).message || (error as any).error || 'Failed to fetch posts');
+  }
+  const result = await response.json();
+  return Array.isArray(result?.data) ? result.data : [];
+};
+
+/**
+ * The board's one pinned post. Its own endpoint because a pin can be older
+ * than the loaded page. Resolves to null — never throws — when the pin columns
+ * are absent, so the strip simply does not render pre-migration.
+ */
+export const fetchPinnedMessage = async (groupId: string) => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/group/${encodeURIComponent(groupId)}/pinned`,
+      {
+        method: 'GET',
+        headers: await getAuthHeaders(),
+      }
+    );
+    if (!response.ok) return null;
+    const result = await response.json().catch(() => ({}));
+    return (result?.data?.message ?? null) as any;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Pin or unpin a board post. One pin per board, cleared server-side. Throws
+ * with the server's message on 400 (not a board), 403 (not a moderator) and
+ * 503 (`Pinning is not available yet`, pre-migration).
+ */
+export const setMessagePin = async (messageId: string, pinned: boolean) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/${encodeURIComponent(messageId)}/pin`,
+    {
+      method: 'PUT',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ pinned }),
+    }
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((body as any)?.error || (body as any)?.message || 'Could not update the pin');
+  }
+  return (body as any)?.data ?? null;
 };
 
 export const fetchDmThread = async (threadId: string, rootId: string) => {

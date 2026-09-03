@@ -22,8 +22,12 @@ export function UnreadPill({ unread }: { unread: number }) {
 }
 
 /**
- * One text channel (`# name`) in the community's server view. The lounge and
- * ordinary channels share this row; only the glyph on the right differs.
+ * One board (`# name`) in the community's server view.
+ *
+ * The community's ONE live chat — the lounge, rendered as `General` — reuses
+ * this row with `chat`, which swaps the `#` for a speech bubble: founder
+ * decision 4 (2026-09-02) is that the chat room must read differently from the
+ * boards at a glance.
  */
 export function ChannelRow({
   displayName,
@@ -32,16 +36,19 @@ export function ChannelRow({
   visibility,
   joined,
   busy,
+  chat,
   onPress,
 }: {
   displayName: string;
   subtitle: string;
   unread: number;
-  /** Lock glyph for members-only channels, globe for public; omitted on the lounge. */
+  /** Lock glyph for members-only boards, globe for public; omitted on the lounge. */
   visibility?: 'community' | 'public';
   /** Unjoined rows dim to 70% — they read "tap to join". */
   joined: boolean;
   busy?: boolean;
+  /** The lounge: a live chat, not a board — no `#`. */
+  chat?: boolean;
   onPress: () => void;
 }) {
   const label = unread > 0 ? `${displayName}, ${unread} unread` : displayName;
@@ -58,7 +65,13 @@ export function ChannelRow({
       }`}
       style={busy ? { opacity: 0.5 } : undefined}
     >
-      <Text className="w-5 text-base font-semibold text-lantern-text-tertiary">#</Text>
+      {chat ? (
+        <View className="w-5 items-center">
+          <Ionicons name="chatbubbles-outline" size={16} color="#94a3b8" />
+        </View>
+      ) : (
+        <Text className="w-5 text-base font-semibold text-lantern-text-tertiary">#</Text>
+      )}
       <View className="flex-1 min-w-0 ml-1">
         <Text
           className={`text-[15px] text-lantern-text ${unread > 0 ? 'font-bold' : 'font-medium'}`}

@@ -38,6 +38,14 @@ export interface MyCommunity extends Community {
    * "delete", because a re-derivation will otherwise appear to undo it.
    */
   source: 'auto' | 'joined';
+  /**
+   * The community's one live chat (`communities.lounge_group_id`). Carried
+   * here so a cold-started client can tell a lounge from a board before it has
+   * opened the community page — founder decision 1 keeps the lounge a chat, so
+   * guessing "board" for it is the one unrecoverable mistake. `undefined` = an
+   * older payload that did not carry it; `null` = resolved, no lounge minted.
+   */
+  lounge_group_id?: string | null;
 }
 
 export interface CommunityDetail extends Community {
@@ -672,3 +680,4 @@ export const REFERRAL_ACTIVATION_EXPLAINER =
 
 export * from './studyRooms';
 export * from './communityServer';
+export * from './communityBoard';

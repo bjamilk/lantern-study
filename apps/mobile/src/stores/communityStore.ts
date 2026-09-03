@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import type { CommunityChannels, CommunityDetail, MyCommunity } from '@lantern/shared/network';
+import type {
+  CommunityChannels,
+  CommunityDetail,
+  KnownCommunityLounges,
+  MyCommunity,
+} from '@lantern/shared/network';
 import { fetchCommunity, fetchCommunityChannels, fetchMyCommunities } from '../services/api';
 import { findMyCommunity } from '../utils/communityOverlay';
 
@@ -99,4 +104,64 @@ export function selectIsLoungeGroup(state: CommunityState, groupId: string): boo
     if (channels.loungeGroupId === groupId) return true;
   }
   return false;
+}
+
+/**
+ * Every lounge group id this session knows about.
+ *
+ * Founder decision 1 (2026-09-02): the lounge STAYS a live chat, so it must be
+ * excluded wherever `isCommunityBoard` would otherwise claim it — the chat-list
+ * filter, the GroupChat redirect and the CommunityChannel router. Callers pass
+ * the two records straight from the store and memoise on them; building the set
+ * inside a zustand selector would return a fresh Set every render and never
+ * settle (the same trap `GroupChatScreen` documents for `selectMyCommunity`).
+ *
+ * This set alone is NOT enough for the chat list or the redirect: an empty set
+ * on a cold start is indistinguishable from "this community has no lounge".
+ * Those callers use `collectKnownLounges`, which also reports which
+ * communities have actually been resolved.
+ */
+export function collectLoungeGroupIds(
+  detailBySlug: CommunityState['detailBySlug'],
+  channelsById: CommunityState['channelsById']
+): Set<string> {
+  const ids = new Set<string>();
+  for (const detail of Object.values(detailBySlug)) {
+    if (detail.lounge_group_id) ids.add(detail.lounge_group_id);
+  }
+  for (const channels of Object.values(channelsById)) {
+    if (channels.loungeGroupId) ids.add(channels.loungeGroupId);
+  }
+  return ids;
+}
+
+/**
+ * The lounge ids this session knows, PLUS the communities it has actually
+ * resolved — including every community on the membership list, which loads
+ * early and now carries `lounge_group_id`. Callers that must not guess
+ * "board" (the chat list, the GroupChat redirect, the channel router) use
+ * this rather than the bare id set.
+ */
+export function collectKnownLounges(
+  detailBySlug: CommunityState['detailBySlug'],
+  channelsById: CommunityState['channelsById'],
+  myCommunities: CommunityState['myCommunities']
+): KnownCommunityLounges {
+  const loungeGroupIds = collectLoungeGroupIds(detailBySlug, channelsById);
+  const resolvedCommunityIds = new Set<string>();
+  for (const detail of Object.values(detailBySlug)) {
+    if (detail.id) resolvedCommunityIds.add(detail.id);
+  }
+  for (const channels of Object.values(channelsById)) {
+    if (channels.communityId) resolvedCommunityIds.add(channels.communityId);
+  }
+  for (const mine of myCommunities) {
+    // `undefined` = a payload from before the membership list carried the
+    // pointer (a stale cache entry across a deploy): still unresolved, so the
+    // caller keeps treating that community's groups as chats.
+    if (mine.lounge_group_id === undefined) continue;
+    resolvedCommunityIds.add(mine.id);
+    if (mine.lounge_group_id) loungeGroupIds.add(mine.lounge_group_id);
+  }
+  return { loungeGroupIds, resolvedCommunityIds };
 }

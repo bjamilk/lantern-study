@@ -1,7 +1,6 @@
+import { channelDisplayName, channelSubtitle } from './communityBoard';
 import {
   buildCommunityChannelRows,
-  channelDisplayName,
-  channelSubtitle,
   communityHeaderLine,
   communityOnlineCount,
   communityPresenceChannel,
@@ -17,12 +16,15 @@ import {
   roomSubtitle,
   shouldSubscribeCommunityPresence,
   sortCommunityChannels,
+  sortCommunityStudyGroups,
   splitMembers,
+  studyGroupsLiveInChatCopy,
 } from './communityServer';
 import type {
   CommunityChannel,
   CommunityChannels,
   CommunityMember,
+  CommunityStudyGroup,
 } from './communityServer';
 import type { StudyRoomListItem } from './studyRooms';
 import type { Group } from '../types';
@@ -38,6 +40,19 @@ const channel = (over: Partial<CommunityChannel> & { id: string; name: string })
   isMember: false,
   unreadCount: 0,
   lastMessage: null,
+  lastMessageTime: null,
+  ...over,
+});
+
+const studyGroup = (
+  over: Partial<CommunityStudyGroup> & { id: string; name: string }
+): CommunityStudyGroup => ({
+  description: null,
+  avatarUrl: null,
+  memberCount: 1,
+  questionCount: 0,
+  isMember: false,
+  visibility: 'community',
   lastMessageTime: null,
   ...over,
 });
@@ -73,7 +88,9 @@ const payload = (over: Partial<CommunityChannels> = {}): CommunityChannels => ({
   viewer: { isMember: true, source: 'joined', role: 'member' },
   lounge: null,
   loungeGroupId: null,
+  boards: [],
   channels: [],
+  studyGroups: [],
   rooms: [],
   memberCount: 12,
   onlineCount: 0,
@@ -128,24 +145,12 @@ describe('communityHeaderLine', () => {
   });
 });
 
-describe('channelDisplayName / channelSubtitle', () => {
-  it('renders the lounge as # lounge whatever the group is called', () => {
-    expect(channelDisplayName({ isLounge: true, name: 'Biology lounge' })).toBe('# lounge');
+describe('channelDisplayName / channelSubtitle (deprecated aliases)', () => {
+  it('the deprecated names still resolve to the board helpers', () => {
+    expect(channelDisplayName({ isLounge: true, name: 'Biology lounge' })).toBe('General');
     expect(channelDisplayName({ isLounge: false, name: 'exam-week' })).toBe('# exam-week');
-  });
-
-  it('lounge subtitle is the shared copy', () => {
     expect(channelSubtitle(channel({ id: 'l', name: 'x', isLounge: true, isMember: true }))).toBe(
       COMMUNITY_COPY.loungeSubtitle
-    );
-  });
-
-  it('members see the last message, falling back to the member count', () => {
-    expect(
-      channelSubtitle(channel({ id: 'a', name: 'a', isMember: true, lastMessage: 'hi', memberCount: 4 }))
-    ).toBe('hi');
-    expect(channelSubtitle(channel({ id: 'a', name: 'a', isMember: true, memberCount: 4 }))).toBe(
-      '4 members'
     );
   });
 
@@ -217,70 +222,100 @@ describe('decorateChannels', () => {
 });
 
 describe('buildCommunityChannelRows', () => {
-  it('member: lounge → TEXT CHANNELS(+) → channels → STUDY ROOMS(+) → rooms → members', () => {
+  it('member: lounge → BOARDS(+) → boards → STUDY GROUPS(+) → groups → STUDY ROOMS(+) → rooms → members', () => {
     const rows = buildCommunityChannelRows(
       payload({
         lounge: channel({ id: 'lounge', name: 'Lounge', isLounge: true, isMember: true, unreadCount: 3 }),
         loungeGroupId: 'lounge',
-        channels: [channel({ id: 'ch', name: 'ch', isMember: true, unreadCount: 2 })],
+        boards: [channel({ id: 'ch', name: 'ch', isMember: true, unreadCount: 2 })],
+        studyGroups: [studyGroup({ id: 'sg', name: 'Anatomy crew' })],
         rooms: [room({ id: 'r1' })],
         memberCount: 12,
       }),
       [],
       NOW
     );
-    expect(rows.map((r) => r.kind)).toEqual(['lounge', 'section', 'channel', 'section', 'room', 'members']);
+    expect(rows.map((r) => r.kind)).toEqual([
+      'lounge',
+      'section',
+      'channel',
+      'section',
+      'study-group',
+      'section',
+      'room',
+      'members',
+    ]);
     expect(rows[0]).toMatchObject({ kind: 'lounge', unread: 3 });
-    expect(rows[1]).toEqual({ kind: 'section', title: 'TEXT CHANNELS', action: 'create-channel' });
+    expect(rows[1]).toEqual({ kind: 'section', title: 'BOARDS', action: 'create-board' });
     expect(rows[2]).toMatchObject({ kind: 'channel', unread: 2 });
-    expect(rows[3]).toEqual({ kind: 'section', title: 'STUDY ROOMS', action: 'start-room' });
-    expect(rows[5]).toEqual({ kind: 'members', count: 12 });
+    expect(rows[3]).toEqual({
+      kind: 'section',
+      title: 'STUDY GROUPS',
+      action: 'start-study-group',
+    });
+    expect(rows[4]).toMatchObject({ kind: 'study-group', group: { id: 'sg' } });
+    expect(rows[5]).toEqual({ kind: 'section', title: 'STUDY ROOMS', action: 'start-room' });
+    expect(rows[7]).toEqual({ kind: 'members', count: 12 });
   });
 
-  it('member with nothing yet: lounge null row, empty copy for channels and rooms', () => {
+  it('member with nothing yet: lounge null row, empty copy for boards, study groups and rooms', () => {
     const rows = buildCommunityChannelRows(payload(), [], NOW);
     expect(rows).toEqual([
       { kind: 'lounge', channel: null, unread: 0 },
-      { kind: 'section', title: 'TEXT CHANNELS', action: 'create-channel' },
-      { kind: 'empty', text: COMMUNITY_COPY.emptyChannelsMember },
+      { kind: 'section', title: 'BOARDS', action: 'create-board' },
+      { kind: 'empty', text: COMMUNITY_COPY.emptyBoardsMember },
+      { kind: 'section', title: 'STUDY GROUPS', action: 'start-study-group' },
+      { kind: 'empty', text: COMMUNITY_COPY.emptyStudyGroups },
       { kind: 'section', title: 'STUDY ROOMS', action: 'start-room' },
       { kind: 'empty', text: COMMUNITY_COPY.emptyRooms },
       { kind: 'members', count: 12 },
     ]);
   });
 
-  it('guest: only a TEXT CHANNELS section without an action plus public channels', () => {
+  it('guest: only a BOARDS section without an action plus public boards', () => {
     const rows = buildCommunityChannelRows(
       payload({
         viewer: { isMember: false, source: null, role: null },
         loungeGroupId: 'lounge',
-        channels: [
+        boards: [
           channel({ id: 'pub', name: 'pub', visibility: 'public', memberCount: 3 }),
           channel({ id: 'priv', name: 'priv', visibility: 'community', memberCount: 9 }),
         ],
+        studyGroups: [studyGroup({ id: 'sg', name: 'Anatomy crew' })],
         rooms: [room({ id: 'r1' })],
       }),
       [],
       NOW
     );
     expect(rows).toEqual([
-      { kind: 'section', title: 'TEXT CHANNELS' },
+      { kind: 'section', title: 'BOARDS' },
       { kind: 'channel', channel: expect.objectContaining({ id: 'pub' }), unread: 0 },
     ]);
     expect(rows.find((r) => r.kind === 'lounge')).toBeUndefined();
+    expect(rows.find((r) => r.kind === 'study-group')).toBeUndefined();
+    expect(rows.find((r) => r.kind === 'room')).toBeUndefined();
     expect(rows.find((r) => r.kind === 'members')).toBeUndefined();
   });
 
-  it('guest with no public channels sees the guest empty copy', () => {
+  it('guest with no public boards sees the guest empty copy', () => {
     const rows = buildCommunityChannelRows(
       payload({ viewer: { isMember: false, source: null, role: null } }),
       [],
       NOW
     );
     expect(rows).toEqual([
-      { kind: 'section', title: 'TEXT CHANNELS' },
-      { kind: 'empty', text: COMMUNITY_COPY.emptyChannelsGuest },
+      { kind: 'section', title: 'BOARDS' },
+      { kind: 'empty', text: COMMUNITY_COPY.emptyBoardsGuest },
     ]);
+  });
+
+  it('falls back to the deprecated `channels` array when an API has not shipped `boards`', () => {
+    const legacy = {
+      ...payload({ channels: [channel({ id: 'ch', name: 'ch', isMember: true })] }),
+      boards: undefined,
+    } as unknown as CommunityChannels;
+    const rows = buildCommunityChannelRows(legacy, [], NOW);
+    expect(rows[2]).toMatchObject({ kind: 'channel', channel: { id: 'ch' } });
   });
 
   it('overlays unread from the group store, lounge included', () => {
@@ -291,7 +326,7 @@ describe('buildCommunityChannelRows', () => {
     const rows = buildCommunityChannelRows(
       payload({
         lounge: channel({ id: 'lounge', name: 'Lounge', isLounge: true, isMember: true }),
-        channels: [channel({ id: 'ch', name: 'ch' })],
+        boards: [channel({ id: 'ch', name: 'ch' })],
       }),
       groups,
       NOW
@@ -308,6 +343,18 @@ describe('buildCommunityChannelRows', () => {
     );
     expect(rows.find((r) => r.kind === 'room')).toBeUndefined();
     expect(rows.find((r) => r.kind === 'empty' && r.text === COMMUNITY_COPY.emptyRooms)).toBeDefined();
+  });
+});
+
+describe('sortCommunityStudyGroups', () => {
+  it('joined first by latest activity, then unjoined by size then name', () => {
+    const sorted = sortCommunityStudyGroups([
+      studyGroup({ id: 'u-small', name: 'zeta', memberCount: 2 }),
+      studyGroup({ id: 'j-old', name: 'old', isMember: true, lastMessageTime: '2026-09-01T00:00:00.000Z' }),
+      studyGroup({ id: 'u-big', name: 'alpha', memberCount: 50 }),
+      studyGroup({ id: 'j-new', name: 'new', isMember: true, lastMessageTime: '2026-09-02T11:00:00.000Z' }),
+    ]);
+    expect(sorted.map((g) => g.id)).toEqual(['j-new', 'j-old', 'u-big', 'u-small']);
   });
 });
 
@@ -397,5 +444,22 @@ describe('communityShareUrl / communityPresenceChannel', () => {
 
   it('names the presence topic community:{id}', () => {
     expect(communityPresenceChannel('abc')).toBe('community:abc');
+  });
+});
+
+describe('COMMUNITY_COPY board vocabulary', () => {
+  it('substitutes the community name into the no-silent-disappearance line', () => {
+    expect(studyGroupsLiveInChatCopy('UNILAG Medicine')).toContain(
+      'stays listed in UNILAG Medicine so members can find and join it'
+    );
+    expect(studyGroupsLiveInChatCopy('UNILAG Medicine')).not.toContain('{community}');
+  });
+
+  it('the deprecated channel keys carry the new board wording', () => {
+    expect(COMMUNITY_COPY.sectionText).toBe(COMMUNITY_COPY.sectionBoards);
+    expect(COMMUNITY_COPY.createChannel).toBe(COMMUNITY_COPY.createBoard);
+    expect(COMMUNITY_COPY.emptyChannelsMember).toBe(COMMUNITY_COPY.emptyBoardsMember);
+    expect(COMMUNITY_COPY.emptyChannelsGuest).toBe(COMMUNITY_COPY.emptyBoardsGuest);
+    expect(COMMUNITY_COPY.newChannelTitle('Physio')).toBe(COMMUNITY_COPY.newBoardTitle('Physio'));
   });
 });
