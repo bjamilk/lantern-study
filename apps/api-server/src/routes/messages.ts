@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
-import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePagination } from '../middleware/validation';
-import { ChatMessageMutationResult, SupabaseService } from '../services/supabase';
+import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePinMessage, validatePagination } from '../middleware/validation';
+import { ChatMessageMutationResult, MessagePinResult, SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import {
@@ -11,6 +11,7 @@ import {
   CHAT_REACTION_MAX_LENGTH,
   isSupportedReactionEmoji,
 } from '@lantern/shared/chat';
+import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
 import { clientErrorMessage } from '../utils/safeError';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
@@ -413,13 +414,15 @@ router.get(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const { page = 1, limit, before, after, responseProfile } = req.query;
+    const { page = 1, limit, before, after, responseProfile, rootsOnly } = req.query;
     const profile = resolveResponseProfile(responseProfile);
+    // A board's page is roots only — comments live behind "N comments".
+    const parsedRootsOnly = rootsOnly === '1' || rootsOnly === 'true';
     const parsedPage = Math.max(1, parseInt(page as string, 10) || 1);
     const requestedLimit = parseInt((limit as string) || `${DEFAULT_MESSAGE_PAGE_SIZE}`, 10);
     const parsedLimit = Math.min(MAX_MESSAGE_PAGE_SIZE, Math.max(1, requestedLimit || DEFAULT_MESSAGE_PAGE_SIZE));
 
-    logger.debug('Fetching group messages', { groupId, page: parsedPage, limit: parsedLimit, before, after, userId, profile });
+    logger.debug('Fetching group messages', { groupId, page: parsedPage, limit: parsedLimit, before, after, userId, profile, rootsOnly: parsedRootsOnly });
 
     const group = await supabaseService.getGroupById(groupId, userId);
     if (!group) {
@@ -437,6 +440,7 @@ router.get(
       after: after as string,
       responseProfile: profile,
       viewerUserId: userId,
+      rootsOnly: parsedRootsOnly,
     });
 
     res.json({
@@ -450,6 +454,80 @@ router.get(
       },
       responseProfile: profile,
     });
+  })
+);
+
+// GET /api/v1/messages/group/:groupId/pinned - The board's one pinned post
+//
+// Its own endpoint because a pin can be older than the loaded page. Access is
+// the same rule as GET /group/:groupId: group membership, or 404. Answers
+// { message: null } — never a 500 — before the 20260903120000 migration.
+router.get(
+  '/group/:groupId/pinned',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId } = req.params;
+    const group = await supabaseService.getGroupById(groupId, userId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        error: 'Group not found or access denied',
+      });
+    }
+
+    const message = await supabaseService.getPinnedMessage(groupId);
+    res.json({ success: true, data: { message: message ?? null } });
+  })
+);
+
+// PUT /api/v1/messages/:messageId/pin - Pin or unpin a board post
+//
+// One pin per board, cleared server-side. The service returns why it refused
+// so each reason keeps its own code: 503 the migration is not applied, 400 the
+// group is not a board or the target is not a live root post, 403 the caller
+// is not a moderator, 404 no access.
+router.put(
+  '/:messageId/pin',
+  authMiddleware,
+  validatePinMessage,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { messageId } = req.params;
+    const pinned = req.body?.pinned === true;
+
+    const result: MessagePinResult = await supabaseService.setMessagePin(
+      messageId,
+      userId,
+      pinned
+    );
+
+    if (result.status === 'ok') {
+      return res.json({ success: true, data: result.message });
+    }
+
+    const refusals: Record<
+      Exclude<MessagePinResult['status'], 'ok'>,
+      { status: number; error: string }
+    > = {
+      unavailable: { status: 503, error: COMMUNITY_BOARD_COPY.pinUnavailable },
+      not_found: { status: 404, error: 'Message not found or access denied' },
+      not_board: { status: 400, error: 'Only community boards support pinning' },
+      not_pinnable: {
+        status: 400,
+        error: 'Only a post that is still on the board can be pinned',
+      },
+      forbidden: { status: 403, error: 'Only community moderators can pin' },
+    };
+    const refusal = refusals[result.status];
+    return res.status(refusal.status).json({ success: false, error: refusal.error });
   })
 );
 
@@ -522,7 +600,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const { content, clientMessageId, replyToMessageId, mentionedUserIds } = req.body;
+    const { content, clientMessageId, replyToMessageId, mentionedUserIds, subject } = req.body;
 
     logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId, clientMessageId });
 
@@ -539,6 +617,9 @@ router.post(
       mentionedUserIds: Array.isArray(mentionedUserIds)
         ? mentionedUserIds.filter((id: unknown): id is string => typeof id === 'string')
         : undefined,
+      // Board post title. Length-checked by validateSendMessage; dropped
+      // (never rejected) while the 20260903120000 migration is unapplied.
+      subject: typeof subject === 'string' ? subject : undefined,
     });
 
     // Invalidate message caches for this group

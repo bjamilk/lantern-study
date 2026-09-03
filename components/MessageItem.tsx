@@ -54,8 +54,13 @@ interface MessageItemProps {
   message: Message;
   isCurrentUserMessage: boolean;
   currentUserVote?: 'up' | 'down' | undefined;
-  onVoteQuestion: (messageId: string, voteType: 'up' | 'down') => void;
-  onFlagAsSimilar: (messageId: string) => void;
+  /**
+   * Omitted on a community surface (the lounge): the vote bar, the
+   * VERIFIED/REJECTED chip and the 20% threshold are study-group apparatus
+   * now (§6). Mobile gates the same three on `studySurface`.
+   */
+  onVoteQuestion?: (messageId: string, voteType: 'up' | 'down') => void;
+  onFlagAsSimilar?: (messageId: string) => void;
   currentUserFlagged?: boolean;
   group: Group | null;
   currentUser: User;
@@ -345,9 +350,15 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
   // Own text bubbles stay solid primary; own questions use a light wash so vote controls stay readable in light mode.
   const onPrimaryChrome = isCurrentUserMessage && !isQuestion;
 
-  const isPending = isQuestion && message.questionStatus === QuestionStatus.PENDING;
-  const isRejected = isQuestion && message.questionStatus === QuestionStatus.REJECTED;
-  const isVerified = isQuestion && message.questionStatus === QuestionStatus.VERIFIED;
+  // No vote handler means no question apparatus at all: the community surface
+  // shows the question's content, never its verification state.
+  const showQuestionVoting = !!onVoteQuestion;
+  const isPending =
+    showQuestionVoting && isQuestion && message.questionStatus === QuestionStatus.PENDING;
+  const isRejected =
+    showQuestionVoting && isQuestion && message.questionStatus === QuestionStatus.REJECTED;
+  const isVerified =
+    showQuestionVoting && isQuestion && message.questionStatus === QuestionStatus.VERIFIED;
   const memberCount = group?.members?.length ?? 0;
   const approvalThreshold = getQuestionVerificationThreshold(memberCount);
   const approvalProgress = approvalThreshold > 0
@@ -649,10 +660,10 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             )}
 
             {/* Vote / flag actions */}
-            {group && (
+            {group && showQuestionVoting && (
               <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-lantern-border">
                 <button
-                  onClick={() => onVoteQuestion(message.id, 'up')}
+                  onClick={() => onVoteQuestion?.(message.id, 'up')}
                   className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserVote === 'up'
                       ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
@@ -665,7 +676,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                   <span className="font-medium">{message.upvotes}</span>
                 </button>
                 <button
-                  onClick={() => onVoteQuestion(message.id, 'down')}
+                  onClick={() => onVoteQuestion?.(message.id, 'down')}
                   className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserVote === 'down'
                       ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/60'
@@ -679,7 +690,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 </button>
                 <div className="w-px h-4 mx-0.5 bg-lantern-border" />
                 <button
-                  onClick={() => onFlagAsSimilar(message.id)}
+                  onClick={() => onFlagAsSimilar?.(message.id)}
                   disabled={isCurrentUserMessage}
                   className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserFlagged

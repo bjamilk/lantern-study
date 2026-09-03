@@ -7,7 +7,7 @@ import {
   ONBOARDING_COMPLETE_STORAGE_KEY,
   isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { canAccessDiscoverHub } from '@lantern/shared/network';
+import { canAccessDiscoverHub, isCommunityBoardGroupIn } from '@lantern/shared/network';
 import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 
@@ -74,6 +74,7 @@ import { refreshUserData, resetDataRefresh } from '../services/dataRefresh';
 import { useFlashcardStore } from '../stores/flashcardStore';
 
 import { useGroupStore } from '../stores/groupStore';
+import { collectKnownLounges, useCommunityStore } from '../stores/communityStore';
 
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -245,6 +246,7 @@ import {
   CommunityDetailScreen,
   CommunityMembersScreen,
   CommunityChannelScreen,
+  CommunityPostScreen,
   FeedScreen,
   MasteryScreen,
 } from '../screens/discover';
@@ -497,6 +499,9 @@ function MarketNavigator() {
 
       <MarketStack.Screen name="CommunityChannel" component={CommunityChannelScreen} />
 
+      {/* A board post and its comments (spec §4.1). */}
+      <MarketStack.Screen name="CommunityPost" component={CommunityPostScreen} />
+
       <MarketStack.Screen name="CreateGroup" component={CreateGroupScreen} />
 
       <MarketStack.Screen name="Feed" component={FeedScreen} />
@@ -605,6 +610,12 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   const dmThreads = useGroupStore(s => s.dmThreads);
 
+  const communityDetailBySlug = useCommunityStore(s => s.detailBySlug);
+
+  const communityChannelsById = useCommunityStore(s => s.channelsById);
+
+  const myCommunities = useCommunityStore(s => s.myCommunities);
+
 
 
   const tabKeyMap: Record<TabKey, string | null> = {
@@ -706,15 +717,34 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   );
 
+  // A board's unread signal is the badge on the community page (§3.9), and
+  // boards are not in the chat list at all — counting them here would show a
+  // Chat badge with no row anywhere that could clear it. Web filters the same
+  // way before summing.
+
+  const knownLounges = useMemo(
+
+    () => collectKnownLounges(communityDetailBySlug, communityChannelsById, myCommunities),
+
+    [communityDetailBySlug, communityChannelsById, myCommunities]
+
+  );
+
   const unreadChatCount = useMemo(
 
     () =>
 
-      groups.reduce((s, g) => s + (g.unreadCount || 0), 0) +
+      groups.reduce(
+
+        (s, g) => (isCommunityBoardGroupIn(g, knownLounges) ? s : s + (g.unreadCount || 0)),
+
+        0
+
+      ) +
 
       dmThreads.reduce((s, t) => s + (t.unreadCount || 0), 0),
 
-    [groups, dmThreads]
+    [groups, dmThreads, knownLounges]
 
   );
 

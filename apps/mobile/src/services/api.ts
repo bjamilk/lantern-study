@@ -108,6 +108,10 @@ export const {
   markGroupAsRead,
   fetchMessages,
   fetchGroupThread,
+  // Community boards (Phase 1): roots-only paging, the one server pin.
+  fetchBoardPosts,
+  fetchPinnedMessage,
+  setMessagePin,
   fetchDmThread,
   sendMessage,
   updateMessage,

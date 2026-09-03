@@ -1,5 +1,6 @@
 import { body, param, query, validationResult } from 'express-validator';
 import { Request, Response, NextFunction } from 'express';
+import { BOARD_POST_SUBJECT_MAX } from '@lantern/shared/network';
 
 // Middleware to handle validation errors
 export const handleValidationErrors = (
@@ -108,6 +109,12 @@ export const validateCreateGroup = [
     .isIn(['private', 'community', 'public'])
     .withMessage('visibility must be private, community or public'),
   body('communityId').optional({ nullable: true }).isUUID().withMessage('Invalid communityId'),
+  // Which surface a community group renders as. Defaults to 'board'
+  // server-side when communityId is set; ignored otherwise.
+  body('communitySurface')
+    .optional({ nullable: true })
+    .isIn(['board', 'study_group'])
+    .withMessage('communitySurface must be board or study_group'),
 ];
 
 export const validateUpdateGroup = [
@@ -137,10 +144,25 @@ export const validateSendMessage = [
   body('replyToMessageId').optional().isUUID().withMessage('replyToMessageId must be a valid UUID'),
   body('mentionedUserIds').optional().isArray().withMessage('mentionedUserIds must be an array'),
   body('mentionedUserIds.*').optional().isUUID().withMessage('Each mentioned user ID must be a valid UUID'),
+  // A board post's optional title. Rejected here with the same string the
+  // client shows (COMMUNITY_BOARD_COPY.subjectTooLong), so the two halves
+  // cannot disagree about the limit.
+  body('subject')
+    .optional({ nullable: true })
+    .isString()
+    .trim()
+    .isLength({ max: BOARD_POST_SUBJECT_MAX })
+    .withMessage(`Title must be ${BOARD_POST_SUBJECT_MAX} characters or fewer`),
 ];
 
 export const validateMessageId = [
   param('messageId').isUUID().withMessage('Message ID must be a valid UUID'),
+];
+
+/** PUT /messages/:messageId/pin — one boolean, nothing else. */
+export const validatePinMessage = [
+  param('messageId').isUUID().withMessage('Message ID must be a valid UUID'),
+  body('pinned').isBoolean().withMessage('pinned must be a boolean'),
 ];
 
 // Notification validation rules

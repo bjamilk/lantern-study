@@ -14,7 +14,12 @@ import {
   mutedUntilFromMinutes,
   resolveChatMuteDurationMinutes,
 } from '@lantern/shared/utils/chatMute';
-import { resolveGroupDiscovery } from '@lantern/shared/network';
+import {
+  COMMUNITY_BOARD_COPY,
+  isCommunityBoard,
+  resolveGroupDiscovery,
+} from '@lantern/shared/network';
+import { hasGroupCommunitySurface } from '../services/schemaCapabilities';
 
 /**
  * A group listed in a community is a channel of that community, and only its
@@ -36,6 +41,52 @@ async function isBarredFromCommunity(
     discovery.communityId,
   );
   return !member;
+}
+
+/**
+ * Who may be pulled into a group that belongs to a community (spec §3.8).
+ *
+ * Both member-add endpoints checked GROUP admin only, which is a live hole:
+ * a channel admin could pull people who are not in the community straight
+ * into one of its channels. Two rules, in this order:
+ *
+ *  1. every target must already be an active member of the community;
+ *  2. a BOARD takes no member adds at all — its audience IS the community's
+ *     membership, so people join the community, then the board.
+ *
+ * Returns the refusal, or null when the request may proceed.
+ */
+async function refuseCommunityMemberAdd(
+  group: {
+    visibility?: unknown;
+    communityId?: string | null;
+    communitySurface?: 'board' | 'study_group' | null;
+  },
+  targetUserIds: string[],
+): Promise<{ status: number; error: string } | null> {
+  const targets = [...new Set(targetUserIds.filter((id) => typeof id === 'string' && id))];
+  if (targets.length > 0) {
+    const barred = await Promise.all(
+      targets.map((targetId) =>
+        isBarredFromCommunity(targetId, {
+          visibility: group.visibility,
+          communityId: group.communityId,
+        }),
+      ),
+    );
+    if (barred.some(Boolean)) {
+      return { status: 403, error: 'They need to join this community first' };
+    }
+  }
+  if (
+    isCommunityBoard({
+      communityId: group.communityId ?? null,
+      communitySurface: group.communitySurface ?? null,
+    })
+  ) {
+    return { status: 403, error: 'Members join the community, then the board' };
+  }
+  return null;
 }
 
 const router = Router();
@@ -269,9 +320,31 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds, courseId, visibility, communityId } = req.body;
+    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds, courseId, visibility, communityId, communitySurface } = req.body;
     if (await isBarredFromCommunity(userId, { visibility, communityId })) {
       return res.status(403).json({ success: false, error: 'Join this community first' });
+    }
+    /**
+     * Which surface a community group renders as. Defaults to 'board' when a
+     * communityId is present, ignored otherwise. Phase 1 does NOT gate 'board'
+     * on a moderator role: community_members.role is display-only, there is no
+     * promote/demote endpoint, and auto-derived campus communities have
+     * created_by = NULL, so a role gate would make board creation impossible
+     * on every campus community (spec §3.7).
+     */
+    const surface: 'board' | 'study_group' | undefined = communityId
+      ? communitySurface === 'study_group'
+        ? 'study_group'
+        : 'board'
+      : undefined;
+    // Pre-migration there is nowhere to record 'study_group', and silently
+    // creating a board instead would drop the user into the wrong surface —
+    // the one thing the no-silent-disappearance rule forbids (spec §1.1/§3.1).
+    if (surface === 'study_group' && !(await hasGroupCommunitySurface(supabaseService.getClient()))) {
+      return res.status(503).json({
+        success: false,
+        error: COMMUNITY_BOARD_COPY.studyGroupsUnavailable,
+      });
     }
     const groupData = {
       name,
@@ -284,6 +357,7 @@ router.post(
       courseId: courseId ?? null,
       visibility,
       communityId: communityId ?? null,
+      communitySurface: surface,
     };
 
     logger.debug('Creating group', { groupData, userId, memberIds });
@@ -539,6 +613,11 @@ router.post(
       });
     }
 
+    const refusal = await refuseCommunityMemberAdd(group, [memberId]);
+    if (refusal) {
+      return res.status(refusal.status).json({ success: false, error: refusal.error });
+    }
+
     // Admin invites create a pending membership — invitee must accept.
     await supabaseService.addGroupMember(groupId, memberId, { pending: true });
 
@@ -611,6 +690,11 @@ router.post(
         success: false,
         error: 'Access denied',
       });
+    }
+
+    const refusal = await refuseCommunityMemberAdd(group, userIds);
+    if (refusal) {
+      return res.status(refusal.status).json({ success: false, error: refusal.error });
     }
 
     const results = {

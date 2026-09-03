@@ -72,6 +72,7 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               // link would arrive with `slug` and leave the community context
               // (name, back link) undefined.
               CommunityChannel: 'discover/c/:communitySlug/ch/:groupId',
+              CommunityPost: 'discover/c/:communitySlug/ch/:groupId/p/:rootId',
             },
           },
           // Jobs owns its own stack, so its links must resolve under JobsTab.

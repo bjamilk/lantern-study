@@ -35,7 +35,24 @@ import {
   getSrsMaxInterval,
   normalizeUserSettings,
 } from "@lantern/shared/settings";
-import { resolveGroupDiscovery } from "@lantern/shared/network";
+import {
+  BOARD_COMMENT_NOTIFY_MAX,
+  BOARD_POST_SUBJECT_MAX,
+  boardDeepLinkPath,
+  canPinOnBoard,
+  isCommunityBoard,
+  resolveCommunityRole,
+  resolveGroupDiscovery,
+} from "@lantern/shared/network";
+import {
+  groupColumns,
+  hasGroupCommunitySurface,
+  hasMessageBoardColumns,
+  isMissingColumnError,
+  markGroupCommunitySurfaceMissing,
+  markMessageBoardColumnsMissing,
+  messageColumns,
+} from "./schemaCapabilities";
 import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
@@ -145,6 +162,20 @@ export type ChatMessageMutationResult = {
   status: ChatMessageMutationStatus;
   message?: Record<string, unknown>;
 };
+
+/**
+ * Why a pin did or did not happen. The route maps each to its own code so the
+ * client can say the true thing: 503 the migration is not applied yet, 400 the
+ * group is not a board, 403 the caller may not pin, 404 no such message or no
+ * access to it.
+ */
+export type MessagePinResult =
+  | { status: "ok"; message: Record<string, unknown> }
+  | { status: "unavailable" }
+  | { status: "not_found" }
+  | { status: "not_board" }
+  | { status: "not_pinnable" }
+  | { status: "forbidden" };
 
 function mapProfileSender(
   profile: ProfileSenderRow | null | undefined,
@@ -886,6 +917,11 @@ export class SupabaseService {
       editedAt: msg.edited_at || msg.editedAt || undefined,
       removedAt: removedAt || undefined,
       isRemoved,
+      // Board columns (20260903120000). Absent — not null — pre-migration, and
+      // a removed post shows its tombstone, never its title.
+      subject: isRemoved ? null : (msg.subject ?? undefined),
+      pinnedAt: msg.pinned_at ?? msg.pinnedAt ?? undefined,
+      pinnedBy: msg.pinned_by ?? msg.pinnedBy ?? undefined,
       replyToMessageId:
         msg.reply_to_message_id || msg.replyToMessageId || undefined,
       mentionedUserIds:
@@ -1585,19 +1621,15 @@ export class SupabaseService {
     return cacheService.cached(
       cacheKey,
       async () => {
-        const selectClause =
+        // community_surface rides along on BOTH profiles: the chat list
+        // filters boards out of Chat with it (spec §4.5), and the compact
+        // profile is exactly what that list fetches.
+        const baseClause =
           profile === "compact"
-            ? "id, name, avatar_url, last_message_time, is_archived"
+            ? "id, name, avatar_url, last_message_time, is_archived, community_id"
             : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at";
-        let query = this.supabase
-          .from("groups")
-          .select(selectClause)
-          .range(offset, offset + safeLimit - 1);
 
-        if (search) {
-          query = query.ilike("name", `%${search}%`);
-        }
-
+        let memberGroupIds: string[] | null = null;
         if (userId) {
           // Only return groups where the user is an active (non-pending) member
           const { data: memberGroups, error: memberError } = await this.supabase
@@ -1608,16 +1640,29 @@ export class SupabaseService {
 
           if (memberError) throw memberError;
 
-          const groupIds = memberGroups?.map((mg) => mg.group_id) || [];
-          if (groupIds.length === 0) return [];
-
-          query = query.in("id", groupIds);
+          memberGroupIds = memberGroups?.map((mg) => mg.group_id) || [];
+          if (memberGroupIds.length === 0) return [];
         }
 
-        // Apply sorting
-        query = query.order(sortBy, { ascending: sortOrder === "asc" });
+        const runList = async (selectClause: string) => {
+          let query = (this.supabase as any)
+            .from("groups")
+            .select(selectClause)
+            .range(offset, offset + safeLimit - 1);
+          if (search) query = query.ilike("name", `%${search}%`);
+          if (memberGroupIds) query = query.in("id", memberGroupIds);
+          return query.order(sortBy, { ascending: sortOrder === "asc" });
+        };
 
-        const { data, error } = await query;
+        // The group list is the hottest read in the app: a stale capability
+        // probe must degrade it, never 500 it.
+        let { data, error } = await runList(
+          await groupColumns(this.supabase, baseClause),
+        );
+        if (error && isMissingColumnError(error)) {
+          markGroupCommunitySurfaceMissing();
+          ({ data, error } = await runList(baseClause));
+        }
         if (error) throw error;
 
         const groupIds = (data || []).map((item: any) => item.id);
@@ -1654,6 +1699,7 @@ export class SupabaseService {
           courseId: item.course_id ?? null,
           visibility: item.visibility || "private",
           communityId: item.community_id ?? null,
+          communitySurface: item.community_surface ?? null,
           createdAt: item.created_at,
           memberCount: memberCounts[item.id] || 0,
         })) as Group[];
@@ -1662,15 +1708,28 @@ export class SupabaseService {
     ); // Cache for 5 minutes
   }
 
+  /**
+   * Every column a group row carries on the wire. `community_surface` is
+   * appended only once 20260903120000 is applied — pre-migration the column
+   * does not exist and NULL (= board) is the right answer anyway.
+   */
+  private static readonly GROUP_COLUMNS_BASE =
+    "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at";
+
   async getGroupById(groupId: string, userId?: string): Promise<Group | null> {
+    const base = SupabaseService.GROUP_COLUMNS_BASE;
     if (!userId) {
-      const { data, error } = await this.supabase
-        .from("groups")
-        .select(
-          "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at",
-        )
-        .eq("id", groupId)
-        .maybeSingle();
+      const readOne = (columns: string) =>
+        (this.supabase as any)
+          .from("groups")
+          .select(columns)
+          .eq("id", groupId)
+          .maybeSingle();
+      let { data, error } = await readOne(await groupColumns(this.supabase, base));
+      if (error && isMissingColumnError(error)) {
+        markGroupCommunitySurfaceMissing();
+        ({ data, error } = await readOne(base));
+      }
       if (error) throw error;
       if (!data) return null;
       return {
@@ -1688,6 +1747,9 @@ export class SupabaseService {
         courseId: data.course_id ?? null,
         visibility: (data as { visibility?: string }).visibility || "private",
         communityId: (data as { community_id?: string | null }).community_id ?? null,
+        communitySurface:
+          (data as { community_surface?: "board" | "study_group" | null })
+            .community_surface ?? null,
         createdAt: data.created_at,
       } as Group;
     }
@@ -1697,13 +1759,17 @@ export class SupabaseService {
     return cacheService.cached(
       cacheKey,
       async () => {
-        const { data, error } = await this.supabase
-          .from("groups")
-          .select(
-            "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at",
-          )
-          .eq("id", groupId)
-          .single();
+        const readOne = (columns: string) =>
+          (this.supabase as any)
+            .from("groups")
+            .select(columns)
+            .eq("id", groupId)
+            .single();
+        let { data, error } = await readOne(await groupColumns(this.supabase, base));
+        if (error && isMissingColumnError(error)) {
+          markGroupCommunitySurfaceMissing();
+          ({ data, error } = await readOne(base));
+        }
 
         if (error) {
           if (error.code === "PGRST116") return null; // Not found
@@ -1739,6 +1805,9 @@ export class SupabaseService {
           courseId: data.course_id ?? null,
           visibility: (data as { visibility?: string }).visibility || "private",
           communityId: (data as { community_id?: string | null }).community_id ?? null,
+          communitySurface:
+            (data as { community_surface?: "board" | "study_group" | null })
+              .community_surface ?? null,
           createdAt: data.created_at,
         } as Group;
       },
@@ -1755,23 +1824,41 @@ export class SupabaseService {
       visibility: groupData.visibility,
       communityId: groupData.communityId,
     });
-    const { data, error } = await this.supabase
-      .from("groups")
-      .insert({
-        name: groupData.name,
-        description: groupData.description,
-        avatar_url: groupData.avatarUrl,
-        admin_ids: [userId],
-        permissions: groupData.permissions || {},
-        invite_id: groupData.inviteId,
-        parent_id: groupData.parentId,
-        course_id: groupData.courseId || null,
-        visibility: discovery.visibility,
-        community_id: discovery.communityId,
-        is_archived: false,
-      })
-      .select()
-      .single();
+    /**
+     * Which surface this group renders as inside its community. Only
+     * meaningful with a community_id, and only written once the column
+     * exists — pre-migration NULL means board, which is the default anyway,
+     * and 'study_group' is refused at the route with a 503 (spec §3.1).
+     */
+    const surface: "board" | "study_group" | null = discovery.communityId
+      ? groupData.communitySurface === "study_group"
+        ? "study_group"
+        : "board"
+      : null;
+    const baseInsert: Record<string, unknown> = {
+      name: groupData.name,
+      description: groupData.description,
+      avatar_url: groupData.avatarUrl,
+      admin_ids: [userId],
+      permissions: groupData.permissions || {},
+      invite_id: groupData.inviteId,
+      parent_id: groupData.parentId,
+      course_id: groupData.courseId || null,
+      visibility: discovery.visibility,
+      community_id: discovery.communityId,
+      is_archived: false,
+    };
+    const insertGroup = (row: Record<string, unknown>) =>
+      (this.supabase as any).from("groups").insert(row).select().single();
+    const withSurface =
+      surface && (await hasGroupCommunitySurface(this.supabase))
+        ? { ...baseInsert, community_surface: surface }
+        : baseInsert;
+    let { data, error } = await insertGroup(withSurface);
+    if (error && withSurface !== baseInsert && isMissingColumnError(error)) {
+      markGroupCommunitySurfaceMissing();
+      ({ data, error } = await insertGroup(baseInsert));
+    }
 
     if (error) throw error;
 
@@ -1842,6 +1929,7 @@ export class SupabaseService {
       courseId: data.course_id ?? null,
       visibility: discovery.visibility,
       communityId: discovery.communityId,
+      communitySurface: data.community_surface ?? surface,
       createdAt: data.created_at,
       pendingInviteUserIds: Array.from(explicitInviteSet),
     } as Group & { pendingInviteUserIds?: string[] };
@@ -1889,8 +1977,11 @@ export class SupabaseService {
       throw error;
     }
 
-    // Invalidate caches
+    // Invalidate caches. The board context is keyed outside `group:<id>:*` on
+    // purpose (every send would otherwise blow it), so clear it explicitly —
+    // moving a group between communities changes its surface.
     await cacheService.invalidateGroupCache(groupId);
+    await cacheService.delete(`board:context:${groupId}`);
     await cacheService.deletePattern("groups:list:*");
 
     // Transform snake_case to camelCase
@@ -1909,6 +2000,9 @@ export class SupabaseService {
       courseId: data.course_id ?? null,
       visibility: (data as { visibility?: string }).visibility || "private",
       communityId: (data as { community_id?: string | null }).community_id ?? null,
+      communitySurface:
+        (data as { community_surface?: "board" | "study_group" | null })
+          .community_surface ?? null,
       createdAt: data.created_at,
     } as Group;
   }
@@ -2475,6 +2569,8 @@ export class SupabaseService {
       after?: string;
       responseProfile?: "compact" | "full";
       viewerUserId?: string;
+      /** Board pages are roots only: comments live behind "N comments". */
+      rootsOnly?: boolean;
     } = {},
   ): Promise<Message[]> {
     const {
@@ -2484,6 +2580,7 @@ export class SupabaseService {
       after,
       responseProfile = "full",
       viewerUserId,
+      rootsOnly = false,
     } = options;
     const profile = this.getResponseProfile(responseProfile);
     const safeLimit = Math.min(
@@ -2493,7 +2590,9 @@ export class SupabaseService {
     const safePage = Math.max(1, page);
     const offset = (safePage - 1) * safeLimit;
 
-    const cacheKey = `messages:group:${groupId}:${safePage}:${safeLimit}:${before || ""}:${after || ""}:profile:${profile}`;
+    // The roots-only page is a DIFFERENT result set for the same page number,
+    // so it needs its own key or a board and a chat would poison each other.
+    const cacheKey = `messages:group:${groupId}:${safePage}:${safeLimit}:${before || ""}:${after || ""}:profile:${profile}:roots:${rootsOnly ? "1" : "0"}`;
 
     logger.debug("getGroupMessages: Fetching messages", {
       groupId,
@@ -2506,7 +2605,7 @@ export class SupabaseService {
       cacheKey,
       async () => {
         logger.debug("getGroupMessages: Cache miss, querying database");
-        const selectClause =
+        const baseSelectClause =
           profile === "compact"
             ? `
           id,
@@ -2560,21 +2659,37 @@ export class SupabaseService {
         // Supabase's generated select type becomes intractable for the two
         // profile-dependent projection strings above. The response is normalized
         // immediately below, so keep this dynamic query explicitly untyped.
-        let query = (this.supabase as any)
-          .from("messages")
-          .select(selectClause)
-          .eq("group_id", groupId);
+        const runPage = (selectClause: string) => {
+          let query = (this.supabase as any)
+            .from("messages")
+            .select(selectClause)
+            .eq("group_id", groupId);
 
-        if (before) {
-          query = query.lt("timestamp", before);
-        }
-        if (after) {
-          query = query.gt("timestamp", after);
-        }
+          // A board post is a root; a comment is the same row with
+          // thread_root_id set and belongs behind "N comments".
+          if (rootsOnly) {
+            query = query.is("thread_root_id", null);
+          }
+          if (before) {
+            query = query.lt("timestamp", before);
+          }
+          if (after) {
+            query = query.gt("timestamp", after);
+          }
 
-        const { data, error } = await query
-          .order("timestamp", { ascending: false })
-          .range(offset, offset + safeLimit - 1);
+          return query
+            .order("timestamp", { ascending: false })
+            .range(offset, offset + safeLimit - 1);
+        };
+
+        let { data, error } = await runPage(
+          await messageColumns(this.supabase, baseSelectClause),
+        );
+        if (error && isMissingColumnError(error)) {
+          // Pre-migration: no titles and no pins, but the board still loads.
+          markMessageBoardColumnsMissing();
+          ({ data, error } = await runPage(baseSelectClause));
+        }
 
         if (error) {
           logger.error("getGroupMessages: Database error", { error });
@@ -2924,6 +3039,14 @@ export class SupabaseService {
     };
     if (result.status !== "ok" || !result.message) return result;
 
+    // `remove_chat_message` predates `messages.pinned_at`, so a removed post
+    // keeps its pin and the board's PINNED strip becomes a permanent, blank
+    // tombstone. Clear it here, at the source, which frees the
+    // one-pin-per-board index slot too.
+    if (kind === "group") {
+      await this.clearPinOnRemovedMessage(result.message);
+    }
+
     await this.invalidateChatMessageMutation(kind, result.message);
     try {
       await this.refreshChatPreview(kind, result.message);
@@ -2952,6 +3075,31 @@ export class SupabaseService {
       status: "ok",
       message: this.mapChatMutationRow(kind, result.message),
     };
+  }
+
+  /**
+   * Drop the server pin from a just-removed group message. Best-effort: a
+   * pre-migration database has no `pinned_at`, and a failure here must not
+   * turn a successful deletion into an error.
+   */
+  private async clearPinOnRemovedMessage(
+    message: Record<string, any>,
+  ): Promise<void> {
+    if (!message?.id || !message.pinned_at) return;
+    try {
+      const { error } = await (this.supabase as any)
+        .from("messages")
+        .update({ pinned_at: null, pinned_by: null })
+        .eq("id", message.id);
+      if (error && !isMissingColumnError(error)) throw error;
+      message.pinned_at = null;
+      message.pinned_by = null;
+    } catch (pinError) {
+      logger.warn("Failed to clear the pin on a removed message", {
+        messageId: message.id,
+        pinError,
+      });
+    }
   }
 
   /**
@@ -8889,7 +9037,10 @@ export class SupabaseService {
     rootId: string,
     viewerUserId?: string,
   ): Promise<Message[]> {
-    const selectClause = `
+    // The thread carries the board post's own row, and the post screen renders
+    // it as the header — so it needs the board columns too, or a post opened
+    // from a pin older than the loaded page comes back untitled.
+    const baseThreadSelect = `
       id,
       group_id,
       sender_id,
@@ -8914,24 +9065,35 @@ export class SupabaseService {
         avatar_url
       )
     `;
+    const selectClause = await messageColumns(this.supabase, baseThreadSelect);
 
-    const [
-      { data: root, error: rootError },
-      { data: replies, error: repliesError },
-    ] = await Promise.all([
-      this.supabase
-        .from("messages")
-        .select(selectClause)
-        .eq("id", rootId)
-        .eq("group_id", groupId)
-        .maybeSingle(),
-      this.supabase
-        .from("messages")
-        .select(selectClause)
-        .eq("group_id", groupId)
-        .eq("thread_root_id", rootId)
-        .order("timestamp", { ascending: true }),
-    ]);
+    const runThread = (columns: string) =>
+      Promise.all([
+        this.supabase
+          .from("messages")
+          .select(columns)
+          .eq("id", rootId)
+          .eq("group_id", groupId)
+          .maybeSingle(),
+        this.supabase
+          .from("messages")
+          .select(columns)
+          .eq("group_id", groupId)
+          .eq("thread_root_id", rootId)
+          .order("timestamp", { ascending: true }),
+      ]);
+
+    let [{ data: root, error: rootError }, { data: replies, error: repliesError }] =
+      await runThread(selectClause);
+    if (
+      (rootError && isMissingColumnError(rootError)) ||
+      (repliesError && isMissingColumnError(repliesError))
+    ) {
+      // Pre-migration: no titles and no pins, but the thread still loads.
+      markMessageBoardColumnsMissing();
+      [{ data: root, error: rootError }, { data: replies, error: repliesError }] =
+        await runThread(baseThreadSelect);
+    }
 
     if (rootError) throw rootError;
     if (repliesError) throw repliesError;
@@ -9092,6 +9254,8 @@ export class SupabaseService {
     mentionedUserIds: string[];
     preview: string;
     mentionedEveryone?: boolean;
+    /** Board mentions link into the community, never into Chat (spec §3.9). */
+    link?: string;
   }): Promise<void> {
     const {
       groupId,
@@ -9117,7 +9281,7 @@ export class SupabaseService {
       mentionedUserIds.map((recipientId) =>
         this.createNotification(recipientId, {
           message,
-          link: `/chat/${groupId}?messageId=${messageId}`,
+          link: params.link || `/chat/${groupId}?messageId=${messageId}`,
           type: "mention",
           data: {
             groupId,
@@ -9189,12 +9353,203 @@ export class SupabaseService {
     });
   }
 
+  /**
+   * Is this group a community BOARD, and if so which community?
+   *
+   * The surface is decided by the group row, never by which screen mounted it
+   * (spec §0), with the one derived exception founder decision 1 records: the
+   * community's lounge carries a community_id but STAYS a live chat, so it is
+   * excluded here and keeps the full chat behaviour including per-message
+   * notifications.
+   *
+   * Cached briefly under a key `invalidateGroupCache` does NOT match: every
+   * send resolves this, and every send also invalidates the group cache.
+   */
+  private async resolveBoardContext(groupId: string): Promise<{
+    isBoard: boolean;
+    communityId: string | null;
+    communitySlug: string | null;
+    communityCreatedBy: string | null;
+    loungeGroupId: string | null;
+    adminIds: string[];
+  }> {
+    const empty = {
+      isBoard: false,
+      communityId: null,
+      communitySlug: null,
+      communityCreatedBy: null,
+      loungeGroupId: null,
+      adminIds: [] as string[],
+    };
+    if (!groupId) return empty;
+    const cacheKey = `board:context:${groupId}`;
+    const hit = await cacheService.get<typeof empty>(cacheKey);
+    if (hit) return hit;
+
+    const group = await this.getGroupById(groupId);
+    if (!group?.communityId) return empty;
+
+    const readCommunity = (columns: string) =>
+      (this.supabase as any)
+        .from("communities")
+        .select(columns)
+        .eq("id", group.communityId)
+        .maybeSingle();
+
+    type CommunityPointer = {
+      slug?: string | null;
+      created_by?: string | null;
+      lounge_group_id?: string | null;
+    };
+    let community: CommunityPointer | null = null;
+    try {
+      // lounge_group_id only exists once 20260829170000 is applied.
+      let { data, error } = await readCommunity("id, slug, created_by, lounge_group_id");
+      if (error && isMissingColumnError(error)) {
+        ({ data, error } = await readCommunity("id, slug, created_by"));
+      }
+      if (error) throw error;
+      community = (data || {}) as CommunityPointer;
+    } catch (err) {
+      /**
+       * The surface itself comes from the GROUP row, which we already have, so
+       * a failed community read degrades the deep link (to /discover, never to
+       * /chat) rather than failing the send. Deliberately NOT cached: an owner
+       * would otherwise be refused a pin for the whole TTL.
+       */
+      logger.warn("resolveBoardContext: community read failed, degrading", {
+        err,
+        groupId,
+      });
+      return {
+        isBoard: isCommunityBoard(group),
+        communityId: group.communityId,
+        communitySlug: null,
+        communityCreatedBy: null,
+        loungeGroupId: null,
+        adminIds: group.adminIds || [],
+      };
+    }
+
+    const loungeGroupId = community?.lounge_group_id ?? null;
+    const context = {
+      // The lounge is a chat, not a board (founder decision 1).
+      isBoard: loungeGroupId === groupId ? false : isCommunityBoard(group),
+      communityId: group.communityId,
+      communitySlug: community?.slug ?? null,
+      communityCreatedBy: community?.created_by ?? null,
+      loungeGroupId,
+      adminIds: group.adminIds || [],
+    };
+    await cacheService.set(cacheKey, context, 300);
+    return context;
+  }
+
+  /**
+   * A board post's comment notification (spec §3.9). Replaces the per-message
+   * fan-out, which a board never issues: the root author plus the people
+   * already on that thread, minus the sender and anyone already notified by a
+   * mention, capped at BOARD_COMMENT_NOTIFY_MAX.
+   */
+  private async notifyBoardCommentRecipients(params: {
+    groupId: string;
+    senderId: string;
+    messageId: string;
+    threadRootId: string;
+    preview: string;
+    skipUserIds?: string[];
+    communitySlug: string | null;
+  }): Promise<void> {
+    const {
+      groupId,
+      senderId,
+      messageId,
+      threadRootId,
+      preview,
+      skipUserIds,
+      communitySlug,
+    } = params;
+
+    const [{ data: root }, { data: replies }] = await Promise.all([
+      this.supabase
+        .from("messages")
+        .select("id, sender_id")
+        .eq("id", threadRootId)
+        .maybeSingle(),
+      this.supabase
+        .from("messages")
+        .select("sender_id")
+        .eq("group_id", groupId)
+        .eq("thread_root_id", threadRootId)
+        .limit(200),
+    ]);
+
+    const rootAuthorId = (root as { sender_id?: string } | null)?.sender_id ?? null;
+    const skip = new Set([senderId, ...(skipUserIds || [])]);
+
+    const repliers: string[] = [];
+    for (const row of (replies || []) as Array<{ sender_id?: string }>) {
+      const id = row?.sender_id;
+      if (!id || skip.has(id) || id === rootAuthorId || repliers.includes(id)) continue;
+      repliers.push(id);
+    }
+
+    const recipients: Array<{ id: string; isRootAuthor: boolean }> = [];
+    if (rootAuthorId && !skip.has(rootAuthorId)) {
+      recipients.push({ id: rootAuthorId, isRootAuthor: true });
+    }
+    for (const id of repliers) recipients.push({ id, isRootAuthor: false });
+    if (!recipients.length) return;
+
+    const [groupMeta, sender] = await Promise.all([
+      this.getGroupById(groupId),
+      this.getUserById(senderId),
+    ]);
+    const boardName = (groupMeta as any)?.name || "a board";
+    const actor =
+      sender?.name || (sender?.username ? `@${sender.username}` : "Someone");
+    const link = communitySlug
+      ? `${boardDeepLinkPath(communitySlug, groupId)}?messageId=${messageId}`
+      : boardDeepLinkPath(null, groupId);
+    const snippet = preview.slice(0, 80);
+
+    await Promise.all(
+      recipients.slice(0, BOARD_COMMENT_NOTIFY_MAX).map((recipient) =>
+        this.createNotification(recipient.id, {
+          message: recipient.isRootAuthor
+            ? `${actor} replied to your post in ${boardName}: ${snippet}`
+            : `${actor} commented on a post you follow in ${boardName}: ${snippet}`,
+          link,
+          type: "reply",
+          data: {
+            groupId,
+            messageId,
+            senderId,
+            threadRootId,
+            preview: snippet,
+          },
+        }).catch((err) => {
+          logger.warn("Failed to notify board comment recipient", {
+            err,
+            recipientId: recipient.id,
+            messageId,
+          });
+        }),
+      ),
+    );
+  }
+
   async sendMessage(
     groupId: string,
     userId: string,
     content: string,
     clientMessageId?: string,
-    options?: { replyToMessageId?: string; mentionedUserIds?: string[] },
+    options?: {
+      replyToMessageId?: string;
+      mentionedUserIds?: string[];
+      /** Board post title. Dropped (not rejected) pre-migration. */
+      subject?: string | null;
+    },
   ): Promise<any> {
     let messageData: any;
     let isQuestion = false;
@@ -9203,19 +9558,34 @@ export class SupabaseService {
         ? options.replyToMessageId
         : undefined;
 
-    // First, try to parse as JSON to check if it's a question
-    try {
-      messageData = JSON.parse(content);
-      isQuestion = messageData.type === "QUESTION" || messageData.questionStem;
-      logger.info("sendMessage: Parsed content as JSON", {
-        isQuestion,
-        type: messageData.type,
-        hasQuestionStem: !!messageData.questionStem,
+    const board = await this.resolveBoardContext(groupId);
+
+    /**
+     * The whole safety property of a board (spec §3.4): a post whose body
+     * happens to be JSON must NOT become a QUESTION. Skipping the parse keeps
+     * type='TEXT', leaves question_data null, never fires the
+     * groups.question_count trigger, and stops routes/messages.ts writing a
+     * group_question_posted learning event — that branch tests the type.
+     */
+    if (board.isBoard) {
+      logger.info("sendMessage: board post, question parsing skipped", {
+        groupId,
       });
-    } catch (parseError) {
-      // Not JSON, treat as text message
-      logger.info("sendMessage: Content is plain text");
-      isQuestion = false;
+    } else {
+      // First, try to parse as JSON to check if it's a question
+      try {
+        messageData = JSON.parse(content);
+        isQuestion = messageData.type === "QUESTION" || messageData.questionStem;
+        logger.info("sendMessage: Parsed content as JSON", {
+          isQuestion,
+          type: messageData.type,
+          hasQuestionStem: !!messageData.questionStem,
+        });
+      } catch (parseError) {
+        // Not JSON, treat as text message
+        logger.info("sendMessage: Content is plain text");
+        isQuestion = false;
+      }
     }
 
     const mentionSource = isQuestion
@@ -9377,15 +9747,30 @@ export class SupabaseService {
         insertBase.thread_root_id = threadRootId;
       }
 
-      const { data, error } = await this.supabase
-        .from("messages")
-        .insert({
-          ...insertBase,
-          type: "TEXT",
-          text: content,
-        })
-        .select()
-        .single();
+      // A board post's optional title. Pre-migration the column does not
+      // exist and the title is DROPPED, not rejected (spec §3.1).
+      const subject =
+        typeof options?.subject === "string" && options.subject.trim()
+          ? options.subject.trim().slice(0, BOARD_POST_SUBJECT_MAX)
+          : null;
+      const withSubject = !!subject && (await hasMessageBoardColumns(this.supabase));
+      const insertText = (includeSubject: boolean) =>
+        (this.supabase as any)
+          .from("messages")
+          .insert({
+            ...insertBase,
+            type: "TEXT",
+            text: content,
+            ...(includeSubject ? { subject } : {}),
+          })
+          .select()
+          .single();
+
+      let { data, error } = await insertText(withSubject);
+      if (error && withSubject && isMissingColumnError(error)) {
+        markMessageBoardColumnsMissing();
+        ({ data, error } = await insertText(false));
+      }
 
       if (error) {
         if (error.code === "23505" && clientMessageId) {
@@ -9423,19 +9808,36 @@ export class SupabaseService {
 
       const mentionedEveryone =
         extractMentionUsernames(content).includes("all");
-      void this.notifyGroupMessageRecipients({
-        groupId,
-        senderId: userId,
-        content,
-        messageId: data.id,
-        excludeUserIds: mentionedUserIds,
-      }).catch((err) => {
-        logger.error("Failed to notify group message recipients", {
-          err,
+      /**
+       * Notification policy (§0a decision 3, §3.9). A BOARD post issues NO
+       * per-post fan-out: `notifyGroupMessageRecipients` inserts one
+       * notification plus one push per non-sender member, which on a
+       * community-scale board is a campus-wide push per post. The unread
+       * badge is the Phase 1 signal. Mentions still notify immediately, and a
+       * comment notifies the thread instead — both into the community, never
+       * into Chat.
+       */
+      const boardLink = board.isBoard
+        ? board.communitySlug
+          ? `${boardDeepLinkPath(board.communitySlug, groupId)}?messageId=${data.id}`
+          : boardDeepLinkPath(null, groupId)
+        : undefined;
+
+      if (!board.isBoard) {
+        void this.notifyGroupMessageRecipients({
           groupId,
+          senderId: userId,
+          content,
           messageId: data.id,
+          excludeUserIds: mentionedUserIds,
+        }).catch((err) => {
+          logger.error("Failed to notify group message recipients", {
+            err,
+            groupId,
+            messageId: data.id,
+          });
         });
-      });
+      }
       void this.notifyMentionedUsers({
         groupId,
         senderId: userId,
@@ -9443,8 +9845,27 @@ export class SupabaseService {
         mentionedUserIds,
         preview: content,
         mentionedEveryone,
+        link: boardLink,
       });
-      if (replyToMessageId) {
+      if (board.isBoard) {
+        if (threadRootId) {
+          void this.notifyBoardCommentRecipients({
+            groupId,
+            senderId: userId,
+            messageId: data.id,
+            threadRootId,
+            preview: content,
+            skipUserIds: mentionedUserIds,
+            communitySlug: board.communitySlug,
+          }).catch((err) => {
+            logger.warn("Failed to notify board comment recipients", {
+              err,
+              groupId,
+              messageId: data.id,
+            });
+          });
+        }
+      } else if (replyToMessageId) {
         void this.notifyReplyRecipient({
           groupId,
           senderId: userId,
@@ -9468,6 +9889,199 @@ export class SupabaseService {
         seenByTotal: 0,
       };
     }
+  }
+
+  /**
+   * The board's one pinned post, whatever page it is on — that is the whole
+   * reason it has its own endpoint. Pre-migration the columns do not exist and
+   * this answers null rather than 500ing the board (spec §3.5).
+   *
+   * Access is enforced by the caller (`getGroupById(groupId, userId)`), the
+   * same way GET /messages/group/:groupId does it.
+   */
+  async getPinnedMessage(groupId: string): Promise<Message | null> {
+    if (!groupId) return null;
+    if (!(await hasMessageBoardColumns(this.supabase))) return null;
+
+    const select = `
+      id,
+      group_id,
+      sender_id,
+      type,
+      text,
+      subject,
+      pinned_at,
+      pinned_by,
+      question_data,
+      timestamp,
+      edited_at,
+      removed_at,
+      upvotes,
+      downvotes,
+      image_url,
+      reply_to_message_id,
+      mentioned_user_ids,
+      thread_root_id,
+      profiles!sender_id (
+        id,
+        name,
+        username,
+        avatar_url
+      )
+    `;
+    const { data, error } = await (this.supabase as any)
+      .from("messages")
+      .select(select)
+      .eq("group_id", groupId)
+      .not("pinned_at", "is", null)
+      // A pin outlives the post it points at: `remove_chat_message` predates
+      // `pinned_at` and never clears it, and a comment can carry a pin from a
+      // hand-crafted PUT. Neither belongs on the board's PINNED strip.
+      .is("removed_at", null)
+      .is("thread_root_id", null)
+      .order("pinned_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      if (isMissingColumnError(error)) {
+        markMessageBoardColumnsMissing();
+        return null;
+      }
+      throw error;
+    }
+    if (!data) return null;
+
+    const msg = data as any;
+    return {
+      id: msg.id,
+      groupId: msg.group_id,
+      sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
+      senderId: msg.sender_id,
+      timestamp: msg.timestamp
+        ? new Date(msg.timestamp).toISOString()
+        : new Date().toISOString(),
+      upvotes: msg.upvotes || 0,
+      downvotes: msg.downvotes || 0,
+      ...this.normalizeMessageRecord(msg),
+    } as Message;
+  }
+
+  /**
+   * Pin or unpin a board post (spec §3.6). One pin per board, cleared
+   * server-side and enforced by the unique partial index — a 23505 means
+   * another pin landed between the clear and the set, so we clear and retry
+   * once rather than handing the client a conflict it cannot act on.
+   *
+   * Returns a status the route maps to a code, so the reason ("not a board",
+   * "not a moderator", "migration not applied") is never collapsed into 500.
+   */
+  async setMessagePin(
+    messageId: string,
+    userId: string,
+    pinned: boolean,
+  ): Promise<MessagePinResult> {
+    if (!(await hasMessageBoardColumns(this.supabase))) {
+      return { status: "unavailable" };
+    }
+
+    const { data: row, error: readError } = await this.supabase
+      .from("messages")
+      .select("id, group_id, removed_at, thread_root_id")
+      .eq("id", messageId)
+      .maybeSingle();
+    if (readError) {
+      if (isMissingColumnError(readError)) {
+        markMessageBoardColumnsMissing();
+        return { status: "unavailable" };
+      }
+      throw readError;
+    }
+    const target = row as {
+      group_id?: string;
+      removed_at?: string | null;
+      thread_root_id?: string | null;
+    } | null;
+    const groupId = target?.group_id;
+    if (!groupId) return { status: "not_found" };
+
+    // Only a live root post can BE pinned. Unpinning stays allowed on both, so
+    // a pin left behind by a deletion is still clearable.
+    if (pinned && (target?.removed_at || target?.thread_root_id)) {
+      return { status: "not_pinnable" };
+    }
+
+    // Same access rule as reading the board: membership, or 404.
+    const group = await this.getGroupById(groupId, userId);
+    if (!group) return { status: "not_found" };
+
+    const board = await this.resolveBoardContext(groupId);
+    if (!board.isBoard) return { status: "not_board" };
+
+    const role = board.communityId
+      ? resolveCommunityRole(
+          await this.communityMemberRole(board.communityId, userId),
+          userId,
+          board.communityCreatedBy,
+        )
+      : null;
+    if (!canPinOnBoard({ role, adminIds: group.adminIds || [], userId })) {
+      return { status: "forbidden" };
+    }
+
+    const clearPins = () =>
+      (this.supabase as any)
+        .from("messages")
+        .update({ pinned_at: null, pinned_by: null })
+        .eq("group_id", groupId)
+        .not("pinned_at", "is", null);
+
+    const applyPin = () =>
+      (this.supabase as any)
+        .from("messages")
+        .update(
+          pinned
+            ? { pinned_at: new Date().toISOString(), pinned_by: userId }
+            : { pinned_at: null, pinned_by: null },
+        )
+        .eq("id", messageId)
+        .select()
+        .single();
+
+    if (pinned) await clearPins();
+    let { data, error } = await applyPin();
+    if (error && (error as { code?: string }).code === "23505" && pinned) {
+      await clearPins();
+      ({ data, error } = await applyPin());
+    }
+    if (error) {
+      if (isMissingColumnError(error)) {
+        markMessageBoardColumnsMissing();
+        return { status: "unavailable" };
+      }
+      throw error;
+    }
+
+    await cacheService.deletePattern(`messages:group:${groupId}:*`);
+    await cacheService.delete(`message:raw:${messageId}`);
+
+    return { status: "ok", message: data };
+  }
+
+  /** The caller's stored role in a community, or null when they are not a member. */
+  private async communityMemberRole(
+    communityId: string,
+    userId: string,
+  ): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from("community_members")
+      .select("role")
+      .eq("community_id", communityId)
+      .eq("user_id", userId)
+      .is("opted_out_at", null)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as { role?: string | null } | null)?.role ?? null;
   }
 
   /** Notify active members after a group message is persisted (message-before-notification ordering). */

@@ -910,7 +910,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, updateGroups, handleSelectChat, updateMessages, handleCloseCreateGroupModal]);
 
-    const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null }) => {
+    const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null; communitySurface?: 'board' | 'study_group' }) => {
         if (!currentUser) return;
 
         try {
@@ -924,6 +924,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 ...(details.courseId !== undefined ? { courseId: details.courseId } : {}),
                 ...(details.visibility ? { visibility: details.visibility } : {}),
                 ...(details.communityId !== undefined ? { communityId: details.communityId } : {}),
+                // Board vs study group (spec §3.7). Ignored server-side without
+                // a communityId; 'study_group' 503s pre-migration.
+                ...(details.communitySurface ? { communitySurface: details.communitySurface } : {}),
             };
             const newGroup = await createGroup(groupData, currentUser.id, details.memberIds);
 
@@ -974,6 +977,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         courseId: g.courseId ?? g.course_id ?? null,
                         visibility: g.visibility || 'private',
                         communityId: g.communityId ?? g.community_id ?? null,
+                        communitySurface: g.communitySurface ?? g.community_surface ?? null,
                         unreadCount: existing?.unreadCount || 0,
                         pendingMembers: existing?.pendingMembers || [],
                         invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
@@ -999,6 +1003,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 courseId: newGroup.courseId ?? newGroup.course_id ?? details.courseId ?? null,
                 visibility: newGroup.visibility || details.visibility || 'private',
                 communityId: newGroup.communityId ?? newGroup.community_id ?? details.communityId ?? null,
+                communitySurface:
+                    newGroup.communitySurface ?? newGroup.community_surface ?? details.communitySurface ?? null,
                 unreadCount: 0,
                 pendingMembers: [],
                 invitedPhoneNumbers: [],

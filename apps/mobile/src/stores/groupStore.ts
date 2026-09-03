@@ -92,6 +92,8 @@ export interface CreateGroupInput {
   courseId?: string | null;
   visibility?: 'private' | 'community' | 'public';
   communityId?: string | null;
+  /** 'board' (default in a community) or 'study_group' (lives in Chat). */
+  communitySurface?: 'board' | 'study_group';
   memberIds?: string[];
   memberDetails?: Array<{
     id: string;
@@ -111,6 +113,12 @@ export interface Group {
   courseId?: string | null;
   visibility?: 'private' | 'community' | 'public';
   communityId?: string | null;
+  /**
+   * Which surface a community group renders as (Phase 1 boards). NULL/absent
+   * means "board" for any group that has a communityId — the community lounge
+   * is the one derived exception (`isCommunityBoardGroup`).
+   */
+  communitySurface?: 'board' | 'study_group' | null;
   adminIds?: string[];
   /**
    * Server-side invite token. Distinct from `id` — invite links must carry this,
@@ -142,6 +150,11 @@ export interface Message {
   editedAt?: string;
   removedAt?: string;
   isRemoved?: boolean;
+  /** Board post title (messages.subject). Absent before the boards migration. */
+  subject?: string | null;
+  /** Server-side board pin — one per board, everyone sees it. */
+  pinnedAt?: string | null;
+  pinnedBy?: string | null;
   upvotes?: number;
   downvotes?: number;
   flaggedAsSimilarUserIds?: string[];
@@ -215,6 +228,7 @@ function mapApiGroup(g: any, unreadCounts: Record<string, number>): Group {
     courseId: g.course_id ?? g.courseId ?? null,
     visibility: g.visibility || 'private',
     communityId: g.community_id ?? g.communityId ?? null,
+    communitySurface: g.community_surface ?? g.communitySurface ?? null,
     adminIds,
     inviteId: g.invite_id || g.inviteId,
     members: mappedMembers,
@@ -285,14 +299,32 @@ interface GroupState {
    * show and falls back to a placeholder.
    */
   hydrateGroup: (groupId: string) => Promise<void>;
-  fetchMessages: (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => Promise<void>;
-  loadMoreMessages: (groupId: string) => Promise<number>;
+  /**
+   * `rootsOnly` is the board's page (spec §3.3): thread roots only, so the
+   * comments folded under each post never enter the board list.
+   */
+  fetchMessages: (
+    groupId: string,
+    options?: { page?: number; refresh?: boolean; limit?: number; rootsOnly?: boolean }
+  ) => Promise<void>;
+  loadMoreMessages: (groupId: string, options?: { limit?: number; rootsOnly?: boolean }) => Promise<number>;
   sendMessage: (
     groupId: string,
     text: string,
     senderId: string,
     senderName?: string,
-    options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
+    options?: {
+      replyToMessageId?: string;
+      mentionedUserIds?: string[];
+      /** Board post title (§3.4). Validate with `validateBoardSubject` first. */
+      subject?: string | null;
+      /**
+       * Board posts are never questions: the JSON question branch is skipped
+       * so a body that happens to start with `{` posts as plain text, exactly
+       * as the API does for a board group (§3.4).
+       */
+      plainText?: boolean;
+    }
   ) => Promise<void>;
   editGroupMessage: (groupId: string, messageId: string, content: string) => Promise<void>;
   removeGroupMessage: (groupId: string, messageId: string) => Promise<void>;
@@ -415,10 +447,22 @@ function replaceOptimisticWithServer(
   return [...stripped, serverMessage];
 }
 
-function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message {
+/**
+ * Exported for the board store, which maps the two board-only endpoints
+ * (`/pinned`, `/pin`) with exactly the mapping the chat cache uses — a second
+ * mapper is how the same row ends up rendering two different ways.
+ */
+export function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message {
   let parsed: any = {};
   const rawContent = m.content || m.text || '';
-  if (typeof rawContent === 'string' && rawContent.trim().startsWith('{')) {
+  // An explicit server `type` is the answer; the JSON body is only a fallback
+  // for payload shapes that carry no type at all. A board post is stored as
+  // TEXT even when its body happens to start with `{` (§3.4), and re-deriving
+  // "question" from the body here turned such a post into a read-only legacy
+  // question card on mobile while web rendered it as an ordinary post.
+  const declaredType = typeof m.type === 'string' ? m.type.toUpperCase() : null;
+  const declaredText = declaredType === 'TEXT';
+  if (!declaredText && typeof rawContent === 'string' && rawContent.trim().startsWith('{')) {
     try {
       parsed = JSON.parse(rawContent);
     } catch {
@@ -443,11 +487,9 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
     parsed.question_stem;
 
   const isQuestion =
-    m.type === 'QUESTION' ||
-    m.type === 'question' ||
-    parsed.type === 'QUESTION' ||
-    parsed.type === 'question' ||
-    !!questionStem;
+    declaredType === 'QUESTION' ||
+    (!declaredText &&
+      (parsed.type === 'QUESTION' || parsed.type === 'question' || !!questionStem));
 
   const sender = m.sender || {};
   const senderId = m.sender_id || m.senderId || sender.id || '';
@@ -501,6 +543,9 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
     removedAt,
     isRemoved,
     reactions: m.reactions && typeof m.reactions === 'object' ? m.reactions : {},
+    subject: m.subject ?? null,
+    pinnedAt: m.pinned_at ?? m.pinnedAt ?? null,
+    pinnedBy: m.pinned_by ?? m.pinnedBy ?? null,
     upvotes: m.upvotes ?? 0,
     downvotes: m.downvotes ?? 0,
     flaggedAsSimilarUserIds:
@@ -893,20 +938,33 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  fetchMessages: async (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => {
+  fetchMessages: async (
+    groupId: string,
+    options?: { page?: number; refresh?: boolean; limit?: number; rootsOnly?: boolean }
+  ) => {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? MESSAGES_PAGE_SIZE;
     const refresh = options?.refresh ?? page === 1;
     const requestId = (messagesFetchSeqByGroup[groupId] = (messagesFetchSeqByGroup[groupId] || 0) + 1);
 
     if (page === 1) {
-      set({ isLoadingMessages: true, error: null });
+      // Only the active chat's fetch owns the shared spinner — it is cleared
+      // below on the same condition, so setting it for anything else (a board,
+      // a background prefetch) would leave it stuck true for the session.
+      set({
+        isLoadingMessages: get().activeGroupId === groupId ? true : get().isLoadingMessages,
+        error: null,
+      });
     } else {
       set({ isLoadingMore: true });
     }
 
     try {
-      const result = await api.fetchMessages(groupId, { page, limit });
+      const result = await api.fetchMessages(groupId, {
+        page,
+        limit,
+        ...(options?.rootsOnly ? { rootsOnly: true } : {}),
+      });
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const pagination = Array.isArray(result) ? undefined : (result as any)?.pagination;
       const roster =
@@ -952,13 +1010,18 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  loadMoreMessages: async (groupId: string) => {
+  loadMoreMessages: async (groupId: string, options?: { limit?: number; rootsOnly?: boolean }) => {
     const pagination = get().messagePagination[groupId];
     if (!pagination?.hasMore || get().isLoadingMore) return 0;
 
     const nextPage = pagination.page + 1;
     const beforeCount = get().messagesCache[groupId]?.length || 0;
-    await get().fetchMessages(groupId, { page: nextPage, refresh: false });
+    await get().fetchMessages(groupId, {
+      page: nextPage,
+      refresh: false,
+      ...(options?.limit ? { limit: options.limit } : {}),
+      ...(options?.rootsOnly ? { rootsOnly: true } : {}),
+    });
     const afterCount = get().messagesCache[groupId]?.length || 0;
     return Math.max(0, afterCount - beforeCount);
   },
@@ -968,7 +1031,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     text: string,
     senderId: string,
     _senderName?: string,
-    options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
+    options?: {
+      replyToMessageId?: string;
+      mentionedUserIds?: string[];
+      subject?: string | null;
+      plainText?: boolean;
+    }
   ) => {
     const releaseSendSlot = await acquireSendSlot(sendChainByGroup, groupId);
 
@@ -980,7 +1048,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       name: member?.name,
     });
     let parsed: any = {};
-    if (text.trim().startsWith('{')) {
+    if (!options?.plainText && text.trim().startsWith('{')) {
       try {
         parsed = JSON.parse(text);
       } catch {
@@ -997,6 +1065,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const deliveryScope = `group:${groupId}`;
     const deliveryFingerprint = JSON.stringify({
       text,
+      subject: options?.subject ?? null,
       replyToMessageId: options?.replyToMessageId || null,
       mentionedUserIds: [...(options?.mentionedUserIds || [])].sort(),
     });
@@ -1009,9 +1078,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const parent = options?.replyToMessageId
       ? existing.find((m) => m.id === options.replyToMessageId)
       : undefined;
+    // A reply whose parent is not in the cache (a board post older than the
+    // loaded page, opened from the pinned strip or a deep link) still belongs
+    // to a thread. `undefined` made the optimistic row look top-level, so a
+    // comment flashed onto the board as its own post card until the server row
+    // replaced it. The server resolves the true root either way.
     const threadRootId = parent
       ? resolveThreadRootId({ id: parent.id, threadRootId: parent.threadRootId })
-      : undefined;
+      : (options?.replyToMessageId ?? undefined);
     const rootReplyCount = threadRootId
       ? (existing.find((m) => m.id === threadRootId)?.replyCount || 0) + 1
       : 0;
@@ -1026,6 +1100,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       text: isQuestion ? questionStem || text : text,
       type: isQuestion ? 'question' : 'text',
       createdAt: new Date().toISOString(),
+      subject: options?.subject ?? null,
       questionStem,
       questionStatus: isQuestion ? 'PENDING' : undefined,
       questionType: parsed.questionType || parsed.question_type,
@@ -1081,6 +1156,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         clientMessageId,
         replyToMessageId: options?.replyToMessageId,
         mentionedUserIds: options?.mentionedUserIds,
+        ...(options?.subject ? { subject: options.subject } : {}),
       });
       const serverMessage = mapApiMessage(serverPayload, groupId);
       set((state) => {
@@ -1123,6 +1199,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
             clientMessageId,
             replyToMessageId: options?.replyToMessageId,
             mentionedUserIds: options?.mentionedUserIds,
+            // Carried so an airplane-mode board post keeps its title when the
+            // queue flushes — the user never sees this send, so a dropped
+            // title would be silent work loss.
+            subject: options?.subject ?? null,
           }, senderId)
           .catch(() => undefined);
       }
@@ -1260,6 +1340,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         ...(groupInput.courseId ? { courseId: groupInput.courseId } : {}),
         ...(groupInput.visibility ? { visibility: groupInput.visibility } : {}),
         ...(groupInput.communityId !== undefined ? { communityId: groupInput.communityId } : {}),
+        ...(groupInput.communitySurface ? { communitySurface: groupInput.communitySurface } : {}),
       });
 
       let persistedAvatarUrl = apiGroup.avatar_url || (apiGroup as any).avatarUrl || createAvatarUrl;
@@ -1290,6 +1371,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         ownerId: groupInput.ownerId,
         parentId: (apiGroup as any).parent_id || (apiGroup as any).parentId || groupInput.parentId,
         courseId: apiGroup.course_id ?? apiGroup.courseId ?? groupInput.courseId ?? null,
+        // The API echoes it only once the boards migration is applied; the
+        // requested surface is the honest fallback, and the caller branches on
+        // it to decide whether to land in Chat or on the board.
+        communityId: groupInput.communityId ?? null,
+        communitySurface:
+          apiGroup.community_surface ?? apiGroup.communitySurface ?? groupInput.communitySurface ?? null,
         permissions: ((apiGroup as any).permissions as GroupPermissions | undefined) || groupInput.permissions,
         members: activeMembers,
         memberCount: activeMembers.length,
@@ -1479,6 +1566,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     await get().sendMessage(groupId, failed.text, senderId, undefined, {
       replyToMessageId: failed.replyToMessageId,
       mentionedUserIds: failed.mentionedUserIds,
+      // The failed row is deleted above, so anything not forwarded here is
+      // gone for good. A board post's title used to be dropped silently, and
+      // `plainText` used to be re-asserted as false, so a JSON-shaped body
+      // came back as a read-only question card on a board.
+      subject: failed.subject ?? null,
+      plainText: failed.type !== 'question',
     });
   },
 
@@ -2433,6 +2526,7 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
     clientMessageId: string;
     replyToMessageId?: string;
     mentionedUserIds?: string[];
+    subject?: string | null;
   };
   try {
     if (data.kind === 'group' && data.groupId) {
@@ -2441,6 +2535,7 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
         clientMessageId: data.clientMessageId,
         replyToMessageId: data.replyToMessageId,
         mentionedUserIds: data.mentionedUserIds,
+        ...(data.subject ? { subject: data.subject } : {}),
       });
       const server = mapApiMessage(payload, data.groupId);
       useGroupStore.setState((state) => ({

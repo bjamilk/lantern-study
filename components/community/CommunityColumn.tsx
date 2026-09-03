@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
+  AcademicCapIcon,
   CheckBadgeIcon,
   EllipsisHorizontalIcon,
   HomeIcon,
@@ -35,7 +36,7 @@ export type { CommunityNavigate } from './communityNavigation';
 const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
 
 /**
- * The community's channel column (spec §5.3) — rendered inside the Sidebar
+ * The community's board column (spec §5.3) — rendered inside the Sidebar
  * aside whenever `resolveSideColumn(...) === 'community'`. Resolves the
  * active community by slug (so a cold load of `/discover/c/:slug/ch/:id`
  * fills in the placeholder App seeded), loads the channel payload the page
@@ -156,10 +157,16 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
                   </MenuItem>
                 ) : null}
                 <MenuItem
-                  onSelect={() => actions?.onCreateChannel()}
+                  onSelect={() => actions?.onCreateBoard()}
                   icon={<PlusIcon className="w-4 h-4 text-lantern-text-tertiary" aria-hidden="true" />}
                 >
-                  {COMMUNITY_COPY.createChannel}
+                  {COMMUNITY_COPY.createBoard}
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => actions?.onStartStudyGroup()}
+                  icon={<AcademicCapIcon className="w-4 h-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                >
+                  {COMMUNITY_COPY.startStudyGroup}
                 </MenuItem>
                 <MenuItem
                   onSelect={() => actions?.onStartRoom()}
@@ -208,10 +215,12 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
             selectedGroupId={selectedGroupId}
             pendingId={pendingId}
             onOpenLounge={actions.onOpenLounge}
-            onOpenChannel={actions.onOpenChannel}
-            onJoinChannel={actions.onJoinChannel}
+            onOpenBoard={actions.onOpenBoard}
+            onJoinBoard={actions.onJoinBoard}
+            onOpenStudyGroup={actions.onOpenStudyGroup}
             onOpenRoom={actions.onOpenRoom}
-            onCreateChannel={actions.onCreateChannel}
+            onCreateBoard={actions.onCreateBoard}
+            onStartStudyGroup={actions.onStartStudyGroup}
             onStartRoom={actions.onStartRoom}
           />
         ) : (

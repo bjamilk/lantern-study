@@ -3,6 +3,7 @@ import {
   communityShareUrl,
   type CommunityChannel,
   type CommunityDetail,
+  type CommunityStudyGroup,
   type StudyRoomListItem,
 } from '@lantern/shared/network';
 
@@ -14,8 +15,9 @@ import {
  * Screens: 'Dashboard' · 'Discover' · 'Home' {slug} · 'CloseCommunity' ·
  * 'GroupChat' {groupId, groupName, joined?, communityId, communitySlug, memberCount?} ·
  * 'JoinChannel' (same params) · 'OpenLounge' {communityId, communitySlug} ·
+ * 'OpenStudyGroup' (same params as GroupChat — lands in the Chat tab) ·
  * 'StudyRoom' {roomId} | {communityId, courseId, topic} · 'CreateLab' ·
- * 'CreateGroup' · 'Members' {slug}.
+ * 'CreateGroup' {communitySurface?} · 'StartStudyGroup' · 'Members' {slug}.
  */
 export type CommunityNavigate = (
   screen: string,
@@ -24,10 +26,14 @@ export type CommunityNavigate = (
 
 export interface CommunityListActions {
   onOpenLounge: () => void;
-  onOpenChannel: (channel: CommunityChannel) => void;
-  onJoinChannel: (channel: CommunityChannel) => void;
+  /** A board opens inside the community, never in the Chat tab (spec §5.2). */
+  onOpenBoard: (board: CommunityChannel) => void;
+  onJoinBoard: (board: CommunityChannel) => void;
+  /** A study group opens in the Chat tab with the full study surface (§7). */
+  onOpenStudyGroup: (group: CommunityStudyGroup) => void;
   onOpenRoom: (room: StudyRoomListItem) => void;
-  onCreateChannel: () => void;
+  onCreateBoard: () => void;
+  onStartStudyGroup: () => void;
   onStartRoom: () => void;
   onOpenMembers: () => void;
 }
@@ -36,7 +42,7 @@ export const LOUNGE_PENDING_ID = 'lounge';
 
 /**
  * Row handlers for a community, with a single in-flight guard so a double
- * click on `# lounge` cannot mint twice or a join cannot race its open.
+ * click on `General` cannot mint the chat twice or a join cannot race its open.
  */
 export function useCommunityListActions(
   detail: CommunityDetail | undefined,
@@ -69,23 +75,32 @@ export function useCommunityListActions(
     };
     return {
       onOpenLounge: () => void run(LOUNGE_PENDING_ID, 'OpenLounge', base),
-      onOpenChannel: (channel) =>
+      onOpenBoard: (board) =>
         void onNavigate('GroupChat', {
           ...base,
-          groupId: channel.id,
-          groupName: channel.name,
-          memberCount: channel.memberCount,
+          groupId: board.id,
+          groupName: board.name,
+          memberCount: board.memberCount,
           joined: true,
         }),
-      onJoinChannel: (channel) =>
-        void run(channel.id, 'JoinChannel', {
+      onJoinBoard: (board) =>
+        void run(board.id, 'JoinChannel', {
           ...base,
-          groupId: channel.id,
-          groupName: channel.name,
-          memberCount: channel.memberCount,
+          groupId: board.id,
+          groupName: board.name,
+          memberCount: board.memberCount,
+        }),
+      onOpenStudyGroup: (group) =>
+        void run(group.id, 'OpenStudyGroup', {
+          ...base,
+          groupId: group.id,
+          groupName: group.name,
+          memberCount: group.memberCount,
+          joined: group.isMember,
         }),
       onOpenRoom: (room) => void onNavigate('StudyRoom', { roomId: room.id }),
-      onCreateChannel: () => void onNavigate('CreateGroup', base),
+      onCreateBoard: () => void onNavigate('CreateGroup', { ...base, communitySurface: 'board' }),
+      onStartStudyGroup: () => void onNavigate('StartStudyGroup', base),
       onStartRoom: () => void onNavigate('CreateLab', { ...base, courseId: detail.course_id }),
       onOpenMembers: () => void onNavigate('Members', { slug: detail.slug }),
     };

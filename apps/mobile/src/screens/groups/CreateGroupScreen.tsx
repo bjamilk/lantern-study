@@ -13,10 +13,15 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { COMMUNITY_COPY } from '@lantern/shared/network';
+import {
+  COMMUNITY_COPY,
+  studyGroupAnnouncement,
+  studyGroupsLiveInChatCopy,
+} from '@lantern/shared/network';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type GroupPermissions } from '../../stores/groupStore';
 import { useCommunityStore } from '../../stores/communityStore';
+import { useToastStore } from '../../stores/toastStore';
 import * as api from '../../services/api';
 import { Button, ScreenHeader, Avatar } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -35,6 +40,7 @@ type Props = {
     goBack: () => void;
     replace: (screen: string, params?: Record<string, unknown>) => void;
     getState: () => { routeNames?: string[] } | undefined;
+    getParent?: () => { navigate: (tab: string, params?: Record<string, unknown>) => void } | undefined;
   };
   route: { params?: CreateGroupParams };
 };
@@ -94,6 +100,18 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   const communityId = route.params?.communityId;
   const communityName = route.params?.communityName;
   const communitySlug = route.params?.communitySlug;
+  /**
+   * Which surface the new group takes inside the community (§4.6). Defaults to
+   * 'board' whenever a community is set, so every existing caller is unchanged.
+   * 'study_group' is the destination for everything a board removes: it opens
+   * in Chat with questions, tests and games intact, and stays listed here.
+   */
+  const communitySurface: 'board' | 'study_group' = communityId
+    ? (route.params?.communitySurface ?? 'board')
+    : 'board';
+  const isStudyGroup = !!communityId && communitySurface === 'study_group';
+  /** The board a "Start a study group about this" came from, if any. */
+  const announceInGroupId = route.params?.announceInGroupId;
   const lockedCommunity = useMemo(
     () => (communityId && communityName ? { id: communityId, name: communityName } : null),
     [communityId, communityName]
@@ -101,7 +119,8 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
   const [step, setStep] = useState<'select_members' | 'group_details'>('select_members');
   const [selectedUsers, setSelectedUsers] = useState<SearchResult[]>([]);
-  const [groupName, setGroupName] = useState('');
+  // "Start a study group about this" prefills the name from the post.
+  const [groupName, setGroupName] = useState(route.params?.seedName ?? '');
   const [groupDescription, setGroupDescription] = useState('');
   const [courseId, setCourseId] = useState<string | null>(null);
   const [discovery, setDiscovery] = useState<GroupDiscoveryValue>(() =>
@@ -235,6 +254,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         courseId,
         visibility: discovery.visibility,
         communityId: discovery.communityId,
+        ...(communityId ? { communitySurface } : {}),
         memberIds: selectedUserIds,
         memberDetails: selectedUsers.map(u => ({
           id: u.id,
@@ -244,13 +264,44 @@ export function CreateGroupScreen({ navigation, route }: Props) {
       });
 
       if (communityId) {
-        // The community's channel list is stale now; it refetches on focus.
+        // The community's board list is stale now; it refetches on focus.
         useCommunityStore.getState().invalidate(communityId);
+
+        if (isStudyGroup) {
+          // §7: the handoff is SHOWN, not inferred — the user physically
+          // changes tab, and the toast says where the group went.
+          if (announceInGroupId) {
+            // The board keeps a plain TEXT pointer to the group a post spawned.
+            void useGroupStore
+              .getState()
+              .sendMessage(
+                announceInGroupId,
+                studyGroupAnnouncement(ownerName, created.name),
+                user.id,
+                undefined,
+                { plainText: true }
+              )
+              .catch(() => undefined);
+          }
+          const parent = navigation.getParent?.();
+          const params = {
+            groupId: created.id,
+            groupName: created.name,
+            openAddMembers: true,
+            communitySlug,
+            communityName,
+          };
+          if (parent) parent.navigate('ChatTab', { screen: 'GroupChat', params });
+          else navigation.replace('GroupChat', params);
+          useToastStore.getState().showToast(COMMUNITY_COPY.createdInChat(created.name), 'success');
+          return;
+        }
+
         const onMarketStack = navigation
           .getState()
           ?.routeNames?.includes('CommunityChannel');
         if (onMarketStack && communitySlug && communityName) {
-          // Founder rule (spec §0a): stay on the community's stack.
+          // Founder rule (spec §0a): a board stays on the community's stack.
           navigation.replace('CommunityChannel', {
             groupId: created.id,
             groupName: created.name,
@@ -273,8 +324,16 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         groupName: created.name,
         openAddMembers: true,
       });
-    } catch {
-      Alert.alert('Error', 'Failed to create group. Please try again.');
+    } catch (error) {
+      // Pre-migration the API answers 503 `Study groups are not available yet`
+      // (§3.1). Surfacing the server's own sentence is the difference between
+      // a degrade and a mystery.
+      Alert.alert(
+        'Error',
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to create group. Please try again.'
+      );
     } finally {
       setIsCreating(false);
     }
@@ -293,6 +352,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
     communityId,
     communityName,
     communitySlug,
+    communitySurface,
+    isStudyGroup,
+    announceInGroupId,
   ]);
 
   if (step === 'select_members') {
@@ -301,7 +363,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         <ScreenHeader
           title={
             lockedCommunity
-              ? COMMUNITY_COPY.newChannelTitle(lockedCommunity.name)
+              ? isStudyGroup
+                ? COMMUNITY_COPY.newStudyGroupTitle(lockedCommunity.name)
+                : COMMUNITY_COPY.newBoardTitle(lockedCommunity.name)
               : isSubGroup
                 ? 'New Sub-group'
                 : 'New Group'
@@ -407,7 +471,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
       <ScreenHeader
         title={
           lockedCommunity
-            ? COMMUNITY_COPY.newChannelTitle(lockedCommunity.name)
+            ? isStudyGroup
+              ? COMMUNITY_COPY.newStudyGroupTitle(lockedCommunity.name)
+              : COMMUNITY_COPY.newBoardTitle(lockedCommunity.name)
             : isSubGroup
               ? 'Sub-group Details'
               : 'Group Details'
@@ -536,8 +602,22 @@ export function CreateGroupScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <StepFooter>
+        {/* §4.6: the no-silent-disappearance contract, in copy. It is the one
+            place a member is told where the study apparatus went, so it is
+            not optional. */}
+        {isStudyGroup && lockedCommunity ? (
+          <Text className="text-xs text-lantern-text-secondary mb-2">
+            {studyGroupsLiveInChatCopy(lockedCommunity.name)}
+          </Text>
+        ) : null}
         <Button fullWidth loading={isCreating} disabled={!groupName.trim()} onPress={handleCreate}>
-          {lockedCommunity ? 'Create channel' : isSubGroup ? 'Create Sub-group' : 'Create Group'}
+          {lockedCommunity
+            ? isStudyGroup
+              ? COMMUNITY_COPY.startStudyGroup
+              : COMMUNITY_COPY.createBoard
+            : isSubGroup
+              ? 'Create Sub-group'
+              : 'Create Group'}
         </Button>
       </StepFooter>
     </SafeAreaView>

@@ -54,6 +54,7 @@ import {
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
+import { isCommunityBoard } from '@lantern/shared/network';
 import {
   getInquiryByThread,
   fetchOffers,
@@ -1182,6 +1183,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const groupMemberList = groupMemberListForMentions;
   const group = isGroup ? { ...chat, members: groupMemberList } : null;
   const isGroupAdmin = isGroupAdminForMentions;
+  /**
+   * The community's ONE live chat ("General", founder decision 1). Boards never
+   * mount ChatWindow at all — they render `CommunityBoard` — so the only group
+   * that reaches here with a communityId and no `study_group` surface is the
+   * lounge. It keeps the chat, and loses the STUDY/TEST apparatus: questions,
+   * tests, study mode, AI generation, the question-visibility filter and
+   * sub-group creation all live in a study group now (§0a.1, §6).
+   */
+  const communityHost = !!group && isCommunityBoard(group);
 
   const typingLabels = typingUserIds.map((userId) =>
     resolveGroupChatSenderLabel({ id: userId }, groupMemberList)
@@ -1410,8 +1420,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   currentUserVote={userVotes[msg.id]}
                   myReactions={myReactions[msg.id]}
                   onToggleReaction={handleToggleReaction}
-                  onVoteQuestion={onVoteQuestion}
-                  onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                  onVoteQuestion={communityHost ? undefined : onVoteQuestion}
+                  onFlagAsSimilar={
+                    communityHost ? undefined : (messageId) => onFlagAsSimilar(messageId, chat.id)
+                  }
                   currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
                   group={group}
                   currentUser={currentUser}
@@ -1568,8 +1580,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           )}
           <MessageInputBar
             onSendMessage={handleComposerSend}
-            onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
-            onAIQuery={isGroup ? onAIQuery : undefined}
+            onOpenQuestionModal={isGroup && !communityHost ? onOpenQuestionModal : undefined}
+            onAIQuery={isGroup && !communityHost ? onAIQuery : undefined}
             onTyping={broadcastTyping}
             mentionCandidates={mentionCandidates}
             seedMentionUsername={seedMentionUsername}
@@ -1635,8 +1647,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   currentUserVote={userVotes[msg.id]}
                   myReactions={myReactions[msg.id]}
                   onToggleReaction={handleToggleReaction}
-                  onVoteQuestion={onVoteQuestion}
-                  onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                  onVoteQuestion={communityHost ? undefined : onVoteQuestion}
+                  onFlagAsSimilar={
+                    communityHost ? undefined : (messageId) => onFlagAsSimilar(messageId, chat.id)
+                  }
                   currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
                   group={group}
                   currentUser={currentUser}
@@ -1681,7 +1695,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           <div className="flex-shrink-0 border-t border-lantern-border">
             <MessageInputBar
               onSendMessage={handleThreadSend}
-              onAIQuery={chat.chatType === 'group' ? onAIQuery : undefined}
+              onAIQuery={chat.chatType === 'group' && !communityHost ? onAIQuery : undefined}
               mentionCandidates={mentionCandidates}
               seedMentionUsername={threadSeedMentionUsername}
               onSeedMentionConsumed={() => setThreadSeedMentionUsername(null)}
@@ -1755,7 +1769,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     >
                       {COMMUNITY_COPY.inCommunity(communityContext.name)}
                     </button>
-                    {isGroup && questionCount > 0 ? ` · ${questionCount} question${questionCount !== 1 ? 's' : ''}` : ''}
+                    {isGroup && !communityHost && questionCount > 0 ? ` · ${questionCount} question${questionCount !== 1 ? 's' : ''}` : ''}
                   </>
                 ) : headerSubtitle}
               </p>
@@ -1767,7 +1781,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 stays exposed on small screens; Test/Study fan out at lg+, and
                 everything else (visibility, mute) lives in the overflow menu
                 so each action sits in exactly one place per breakpoint. */}
-            {isGroup && group && !isArchived && (
+            {isGroup && group && !isArchived && !communityHost && (
               <div className="flex items-center gap-1 mr-2">
                 <button
                   onClick={onOpenQuestionModal}
@@ -1818,29 +1832,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     Group Info & Members
                   </MenuItem>
                   <MenuSeparator />
-                  <MenuSubmenu
-                    label="All questions"
-                    open={questionFiltersOpen}
-                    onOpenChange={setQuestionFiltersOpen}
-                  >
-                    {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
-                      <MenuItem
-                        key={opt.value}
-                        onSelect={() =>
-                          handleDropdownAction(() => setQuestionVisibilityMode(opt.value))
-                        }
-                        className={`pl-8 ${
-                          questionVisibilityMode === opt.value
-                            ? 'text-lantern-primary font-medium'
-                            : ''
-                        }`}
+                  {communityHost ? null : (
+                    <>
+                      <MenuSubmenu
+                        label="All questions"
+                        open={questionFiltersOpen}
+                        onOpenChange={setQuestionFiltersOpen}
                       >
-                        {opt.label}
-                        {questionVisibilityMode === opt.value ? ' ✓' : ''}
-                      </MenuItem>
-                    ))}
-                  </MenuSubmenu>
-                  <MenuSeparator />
+                        {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
+                          <MenuItem
+                            key={opt.value}
+                            onSelect={() =>
+                              handleDropdownAction(() => setQuestionVisibilityMode(opt.value))
+                            }
+                            className={`pl-8 ${
+                              questionVisibilityMode === opt.value
+                                ? 'text-lantern-primary font-medium'
+                                : ''
+                            }`}
+                          >
+                            {opt.label}
+                            {questionVisibilityMode === opt.value ? ' ✓' : ''}
+                          </MenuItem>
+                        ))}
+                      </MenuSubmenu>
+                      <MenuSeparator />
+                    </>
+                  )}
                   <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
                     Notifications
                   </div>
@@ -1856,38 +1874,45 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     </MenuItem>
                   ) : (
                     <>
-                      <MenuItem
-                        onSelect={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
-                        icon={<PlusCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />}
-                      >
-                        Create Sub-group
-                      </MenuItem>
-                      <MenuSeparator />
-                      <div className="lg:hidden">
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<ClipboardDocumentCheckIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
-                          Take a Test
-                        </MenuItem>
-                        <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<BookOpenIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
-                          Study Mode
-                        </MenuItem>
-                      </div>
-                      {onOpenAIGenerateModal && isGroupAdmin && (
-                        <MenuItem
-                          onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
-                          icon={<SparklesIcon className="w-4 h-4" />}
-                          className="text-lantern-primary"
-                        >
-                          AI Generate Questions
-                        </MenuItem>
+                      {/* Every study affordance below belongs to a study group
+                          now, and a community's chat is never archivable by a
+                          member (§5.4 / §6). */}
+                      {communityHost ? null : (
+                        <>
+                          <MenuItem
+                            onSelect={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
+                            icon={<PlusCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+                          >
+                            Create Sub-group
+                          </MenuItem>
+                          <MenuSeparator />
+                          <div className="lg:hidden">
+                            <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<ClipboardDocumentCheckIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                              Take a Test
+                            </MenuItem>
+                            <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<BookOpenIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                              Study Mode
+                            </MenuItem>
+                          </div>
+                          {onOpenAIGenerateModal && isGroupAdmin && (
+                            <MenuItem
+                              onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
+                              icon={<SparklesIcon className="w-4 h-4" />}
+                              className="text-lantern-primary"
+                            >
+                              AI Generate Questions
+                            </MenuItem>
+                          )}
+                          <MenuSeparator />
+                          <MenuItem
+                            onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
+                            icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                            className="text-amber-600 dark:text-amber-400"
+                          >
+                            Archive Group
+                          </MenuItem>
+                        </>
                       )}
-                      <MenuSeparator />
-                      <MenuItem
-                        onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                        icon={<ArchiveBoxIcon className="w-4 h-4" />}
-                        className="text-amber-600 dark:text-amber-400"
-                      >
-                        Archive Group
-                      </MenuItem>
                     </>
                   )}
                 </MenuContent>

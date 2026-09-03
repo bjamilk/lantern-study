@@ -72,8 +72,8 @@ import {
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
-import { COMMUNITY_COPY } from '@lantern/shared/network';
-import { useCommunityStore } from '../../stores/communityStore';
+import { COMMUNITY_COPY, isCommunityBoardGroupIn } from '@lantern/shared/network';
+import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { findMyCommunity } from '../../utils/communityOverlay';
 
 export type GroupChatNavigation = {
@@ -376,6 +376,14 @@ export function GroupChatView({
   host = 'chat',
   communityContext,
 }: GroupChatViewProps) {
+  /**
+   * A community surface (the lounge) keeps this chat UI but loses the whole
+   * study/test apparatus — founder decision 1. That includes the per-question
+   * machinery on the rows themselves: the vote bar, the VERIFIED/REJECTED
+   * chip, the 20% threshold and flag-as-duplicate all live in a study group
+   * now (§6). `Report` is a different action and stays.
+   */
+  const studySurface = host !== 'community';
   const user = useAuthStore(s => s.user);
   const { colors } = useTheme();
   const { lowDataMode } = useLowDataMode();
@@ -948,8 +956,12 @@ export function GroupChatView({
     if (!trimmed || !user?.id || sending || aiThinking) return;
 
     // Same trigger as web: "@AI <question>" or "/ask <question>" answers in-chat
-    // instead of posting the question. Not available while editing a message.
-    if (!editingMessage && parseAiQuery(trimmed)) {
+    // instead of posting the question. Not available while editing a message,
+    // and not on a community room (§6): AI credits are personal, and a
+    // campus-wide lounge is not where they get spent in public. Web strips the
+    // same path via `communityHost` in ChatWindow. The text posts as an
+    // ordinary message instead, so nothing disappears silently.
+    if (host !== 'community' && !editingMessage && parseAiQuery(trimmed)) {
       if (!overrideText) setText('');
       aiReplyToIdRef.current = replyTo?.id;
       const result = await tryAiTutorSend(trimmed);
@@ -1403,6 +1415,11 @@ export function GroupChatView({
   }, [archiveBusy, archiveGroup, groupId]);
 
   useEffect(() => {
+    // Founder decision 1 (2026-09-02): the community lounge is a chat WITHOUT
+    // the study/test apparatus, so the coach-marks that anchor to the
+    // add-question "+", Study mode, Test mode and AI generate must not arm —
+    // a tip pointing at an element that is not rendered is a visible bug.
+    if (host === 'community') return undefined;
     const { setTipAllowed, setTipReady } = useFeatureTipStore.getState();
     setTipReady('chat.question', true);
     setTipReady('chat.test', true);
@@ -1416,7 +1433,7 @@ export function GroupChatView({
       setTipReady('chat.aiGenerate', false);
       setTipAllowed('chat.aiGenerate', false);
     };
-  }, [isAdmin]);
+  }, [isAdmin, host]);
 
   const handleBack = useCallback(() => {
     // On the community stack the community always sits underneath.
@@ -1510,7 +1527,7 @@ export function GroupChatView({
     // Remove is no longer listed here — it is a first-class Delete button in
     // the action bar (duplicating it made the overflow the only path when the
     // bar's other actions were unavailable).
-    if (!isOwn && message.type === 'question') {
+    if (studySurface && !isOwn && message.type === 'question') {
       items.push({
         label: 'Flag duplicate',
         icon: 'copy-outline',
@@ -1528,6 +1545,7 @@ export function GroupChatView({
   }, [
     messageActionTarget,
     user?.id,
+    studySurface,
     handleSheetEdit,
     handleSheetRemove,
     handleSheetFlagDuplicate,
@@ -1559,7 +1577,11 @@ export function GroupChatView({
   }, []);
 
   const headerMenuActions = useMemo((): GroupChatHeaderAction[] => {
-    const actions: GroupChatHeaderAction[] = [
+    // The community lounge keeps this chat UI but loses every study/test
+    // affordance (founder decision 1): questions, tests, games, challenges and
+    // sub-group creation live in a STUDY GROUP now, which opens in Chat.
+    const practice: GroupChatHeaderAction[] = studySurface
+      ? [
       // Practice — Study / Test are the primary entry points, so they lead.
       // Gated while archived: an archived group is read-only.
       {
@@ -1584,6 +1606,11 @@ export function GroupChatView({
           setShowTestConfig(true);
         },
       },
+        ]
+      : [];
+
+    const actions: GroupChatHeaderAction[] = [
+      ...practice,
       // View — display preferences & insights. Nested under All questions so
       // Verified / Unverified / Hide all are not top-level siblings.
       {
@@ -1609,23 +1636,27 @@ export function GroupChatView({
           setChatSearchOpen(false);
         },
       },
-      {
-        id: 'question-filter',
-        label: 'All questions',
-        icon: 'filter-outline',
-        section: 'View',
-        submenu: {
-          title: 'All questions',
-          options: QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => ({
-            id: `qvis-${opt.value}`,
-            label: opt.label,
-            helper: opt.helper,
-            icon: 'filter-outline' as const,
-            selected: questionVisibilityMode === opt.value,
-            onPress: () => setQuestionVisibilityMode(opt.value),
-          })),
-        },
-      },
+      ...(studySurface
+        ? [
+            {
+              id: 'question-filter',
+              label: 'All questions',
+              icon: 'filter-outline' as const,
+              section: 'View',
+              submenu: {
+                title: 'All questions',
+                options: QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => ({
+                  id: `qvis-${opt.value}`,
+                  label: opt.label,
+                  helper: opt.helper,
+                  icon: 'filter-outline' as const,
+                  selected: questionVisibilityMode === opt.value,
+                  onPress: () => setQuestionVisibilityMode(opt.value),
+                })),
+              },
+            },
+          ]
+        : []),
       // Notifications.
       chatMuted
         ? {
@@ -1662,7 +1693,7 @@ export function GroupChatView({
       },
     ];
 
-    if (isAdmin) {
+    if (isAdmin && studySurface) {
       actions.push({
         id: 'ai-generate',
         label: 'AI generate questions',
@@ -1677,6 +1708,7 @@ export function GroupChatView({
 
     return actions;
   }, [
+    host,
     isAdmin,
     isArchived,
     colors.warning,
@@ -1745,8 +1777,10 @@ export function GroupChatView({
         lowDataMode={lowDataMode}
         onBack={handleBack}
         onAddQuestion={() => setShowQuestionModal(true)}
-        // Archived groups are read-only: hide the add-question "+".
-        addQuestionDisabled={isArchived}
+        // Archived groups are read-only: hide the add-question "+". The
+        // community lounge hides it for good (founder decision 1) — questions
+        // are posted in a study group now.
+        addQuestionDisabled={isArchived || host === 'community'}
         onTitlePress={() => setShowGroupInfo(true)}
         menuActions={headerMenuActions}
         contextLabel={communityContext?.label}
@@ -1963,8 +1997,8 @@ export function GroupChatView({
                   userFlagged={
                     user?.id ? item.flaggedAsSimilarUserIds?.includes(user.id) ?? false : false
                   }
-                  canFlag={item.senderId !== user?.id}
-                  canVote={!!user?.id}
+                  canFlag={studySurface && item.senderId !== user?.id}
+                  canVote={studySurface && !!user?.id}
                   dateLabel={showDate ? formatChatDateLabel(item.createdAt) : null}
                   showUnreadDivider={showUnreadDivider}
                   isGroupedWithPrevious={isGroupedWithPrevious}
@@ -2162,10 +2196,18 @@ export function GroupChatView({
             setShowGroupInfo(false);
             setShowAddMembers(true);
           }}
-          onCreateSubgroup={() => {
-            setShowGroupInfo(false);
-            chatNavigate('CreateGroup', { parentId: groupId, parentName: displayName });
-          }}
+          // Replaced by "Start a study group" on the community page: a
+          // sub-group passes no communityId, so one made here would be
+          // invisible to its community forever (§6).
+          hideStudyActions={host === 'community'}
+          onCreateSubgroup={
+            host === 'community'
+              ? undefined
+              : () => {
+                  setShowGroupInfo(false);
+                  chatNavigate('CreateGroup', { parentId: groupId, parentName: displayName });
+                }
+          }
           onChallenge={member => {
             setShowGroupInfo(false);
             setChallengeMember(member);
@@ -2281,15 +2323,23 @@ export function GroupChatView({
         members={groupMembers}
         mentionCandidates={mentionCandidates}
         userVotes={userVotes}
-        onVote={(messageId, vote) => {
-          if (!user?.id) return;
-          void voteOnMessage(groupId, messageId, user.id, vote);
-        }}
-        onFlag={messageId => {
-          if (!user?.id) return;
-          void flagMessageAsSimilar(messageId, groupId, user.id);
-        }}
-        canFlag={msg => msg.senderId !== user?.id}
+        onVote={
+          studySurface
+            ? (messageId, vote) => {
+                if (!user?.id) return;
+                void voteOnMessage(groupId, messageId, user.id, vote);
+              }
+            : undefined
+        }
+        onFlag={
+          studySurface
+            ? messageId => {
+                if (!user?.id) return;
+                void flagMessageAsSimilar(messageId, groupId, user.id);
+              }
+            : undefined
+        }
+        canFlag={msg => studySurface && msg.senderId !== user?.id}
         userFlagged={msg => (user?.id ? msg.flaggedAsSimilarUserIds?.includes(user.id) ?? false : false)}
         groupId={groupId}
       />
@@ -2306,9 +2356,9 @@ export function GroupChatView({
  */
 export function GroupChatScreen({ navigation, route }: Props) {
   const { groupId, groupName, openAddMembers, communitySlug, communityName } = route.params;
-  const groupCommunityId = useGroupStore(
-    s => s.groups.find(g => g.id === groupId)?.communityId ?? s.currentGroup?.communityId ?? null
-  );
+  const resolvedGroup = useGroupStore(s => s.groups.find(g => g.id === groupId));
+  const currentGroupCommunityId = useGroupStore(s => s.currentGroup?.communityId ?? null);
+  const groupCommunityId = resolvedGroup?.communityId ?? currentGroupCommunityId;
   const loadMine = useCommunityStore(s => s.loadMine);
   // Subscribe to the ARRAY, then derive. `selectMyCommunity` builds a fresh
   // `{ slug, name }` on every call, and a zustand selector that returns a new
@@ -2320,13 +2370,84 @@ export function GroupChatScreen({ navigation, route }: Props) {
     [myCommunities, groupCommunityId]
   );
 
+  // Settles once the membership list has been fetched (or failed) for this
+  // open. Until then a group that belongs to a community has no decidable
+  // surface, and guessing "board" for the lounge is the one unrecoverable
+  // mistake — so this screen waits instead of guessing.
+  const [membershipSettled, setMembershipSettled] = useState(false);
   useEffect(() => {
-    if (!groupCommunityId || (communitySlug && communityName)) return;
-    void loadMine().catch(() => undefined);
-  }, [groupCommunityId, communitySlug, communityName, loadMine]);
+    if (!groupCommunityId) {
+      setMembershipSettled(true);
+      return;
+    }
+    // A group that resolves its community late (the row arrives after the
+    // screen mounts) must go back to waiting, not keep the answer it gave
+    // while it looked like a plain chat.
+    setMembershipSettled(false);
+    let cancelled = false;
+    void loadMine()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setMembershipSettled(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupCommunityId, loadMine]);
 
   const resolved =
     communitySlug && communityName ? { slug: communitySlug, name: communityName } : fromMine;
+
+  // §4.5 — the Chat-tab bypass. A board group also appears in GET /groups, so
+  // a deep link, a notification or an old route could still open it here as a
+  // chat with the whole study surface. Send it to the board instead and render
+  // nothing meanwhile. The lounge is exempt: it IS a chat (founder decision 1).
+  const detailBySlug = useCommunityStore(s => s.detailBySlug);
+  const channelsById = useCommunityStore(s => s.channelsById);
+  const knownLounges = useMemo(
+    () => collectKnownLounges(detailBySlug, channelsById, myCommunities),
+    [detailBySlug, channelsById, myCommunities]
+  );
+  const isLounge = knownLounges.loungeGroupIds.has(groupId);
+  const isBoard = !!resolvedGroup && isCommunityBoardGroupIn(resolvedGroup, knownLounges);
+  // A community group whose lounge pointer has not arrived yet is neither: a
+  // deep link or a notification lands here with nothing but a group id, and
+  // rendering the chat meanwhile would reopen the §4.5 bypass for a board
+  // while rendering the board would strip the lounge of its chat.
+  const surfaceUndecided =
+    !!groupCommunityId &&
+    !membershipSettled &&
+    !knownLounges.resolvedCommunityIds.has(groupCommunityId);
+
+  useEffect(() => {
+    if (!isBoard) return;
+    navigation.getParent()?.navigate('MarketTab', {
+      screen: 'CommunityChannel',
+      params: {
+        groupId,
+        groupName: groupName ?? resolvedGroup?.name,
+        communitySlug: resolved?.slug,
+        communityName: resolved?.name,
+        communityId: groupCommunityId ?? undefined,
+        // We have already resolved the surface here; hand the answer over so
+        // the router never has to guess it from a missing slug.
+        isLounge: false,
+      },
+    });
+    // Leave no chat screen underneath for hardware back to return to.
+    const hasScreenBelow = (navigation.getState?.()?.index ?? 0) > 0;
+    if (hasScreenBelow) navigation.goBack();
+    else navigation.navigate('GroupsList');
+  }, [
+    isBoard,
+    navigation,
+    groupId,
+    groupName,
+    resolvedGroup?.name,
+    resolved?.slug,
+    resolved?.name,
+    groupCommunityId,
+  ]);
 
   const communityContext = useMemo(() => {
     if (!resolved) return null;
@@ -2340,13 +2461,21 @@ export function GroupChatScreen({ navigation, route }: Props) {
     };
   }, [resolved?.slug, resolved?.name, navigation]);
 
+  if (isBoard || surfaceUndecided) return null;
+
   return (
     <GroupChatView
       groupId={groupId}
       groupName={groupName}
       openAddMembers={openAddMembers}
       navigation={navigation}
-      host="chat"
+      // The surface is decided by the GROUP, never by which screen mounted it
+      // (§0). The lounge is a live chat wherever it is opened, but it is
+      // ALWAYS stripped of the study/test apparatus (founder decision 1) — so
+      // reaching it from the Chat tab must not restore Study, Test, the
+      // question tray, AI generate, sub-groups or Challenge. Web derives the
+      // same thing from the group inside `ChatWindow`.
+      host={isLounge ? 'community' : 'chat'}
       communityContext={communityContext}
     />
   );

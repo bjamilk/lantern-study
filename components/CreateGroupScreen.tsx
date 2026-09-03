@@ -13,7 +13,7 @@ import {
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import { normalizeUserSearchQuery } from '@lantern/shared';
-import { COMMUNITY_COPY } from '@lantern/shared/network';
+import { COMMUNITY_COPY, studyGroupsLiveInChatCopy } from '@lantern/shared/network';
 import { searchUsers } from '../services/supabase';
 import { useCommunityStore } from '../stores/communityStore';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
@@ -49,13 +49,22 @@ interface CreateGroupScreenProps {
     courseId?: string | null;
     visibility?: 'private' | 'community' | 'public';
     communityId?: string | null;
+    communitySurface?: 'board' | 'study_group';
   }) => Promise<CreatedGroupSummary | void>;
   onEnterGroup: (group: CreatedGroupSummary) => void;
   onBack: () => void;
   /** Starting discoverability (a channel created inside a community starts as `community`). */
   initialDiscovery?: GroupDiscoveryValue;
-  /** New channel in `<Community>`: title changes and the listing is read-only. */
+  /** New board in `<Community>`: title changes and the listing is read-only. */
   lockedCommunity?: { id: string; name: string };
+  /**
+   * Which surface a group created inside a community becomes (spec §4.6).
+   * 'study_group' shows the `studyGroupsLiveInChat` consequence copy above the
+   * Create button — the no-silent-disappearance contract, not optional.
+   */
+  communitySurface?: 'board' | 'study_group';
+  /** Seeds the name (e.g. "Start a study group about this" from a post). */
+  initialName?: string;
 }
 
 function buildInviteLink(inviteId: string): string {
@@ -84,11 +93,13 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   onBack,
   initialDiscovery,
   lockedCommunity,
+  communitySurface,
+  initialName,
 }) => {
   const [step, setStep] = useState<'select_members' | 'group_details' | 'success'>('select_members');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<SearchResult[]>([]);
-  const [groupName, setGroupName] = useState('');
+  const [groupName, setGroupName] = useState(initialName ?? '');
   const [groupDescription, setGroupDescription] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -108,7 +119,12 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   const [discovery, setDiscovery] = useState<GroupDiscoveryValue>(
     () => initialDiscovery ?? { visibility: 'private', communityId: null }
   );
-  const screenTitle = lockedCommunity ? COMMUNITY_COPY.newChannelTitle(lockedCommunity.name) : 'New Group';
+  const isStudyGroup = communitySurface === 'study_group';
+  const screenTitle = lockedCommunity
+    ? isStudyGroup
+      ? COMMUNITY_COPY.newStudyGroupTitle(lockedCommunity.name)
+      : COMMUNITY_COPY.newBoardTitle(lockedCommunity.name)
+    : 'New Group';
 
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
@@ -177,6 +193,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         courseId: course?.id ?? null,
         visibility: discovery.visibility,
         communityId: discovery.communityId,
+        ...(discovery.communityId && communitySurface ? { communitySurface } : {}),
       });
       if (result?.inviteId) {
         // The community's channel list is cached; the new channel must show on return.
@@ -435,6 +452,12 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         </div>
       </div>
       <div className="shrink-0 sticky bottom-0 p-4 bg-lantern-surface border-t dark:border-lantern-border">
+        {/* The ONE place a member is told where the study apparatus went (§4.6). */}
+        {isStudyGroup && lockedCommunity ? (
+          <p className="mx-auto mb-3 max-w-sm text-xs text-lantern-text-secondary">
+            {studyGroupsLiveInChatCopy(lockedCommunity.name)}
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={() => void handleCreate()}

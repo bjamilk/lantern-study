@@ -274,17 +274,19 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
           </header>
 
           {/* Below md there is no column: the channel list lives on the page. */}
-          <section className="md:hidden" aria-label="Channels">
+          <section className="md:hidden" aria-label="Boards">
             {payload && actions ? (
               <CommunityChannelList
                 payload={payload}
                 groups={groups}
                 pendingId={pendingId}
                 onOpenLounge={actions.onOpenLounge}
-                onOpenChannel={actions.onOpenChannel}
-                onJoinChannel={actions.onJoinChannel}
+                onOpenBoard={actions.onOpenBoard}
+                onJoinBoard={actions.onJoinBoard}
+                onOpenStudyGroup={actions.onOpenStudyGroup}
                 onOpenRoom={actions.onOpenRoom}
-                onCreateChannel={actions.onCreateChannel}
+                onCreateBoard={actions.onCreateBoard}
+                onStartStudyGroup={actions.onStartStudyGroup}
                 onStartRoom={actions.onStartRoom}
                 onOpenMembers={actions.onOpenMembers}
               />

@@ -52,6 +52,39 @@ import type {
   UserCourse,
 } from "../types";
 
+/**
+ * A `messages` row as the board reads it. `subject` / `pinned_at` / `pinned_by`
+ * are absent (not null) before the 20260903120000 migration is applied — the
+ * API degrades rather than 500s, so treat missing as "no title / not pinned".
+ */
+export type BoardMessageRow = {
+  id: string;
+  group_id?: string;
+  groupId?: string;
+  sender_id?: string;
+  senderId?: string;
+  text?: string;
+  subject?: string | null;
+  type?: "TEXT" | "QUESTION";
+  timestamp?: string;
+  created_at?: string;
+  updated_at?: string;
+  edited_at?: string | null;
+  removed_at?: string | null;
+  thread_root_id?: string | null;
+  threadRootId?: string | null;
+  reply_count?: number;
+  replyCount?: number;
+  reactions?: Record<string, number>;
+  pinned_at?: string | null;
+  pinnedAt?: string | null;
+  pinned_by?: string | null;
+  pinnedBy?: string | null;
+  image_url?: string | null;
+  question_stem?: string | null;
+  client_message_id?: string | null;
+};
+
 type ChatMessageMutationPayload = {
   id: string;
   groupId?: string;
@@ -741,6 +774,13 @@ export function createApiEndpoints(client: ApiClient) {
       courseId?: string | null;
       visibility?: 'private' | 'community' | 'public';
       communityId?: string | null;
+      /**
+       * Which surface the group renders as inside a community. Defaults to
+       * 'board' server-side when communityId is set; ignored otherwise.
+       * 'study_group' 503s (`Study groups are not available yet`) until the
+       * 20260903120000 migration is applied.
+       */
+      communitySurface?: 'board' | 'study_group';
     }) =>
       apiRequest<{
         id: string;
@@ -750,6 +790,8 @@ export function createApiEndpoints(client: ApiClient) {
         invite_id: string;
         course_id?: string | null;
         courseId?: string | null;
+        community_surface?: 'board' | 'study_group' | null;
+        communitySurface?: 'board' | 'study_group' | null;
         created_at: string;
         updated_at: string;
       }>("/groups", {
@@ -894,11 +936,13 @@ export function createApiEndpoints(client: ApiClient) {
 
     fetchMessages: async (
       groupId: string,
-      options?: { page?: number; limit?: number },
+      options?: { page?: number; limit?: number; rootsOnly?: boolean },
     ) => {
       const params = new URLSearchParams();
       if (options?.page) params.append("page", options.page.toString());
       if (options?.limit) params.append("limit", options.limit.toString());
+      // Board pages are roots-only: comments live behind "N comments".
+      if (options?.rootsOnly) params.append("rootsOnly", "1");
       const query = params.toString() ? `?${params.toString()}` : "";
       const endpoint = `/messages/group/${groupId}${query}`;
 
@@ -945,6 +989,12 @@ export function createApiEndpoints(client: ApiClient) {
         clientMessageId?: string;
         replyToMessageId?: string;
         mentionedUserIds?: string[];
+        /**
+         * Board post title, ≤120 chars. Dropped server-side (not rejected)
+         * before the 20260903120000 migration. Validate with
+         * `validateBoardSubject` from `@lantern/shared/network` first.
+         */
+        subject?: string | null;
         type?: "TEXT" | "QUESTION";
         questionType?: string;
         questionStem?: string;
@@ -961,6 +1011,7 @@ export function createApiEndpoints(client: ApiClient) {
           group_id: string;
           sender_id: string;
           content?: string;
+          subject?: string | null;
           type: "TEXT" | "QUESTION";
           created_at: string;
           updated_at: string;
@@ -991,6 +1042,49 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(
         `/messages/group/${encodeURIComponent(groupId)}/thread/${encodeURIComponent(rootId)}`,
+      ),
+
+    // ========== COMMUNITY BOARDS ==========
+
+    /**
+     * One page of board posts: roots only, newest first. Use
+     * `boardPageSize(lowDataMode)` from `@lantern/shared/network` for `limit`
+     * so both clients page identically (§8 parity rule 5).
+     */
+    fetchBoardPosts: (
+      groupId: string,
+      options?: { page?: number; limit?: number },
+    ) => {
+      const params = new URLSearchParams({ rootsOnly: "1" });
+      if (options?.page) params.set("page", String(options.page));
+      if (options?.limit) params.set("limit", String(options.limit));
+      return apiRequest<BoardMessageRow[]>(
+        `/messages/group/${encodeURIComponent(groupId)}?${params.toString()}`,
+      );
+    },
+
+    /**
+     * The board's one pinned post. Its own endpoint because a pin can be older
+     * than the loaded page. Resolves to `{ message: null }` — never a 500 —
+     * before the 20260903120000 migration.
+     */
+    fetchPinnedMessage: (groupId: string) =>
+      apiRequest<{ message: BoardMessageRow | null }>(
+        `/messages/group/${encodeURIComponent(groupId)}/pinned`,
+        {},
+        10000,
+      ),
+
+    /**
+     * Pin or unpin a board post. One pin per board, cleared server-side.
+     * 400 on a non-board group, 403 unless `canPinOnBoard`, 503
+     * (`Pinning is not available yet`) before the migration.
+     */
+    setMessagePin: (messageId: string, pinned: boolean) =>
+      apiRequest<BoardMessageRow>(
+        `/messages/${encodeURIComponent(messageId)}/pin`,
+        { method: "PUT", body: JSON.stringify({ pinned }) },
+        10000,
       ),
 
     updateMessage: (

@@ -13,6 +13,7 @@ import { FlagIcon } from '@heroicons/react/24/outline';
 import GroupDiscoverabilityFields, {
   type GroupDiscoveryValue,
 } from './discover/GroupDiscoverabilityFields';
+import { isCommunityBoard } from '@lantern/shared/network';
 
 
 interface GroupInfoModalProps {
@@ -184,6 +185,15 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   const isCurrentUserAdmin = group.adminIds?.includes(currentUser.id) || false;
   const isSoleAdmin =
     isCurrentUserAdmin && (group.adminIds?.length || 0) <= 1;
+  /**
+   * A group the community owns — its board, or its `General` chat (spec §5.4).
+   * Web had no `isLounge` concept, so a member could archive or delete a
+   * community's chat and change its discoverability, which mobile forbids.
+   * Rename, avatar, discoverability, Archive and Delete are the community's to
+   * make (Phase 2); Leave and Report stay, so nobody is trapped or silenced.
+   * A board never opens this modal at all — it has `About this board`.
+   */
+  const communityOwned = isCommunityBoard(group);
   
   const inviteLink = group.inviteId ? buildGroupInviteLink(group.inviteId) : '';
 
@@ -194,6 +204,20 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   const renderContent = (tab: 'details' | 'members' | 'danger' = activeTab) => {
       switch (tab) {
         case 'details':
+            if (communityOwned) {
+                return (
+                    <div className="space-y-3">
+                        <h3 className="text-md font-medium text-lantern-text">{group.name}</h3>
+                        {group.description ? (
+                            <p className="text-sm text-lantern-text-secondary">{group.description}</p>
+                        ) : null}
+                        <p className="text-xs text-lantern-text-tertiary">
+                            This group belongs to its community. Its name, topic, avatar and listing
+                            are managed by the community.
+                        </p>
+                    </div>
+                );
+            }
             return (
                  <form onSubmit={handleDetailsSubmit} className="space-y-4">
                     <div className="mb-6 pb-6 border-b border-lantern-border">
@@ -252,14 +276,14 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
         case 'members':
             return (
                 <div className="space-y-6">
-                     {isCurrentUserAdmin && inviteLink && (
+                     {isCurrentUserAdmin && inviteLink && !communityOwned && (
                         <GroupInviteLinkPanel
                           inviteLink={inviteLink}
                           groupName={group.name}
                           compact
                         />
                      )}
-                     {isCurrentUserAdmin && (
+                     {isCurrentUserAdmin && !communityOwned && (
                         <div className="p-4 bg-lantern-background dark:bg-lantern-surface-secondary/50 border border-lantern-border dark:border-lantern-border rounded-lg">
                            <button onClick={onOpenAddMembersModal} className="w-full flex items-center justify-center px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md text-sm font-medium"><UserPlusIcon className="w-5 h-5 mr-2" />Add or Invite Members</button>
                         </div>
@@ -297,7 +321,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                         {member.id === currentUser.id && <span className="text-xs text-lantern-text-secondary ml-2">(You)</span>}
                                     </div>
                                     <div className="flex items-center space-x-1">
-                                        {member.id !== currentUser.id && (
+                                        {member.id !== currentUser.id && !communityOwned && (
                                             <button onClick={() => onChallengeUser(member)} className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-full" title="Challenge to a Duel">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M3.53 2.47a.75.75 0 00-1.06 1.06l18 18a.75.75 0 101.06-1.06l-18-18zM21.625 5.375a.75.75 0 00-1.25-1.125L18 6.69l-1.92-1.92a.75.75 0 00-1.06 1.06l1.92 1.92-2.094 2.093a.75.75 0 00-1.06 1.06L15.75 10.5H13.5a.75.75 0 000 1.5h2.25l-2.094 2.093a.75.75 0 00-1.06 1.06L14.56 17.12l-1.92 1.92a.75.75 0 101.06 1.06l1.92-1.92 2.435 2.435a.75.75 0 001.25-1.125L6.94 5.375l14.686-.001z" clipRule="evenodd" /></svg>
                                             </button>
@@ -386,6 +410,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                             Leave Group
                         </button>
                     </div>
+                    {communityOwned ? null : (
                     <div className="p-4 border border-yellow-500/30 dark:border-yellow-600/50 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
                         <h4 className="font-semibold text-yellow-800 dark:text-yellow-300">Archive Group</h4>
                         <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 mb-3">Archiving will hide the group from the main list for all members and disable new messages.</p>
@@ -394,7 +419,8 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                             {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
                         </button>
                     </div>
-                    {isCurrentUserAdmin ? (
+                    )}
+                    {isCurrentUserAdmin && !communityOwned ? (
                          <div className="p-4 border border-red-500/30 dark:border-red-600/50 bg-red-50 dark:bg-red-900/30 rounded-lg">
                             <h4 className="font-semibold text-red-700 dark:text-red-300">Delete Group</h4>
                             <p className="text-xs text-red-600 dark:text-red-400 mt-1 mb-3">This action is permanent and will delete the group, all its sub-groups, and all messages for everyone.</p>

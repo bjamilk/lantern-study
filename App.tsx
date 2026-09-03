@@ -31,9 +31,10 @@ import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
-import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge } from './services/supabase';
+import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
 import { useCommunityStore } from './stores/communityStore';
-import { COMMUNITY_COPY } from '@lantern/shared/network';
+import { COMMUNITY_COPY, studyGroupAnnouncement } from '@lantern/shared/network';
+import { collectKnownLounges, isBoardGroup } from './utils/communityBoards';
 import { useCommunityPresence } from './hooks/useCommunityPresence';
 import type { CommunityNavigate } from './components/community/communityNavigation';
 import MarketplacePrivatePilot, { GOODS_MARKETPLACE_MODES } from './components/marketplace/MarketplacePrivatePilot';
@@ -102,6 +103,7 @@ const DiscoverScreen = lazyWithRetry(() => import('./components/DiscoverScreen')
 const InviteFriendsScreen = lazyWithRetry(() => import('./components/InviteFriendsScreen'));
 const CampusScreen = lazyWithRetry(() => import('./components/CampusScreen'));
 const CommunityDetailScreen = lazyWithRetry(() => import('./components/CommunityDetailScreen'));
+const CommunityChannelPane = lazyWithRetry(() => import('./components/community/CommunityChannelPane'));
 const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
@@ -318,7 +320,21 @@ export const App: React.FC = () => {
         { id: string; name: string; courseId: string | null } | null
     >(null);
     const [createGroupPreset, setCreateGroupPreset] = useState<
-        { communityId: string; communityName: string; communitySlug: string } | null
+        {
+            communityId: string;
+            communityName: string;
+            communitySlug: string;
+            /** Board (stays in the community) vs study group (lands in Chat) — spec §4.6. */
+            communitySurface: 'board' | 'study_group';
+            /** Seed from "Start a study group about this" on a board post (§7). */
+            prefillName?: string;
+            /**
+             * The board the flow was launched from. §7 entry point 3: on success
+             * the board keeps a plain TEXT pointer to the group its post spawned.
+             * Mobile threads the same value as `announceInGroupId`.
+             */
+            announceInGroupId?: string;
+        } | null
     >(null);
     const communityActionBusy = React.useRef(false);
 
@@ -341,6 +357,49 @@ export const App: React.FC = () => {
     const activeCommunityDetail = useCommunityStore((s) =>
         activeCommunity ? s.detailBySlug[activeCommunity.slug] : undefined
     );
+    // Boards leave the Chat tab entirely (spec §5.2 / §4.5): they are the
+    // community's surface, and a direct route to one redirects there. The one
+    // exception is the community's live chat, which stays a chat.
+    const communityDetailBySlug = useCommunityStore((s) => s.detailBySlug);
+    const communityChannelsById = useCommunityStore((s) => s.channelsById);
+    const knownLounges = React.useMemo(
+        () =>
+            collectKnownLounges(
+                communityDetailBySlug,
+                communityChannelsById,
+                activeCommunity?.loungeGroupId,
+                myCommunities
+            ),
+        [communityDetailBySlug, communityChannelsById, activeCommunity?.loungeGroupId, myCommunities]
+    );
+    // The membership list carries each community's lounge pointer, so the chat
+    // list can tell a lounge from a board on a cold page load. Until it lands,
+    // a community's groups stay chats — never the reverse (§0a decision 1).
+    React.useEffect(() => {
+        if (!currentUser?.id) return;
+        void useCommunityStore.getState().loadMine().catch(() => {});
+    }, [currentUser?.id]);
+    const chatListGroups = React.useMemo(
+        () => (Array.isArray(groups) ? groups.filter((g) => !isBoardGroup(g, knownLounges)) : []),
+        [groups, knownLounges]
+    );
+    const selectedChatIsBoard =
+        appMode === AppMode.CHAT &&
+        selectedChat?.chatType === 'group' &&
+        isBoardGroup(selectedChat as unknown as Group, knownLounges);
+    // Closing the Chat-tab bypass (spec §5.2 / §4.5): a board reached by a
+    // direct route replaces itself with the community page, which renders the
+    // board. It is not refused and it never falls back to a chat.
+    useEffect(() => {
+        if (!selectedChatIsBoard || !selectedChat) return;
+        const communityId = (selectedChat as unknown as Group).communityId;
+        const slug = myCommunities.find((c) => c.id === communityId)?.slug;
+        if (!slug) {
+            void useCommunityStore.getState().loadMine().catch(() => {});
+            return;
+        }
+        navigateTo(AppMode.COMMUNITY_DETAIL, { slug, groupId: selectedChat.id });
+    }, [selectedChatIsBoard, selectedChat, myCommunities, navigateTo]);
     // A community channel opened from the plain chats list shows `in <Community>`
     // in its header; memberships resolve the id to a name + slug.
     const selectedChatCommunityId =
@@ -1416,11 +1475,56 @@ export const App: React.FC = () => {
                 });
                 setCreateLabOpen(true);
                 return;
+            case 'OpenStudyGroup': {
+                // A study group lives in Chat with the full study surface (§7).
+                // Unjoined rows join first, then land in Chat — never on a board.
+                const groupId = String(params.groupId || '');
+                if (!groupId || communityActionBusy.current) return;
+                const communityId = String(params.communityId || '');
+                const openInChat = () => {
+                    const target = useGroupStore.getState().groups.find((x) => x.id === groupId);
+                    if (target) handleSelectChat({ ...target, chatType: 'group' });
+                    navigateTo(AppMode.CHAT, {});
+                };
+                if (params.joined) {
+                    openInChat();
+                    return;
+                }
+                communityActionBusy.current = true;
+                try {
+                    await joinDiscoverableGroup(groupId);
+                    if (communityId) useCommunityStore.getState().invalidate(communityId);
+                    const userId = useAuthStore.getState().currentUser?.id;
+                    if (userId) {
+                        try {
+                            const refreshed = await fetchGroups(userId);
+                            if (refreshed) useGroupStore.getState().setGroups(refreshed);
+                        } catch {
+                            // A failed refresh still opens Chat; hydration retries.
+                        }
+                    }
+                    openInChat();
+                } catch (err) {
+                    showToast(err instanceof Error ? err.message : 'Could not open this study group', 'error');
+                } finally {
+                    communityActionBusy.current = false;
+                }
+                return;
+            }
             case 'CreateGroup':
+            case 'StartStudyGroup':
                 setCreateGroupPreset({
                     communityId: String(params.communityId || activeCommunity?.id || ''),
                     communityName: String(params.communityName || activeCommunity?.name || activeCommunityDetail?.name || 'Community'),
                     communitySlug: slugParam,
+                    communitySurface:
+                        screen === 'StartStudyGroup' || params.communitySurface === 'study_group'
+                            ? 'study_group'
+                            : 'board',
+                    prefillName: params.prefillName ? String(params.prefillName) : undefined,
+                    announceInGroupId: params.announceInGroupId
+                        ? String(params.announceInGroupId)
+                        : undefined,
                 });
                 setCreateGroupReturnMode(AppMode.COMMUNITY_DETAIL);
                 navigateTo(AppMode.CREATE_GROUP);
@@ -1444,7 +1548,7 @@ export const App: React.FC = () => {
         onOpenTestConfigModal={onOpenTestConfigModal} onOpenStudyConfigModal={onOpenStudyConfigModal}
         onVoteQuestion={onVoteQuestion} onFlagAsSimilar={onFlagAsSimilar}
         onOpenCreateSubGroupModal={onOpenCreateSubGroupModal}
-        groups={groups} onToggleArchiveGroup={handleToggleArchiveGroup}
+        groups={chatListGroups} onToggleArchiveGroup={handleToggleArchiveGroup}
         onOpenAIGenerateModal={() => openModal('aiGenerateQuestions')}
         onAIQuery={handleAIAskTutor}
         dmThreads={dmThreads}
@@ -1494,12 +1598,35 @@ export const App: React.FC = () => {
                         lockedCommunity={createGroupPreset
                             ? { id: createGroupPreset.communityId, name: createGroupPreset.communityName }
                             : undefined}
+                        communitySurface={createGroupPreset?.communitySurface}
+                        initialName={createGroupPreset?.prefillName}
                         onEnterGroup={(group) => {
                             if (createGroupPreset) {
-                                // A channel created from its community opens INSIDE the
-                                // community (founder rule §0a), not on the chat screen.
                                 const preset = createGroupPreset;
                                 setCreateGroupPreset(null);
+                                if (preset.communitySurface === 'study_group') {
+                                    // §7 entry point 3: a group spawned from a board post
+                                    // leaves a plain TEXT pointer behind on that board, so
+                                    // the conversation keeps a link to what it produced.
+                                    // Fire-and-forget — the handoff must not wait on it.
+                                    if (preset.announceInGroupId && currentUser) {
+                                        void sendGroupMessage(
+                                            preset.announceInGroupId,
+                                            currentUser.id,
+                                            studyGroupAnnouncement(currentUser.name, group.name),
+                                        ).catch(() => undefined);
+                                    }
+                                    // The handoff is SHOWN, not inferred (§7): the user
+                                    // physically lands in the Chat tab, with a toast that
+                                    // says the group is also listed in the community.
+                                    const created = useGroupStore.getState().groups.find((g) => g.id === group.id);
+                                    if (created) handleSelectChat({ ...created, chatType: 'group' });
+                                    navigateTo(AppMode.CHAT, {});
+                                    showToast(COMMUNITY_COPY.createdInChat(group.name), 'success');
+                                    return;
+                                }
+                                // A board created from its community opens INSIDE the
+                                // community (founder rule §0a), not on the chat screen.
                                 openCommunityChannel({
                                     groupId: group.id,
                                     groupName: group.name,
@@ -1524,7 +1651,10 @@ export const App: React.FC = () => {
                     />
                 );
             case AppMode.CHAT: {
-                // Reached from the chats flyout: a community channel keeps the
+                // A board never renders here — the effect above is replacing this
+                // route with the community page.
+                if (selectedChatIsBoard) return <AppContentLoadingFallback />;
+                // Reached from the chats flyout: a community study group keeps the
                 // chat surface but its header links back to the community.
                 const chatCommunity = selectedChatCommunityId
                     ? myCommunities.find((c) => c.id === selectedChatCommunityId)
@@ -2109,18 +2239,43 @@ export const App: React.FC = () => {
                 if (!slug) return null;
                 if (communityChannelId) {
                     const backToCommunity = () => navigateTo(AppMode.COMMUNITY_DETAIL, { slug });
-                    if (selectedChat?.chatType !== 'group' || selectedChat.id !== communityChannelId) {
-                        // Route hydration selects the group (or redirects to the
-                        // home when it is not one of the user's groups).
-                        return <AppContentLoadingFallback />;
-                    }
-                    return renderChatWindow({
-                        communityContext: {
-                            name: activeCommunity?.name || activeCommunityDetail?.name || 'Community',
-                            onOpen: backToCommunity,
-                        },
-                        onBack: backToCommunity,
-                    });
+                    // The community decides the surface, never the screen that
+                    // navigated here (spec §5.2): its lounge stays a live chat
+                    // ("General"), every other community group is a board.
+                    const renderLounge = () => {
+                        if (selectedChat?.chatType !== 'group' || selectedChat.id !== communityChannelId) {
+                            // Route hydration selects the group (or redirects to the
+                            // home when it is not one of the user's groups).
+                            return <AppContentLoadingFallback />;
+                        }
+                        return renderChatWindow({
+                            communityContext: {
+                                name: activeCommunity?.name || activeCommunityDetail?.name || 'Community',
+                                onOpen: backToCommunity,
+                            },
+                            onBack: backToCommunity,
+                        });
+                    };
+                    return <CommunityChannelPane
+                        slug={slug}
+                        groupId={communityChannelId}
+                        renderLounge={renderLounge}
+                        fallback={<AppContentLoadingFallback />}
+                        onBack={backToCommunity}
+                        onOpenMembers={() => void handleCommunityNavigate('Members', { slug })}
+                        onStartStudyGroup={(prefillName, fromPost) =>
+                            void handleCommunityNavigate('StartStudyGroup', {
+                                slug,
+                                communitySlug: slug,
+                                communityId: activeCommunityDetail?.id || activeCommunity?.id || '',
+                                communityName: activeCommunityDetail?.name || activeCommunity?.name || 'Community',
+                                ...(prefillName ? { prefillName } : {}),
+                                // §7 entry point 3 only — a group started from a POST
+                                // leaves a pointer behind; one started from the header
+                                // or the study nudge does not.
+                                ...(fromPost ? { announceInGroupId: communityChannelId } : {}),
+                            })
+                        } />;
                 }
                 return <CommunityDetailScreen
                     slug={slug}
@@ -2435,7 +2590,8 @@ export const App: React.FC = () => {
         }
     };
     const sidebarProps = {
-        currentUser, groups, dmThreads,
+        // Boards are not chats — they live on the community page (§5.2).
+        currentUser, groups: chatListGroups, dmThreads,
         selectedChatId: selectedChat?.id,
         onSelectChat: handleSelectChat,
         onNavigateToCreateGroup: () => {
@@ -2470,7 +2626,7 @@ export const App: React.FC = () => {
     return (
         <ErrorBoundary>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
-            unreadChatCount={getTotalActiveUnreadChatCount(groups, dmThreads)}
+            unreadChatCount={getTotalActiveUnreadChatCount(chatListGroups, dmThreads)}
             hideMobileAiUsageBadge={
                 (appMode === AppMode.CHAT && !!selectedChat)
                 || (appMode === AppMode.COMMUNITY_DETAIL && !!communityChannelId)
