@@ -1061,6 +1061,30 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     ],
     commits: ['1f2bf56', 'c386033'],
   },
+  {
+    id: 'mobile-community-chat-freeze-1-0-42',
+    title: 'Mobile \u2014 community chat freeze fixed; decorative accent rails removed (1.0.42)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-03',
+    summary:
+      'Opening a chat that belongs to a community, from the Chat screen, froze the app until it was force-quit \u2014 every time, and again on re-entry. Fixed. Separately, the coloured edge and tinted fill are gone from cards that used them decoratively.',
+    details: [
+      'Cause: GroupChatScreen resolved the community through a zustand selector calling findMyCommunity, which returns a fresh { slug, name } object per call. A selector that returns a new object every render is a permanently changed snapshot, so React re-rendered without end and the JS thread never recovered.',
+      'Only chats with a non-null communityId could hit it, which is why exactly the community-created chats froze and ordinary chats did not.',
+      'Fix: subscribe to the memberships array and derive with useMemo. The selector that invited the mistake is deleted rather than left for reuse, and a test pins the hazard (findMyCommunity returns a fresh object per call, so callers must memoize).',
+      'Every other selector in both apps was audited: all return primitives, functions or stored references.',
+      'Accent rails: removed from the dashboard greeting (mobile and web), study hub cards, saved sessions, the offline storage card and notification rows; the sub-group rail in the chat list is now a neutral indent marker. Colour at an edge survives only where it is semantic: reply quotes, warning/error callouts, and the selected chat.',
+    ],
+    howToUse: ['Chat \u2192 any chat created inside a community (its header reads \u201cin <Community>\u201d).'],
+    surfaces: ['mobile', 'web'],
+    adminNotes: [
+      '1.0.41 shipped with this freeze; 1.0.42 is the fix and should replace it on the download link.',
+      'Verified on a signed-in emulator: open a community channel from the Chat list, back, reopen, scroll and type \u2014 responsive, with logcat clean of ANR, \u201cMaximum update depth\u201d and the React snapshot warning.',
+      'Rule for future work: never call a helper that builds an object inside a zustand selector.',
+    ],
+    commits: ['2f37242', '53059ce'],
+  },
 ];
 
 export function sortProductFeatures(entries: ProductFeatureEntry[]): ProductFeatureEntry[] {
