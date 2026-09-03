@@ -1043,9 +1043,18 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const group = get().groups.find((g) => g.id === groupId);
     // Prefer userId — member.id may be the membership row id, not the auth user id.
     const member = group?.members?.find((m) => m.userId === senderId || m.id === senderId);
+    // The sender is whoever is signed in, so fall back to their own profile when
+    // the group's member list has not loaded them (board posts hit this: the
+    // board's roster is not fetched, so the author showed as "Member" until the
+    // app was restarted and the server's copy arrived).
+    const auth = useAuthStore.getState();
+    const isMe = !!auth.user?.id && auth.user.id === senderId;
+    const myUsername = isMe
+      ? ((auth.user?.user_metadata as { username?: string | null } | undefined)?.username ?? null)
+      : null;
     const senderName = formatChatSenderLabel({
-      username: member?.username,
-      name: member?.name,
+      username: member?.username ?? myUsername,
+      name: member?.name ?? (isMe ? auth.profileName : null),
     });
     let parsed: any = {};
     if (!options?.plainText && text.trim().startsWith('{')) {

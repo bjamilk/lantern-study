@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import type { GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
+import { flattenColor } from '../../utils/color';
 import {
   chatMessagePreview,
   parseChatAudioUrl,
@@ -47,6 +48,15 @@ interface MessageBubbleProps {
   onRetry?: (message: Message) => void;
   /** Device-local star from the message action sheet. */
   starred?: boolean;
+  /**
+   * Opaque pill for the text that renders OUTSIDE the bubble — the author name
+   * and the thread link. Passed (and only passed) when a chat wallpaper is
+   * showing, because that text would otherwise sit straight on the student's
+   * photo: `colors.primary` is a mid-luminance indigo in BOTH themes, so no
+   * scrim value can rescue it — a dark photo kills it in light mode and a
+   * bright one kills it in dark. Same object the date separators use.
+   */
+  wallpaperPillStyle?: ViewStyle;
 }
 
 function MessageBubbleComponent({
@@ -68,12 +78,15 @@ function MessageBubbleComponent({
   onOpenThread,
   onRetry,
   starred = false,
+  wallpaperPillStyle,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   // On tablets / landscape, cap the row in absolute points so bubbles don't
   // stretch full-bleed. Phones keep the percentage max (max-w-[92%]/[82%]) below.
   const wideMaxWidth = windowWidth >= 768 ? { maxWidth: 520 } : undefined;
+  // `overflow-hidden` so Android actually clips the pill to its radius.
+  const pillClass = wallpaperPillStyle ? ' px-1.5 py-0.5 rounded-md overflow-hidden' : '';
   const isQuestion = message.type === 'question';
   const audioUrl = !isQuestion ? parseChatAudioUrl(message.text) : null;
   const isRemoved = !!message.isRemoved || !!message.removedAt;
@@ -140,7 +153,8 @@ function MessageBubbleComponent({
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
-            className="mt-1.5"
+            className={`mt-1.5 self-start${pillClass}`}
+            style={wallpaperPillStyle}
           >
             <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
               {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
@@ -153,7 +167,13 @@ function MessageBubbleComponent({
 
   const ownTextBubbleStyle = { backgroundColor: colors.chatBubbleOwn };
   const ownQuestionBubbleStyle = {
-    backgroundColor: colors.primaryBackground,
+    // FLATTENED, not `colors.primaryBackground` raw: the dark token is the
+    // alpha-baked `#6366f120`, i.e. 12.5% opaque. Every other bubble resolves to
+    // an opaque token, so this was the one surface a wallpaper showed straight
+    // through — taking the option letters, the vote row and the timestamp below
+    // AA with it. Compositing it over the ground it already sits on is a no-op
+    // visually (and a literal no-op in light mode, where the token is opaque).
+    backgroundColor: flattenColor(colors.primaryBackground, colors.chatBackground),
     borderColor: colors.primary,
     borderWidth: 1,
   };
@@ -221,7 +241,8 @@ function MessageBubbleComponent({
               onPress={() => onMentionUser(mentionUsername)}
               accessibilityRole="button"
               accessibilityLabel={`Mention ${authorLabel}`}
-              className="mb-1 ml-0.5"
+              className={`mb-1 ml-0.5 self-start${pillClass}`}
+              style={wallpaperPillStyle}
             >
               <Text
                 importantForAccessibility="no"
@@ -233,14 +254,16 @@ function MessageBubbleComponent({
               </Text>
             </Pressable>
           ) : (
-            <Text
-              importantForAccessibility="no"
-              className="text-xs font-semibold mb-1 ml-0.5"
-              style={{ color: colors.primary }}
-              numberOfLines={1}
-            >
-              {authorLabel}
-            </Text>
+            <View className={`mb-1 ml-0.5 self-start${pillClass}`} style={wallpaperPillStyle}>
+              <Text
+                importantForAccessibility="no"
+                className="text-xs font-semibold"
+                style={{ color: colors.primary }}
+                numberOfLines={1}
+              >
+                {authorLabel}
+              </Text>
+            </View>
           )
         ) : null}
 
@@ -452,7 +475,8 @@ function MessageBubbleComponent({
           <Pressable
             onPress={() => onOpenThread(message.threadRootId || message.id)}
             hitSlop={8}
-            className="mt-1.5"
+            className={`mt-1.5${pillClass} ${isOwn ? 'self-end' : 'self-start'}`}
+            style={wallpaperPillStyle}
             accessibilityRole="button"
             accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
           >

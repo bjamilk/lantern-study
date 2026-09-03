@@ -323,6 +323,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { useMarketplaceStore, LEGACY_MARKETPLACE_STORAGE_KEYS } = await import('./marketplaceStore');
       await useMarketplaceStore.getState().reset();
 
+      // Chat wallpapers: the AsyncStorage key is user-scoped and stays put on
+      // purpose, but the IN-MEMORY manifest is module state that outlives the
+      // sign-out. On a shared handset that meant the next account's first chat
+      // frame was painted with the previous student's personal photo.
+      try {
+        const { useChatWallpaperStore } = await import('./chatWallpaperStore');
+        useChatWallpaperStore.getState().reset();
+      } catch {
+        // continue with local sign-out
+      }
+
       // Drop user-scoped settings cache so pending patches cannot leak across accounts.
       try {
         const { clearLocalSettings } = await import('./settingsStore');

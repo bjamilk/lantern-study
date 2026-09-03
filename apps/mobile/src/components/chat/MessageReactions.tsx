@@ -6,6 +6,7 @@ import {
   totalReactionCount,
 } from '@lantern/shared/chat';
 import { useTheme, withAlpha } from '../../theme';
+import { flattenColor } from '../../utils/color';
 
 interface Props {
   reactions?: Record<string, number> | null;
@@ -24,6 +25,17 @@ interface Props {
    * card is the tap surface. Chat keeps the compact strip.
    */
   size?: 'compact' | 'touch';
+  /**
+   * The opaque colour this strip is drawn on. Chat passes `colors.chatBackground`.
+   *
+   * The "mine" chip is a 15%-alpha primary tint, which is fine on a flat theme
+   * ground and NOT fine over a chat wallpaper: 85% of the student's photo shows
+   * through the one chip state that is supposed to read as "yours", and its
+   * 11px count drops to ~1.5:1. Flattening the tint against the ground keeps
+   * the exact same appearance while making the chip opaque, so it holds its
+   * contrast over any photo.
+   */
+  surfaceBase?: string;
 }
 
 /**
@@ -42,9 +54,13 @@ export function MessageReactions({
   align = 'start',
   labelFor,
   size = 'compact',
+  surfaceBase,
 }: Props) {
   const { colors } = useTheme();
   if (totalReactionCount(reactions) === 0) return null;
+  const mineBackground = surfaceBase
+    ? flattenColor(withAlpha(colors.primary, 0.15), surfaceBase)
+    : withAlpha(colors.primary, 0.15);
   const mineSet = new Set(mine);
   const touch = size === 'touch';
 
@@ -77,9 +93,7 @@ export function MessageReactions({
             }
             style={{
               borderColor: isMine ? colors.primary : colors.border,
-              backgroundColor: isMine
-                ? withAlpha(colors.primary, 0.15)
-                : colors.backgroundSecondary,
+              backgroundColor: isMine ? mineBackground : colors.backgroundSecondary,
             }}
           >
             <Text className="text-[12px]">{emoji}</Text>

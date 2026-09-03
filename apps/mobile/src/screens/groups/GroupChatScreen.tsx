@@ -10,6 +10,7 @@ import {
   Pressable,
   Text,
   View,
+  type ViewStyle,
   TextInput,
   BackHandler,
 } from 'react-native';
@@ -37,7 +38,11 @@ import {
   CHAT_LIST_WINDOWING,
   ChatComposer,
   ChatThreadModal,
+  ChatWallpaperBusyOverlay,
+  ChatWallpaperLayer,
+  ChatWallpaperSheet,
   GroupChatHeader,
+  useChatWallpaper,
   MessageBubble,
   formatChatDateLabel,
   isDifferentChatDay,
@@ -50,6 +55,7 @@ import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode';
 import { useTheme, withAlpha } from '../../theme';
+import { groupWallpaperScopeKey } from '../../utils/chatWallpaper';
 import { applyReactionLocally } from '@lantern/shared/chat';
 import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
@@ -214,26 +220,42 @@ function mapAIQuestionToPayload(
   };
 }
 
-function ChatDateSeparator({ label }: { label: string }) {
+function ChatDateSeparator({ label, pillStyle }: { label: string; pillStyle?: ViewStyle }) {
   if (!label) return null;
   return (
     <View className="items-center my-3">
-      <View className="px-3 py-1 rounded-full bg-lantern-background-secondary/80 dark:bg-lantern-surface-secondary/80">
+      {/* The default pill is 80% translucent, which washes out over a photo —
+          so a wallpaper swaps it for an opaque one via `pillStyle`. */}
+      <View
+        className={
+          pillStyle
+            ? 'px-3 py-1 rounded-full'
+            : 'px-3 py-1 rounded-full bg-lantern-background-secondary/80 dark:bg-lantern-surface-secondary/80'
+        }
+        style={pillStyle}
+      >
         <Text className="text-[11px] font-medium text-lantern-text-secondary">{label}</Text>
       </View>
     </View>
   );
 }
 
-function NewMessagesDivider() {
+function NewMessagesDivider({ pillStyle }: { pillStyle?: ViewStyle }) {
   // The rules were invisible: `bg-lantern-primary/40` emits no rule at all
   // (var()-backed colour + opacity modifier). Inline style instead.
   const { colors } = useTheme();
-  const ruleStyle = { backgroundColor: withAlpha(colors.primary, 0.4) };
+  // Over a wallpaper the hairlines need more weight to stay visible.
+  const ruleStyle = { backgroundColor: withAlpha(colors.primary, pillStyle ? 0.7 : 0.4) };
   return (
     <View className="flex-row items-center my-3 gap-2">
       <View className="flex-1 h-px" style={ruleStyle} />
-      <Text className="text-[11px] font-semibold text-lantern-primary">New messages</Text>
+      {pillStyle ? (
+        <View className="px-3 py-1 rounded-full" style={pillStyle}>
+          <Text className="text-[11px] font-semibold text-lantern-primary">New messages</Text>
+        </View>
+      ) : (
+        <Text className="text-[11px] font-semibold text-lantern-primary">New messages</Text>
+      )}
       <View className="flex-1 h-px" style={ruleStyle} />
     </View>
   );
@@ -252,6 +274,8 @@ interface MessageRowProps {
   dateLabel: string | null;
   showUnreadDivider: boolean;
   isGroupedWithPrevious: boolean;
+  /** Opaque pill behind separators when a wallpaper is showing. Stable ref. */
+  wallpaperPillStyle?: ViewStyle;
   onVoteMessage: (message: Message, vote: 'up' | 'down') => void;
   onFlagMessage: (message: Message) => void;
   onReply: (message: Message) => void;
@@ -292,6 +316,7 @@ const MessageRow = React.memo(function MessageRow({
   dateLabel,
   showUnreadDivider,
   isGroupedWithPrevious,
+  wallpaperPillStyle,
   onVoteMessage,
   onFlagMessage,
   onReply,
@@ -331,8 +356,8 @@ const MessageRow = React.memo(function MessageRow({
           : undefined
       }
     >
-      {dateLabel ? <ChatDateSeparator label={dateLabel} /> : null}
-      {showUnreadDivider ? <NewMessagesDivider /> : null}
+      {dateLabel ? <ChatDateSeparator label={dateLabel} pillStyle={wallpaperPillStyle} /> : null}
+      {showUnreadDivider ? <NewMessagesDivider pillStyle={wallpaperPillStyle} /> : null}
       <MessageBubble
         message={message}
         isOwn={isOwn}
@@ -352,6 +377,7 @@ const MessageRow = React.memo(function MessageRow({
         onOpenThread={onOpenThread}
         onRetry={onRetry}
         starred={starred}
+        wallpaperPillStyle={wallpaperPillStyle}
       />
       {/* Reactions sit under the bubble for EVERY message type, questions
           included — they are not the question vote row, which lives inside the
@@ -360,6 +386,7 @@ const MessageRow = React.memo(function MessageRow({
         reactions={message.reactions}
         mine={myReactions}
         align={isOwn ? 'end' : 'start'}
+        surfaceBase={colors.chatBackground}
         onToggle={(emoji, added) => onToggleReaction(message, emoji, added)}
       />
     </View>
@@ -481,6 +508,12 @@ export function GroupChatView({
   const lastMessageIdRef = useRef<string | null>(null);
   const prevMessageCountRef = useRef(0);
   const suppressLoadOlderRef = useRef(true);
+
+  // Keyed on groupId, never on `host` or a route param: the same lounge opened
+  // from the Chat tab and from the community must share one wallpaper.
+  const wallpaperScopeKey = groupWallpaperScopeKey(groupId);
+  const wallpaper = useChatWallpaper(wallpaperScopeKey);
+  const [wallpaperSheetOpen, setWallpaperSheetOpen] = useState(false);
 
   const displayName = groupName || currentGroup?.name || 'Group chat';
 
@@ -1636,6 +1669,18 @@ export function GroupChatView({
           setChatSearchOpen(false);
         },
       },
+      {
+        // Deliberately NOT gated on studySurface: a community lounge is a
+        // transcript and keeps the feature.
+        id: 'chat-background',
+        label: 'Chat background',
+        icon: 'image-outline',
+        section: 'View',
+        // GroupChatHeader closes its menu and calls onPress synchronously, and
+        // iOS will not present a Modal under one that is still dismissing.
+        onPress: () =>
+          setTimeout(() => setWallpaperSheetOpen(true), Platform.OS === 'ios' ? 320 : 0),
+      },
       ...(studySurface
         ? [
             {
@@ -1916,14 +1961,23 @@ export function GroupChatView({
             </Pressable>
           </View>
         ) : (
-          <View className="flex-1 relative">
+          <View className="flex-1 relative" style={{ backgroundColor: colors.chatBackground }}>
+          {/* Absolutely-positioned SIBLING of the list — never inside it. */}
+          <ChatWallpaperLayer
+            uri={wallpaper.uri}
+            scrimColor={wallpaper.scrimColor}
+            onError={wallpaper.onImageError}
+          />
+          {/* Nothing else says the picked photo is being prepared: the sheet
+              dismissed before the work started. */}
+          <ChatWallpaperBusyOverlay />
           <FlatList
             ref={listRef}
             data={displayMessages}
             keyExtractor={item => item.id}
             {...CHAT_LIST_WINDOWING}
             className="flex-1"
-            style={{ backgroundColor: colors.chatBackground }}
+            style={{ backgroundColor: wallpaper.listBackgroundColor }}
             contentContainerClassName="px-4 py-4 flex-grow"
             onScroll={(e) => {
               const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -1961,11 +2015,16 @@ export function GroupChatView({
             }
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16 px-8">
-                <Text className="text-sm text-center text-lantern-text-secondary">
-                  {starredOnly
-                    ? 'No starred messages in this chat yet. Long-press a message and tap the star to keep it here.'
-                    : 'No messages yet. Say hello!'}
-                </Text>
+                <View
+                  className={wallpaper.active ? 'px-4 py-3 rounded-2xl' : undefined}
+                  style={wallpaper.pillStyle}
+                >
+                  <Text className="text-sm text-center text-lantern-text-secondary">
+                    {starredOnly
+                      ? 'No starred messages in this chat yet. Long-press a message and tap the star to keep it here.'
+                      : 'No messages yet. Say hello!'}
+                  </Text>
+                </View>
               </View>
             }
             // MessageRow closes over none of these, so the list must be told
@@ -2002,6 +2061,7 @@ export function GroupChatView({
                   dateLabel={showDate ? formatChatDateLabel(item.createdAt) : null}
                   showUnreadDivider={showUnreadDivider}
                   isGroupedWithPrevious={isGroupedWithPrevious}
+                  wallpaperPillStyle={wallpaper.pillStyle}
                   onVoteMessage={handleVoteMessage}
                   onFlagMessage={handleFlagMessage}
                   onReply={showMessageActions}
@@ -2102,6 +2162,12 @@ export function GroupChatView({
           },
         }))}
         onClose={() => setMsgOverflowOpen(false)}
+      />
+      <ChatWallpaperSheet
+        visible={wallpaperSheetOpen}
+        onClose={() => setWallpaperSheetOpen(false)}
+        scope={wallpaperScopeKey}
+        scopeLabel="this chat"
       />
       <ForwardMessageSheet
         visible={!!forwardMessage}
@@ -2299,6 +2365,7 @@ export function GroupChatView({
 
       <ChatThreadModal
         visible={!!threadRootId}
+        wallpaperScopeKey={wallpaperScopeKey}
         onClose={() => {
           setThreadRootId(null);
           setThreadMessages([]);

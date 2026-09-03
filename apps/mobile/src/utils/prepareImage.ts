@@ -12,7 +12,8 @@ export type MobileImageBudget =
   | 'marketplace'
   | 'notePhoto'
   | 'companyLogo'
-  | 'paymentProof';
+  | 'paymentProof'
+  | 'chatWallpaper';
 
 const BUDGETS: Record<
   MobileImageBudget,
@@ -26,6 +27,10 @@ const BUDGETS: Record<
   notePhoto: { maxDimension: 2000, compress: 0.82 },
   companyLogo: { maxDimension: 512, compress: 0.82 },
   paymentProof: { maxDimension: 1600, compress: 0.8 },
+  // Cover-fits a 1080-wide phone with headroom: ~150-350 KB on disk and ~8 MB
+  // decoded. Do not raise it, and do not reuse notePhoto (2000px) — this file
+  // stays resident behind a scrolling list.
+  chatWallpaper: { maxDimension: 1440, compress: 0.75 },
 };
 
 export type PreparedMobileImage = {

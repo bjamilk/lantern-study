@@ -24,6 +24,7 @@ import { MessageBubble } from './MessageBubble';
 import { DmBubble } from './DmBubble';
 import type { DirectMessage, GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
+import { ChatWallpaperLayer, useChatWallpaper } from './ChatWallpaper';
 import {
   canEditChatMessage,
   canRemoveChatMessage,
@@ -67,6 +68,12 @@ interface ChatThreadModalProps {
   otherAvatarUrl?: string | null;
   groupId?: string;
   threadId?: string;
+  /**
+   * Same conversation, same background. Dropping to a flat colour inside the
+   * thread reads as a rendering bug, and the uri is identical to the parent's
+   * so RN's image cache dedupes the decode — this costs a draw, not a decode.
+   */
+  wallpaperScopeKey?: string | null;
 }
 
 export function ChatThreadModal({
@@ -94,8 +101,10 @@ export function ChatThreadModal({
   otherAvatarUrl,
   groupId,
   threadId,
+  wallpaperScopeKey,
 }: ChatThreadModalProps) {
   const { colors } = useTheme();
+  const wallpaper = useChatWallpaper(wallpaperScopeKey ?? null);
   const { width: windowWidth } = useWindowDimensions();
   // On tablets / landscape, present the thread as a centered sheet with a
   // dimmed backdrop instead of an edge-to-edge full-screen slide.
@@ -332,6 +341,12 @@ export function ChatThreadModal({
                vanished behind an alert with nothing to retry. */
             <ErrorState message={loadError} onRetry={() => void onReload()} />
           ) : (
+            <View className="flex-1 relative" style={{ backgroundColor: colors.chatBackground }}>
+            <ChatWallpaperLayer
+              uri={wallpaper.uri}
+              scrimColor={wallpaper.scrimColor}
+              onError={wallpaper.onImageError}
+            />
             <FlatList
               ref={listRef}
               data={visibleMessages}
@@ -346,7 +361,7 @@ export function ChatThreadModal({
                 ) : null
               }
               className="flex-1"
-              style={{ backgroundColor: colors.chatBackground }}
+              style={{ backgroundColor: wallpaper.listBackgroundColor }}
               contentContainerClassName="px-4 py-4 flex-grow"
               onContentSizeChange={() => {
                 if (visibleMessages.length > 0) {
@@ -384,6 +399,7 @@ export function ChatThreadModal({
                       canFlag={canFlag?.(item) ?? false}
                       onReply={showMessageActions}
                       onSwipeReply={beginReply}
+                      wallpaperPillStyle={wallpaper.pillStyle}
                     />
                   );
                 }
@@ -417,10 +433,12 @@ export function ChatThreadModal({
                     senderAvatar={isOwn ? undefined : otherAvatarUrl}
                     onReply={() => showMessageActions(dm)}
                     onSwipeReply={() => beginReply(dm)}
+                    wallpaperPillStyle={wallpaper.pillStyle}
                   />
                 );
               }}
             />
+            </View>
           )}
 
           {aiThinking ? (

@@ -22,6 +22,12 @@ export interface ActionSheetItem {
   hint?: string;
   /** Groups related actions under a heading so a long menu stays scannable. */
   section?: string;
+  /**
+   * Screen-reader label when the visible label is too terse on its own
+   * ("No background" → "Remove the background from this chat"). Defaults to
+   * `label`.
+   */
+  accessibilityLabel?: string;
 }
 
 interface ActionSheetProps {
@@ -81,8 +87,12 @@ export function ActionSheet({
                 onPress={() => select(item)}
                 disabled={item.disabled}
                 accessibilityRole="button"
-                accessibilityLabel={item.label}
+                accessibilityLabel={item.accessibilityLabel || item.label}
                 accessibilityState={{ disabled: !!item.disabled }}
+                // minHeight guarantees the 44pt touch target even at the
+                // smallest font-size setting, where padding + one line lands
+                // right on the boundary.
+                style={{ minHeight: 44 }}
                 className={`flex-row items-center gap-3 px-5 py-3.5 active:bg-lantern-background-secondary ${
                   item.disabled ? 'opacity-40' : ''
                 }`}

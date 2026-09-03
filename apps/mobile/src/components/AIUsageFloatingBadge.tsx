@@ -16,7 +16,18 @@ interface Props {
 
 /** Tabs or screens where the floating badge should not appear */
 const HIDDEN_TABS: TabKey[] = ['Chat'];
-const HIDDEN_ROUTES = new Set(['GroupChat', 'DirectMessage', 'TestTaking']);
+// Community screens put their own controls on the right edge (the + on BOARDS,
+// STUDY GROUPS and STUDY ROOMS sit exactly where this badge floats), and a
+// board is a reading surface like a chat.
+const HIDDEN_ROUTES = new Set([
+  'GroupChat',
+  'DirectMessage',
+  'TestTaking',
+  'CommunityDetail',
+  'CommunityChannel',
+  'CommunityPost',
+  'CommunityMembers',
+]);
 
 export function AIUsageFloatingBadge({ activeTab, hidden = false, focusedRoute }: Props) {
   if (hidden || HIDDEN_TABS.includes(activeTab) || (focusedRoute && HIDDEN_ROUTES.has(focusedRoute))) {

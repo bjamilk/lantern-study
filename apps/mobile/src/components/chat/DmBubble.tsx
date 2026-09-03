@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { chatMessagePreview, parseChatAudioUrl } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
@@ -40,6 +40,13 @@ interface DmBubbleProps {
   onRetry?: () => void;
   /** Device-local star from the message action sheet. */
   starred?: boolean;
+  /**
+   * Opaque pill for the text OUTSIDE the bubble — the sender name (shown on
+   * every incoming DM) and the thread link. Passed only when a wallpaper is
+   * showing; see MessageBubble for why `colors.primary` on a photo cannot be
+   * saved by the scrim in either theme.
+   */
+  wallpaperPillStyle?: ViewStyle;
 }
 
 function DmBubbleComponent({
@@ -55,9 +62,12 @@ function DmBubbleComponent({
   threadRootId,
   messageId,
   starred = false,
+  wallpaperPillStyle,
 }: DmBubbleProps) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
+  // `overflow-hidden` so Android clips the pill to its radius.
+  const pillClass = wallpaperPillStyle ? ' px-1.5 py-0.5 rounded-md overflow-hidden' : '';
   // On tablets / landscape, cap the row in absolute points so bubbles don't
   // stretch full-bleed. Phones keep the percentage max (max-w-[92%]/[82%]) below.
   const wideMaxWidth = windowWidth >= 768 ? { maxWidth: 520 } : undefined;
@@ -134,13 +144,15 @@ function DmBubbleComponent({
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
         {!isOwn ? (
-          <Text
-            importantForAccessibility="no"
-            className="text-xs font-semibold mb-1 ml-0.5"
-            style={{ color: colors.primary }}
-          >
-            {senderName?.trim() || 'Member'}
-          </Text>
+          <View className={`mb-1 ml-0.5 self-start${pillClass}`} style={wallpaperPillStyle}>
+            <Text
+              importantForAccessibility="no"
+              className="text-xs font-semibold"
+              style={{ color: colors.primary }}
+            >
+              {senderName?.trim() || 'Member'}
+            </Text>
+          </View>
         ) : null}
 
         <View
@@ -249,7 +261,8 @@ function DmBubbleComponent({
           <Pressable
             onPress={() => onOpenThread(threadRootId || messageId || message.replyTo?.id || '')}
             hitSlop={8}
-            className="mt-1.5"
+            className={`mt-1.5${pillClass} ${isOwn ? 'self-end' : 'self-start'}`}
+            style={wallpaperPillStyle}
             accessibilityRole="button"
             accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
           >

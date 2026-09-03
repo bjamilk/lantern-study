@@ -42,6 +42,8 @@ import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
+import { ChatWallpaperSheet } from '../../components/chat/ChatWallpaperSheet';
+import { useChatWallpaperStore } from '../../stores/chatWallpaperStore';
 import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner';
 import { shareTextFile, SharingUnavailableError } from '../../utils/shareFile';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
@@ -159,6 +161,18 @@ export default function SettingsScreen() {
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showImportAccountModal, setShowImportAccountModal] = useState(false);
   const [showCampusModal, setShowCampusModal] = useState(false);
+  const [wallpaperSheetOpen, setWallpaperSheetOpen] = useState(false);
+  const defaultWallpaper = useChatWallpaperStore((s) => s.manifest.default);
+  const hydrateWallpapers = useChatWallpaperStore((s) => s.hydrate);
+  // Settings has no transcript to overlay, so the row itself carries the
+  // progress: preparing a large photo takes seconds on a cheap Android.
+  const wallpaperBusy = useChatWallpaperStore((s) => s.busy);
+  // Settings can be the first screen to touch the wallpaper store in a session
+  // (a student who has not opened a chat yet), and pickAndApply needs the
+  // user id the hydrate call installs.
+  useEffect(() => {
+    void hydrateWallpapers(user?.id ?? null);
+  }, [hydrateWallpapers, user?.id]);
   const [checkingOta, setCheckingOta] = useState(false);
   const otaDiagnostics = useMemo(() => getOtaDiagnostics(), []);
   const [accountLifecycle, setAccountLifecycle] = useState<AccountLifecycleInfo | null>(null);
@@ -812,6 +826,20 @@ export default function SettingsScreen() {
                 />
               }
               showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="image-outline"
+              iconColor="#10b981"
+              title="Chat background"
+              subtitle={
+                wallpaperBusy
+                  ? 'Saving background…'
+                  : defaultWallpaper
+                    ? 'Your photo — saved on this phone'
+                    : 'Default chat colour'
+              }
+              onPress={() => setWallpaperSheetOpen(true)}
             />
             <View style={[styles.settingItem, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
@@ -1497,6 +1525,13 @@ export default function SettingsScreen() {
           onLifecycleChange={setAccountLifecycle}
         />
       ) : null}
+
+      <ChatWallpaperSheet
+        visible={wallpaperSheetOpen}
+        onClose={() => setWallpaperSheetOpen(false)}
+        scope="default"
+        scopeLabel="all your chats"
+      />
 
       {/* Daily Goal Modal */}
       <Modal

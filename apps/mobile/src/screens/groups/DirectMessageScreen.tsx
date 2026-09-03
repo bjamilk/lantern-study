@@ -50,6 +50,13 @@ import { useChatImageAttach } from '../../hooks/useChatImageAttach';
 import { CHAT_LIST_WINDOWING } from '../../components/chat/chatListWindowing';
 import { ChatComposer } from '../../components/chat/ChatComposer';
 import { ChatThreadModal } from '../../components/chat/ChatThreadModal';
+import {
+  ChatWallpaperBusyOverlay,
+  ChatWallpaperLayer,
+  useChatWallpaper,
+} from '../../components/chat/ChatWallpaper';
+import { ChatWallpaperSheet } from '../../components/chat/ChatWallpaperSheet';
+import { dmWallpaperScopeKey } from '../../utils/chatWallpaper';
 import { DmBubble } from '../../components/chat/DmBubble';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { DmOffersPanel } from '../../components/chat/DmOffersPanel';
@@ -99,15 +106,26 @@ interface Props {
   route: { params: { threadId: string; recipientId: string; recipientName?: string } };
 }
 
-function NewMessagesDivider() {
+function NewMessagesDivider({ pillStyle }: { pillStyle?: ViewStyle }) {
   const { colors } = useTheme();
+  // Over a wallpaper the hairlines need more weight and the label needs an
+  // opaque pill, or both wash out against the photo.
+  const rule = { backgroundColor: `${colors.primary}${pillStyle ? 'b3' : '66'}` };
   return (
     <View className="flex-row items-center gap-3 py-2">
-      <View className="flex-1 h-px" style={{ backgroundColor: `${colors.primary}66` }} />
-      <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
-        New messages
-      </Text>
-      <View className="flex-1 h-px" style={{ backgroundColor: `${colors.primary}66` }} />
+      <View className="flex-1 h-px" style={rule} />
+      {pillStyle ? (
+        <View className="px-3 py-1 rounded-full" style={pillStyle}>
+          <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+            New messages
+          </Text>
+        </View>
+      ) : (
+        <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+          New messages
+        </Text>
+      )}
+      <View className="flex-1 h-px" style={rule} />
     </View>
   );
 }
@@ -118,6 +136,8 @@ interface DmMessageRowProps {
   senderName?: string;
   senderAvatar?: string | null;
   showUnreadDivider: boolean;
+  /** Opaque pill behind the unread divider when a wallpaper is showing. */
+  wallpaperPillStyle?: ViewStyle;
   onReplyToMessage: (message: DirectMessage) => void;
   onSwipeReplyToMessage: (message: DirectMessage) => void;
   onScrollToMessage: (messageId: string) => void;
@@ -144,6 +164,7 @@ const DmMessageRow = React.memo(function DmMessageRow({
   senderName,
   senderAvatar,
   showUnreadDivider,
+  wallpaperPillStyle,
   onReplyToMessage,
   onSwipeReplyToMessage,
   onScrollToMessage,
@@ -207,7 +228,7 @@ const DmMessageRow = React.memo(function DmMessageRow({
           : undefined
       }
     >
-      {showUnreadDivider ? <NewMessagesDivider /> : null}
+      {showUnreadDivider ? <NewMessagesDivider pillStyle={wallpaperPillStyle} /> : null}
       <DmBubble
         message={bubbleMessage}
         isOwn={isOwn}
@@ -221,11 +242,13 @@ const DmMessageRow = React.memo(function DmMessageRow({
         threadRootId={message.threadRootId}
         messageId={message.id}
         starred={starred}
+        wallpaperPillStyle={wallpaperPillStyle}
       />
       <MessageReactions
         reactions={message.reactions}
         mine={myReactions}
         align={isOwn ? 'end' : 'start'}
+        surfaceBase={colors.chatBackground}
         onToggle={(emoji, added) => onToggleReaction(message, emoji, added)}
       />
     </View>
@@ -531,6 +554,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [chatSearchIndex, setChatSearchIndex] = useState(0);
   const [muteSheetOpen, setMuteSheetOpen] = useState(false);
   const [showReportUser, setShowReportUser] = useState(false);
+  // Matches the local-pref key shape already used in this file
+  // (`lantern_starred_msgs:${user.id}:dm:${threadId}`).
+  const wallpaperScopeKey = dmWallpaperScopeKey(threadId);
+  const wallpaper = useChatWallpaper(wallpaperScopeKey);
+  const [wallpaperSheetOpen, setWallpaperSheetOpen] = useState(false);
   const openChatMenu = useCallback(() => setChatMenuOpen(true), []);
   const afterSheet = (fn: () => void) => setTimeout(fn, Platform.OS === 'ios' ? 320 : 0);
   const chatMenuItems: ActionSheetItem[] = [
@@ -550,6 +578,12 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           setStarredOnly((on) => !on);
           setChatSearchOpen(false);
         }),
+    },
+    {
+      label: 'Chat background',
+      icon: 'image-outline',
+      hint: 'Set a photo behind this conversation',
+      onPress: () => afterSheet(() => setWallpaperSheetOpen(true)),
     },
     {
       label: chatMuted ? 'Unmute notifications' : 'Mute',
@@ -1501,13 +1535,25 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 </Pressable>
               </Pressable>
             ) : null}
+            {/* Only the transcript gets the wallpaper: the search bar, the
+                starred banner and the pinned banner above stay on their own
+                opaque surfaces. */}
+            <View className="flex-1 relative" style={{ backgroundColor: colors.chatBackground }}>
+            <ChatWallpaperLayer
+              uri={wallpaper.uri}
+              scrimColor={wallpaper.scrimColor}
+              onError={wallpaper.onImageError}
+            />
+            {/* The sheet dismissed before the prepare-and-copy started; without
+                this the chat looks unchanged for seconds on a cheap phone. */}
+            <ChatWallpaperBusyOverlay />
             <FlatList
               ref={listRef}
               data={visibleMessages}
               keyExtractor={item => item.id}
               {...CHAT_LIST_WINDOWING}
               className="flex-1"
-              style={{ backgroundColor: colors.chatBackground }}
+              style={{ backgroundColor: wallpaper.listBackgroundColor }}
               contentContainerClassName="px-4 py-4 flex-grow"
               onScroll={(e) => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -1529,14 +1575,27 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 ) : null
               }
               ListEmptyComponent={
-                <EmptyState
-                  icon={starredOnly ? 'star-outline' : 'chatbubble-ellipses-outline'}
-                  title={
-                    starredOnly
-                      ? 'No starred messages yet'
-                      : `Start a conversation with ${displayName}`
-                  }
-                />
+                wallpaper.active ? (
+                  <View className="px-4 py-4 rounded-2xl mx-8 mt-16" style={wallpaper.pillStyle}>
+                    <EmptyState
+                      icon={starredOnly ? 'star-outline' : 'chatbubble-ellipses-outline'}
+                      title={
+                        starredOnly
+                          ? 'No starred messages yet'
+                          : `Start a conversation with ${displayName}`
+                      }
+                    />
+                  </View>
+                ) : (
+                  <EmptyState
+                    icon={starredOnly ? 'star-outline' : 'chatbubble-ellipses-outline'}
+                    title={
+                      starredOnly
+                        ? 'No starred messages yet'
+                        : `Start a conversation with ${displayName}`
+                    }
+                  />
+                )
               }
               // DmMessageRow is memoized and closes over none of these.
               extraData={listExtraData}
@@ -1554,6 +1613,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                       : peerAvatarUrl || item.senderAvatar || undefined
                   }
                   showUnreadDivider={firstUnreadId === item.id}
+                  wallpaperPillStyle={wallpaper.pillStyle}
                   onReplyToMessage={showMessageActions}
                   onSwipeReplyToMessage={beginReply}
                   onScrollToMessage={handleScrollToMessage}
@@ -1580,6 +1640,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 </Pressable>
               </View>
             ) : null}
+            </View>
           </View>
         )}
 
@@ -1721,8 +1782,15 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       </>
       )}
 
+      <ChatWallpaperSheet
+        visible={wallpaperSheetOpen}
+        onClose={() => setWallpaperSheetOpen(false)}
+        scope={wallpaperScopeKey}
+        scopeLabel="this chat"
+      />
       <ChatThreadModal
         visible={!!threadRootId}
+        wallpaperScopeKey={wallpaperScopeKey}
         onClose={() => {
           setThreadRootId(null);
           setThreadMessages([]);

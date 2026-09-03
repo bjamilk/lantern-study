@@ -1,5 +1,11 @@
 export { ChatComposer } from './ChatComposer';
 export { ChatThreadModal } from './ChatThreadModal';
+export {
+  ChatWallpaperBusyOverlay,
+  ChatWallpaperLayer,
+  useChatWallpaper,
+} from './ChatWallpaper';
+export { ChatWallpaperSheet } from './ChatWallpaperSheet';
 export { DmBubble } from './DmBubble';
 export { GroupChatHeader, type GroupChatHeaderAction } from './GroupChatHeader';
 export { MessageBubble } from './MessageBubble';
