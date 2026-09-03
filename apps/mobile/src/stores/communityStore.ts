@@ -100,5 +100,3 @@ export function selectIsLoungeGroup(state: CommunityState, groupId: string): boo
   }
   return false;
 }
-
-/** Sync selector: `communityId → { slug, name }` from the membership list. */
