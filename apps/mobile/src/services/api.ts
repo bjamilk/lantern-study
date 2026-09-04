@@ -46,6 +46,14 @@ const client: ApiClient = {
     rawClient.requestRaw<T>(endpoint, options, timeoutMs).catch(rethrowAfterSuspensionCheck),
 };
 
+/**
+ * The configured transport, for the few mobile-only endpoints that are not in
+ * the shared endpoint set. Going through this — rather than a bare `fetch` —
+ * keeps the 401 refresh, the sign-out on a dead session and the
+ * ACCOUNT_SUSPENDED probe above, all of which a hand-rolled call would lose.
+ */
+export const apiClient: ApiClient = client;
+
 const lanternApi = createApiEndpoints(client);
 
 /** Shared API instance for stores using `import * as api` */

@@ -26,6 +26,7 @@ import type { CommunityChannel, CommunityRole, CommunityStudyGroup } from './com
 import { COMMUNITY_COPY, COMMUNITY_LOUNGE_CHANNEL_NAME } from './communityServer';
 import type { Group } from '../types';
 import { memberCountLabel } from './communityLabels';
+import { normalizeReactions } from '../chat/reactions';
 
 /** Maximum length of a post's optional title. Mirrors the API validator. */
 export const BOARD_POST_SUBJECT_MAX = 120;
@@ -42,6 +43,91 @@ export const BOARD_VOICE_NOTE_MAX_SECONDS = 120;
 export const BOARD_COMMENT_NOTIFY_MAX = 50;
 /** Milliseconds the freshly posted card stays highlighted (static if reduced motion). */
 export const BOARD_NEW_POST_HIGHLIGHT_MS = 1200;
+
+// ---------------------------------------------------------------------------
+// Twitter-shaped board actions (Phase 1). Every limit below is re-checked
+// server-side; a limit that lives only in a client is a review blocker
+// (§9.3 rule 3).
+// ---------------------------------------------------------------------------
+
+/**
+ * Favorite is a REACTION with the emoji pinned — not a new table and not a new
+ * endpoint. `❤️` is already inside `CHAT_REACTION_EMOJI`, so
+ * `POST`/`DELETE /messages/:id/reactions` accept it with no validator change,
+ * `sync_message_reaction_counts` keeps the count, and the parent UPDATE rides
+ * the realtime channel both clients already subscribe to.
+ */
+export const BOARD_FAVORITE_EMOJI = '\u2764\ufe0f';
+
+/**
+ * The ONE binding order for the action row, rendered from this array on both
+ * platforms so they cannot diverge (§9.3 rule 1).
+ */
+export const BOARD_ACTION_ROW_ORDER = [
+  'comment',
+  'repost',
+  'favorite',
+  'bookmark',
+  'share',
+] as const;
+export type BoardAction = (typeof BOARD_ACTION_ROW_ORDER)[number];
+
+/**
+ * A repost row's `client_message_id`. The partial unique index
+ * `(group_id, sender_id, client_message_id) WHERE client_message_id IS NOT NULL`
+ * (20260711170000) makes "one repost per person per post" a DATABASE
+ * guarantee: a second attempt raises 23505, which the API answers 409.
+ *
+ * The server refuses this prefix on the ordinary send path, so no other write
+ * can occupy the slot or forge the discriminator (see `isBoardRepostRow`).
+ */
+export const BOARD_REPOST_CLIENT_ID_PREFIX = 'repost:';
+/** Longest optional comment on a repost. */
+export const BOARD_REPOST_QUOTE_MAX = 280;
+/** Longest snippet of the quoted original carried in a repost embed. */
+export const BOARD_QUOTE_SNIPPET_MAX = 140;
+/** You cannot bump your own post while it is still near the top. */
+export const BOARD_REPOST_SELF_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+/** Reposts one person may make on one board in an hour (§6.3 rule 6). */
+export const BOARD_REPOST_PER_BOARD_HOURLY_MAX = 5;
+
+/** One limit for a board photo, enforced in both composers AND on the server. */
+export const BOARD_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+export const BOARD_IMAGE_MAX_DIMENSION = 1600;
+
+/**
+ * A GIF's own, SMALLER cap.
+ *
+ * Founder decision: a GIF is an uploaded `.gif` from the gallery, and it has
+ * to animate — so it goes to storage byte-for-byte. Any canvas or
+ * `ImageManipulator` round trip keeps frame one and throws the rest away, and
+ * the "GIF" that arrives is a still: a failure that looks perfect to whoever
+ * posted it. The server already agrees — `normalizeImageForStorage` detects a
+ * multi-frame GIF and passes it through untouched.
+ *
+ * Passthrough is exactly why the cap is lower than a photo's. Nothing resizes
+ * it and its static first-frame thumb is no substitute, so EVERY reader pays
+ * the whole file. At the 10 MB photo cap that is ₦3–₦5 per reader per view on
+ * Nigerian mobile data, against ₦0.01–₦0.13 for a photo.
+ *
+ * Lives here, not in a client, because a limit defined on one platform is how
+ * the composers drifted the last time (web 8 MB, shared 10 MB, server 10 MB
+ * for the same photo).
+ */
+export const BOARD_GIF_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Saved posts page size, and the ceiling the API clamps `limit` to. */
+export const BOARD_BOOKMARKS_PAGE_SIZE = 20;
+export const BOARD_BOOKMARKS_PAGE_SIZE_MAX = 50;
+/** Ids accepted in one device-local bookmark import. */
+export const BOARD_BOOKMARK_IMPORT_MAX = 200;
+
+/**
+ * Where a shared board link points. Deliberately a constant and not a runtime
+ * origin: a link minted inside the Android app must open the website, not
+ * `exp://`.
+ */
+export const BOARD_SHARE_ORIGIN = 'https://lanternstudy.com';
 
 /**
  * One card on a board. A post is `messages.type = 'TEXT'` with
@@ -67,6 +153,53 @@ export interface BoardPost {
   isLegacyQuestion: boolean;
   /** Present only when isLegacyQuestion — the stem, for the read-only card. */
   legacyQuestionStem: string | null;
+  /**
+   * The post's photo, carried on `messages.image_url`. Legacy posts keep theirs
+   * as markdown inside `text`, so a card reads `imageUrl ?? <parsed from text>`
+   * — `image_url` is the FIRST encoding to be written, not a third one.
+   */
+  imageUrl: string | null;
+  /** `reactions[BOARD_FAVORITE_EMOJI]`, precomputed so a card never re-derives it. */
+  favoriteCount: number;
+  favorited: boolean;
+  /** Private to the viewer. There is no "how many people saved this", anywhere. */
+  bookmarked: boolean;
+  repostCount: number;
+  repostedByMe: boolean;
+  /** Non-null only on a repost row (§6.2). */
+  repostOf: BoardQuotedPost | null;
+}
+
+/**
+ * The original a repost points at. TEXT ONLY — it carries `hasImage` /
+ * `hasAudio` flags and never a media URL, so a repost card downloads zero
+ * bytes of media exactly like every other list card (§5.5, §6.5).
+ */
+export interface BoardQuotedPost {
+  id: string;
+  senderName: string;
+  timestamp: string;
+  subject: string | null;
+  /** `boardQuoteSnippet` of the body with its media markdown stripped. */
+  snippet: string;
+  hasImage: boolean;
+  hasAudio: boolean;
+  /** Set when the original was taken down: the embed says so, with no writes. */
+  removedAt: string | null;
+}
+
+/**
+ * A row in "Saved posts". Bookmarks span boards, so each entry carries the
+ * board context the list has to render — the post alone cannot say where it
+ * came from.
+ */
+export interface BoardBookmarkEntry {
+  post: BoardPost;
+  groupId: string;
+  boardName: string;
+  communitySlug: string | null;
+  communityName: string | null;
+  savedAt: string;
 }
 
 export const COMMUNITY_BOARD_COPY = {
@@ -79,11 +212,17 @@ export const COMMUNITY_BOARD_COPY = {
   comments: (n: number) => (n === 1 ? '1 comment' : `${n} comments`),
   commentsTitle: 'Comments',
   commentPlaceholder: 'Write a comment',
-  react: 'React',
   pinnedLabel: 'PINNED',
   pin: 'Pin to top',
   unpin: 'Unpin',
   pinUnavailable: 'Pinning is not available yet',
+  /**
+   * The device-local "Save for me" that Bookmark replaces. It survives Phase 1
+   * on purpose: §2's degrade rule says that on a database without
+   * `message_bookmarks` the clients hide Bookmark and keep today's local save
+   * working, so the copy has to still exist. It is deleted in Phase 2, once
+   * the one-time import has run everywhere.
+   */
   saveForMe: 'Save for me',
   saved: 'Saved',
   copyText: 'Copy text',
@@ -99,6 +238,17 @@ export const COMMUNITY_BOARD_COPY = {
   openStudyGroup: 'Start a study group about this',
   photoTapToLoad: 'Photo · tap to load',
   voiceNote: 'Voice note',
+  /**
+   * Shown when a stored media reference cannot be re-signed for display — the
+   * object is gone, or the viewer has lost access to the board that owns it.
+   * Both clients render this chip rather than a broken image (web) or nothing
+   * at all (mobile), so the reader is told what happened.
+   */
+  photoUnavailable: 'Photo unavailable',
+  voiceNoteUnavailable: 'Voice note unavailable',
+  /** The gap between "you asked for it" and "it is signed and downloading". */
+  photoLoading: 'Photo · loading…',
+  voiceNoteLoading: 'Voice note · loading…',
   boardOf: (community: string) => community,
   // --- board header overflow (§4.1), in the one binding order ---
   searchBoard: 'Search this board',
@@ -109,6 +259,54 @@ export const COMMUNITY_BOARD_COPY = {
   // --- errors surfaced by the degrade path (§3.1) ---
   studyGroupsUnavailable: 'Study groups are not available yet',
   subjectTooLong: `Title must be ${BOARD_POST_SUBJECT_MAX} characters or fewer`,
+  // --- the action row (§9.1), in BOARD_ACTION_ROW_ORDER ---
+  /**
+   * Favorite replaces the emoji React on BOARD surfaces only. Group chat and
+   * DMs keep the full picker and `reactionAccessibilityLabel` — the same
+   * component, the same table, six render sites, three of which are not
+   * boards.
+   */
+  favorite: 'Favorite',
+  favorited: 'Favorited',
+  repost: 'Repost',
+  reposted: 'Reposted',
+  undoRepost: 'Undo repost',
+  repostedBy: (name: string) => `${name || 'Someone'} reposted`,
+  repostQuotePlaceholder: 'Add a comment (optional)',
+  repostAlready: 'You already reposted this post',
+  repostOwnTooSoon: 'You can repost your own post after a day',
+  repostOfRepost: 'Repost the original post instead',
+  repostNotSameBoard: 'A post can only be reposted on its own board',
+  repostNotAPost: 'Only a post can be reposted, not a comment',
+  repostRemoved: 'That post was removed',
+  repostTooMany: 'You have reposted a lot on this board. Try again later.',
+  repostUnavailable: 'Reposting is not available yet',
+  repostQuoteTooLong: `A repost comment must be ${BOARD_REPOST_QUOTE_MAX} characters or fewer`,
+  quotedRemoved: 'This post was removed',
+  quotedUnavailable: 'This post is no longer available',
+  bookmark: 'Bookmark',
+  bookmarked: 'Bookmarked',
+  savedPosts: 'Saved posts',
+  savedPostsEmpty:
+    'Nothing saved yet. Bookmark a post to keep it — timetables, past-question drives, exam plans.',
+  bookmarksUnavailable: 'Bookmarks are not available yet',
+  share: 'Share',
+  copyLink: 'Copy link',
+  linkCopied: 'Link copied',
+  shareFailed: 'Could not share that link',
+  // --- what a non-member sees on a shared link (§8.3). No post content, ever. ---
+  notAMemberTitle: 'This post is in a board you are not in',
+  notAMemberBody: (community: string) => `Join ${community} to open it.`,
+  notAMemberUnknown: 'Only members of this board can open this link.',
+  // --- the one-photo composer (§5.3) ---
+  removePhoto: 'Remove photo',
+  photoAttached: 'Photo attached',
+  imageTooLarge: 'That photo is too large. Pick one under 10 MB.',
+  invalidImage: 'That photo could not be attached',
+  /** Refused BEFORE any bytes leave the device — see `BOARD_GIF_MAX_BYTES`. */
+  gifTooLarge: 'That GIF is too large. Pick one under 5 MB.',
+  /** The badge on a GIF chip: words, never colour alone (§9.1). */
+  gif: 'GIF',
 } as const;
 
 /**
@@ -315,6 +513,283 @@ export function boardDeepLinkPath(
 ): string {
   if (!slug) return '/discover';
   return `/discover/c/${encodeURIComponent(slug)}/ch/${encodeURIComponent(groupId)}`;
+}
+
+
+// ---------------------------------------------------------------------------
+// Favorite (§4) — a reaction with the emoji pinned. No new table, no new route.
+// ---------------------------------------------------------------------------
+
+/**
+ * How many people favorited a post. Every other emoji already on the row is
+ * counted by nobody on a board surface and deleted by nobody either: a
+ * 👍→❤️ fold would make un-favoriting ambiguous, because you cannot remove a
+ * reaction you never placed (§4.4).
+ */
+export function boardFavoriteCount(reactions: unknown): number {
+  return normalizeReactions(reactions)[BOARD_FAVORITE_EMOJI] ?? 0;
+}
+
+/**
+ * Did the viewer favorite this post? `mine` is one row of the existing
+ * `GET /messages/group/:groupId/user-reactions` map, which both boards already
+ * fetch on mount.
+ */
+export function isBoardFavorited(mine?: readonly string[] | null): boolean {
+  return Array.isArray(mine) && mine.includes(BOARD_FAVORITE_EMOJI);
+}
+
+// ---------------------------------------------------------------------------
+// Repost (§6) — a same-board bump. An ordinary `messages` row, zero migrations.
+// ---------------------------------------------------------------------------
+
+/** `repost:<originalId>` — the value that makes the unique index do the work. */
+export function boardRepostClientId(originalId: string): string {
+  return `${BOARD_REPOST_CLIENT_ID_PREFIX}${originalId}`;
+}
+
+/** The inverse. Returns null for any client id that is not a repost key. */
+export function boardRepostOriginalId(
+  clientMessageId: string | null | undefined,
+): string | null {
+  if (typeof clientMessageId !== 'string') return null;
+  if (!clientMessageId.startsWith(BOARD_REPOST_CLIENT_ID_PREFIX)) return null;
+  const id = clientMessageId.slice(BOARD_REPOST_CLIENT_ID_PREFIX.length).trim();
+  return id || null;
+}
+
+/**
+ * The repost discriminator:
+ * `reply_to_message_id IS NOT NULL AND thread_root_id IS NULL AND client_message_id LIKE 'repost:%'`.
+ *
+ * Why all three clauses are needed, and why none of them is decoration:
+ *
+ *  - a COMMENT always carries `thread_root_id`, because the only write path
+ *    that sets `reply_to_message_id` also sets
+ *    `COALESCE(parent.thread_root_id, parent.id)` and 20260728140000
+ *    backfilled every pre-existing reply. So clauses 1+2 already exclude every
+ *    comment the server can write today;
+ *  - both columns are `ON DELETE SET NULL`. Hard-deleting a root post (account
+ *    deletion cascades through `messages.sender_id`) leaves a NESTED comment
+ *    with `reply_to_message_id` still pointing at its sibling and
+ *    `thread_root_id` nulled — clauses 1+2 alone would call that orphan a
+ *    repost and render someone's reply as a bump of a post that no longer
+ *    exists. Clause 3 excludes it;
+ *  - clause 3 is only trustworthy because `client_message_id` is
+ *    client-supplied: the server REFUSES the `repost:` prefix on the ordinary
+ *    send path, so the prefix cannot be forged onto a comment.
+ */
+export function isBoardRepostRow(row: {
+  replyToMessageId?: string | null;
+  threadRootId?: string | null;
+  clientMessageId?: string | null;
+}): boolean {
+  if (!row?.replyToMessageId) return false;
+  if (row.threadRootId) return false;
+  return boardRepostOriginalId(row.clientMessageId) !== null;
+}
+
+/** Why a repost was refused. The same typed reasons on both platforms (§9.3 rule 6). */
+export type BoardRepostRefusal =
+  | 'already'
+  | 'ownTooSoon'
+  | 'isRepost'
+  | 'removed'
+  | 'notSameBoard'
+  | 'tooMany'
+  | 'unavailable';
+
+/**
+ * Can this viewer repost this post? The client hides the control on a refusal
+ * and the server re-checks every rule, so calling the endpoint directly with
+ * curl is refused too (§6.3, acceptance criterion 17).
+ */
+export function canRepostBoardPost(input: {
+  post: Pick<BoardPost, 'senderId' | 'timestamp' | 'removedAt' | 'repostedByMe' | 'repostOf'>;
+  viewerId: string;
+  now?: number;
+}): { ok: true } | { ok: false; reason: BoardRepostRefusal } {
+  const { post, viewerId } = input;
+  const now = input.now ?? Date.now();
+  if (post.removedAt) return { ok: false, reason: 'removed' };
+  if (post.repostOf) return { ok: false, reason: 'isRepost' };
+  if (post.repostedByMe) return { ok: false, reason: 'already' };
+  if (viewerId && post.senderId === viewerId) {
+    const postedAt = Date.parse(post.timestamp);
+    if (Number.isFinite(postedAt) && now - postedAt < BOARD_REPOST_SELF_COOLDOWN_MS) {
+      return { ok: false, reason: 'ownTooSoon' };
+    }
+  }
+  return { ok: true };
+}
+
+/** One refusal reason → the one string both platforms show for it. */
+export function boardRepostRefusalCopy(reason: BoardRepostRefusal): string {
+  switch (reason) {
+    case 'already':
+      return COMMUNITY_BOARD_COPY.repostAlready;
+    case 'ownTooSoon':
+      return COMMUNITY_BOARD_COPY.repostOwnTooSoon;
+    case 'isRepost':
+      return COMMUNITY_BOARD_COPY.repostOfRepost;
+    case 'removed':
+      return COMMUNITY_BOARD_COPY.repostRemoved;
+    case 'notSameBoard':
+      return COMMUNITY_BOARD_COPY.repostNotSameBoard;
+    case 'tooMany':
+      return COMMUNITY_BOARD_COPY.repostTooMany;
+    case 'unavailable':
+    default:
+      return COMMUNITY_BOARD_COPY.repostUnavailable;
+  }
+}
+
+const BOARD_IMAGE_MARKDOWN_RE = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi;
+const BOARD_AUDIO_MARKDOWN_RE = /\[audio\]\((https?:\/\/[^)\s]+)\)/gi;
+
+/**
+ * The quoted original's body, media stripped and truncated. Built on the same
+ * strip web's `boardPostText` and mobile's `splitBoardBody` use, so a signed
+ * media URL can never ride inside a repost embed (§6.5) — and never inside a
+ * share payload either.
+ */
+export function boardQuoteSnippet(
+  text: string | null | undefined,
+  max: number = BOARD_QUOTE_SNIPPET_MAX,
+): string {
+  const stripped = (text ?? '')
+    .replace(BOARD_IMAGE_MARKDOWN_RE, '')
+    .replace(BOARD_AUDIO_MARKDOWN_RE, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const limit = Math.max(1, Math.floor(max));
+  if (stripped.length <= limit) return stripped;
+  return `${stripped.slice(0, limit - 1).trimEnd()}…`;
+}
+
+// ---------------------------------------------------------------------------
+// Share (§8) — a link, never content.
+// ---------------------------------------------------------------------------
+
+/**
+ * The deep link to ONE post. Falls back to the board link with no postId, and
+ * to `/discover` with no slug — never to `/chat/:groupId`, which is exactly
+ * the surface a board must not open in.
+ */
+export function boardPostDeepLinkPath(
+  slug: string | null | undefined,
+  groupId: string,
+  postId?: string | null,
+): string {
+  const board = boardDeepLinkPath(slug, groupId);
+  if (!slug || !postId) return board;
+  return `${board}/p/${encodeURIComponent(postId)}`;
+}
+
+/**
+ * The absolute link a student pastes into WhatsApp.
+ *
+ * Deliberately NOT unfurlable: the web app has no server-side renderer, so a
+ * paste shows the site title and nothing about the post. That is CORRECT for
+ * members-only content — do not add per-post Open Graph tags in a later SEO
+ * pass (§8.3). The ACL decides what the recipient gets; the link previews
+ * nothing.
+ */
+export function boardPostShareUrl(
+  slug: string | null | undefined,
+  groupId: string,
+  postId: string,
+  origin: string = BOARD_SHARE_ORIGIN,
+): string {
+  const base = (origin || BOARD_SHARE_ORIGIN).replace(/\/+$/, '');
+  return `${base}${boardPostDeepLinkPath(slug, groupId, postId)}`;
+}
+
+/**
+ * Everything the OS share sheet is given: a title and a URL, and NOTHING else.
+ * Never `post.text`, never a body snippet, never a media URL — a signed
+ * storage URL in a share payload is a members-only object leaving the board.
+ */
+export function boardSharePayload(
+  post: Pick<BoardPost, 'id' | 'subject'>,
+  ctx: { slug: string | null | undefined; groupId: string; boardName: string },
+): { title: string; url: string } {
+  const subject = (post.subject ?? '').trim();
+  const boardName = (ctx.boardName ?? '').trim();
+  return {
+    title: subject || (boardName ? `Post in # ${boardName}` : COMMUNITY_BOARD_COPY.post),
+    url: boardPostShareUrl(ctx.slug, ctx.groupId, post.id),
+  };
+}
+
+/**
+ * The storage prefix a board photo MUST live under. The path IS the ACL:
+ * `canAccessStorageObject` resolves `note-files/{owner}/chat/{groupId}/…` to
+ * `isGroupMember(groupId, viewer)`, and storage RLS
+ * (`note_files_chat_group_select`, 20260704100300) mirrors it.
+ */
+export function boardImageUploadPrefix(userId: string, groupId: string): string {
+  return `${userId}/chat/${groupId}/`;
+}
+
+/**
+ * Is this URL a photo THIS user uploaded for THIS board? Re-checked on the
+ * server before `messages.image_url` is written: without it a client could
+ * point `image_url` at another group's object, and the reader's own signed-URL
+ * request would then be refused — a permanently broken image — or, worse,
+ * point it at an object the board's members should not be able to name.
+ *
+ * `parse` is `parseStorageObjectUrl`, passed in so this module stays free of
+ * the storage-config import chain.
+ */
+export function isBoardImageUrlAllowed(input: {
+  url: string;
+  userId: string;
+  groupId: string;
+  parse: (url: string) => { bucket: string; path: string } | null;
+}): boolean {
+  const { url, userId, groupId, parse } = input;
+  if (typeof url !== 'string' || !url.trim()) return false;
+  if (!userId || !groupId) return false;
+  const parsed = parse(url);
+  if (!parsed) return false;
+  if (parsed.bucket !== 'note-files') return false;
+  return parsed.path.startsWith(boardImageUploadPrefix(userId, groupId));
+}
+
+// ---------------------------------------------------------------------------
+// Accessibility labels (§9.2) — here so both platforms announce identically.
+// State is carried by words as well as by an outline-vs-solid icon; never by
+// colour alone.
+// ---------------------------------------------------------------------------
+
+function safeCount(count: number): number {
+  return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+}
+
+/** "Favorite, 12, favorited" / "Favorite, 12, not favorited". */
+export function boardFavoriteAccessibilityLabel(count: number, mine: boolean): string {
+  return `${COMMUNITY_BOARD_COPY.favorite}, ${safeCount(count)}, ${mine ? 'favorited' : 'not favorited'}`;
+}
+
+/** "Repost, 2, you reposted this" / "Repost, 2, not reposted". */
+export function boardRepostAccessibilityLabel(count: number, mine: boolean): string {
+  return `${COMMUNITY_BOARD_COPY.repost}, ${safeCount(count)}, ${mine ? 'you reposted this' : 'not reposted'}`;
+}
+
+/** "Bookmark, saved" / "Bookmark, not saved". */
+export function boardBookmarkAccessibilityLabel(saved: boolean): string {
+  return `${COMMUNITY_BOARD_COPY.bookmark}, ${saved ? 'saved' : 'not saved'}`;
+}
+
+/** "Comment, 3" — the count is hidden at zero visually, never in the label. */
+export function boardCommentAccessibilityLabel(count: number): string {
+  return `${COMMUNITY_BOARD_COPY.comment}, ${safeCount(count)}`;
+}
+
+/** "Share post". */
+export function boardShareAccessibilityLabel(): string {
+  return 'Share post';
 }
 
 /** How many characters of a post seed a study-group name from "Start a study group about this". */

@@ -1,19 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
   Pressable,
+  Share,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import {
   COMMUNITY_BOARD_COPY,
   boardRelativeTime,
-  reactionAccessibilityLabel,
+  boardRepostRefusalCopy,
+  boardSharePayload,
+  BOARD_FAVORITE_EMOJI,
+  boardFavoriteAccessibilityLabel,
+  boardFavoriteCount,
+  canRepostBoardPost,
+  isBoardFavorited,
 } from '@lantern/shared/network';
 import { applyReactionLocally } from '@lantern/shared/chat';
 import { resolveAvatarSrc, normalizeStorageUrl } from '@lantern/shared/utils';
@@ -24,19 +33,33 @@ import { useGroupStore, type Message } from '../../stores/groupStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
-import { ChatImageThumbnail, MentionText } from '../../components/chat/ChatMessageBody';
-import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
+import { MentionText } from '../../components/chat/ChatMessageBody';
+import { BoardActionRow } from '../../components/board/BoardActionRow';
+import { BoardImage } from '../../components/board/BoardImage';
+import { BoardQuotedPost } from '../../components/board/BoardQuotedPost';
+import { BoardRepostSheet } from '../../components/board/BoardRepostSheet';
 import { VoiceNotePlayer } from '../../components/chat/VoiceNotePlayer';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { BackButton } from '../../components/ui';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
-import { mergeComments, selectPostComments, splitBoardBody } from '../../utils/boardPosts';
+import { ActionSheet, type ActionSheetItem } from '../../components/ui';
+import {
+  boardActionTargetId,
+  isBoardRepost,
+  mergeComments,
+  selectPostComments,
+  splitBoardBody,
+  toBoardPost,
+} from '../../utils/boardPosts';
 
 type Params = {
   groupId: string;
   rootId: string;
   communitySlug?: string;
   communityName?: string;
+  /** For the share sheet's `Post in # {board}` fallback title. */
+  boardName?: string;
 };
 
 type Navigation = { goBack: () => void };
@@ -58,7 +81,7 @@ export function CommunityPostScreen({
   navigation: Navigation;
   route: { params: Params };
 }) {
-  const { groupId, rootId } = route.params;
+  const { groupId, rootId, communitySlug, boardName } = route.params;
   const { colors } = useTheme();
   const { lowDataMode } = useLowDataMode();
   const user = useAuthStore((s) => s.user);
@@ -67,6 +90,18 @@ export function CommunityPostScreen({
   const fetchThread = useGroupStore((s) => s.fetchThread);
   const patchMessageInState = useGroupStore((s) => s.patchMessageInState);
   const commentOnPost = useBoardStore((s) => s.commentOnPost);
+  /**
+   * Primitives and arrays only — never an object built inside the selector.
+   * A fresh object every render fails zustand's `Object.is` check forever and
+   * re-renders the screen without end; that is a production freeze this
+   * codebase has already paid for once.
+   */
+  const bookmarkedIds = useBoardStore((s) => s.bookmarkedByGroup[groupId]);
+  const bookmarksSupported = useBoardStore((s) => s.bookmarksSupported[groupId] !== false);
+  const loadBookmarks = useBoardStore((s) => s.loadBookmarks);
+  const toggleBookmarkOnBoard = useBoardStore((s) => s.toggleBookmark);
+  const repostOnBoard = useBoardStore((s) => s.repost);
+  const undoRepostOnBoard = useBoardStore((s) => s.undoRepost);
 
   const [fetched, setFetched] = useState<Message[]>([]);
   /**
@@ -81,8 +116,10 @@ export function CommunityPostScreen({
   const [expanded, setExpanded] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
+  const [repostOpen, setRepostOpen] = useState(false);
+  const [repostBusy, setRepostBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const root = useMemo(
     () => (messages || []).find((m) => m.id === rootId) ?? fetchedRoot,
@@ -121,10 +158,24 @@ export function CommunityPostScreen({
         if (!cancelled) setMyReactions(map || {});
       })
       .catch(() => undefined);
+    // Same request the board screen makes on mount, so opening a post from a
+    // deep link (where the board was never mounted) still paints the Bookmark
+    // icon in the right state on the first frame.
+    void loadBookmarks(groupId);
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, loadBookmarks]);
+
+  /** Keep the locally held copy of the post in step with the cached one. */
+  const patchFetchedRoot = useCallback(
+    (messageId: string, reactions: Record<string, number> | undefined) => {
+      setFetchedRoot((prev) =>
+        prev && prev.id === messageId ? { ...prev, reactions: reactions ?? {} } : prev
+      );
+    },
+    []
+  );
 
   const toggleReaction = useCallback(
     async (message: Message, emoji: string, added: boolean) => {
@@ -139,14 +190,22 @@ export function CommunityPostScreen({
       patchMessageInState(message.id, {
         reactions: applyReactionLocally(previousCounts, emoji, added),
       });
+      // The post itself may live ONLY in `fetchedRoot` — `fetchThread` does not
+      // write it into `messagesCache`, and the cache does not hold it at all
+      // when the post is older than the board's loaded page (every deep link,
+      // and the pinned strip). `patchMessageInState` cannot reach it there, so
+      // the heart filled and the count never moved.
+      patchFetchedRoot(message.id, applyReactionLocally(previousCounts, emoji, added));
       try {
         const result = added
           ? await api.addMessageReaction(message.id, emoji)
           : await api.removeMessageReaction(message.id, emoji);
         patchMessageInState(message.id, { reactions: result?.reactions ?? {} });
+        patchFetchedRoot(message.id, result?.reactions ?? {});
       } catch (error) {
         setMyReactions((prev) => ({ ...prev, [message.id]: previousMine }));
         patchMessageInState(message.id, { reactions: previousCounts });
+        patchFetchedRoot(message.id, previousCounts);
         useToastStore
           .getState()
           .showToast(
@@ -155,8 +214,123 @@ export function CommunityPostScreen({
           );
       }
     },
-    [myReactions, patchMessageInState]
+    [myReactions, patchMessageInState, patchFetchedRoot]
   );
+
+  const bookmarked = useMemo(
+    () => (bookmarkedIds ?? []).includes(rootId),
+    [bookmarkedIds, rootId]
+  );
+
+  const toggleBookmark = useCallback(async () => {
+    const ok = await toggleBookmarkOnBoard(groupId, rootId, !bookmarked);
+    if (!ok) {
+      useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.bookmarksUnavailable, 'error');
+    }
+  }, [toggleBookmarkOnBoard, groupId, rootId, bookmarked]);
+
+  const openRepost = useCallback(() => {
+    if (!root) return;
+    if (root.repostedByMe) {
+      setRepostOpen(true);
+      return;
+    }
+    const verdict = canRepostBoardPost({
+      post: toBoardPost(root),
+      viewerId: user?.id ?? '',
+    });
+    if (!verdict.ok) {
+      useToastStore.getState().showToast(boardRepostRefusalCopy(verdict.reason), 'error');
+      return;
+    }
+    setRepostOpen(true);
+  }, [root, user?.id]);
+
+  const confirmRepost = useCallback(
+    async (quote: string) => {
+      if (repostBusy) return;
+      setRepostBusy(true);
+      const error = await repostOnBoard(groupId, rootId, quote);
+      setRepostBusy(false);
+      if (error) {
+        useToastStore.getState().showToast(error, 'error');
+        return;
+      }
+      setRepostOpen(false);
+    },
+    [repostBusy, repostOnBoard, groupId, rootId]
+  );
+
+  const confirmUndoRepost = useCallback(async () => {
+    if (repostBusy) return;
+    setRepostBusy(true);
+    const error = await undoRepostOnBoard(groupId, rootId);
+    setRepostBusy(false);
+    if (error) {
+      useToastStore.getState().showToast(error, 'error');
+      return;
+    }
+    setRepostOpen(false);
+  }, [repostBusy, undoRepostOnBoard, groupId, rootId]);
+
+  /**
+   * Copy link · Copy text · Share via… — the same three rows, in the same
+   * order, with the same words as the board list and as web (§8.1).
+   *
+   * `boardSharePayload` returns a title and a URL and nothing else. Copy text
+   * runs through `splitBoardBody`, so `![image](https://…)` never reaches the
+   * clipboard and a members-only signed URL never leaves the board.
+   */
+  const shareItems: ActionSheetItem[] = useMemo(() => {
+    if (!root) return [];
+    // A deep link straight to a repost row shares the ORIGINAL's link, so the
+    // recipient lands on the post and not on somebody's bump of it.
+    const payload = boardSharePayload(
+      { ...toBoardPost(root), id: boardActionTargetId(root) },
+      {
+        slug: communitySlug ?? null,
+        groupId,
+        boardName: boardName || route.params.communityName || '',
+      }
+    );
+    const items: ActionSheetItem[] = [
+      {
+        label: COMMUNITY_BOARD_COPY.copyLink,
+        icon: 'link-outline',
+        onPress: () => {
+          void Clipboard.setStringAsync(payload.url)
+            .then(() => AccessibilityInfo.announceForAccessibility(COMMUNITY_BOARD_COPY.linkCopied))
+            .catch(() =>
+              useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.shareFailed, 'error')
+            );
+        },
+      },
+    ];
+    const { body } = splitBoardBody(root.text);
+    if (body) {
+      items.push({
+        label: COMMUNITY_BOARD_COPY.copyText,
+        icon: 'copy-outline',
+        onPress: () => {
+          void Clipboard.setStringAsync(body)
+            .then(() => AccessibilityInfo.announceForAccessibility('Post copied'))
+            .catch(() =>
+              useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.shareFailed, 'error')
+            );
+        },
+      });
+    }
+    items.push({
+      label: `${COMMUNITY_BOARD_COPY.share} via…`,
+      icon: 'share-outline',
+      onPress: () => {
+        void Share.share({ message: payload.url, title: payload.title }).catch(() =>
+          useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.shareFailed, 'error')
+        );
+      },
+    });
+    return items;
+  }, [root, communitySlug, groupId, boardName, route.params.communityName]);
 
   const submitComment = useCallback(async () => {
     const trimmed = text.trim();
@@ -178,11 +352,16 @@ export function CommunityPostScreen({
   }, [text, user?.id, sending, commentOnPost, groupId, rootId, reload]);
 
   const rootMedia = splitBoardBody(root?.text);
-  const rootImage = rootMedia.imageUrl
-    ? normalizeStorageUrl(rootMedia.imageUrl)
-    : root?.imageUrl
-      ? normalizeStorageUrl(root.imageUrl)
-      : null;
+  /**
+   * `messages.image_url` FIRST, the markdown inside `text` only as the legacy
+   * fallback — the same precedence `BoardPostCard` uses, so a post never shows
+   * one photo in the list and a different one on this screen.
+   *
+   * Stored as-is: `BoardImage` re-signs it on read. Normalising here and
+   * handing the result straight to <Image> is what let a day-old photo 400 and
+   * vanish with no error anywhere.
+   */
+  const rootImage = root?.imageUrl ?? rootMedia.imageUrl ?? null;
 
   const renderComment = ({ item }: { item: Message }) => {
     const media = splitBoardBody(item.text);
@@ -225,10 +404,11 @@ export function CommunityPostScreen({
             <>
               {media.imageUrl ? (
                 <View className="mt-1">
-                  <ChatImageThumbnail
-                    uri={normalizeStorageUrl(media.imageUrl)}
+                  <BoardImage
+                    url={media.imageUrl}
                     accessibilityLabel="Comment photo"
                     maxWidth={200}
+                    lowDataMode={lowDataMode}
                   />
                 </View>
               ) : null}
@@ -251,6 +431,39 @@ export function CommunityPostScreen({
                   />
                 </View>
               ) : null}
+              {/*
+                A comment gets Favorite and NOTHING else (§4.5). No repost, no
+                bookmark, no share on a comment in any phase: five 44px targets
+                do not fit a 24px-avatar comment row on a 320dp screen, and
+                every one of them would point at a row that is not a post.
+              */}
+              <Pressable
+                onPress={() =>
+                  void toggleReaction(
+                    item,
+                    BOARD_FAVORITE_EMOJI,
+                    !isBoardFavorited(myReactions[item.id])
+                  )
+                }
+                accessibilityRole="button"
+                accessibilityState={{ selected: isBoardFavorited(myReactions[item.id]) }}
+                accessibilityLabel={boardFavoriteAccessibilityLabel(
+                  boardFavoriteCount(item.reactions),
+                  isBoardFavorited(myReactions[item.id])
+                )}
+                className="mt-0.5 min-h-[44px] min-w-[44px] flex-row items-center self-start"
+              >
+                <Ionicons
+                  name={isBoardFavorited(myReactions[item.id]) ? 'heart' : 'heart-outline'}
+                  size={15}
+                  color={isBoardFavorited(myReactions[item.id]) ? colors.error : '#94a3b8'}
+                />
+                {boardFavoriteCount(item.reactions) > 0 ? (
+                  <Text className="ml-1 text-[12px] font-medium text-lantern-text-secondary">
+                    {boardFavoriteCount(item.reactions)}
+                  </Text>
+                ) : null}
+              </Pressable>
             </>
           )}
         </View>
@@ -300,9 +513,21 @@ export function CommunityPostScreen({
                   </Text>
                 ) : null}
 
+                {/* Opened from a repost card's Comment control this is the
+                    ORIGINAL, so this branch only fires on a direct deep link
+                    to a repost row. Render what it points at rather than an
+                    empty card. */}
+                {isBoardRepost(root) ? (
+                  <BoardQuotedPost quoted={root.repostOf ?? null} />
+                ) : null}
+
                 {rootImage ? (
                   <View className="mt-2">
-                    <ChatImageThumbnail uri={rootImage} accessibilityLabel="Post photo" />
+                    <BoardImage
+                      url={rootImage}
+                      accessibilityLabel="Post photo"
+                      lowDataMode={lowDataMode}
+                    />
                   </View>
                 ) : null}
 
@@ -325,35 +550,39 @@ export function CommunityPostScreen({
                   </View>
                 ) : null}
 
-                <MessageReactions
-                  reactions={root.reactions}
-                  mine={myReactions[root.id]}
-                  onToggle={(emoji, added) => void toggleReaction(root, emoji, added)}
-                  size="touch"
-                  labelFor={reactionAccessibilityLabel}
+                {/*
+                  The same five controls, in the same order, as the board list
+                  — rendered from the shared BOARD_ACTION_ROW_ORDER (§9.1).
+                  Favorite replaces the emoji React on BOARD surfaces only: the
+                  same message_reactions table and the same endpoints with the
+                  emoji pinned, so group chat and DMs keep the full picker.
+
+                  Comment scrolls to the composer rather than navigating: this
+                  screen IS the comments.
+                */}
+                <BoardActionRow
+                  favoriteCount={boardFavoriteCount(root.reactions)}
+                  favorited={isBoardFavorited(myReactions[root.id])}
+                  onFavorite={() =>
+                    void toggleReaction(
+                      root,
+                      BOARD_FAVORITE_EMOJI,
+                      !isBoardFavorited(myReactions[root.id])
+                    )
+                  }
+                  repostCount={root.repostCount ?? 0}
+                  repostedByMe={!!root.repostedByMe}
+                  onRepost={openRepost}
+                  canRepost={
+                    canRepostBoardPost({ post: toBoardPost(root), viewerId: user?.id ?? '' }).ok
+                  }
+                  replyCount={comments.length}
+                  onComment={() => setExpanded(true)}
+                  bookmarked={bookmarked}
+                  onBookmark={() => void toggleBookmark()}
+                  bookmarksSupported={bookmarksSupported}
+                  onShare={() => setShareOpen(true)}
                 />
-
-                {pickerOpen ? (
-                  <ReactionPickerRow
-                    mine={myReactions[root.id]}
-                    onPick={(emoji, added) => {
-                      setPickerOpen(false);
-                      void toggleReaction(root, emoji, added);
-                    }}
-                  />
-                ) : null}
-
-                <Pressable
-                  onPress={() => setPickerOpen((open) => !open)}
-                  accessibilityRole="button"
-                  accessibilityLabel={COMMUNITY_BOARD_COPY.react}
-                  accessibilityState={{ expanded: pickerOpen }}
-                  className="mt-2 self-start min-h-[44px] justify-center"
-                >
-                  <Text className="text-[12px] font-semibold text-lantern-primary">
-                    {COMMUNITY_BOARD_COPY.react}
-                  </Text>
-                </Pressable>
               </View>
             ) : null
           }
@@ -413,6 +642,31 @@ export function CommunityPostScreen({
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <ActionSheet
+        visible={shareOpen}
+        title={COMMUNITY_BOARD_COPY.share}
+        items={shareItems.map((item) => ({
+          ...item,
+          onPress: () => {
+            setShareOpen(false);
+            item.onPress();
+          },
+        }))}
+        onClose={() => setShareOpen(false)}
+      />
+
+      <BoardRepostSheet
+        visible={repostOpen}
+        authorName={root?.senderName ?? ''}
+        subject={root?.subject ?? null}
+        body={root?.text ?? ''}
+        reposted={!!root?.repostedByMe}
+        busy={repostBusy}
+        onRepost={(quote) => void confirmRepost(quote)}
+        onUndo={() => void confirmUndoRepost()}
+        onClose={() => setRepostOpen(false)}
+      />
     </SafeAreaView>
   );
 }

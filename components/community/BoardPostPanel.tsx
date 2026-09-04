@@ -1,8 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import { HeartIcon } from '@heroicons/react/24/outline';
+import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
 import {
   COMMUNITY_BOARD_COPY,
+  boardFavoriteAccessibilityLabel,
+  boardFavoriteCount,
   boardRelativeTime,
+  isBoardFavorited,
   type BoardPost,
 } from '@lantern/shared/network';
 import { fetchGroupThread } from '../../services/supabase';
@@ -13,12 +18,53 @@ import MessageInputBar from '../MessageInputBar';
 import { BoardPostMedia, boardPostText } from './BoardPostCard';
 import { Avatar } from '../ui';
 
+/**
+ * The one control a board comment gets. Same table, same endpoints and the
+ * same pinned emoji as a post's Favorite; the emoji picker is gone from every
+ * board surface and untouched in group chat and DMs.
+ */
+const FavoriteButton: React.FC<{
+  count: number;
+  mine: boolean;
+  onToggle: (added: boolean) => void;
+}> = ({ count, mine, onToggle }) => (
+  <button
+    type="button"
+    onClick={() => onToggle(!mine)}
+    aria-pressed={mine}
+    aria-label={boardFavoriteAccessibilityLabel(count, mine)}
+    className="mt-1 inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lantern px-2.5 text-xs font-medium text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+  >
+    {mine ? (
+      <HeartSolidIcon className="h-4 w-4 text-lantern-error" aria-hidden="true" />
+    ) : (
+      <HeartIcon className="h-4 w-4" aria-hidden="true" />
+    )}
+    {count > 0 ? count : null}
+  </button>
+);
+
 export interface BoardPostPanelProps {
   groupId: string;
   post: BoardPost;
   lowDataMode: boolean;
   mentionCandidates: MentionCandidate[];
   onClose: () => void;
+  /**
+   * The viewer's own reactions across this board, keyed by message id. A
+   * comment's Favorite reads its row out of the same map the cards use, so a
+   * heart placed here and one placed on the card are the same record.
+   */
+  myReactions: Record<string, string[]>;
+  /**
+   * Favorite on the root post or on any comment. Board comments get Favorite
+   * and NOTHING else (§4.5) — five 44px controls do not fit a comment row
+   * beside a 24px avatar on a 320dp screen.
+   */
+  onToggleFavorite: (
+    messageId: string,
+    added: boolean,
+  ) => Promise<Record<string, number> | null>;
   /** Posts a comment (a plain TEXT reply on the root). */
   onSendComment: (text: string, options: SendMessageOptions) => Promise<void>;
   /** Keeps the card's `N comments` in step without a manual refetch (§11.7). */
@@ -37,6 +83,8 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
   lowDataMode,
   mentionCandidates,
   onClose,
+  myReactions,
+  onToggleFavorite,
   onSendComment,
   onReplyCountChange,
 }) => {
@@ -71,6 +119,20 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
     setLoading(true);
     void load();
   }, [load]);
+
+  /**
+   * A comment is not in the board's `posts` list, so the authoritative counts
+   * that come back from the toggle are patched onto its row here. Without this
+   * the heart filled and the number beside it stayed on the old value until
+   * the thread was reloaded.
+   */
+  const handleFavorite = async (messageId: string, added: boolean) => {
+    const reactions = await onToggleFavorite(messageId, added);
+    if (!reactions) return;
+    setComments((prev) =>
+      prev.map((comment) => (comment.id === messageId ? { ...comment, reactions } : comment))
+    );
+  };
 
   const handleSend = async (text: string, options?: SendMessageOptions) => {
     await onSendComment(text, { ...options, replyToMessageId: post.id });
@@ -126,8 +188,24 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
             {body ? (
               <p className="mt-2 whitespace-pre-wrap break-words text-sm text-lantern-text">{body}</p>
             ) : null}
-            {/* The post screen is where media actually loads (§10). */}
-            <BoardPostMedia text={post.text} eager={!lowDataMode} />
+            {/*
+              The post view is where the FULL photo loads — `original` unless
+              low-data mode is on, which reads the 480px thumb instead. It is
+              also the only board surface that ever fetches a voice note.
+            */}
+            <BoardPostMedia
+              text={post.text}
+              imageUrl={post.imageUrl}
+              eager={!lowDataMode}
+              variant={lowDataMode ? 'thumb' : 'original'}
+            />
+            <div className="mt-2">
+              <FavoriteButton
+                count={boardFavoriteCount(post.reactions)}
+                mine={isBoardFavorited(myReactions[post.id])}
+                onToggle={(added) => void handleFavorite(post.id, added)}
+              />
+            </div>
           </article>
 
           {error ? (
@@ -166,7 +244,18 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
                         <p className="whitespace-pre-wrap break-words text-sm text-lantern-text">
                           {boardPostText(comment.text)}
                         </p>
-                        <BoardPostMedia text={comment.text} />
+                        <BoardPostMedia
+                          text={comment.text}
+                          imageUrl={comment.imageUrl}
+                          eager={!lowDataMode}
+                          variant="thumb"
+                          cropped
+                        />
+                        <FavoriteButton
+                          count={boardFavoriteCount(comment.reactions)}
+                          mine={isBoardFavorited(myReactions[comment.id])}
+                          onToggle={(added) => void handleFavorite(comment.id, added)}
+                        />
                       </>
                     )}
                   </div>

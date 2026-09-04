@@ -34,9 +34,21 @@ const GROUP = '44444444-4444-4444-8444-444444444444';
 
 type Op = { fn: string; args: any[] };
 
-function makeSelf(options: { boardColumns?: boolean; failFirstWith42703?: boolean } = {}) {
-  const { boardColumns = true, failFirstWith42703 = false } = options;
-  setSchemaCapabilities({ messageBoardColumns: boardColumns });
+function makeSelf(
+  options: {
+    boardColumns?: boolean;
+    reactionsColumn?: boolean;
+    /** How many leading page reads answer 42703 before the mock returns rows. */
+    failFirstAttempts?: number;
+  } = {},
+) {
+  const { boardColumns = true, reactionsColumn = true, failFirstAttempts = 0 } = options;
+  // Both capabilities are forced so the probe query never runs: an unforced
+  // probe would be `opsByCall[0]` and shift every index below.
+  setSchemaCapabilities({
+    messageBoardColumns: boardColumns,
+    messageReactionsColumn: reactionsColumn,
+  });
 
   const selects: string[] = [];
   const opsByCall: Op[][] = [];
@@ -57,7 +69,7 @@ function makeSelf(options: { boardColumns?: boolean; failFirstWith42703?: boolea
       chain.range = (...args: any[]) => {
         ops.push({ fn: 'range', args });
         attempts += 1;
-        if (failFirstWith42703 && attempts === 1) {
+        if (attempts <= failFirstAttempts) {
           return Promise.resolve({
             data: null,
             error: { code: '42703', message: 'column messages.subject does not exist' },
@@ -72,6 +84,7 @@ function makeSelf(options: { boardColumns?: boolean; failFirstWith42703?: boolea
               type: 'TEXT',
               text: 'Timetable is out',
               subject: boardColumns ? 'Exam week' : undefined,
+              reactions: reactionsColumn ? { '\u2764\ufe0f': 3, '\ud83d\udd25': 1 } : undefined,
               timestamp: '2026-09-03T10:00:00.000Z',
               profiles: { id: 'u1', name: 'Ada' },
             },
@@ -93,6 +106,15 @@ function makeSelf(options: { boardColumns?: boolean; failFirstWith42703?: boolea
     attachReplyPreviewsBatch: jest.fn(async (rows: any[]) => rows),
     attachThreadReplyCounts: jest.fn(async (rows: any[]) =>
       rows.map((r) => ({ ...r, replyCount: 2 })),
+    ),
+    // Board-only hydration (§6.4): `repostOf` / `repostCount` inside the
+    // shared page cache, `repostedByMe` / `bookmarked` outside it.
+    attachBoardRepostContext: jest.fn(async (rows: any[]) =>
+      rows.map((r) => ({ ...r, repostCount: 0, repostOf: null })),
+    ),
+    enrichGroupMessageReceipts: jest.fn(async (rows: any[]) => rows),
+    enrichBoardViewerState: jest.fn(async (rows: any[]) =>
+      rows.map((r) => ({ ...r, repostedByMe: false, bookmarked: false })),
     ),
   };
 
@@ -117,6 +139,38 @@ describe('getGroupMessages rootsOnly', () => {
     expect(chat.opsByCall[0].some((o) => o.fn === 'is' && o.args[0] === 'thread_root_id')).toBe(
       false,
     );
+  });
+
+  it('hydrates reposts on a board page and never on a chat page', async () => {
+    const board = makeSelf();
+    await board.fetchPage({ page: 1, limit: 20, rootsOnly: true });
+    expect(board.self.attachBoardRepostContext).toHaveBeenCalled();
+
+    const chat = makeSelf();
+    await chat.fetchPage({ page: 1, limit: 20 });
+    // A comment thread and a group chat pay nothing for a board-only feature.
+    expect(chat.self.attachBoardRepostContext).not.toHaveBeenCalled();
+  });
+
+  it('keeps viewer-specific state OUT of the shared page cache', async () => {
+    // repostedByMe and bookmarked are per viewer; the 120s page cache is
+    // shared by every member of the board, so attaching them inside it would
+    // show one student another student's bookmarks.
+    const board = makeSelf();
+    await board.fetchPage({ page: 1, limit: 20, rootsOnly: true, viewerUserId: 'u9' });
+    const insideCache = cached.mock.calls.length;
+    expect(insideCache).toBe(1);
+    expect(board.self.enrichBoardViewerState).toHaveBeenCalled();
+    // The cached factory produced rows without either flag.
+    const cachedRows = await (cached.mock.results[0]!.value as Promise<any[]>);
+    expect(cachedRows[0].bookmarked).toBeUndefined();
+    expect(cachedRows[0].repostedByMe).toBeUndefined();
+  });
+
+  it('does not attach viewer board state to a chat page', async () => {
+    const chat = makeSelf();
+    await chat.fetchPage({ page: 1, limit: 20, viewerUserId: 'u9' });
+    expect(chat.self.enrichBoardViewerState).not.toHaveBeenCalled();
   });
 
   it('gives the roots-only page its own cache key', async () => {
@@ -144,12 +198,47 @@ describe('getGroupMessages rootsOnly', () => {
     expect(post.subject).toBeUndefined();
   });
 
-  it('retries once without the board columns when the probe was stale', async () => {
-    const board = makeSelf({ boardColumns: true, failFirstWith42703: true });
+  it('drops reactions first when the probe was stale, then the board columns', async () => {
+    // Two optional column sets from two migrations, so the ladder is two rungs
+    // and never more: `reactions` goes first, the board columns second.
+    const board = makeSelf({ failFirstAttempts: 2 });
     const rows = await board.fetchPage({ page: 1, limit: 20, rootsOnly: true });
     expect(rows).toHaveLength(1);
-    expect(board.selects).toHaveLength(2);
+    expect(board.selects).toHaveLength(3);
+    expect(board.selects[0]).toContain('reactions');
     expect(board.selects[0]).toContain('pinned_at');
-    expect(board.selects[1]).not.toContain('pinned_at');
+    expect(board.selects[1]).not.toContain('reactions');
+    expect(board.selects[1]).toContain('pinned_at');
+    expect(board.selects[2]).not.toContain('reactions');
+    expect(board.selects[2]).not.toContain('pinned_at');
+  });
+
+  /**
+   * Regression — the counts were selected by nobody.
+   *
+   * `messages.reactions` (20260830120000) was in neither select profile and in
+   * no branch of `normalizeMessageRecord`, so a freshly loaded board or chat
+   * read `{}` for every post. Counts only appeared once a realtime UPDATE
+   * arrived or the viewer tapped a reaction themselves — which is exactly why
+   * it survived manual testing.
+   */
+  it('carries reaction counts on a listed message', async () => {
+    const board = makeSelf();
+    const [post] = await board.fetchPage({ page: 1, limit: 20, rootsOnly: true });
+    expect(board.selects[0]).toContain('reactions');
+    expect(post.reactions).toEqual({ '\u2764\ufe0f': 3, '\ud83d\udd25': 1 });
+  });
+
+  it('reads {} rather than undefined when the reactions migration is not applied', async () => {
+    const board = makeSelf({ reactionsColumn: false });
+    const [post] = await board.fetchPage({ page: 1, limit: 20, rootsOnly: true });
+    expect(board.selects[0]).not.toContain('reactions');
+    expect(post.reactions).toEqual({});
+  });
+
+  it('selects client_message_id so an optimistic row is not rendered twice', async () => {
+    const board = makeSelf();
+    await board.fetchPage({ page: 1, limit: 20, rootsOnly: true });
+    expect(board.selects[0]).toContain('client_message_id');
   });
 });

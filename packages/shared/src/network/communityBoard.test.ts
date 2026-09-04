@@ -20,9 +20,32 @@ import {
   studyGroupNameFromPost,
   studyGroupSubtitle,
   validateBoardSubject,
+  BOARD_ACTION_ROW_ORDER,
+  BOARD_FAVORITE_EMOJI,
+  BOARD_QUOTE_SNIPPET_MAX,
+  BOARD_REPOST_CLIENT_ID_PREFIX,
+  BOARD_REPOST_SELF_COOLDOWN_MS,
+  BOARD_SHARE_ORIGIN,
+  boardBookmarkAccessibilityLabel,
+  boardCommentAccessibilityLabel,
+  boardFavoriteAccessibilityLabel,
+  boardFavoriteCount,
+  boardPostDeepLinkPath,
+  boardPostShareUrl,
+  boardQuoteSnippet,
+  boardRepostAccessibilityLabel,
+  boardRepostClientId,
+  boardRepostOriginalId,
+  boardRepostRefusalCopy,
+  boardShareAccessibilityLabel,
+  boardSharePayload,
+  canRepostBoardPost,
+  isBoardFavorited,
+  isBoardRepostRow,
 } from './communityBoard';
 import type { BoardPost } from './communityBoard';
 import { COMMUNITY_COPY } from './communityServer';
+import { CHAT_REACTION_EMOJI } from '../chat/reactions';
 import type { CommunityChannel, CommunityStudyGroup } from './communityServer';
 import type { Group } from '../types';
 
@@ -75,6 +98,13 @@ const post = (over: Partial<BoardPost> = {}): BoardPost => ({
   pinnedBy: null,
   isLegacyQuestion: false,
   legacyQuestionStem: null,
+  imageUrl: null,
+  favoriteCount: 0,
+  favorited: false,
+  bookmarked: false,
+  repostCount: 0,
+  repostedByMe: false,
+  repostOf: null,
   ...over,
 });
 
@@ -397,5 +427,264 @@ describe('COMMUNITY_BOARD_COPY', () => {
 
   it('the list never promises to have downloaded an image', () => {
     expect(COMMUNITY_BOARD_COPY.photoTapToLoad).toBe('Photo · tap to load');
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Phase 1 board actions: favorite, repost, bookmark, share (§10.1).
+// ---------------------------------------------------------------------------
+
+describe('favorite', () => {
+  it('is an emoji already inside the shipped reaction set, so no validator changes', () => {
+    expect(BOARD_FAVORITE_EMOJI).toBe('❤️');
+    expect(CHAT_REACTION_EMOJI as readonly string[]).toContain(BOARD_FAVORITE_EMOJI);
+  });
+
+  it('counts only hearts', () => {
+    expect(boardFavoriteCount({})).toBe(0);
+    expect(boardFavoriteCount({ [BOARD_FAVORITE_EMOJI]: 3 })).toBe(3);
+    expect(boardFavoriteCount({ '👍': 5 })).toBe(0);
+    expect(boardFavoriteCount(undefined)).toBe(0);
+    expect(boardFavoriteCount({ [BOARD_FAVORITE_EMOJI]: -2 })).toBe(0);
+  });
+
+  it('reads the viewer state off the existing user-reactions row', () => {
+    expect(isBoardFavorited([BOARD_FAVORITE_EMOJI, '🔥'])).toBe(true);
+    expect(isBoardFavorited(['🔥'])).toBe(false);
+    expect(isBoardFavorited(undefined)).toBe(false);
+  });
+});
+
+describe('repost client ids', () => {
+  it('round-trips', () => {
+    const id = '66666666-6666-4666-8666-666666666666';
+    expect(boardRepostClientId(id)).toBe(`${BOARD_REPOST_CLIENT_ID_PREFIX}${id}`);
+    expect(boardRepostOriginalId(boardRepostClientId(id))).toBe(id);
+  });
+
+  it('refuses anything that is not a repost key', () => {
+    expect(boardRepostOriginalId(null)).toBeNull();
+    expect(boardRepostOriginalId(undefined)).toBeNull();
+    expect(boardRepostOriginalId('66666666-6666-4666-8666-666666666666')).toBeNull();
+    expect(boardRepostOriginalId('repost:')).toBeNull();
+  });
+});
+
+describe('isBoardRepostRow', () => {
+  it('is true for a repost row', () => {
+    expect(
+      isBoardRepostRow({ replyToMessageId: 'a', threadRootId: null, clientMessageId: 'repost:a' })
+    ).toBe(true);
+  });
+
+  it('is false for a comment, which always carries thread_root_id', () => {
+    expect(
+      isBoardRepostRow({ replyToMessageId: 'a', threadRootId: 'a', clientMessageId: 'repost:a' })
+    ).toBe(false);
+  });
+
+  it('is false for a comment orphaned by ON DELETE SET NULL', () => {
+    // Deleting a thread root nulls thread_root_id on a nested comment while
+    // reply_to_message_id still points at its sibling. Without the client-id
+    // clause that orphan would render as a repost.
+    expect(
+      isBoardRepostRow({ replyToMessageId: 'sibling', threadRootId: null, clientMessageId: null })
+    ).toBe(false);
+    expect(
+      isBoardRepostRow({
+        replyToMessageId: 'sibling',
+        threadRootId: null,
+        clientMessageId: '9c1f0f4e-0000-4000-8000-000000000000',
+      })
+    ).toBe(false);
+  });
+
+  it('is false for a root post', () => {
+    expect(
+      isBoardRepostRow({ replyToMessageId: null, threadRootId: null, clientMessageId: 'repost:a' })
+    ).toBe(false);
+  });
+});
+
+describe('canRepostBoardPost', () => {
+  const now = Date.parse('2026-09-03T12:00:00.000Z');
+  const hoursAgo = (h: number) => new Date(now - h * 60 * 60 * 1000).toISOString();
+
+  it('refuses a post the viewer already reposted', () => {
+    expect(
+      canRepostBoardPost({ post: post({ repostedByMe: true }), viewerId: 'u2', now })
+    ).toEqual({ ok: false, reason: 'already' });
+  });
+
+  it('refuses the viewer bumping their own post inside a day, and allows it after', () => {
+    expect(
+      canRepostBoardPost({ post: post({ senderId: 'u1', timestamp: hoursAgo(1) }), viewerId: 'u1', now })
+    ).toEqual({ ok: false, reason: 'ownTooSoon' });
+    expect(
+      canRepostBoardPost({ post: post({ senderId: 'u1', timestamp: hoursAgo(25) }), viewerId: 'u1', now })
+    ).toEqual({ ok: true });
+    expect(BOARD_REPOST_SELF_COOLDOWN_MS).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it('never refuses someone else bumping a day-old post', () => {
+    expect(
+      canRepostBoardPost({ post: post({ senderId: 'u1', timestamp: hoursAgo(1) }), viewerId: 'u2', now })
+    ).toEqual({ ok: true });
+  });
+
+  it('refuses a repost of a repost, and a removed post', () => {
+    const quoted = {
+      id: 'p0',
+      senderName: 'Ada',
+      timestamp: hoursAgo(48),
+      subject: null,
+      snippet: 'Timetable',
+      hasImage: false,
+      hasAudio: false,
+      removedAt: null,
+    };
+    expect(canRepostBoardPost({ post: post({ repostOf: quoted }), viewerId: 'u2', now })).toEqual({
+      ok: false,
+      reason: 'isRepost',
+    });
+    expect(
+      canRepostBoardPost({ post: post({ removedAt: hoursAgo(2) }), viewerId: 'u2', now })
+    ).toEqual({ ok: false, reason: 'removed' });
+  });
+
+  it('gives every refusal a single string both platforms show', () => {
+    expect(boardRepostRefusalCopy('already')).toBe(COMMUNITY_BOARD_COPY.repostAlready);
+    expect(boardRepostRefusalCopy('ownTooSoon')).toBe(COMMUNITY_BOARD_COPY.repostOwnTooSoon);
+    expect(boardRepostRefusalCopy('isRepost')).toBe(COMMUNITY_BOARD_COPY.repostOfRepost);
+    expect(boardRepostRefusalCopy('removed')).toBe(COMMUNITY_BOARD_COPY.repostRemoved);
+    expect(boardRepostRefusalCopy('notSameBoard')).toBe(COMMUNITY_BOARD_COPY.repostNotSameBoard);
+    expect(boardRepostRefusalCopy('tooMany')).toBe(COMMUNITY_BOARD_COPY.repostTooMany);
+    expect(boardRepostRefusalCopy('unavailable')).toBe(COMMUNITY_BOARD_COPY.repostUnavailable);
+  });
+});
+
+describe('boardQuoteSnippet', () => {
+  it('strips image and audio markdown', () => {
+    expect(
+      boardQuoteSnippet('![photo](https://x.test/storage/v1/object/sign/note-files/a.webp) Timetable')
+    ).toBe('Timetable');
+    expect(boardQuoteSnippet('[audio](https://x.test/a.m4a) Listen')).toBe('Listen');
+  });
+
+  it('truncates at the shared limit and never exceeds it', () => {
+    const long = 'a'.repeat(400);
+    const snippet = boardQuoteSnippet(long);
+    expect(snippet.length).toBe(BOARD_QUOTE_SNIPPET_MAX);
+    expect(snippet.endsWith('…')).toBe(true);
+    expect(boardQuoteSnippet('short')).toBe('short');
+    expect(boardQuoteSnippet(null)).toBe('');
+  });
+});
+
+describe('board post deep links', () => {
+  it('appends the post id to the board link', () => {
+    expect(boardPostDeepLinkPath('unilag', 'g1', 'p1')).toBe('/discover/c/unilag/ch/g1/p/p1');
+  });
+
+  it('falls back to the board link with no post id, and to /discover with no slug', () => {
+    expect(boardPostDeepLinkPath('unilag', 'g1')).toBe(boardDeepLinkPath('unilag', 'g1'));
+    expect(boardPostDeepLinkPath(null, 'g1', 'p1')).toBe('/discover');
+  });
+
+  it('never falls back to the chat tab', () => {
+    for (const link of [
+      boardPostDeepLinkPath(null, 'g1', 'p1'),
+      boardPostDeepLinkPath('', 'g1', 'p1'),
+      boardPostDeepLinkPath(undefined, 'g1'),
+    ]) {
+      expect(link.startsWith('/chat')).toBe(false);
+    }
+  });
+
+  it('builds an absolute share url on the production origin', () => {
+    expect(boardPostShareUrl('unilag', 'g1', 'p1')).toBe(
+      `${BOARD_SHARE_ORIGIN}/discover/c/unilag/ch/g1/p/p1`
+    );
+    expect(boardPostShareUrl('unilag', 'g1', 'p1', 'https://staging.test/')).toBe(
+      'https://staging.test/discover/c/unilag/ch/g1/p/p1'
+    );
+  });
+});
+
+describe('boardSharePayload', () => {
+  const ctx = { slug: 'unilag', groupId: 'g1', boardName: 'exam-week' };
+
+  it('is exactly a title and a url', () => {
+    const payload = boardSharePayload(post({ subject: 'Timetable is out' }), ctx);
+    expect(Object.keys(payload).sort()).toEqual(['title', 'url']);
+    expect(payload.title).toBe('Timetable is out');
+    expect(payload.url).toBe(`${BOARD_SHARE_ORIGIN}/discover/c/unilag/ch/g1/p/p1`);
+  });
+
+  it('names the board when the post has no title', () => {
+    expect(boardSharePayload(post(), ctx).title).toBe('Post in # exam-week');
+  });
+
+  it('never carries the body, an image markdown or a storage url', () => {
+    const leaky = post({
+      subject: null,
+      text: '![photo](https://x.test/storage/v1/object/sign/note-files/u1/chat/g1/a.webp?token=xyz)',
+    });
+    const serialised = JSON.stringify(boardSharePayload(leaky, ctx));
+    expect(serialised).not.toContain('![image](');
+    expect(serialised).not.toContain('![photo](');
+    expect(serialised).not.toContain('/storage/v1/object/');
+    expect(serialised).not.toContain('token=');
+  });
+});
+
+describe('board action row and accessibility labels', () => {
+  it('binds one row order for both platforms', () => {
+    expect(BOARD_ACTION_ROW_ORDER).toEqual(['comment', 'repost', 'favorite', 'bookmark', 'share']);
+  });
+
+  it('announces state in words, never by colour alone', () => {
+    expect(boardFavoriteAccessibilityLabel(12, true)).toBe('Favorite, 12, favorited');
+    expect(boardFavoriteAccessibilityLabel(12, false)).toBe('Favorite, 12, not favorited');
+    expect(boardRepostAccessibilityLabel(2, true)).toBe('Repost, 2, you reposted this');
+    expect(boardRepostAccessibilityLabel(2, false)).toBe('Repost, 2, not reposted');
+    expect(boardBookmarkAccessibilityLabel(true)).toBe('Bookmark, saved');
+    expect(boardBookmarkAccessibilityLabel(false)).toBe('Bookmark, not saved');
+    expect(boardCommentAccessibilityLabel(3)).toBe('Comment, 3');
+    expect(boardShareAccessibilityLabel()).toBe('Share post');
+  });
+
+  it('keeps a count out of the label when it is not a number', () => {
+    expect(boardFavoriteAccessibilityLabel(Number.NaN, false)).toBe('Favorite, 0, not favorited');
+  });
+});
+
+describe('board copy after the action row lands', () => {
+  it('drops the emoji React affordance from BOARD copy', () => {
+    expect('react' in COMMUNITY_BOARD_COPY).toBe(false);
+  });
+
+  it('keeps reactionAccessibilityLabel exported for chat and DMs', () => {
+    expect(reactionAccessibilityLabel('🔥', 2, true)).toBe(
+      '🔥 reaction, 2, selected'
+    );
+  });
+
+  it('keeps the device-local save copy while bookmarks may be unavailable', () => {
+    // §2: on a database without message_bookmarks the clients hide Bookmark
+    // and keep today's local save. The copy therefore has to still exist.
+    expect(COMMUNITY_BOARD_COPY.saveForMe).toBe('Save for me');
+    expect(COMMUNITY_BOARD_COPY.bookmarksUnavailable).toBe('Bookmarks are not available yet');
+  });
+
+  it('tells a non-member what to do without naming the post', () => {
+    expect(COMMUNITY_BOARD_COPY.notAMemberBody('UNILAG')).toBe('Join UNILAG to open it.');
+    const strings = [
+      COMMUNITY_BOARD_COPY.notAMemberTitle,
+      COMMUNITY_BOARD_COPY.notAMemberBody('UNILAG'),
+      COMMUNITY_BOARD_COPY.notAMemberUnknown,
+    ].join(' ');
+    expect(strings).not.toContain('http');
   });
 });

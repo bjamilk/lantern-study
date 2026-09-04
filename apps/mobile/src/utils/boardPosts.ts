@@ -1,5 +1,10 @@
 import { parseChatAudioUrl, parseChatImageUrl } from '@lantern/shared/utils';
-import type { BoardPost } from '@lantern/shared/network';
+import {
+  boardFavoriteCount,
+  boardRepostOriginalId,
+  isBoardRepostRow,
+  type BoardPost,
+} from '@lantern/shared/network';
 import type { Message } from '../stores/groupStore';
 
 /**
@@ -69,8 +74,21 @@ export function isLegacyQuestionPost(message: Pick<Message, 'type' | 'questionSt
   return message.type === 'question';
 }
 
-/** The shared `BoardPost` shape, so the shared a11y/copy helpers can read it. */
-export function toBoardPost(message: Message): BoardPost {
+/**
+ * The shared `BoardPost` shape, so the shared a11y/copy helpers can read it.
+ *
+ * `viewer` carries the two flags the group store's normalised `Message` may
+ * not hold. `favorited` never rides the row at all — it comes from the board's
+ * own `user-reactions` map, which both boards already fetch on mount — and
+ * `bookmarked` is absent (not false) whenever the page that filled the cache
+ * was a chat page or a comment thread. Passing them in beats defaulting: a
+ * `repostedByMe: false` invented here would make `canRepostBoardPost` offer a
+ * repost the server is about to answer 409 to.
+ */
+export function toBoardPost(
+  message: Message,
+  viewer?: { favorited?: boolean; bookmarked?: boolean },
+): BoardPost {
   const legacy = isLegacyQuestionPost(message);
   return {
     id: message.id,
@@ -89,7 +107,58 @@ export function toBoardPost(message: Message): BoardPost {
     pinnedBy: message.pinnedBy ?? null,
     isLegacyQuestion: legacy,
     legacyQuestionStem: legacy ? (message.questionStem || message.text || null) : null,
+    /**
+     * `messages.image_url` is the FIRST encoding for a board photo, not a
+     * third one: legacy posts keep theirs as markdown inside `text`, which
+     * `splitBoardBody` still parses, so a card reads `imageUrl ?? split.imageUrl`.
+     */
+    imageUrl: message.imageUrl ?? null,
+    favoriteCount: boardFavoriteCount(message.reactions),
+    favorited: !!viewer?.favorited,
+    /**
+     * `bookmarked` prefers the caller's answer (the board's per-group bookmark
+     * map, which is one request and is correct even on a page the API could
+     * not hydrate) and falls back to the flag the board page attached.
+     */
+    bookmarked: viewer?.bookmarked ?? message.bookmarked ?? false,
+    repostCount: message.repostCount ?? 0,
+    repostedByMe: message.repostedByMe ?? false,
+    repostOf: message.repostOf ?? null,
   };
+}
+
+/**
+ * Is this row a repost — a bump of another post onto the SAME board?
+ *
+ * Answered from the hydrated embed when the API supplied one, and otherwise
+ * from the row's own three columns via the shared discriminator, so a card
+ * built out of an optimistic or realtime row (neither of which carries
+ * `repostOf`) still knows what it is.
+ */
+export function isBoardRepost(message: Message): boolean {
+  if (message.repostOf) return true;
+  return isBoardRepostRow({
+    replyToMessageId: message.replyToMessageId ?? null,
+    threadRootId: message.threadRootId ?? null,
+    clientMessageId: message.clientMessageId ?? null,
+  });
+}
+
+/**
+ * Which post an action on this card must hit.
+ *
+ * Favorite, Comment, Bookmark and Report on a REPOST card all act on the
+ * ORIGINAL (§6.5), so counts never fragment across copies and no comment ever
+ * attaches to a repost row. Only Undo repost acts on the repost row itself.
+ */
+export function boardActionTargetId(message: Message): string {
+  if (!isBoardRepost(message)) return message.id;
+  return (
+    boardRepostOriginalId(message.clientMessageId) ||
+    message.repostOf?.id ||
+    message.replyToMessageId ||
+    message.id
+  );
 }
 
 const AUDIO_MARKDOWN_RE = /\[audio\]\((https?:\/\/[^)\s]+)\)/i;

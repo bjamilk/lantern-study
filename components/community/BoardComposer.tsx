@@ -50,7 +50,13 @@ export const BoardComposer: React.FC<BoardComposerProps> = ({
     const validated = validateBoardSubject(subject);
     if (validated.error) {
       setSubjectError(validated.error);
-      return;
+      // Thrown, not returned: `MessageInputBar` clears the body and the held
+      // photo the moment it starts sending, and only puts them back when the
+      // send throws. Returning here quietly binned a typed post and an
+      // already-paid-for upload over a too-long title. The message is empty on
+      // purpose — the error belongs beside the title field that caused it, and
+      // `recordError` is falsy for '' so it is not also shown twice.
+      throw new Error('');
     }
     setSubjectError(null);
     await onPost(text, { ...options, subject: validated.subject });
@@ -115,6 +121,9 @@ export const BoardComposer: React.FC<BoardComposerProps> = ({
         placeholder={COMMUNITY_BOARD_COPY.composerPlaceholder}
         sendLabel={COMMUNITY_BOARD_COPY.post}
         autoFocus
+        // A title, a body and one photo as ONE row (§5). Chat keeps the
+        // default `'send'`, where a photo is still its own message.
+        attachmentMode="inline"
       />
     </div>
   );

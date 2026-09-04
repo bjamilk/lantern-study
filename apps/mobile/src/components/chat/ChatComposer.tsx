@@ -160,8 +160,25 @@ export function ChatComposer({
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return;
     const result = await ImagePicker.launchImageLibraryAsync({
+      // `image/*` on Android and every still image type on iOS, so an animated
+      // .gif in the gallery is offered like any other photo.
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
+      /**
+       * `quality: 1` is load-bearing, not a quality preference.
+       *
+       * expo-image-picker only hands back the ORIGINAL bytes at maximum
+       * quality: on Android anything lower runs `CompressionImageExporter`,
+       * which decodes one bitmap frame and re-encodes it as JPEG even for a
+       * file it still names `.gif`, and iOS re-encodes the GIF frame by frame.
+       * At 0.8 an animated GIF therefore arrived here already flattened, while
+       * still reporting `mimeType: 'image/gif'` — a lie no downstream check
+       * could see through.
+       *
+       * Nothing gets bigger on the wire: `prepareImageForUpload` still
+       * downscales and compresses every non-GIF pick to the same budget, and
+       * this simply stops that work being done twice.
+       */
+      quality: 1,
       exif: false,
     });
     if (result.canceled || !result.assets?.[0]) return;

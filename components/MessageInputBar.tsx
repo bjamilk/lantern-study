@@ -6,8 +6,20 @@ import {
   formatAiTutorReply,
   parseAiQuery,
 } from '@lantern/shared/utils';
+import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
 import type { MessageReplyPreview } from '../types';
 import { uploadChatAudio, uploadChatImage } from '../services/supabase';
+import { compressImage } from '../utils/imageCompression';
+import {
+  BOARD_IMAGE_ACCEPT,
+  BOARD_IMAGE_MAX_DIMENSION,
+  boardImageFileName,
+  boardImagePickError,
+  dataUrlContentType,
+  preservesOriginalBytes,
+  resolvePickContentType,
+  stripDataUrlPrefix,
+} from '../utils/boardImageUpload';
 
 export type MentionCandidate = {
   id: string;
@@ -18,6 +30,12 @@ export type MentionCandidate = {
 export type SendMessageOptions = {
   replyToMessageId?: string;
   mentionedUserIds?: string[];
+  /**
+   * A board post's photo, carried on `messages.image_url` so a title, a body
+   * and one photo are ONE row. Only ever set in `attachmentMode="inline"`;
+   * chat and DMs never send it and the server accepts it on boards only.
+   */
+  imageUrl?: string;
 };
 
 interface MessageInputBarProps {
@@ -41,6 +59,18 @@ interface MessageInputBarProps {
   sendLabel?: string;
   /** Focus the body field on mount — the board composer expands into it (§9). */
   autoFocus?: boolean;
+  /**
+   * What picking a photo does.
+   *
+   * `'send'` (the default, and what chat and DMs keep) uploads it and sends it
+   * immediately as its own `![image](url)` message.
+   *
+   * `'inline'` uploads it and HOLDS it as one attachment on the composer, so
+   * `Post` sends the title, the body and the photo as a single row. This is
+   * the gap the board had: there was no code path in the repo that wrote typed
+   * text and an image into one message.
+   */
+  attachmentMode?: 'send' | 'inline';
 }
 
 const MAX_VOICE_MS = 120_000;
@@ -62,6 +92,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   placeholder,
   sendLabel,
   autoFocus = false,
+  attachmentMode = 'send',
 }) => {
   const [inputText, setInputText] = useState('');
   const [isAIThinking, setIsAIThinking] = useState(false);
@@ -70,7 +101,10 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
+  /** The one held photo in `'inline'` mode — uploaded, not yet posted. */
+  const [attachedImageUrl, setAttachedImageUrl] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const removeAttachmentRef = useRef<HTMLButtonElement>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -214,7 +248,11 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   const handleSend = async (overrideText?: string) => {
     if (isSending || isAIThinking || isUploadingAudio) return;
     const trimmed = (overrideText ?? inputText).trim();
-    if (!trimmed) return;
+    // A held photo rides only the ordinary send, never an `overrideText` one:
+    // a voice note stays its own post in Phase 1, exactly as on mobile.
+    const pendingImageUrl = overrideText ? null : attachedImageUrl;
+    // A photo-only post is a real post — the board renders a media-only card.
+    if (!trimmed && !pendingImageUrl) return;
 
     const question = editingMessage ? null : parseAiQuery(trimmed);
     if (question && onAIQuery) {
@@ -254,11 +292,13 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     setIsSending(true);
     setRecordError(null);
     if (!overrideText && !editingMessage) setInputText('');
+    if (pendingImageUrl) setAttachedImageUrl(null);
     try {
       const mentionedUserIds = editingMessage ? undefined : resolveMentionedUserIds(trimmed);
       await onSendMessage(trimmed, {
         replyToMessageId: editingMessage ? undefined : replyTo?.id,
         mentionedUserIds,
+        ...(pendingImageUrl ? { imageUrl: pendingImageUrl } : {}),
       });
       if (editingMessage) {
         setInputText('');
@@ -266,7 +306,10 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       }
       onClearReply?.();
     } catch (error) {
+      // Restore BOTH halves of what was typed: losing the photo would mean
+      // paying for the upload twice on a connection that just failed once.
       if (!overrideText && !editingMessage) setInputText(trimmed);
+      if (pendingImageUrl) setAttachedImageUrl(pendingImageUrl);
       setRecordError(error instanceof Error ? error.message : 'Could not send message');
     } finally {
       setIsSending(false);
@@ -338,33 +381,59 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
 
   const handlePickImage = async (file: File) => {
     if (isUploadingImage || isUploadingAudio || isSending || isAIThinking || isRecording) return;
-    if (!file.type.startsWith('image/')) {
-      setRecordError('Please choose an image file.');
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      setRecordError('Image is too large (max 8MB).');
+    // Some browsers hand back a File with an empty `type`; the extension is
+    // the fallback, so a real `.gif` pick is not refused as "not an image".
+    const pickedType = resolvePickContentType(file.type, file.name);
+    // Checked BEFORE a single byte is read. This is what gives web the HEIC
+    // guard mobile already had, and it is why an over-cap pick now costs
+    // nothing instead of being paid for and then refused by the server.
+    const refusal = boardImagePickError({
+      contentType: pickedType,
+      fileName: file.name,
+      byteLength: file.size,
+    });
+    if (refusal) {
+      setRecordError(refusal);
       return;
     }
     setIsUploadingImage(true);
     setRecordError(null);
     try {
-      const base64Data = await blobToBase64(file);
-      const contentType = (file.type || 'image/jpeg').split(';')[0].trim().toLowerCase() || 'image/jpeg';
-      const ext = contentType.includes('png')
-        ? 'png'
-        : contentType.includes('webp')
-          ? 'webp'
-          : contentType.includes('gif')
-            ? 'gif'
-            : 'jpg';
+      let contentType = pickedType || 'image/jpeg';
+      let base64Data: string;
+      if (preservesOriginalBytes(contentType, file.name)) {
+        // A GIF goes up byte-for-byte or it stops being a GIF.
+        base64Data = await blobToBase64(file);
+      } else {
+        try {
+          const dataUrl = (await compressImage(file, {
+            maxWidth: BOARD_IMAGE_MAX_DIMENSION,
+            maxHeight: BOARD_IMAGE_MAX_DIMENSION,
+            outputType: 'base64',
+          })) as string;
+          base64Data = stripDataUrlPrefix(dataUrl);
+          contentType = dataUrlContentType(dataUrl) || contentType;
+        } catch {
+          // A canvas that refuses the file (memory, a codec the browser will
+          // decode but not re-encode) must not lose the photo: the original is
+          // already under the cap, so send it as picked.
+          base64Data = await blobToBase64(file);
+        }
+      }
       const { url } = await uploadChatImage({
-        fileName: `image-${Date.now()}.${ext}`,
+        fileName: boardImageFileName(contentType),
         base64Data,
         contentType,
         groupId,
       });
-      // Media messages are plain text of `![image](url)` (matches mobile + the parser).
+      if (attachmentMode === 'inline') {
+        // Held, not sent: `Post` will carry it alongside the title and body.
+        setAttachedImageUrl(url);
+        requestAnimationFrame(() => removeAttachmentRef.current?.focus());
+        return;
+      }
+      // Chat and DMs are unchanged: a photo is its own `![image](url)` message
+      // (matches mobile and the shipped `parseChatImageUrl`).
       await handleSend(`![image](${url})`);
     } catch (err: any) {
       setRecordError(err?.message || 'Could not upload image');
@@ -445,7 +514,10 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   };
 
   const busy = isAIThinking || isSending || isUploadingAudio || isUploadingImage;
-  const showMic = !editingMessage && !inputText.trim() && !busy;
+  // With a photo held there is something to post, so the send control has to be
+  // the one on screen — a mic here would make a photo-only post unreachable.
+  const showMic = !editingMessage && !inputText.trim() && !attachedImageUrl && !busy;
+  const canSend = !!inputText.trim() || !!attachedImageUrl;
   // The "+" tray collapses insert actions (question + photo). Hidden while editing.
   const showTray = !editingMessage;
 
@@ -526,6 +598,31 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
         </p>
       )}
 
+      {/*
+        The one attachment slot (§5.3). It is announced in words — the photo is
+        NOT previewed here, because the list rule is that a board surface
+        downloads no media, and previewing it would also mean signing a URL for
+        an object the composer already knows it has.
+      */}
+      {attachedImageUrl && (
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-lantern-border bg-lantern-background px-3 py-2">
+          <PhotoIcon className="w-4 h-4 shrink-0 text-lantern-text-secondary" aria-hidden="true" />
+          <p className="flex-1 min-w-0 truncate text-xs font-medium text-lantern-text" role="status">
+            {COMMUNITY_BOARD_COPY.photoAttached}
+          </p>
+          <button
+            ref={removeAttachmentRef}
+            type="button"
+            onClick={() => setAttachedImageUrl(null)}
+            aria-label={COMMUNITY_BOARD_COPY.removePhoto}
+            title={COMMUNITY_BOARD_COPY.removePhoto}
+            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lantern text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+          >
+            <XMarkIcon className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-end gap-2">
         {showTray && (
           <div className="relative flex-shrink-0">
@@ -578,7 +675,9 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             <input
               ref={imageInputRef}
               type="file"
-              accept="image/*"
+              // Spelled out rather than `image/*`: an iPhone would otherwise
+              // offer a HEIC we are only going to refuse.
+              accept={BOARD_IMAGE_ACCEPT}
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -650,7 +749,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
           <button
             type="button"
             onClick={() => void handleSend()}
-            disabled={!inputText.trim() || busy}
+            disabled={!canSend || busy}
             className="flex-shrink-0 p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-background-secondary text-white disabled:text-lantern-text-tertiary rounded-lantern-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:cursor-not-allowed"
             aria-label={
               editingMessage ? 'Save message changes' : (sendLabel ?? 'Send message')

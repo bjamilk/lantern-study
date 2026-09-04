@@ -3,7 +3,12 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePinMessage, validatePagination } from '../middleware/validation';
-import { ChatMessageMutationResult, MessagePinResult, SupabaseService } from '../services/supabase';
+import {
+  BoardRepostResult,
+  ChatMessageMutationResult,
+  MessagePinResult,
+  SupabaseService,
+} from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import {
@@ -11,7 +16,14 @@ import {
   CHAT_REACTION_MAX_LENGTH,
   isSupportedReactionEmoji,
 } from '@lantern/shared/chat';
-import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
+import {
+  BOARD_BOOKMARK_IMPORT_MAX,
+  BOARD_GIF_MAX_BYTES,
+  BOARD_REPOST_QUOTE_MAX,
+  COMMUNITY_BOARD_COPY,
+  isBoardImageUrlAllowed,
+} from '@lantern/shared/network';
+import { parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
 import { clientErrorMessage } from '../utils/safeError';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
@@ -256,6 +268,20 @@ router.post(
     const estimatedBytes = Math.ceil((String(base64Data).length * 3) / 4);
     if (estimatedBytes > 10 * 1024 * 1024) {
       return res.status(400).json({ success: false, error: 'Image exceeds 10 MB limit' });
+    }
+    /**
+     * A GIF answers to its own, SMALLER cap, and it has to be enforced here or
+     * it is not enforced at all.
+     *
+     * `normalizeImageForStorage` passes an animated GIF through byte-for-byte
+     * — nothing resizes it and its static first-frame thumb is no substitute —
+     * so every reader pays the whole file. Both composers already refuse an
+     * over-cap pick, but a client that skips them (or a stale build) reaches
+     * this route directly, and the `note-files` bucket declares no
+     * `file_size_limit`. A limit that lives only in a client is not a limit.
+     */
+    if (normalizedType === 'image/gif' && estimatedBytes > BOARD_GIF_MAX_BYTES) {
+      return res.status(400).json({ success: false, error: COMMUNITY_BOARD_COPY.gifTooLarge });
     }
 
     try {
@@ -531,6 +557,221 @@ router.put(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Board actions — Repost, Bookmark (Phase 1).
+//
+// FAVORITE has no route here on purpose: it is a reaction with the emoji
+// pinned to BOARD_FAVORITE_EMOJI, so it uses POST/DELETE
+// /messages/:messageId/reactions and GET /messages/group/:groupId/user-reactions
+// unchanged. SHARE has no route either — the link is minted in shared
+// (`boardPostShareUrl`) and the members-only guard is the board fetch's
+// existing `getGroupById(groupId, userId)` 404, which every route below also
+// relies on.
+//
+// GET /bookmarks is registered HERE, above `GET /:messageId`, because Express
+// matches in registration order and `validateMessageId` would otherwise
+// reject "bookmarks" as a malformed id rather than falling through.
+// ---------------------------------------------------------------------------
+
+/** Refusal → status + copy, in one table so no reason collapses into another. */
+const REPOST_REFUSALS: Record<
+  Exclude<BoardRepostResult['status'], 'ok'>,
+  { status: number; error: string }
+> = {
+  not_found: { status: 404, error: 'Post not found or access denied' },
+  not_board: { status: 400, error: COMMUNITY_BOARD_COPY.repostUnavailable },
+  not_same_board: { status: 400, error: COMMUNITY_BOARD_COPY.repostNotSameBoard },
+  not_a_post: { status: 400, error: COMMUNITY_BOARD_COPY.repostNotAPost },
+  repost_of_repost: { status: 400, error: COMMUNITY_BOARD_COPY.repostOfRepost },
+  own_too_soon: { status: 400, error: COMMUNITY_BOARD_COPY.repostOwnTooSoon },
+  removed: { status: 400, error: COMMUNITY_BOARD_COPY.repostRemoved },
+  already: { status: 409, error: COMMUNITY_BOARD_COPY.repostAlready },
+  too_many: { status: 429, error: COMMUNITY_BOARD_COPY.repostTooMany },
+  quote_too_long: { status: 400, error: COMMUNITY_BOARD_COPY.repostQuoteTooLong },
+};
+
+// POST /api/v1/messages/:messageId/repost  { quote? }
+//
+// `:messageId` is the ORIGINAL post. The repost lands on the SAME board with
+// the original's author preserved and the reposter's name above it.
+router.post(
+  '/:messageId/repost',
+  authMiddleware,
+  validateMessageId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { messageId } = req.params;
+    const quote = typeof req.body?.quote === 'string' ? req.body.quote : '';
+    if (quote.length > BOARD_REPOST_QUOTE_MAX * 4) {
+      // Refuse an absurd body before it reaches the service, without
+      // second-guessing the trimmed length rule the service owns.
+      return res.status(400).json({
+        success: false,
+        error: COMMUNITY_BOARD_COPY.repostQuoteTooLong,
+      });
+    }
+
+    // Same access rule as reading the board: an active membership, or 404.
+    const target = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    if (!target) {
+      return res.status(404).json({ success: false, error: 'Post not found or access denied' });
+    }
+
+    const result: BoardRepostResult = await supabaseService.createBoardRepost(
+      String((target as any).group_id),
+      userId,
+      messageId,
+      quote
+    );
+
+    if (result.status === 'ok') {
+      await cacheService.deletePattern(`messages:group:${(target as any).group_id}:*`);
+      return res.status(201).json({ success: true, data: result.message });
+    }
+    const refusal = REPOST_REFUSALS[result.status];
+    return res.status(refusal.status).json({ success: false, error: refusal.error });
+  })
+);
+
+// DELETE /api/v1/messages/:messageId/repost
+//
+// `:messageId` is the ORIGINAL's id too, so the client never has to hold the
+// repost row's id. Scoped to the caller's own row and deliberately outside the
+// 30-minute mutation window — a repost is a pointer, not speech.
+router.delete(
+  '/:messageId/repost',
+  authMiddleware,
+  validateMessageId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const result = await supabaseService.undoBoardRepost(req.params.messageId, userId);
+    if (result.status !== 'ok') {
+      return res.status(404).json({ success: false, error: 'Repost not found' });
+    }
+    await cacheService.deletePattern(`messages:group:${result.groupId}:*`);
+    return res.json({ success: true, data: { removed: true, repostId: result.repostId } });
+  })
+);
+
+// GET /api/v1/messages/bookmarks?limit&before — "Saved posts", every board.
+router.get(
+  '/bookmarks',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const limit = parseInt(String(req.query?.limit ?? ''), 10);
+    const before = typeof req.query?.before === 'string' ? req.query.before : undefined;
+    const page = await supabaseService.listBookmarkedPosts(userId, {
+      limit: Number.isFinite(limit) ? limit : undefined,
+      before,
+    });
+    // 200 even with no table: a missing migration hides a control, it does not
+    // break the screen.
+    return res.json({ success: true, data: page });
+  })
+);
+
+// PUT /api/v1/messages/bookmarks/import  { messageIds }
+//
+// The one-time migration of the device-local saves. Idempotent, so a client
+// may keep its local key until it has seen a 2xx.
+router.put(
+  '/bookmarks/import',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const raw = req.body?.messageIds;
+    if (!Array.isArray(raw)) {
+      return res.status(400).json({ success: false, error: 'messageIds must be an array' });
+    }
+    if (raw.length > BOARD_BOOKMARK_IMPORT_MAX) {
+      return res.status(400).json({
+        success: false,
+        error: `Import at most ${BOARD_BOOKMARK_IMPORT_MAX} bookmarks at a time`,
+      });
+    }
+    const result = await supabaseService.importMessageBookmarks(
+      userId,
+      raw.filter((id: unknown): id is string => typeof id === 'string')
+    );
+    if (!result.serverBacked) {
+      return res
+        .status(503)
+        .json({ success: false, error: COMMUNITY_BOARD_COPY.bookmarksUnavailable });
+    }
+    return res.json({ success: true, data: { imported: result.imported } });
+  })
+);
+
+// GET /api/v1/messages/group/:groupId/bookmarks — the viewer's saved ids on
+// ONE board, so the icon renders filled on first paint. Same shape and
+// lifecycle as the existing user-reactions endpoint.
+router.get(
+  '/group/:groupId/bookmarks',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId } = req.params;
+    const isMember = await supabaseService.isGroupMember(groupId, userId);
+    if (!isMember) {
+      return res.status(404).json({ success: false, error: 'Group not found' });
+    }
+    const data = await supabaseService.getBookmarkedMessageIdsForGroup(groupId, userId);
+    return res.json({ success: true, data });
+  })
+);
+
+// PUT /api/v1/messages/:messageId/bookmark  { bookmarked }
+router.put(
+  '/:messageId/bookmark',
+  authMiddleware,
+  validateMessageId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const bookmarked = req.body?.bookmarked === true;
+    const result = await supabaseService.setMessageBookmark(
+      req.params.messageId,
+      userId,
+      bookmarked
+    );
+
+    switch (result.status) {
+      case 'ok':
+        return res.json({ success: true, data: { bookmarked: result.bookmarked } });
+      case 'unavailable':
+        return res
+          .status(503)
+          .json({ success: false, error: COMMUNITY_BOARD_COPY.bookmarksUnavailable });
+      case 'not_a_board_post':
+        return res
+          .status(400)
+          .json({ success: false, error: 'Only a board post can be bookmarked' });
+      case 'not_found':
+      default:
+        return res
+          .status(404)
+          .json({ success: false, error: 'Message not found or access denied' });
+    }
+  })
+);
+
 // GET /api/v1/messages/group/:groupId/thread/:rootId - Nested reply thread
 router.get(
   '/group/:groupId/thread/:rootId',
@@ -600,7 +841,8 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const { content, clientMessageId, replyToMessageId, mentionedUserIds, subject } = req.body;
+    const { content, clientMessageId, replyToMessageId, mentionedUserIds, subject, imageUrl } =
+      req.body;
 
     logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId, clientMessageId });
 
@@ -612,7 +854,27 @@ router.post(
       });
     }
 
+    /**
+     * A board post's ONE photo (§5.2), carried on `messages.image_url` so a
+     * title, a body and a photo are ONE row. The path IS the ACL — a signed
+     * URL under `note-files/{userId}/chat/{groupId}/` is what
+     * `canAccessStorageObject` resolves back to `isGroupMember(groupId, …)` —
+     * so it is checked here BEFORE the insert. Without it a client could point
+     * `image_url` at another group's object.
+     */
+    if (imageUrl !== undefined && imageUrl !== null && imageUrl !== '') {
+      const allowed =
+        typeof imageUrl === 'string' &&
+        isBoardImageUrlAllowed({ url: imageUrl, userId, groupId, parse: parseStorageObjectUrl });
+      if (!allowed) {
+        return res.status(400).json({ success: false, error: 'invalid_image' });
+      }
+    }
+
     const message = await supabaseService.sendMessage(groupId, userId, content, clientMessageId, {
+      // Written on BOARDS only — the service re-checks `board.isBoard`, so the
+      // same call against a group chat ignores it rather than 400ing.
+      imageUrl: typeof imageUrl === 'string' && imageUrl ? imageUrl : undefined,
       replyToMessageId: typeof replyToMessageId === 'string' ? replyToMessageId : undefined,
       mentionedUserIds: Array.isArray(mentionedUserIds)
         ? mentionedUserIds.filter((id: unknown): id is string => typeof id === 'string')

@@ -35,6 +35,14 @@ export interface AppRouteParams {
   companyId?: string;
   /** Campus page: `/campus/:slug/:programme`, and community `/discover/c/:slug`. */
   slug?: string;
+  /**
+   * One board post: `/discover/c/:slug/ch/:groupId/p/:postId` — the link a
+   * student pastes into WhatsApp (`boardPostShareUrl`). Mobile already routes
+   * this shape (linking.ts), so without it here a shared link is unopenable on
+   * web. It is a sub-path of the channel, not its own AppMode: the board
+   * renders and opens that post's comments.
+   */
+  postId?: string;
   programme?: string;
   roomId?: string;
   /** Which Library tab `/library/:libraryTab` names. Absent on bare `/library`. */
@@ -96,9 +104,11 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       // path (founder rule: the community owns its chat), so it reloads
       // with the column out rather than on the chat screen.
       if (!params.slug) return '/discover';
-      return params.groupId
-        ? `/discover/c/${encodeURIComponent(params.slug)}/ch/${encodeURIComponent(params.groupId)}`
-        : `/discover/c/${encodeURIComponent(params.slug)}`;
+      if (!params.groupId) return `/discover/c/${encodeURIComponent(params.slug)}`;
+      const channel = `/discover/c/${encodeURIComponent(params.slug)}/ch/${encodeURIComponent(params.groupId)}`;
+      // A post is a sub-path of its board, so Back from an open post lands on
+      // the board rather than leaving the community.
+      return params.postId ? `${channel}/p/${encodeURIComponent(params.postId)}` : channel;
     case AppMode.MARKETPLACE:
       return '/marketplace';
     case AppMode.MARKETPLACE_LISTING_DETAIL:
@@ -218,11 +228,22 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     const rest = path.slice('/discover/c/'.length).split('/').filter(Boolean);
     const slug = decodeURIComponent(rest[0] || '');
     if (!slug) return { mode: AppMode.DISCOVER, params: {} };
-    // `/discover/c/:slug/ch/:groupId` — a channel inside the community.
+    // `/discover/c/:slug/ch/:groupId` — a channel inside the community, and
+    // `/discover/c/:slug/ch/:groupId/p/:postId` — one post on its board, the
+    // shape `boardPostShareUrl` mints and mobile already routes. An
+    // unrecognised deeper segment falls back to the channel rather than the
+    // community, so a mangled link still lands somewhere the reader can use.
     if (rest[1] === 'ch' && rest[2]) {
+      const groupId = decodeURIComponent(rest[2]);
+      if (rest[3] === 'p' && rest[4]) {
+        return {
+          mode: AppMode.COMMUNITY_DETAIL,
+          params: { slug, groupId, postId: decodeURIComponent(rest[4]) },
+        };
+      }
       return {
         mode: AppMode.COMMUNITY_DETAIL,
-        params: { slug, groupId: decodeURIComponent(rest[2]) },
+        params: { slug, groupId },
       };
     }
     return { mode: AppMode.COMMUNITY_DETAIL, params: { slug } };

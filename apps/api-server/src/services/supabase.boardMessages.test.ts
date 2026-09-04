@@ -252,8 +252,11 @@ describe('sendMessage on a community board', () => {
     const only = board.notifications[0];
     expect(only.userId).toBe(OTHER);
     expect(only.payload.type).toBe('mention');
+    // The link points AT THE POST (§8.2). `?messageId=` was read by no client
+    // and could not be opened on web at all; `/p/{postId}` is the path both
+    // platforms route, and the one a shared link uses.
     expect(only.payload.link).toBe(
-      `/discover/c/course-pharm-101/ch/${GROUP}?messageId=new-message`,
+      `/discover/c/course-pharm-101/ch/${GROUP}/p/new-message`,
     );
     expect(only.payload.link).not.toContain('/chat/');
   });
@@ -282,8 +285,10 @@ describe('sendMessage on a community board', () => {
     const replier = board.notifications.find((n) => n.userId === THIRD)!;
     expect(rootAuthor.payload.message).toContain('replied to your post in exam-week');
     expect(replier.payload.message).toContain('commented on a post you follow in exam-week');
+    // A comment has no surface of its own, so the link opens the POST that
+    // holds it — the thread root — not the comment row.
     expect(rootAuthor.payload.link).toBe(
-      `/discover/c/course-pharm-101/ch/${GROUP}?messageId=new-message`,
+      `/discover/c/course-pharm-101/ch/${GROUP}/p/${ROOT}`,
     );
     // Still zero per-post fan-out for the other 38 members.
     expect(board.calls.some((c) => c.table === 'group_members')).toBe(false);

@@ -39,3 +39,15 @@ export function setCachedSignedUrl(
     expiresAtMs: Date.now() + ttlMs,
   });
 }
+
+/**
+ * Drop every cached signed URL.
+ *
+ * Called from `authStore.signOut` — the key is (bucket, path, variant) and says
+ * nothing about whose session minted the URL, so on a shared handset the next
+ * account would otherwise be handed URLs authorised for the previous student —
+ * and by tests that need a cold cache.
+ */
+export function clearSignedUrlCache(): void {
+  cache.clear();
+}

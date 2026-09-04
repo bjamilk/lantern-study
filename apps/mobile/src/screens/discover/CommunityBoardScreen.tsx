@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Pressable,
   RefreshControl,
+  Share,
   Text,
   TextInput,
   View,
@@ -16,11 +17,16 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  BOARD_FAVORITE_EMOJI,
   BOARD_NEW_POST_HIGHLIGHT_MS,
   COMMUNITY_BOARD_COPY,
   COMMUNITY_COPY,
   boardDisplayName,
+  boardRepostRefusalCopy,
+  boardSharePayload,
   canPinOnBoard,
+  canRepostBoardPost,
+  isBoardFavorited,
   studyGroupNameFromPost,
   validateBoardSubject,
   type CommunityRole,
@@ -33,18 +39,24 @@ import {
   type ChatMuteDurationId,
 } from '@lantern/shared/utils';
 import * as api from '../../services/api';
+import { uploadChatImage } from '../../services/chatImageUpload';
+import { importLocalBookmarksOnce } from '../../services/bookmarkImport';
 import { useAuthStore } from '../../stores';
 import { useBoardStore } from '../../stores/boardStore';
 import { useCommunityStore } from '../../stores/communityStore';
 import { useGroupStore, type Message } from '../../stores/groupStore';
 import { useToastStore } from '../../stores/toastStore';
-import { useChatImageAttach } from '../../hooks/useChatImageAttach';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { ActionSheet, BackButton, type ActionSheetItem } from '../../components/ui';
-import { BoardComposer, BoardPostCard, PinnedBanner } from '../../components/board';
-import { selectBoardPosts, splitBoardBody, toBoardPost } from '../../utils/boardPosts';
+import { BoardComposer, BoardPostCard, BoardRepostSheet, PinnedBanner } from '../../components/board';
+import {
+  boardActionTargetId,
+  selectBoardPosts,
+  splitBoardBody,
+  toBoardPost,
+} from '../../utils/boardPosts';
 import { applyReactionLocally } from '@lantern/shared/chat';
 
 export type BoardNavigation = {
@@ -127,6 +139,28 @@ export function CommunityBoardScreen({
   const loadPosts = useBoardStore((s) => s.loadPosts);
   const loadOlderPosts = useBoardStore((s) => s.loadOlderPosts);
   const postToBoard = useBoardStore((s) => s.postToBoard);
+  /**
+   * Subscribed as an ARRAY and a BOOLEAN, never as a freshly built object.
+   * A selector that returns `{ ids, supported }` allocates on every store
+   * write, zustand's `Object.is` comparison then always says "changed", and
+   * the screen re-renders forever — the production freeze this codebase has
+   * already paid for once. The Set below is derived with `useMemo` instead.
+   */
+  const bookmarkedIds = useBoardStore((s) => s.bookmarkedByGroup[groupId]);
+  const bookmarksSupported = useBoardStore((s) => s.bookmarksSupported[groupId] !== false);
+  /**
+   * `bookmarksSupported` is OPTIMISTIC — it reads `!== false`, so it is true
+   * before the server has answered, which is what stops the Bookmark control
+   * flashing in. That default is wrong for the one-time import: "not answered
+   * yet" is not "the table exists", and firing the import on mount sends a
+   * doomed request on every launch against a database without the migration.
+   * This one waits for the actual `serverBacked: true`.
+   */
+  const bookmarksConfirmed = useBoardStore((s) => s.bookmarksSupported[groupId] === true);
+  const loadBookmarks = useBoardStore((s) => s.loadBookmarks);
+  const toggleBookmarkOnBoard = useBoardStore((s) => s.toggleBookmark);
+  const repostOnBoard = useBoardStore((s) => s.repost);
+  const undoRepostOnBoard = useBoardStore((s) => s.undoRepost);
 
   const detail = useCommunityStore((s) => (communitySlug ? s.detailBySlug[communitySlug] : undefined));
   const loadCommunity = useCommunityStore((s) => s.loadCommunity);
@@ -154,6 +188,12 @@ export function CommunityBoardScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  /** The uploaded photo waiting to go out WITH the text, as one row (§5.3). */
+  const [attachedImageUrl, setAttachedImageUrl] = useState<string | null>(null);
+  const [attachingImage, setAttachingImage] = useState(false);
+  const [repostTarget, setRepostTarget] = useState<Message | null>(null);
+  const [repostBusy, setRepostBusy] = useState(false);
+  const [shareTarget, setShareTarget] = useState<Message | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [newPostCount, setNewPostCount] = useState(0);
   const [chatMuted, setChatMuted] = useState(false);
@@ -165,6 +205,7 @@ export function CommunityBoardScreen({
   const newestIdRef = useRef<string | null>(null);
 
   const allPosts = useMemo(() => selectBoardPosts(messages), [messages]);
+  const bookmarkedSet = useMemo(() => new Set(bookmarkedIds ?? []), [bookmarkedIds]);
 
   /**
    * A pin outlives the post it points at: the removal RPC predates `pinned_at`
@@ -238,6 +279,9 @@ export function CommunityBoardScreen({
         if (!cancelled) setMyReactions(map || {});
       })
       .catch(() => undefined);
+    // Same shape and lifecycle as user-reactions above, so the Bookmark icon
+    // paints filled on the first frame instead of flipping a moment later.
+    void loadBookmarks(groupId);
     void AsyncStorage.getItem(`lantern_starred_msgs:${user.id}:${groupId}`).then((raw) => {
       if (cancelled || !raw) return;
       try {
@@ -249,7 +293,27 @@ export function CommunityBoardScreen({
     return () => {
       cancelled = true;
     };
-  }, [groupId, user?.id]);
+  }, [groupId, user?.id, loadBookmarks]);
+
+  /**
+   * The one-time move of the device-local "Save for me" saves into
+   * `message_bookmarks` (§7.3).
+   *
+   * Gated on a `serverBacked: true` response, so it never fires against a
+   * database the founder has not applied the migration to yet — and it only
+   * imports from groups resolved as BOARDS, because group chat and DMs write
+   * the identical AsyncStorage key shape for their own stars.
+   */
+  useEffect(() => {
+    if (!user?.id || !bookmarksConfirmed) return;
+    let cancelled = false;
+    void importLocalBookmarksOnce(user.id).then((imported) => {
+      if (!cancelled && imported > 0) void loadBookmarks(groupId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, bookmarksConfirmed, groupId, loadBookmarks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -302,7 +366,11 @@ export function CommunityBoardScreen({
 
   const submitPost = useCallback(async (): Promise<boolean> => {
     const trimmed = text.trim();
-    if (!trimmed || !user?.id || sending) return false;
+    // A photo alone is a post (§5 acceptance 13). Only an EMPTY post is
+    // refused, and editing still requires text because the edit endpoint
+    // updates `text` and nothing else.
+    if (!user?.id || sending) return false;
+    if (!trimmed && (editing || !attachedImageUrl)) return false;
     const validated = validateBoardSubject(subject);
     if (validated.error) {
       useToastStore.getState().showToast(validated.error, 'error');
@@ -322,9 +390,13 @@ export function CommunityBoardScreen({
         subject: validated.subject,
         senderId: user.id,
         mentionedUserIds: resolveMentionedUserIds(trimmed, mentionCandidates),
+        // ONE row: the title, the body and the photo, on `messages.image_url`.
+        // Attaching used to post the photo as its own separate message.
+        imageUrl: attachedImageUrl,
       });
       setText('');
       setSubject('');
+      setAttachedImageUrl(null);
       scrollToTop();
       setHighlightId(useGroupStore.getState().messagesCache[groupId]?.slice(-1)[0]?.id ?? null);
       return true;
@@ -345,6 +417,7 @@ export function CommunityBoardScreen({
     postToBoard,
     mentionCandidates,
     scrollToTop,
+    attachedImageUrl,
   ]);
 
   const sendMediaMarkdown = useCallback(
@@ -356,11 +429,41 @@ export function CommunityBoardScreen({
     [groupId, postToBoard, user?.id, scrollToTop]
   );
 
-  const attachImage = useChatImageAttach({
-    chatId: groupId,
-    onSendMarkdown: sendMediaMarkdown,
-    enabled: !!user?.id,
-  });
+  /**
+   * Pick → upload → park the url in composer state. It does NOT send.
+   *
+   * This is the §5.1 gap: the shipped path was
+   * `useChatImageAttach` → `sendMediaMarkdown` → `postToBoard({ text: markdown })`,
+   * so attaching a photo posted it as its own separate row and whatever the
+   * student had typed stayed in the box. The upload overlaps with typing;
+   * `attachingImage` is what the composer chip reports.
+   */
+  const attachImage = useCallback(
+    async (uri: string, mimeType?: string | null) => {
+      if (!user?.id) return;
+      setAttachingImage(true);
+      try {
+        const { url } = await uploadChatImage(uri, mimeType, groupId);
+        setAttachedImageUrl(url);
+        AccessibilityInfo.announceForAccessibility(COMMUNITY_BOARD_COPY.photoAttached);
+      } catch (error) {
+        // The message names the real reason — an oversized GIF, a HEIC pick —
+        // because "Failed to send image" taught the student nothing about
+        // what to do differently.
+        useToastStore
+          .getState()
+          .showToast(
+            error instanceof Error && error.message
+              ? error.message
+              : COMMUNITY_BOARD_COPY.invalidImage,
+            'error'
+          );
+      } finally {
+        setAttachingImage(false);
+      }
+    },
+    [groupId, user?.id]
+  );
 
   const toggleReaction = useCallback(
     async (message: Message, emoji: string, added: boolean) => {
@@ -393,6 +496,180 @@ export function CommunityBoardScreen({
     },
     [myReactions, patchMessageInState]
   );
+
+  /**
+   * Every board action except Undo repost targets the ORIGINAL post.
+   *
+   * On a repost card that is NOT the row you tapped: favoriting, commenting,
+   * bookmarking and reporting all act on the post being bumped, so counts
+   * never fragment across copies, no comment ever attaches to a repost row,
+   * and `content_reports`' UNIQUE (reporter, target_type, target_id) keeps one
+   * report covering every copy (§6.5).
+   */
+  const targetOf = useCallback(
+    (post: Message): Message => {
+      const id = boardActionTargetId(post);
+      if (id === post.id) return post;
+      /**
+       * The original may be older than the loaded page, so the cache lookup
+       * can miss. When it does, keep the resolved ID — it comes from
+       * `client_message_id`, not from the cache — and carry only the counts
+       * we actually have. Falling back to the repost ROW would send the
+       * favorite and the bookmark to the wrong message.
+       */
+      const cached = (messages || []).find((m) => m.id === id);
+      return cached ?? { ...post, id, reactions: post.repostOf ? {} : post.reactions };
+    },
+    [messages]
+  );
+
+  const toggleFavorite = useCallback(
+    (post: Message) => {
+      const target = targetOf(post);
+      void toggleReaction(
+        target,
+        BOARD_FAVORITE_EMOJI,
+        !isBoardFavorited(myReactions[target.id])
+      );
+    },
+    [targetOf, toggleReaction, myReactions]
+  );
+
+  const toggleBookmark = useCallback(
+    async (post: Message) => {
+      const targetId = boardActionTargetId(post);
+      const next = !bookmarkedSet.has(targetId);
+      const ok = await toggleBookmarkOnBoard(groupId, targetId, next);
+      if (!ok) {
+        useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.bookmarksUnavailable, 'error');
+      }
+    },
+    [bookmarkedSet, toggleBookmarkOnBoard, groupId]
+  );
+
+  /**
+   * Open the repost sheet — or refuse before opening it, with the reason.
+   *
+   * The client checks `canRepostBoardPost` so the student is told why rather
+   * than watching a sheet fail; the server re-checks every rule, so calling
+   * the endpoint directly with curl is refused too (acceptance 17).
+   */
+  const openRepost = useCallback(
+    (post: Message) => {
+      const target = targetOf(post);
+      if (target.repostedByMe) {
+        setRepostTarget(target);
+        return;
+      }
+      const verdict = canRepostBoardPost({
+        post: toBoardPost(target),
+        viewerId: user?.id ?? '',
+      });
+      if (!verdict.ok) {
+        useToastStore.getState().showToast(boardRepostRefusalCopy(verdict.reason), 'error');
+        return;
+      }
+      setRepostTarget(target);
+    },
+    [targetOf, user?.id]
+  );
+
+  const confirmRepost = useCallback(
+    async (quote: string) => {
+      const target = repostTarget;
+      if (!target || repostBusy) return;
+      setRepostBusy(true);
+      const error = await repostOnBoard(groupId, target.id, quote);
+      setRepostBusy(false);
+      if (error) {
+        useToastStore.getState().showToast(error, 'error');
+        return;
+      }
+      setRepostTarget(null);
+      // The bump belongs at the top, which is where the board opens.
+      scrollToTop();
+    },
+    [repostTarget, repostBusy, repostOnBoard, groupId, scrollToTop]
+  );
+
+  const confirmUndoRepost = useCallback(async () => {
+    const target = repostTarget;
+    if (!target || repostBusy) return;
+    setRepostBusy(true);
+    const error = await undoRepostOnBoard(groupId, target.id);
+    setRepostBusy(false);
+    if (error) {
+      useToastStore.getState().showToast(error, 'error');
+      return;
+    }
+    setRepostTarget(null);
+  }, [repostTarget, repostBusy, undoRepostOnBoard, groupId]);
+
+  /**
+   * The share sheet's three rows: Copy link, Copy text, Share via… (§8.1).
+   *
+   * The payload is `boardSharePayload` and nothing else — a title and a URL.
+   * Never `post.text`, never a body snippet, never a media URL: a signed
+   * storage URL in a share payload is a members-only object leaving the board.
+   * The link itself carries no preview either; the recipient's own membership
+   * is what decides whether they see anything.
+   */
+  const shareItems: ActionSheetItem[] = useMemo(() => {
+    const post = shareTarget;
+    if (!post) return [];
+    const target = targetOf(post);
+    // The ORIGINAL's id, even when the original is older than the loaded page
+    // and `targetOf` had to fall back to the repost row: the link is minted
+    // from the id in `client_message_id`, not from whatever is in the cache.
+    const payload = boardSharePayload(
+      { ...toBoardPost(target), id: boardActionTargetId(post) },
+      { slug: communitySlug ?? null, groupId, boardName: displayName }
+    );
+    const items: ActionSheetItem[] = [
+      {
+        label: COMMUNITY_BOARD_COPY.copyLink,
+        icon: 'link-outline',
+        onPress: () => {
+          void Clipboard.setStringAsync(payload.url)
+            .then(() => AccessibilityInfo.announceForAccessibility(COMMUNITY_BOARD_COPY.linkCopied))
+            .catch(() =>
+              useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.shareFailed, 'error')
+            );
+        },
+      },
+    ];
+    // "Copy text" moves out of the card overflow into this sheet, on both
+    // platforms in the same commit. It keeps using `splitBoardBody`, so
+    // `![image](https://…)` never reaches the clipboard, and it is omitted on
+    // a media-only post exactly as the overflow does today.
+    const { body } = splitBoardBody(target.text);
+    if (body) {
+      items.push({
+        label: COMMUNITY_BOARD_COPY.copyText,
+        icon: 'copy-outline',
+        onPress: () => {
+          void Clipboard.setStringAsync(body)
+            .then(() => AccessibilityInfo.announceForAccessibility('Post copied'))
+            .catch(() =>
+              useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.shareFailed, 'error')
+            );
+        },
+      });
+    }
+    items.push({
+      label: `${COMMUNITY_BOARD_COPY.share} via…`,
+      icon: 'share-outline',
+      onPress: () => {
+        // The same `Share.share` call the community invite already makes.
+        // `message` is the URL alone: Android has no title field and would
+        // otherwise paste the two concatenated.
+        void Share.share({ message: payload.url, title: payload.title }).catch(() =>
+          useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.shareFailed, 'error')
+        );
+      },
+    });
+    return items;
+  }, [shareTarget, targetOf, communitySlug, groupId, displayName]);
 
   // ------------------------------------------------------------ study group
 
@@ -504,6 +781,18 @@ export function CommunityBoardScreen({
         icon: 'search-outline',
         onPress: () => setSearchOpen(true),
       },
+      // Second row, both platforms, same words (§3.4). Hidden when the
+      // migration is not applied: an entry that opens a screen which can only
+      // say "not available yet" is worse than no entry.
+      ...(bookmarksSupported
+        ? [
+            {
+              label: COMMUNITY_BOARD_COPY.savedPosts,
+              icon: 'bookmark-outline' as const,
+              onPress: () => navigation.navigate('SavedPosts'),
+            },
+          ]
+        : []),
       {
         label: chatMuted
           ? formatMuteUntilLabel(chatMutedUntil)
@@ -545,6 +834,8 @@ export function CommunityBoardScreen({
       groupId,
       displayName,
       confirmLeave,
+      bookmarksSupported,
+      navigation,
     ]
   );
 
@@ -553,34 +844,34 @@ export function CommunityBoardScreen({
     if (!target) return [];
     const { body } = splitBoardBody(target.text);
     const items: ActionSheetItem[] = [];
-    if (body) {
+    // `Copy text` has MOVED to the share sheet (§8.1 row 2) so the overflow
+    // does not carry two ways to copy the same words. Edit/Delete/Pin still
+    // act on the row itself; Report acts on the ORIGINAL when this is a
+    // repost, so one report covers every copy.
+    const reportTargetId = boardActionTargetId(target);
+    // `Save for me` LEAVES the overflow in the same release Bookmark enters
+    // the action row — one save, not two that cannot read each other. It
+    // survives only while the server cannot back a bookmark, so a student on
+    // a database without the migration is not left with no way to keep a post.
+    if (!bookmarksSupported) {
+      const starred = starredIds.has(target.id);
       items.push({
-        label: COMMUNITY_BOARD_COPY.copyText,
-        icon: 'copy-outline',
+        label: starred ? COMMUNITY_BOARD_COPY.saved : COMMUNITY_BOARD_COPY.saveForMe,
+        icon: starred ? 'star' : 'star-outline',
+        hint: 'Only on this device',
         onPress: () => {
-          void Clipboard.setStringAsync(body)
-            .then(() => AccessibilityInfo.announceForAccessibility('Post copied'))
-            .catch(() => Alert.alert('Copy failed', 'Could not copy the post text.'));
+          if (!user?.id) return;
+          const next = new Set(starredIds);
+          if (starred) next.delete(target.id);
+          else next.add(target.id);
+          setStarredIds(next);
+          void AsyncStorage.setItem(
+            `lantern_starred_msgs:${user.id}:${groupId}`,
+            JSON.stringify([...next])
+          );
         },
       });
     }
-    const starred = starredIds.has(target.id);
-    items.push({
-      label: starred ? COMMUNITY_BOARD_COPY.saved : COMMUNITY_BOARD_COPY.saveForMe,
-      icon: starred ? 'star' : 'star-outline',
-      hint: 'Only you can see this',
-      onPress: () => {
-        if (!user?.id) return;
-        const next = new Set(starredIds);
-        if (starred) next.delete(target.id);
-        else next.add(target.id);
-        setStarredIds(next);
-        void AsyncStorage.setItem(
-          `lantern_starred_msgs:${user.id}:${groupId}`,
-          JSON.stringify([...next])
-        );
-      },
-    });
     // Reporting your own post is not a thing anywhere else in the product
     // (`MessageItem.tsx`, `GroupChatScreen`'s long-press menu) and web's board
     // card already hides it — §8 parity rule 7 makes the row order binding.
@@ -591,7 +882,7 @@ export function CommunityBoardScreen({
         onPress: () =>
           setReportTarget({
             type: 'message',
-            id: target.id,
+            id: reportTargetId,
             label: body.slice(0, 120) || undefined,
           }),
       });
@@ -678,6 +969,7 @@ export function CommunityBoardScreen({
     clearPinned,
     removeGroupMessage,
     startStudyGroup,
+    bookmarksSupported,
   ]);
 
   // ----------------------------------------------------------------- render
@@ -685,44 +977,64 @@ export function CommunityBoardScreen({
   const openComments = useCallback(
     (post: Message) => {
       navigation.navigate('CommunityPost', {
+        // A comment never attaches to a repost row: opening the comments of a
+        // repost card opens the ORIGINAL's thread (§6.5).
+        rootId: boardActionTargetId(post),
         groupId,
-        rootId: post.id,
         communitySlug,
         communityName: communityName ?? undefined,
+        // So the post screen's share sheet can fall back to `Post in # {board}`
+        // for a post with no title, exactly as the list does.
+        boardName: displayName,
       });
     },
-    [navigation, groupId, communitySlug, communityName]
+    [navigation, groupId, communitySlug, communityName, displayName]
   );
 
   const renderPost = useCallback(
-    ({ item }: { item: Message }) => (
-      <BoardPostCard
-        post={item}
-        now={Date.now()}
-        isOwn={item.senderId === user?.id}
-        authorIsAdmin={!!group?.adminIds?.includes(item.senderId)}
-        myReactions={myReactions[item.id]}
-        lowDataMode={lowDataMode}
-        highlighted={highlightId === item.id}
-        onOpenComments={() => openComments(item)}
-        onToggleReaction={(message, emoji, added) => void toggleReaction(message, emoji, added)}
-        onOverflow={() => setPostMenuTarget(item)}
-        onRetry={
-          item.deliveryState === 'failed' && user?.id
-            ? () => void retryFailedMessage(groupId, item.id, user.id).catch(() => undefined)
-            : undefined
-        }
-        onStartStudyGroup={() => startStudyGroup(item)}
-      />
-    ),
+    ({ item }: { item: Message }) => {
+      // Favorite / Comment / Bookmark on a REPOST card read the ORIGINAL's
+      // state, so the two cards for one post never show different numbers.
+      const actionId = boardActionTargetId(item);
+      return (
+        <BoardPostCard
+          post={item}
+          now={Date.now()}
+          isOwn={item.senderId === user?.id}
+          viewerId={user?.id ?? ''}
+          authorIsAdmin={!!group?.adminIds?.includes(item.senderId)}
+          favorited={isBoardFavorited(myReactions[actionId])}
+          bookmarked={bookmarkedSet.has(actionId)}
+          bookmarksSupported={bookmarksSupported}
+          lowDataMode={lowDataMode}
+          highlighted={highlightId === item.id}
+          onOpenComments={() => openComments(item)}
+          onToggleFavorite={() => toggleFavorite(item)}
+          onRepost={() => openRepost(item)}
+          onToggleBookmark={() => void toggleBookmark(item)}
+          onShare={() => setShareTarget(item)}
+          onOverflow={() => setPostMenuTarget(item)}
+          onRetry={
+            item.deliveryState === 'failed' && user?.id
+              ? () => void retryFailedMessage(groupId, item.id, user.id).catch(() => undefined)
+              : undefined
+          }
+          onStartStudyGroup={() => startStudyGroup(item)}
+        />
+      );
+    },
     [
       user?.id,
       group?.adminIds,
       myReactions,
+      bookmarkedSet,
+      bookmarksSupported,
       lowDataMode,
       highlightId,
       openComments,
-      toggleReaction,
+      toggleFavorite,
+      openRepost,
+      toggleBookmark,
       retryFailedMessage,
       groupId,
       startStudyGroup,
@@ -894,11 +1206,15 @@ export function CommunityBoardScreen({
           mentionCandidates={mentionCandidates}
           onPost={submitPost}
           onAttachImage={attachImage}
+          attachedImageUrl={attachedImageUrl}
+          attachingImage={attachingImage}
+          onRemoveAttachedImage={() => setAttachedImageUrl(null)}
           onSendAudioMarkdown={sendMediaMarkdown}
           editing={editing}
           onCancelEdit={() => {
             setEditing(null);
             setText('');
+            setAttachedImageUrl(null);
           }}
         />
       </KeyboardAvoidingView>
@@ -941,6 +1257,31 @@ export function CommunityBoardScreen({
           },
         }))}
         onClose={() => setPostMenuTarget(null)}
+      />
+
+      <ActionSheet
+        visible={!!shareTarget}
+        title={COMMUNITY_BOARD_COPY.share}
+        items={shareItems.map((item) => ({
+          ...item,
+          onPress: () => {
+            setShareTarget(null);
+            item.onPress();
+          },
+        }))}
+        onClose={() => setShareTarget(null)}
+      />
+
+      <BoardRepostSheet
+        visible={!!repostTarget}
+        authorName={repostTarget?.senderName ?? ''}
+        subject={repostTarget?.subject ?? null}
+        body={repostTarget?.text ?? ''}
+        reposted={!!repostTarget?.repostedByMe}
+        busy={repostBusy}
+        onRepost={(quote) => void confirmRepost(quote)}
+        onUndo={() => void confirmUndoRepost()}
+        onClose={() => setRepostTarget(null)}
       />
 
       <ReportContentSheet

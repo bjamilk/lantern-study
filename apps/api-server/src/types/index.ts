@@ -154,6 +154,36 @@ export interface Message {
   /** The board's server-side pin — one per group, enforced by a unique index. */
   pinnedAt?: string | null;
   pinnedBy?: string | null;
+  /**
+   * Denormalised emoji counts kept by `sync_message_reaction_counts`
+   * (20260830120000): `{ "👍": 3 }`. `{}` when there are none, or when the
+   * migration has not been hand-applied yet.
+   */
+  reactions?: Record<string, number>;
+  /** Client-generated send id — how an optimistic row matches its persisted one. */
+  clientMessageId?: string;
+  /**
+   * Board repost hydration (§6.4). `repostOf` is set only on a repost row and
+   * carries the ORIGINAL as text — a snippet plus hasImage/hasAudio flags,
+   * never a media URL, so a repost card downloads nothing. `null` means the
+   * original is gone; absent means this page was not a board page.
+   */
+  repostOf?: {
+    id: string;
+    senderName: string;
+    timestamp: string;
+    subject: string | null;
+    snippet: string;
+    hasImage: boolean;
+    hasAudio: boolean;
+    removedAt: string | null;
+  } | null;
+  /** How many live reposts point at THIS post. Board pages only. */
+  repostCount?: number;
+  /** Viewer-specific; attached after the shared page cache, never inside it. */
+  repostedByMe?: boolean;
+  /** Viewer-specific and PRIVATE — there is no bookmark count anywhere. */
+  bookmarked?: boolean;
 }
 
 export interface TestResult {

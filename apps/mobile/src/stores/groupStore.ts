@@ -5,6 +5,8 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
+import type { BoardQuotedPost } from '@lantern/shared/network';
+import { boardActionFields } from '../utils/boardMessageFields';
 import {
   chatMessagePreview,
   resolveQuestionStatusAfterVote,
@@ -185,6 +187,21 @@ export interface Message {
   } | null;
   threadRootId?: string;
   replyCount?: number;
+  /**
+   * `messages.client_message_id`. A repost row carries `repost:<originalId>`
+   * and the shipped optimistic-send path matches its own pending row on it,
+   * so the board can tell a repost from a comment without a second query
+   * (`isBoardRepostRow`).
+   */
+  clientMessageId?: string;
+  /** How many people reposted this post. Board pages only; absent in chat. */
+  repostCount?: number;
+  /** Set on a REPOST row: the original it points at, text only, never a URL. */
+  repostOf?: BoardQuotedPost | null;
+  /** Viewer-specific, attached per request — never inside the shared page cache. */
+  repostedByMe?: boolean;
+  /** Viewer-specific. Absent (not false) when `message_bookmarks` is missing. */
+  bookmarked?: boolean;
   receiptStatus?: 'sent' | 'read';
   /**
    * Local-only outbox state. Deliberately separate from receiptStatus, which
@@ -324,6 +341,15 @@ interface GroupState {
        * as the API does for a board group (§3.4).
        */
       plainText?: boolean;
+      /**
+       * A board post's photo, carried on `messages.image_url` so a title, a
+       * body and a photo are ONE row (§5.2). The server writes it only on a
+       * board group and only when the path is `note-files/{me}/chat/{group}/`,
+       * so this is a request, not a guarantee. Do NOT use it for chat: a chat
+       * photo is still `![image](url)` markdown, and a third encoding is
+       * exactly what trap 6 forbids.
+       */
+      imageUrl?: string | null;
     }
   ) => Promise<void>;
   editGroupMessage: (groupId: string, messageId: string, content: string) => Promise<void>;
@@ -605,6 +631,7 @@ export function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): 
     replyTo: m.replyTo || m.reply_to || null,
     threadRootId: m.threadRootId || m.thread_root_id || undefined,
     replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
+    ...boardActionFields(m),
     receiptStatus: m.receiptStatus || m.receipt_status || undefined,
     seenByCount: typeof m.seenByCount === 'number' ? m.seenByCount : m.seen_by_count,
     seenByTotal: typeof m.seenByTotal === 'number' ? m.seenByTotal : m.seen_by_total,
@@ -1036,6 +1063,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       mentionedUserIds?: string[];
       subject?: string | null;
       plainText?: boolean;
+      imageUrl?: string | null;
     }
   ) => {
     const releaseSendSlot = await acquireSendSlot(sendChainByGroup, groupId);
@@ -1077,6 +1105,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       subject: options?.subject ?? null,
       replyToMessageId: options?.replyToMessageId || null,
       mentionedUserIds: [...(options?.mentionedUserIds || [])].sort(),
+      // Part of the identity of the send: two posts with the same words but
+      // different photos are two posts, and the retry path must not fold them
+      // into one delivery intent.
+      imageUrl: options?.imageUrl ?? null,
     });
     const clientMessageId = deliveryIntents.resolve(
       deliveryScope,
@@ -1124,6 +1156,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       mentionedUserIds: options?.mentionedUserIds,
       threadRootId,
       replyCount: 0,
+      // Shown on the optimistic card immediately: the photo was already
+      // uploaded and signed by the composer, so there is nothing to wait for.
+      ...(options?.imageUrl ? { imageUrl: options.imageUrl } : {}),
       receiptStatus: 'sent',
       seenByCount: 0,
       seenByTotal,
@@ -1166,6 +1201,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         replyToMessageId: options?.replyToMessageId,
         mentionedUserIds: options?.mentionedUserIds,
         ...(options?.subject ? { subject: options.subject } : {}),
+        ...(options?.imageUrl ? { imageUrl: options.imageUrl } : {}),
       });
       const serverMessage = mapApiMessage(serverPayload, groupId);
       set((state) => {
@@ -1210,8 +1246,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
             mentionedUserIds: options?.mentionedUserIds,
             // Carried so an airplane-mode board post keeps its title when the
             // queue flushes — the user never sees this send, so a dropped
-            // title would be silent work loss.
+            // title would be silent work loss. The photo is carried for the
+            // same reason: it is ALREADY uploaded (the composer signs it
+            // before Post is enabled), so dropping the reference here would
+            // strand an object in storage that no row points at.
             subject: options?.subject ?? null,
+            imageUrl: options?.imageUrl ?? null,
           }, senderId)
           .catch(() => undefined);
       }
@@ -2536,6 +2576,7 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
     replyToMessageId?: string;
     mentionedUserIds?: string[];
     subject?: string | null;
+    imageUrl?: string | null;
   };
   try {
     if (data.kind === 'group' && data.groupId) {
@@ -2545,6 +2586,7 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
         replyToMessageId: data.replyToMessageId,
         mentionedUserIds: data.mentionedUserIds,
         ...(data.subject ? { subject: data.subject } : {}),
+        ...(data.imageUrl ? { imageUrl: data.imageUrl } : {}),
       });
       const server = mapApiMessage(payload, data.groupId);
       useGroupStore.setState((state) => ({

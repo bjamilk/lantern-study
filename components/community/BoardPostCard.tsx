@@ -1,17 +1,33 @@
 import React, { useState } from 'react';
 import {
+  ArrowPathRoundedSquareIcon,
+  BookmarkIcon,
   ChatBubbleOvalLeftIcon,
   EllipsisHorizontalIcon,
+  HeartIcon,
   MicrophoneIcon,
   PhotoIcon,
+  ShareIcon,
 } from '@heroicons/react/24/outline';
-import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
 import {
+  ArrowPathRoundedSquareIcon as RepostSolidIcon,
+  BookmarkIcon as BookmarkSolidIcon,
+  HeartIcon as HeartSolidIcon,
+} from '@heroicons/react/24/solid';
+import {
+  BOARD_ACTION_ROW_ORDER,
+  BOARD_FAVORITE_EMOJI,
   COMMUNITY_BOARD_COPY,
+  boardBookmarkAccessibilityLabel,
+  boardCommentAccessibilityLabel,
+  boardFavoriteAccessibilityLabel,
   boardPostAccessibilityLabel,
   boardRelativeTime,
-  reactionAccessibilityLabel,
+  boardRepostAccessibilityLabel,
+  boardShareAccessibilityLabel,
+  type BoardAction,
   type BoardPost,
+  type BoardQuotedPost,
 } from '@lantern/shared/network';
 import {
   canEditChatMessage,
@@ -19,27 +35,46 @@ import {
   parseChatAudioUrl,
   parseChatImageUrl,
 } from '@lantern/shared/utils';
-import MessageReactions from '../chat/MessageReactions';
+import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 import { Avatar, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '../ui';
 
 export interface BoardPostCardProps {
   post: BoardPost;
   currentUserId: string;
-  /** Emoji the viewer has personally added to this post. */
+  /**
+   * Emoji the viewer has added to the ACTION TARGET — the original on a repost
+   * card, the post itself otherwise (§6.5). The parent resolves that id, so
+   * favoriting from a repost never fragments the original's count.
+   */
   myReactions?: string[];
   /** The viewer passes `canPinOnBoard` — shows Pin / Unpin. */
   canPin: boolean;
   lowDataMode: boolean;
   /** Freshly created by this viewer: a 1.2s wash (static under reduced motion). */
   highlighted?: boolean;
-  /** Personal, device-local bookmark. */
+  /**
+   * The device-local "Save for me". Still here because a database without
+   * `message_bookmarks` has to keep working; it is deleted in Phase 2, once
+   * the one-time import has run everywhere.
+   */
   saved: boolean;
+  /** Account-level bookmark on the action target. */
+  bookmarked: boolean;
+  /** False when `message_bookmarks` is not applied yet: the control is hidden. */
+  bookmarksAvailable: boolean;
+  /** The action target's counts — see `myReactions`. */
+  favoriteCount: number;
+  commentCount: number;
   /** Optimistic states for the viewer's own post. */
   sending?: boolean;
   failed?: boolean;
   onRetry?: () => void;
   onToggleReaction: (emoji: string, added: boolean) => void;
   onOpenComments: () => void;
+  /** Repost, or undo the viewer's own. The parent decides which and refuses. */
+  onRepost: () => void;
+  onToggleBookmark: () => void;
+  onShare: () => void;
   onCopyText: () => void;
   onToggleSave: () => void;
   onReport: () => void;
@@ -49,53 +84,119 @@ export interface BoardPostCardProps {
   onStartStudyGroup: () => void;
 }
 
+const MEDIA_CHIP_CLASS =
+  'inline-flex min-h-[44px] items-center gap-1.5 rounded-lantern border border-lantern-border bg-lantern-background-secondary px-3 text-xs font-medium text-lantern-text-secondary';
+
+/** The unresolvable case, said out loud instead of shown as a broken image. */
+const MediaUnavailable: React.FC<{ label: string; icon: 'photo' | 'audio' }> = ({ label, icon }) => (
+  <p className={`${MEDIA_CHIP_CLASS} text-lantern-text-tertiary`}>
+    {icon === 'photo' ? (
+      <PhotoIcon className="h-4 w-4" aria-hidden="true" />
+    ) : (
+      <MicrophoneIcon className="h-4 w-4" aria-hidden="true" />
+    )}
+    {label}
+  </p>
+);
+
 /**
- * Media on a board list is a text chip, never a download (spec §10): at 20
- * cards a page the images are the whole data bill. The chip loads on tap, and
- * the comments panel loads it outright.
+ * A board post's photo and voice note.
+ *
+ * Two things this deliberately does NOT do.
+ *
+ * It never puts the stored url straight into a `src`. That string is a
+ * REFERENCE: it was signed at upload time and `clampSignedUrlTtl` caps every
+ * signed URL at 24 hours, so a day later it is a 400 and the card showed a
+ * broken-image icon. `useResolvedStorageUrl` re-signs it on read through
+ * POST /api/v1/storage/signed-url[s], which re-checks board membership as it
+ * goes; every resolve landing in the same tick is batched into one request, so
+ * a page of photo posts costs one call, not one per card.
+ *
+ * And it never loads anything the reader did not ask for while low-data mode
+ * is on. The list renders the 480px `thumb` sibling that
+ * `processImageForUpload` already writes for every upload and that nothing
+ * used to request — 15–35 KB against 100–250 KB for the original, which at
+ * ₦0.30–0.50/MB is the difference between ₦0.01 and ₦0.13 a card.
  */
-export const BoardPostMedia: React.FC<{ text: string; eager?: boolean }> = ({ text, eager }) => {
-  const imageUrl = parseChatImageUrl(text);
+export const BoardPostMedia: React.FC<{
+  text: string;
+  /**
+   * `messages.image_url` — the first encoding. Legacy posts keep theirs as
+   * markdown inside `text`, which is still parsed as the fallback, so nothing
+   * posted before this release stops rendering.
+   */
+  imageUrl?: string | null;
+  /** Load without a tap. Off in low-data mode, where the chip stays. */
+  eager?: boolean;
+  /** `thumb` on a list card, `original` in the post view. */
+  variant?: 'thumb' | 'original';
+  /** List cards crop to a Twitter-shaped band; the post view shows the whole photo. */
+  cropped?: boolean;
+}> = ({ text, imageUrl: imageUrlProp, eager, variant = 'original', cropped = false }) => {
+  const imageUrl = imageUrlProp || parseChatImageUrl(text);
   const audioUrl = parseChatAudioUrl(text);
   const [showImage, setShowImage] = useState(!!eager);
   const [showAudio, setShowAudio] = useState(!!eager);
+
+  // Passing null until the reader asks keeps the tap-to-load promise honest:
+  // the hook signs nothing, so nothing is fetched.
+  const resolvedImage = useResolvedStorageUrl(showImage ? imageUrl : null, { variant });
+  const resolvedAudio = useResolvedStorageUrl(showAudio ? audioUrl : null);
 
   if (!imageUrl && !audioUrl) return null;
 
   return (
     <div className="mt-2 space-y-2">
       {imageUrl ? (
-        showImage ? (
-          <img
-            src={imageUrl}
-            alt="Post attachment"
-            loading="lazy"
-            className="max-h-96 w-full rounded-lantern object-contain bg-lantern-background-secondary"
-          />
-        ) : (
+        !showImage ? (
           <button
             type="button"
             onClick={() => setShowImage(true)}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lantern border border-lantern-border bg-lantern-background-secondary px-3 text-xs font-medium text-lantern-text-secondary hover:bg-lantern-border focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+            className={`${MEDIA_CHIP_CLASS} hover:bg-lantern-border focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary`}
           >
             <PhotoIcon className="h-4 w-4" aria-hidden="true" />
             {COMMUNITY_BOARD_COPY.photoTapToLoad}
           </button>
+        ) : resolvedImage === null ? (
+          <MediaUnavailable label={COMMUNITY_BOARD_COPY.photoUnavailable} icon="photo" />
+        ) : resolvedImage === undefined ? (
+          <p className={MEDIA_CHIP_CLASS} role="status">
+            <PhotoIcon className="h-4 w-4" aria-hidden="true" />
+            {COMMUNITY_BOARD_COPY.photoLoading}
+          </p>
+        ) : (
+          <img
+            src={resolvedImage}
+            alt="Post attachment"
+            loading="lazy"
+            className={
+              cropped
+                ? 'aspect-[16/9] w-full rounded-lantern border border-lantern-border object-cover bg-lantern-background-secondary'
+                : 'max-h-96 w-full rounded-lantern object-contain bg-lantern-background-secondary'
+            }
+          />
         )
       ) : null}
       {audioUrl ? (
-        showAudio ? (
-          // preload="none": a voice note fetches on play, never on render (§10).
-          <audio src={audioUrl} controls preload="none" className="w-full max-w-sm" />
-        ) : (
+        !showAudio ? (
           <button
             type="button"
             onClick={() => setShowAudio(true)}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lantern border border-lantern-border bg-lantern-background-secondary px-3 text-xs font-medium text-lantern-text-secondary hover:bg-lantern-border focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+            className={`${MEDIA_CHIP_CLASS} hover:bg-lantern-border focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary`}
           >
             <MicrophoneIcon className="h-4 w-4" aria-hidden="true" />
             {COMMUNITY_BOARD_COPY.voiceNote}
           </button>
+        ) : resolvedAudio === null ? (
+          <MediaUnavailable label={COMMUNITY_BOARD_COPY.voiceNoteUnavailable} icon="audio" />
+        ) : resolvedAudio === undefined ? (
+          <p className={MEDIA_CHIP_CLASS} role="status">
+            <MicrophoneIcon className="h-4 w-4" aria-hidden="true" />
+            {COMMUNITY_BOARD_COPY.voiceNoteLoading}
+          </p>
+        ) : (
+          // preload="none": a voice note fetches on play, never on render (§10).
+          <audio src={resolvedAudio} controls preload="none" className="w-full max-w-sm" />
         )
       ) : null}
     </div>
@@ -108,6 +209,64 @@ export const boardPostText = (text: string): string =>
     .replace(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi, '')
     .replace(/\[audio\]\((https?:\/\/[^)\s]+)\)/gi, '')
     .trim();
+
+/** One control in the action row: ≥44px, icon + optional count, never colour-only. */
+const ACTION_BUTTON_CLASS =
+  'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lantern px-2.5 text-xs font-medium text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50 disabled:hover:bg-transparent';
+
+/**
+ * The quoted original inside a repost card.
+ *
+ * TEXT ONLY, on purpose: it carries `hasImage` / `hasAudio` flags and never a
+ * media URL, so a repost card downloads exactly zero bytes of media like every
+ * other list card. A takedown of the original propagates here with no writes
+ * to any repost row, and an id that no longer resolves says so rather than
+ * rendering a blank block.
+ */
+const QuotedPost: React.FC<{ quoted: BoardQuotedPost | null }> = ({ quoted }) => {
+  const shell =
+    'mt-2 rounded-lantern border border-lantern-border bg-lantern-background-secondary/60 p-3';
+  if (!quoted) {
+    return (
+      <p className={`${shell} text-xs italic text-lantern-text-tertiary`}>
+        {COMMUNITY_BOARD_COPY.quotedUnavailable}
+      </p>
+    );
+  }
+  if (quoted.removedAt) {
+    return (
+      <p className={`${shell} text-xs italic text-lantern-text-tertiary`}>
+        {COMMUNITY_BOARD_COPY.quotedRemoved}
+      </p>
+    );
+  }
+  return (
+    <div className={shell}>
+      <p className="text-xs font-semibold text-lantern-text">
+        {quoted.senderName}
+        <span className="ml-2 font-normal text-lantern-text-tertiary">
+          {boardRelativeTime(quoted.timestamp)}
+        </span>
+      </p>
+      {quoted.subject ? (
+        <p className="mt-1 break-words text-xs font-bold text-lantern-text">{quoted.subject}</p>
+      ) : null}
+      {quoted.snippet ? (
+        <p className="mt-1 break-words text-xs text-lantern-text-secondary">{quoted.snippet}</p>
+      ) : null}
+      {quoted.hasImage || quoted.hasAudio ? (
+        <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-lantern-text-tertiary">
+          {quoted.hasImage ? (
+            <PhotoIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <MicrophoneIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {quoted.hasImage ? COMMUNITY_BOARD_COPY.photoTapToLoad : COMMUNITY_BOARD_COPY.voiceNote}
+        </p>
+      ) : null}
+    </div>
+  );
+};
 
 /**
  * One card on a board (spec §4.2). Deliberately NOT a bubble: no left/right
@@ -122,11 +281,18 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
   lowDataMode,
   highlighted = false,
   saved,
+  bookmarked,
+  bookmarksAvailable,
+  favoriteCount,
+  commentCount,
   sending = false,
   failed = false,
   onRetry,
   onToggleReaction,
   onOpenComments,
+  onRepost,
+  onToggleBookmark,
+  onShare,
   onCopyText,
   onToggleSave,
   onReport,
@@ -142,6 +308,14 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
   const isOwn = post.senderId === currentUserId;
   const when = boardRelativeTime(post.timestamp);
   const body = boardPostText(post.text);
+  const isRepost = !!post.repostOf;
+  /**
+   * An unconfirmed post has no server-side row yet, so every action on it
+   * would be a no-op. Disabled says that; leaving them live would mean a Share
+   * button that quietly does nothing.
+   */
+  const pending = sending || failed;
+  const favorited = myReactions.includes(BOARD_FAVORITE_EMOJI);
   const mutationCandidate = {
     id: post.id,
     senderId: post.senderId,
@@ -185,6 +359,18 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
         highlighted ? 'bg-lantern-primary-background' : 'bg-lantern-surface'
       }`}
     >
+      {/*
+        Who bumped this, in an icon AND in words. Never colour alone, and never
+        a badge that a screen reader would read as decoration: the reposter's
+        name is the only thing on the card that is not the original author's.
+      */}
+      {isRepost ? (
+        <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-lantern-text-tertiary">
+          <ArrowPathRoundedSquareIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          {COMMUNITY_BOARD_COPY.repostedBy(post.senderName)}
+        </p>
+      ) : null}
+
       <div className="flex items-start gap-2">
         <Avatar name={post.senderName} src={post.senderAvatarUrl} size="sm" localOnly={lowDataMode} />
         <div className="min-w-0 flex-1">
@@ -209,9 +395,17 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
             {body ? (
               <MenuItem onSelect={onCopyText}>{COMMUNITY_BOARD_COPY.copyText}</MenuItem>
             ) : null}
-            <MenuItem onSelect={onToggleSave}>
-              {saved ? COMMUNITY_BOARD_COPY.saved : COMMUNITY_BOARD_COPY.saveForMe}
-            </MenuItem>
+            {/*
+              "Save for me" LEAVES the overflow in the release Bookmark enters
+              the row — one save affordance, not two. It survives only for a
+              database that has not had `message_bookmarks` hand-applied yet,
+              where hiding both would take the feature away entirely.
+            */}
+            {bookmarksAvailable ? null : (
+              <MenuItem onSelect={onToggleSave}>
+                {saved ? COMMUNITY_BOARD_COPY.saved : COMMUNITY_BOARD_COPY.saveForMe}
+              </MenuItem>
+            )}
             {isOwn ? null : (
               <MenuItem onSelect={onReport}>{COMMUNITY_BOARD_COPY.reportPost}</MenuItem>
             )}
@@ -277,7 +471,20 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
           {body ? (
             <p className="mt-2 whitespace-pre-wrap break-words text-sm text-lantern-text">{body}</p>
           ) : null}
-          <BoardPostMedia text={post.text} />
+          {/*
+            The list shows the photo INLINE, Twitter-shaped, from the 480px
+            `thumb` sibling that every upload already generates — a card is a
+            few tens of KB, not a few hundred. Low-data mode keeps the
+            tap-to-load chip, so nothing is fetched until the reader asks.
+          */}
+          <BoardPostMedia
+            text={post.text}
+            imageUrl={post.imageUrl}
+            eager={!lowDataMode}
+            variant="thumb"
+            cropped
+          />
+          {isRepost ? <QuotedPost quoted={post.repostOf} /> : null}
         </>
       )}
 
@@ -293,29 +500,115 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
         <p className="mt-2 text-xs text-lantern-text-tertiary">{COMMUNITY_BOARD_COPY.posting}</p>
       ) : null}
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <MessageReactions
-          reactions={post.reactions}
-          mine={myReactions}
-          onToggle={onToggleReaction}
-          size="touch"
-          addLabel={COMMUNITY_BOARD_COPY.react}
-          labelFor={reactionAccessibilityLabel}
-        />
-        <button
-          type="button"
-          onClick={onOpenComments}
-          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lantern px-3 text-xs font-medium text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-        >
-          <ChatBubbleOvalLeftIcon className="h-4 w-4" aria-hidden="true" />
-          {COMMUNITY_BOARD_COPY.comments(post.replyCount)}
-        </button>
-        {saved ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-lantern-text-tertiary">
-            <BookmarkSolidIcon className="h-3.5 w-3.5" aria-hidden="true" />
-            {COMMUNITY_BOARD_COPY.saved}
-          </span>
-        ) : null}
+      {/*
+        The five-control action row (§9.1), rendered FROM
+        `BOARD_ACTION_ROW_ORDER` rather than hand-ordered, so web and Android
+        cannot drift into two different orders. Counts are hidden at zero —
+        that is what makes five 44px targets fit inside a 320dp screen — but
+        never hidden from the accessibility label. State is carried by an
+        outline-vs-solid icon AND by words, never by colour alone.
+      */}
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        {BOARD_ACTION_ROW_ORDER.map((action: BoardAction) => {
+          switch (action) {
+            case 'comment':
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  onClick={onOpenComments}
+                  disabled={pending}
+                  aria-label={boardCommentAccessibilityLabel(commentCount)}
+                  className={ACTION_BUTTON_CLASS}
+                >
+                  <ChatBubbleOvalLeftIcon className="h-4 w-4" aria-hidden="true" />
+                  {commentCount > 0 ? commentCount : null}
+                </button>
+              );
+            case 'repost':
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  onClick={onRepost}
+                  disabled={pending}
+                  aria-pressed={post.repostedByMe}
+                  aria-label={boardRepostAccessibilityLabel(post.repostCount, post.repostedByMe)}
+                  className={ACTION_BUTTON_CLASS}
+                >
+                  {post.repostedByMe ? (
+                    <RepostSolidIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
+                  ) : (
+                    <ArrowPathRoundedSquareIcon className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {post.repostCount > 0 ? post.repostCount : null}
+                </button>
+              );
+            case 'favorite':
+              /*
+                Favorite replaces the emoji React on BOARD surfaces only
+                (§4.1): the same `message_reactions` table and the same
+                endpoints with the emoji pinned, so group chat and DMs keep the
+                full picker and every heart already left on a board post counts
+                forward untouched.
+              */
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  onClick={() => onToggleReaction(BOARD_FAVORITE_EMOJI, !favorited)}
+                  disabled={pending}
+                  aria-pressed={favorited}
+                  aria-label={boardFavoriteAccessibilityLabel(favoriteCount, favorited)}
+                  className={ACTION_BUTTON_CLASS}
+                >
+                  {favorited ? (
+                    <HeartSolidIcon className="h-4 w-4 text-lantern-error" aria-hidden="true" />
+                  ) : (
+                    <HeartIcon className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {favoriteCount > 0 ? favoriteCount : null}
+                </button>
+              );
+            case 'bookmark':
+              // Hidden, not disabled, where `message_bookmarks` has not been
+              // applied: a control that can only fail is worse than none, and
+              // "Save for me" is still in the overflow in that state.
+              if (!bookmarksAvailable) return null;
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  onClick={onToggleBookmark}
+                  disabled={pending}
+                  aria-pressed={bookmarked}
+                  aria-label={boardBookmarkAccessibilityLabel(bookmarked)}
+                  className={ACTION_BUTTON_CLASS}
+                >
+                  {bookmarked ? (
+                    <BookmarkSolidIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
+                  ) : (
+                    <BookmarkIcon className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              );
+            case 'share':
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  onClick={onShare}
+                  disabled={pending}
+                  aria-label={boardShareAccessibilityLabel()}
+                  className={ACTION_BUTTON_CLASS}
+                >
+                  <ShareIcon className="h-4 w-4" aria-hidden="true" />
+                </button>
+              );
+            default:
+              return null;
+          }
+        })}
       </div>
     </article>
   );

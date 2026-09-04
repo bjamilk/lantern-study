@@ -20,6 +20,7 @@ export * from './walletCoins';
 export * from './budgetPlan';
 export * from './marketplacePromo';
 export * from './storageUrl';
+export * from './signedUrlBatch';
 export * from './sentryScrub';
 export * from './noteStudyContent';
 export * from './smartNotes';

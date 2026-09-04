@@ -247,6 +247,7 @@ import {
   CommunityMembersScreen,
   CommunityChannelScreen,
   CommunityPostScreen,
+  SavedPostsScreen,
   FeedScreen,
   MasteryScreen,
 } from '../screens/discover';
@@ -501,6 +502,12 @@ function MarketNavigator() {
 
       {/* A board post and its comments (spec §4.1). */}
       <MarketStack.Screen name="CommunityPost" component={CommunityPostScreen} />
+
+      {/* Bookmarks across every board (§7.5). Deliberately NOT gated behind
+          canAccessDiscoverHub: the board screen carries no such gate, so
+          gating this would hide saved posts from the pilot cohort that has
+          them. */}
+      <MarketStack.Screen name="SavedPosts" component={SavedPostsScreen} />
 
       <MarketStack.Screen name="CreateGroup" component={CreateGroupScreen} />
 

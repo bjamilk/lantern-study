@@ -55,7 +55,10 @@ export function isMissingColumnError(error: unknown): boolean {
   return code === '42703' || code === 'PGRST204';
 }
 
-type Capability = 'groupCommunitySurface' | 'messageBoardColumns';
+type Capability =
+  | 'groupCommunitySurface'
+  | 'messageBoardColumns'
+  | 'messageReactionsColumn';
 
 /**
  * How long an "absent" answer is trusted before the next caller re-probes.
@@ -70,10 +73,12 @@ type CachedAnswer = { value: boolean; at: number };
 const resolved: Record<Capability, CachedAnswer | null> = {
   groupCommunitySurface: null,
   messageBoardColumns: null,
+  messageReactionsColumn: null,
 };
 const inFlight: Record<Capability, Promise<boolean> | null> = {
   groupCommunitySurface: null,
   messageBoardColumns: null,
+  messageReactionsColumn: null,
 };
 
 /** A cached answer is usable while it is `true`, or while a `false` is fresh. */
@@ -89,6 +94,9 @@ function readCache(capability: Capability): boolean | null {
 const PROBES: Record<Capability, { table: string; column: string }> = {
   groupCommunitySurface: { table: 'groups', column: 'community_surface' },
   messageBoardColumns: { table: 'messages', column: 'subject, pinned_at, pinned_by' },
+  // 20260830120000 adds `reactions` to BOTH messages and dm_messages in one
+  // migration, so one probe answers for both listing paths.
+  messageReactionsColumn: { table: 'messages', column: 'reactions' },
 };
 
 async function resolveCapability(db: unknown, capability: Capability): Promise<boolean> {
@@ -140,6 +148,17 @@ export function markMessageBoardColumnsMissing(): void {
   inFlight.messageBoardColumns = null;
 }
 
+/** Is the denormalised `messages.reactions` / `dm_messages.reactions` available? */
+export function hasMessageReactionsColumn(db: unknown): Promise<boolean> {
+  return resolveCapability(db, 'messageReactionsColumn');
+}
+
+/** Call from a query that saw 42703 on `reactions`, then retry without it. */
+export function markMessageReactionsColumnMissing(): void {
+  resolved.messageReactionsColumn = { value: false, at: Date.now() };
+  inFlight.messageReactionsColumn = null;
+}
+
 /** Appends `, community_surface` when the column exists. */
 export async function groupColumns(db: unknown, base: string): Promise<string> {
   if (!(await hasGroupCommunitySurface(db))) return base;
@@ -153,6 +172,16 @@ export async function messageColumns(db: unknown, base: string): Promise<string>
 }
 
 /**
+ * Appends `, reactions` when the column exists. Separate from
+ * `messageColumns` because the two live in different migrations: a database
+ * with boards but no reactions is a real, shipped state.
+ */
+export async function reactionColumns(db: unknown, base: string): Promise<string> {
+  if (!(await hasMessageReactionsColumn(db))) return base;
+  return `${base.trimEnd().replace(/,$/, '')}, reactions`;
+}
+
+/**
  * Force the cached answers. Tests use it so a scripted database does not have
  * to serve a probe query; operations can use it to short-circuit a probe on a
  * database known to be migrated. `null` clears the cache and re-probes.
@@ -160,6 +189,7 @@ export async function messageColumns(db: unknown, base: string): Promise<string>
 export function setSchemaCapabilities(next: {
   groupCommunitySurface?: boolean | null;
   messageBoardColumns?: boolean | null;
+  messageReactionsColumn?: boolean | null;
 }): void {
   for (const key of Object.keys(next) as Capability[]) {
     const value = next[key];

@@ -3,6 +3,13 @@
 // DeckDetailScreen already imports the legacy module for the same reason.
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
+import {
+  GIF_MIME_TYPE,
+  base64ByteLength,
+  gifFileName,
+  gifSizeRefusal,
+  isGifUpload,
+} from './boardAttachments';
 
 export type MobileImageBudget =
   | 'avatar'
@@ -39,12 +46,35 @@ export type PreparedMobileImage = {
   fileName: string;
   width?: number;
   height?: number;
+  /**
+   * True when the original bytes are being uploaded untouched (an animated
+   * GIF). The caller must then enforce the GIF byte cap itself, because
+   * nothing downstream will shrink the file.
+   */
+  passthrough?: boolean;
 };
+
+/**
+ * Which budgets may hand original bytes through instead of re-encoding.
+ *
+ * Only `chat` — the budget board posts, board comments, group chat and DMs all
+ * share. An avatar, a flashcard visual or a marketplace photo is displayed at
+ * a fixed small size and has no reason to carry an animation, and passing a
+ * 5 MB GIF through into an avatar would be paid for on every screen that
+ * renders it.
+ */
+const PASSTHROUGH_BUDGETS: ReadonlySet<MobileImageBudget> = new Set(['chat']);
 
 /**
  * Resize + compress a local image URI before upload.
  * Falls back to the original URI if manipulation fails.
  * Never enlarges images smaller than the budget.
+ *
+ * An animated GIF on a passthrough budget is returned untouched:
+ * `ImageManipulator` has no animated output format, so re-encoding it (which
+ * this function did unconditionally) keeps frame one and silently throws the
+ * animation away. See `utils/boardAttachments.ts` for the second half of that
+ * trap, in the picker.
  */
 export async function prepareImageForUpload(
   uri: string,
@@ -53,6 +83,19 @@ export async function prepareImageForUpload(
 ): Promise<PreparedMobileImage> {
   const budget = BUDGETS[budgetKey];
   const fallbackName = options?.fileName || `upload-${Date.now()}.jpg`;
+
+  if (
+    PASSTHROUGH_BUDGETS.has(budgetKey) &&
+    isGifUpload({ uri, mimeType: options?.mimeType, fileName: options?.fileName })
+  ) {
+    return {
+      uri,
+      mimeType: GIF_MIME_TYPE,
+      fileName: gifFileName(options?.fileName),
+      passthrough: true,
+    };
+  }
+
   try {
     const probe = await ImageManipulator.manipulateAsync(uri, [], {
       compress: 1,
@@ -106,18 +149,44 @@ export async function prepareImageBase64ForUpload(
   fileName: string;
   contentType: string;
   base64Data: string;
+  byteLength: number;
+  passthrough: boolean;
 }> {
   const prepared = await prepareImageForUpload(uri, budgetKey, options);
+
+  // A passthrough GIF is never resized, so it is refused BEFORE it is read
+  // into a base64 string — a 20 MB pick would otherwise become a ~27 MB JS
+  // string on a 2 GB phone just to be rejected a line later. `getInfoAsync` is
+  // best-effort: the base64 length below is the backstop when it says nothing.
+  if (prepared.passthrough) {
+    // `size` is always on a `FileInfo` whose `exists` is true — there is no
+    // opt-in option for it in the legacy API.
+    const info = await FileSystem.getInfoAsync(prepared.uri).catch(() => null);
+    const refusal = gifSizeRefusal(
+      info && info.exists && typeof info.size === 'number' ? info.size : null,
+    );
+    if (refusal) throw new Error(refusal);
+  }
+
   const base64Data = await FileSystem.readAsStringAsync(prepared.uri, {
     encoding: 'base64',
   });
   if (!base64Data) {
     throw new Error('Could not read the selected image.');
   }
+
+  const byteLength = base64ByteLength(base64Data);
+  if (prepared.passthrough) {
+    const refusal = gifSizeRefusal(byteLength);
+    if (refusal) throw new Error(refusal);
+  }
+
   return {
     uri: prepared.uri,
     fileName: prepared.fileName,
     contentType: prepared.mimeType,
     base64Data,
+    byteLength,
+    passthrough: !!prepared.passthrough,
   };
 }

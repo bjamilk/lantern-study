@@ -73,6 +73,9 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               // (name, back link) undefined.
               CommunityChannel: 'discover/c/:communitySlug/ch/:groupId',
               CommunityPost: 'discover/c/:communitySlug/ch/:groupId/p/:rootId',
+              // "Saved posts" spans every board, so it hangs off /discover
+              // rather than under one community's slug (§7.5).
+              SavedPosts: 'discover/saved',
             },
           },
           // Jobs owns its own stack, so its links must resolve under JobsTab.

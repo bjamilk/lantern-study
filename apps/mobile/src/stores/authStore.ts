@@ -334,6 +334,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // continue with local sign-out
       }
 
+      // Signed storage URLs are module-level, in-memory and keyed only by
+      // (bucket, path, variant) — nothing in the key says WHOSE session minted
+      // them. Board and chat photos are now re-signed on read against that
+      // cache, so on a shared handset the next account would be handed URLs
+      // minted under the previous student's authorisation, for up to six hours.
+      // Exactly the chat-wallpaper problem above, one cache over.
+      try {
+        const { clearSignedUrlCache } = await import('../utils/signedUrlCache');
+        clearSignedUrlCache();
+      } catch {
+        // continue with local sign-out
+      }
+
       // Drop user-scoped settings cache so pending patches cannot leak across accounts.
       try {
         const { clearLocalSettings } = await import('./settingsStore');

@@ -1,6 +1,8 @@
 import type { Message } from '../stores/groupStore';
 import {
+  boardActionTargetId,
   isBoardComment,
+  isBoardRepost,
   isLegacyQuestionPost,
   mergeComments,
   selectBoardPosts,
@@ -129,6 +131,138 @@ describe('toBoardPost', () => {
 
   it('falls back to a name rather than rendering an empty byline', () => {
     expect(toBoardPost(message({ id: 'p', senderName: '' })).senderName).toBe('Someone');
+  });
+
+  it('prefers messages.image_url over the markdown parsed out of the body', () => {
+    // §5.2: `image_url` is the FIRST encoding, not a third one. A post made in
+    // one action carries its photo there and its body stays markdown-free.
+    const post = toBoardPost(
+      message({
+        id: 'p',
+        imageUrl: 'https://cdn.example/new.webp',
+        text: '![image](https://cdn.example/legacy.jpg) caption',
+      })
+    );
+    expect(post.imageUrl).toBe('https://cdn.example/new.webp');
+  });
+
+  it('leaves a legacy markdown post with a null imageUrl, for the card to split', () => {
+    const post = toBoardPost(
+      message({ id: 'p', text: '![image](https://cdn.example/legacy.jpg)' })
+    );
+    expect(post.imageUrl).toBeNull();
+    expect(splitBoardBody(post.text).imageUrl).toBe('https://cdn.example/legacy.jpg');
+  });
+
+  it('counts hearts as favorites and every other emoji as none', () => {
+    expect(toBoardPost(message({ id: 'a', reactions: { '\u2764\ufe0f': 3 } })).favoriteCount).toBe(3);
+    // §4.4: nothing is folded. A 👍 stays on the row and counts as zero
+    // favorites, because you cannot un-favorite a reaction you never placed.
+    expect(toBoardPost(message({ id: 'b', reactions: { '\ud83d\udc4d': 5 } })).favoriteCount).toBe(0);
+  });
+
+  it('takes favorited and bookmarked from the caller, not from the row', () => {
+    // `favorited` never rides the row: it comes from the board's own
+    // user-reactions map, which both boards already fetch on mount.
+    const post = toBoardPost(message({ id: 'p' }), { favorited: true, bookmarked: true });
+    expect(post.favorited).toBe(true);
+    expect(post.bookmarked).toBe(true);
+  });
+
+  it('falls back to the row bookmark flag when the caller has no answer', () => {
+    expect(toBoardPost(message({ id: 'p', bookmarked: true })).bookmarked).toBe(true);
+    expect(toBoardPost(message({ id: 'p' })).bookmarked).toBe(false);
+  });
+
+  it('carries the repost hydration the board page attached', () => {
+    const post = toBoardPost(
+      message({
+        id: 'r',
+        repostCount: 2,
+        repostedByMe: true,
+        repostOf: {
+          id: 'orig',
+          senderName: 'Ada',
+          timestamp: '2026-09-01T00:00:00.000Z',
+          subject: 'Timetable',
+          snippet: 'exam week',
+          hasImage: true,
+          hasAudio: false,
+          removedAt: null,
+        },
+      })
+    );
+    expect(post.repostCount).toBe(2);
+    expect(post.repostedByMe).toBe(true);
+    expect(post.repostOf?.id).toBe('orig');
+    // The embed is TEXT ONLY: a media chip, never a media URL (§6.5).
+    expect(JSON.stringify(post.repostOf)).not.toContain('/storage/v1/object/');
+  });
+});
+
+describe('isBoardRepost / boardActionTargetId', () => {
+  const repostRow = (over: Record<string, unknown> = {}) =>
+    message({
+      id: 'r',
+      replyToMessageId: 'orig',
+      clientMessageId: 'repost:orig',
+      ...over,
+    });
+
+  it('recognises a repost from its three columns, with no hydration', () => {
+    // An optimistic or realtime row carries no `repostOf`, so the card has to
+    // be able to answer this from the row itself.
+    expect(isBoardRepost(repostRow())).toBe(true);
+  });
+
+  it('is not fooled by a comment', () => {
+    // Every comment carries thread_root_id, because the only write path that
+    // sets reply_to also sets COALESCE(parent.thread_root_id, parent.id).
+    expect(
+      isBoardRepost(message({ id: 'c', replyToMessageId: 'orig', threadRootId: 'orig' }))
+    ).toBe(false);
+  });
+
+  it('is not fooled by an ORPHANED comment', () => {
+    // Both FKs are ON DELETE SET NULL, so hard-deleting a root leaves a nested
+    // comment with reply_to set and thread_root_id nulled. Without the
+    // client_message_id clause that orphan would render as a repost.
+    expect(isBoardRepost(message({ id: 'c', replyToMessageId: 'sibling' }))).toBe(false);
+    expect(
+      isBoardRepost(
+        message({ id: 'c', replyToMessageId: 'sibling', clientMessageId: 'a-plain-uuid' })
+      )
+    ).toBe(false);
+  });
+
+  it('points every action on a repost card at the ORIGINAL', () => {
+    // Favorite, Comment, Bookmark and Report act on the original so counts
+    // never fragment and no comment attaches to a repost row (§6.5).
+    expect(boardActionTargetId(repostRow())).toBe('orig');
+  });
+
+  it('points an ordinary post at itself', () => {
+    expect(boardActionTargetId(message({ id: 'p' }))).toBe('p');
+    expect(boardActionTargetId(message({ id: 'c', threadRootId: 'p', replyToMessageId: 'p' })))
+      .toBe('c');
+  });
+
+  it('still finds the original when the client id is missing but the embed is not', () => {
+    const row = message({
+      id: 'r',
+      replyToMessageId: 'orig',
+      clientMessageId: 'repost:orig',
+    });
+    expect(boardActionTargetId({ ...row, clientMessageId: undefined, repostOf: {
+      id: 'orig',
+      senderName: 'Ada',
+      timestamp: '2026-09-01T00:00:00.000Z',
+      subject: null,
+      snippet: '',
+      hasImage: false,
+      hasAudio: false,
+      removedAt: null,
+    } })).toBe('orig');
   });
 });
 

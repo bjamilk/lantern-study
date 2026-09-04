@@ -7,7 +7,7 @@
  * not null — until the 20260903120000 migration is applied. Both spellings are
  * read here so a board renders identically before and after it.
  */
-import type { BoardPost } from '@lantern/shared/network';
+import { boardFavoriteCount, type BoardPost } from '@lantern/shared/network';
 
 type RawBoardRow = Record<string, any>;
 
@@ -52,7 +52,52 @@ export function toBoardPost(raw: RawBoardRow, fallbackGroupId = ''): BoardPost {
     // read-only (§4.2 LegacyQuestionCard) — never blank.
     isLegacyQuestion: isQuestion && !removedAt,
     legacyQuestionStem: isQuestion && !removedAt ? stem : null,
+    /**
+     * `messages.image_url` is the FIRST encoding for a board photo, not a
+     * third one: legacy posts keep theirs as markdown inside `text`, which
+     * `parseChatImageUrl` still parses, so a card reads
+     * `post.imageUrl ?? parseChatImageUrl(post.text)`.
+     */
+    imageUrl: removedAt ? null : pickString(raw?.imageUrl, raw?.image_url),
+    favoriteCount: boardFavoriteCount(reactions),
+    // The viewer's own ❤️ comes from the board's user-reactions map, which the
+    // board holds separately; it is not on the row.
+    favorited: false,
+    bookmarked: raw?.bookmarked === true,
+    repostCount: toCount(raw?.repostCount ?? raw?.repost_count),
+    repostedByMe: raw?.repostedByMe === true,
+    repostOf: raw?.repostOf && typeof raw.repostOf === 'object' ? raw.repostOf : null,
   };
+}
+
+/**
+ * Fields a realtime `messages` UPDATE cannot carry, and which must therefore
+ * survive one.
+ *
+ * The postgres_changes row is the raw table row: it has `reactions` (REPLICA
+ * IDENTITY FULL, so a favorite count updates live) but it has none of the
+ * board hydration the API adds on top — `repostOf` and `repostCount` come from
+ * `attachBoardRepostContext`, and `bookmarked` / `repostedByMe` are attached
+ * per-viewer AFTER the page cache. Mapping such a row through `toBoardPost`
+ * yields `bookmarked: false`, `repostCount: 0`, `repostOf: null`, so a plain
+ * `{ ...post, ...mapped }` merge would silently un-bookmark a saved post and
+ * blank a repost's embed the moment anyone reacted to it.
+ */
+const REALTIME_UNKNOWN_FIELDS = [
+  'bookmarked',
+  'repostedByMe',
+  'repostCount',
+  'repostOf',
+  'replyCount',
+] as const;
+
+/** Patch a loaded post from a realtime row, keeping what the row cannot know. */
+export function mergeRealtimeBoardPost(previous: BoardPost, incoming: BoardPost): BoardPost {
+  const merged: BoardPost = { ...previous, ...incoming };
+  for (const field of REALTIME_UNKNOWN_FIELDS) {
+    Object.assign(merged, { [field]: previous[field] });
+  }
+  return merged;
 }
 
 /** Newest first, the order a board reads in (§0). */

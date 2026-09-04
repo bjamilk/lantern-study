@@ -19,8 +19,14 @@ import {
   RateLimitError,
 } from '@lantern/shared'
 import { normalizeTestResultSession, retryUncertainDelivery } from '@lantern/shared/utils'
+import {
+  createSignedUrlBatcher,
+  type SignedUrlBatchResult,
+  type SignedUrlRequest,
+} from '@lantern/shared/utils/signedUrlBatch'
 import type { StudyPackContentInput, StudyPackCounts, StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/marketplace'
 import type {
+  BoardBookmarkEntry,
   Community,
   CommunityChannels,
   CommunityDetail,
@@ -38,6 +44,7 @@ import type {
   ReferralSummary,
   TopicMastery,
 } from '@lantern/shared/network'
+import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network'
 import {
   type UserSettings,
   normalizeUserSettings,
@@ -367,6 +374,17 @@ export async function apiLogoutSession(): Promise<void> {
     console.warn('Supabase signOut failed:', e);
   }
   clearLastKnownSettingsVersion();
+  // Signed storage URLs live in a module-level map keyed only by
+  // (bucket, path, variant) — nothing in the key says WHOSE session minted
+  // them. Board and chat photos are now re-signed on read against that cache,
+  // so on a shared laptop the next account would be handed URLs minted under
+  // the previous student's authorisation until they expired.
+  try {
+    const { clearSignedUrlCache } = await import('../utils/signedUrlCache');
+    clearSignedUrlCache();
+  } catch {
+    // Never block a sign-out on a cache.
+  }
   clearAllClientAuthStorage();
 }
 
@@ -657,6 +675,41 @@ export async function ensureAuthTokenReady(): Promise<boolean> {
   return Boolean(headers.Authorization);
 };
 
+/**
+ * Every signed-URL resolve that lands in the same tick becomes ONE POST
+ * /api/v1/storage/signed-urls. A board page renders many photos at once and a
+ * per-image call would make that one request per card.
+ *
+ * The mobile twin lives at apps/mobile/src/services/storageUrls.ts and sends
+ * the identical payload — the batching itself is shared
+ * (packages/shared/src/utils/signedUrlBatch.ts) so the two cannot drift.
+ */
+const signedUrlBatcher = createSignedUrlBatcher({
+  sign: async (items: SignedUrlRequest[], expiresInSeconds: number) => {
+    const headers = await getAuthHeaders();
+    const response = await fetchWithTimeout(
+      `${getApiRoot()}/api/v1/storage/signed-urls`,
+      withApiCredentials({
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          items: items.map(({ bucket, path, variant }) => ({ bucket, path, variant })),
+          expiresInSeconds,
+        }),
+      }),
+      10000
+    );
+    const body = await response.json().catch(
+      () => ({} as { error?: string; message?: string; data?: { items?: SignedUrlBatchResult[] } })
+    );
+    if (!response.ok) {
+      throw new Error(body.error || body.message || 'Failed to sign storage URLs');
+    }
+    // Positional: the route Promise.alls over `items`, so result[i] answers items[i].
+    return body.data?.items ?? [];
+  },
+});
+
 export async function fetchSignedStorageUrl(
   bucket: string,
   path: string,
@@ -671,27 +724,13 @@ export async function fetchSignedStorageUrl(
   const ttl = typeof expiresInSeconds === 'number' ? expiresInSeconds : 60 * 60 * 6;
   const cacheKey = signedUrlCacheKey(bucket, path, variant);
   const cached = getCachedSignedUrl(cacheKey);
+  // The cache expires a minute EARLY (signedUrlCache SKEW_MS), so a URL handed
+  // to an <img> is never one that dies mid-load.
   if (cached) return cached;
 
-  const headers = await getAuthHeaders();
-  const response = await fetchWithTimeout(
-    `${getApiRoot()}/api/v1/storage/signed-url`,
-    withApiCredentials({
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ bucket, path, expiresInSeconds: ttl, variant }),
-    }),
-    10000
-  );
-  const body = await response.json().catch(() => ({} as { error?: string; message?: string; data?: { signedUrl?: string } }));
-  if (!response.ok) {
-    throw new Error(body.error || body.message || 'Failed to sign storage URL');
-  }
-  if (!body.data?.signedUrl) {
-    throw new Error('Signed URL missing from response');
-  }
-  setCachedSignedUrl(cacheKey, body.data.signedUrl, ttl);
-  return body.data.signedUrl;
+  const signedUrl = await signedUrlBatcher.request({ bucket, path, variant }, ttl);
+  setCachedSignedUrl(cacheKey, signedUrl, ttl);
+  return signedUrl;
 }
 
 export const uploadProfileAvatar = async (
@@ -1052,7 +1091,18 @@ export const sendMessage = async (
   userId: string,
   content: string,
   clientMessageId?: string,
-  options?: { replyToMessageId?: string; mentionedUserIds?: string[]; subject?: string | null }
+  options?: {
+    replyToMessageId?: string;
+    mentionedUserIds?: string[];
+    subject?: string | null;
+    /**
+     * The post's photo, written to `messages.image_url` — a title, a body and
+     * one photo in ONE row. The server accepts it only on a BOARD group and
+     * only for an object under `note-files/{userId}/chat/{groupId}/`
+     * (`isBoardImageUrlAllowed`), so chat and DMs are unaffected.
+     */
+    imageUrl?: string | null;
+  }
 ) => {
   const body = JSON.stringify({
     content,
@@ -1063,6 +1113,7 @@ export const sendMessage = async (
     // Board post title (spec §3.4). Dropped server-side — not rejected —
     // before the 20260903120000 migration; validate with `validateBoardSubject`.
     ...(options?.subject !== undefined ? { subject: options.subject } : {}),
+    ...(options?.imageUrl ? { imageUrl: options.imageUrl } : {}),
   });
   const request = async () => {
     const response = await fetch(`${getApiRoot()}/api/v1/messages/group/${groupId}`, {
@@ -1266,7 +1317,15 @@ export const fetchBoardPosts = async (
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error((error as any).message || (error as any).error || 'Failed to fetch posts');
+    const failure = new Error(
+      (error as any).message || (error as any).error || 'Failed to fetch posts'
+    );
+    // The status is carried so the board can tell "you are not a member of
+    // this board" (404 — the same answer `getGroupById` gives without an
+    // active `group_members` row) from a network failure, and say the honest
+    // thing for each.
+    (failure as Error & { status?: number }).status = response.status;
+    throw failure;
   }
   const result = await response.json();
   return Array.isArray(result?.data) ? result.data : [];
@@ -1313,6 +1372,169 @@ export const setMessagePin = async (messageId: string, pinned: boolean) => {
     throw new Error((body as any)?.error || (body as any)?.message || 'Could not update the pin');
   }
   return (body as any)?.data ?? null;
+};
+
+// --- Twitter-shaped board actions (spec §6, §7, §8) ---------------------------
+// Favorite needs nothing here: it is a REACTION with the emoji pinned, so it
+// rides `addMessageReaction` / `removeMessageReaction` above. Share needs
+// nothing either — the link is minted in shared (`boardPostShareUrl`) and the
+// members-only guard is the board fetch's existing 404.
+
+/**
+ * Bump a post back to the top of its own board. `:messageId` is the ORIGINAL's
+ * id; the server writes the repost row and enforces every rule (same board,
+ * not a repost, not a comment, not removed, the 24h self-cooldown, the hourly
+ * cap, one per person). Throws with the server's own copy, which is the same
+ * `COMMUNITY_BOARD_COPY` string mobile shows.
+ */
+export const createBoardRepost = async (messageId: string, quote?: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/${encodeURIComponent(messageId)}/repost`,
+    withApiCredentials({
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ quote: quote ?? '' }),
+    })
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      (body as any)?.error || (body as any)?.message || COMMUNITY_BOARD_COPY.repostUnavailable
+    );
+  }
+  return (body as any)?.data ?? null;
+};
+
+/**
+ * Undo. `:messageId` is the ORIGINAL's id here too, so the client never has to
+ * hold the repost row's id — and the server deliberately ignores the 30-minute
+ * mutation window, because a repost is a pointer, not speech.
+ */
+export const undoBoardRepost = async (messageId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/${encodeURIComponent(messageId)}/repost`,
+    withApiCredentials({
+      method: 'DELETE',
+      headers: await getAuthHeaders(),
+    })
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      (body as any)?.error || (body as any)?.message || COMMUNITY_BOARD_COPY.repostUnavailable
+    );
+  }
+  return true;
+};
+
+/** A bookmark write, or `serverBacked: false` when the migration is not applied. */
+export type BoardBookmarkWriteResult =
+  | { serverBacked: true; bookmarked: boolean }
+  | { serverBacked: false };
+
+/**
+ * Save / unsave a post for this account. A 503 means `message_bookmarks` is
+ * not there yet: the caller hides the control and keeps the device-local save,
+ * rather than showing an error for something the student cannot fix.
+ */
+export const setMessageBookmark = async (
+  messageId: string,
+  bookmarked: boolean
+): Promise<BoardBookmarkWriteResult> => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/${encodeURIComponent(messageId)}/bookmark`,
+    withApiCredentials({
+      method: 'PUT',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ bookmarked }),
+    })
+  );
+  if (response.status === 503) return { serverBacked: false };
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      (body as any)?.error || (body as any)?.message || 'Could not update that bookmark'
+    );
+  }
+  return { serverBacked: true, bookmarked: (body as any)?.data?.bookmarked === true };
+};
+
+/**
+ * The viewer's saved ids on ONE board, so the icon renders filled on first
+ * paint. Same shape and lifecycle as `fetchUserReactionsForGroup`, and
+ * `serverBacked: false` is what hides Bookmark and "Saved posts" entirely.
+ */
+export const fetchGroupBookmarks = async (
+  groupId: string
+): Promise<{ messageIds: string[]; serverBacked: boolean }> => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/group/${encodeURIComponent(groupId)}/bookmarks`,
+      withApiCredentials({ headers: await getAuthHeaders() })
+    );
+    if (!response.ok) return { messageIds: [], serverBacked: false };
+    const body = await response.json().catch(() => ({}));
+    const data = (body as any)?.data ?? {};
+    return {
+      messageIds: Array.isArray(data.messageIds) ? data.messageIds.map(String) : [],
+      serverBacked: data.serverBacked !== false,
+    };
+  } catch {
+    // Offline is not "no such table": hide the control rather than claim the
+    // board has none saved.
+    return { messageIds: [], serverBacked: false };
+  }
+};
+
+/** "Saved posts" — newest-saved-first, across every board, keyset on savedAt. */
+export const fetchBookmarkedPosts = async (
+  options: { limit?: number; before?: string } = {}
+): Promise<{ entries: BoardBookmarkEntry[]; nextCursor: string | null; serverBacked: boolean }> => {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.before) params.set('before', options.before);
+  const query = params.toString();
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/bookmarks${query ? `?${query}` : ''}`,
+    withApiCredentials({ headers: await getAuthHeaders() })
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      (body as any)?.error || (body as any)?.message || 'Could not load your saved posts'
+    );
+  }
+  const data = (body as any)?.data ?? {};
+  return {
+    entries: Array.isArray(data.entries) ? (data.entries as BoardBookmarkEntry[]) : [],
+    nextCursor: typeof data.nextCursor === 'string' ? data.nextCursor : null,
+    serverBacked: data.serverBacked !== false,
+  };
+};
+
+/**
+ * The one-time migration of this device's local saves. Idempotent server-side,
+ * so the caller may keep its local key until it has seen a 2xx.
+ */
+export const importMessageBookmarks = async (
+  messageIds: string[]
+): Promise<{ imported: number; serverBacked: boolean }> => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/bookmarks/import`,
+    withApiCredentials({
+      method: 'PUT',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ messageIds }),
+    })
+  );
+  if (response.status === 503) return { imported: 0, serverBacked: false };
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      (body as any)?.error || (body as any)?.message || COMMUNITY_BOARD_COPY.bookmarksUnavailable
+    );
+  }
+  return { imported: Number((body as any)?.data?.imported ?? 0), serverBacked: true };
 };
 
 export const fetchDmThread = async (threadId: string, rootId: string) => {

@@ -8,6 +8,7 @@ export { CommunityMembersScreen } from './CommunityMembersScreen';
 export { CommunityChannelScreen } from './CommunityChannelScreen';
 export { CommunityBoardScreen } from './CommunityBoardScreen';
 export { CommunityPostScreen } from './CommunityPostScreen';
+export { SavedPostsScreen } from './SavedPostsScreen';
 
 export { FeedScreen } from './FeedScreen';
 

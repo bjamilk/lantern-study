@@ -4,9 +4,14 @@ import { Image, Modal, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { normalizeStorageUrl, segmentMentions } from '@lantern/shared/utils';
+import { segmentMentions } from '@lantern/shared/utils';
+import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
+import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 
 const IMAGE_MARKDOWN = /!\[.*?\]\((https?:\/\/[^)]+)\)/;
+
+/** One string for both platforms and both surfaces — never a second copy. */
+const IMAGE_UNAVAILABLE = COMMUNITY_BOARD_COPY.photoUnavailable;
 
 export function MentionText({
   text,
@@ -108,6 +113,7 @@ export function ChatImageThumbnail({
   borderColor,
   borderWidth = 0,
   borderRadius = 10,
+  unavailableLabel,
 }: {
   uri: string;
   accessibilityLabel?: string;
@@ -116,6 +122,12 @@ export function ChatImageThumbnail({
   borderColor?: string;
   borderWidth?: number;
   borderRadius?: number;
+  /**
+   * Rendered instead of nothing when the pixels will not load. Callers that
+   * pass it (board photos, chat text bodies) get an honest chip; the question
+   * -visual callers keep the original behaviour until they are looked at.
+   */
+  unavailableLabel?: string;
 }) {
   const [failed, setFailed] = useState(false);
   const [ratio, setRatio] = useState<number | null>(null);
@@ -141,7 +153,21 @@ export function ChatImageThumbnail({
     };
   }, [uri]);
 
-  if (failed) return null;
+  if (failed) {
+    // A photo that vanishes with no trace is worse than one that admits it is
+    // gone: the reader cannot tell a missing attachment from a bug.
+    if (!unavailableLabel) return null;
+    return (
+      <View
+        accessible
+        accessibilityLabel={unavailableLabel}
+        className="self-start min-h-[44px] flex-row items-center rounded-full border border-lantern-border px-3"
+      >
+        <Ionicons name="image-outline" size={14} color="#94a3b8" />
+        <Text className="ml-1.5 text-[12px] text-lantern-text-tertiary">{unavailableLabel}</Text>
+      </View>
+    );
+  }
 
   // Fit the natural size inside maxWidth × maxHeight without cropping. Until the
   // real ratio resolves, use a neutral landscape box to hold space.
@@ -197,13 +223,32 @@ export function ChatTextBody({
   mentionColor: string;
 }) {
   const imageUri = text?.match(IMAGE_MARKDOWN)?.[1];
-  const normalizedUri = imageUri ? normalizeStorageUrl(imageUri) : undefined;
+  // The markdown holds the url that was signed at UPLOAD time, and every
+  // signed url is capped at 24 hours (clampSignedUrlTtl). Passing it straight
+  // to <Image> is why a chat photo went blank the next day: it 400s, the
+  // thumbnail sets `failed`, and the whole attachment disappeared without a
+  // word. Re-sign it on read instead.
+  const resolvedUri = useResolvedStorageUrl(imageUri ?? null);
   const textWithoutImage = text?.replace(IMAGE_MARKDOWN, '').trim();
 
   return (
     <View className="gap-2">
-      {normalizedUri ? (
-        <ChatImageThumbnail uri={normalizedUri} accessibilityLabel="Shared image" />
+      {imageUri && resolvedUri === null ? (
+        <View
+          accessible
+          accessibilityLabel={IMAGE_UNAVAILABLE}
+          className="self-start min-h-[44px] flex-row items-center rounded-full border border-lantern-border px-3"
+        >
+          <Ionicons name="image-outline" size={14} color="#94a3b8" />
+          <Text className="ml-1.5 text-[12px] text-lantern-text-tertiary">{IMAGE_UNAVAILABLE}</Text>
+        </View>
+      ) : null}
+      {resolvedUri ? (
+        <ChatImageThumbnail
+          uri={resolvedUri}
+          accessibilityLabel="Shared image"
+          unavailableLabel={IMAGE_UNAVAILABLE}
+        />
       ) : null}
       {textWithoutImage ? (
         <MentionText text={textWithoutImage} color={textColor} mentionColor={mentionColor} />

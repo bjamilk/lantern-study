@@ -180,7 +180,16 @@ export type MarketStackParamList = {
     rootId: string;
     communitySlug?: string;
     communityName?: string;
+    /** Fallback title for the share sheet on a post with no title of its own. */
+    boardName?: string;
   };
+  /**
+   * Bookmarked posts across EVERY board (§7.5). Takes no params: the list is
+   * account-level, not per board, which is the whole reason the server-side
+   * bookmark replaced the two device-local saves that could not read each
+   * other.
+   */
+  SavedPosts: undefined;
   /** Create a board or a study group from inside a community (same component as the Chat stack's CreateGroup). */
   CreateGroup:
     | {
