@@ -115,6 +115,10 @@ describe('openLounge', () => {
         table: 'communities',
         result: { data: { id: COMMUNITY, name: 'UNILAG Medicine & Surgery', course_id: null, lounge_group_id: null } },
       },
+      // A null pointer now asks whether the community already HAS a lounge
+      // before minting (2026-09-03: a deleted lounge left the pointer null and
+      // the next open stranded the original). Nothing to adopt here.
+      { table: 'groups', result: { data: [] } },
       { table: 'groups', result: { data: { id: GROUP } } },
       { table: 'communities', result: { data: [{ id: COMMUNITY }] } }, // pointer claim won
       { table: 'group_members', result: {} },
@@ -157,6 +161,10 @@ describe('openLounge', () => {
         table: 'communities',
         result: { data: { id: COMMUNITY, name: 'UNILAG Medicine & Surgery', course_id: null, lounge_group_id: null } },
       },
+      // A null pointer now asks whether the community already HAS a lounge
+      // before minting (2026-09-03: a deleted lounge left the pointer null and
+      // the next open stranded the original). Nothing to adopt here.
+      { table: 'groups', result: { data: [] } },
       { table: 'groups', result: { data: { id: GROUP } } },
       { table: 'communities', result: { data: [] } }, // claim lost — pointer already set
       { table: 'communities', result: { data: { lounge_group_id: WINNER_GROUP } } },
