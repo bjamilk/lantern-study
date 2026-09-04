@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import {
@@ -37,6 +37,9 @@ export function StudyProductDraftsScreen({
   const [loading, setLoading] = useState(true);
   const [reviewDraft, setReviewDraft] = useState<StudyPackDraft | null>(null);
   const createdRef = useRef(false);
+  // Clears the absolutely-positioned bottom tab bar; the old paddingBottom: 24
+  // left the last draft's Review/Publish actions under it.
+  const bottomPadding = useScreenBottomPadding();
 
   const load = useCallback(async () => {
     try {
@@ -141,7 +144,7 @@ export function StudyProductDraftsScreen({
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="mr-2 -ml-1 p-1">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -189,7 +192,7 @@ export function StudyProductDraftsScreen({
           data={drafts}
           keyExtractor={(d) => d.id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: bottomPadding }}
         />
       )}
 
@@ -213,7 +216,7 @@ export function StudyProductDraftsScreen({
           if (listingId) navigation.navigate('ListingDetail', { listingId });
         }}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 

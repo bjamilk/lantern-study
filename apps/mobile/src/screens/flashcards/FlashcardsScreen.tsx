@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
@@ -672,8 +673,22 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       />
 
       <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>
-        <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setCreateOpen(false)}>
-          <Pressable onPress={e => e.stopPropagation?.()}>
+        {/* The deck-name field is `autoFocus`, so the keyboard is up the
+            instant this opens; a centred, non-scrolling View then hid the
+            Course/Topic pickers and Create behind it with no scroll range.
+            `flexGrow` (not `flex-1`) on the backdrop keeps tap-to-dismiss
+            covering the window while letting a tall card grow past it. */}
+        <View className="flex-1 bg-black/40">
+          <KeyboardAwareScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ flexGrow: 1 }}
+          >
+            <Pressable
+              className="px-6"
+              style={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 24 }}
+              onPress={() => setCreateOpen(false)}
+            >
+              <Pressable onPress={e => e.stopPropagation?.()}>
             <Card className="border-0 shadow-lg">
               <Text className="text-lg font-bold text-lantern-text mb-4">New Deck</Text>
               <TextInput
@@ -715,9 +730,11 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
                   Create
                 </Button>
               </View>
-            </Card>
-          </Pressable>
-        </Pressable>
+              </Card>
+              </Pressable>
+            </Pressable>
+          </KeyboardAwareScrollView>
+        </View>
       </Modal>
 
       {aiDeckId ? (

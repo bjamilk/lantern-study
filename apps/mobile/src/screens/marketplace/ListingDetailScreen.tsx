@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   ScrollView,
@@ -11,7 +12,12 @@ import {
   View,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SCREEN_KEYBOARD_BEHAVIOR,
+  Screen,
+  useScreenBottomPadding,
+  useScreenInsets,
+} from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import {
   useMarketplaceStore,
@@ -21,6 +27,8 @@ import {
 } from '../../stores';
 import { Avatar, Button, Card } from '../../components/ui';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
+import { StickyActionBar } from './components/StickyActionBar';
+import { scrollClearanceForActionBar } from './components/keyboardSafeLayout';
 import { formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { addRecentlyViewedListing } from './marketplaceRecentlyViewed';
 import { SaleCountdown } from './SaleCountdown';
@@ -85,7 +93,20 @@ function StarRow({ rating }: { rating: number }) {
 export function ListingDetailScreen({ navigation, route }: Props) {
   const listingId = route.params?.listingId ?? '';
   const initialQuantity = route.params?.quantity;
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
+  // This route is immersive (no bottom tab bar), so 'auto' resolves to the
+  // plain system inset — the floor the page needs when no action bar renders.
+  const baseBottomPadding = useScreenBottomPadding({ bottomExtra: 24 });
+  /*
+   * The action bar below is conditionally one to four rows tall — quantity
+   * stepper, coupon row, Contact/Offer, Cart/Buy Now — which reaches ~280px on
+   * a gesture-nav device. The page used to reserve a hard-coded 140px for it,
+   * so roughly 140px of the listing (the tail of the description, the seller
+   * block, the favourites line) could never be scrolled into view. Measuring
+   * the bar is the only thing that tracks a bar whose height depends on price,
+   * quantity, coupon eligibility and ownership.
+   */
+  const [actionBarHeight, setActionBarHeight] = useState(0);
   const { user } = useAuthStore();
   const {
     currentListing,
@@ -475,18 +496,22 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
   if (isLoading && !listing) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center" edges={['top']}>
-        <ActivityIndicator size="large" color="#6366f1" />
-      </SafeAreaView>
+      <Screen bottom="safe">
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#6366f1" />
+        </View>
+      </Screen>
     );
   }
 
   if (!listing) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-lantern-text mb-4">Listing not found</Text>
-        <Button onPress={() => navigation.goBack()}>Go Back</Button>
-      </SafeAreaView>
+      <Screen bottom="safe">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-lg font-semibold text-lantern-text mb-4">Listing not found</Text>
+          <Button onPress={() => navigation.goBack()}>Go Back</Button>
+        </View>
+      </Screen>
     );
   }
 
@@ -519,7 +544,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const typeLabel = listingTypeLabel(listing, category?.name || '');
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="px-4 pt-2 pb-2 flex-row items-center justify-between">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -547,7 +572,16 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 140 }}>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingBottom: scrollClearanceForActionBar({
+            actionBarHeight,
+            baseClearance: baseBottomPadding,
+          }),
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="aspect-[16/10] bg-lantern-background-secondary mx-4 rounded-2xl overflow-hidden">
           {images.length ? (
             <>
@@ -1056,9 +1090,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       {/* Digital products (question banks, study packs): own bar — no cart, no offers, instant delivery. */}
       {!own && listing.status === 'active' && isDigitalListingKind(listing.listing_kind) ? (
-        <View
-          style={{ paddingBottom: insets.bottom + 24 }}
-          className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
+        <StickyActionBar
+          bottomExtra={24}
+          onHeightChange={setActionBarHeight}
+          className="absolute left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
         >
           {bankOwned ? (
             <>
@@ -1091,13 +1126,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               Download free
             </Button>
           )}
-        </View>
+        </StickyActionBar>
       ) : null}
 
       {!own && listing.status === 'active' && !isDigitalListingKind(listing.listing_kind) ? (
-        <View
-          style={{ paddingBottom: insets.bottom + 24 }}
-          className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
+        <StickyActionBar
+          bottomExtra={24}
+          onHeightChange={setActionBarHeight}
+          className="absolute left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
         >
           {listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 ? (
             <View className="flex-row items-center justify-between mb-2">
@@ -1179,13 +1215,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               </Button>
             </View>
           ) : null}
-        </View>
+        </StickyActionBar>
       ) : null}
 
       {own && listing.status === 'active' ? (
-        <View
-          style={{ paddingBottom: insets.bottom + 24 }}
-          className="absolute bottom-0 left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
+        <StickyActionBar
+          bottomExtra={24}
+          onHeightChange={setActionBarHeight}
+          className="absolute left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
         >
           <View className="flex-row gap-2 mb-2">
             <Button
@@ -1207,11 +1244,16 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               Delete
             </Button>
           </View>
-        </View>
+        </StickyActionBar>
       ) : null}
 
+      {/* Bottom-anchored sheets sit exactly where the keyboard lands, so the
+          message box and its Send button were covered outright. */}
       <Modal visible={showContact} transparent animationType="slide" onRequestClose={() => setShowContact(false)}>
-        <View className="flex-1 justify-end bg-black/40">
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          className="flex-1 justify-end bg-black/40"
+        >
           <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
             <Text className="text-lg font-bold text-lantern-text mb-3">Contact Seller</Text>
             <TextInput
@@ -1233,11 +1275,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               </Button>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showReview} transparent animationType="slide" onRequestClose={() => setShowReview(false)}>
-        <View className="flex-1 justify-end bg-black/40">
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          className="flex-1 justify-end bg-black/40"
+        >
           <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
             <Text className="text-lg font-bold text-lantern-text mb-3">Write a review</Text>
             <View className="flex-row gap-2 mb-4">
@@ -1265,7 +1310,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               </Button>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <ReportContentSheet
@@ -1275,6 +1320,6 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         targetLabel={listing.title}
         onClose={() => setShowReport(false)}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }

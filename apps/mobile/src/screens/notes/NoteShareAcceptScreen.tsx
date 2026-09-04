@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { acceptNoteShareLink, previewNoteShareLink } from '../../services/notes';
 import { useNotesStore } from '../../stores/notesStore';
 import { Button, Card } from '../../components/ui';
+import { Screen } from '../../components/layout';
 
 type NavigationProp = {
   goBack: () => void;
@@ -65,7 +65,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen>
       <View className="flex-row items-center px-4 py-3">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={24} color="#475569" />
@@ -112,7 +112,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

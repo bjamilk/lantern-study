@@ -1,4 +1,3 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -11,7 +10,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared';
 import { useMarketplaceStore, useAuthStore, type MarketplaceOffer } from '../../stores';
@@ -19,7 +17,9 @@ import { resumeMarketplaceOrderCheckout } from '../../services/api';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
-import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { StickyActionBar } from './components/StickyActionBar';
+import { scrollClearanceForActionBar } from './components/keyboardSafeLayout';
 
 type NavigationProp = {
   goBack: () => void;
@@ -43,8 +43,10 @@ export function OffersScreen({
   route?: { params?: { tab?: Tab } };
 }) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
-  const tabBarClearance = useTabBarClearance(16);
-  const insets = useSafeAreaInsets();
+  const tabBarClearance = useScreenBottomPadding();
+  // ...and, while the counter-offer bar is up, that bar as well. Measured
+  // rather than guessed: the bar's height moves with the keyboard.
+  const [counterBarHeight, setCounterBarHeight] = useState(0);
   const { user } = useAuthStore();
   const { buyerOffers, sellerOffers, isLoading, fetchOffers, respondToOffer } = useMarketplaceStore();
   // The You hub sends buyers to their own offers (`tab: 'buyer'`) and the
@@ -280,7 +282,7 @@ export function OffersScreen({
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="px-4 pt-2 pb-3 flex-row items-center">
         <Pressable hitSlop={10}
           onPress={() => navigation.goBack()}
@@ -318,7 +320,14 @@ export function OffersScreen({
           data={offers}
           keyExtractor={item => item.id}
           renderItem={renderOffer}
-          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          contentContainerStyle={{
+            paddingBottom: counterOfferId
+              ? scrollClearanceForActionBar({
+                  actionBarHeight: counterBarHeight,
+                  baseClearance: tabBarClearance,
+                })
+              : tabBarClearance,
+          }}
           refreshControl={
             <RefreshControl
               refreshing={isLoading && offers.length > 0}
@@ -334,12 +343,16 @@ export function OffersScreen({
         />
       )}
 
+      {/* Was `absolute bottom-0` paying only `insets.bottom + 16`, so the ~102px
+          bottom tab bar swallowed the counter amount field and both buttons —
+          the exact bug CartScreen already carries a comment about having fixed.
+          StickyActionBar pays the tab bar's clearance AND rides above the
+          keyboard, which an unscrollable pinned bar cannot otherwise escape. */}
       {counterOfferId ? (
-        <View
-          accessibilityViewIsModal
+        <StickyActionBar
           accessibilityLabel="Send counter offer"
-          className="absolute bottom-0 left-0 right-0 p-4 bg-lantern-surface border-t border-lantern-border"
-          style={{ paddingBottom: insets.bottom + 16 }}
+          className="absolute left-0 right-0 p-4 bg-lantern-surface border-t border-lantern-border"
+          onHeightChange={setCounterBarHeight}
         >
           <Text className="text-sm font-semibold text-lantern-text mb-2">Counter amount (₦)</Text>
           <TextInput
@@ -367,8 +380,8 @@ export function OffersScreen({
               Send counter
             </Button>
           </View>
-        </View>
+        </StickyActionBar>
       ) : null}
-    </SafeAreaView>
+    </Screen>
   );
 }

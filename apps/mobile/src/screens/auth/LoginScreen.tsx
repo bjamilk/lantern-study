@@ -47,9 +47,12 @@ export function LoginScreen({ navigation }: Props) {
         behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         className="flex-1"
       >
+        {/* Without persist-taps the first tap on the primary button is
+            swallowed dismissing the keyboard, so it needs two. */}
         <ScrollView
           contentContainerClassName="flex-grow px-6 py-8 justify-center"
           contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset }}
+          keyboardShouldPersistTaps="handled"
         >
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />

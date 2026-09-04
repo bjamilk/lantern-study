@@ -33,6 +33,7 @@ import {
   type JobReportReason,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
+import { Screen } from "../../components/layout";
 import {
   applyToJob,
   fetchJobApplicantProfile,
@@ -134,11 +135,18 @@ export function JobDetailScreen() {
   }
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    /* The apply form lives at the END of the job's scroll — screener answers,
+       then a multiline "Message to the poster", then upload and submit — so it
+       is already low on screen before the keyboard opens. `keyboard` supplies
+       the KeyboardAvoidingView the file never had; on SDK 36 Android the
+       window does not resize, so without it there is no scroll range to reach
+       the covered field. ScreenHeader safeTop keeps the top inset. */
+    <Screen edges={[]} bottom="none" keyboard>
       <ScreenHeader safeTop title="Job" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
         contentContainerStyle={{ paddingBottom: tabBarClearance }}
+        keyboardShouldPersistTaps="handled"
       >
         {error ? (
           <View className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3">
@@ -584,7 +592,7 @@ export function JobDetailScreen() {
           </Card>
         ) : null}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 

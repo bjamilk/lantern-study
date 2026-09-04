@@ -16,8 +16,9 @@ import {
   TextInput,
   Modal,
   Linking,
+  KeyboardAvoidingView,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
@@ -26,6 +27,7 @@ import Constants from 'expo-constants';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
+import { SCREEN_KEYBOARD_BEHAVIOR, Screen, useScreenBottomPadding } from '../../components/layout';
 import { exportUserData, fetchMarketplaceCampuses, fetchUserProfile } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
 import { marketplaceComplianceBanner } from '@lantern/shared';
@@ -126,6 +128,8 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   // Edge-to-edge: bottom-sheet buttons must clear the system nav bar.
   const sheetInsetPad = { paddingBottom: insets.bottom + 40 };
+  // Replaces the hand-typed `<View style={{ height: 100 }} />` tail spacer.
+  const bottomPadding = useScreenBottomPadding();
   const paystackEnabled = usePaystackEnabled();
 
   const modalTheme = useMemo(
@@ -427,10 +431,10 @@ export default function SettingsScreen() {
   // The store will update in the background if needed
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <Screen bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
@@ -1330,7 +1334,6 @@ export default function SettingsScreen() {
           Lantern Study v{Constants.expoConfig?.version || otaDiagnostics.runtimeVersion || '1.0.26'}
         </Text>
 
-        <View style={{ height: 100 }} />
       </ScrollView>
 
       <Modal
@@ -1392,7 +1395,14 @@ export default function SettingsScreen() {
         animationType="slide"
         onRequestClose={() => setShowCampusModal(false)}
       >
-        <View style={[styles.modalOverlay, modalTheme.overlay]}>
+        {/* The sheet is pinned to the bottom edge and holds a search field, a
+            "Your city" field and the Done button — exactly where the keyboard
+            lands. Android 15+ (this app targets SDK 36) no longer honours
+            adjustResize, so without this the sheet does not move at all. */}
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          style={[styles.modalOverlay, modalTheme.overlay]}
+        >
           <View style={[styles.modalContent, sheetInsetPad, modalTheme.content, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Your campus</Text>
@@ -1415,7 +1425,9 @@ export default function SettingsScreen() {
                 },
               ]}
             />
-            <ScrollView>
+            {/* Without this the first tap on a campus row is swallowed
+                dismissing the search keyboard instead of selecting. */}
+            <ScrollView keyboardShouldPersistTaps="handled">
               <TouchableOpacity
                 style={[
                   styles.optionItem,
@@ -1510,7 +1522,7 @@ export default function SettingsScreen() {
               </View>
             ) : null}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {user?.id ? (
@@ -1769,7 +1781,7 @@ export default function SettingsScreen() {
           onChange={handleReminderTimeChange}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

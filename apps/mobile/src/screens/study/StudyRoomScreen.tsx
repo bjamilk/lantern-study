@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { StudyRoomDetail } from '@lantern/shared/network';
 import {
@@ -16,6 +15,7 @@ import { studyRoomPresenceChannel,
   STUDY_ROOM_LIFETIME_COPY,
 } from '@lantern/shared/network';
 import { CoursePicker } from '../../components/CoursePicker';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 type NavigationProp = {
   goBack: () => void;
@@ -49,6 +49,10 @@ export function StudyRoomScreen({
   const [pickedCourseId, setPickedCourseId] = useState<string | null>(null);
   const [topicDraft, setTopicDraft] = useState('');
   const [starting, setStarting] = useState(false);
+  // The bottom tab bar is an absolute overlay on this route, so the scroll
+  // content has to clear it; `pb` used to be `py-4` on the ScrollView's own
+  // style, which both under-paid the bar and clipped the scrollable extent.
+  const bottomPadding = useScreenBottomPadding();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,7 +135,10 @@ export function StudyRoomScreen({
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    // `keyboard` wraps the fixed header + scroller in a KeyboardAvoidingView
+    // whose vertical offset the primitive measures, so the topic TextInput and
+    // the "Join or create" button stay above the keyboard.
+    <Screen edges={['top']} bottom="none" keyboard>
       <View className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Go back" className="p-2">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -147,7 +154,12 @@ export function StudyRoomScreen({
           ) : null}
         </View>
       </View>
-      <ScrollView className="flex-1 px-4 py-4">
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="px-4 pt-4"
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
         {loading ? (
           <ActivityIndicator />
         ) : error ? (
@@ -229,7 +241,7 @@ export function StudyRoomScreen({
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

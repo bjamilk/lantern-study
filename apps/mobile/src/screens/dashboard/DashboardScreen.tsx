@@ -42,6 +42,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 
 import { useNotesStore } from '../../stores/notesStore';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { KeyboardAwareScrollView, useScreenBottomPadding } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTestStore } from '../../stores/testStore';
 
@@ -156,6 +157,9 @@ function ActivityHeatmap({ days, theme }: { days: { date: string; count: number 
 
 export function DashboardScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(24);
+  // The group picker is a Modal, so it covers the tab bar: it owes the plain
+  // system inset, not tab-bar clearance.
+  const sheetPadding = useScreenBottomPadding({ bottom: 'safe' });
   const { onScroll: chromeOnScroll } = useChrome();
   const { width: windowWidth } = useWindowDimensions();
   const heroQuestsSideBySide = windowWidth >= 768;
@@ -1261,7 +1265,21 @@ export function DashboardScreen({ navigation }: Props) {
 
       <Modal visible={groupPickerOpen} transparent animationType="fade" onRequestClose={() => setGroupPickerOpen(false)}>
 
-        <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setGroupPickerOpen(false)}>
+        {/* A user in ~8+ groups overflowed this centred, non-scrolling View and
+            the "All tests instead" escape button was clipped off the bottom
+            with no way to scroll to it. */}
+        <View className="flex-1 bg-black/40">
+
+          <KeyboardAwareScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ flexGrow: 1 }}
+          >
+
+          <Pressable
+            className="px-6"
+            style={{ flexGrow: 1, justifyContent: 'center', paddingTop: 24, paddingBottom: sheetPadding }}
+            onPress={() => setGroupPickerOpen(false)}
+          >
 
           <Pressable
             onPress={e => e.stopPropagation?.()}
@@ -1312,7 +1330,11 @@ export function DashboardScreen({ navigation }: Props) {
 
           </Pressable>
 
-        </Pressable>
+          </Pressable>
+
+          </KeyboardAwareScrollView>
+
+        </View>
 
       </Modal>
 

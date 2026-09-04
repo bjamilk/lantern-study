@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Share, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -15,10 +14,12 @@ import {
 import { fetchAmbassadors, fetchReferralSummary } from '../../services/api';
 import { fetchLeaderboard } from '../../services/gamification';
 import { useAuthStore } from '../../stores/authStore';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 type NavigationProp = { goBack: () => void };
 
 export function InviteFriendsScreen({ navigation }: { navigation: NavigationProp }) {
+  const bottomPadding = useScreenBottomPadding();
   const institutionId = useAuthStore((s) => s.academicProfile?.institutionId ?? null);
   const [summary, setSummary] = useState<ReferralSummary | null>(null);
   const [ambassadors, setAmbassadors] = useState<
@@ -58,14 +59,19 @@ export function InviteFriendsScreen({ navigation }: { navigation: NavigationProp
   const link = code ? referralLink(code) : '';
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityRole="button">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-lg font-semibold text-lantern-text">Invite friends</Text>
       </View>
-      <ScrollView className="flex-1 px-4 py-4">
+      <ScrollView
+        className="flex-1 px-4"
+        // Vertical padding on a ScrollView's own style clips the scrollable
+        // extent on Android, and `py-4` never paid the bottom inset.
+        contentContainerStyle={{ paddingTop: 14, paddingBottom: bottomPadding }}
+      >
         {loading ? <ActivityIndicator /> : null}
         {error ? <Text className="text-sm text-lantern-error">{error}</Text> : null}
         <Text className="text-sm text-lantern-text-secondary mb-3">
@@ -120,7 +126,7 @@ export function InviteFriendsScreen({ navigation }: { navigation: NavigationProp
           </View>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

@@ -10,7 +10,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   COMMUNITY_COPY,
@@ -44,6 +43,7 @@ import { useCommunityPresence } from '../../hooks/useCommunityPresence';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useChrome } from '../../components/layout/ChromeContext';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { ActionSheet, BackButton, type ActionSheetItem } from '../../components/ui';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { ChannelRow, RoomRow, StudyGroupRow } from '../../components/community';
@@ -90,6 +90,10 @@ function CommunityServer({
   const userId = useAuthStore((s) => s.user?.id);
   const { lowDataMode } = useLowDataMode();
   const { onScroll: chromeOnScroll } = useChrome();
+  // CommunityDetail is not immersive, so the absolute bottom tab bar overlays
+  // the channel list. A community with only a few channels never scrolls, so
+  // the bar never slides away and the old 32 left the last row under it.
+  const listBottomPadding = useScreenBottomPadding();
   const groups = useGroupStore((s) => s.groups);
   const fetchGroups = useGroupStore((s) => s.fetchGroups);
 
@@ -531,14 +535,16 @@ function CommunityServer({
 
   if (loading && !community) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
-        <ActivityIndicator color="#6366f1" />
-      </SafeAreaView>
+      <Screen bottom="none">
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color="#6366f1" />
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center h-[56px] pr-2 border-b border-lantern-border">
         <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
         <View
@@ -604,7 +610,7 @@ function CommunityServer({
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={{ paddingBottom: listBottomPadding }}
           ListHeaderComponent={
             <View className="px-4 pt-4 pb-1 border-b border-lantern-border">
               <Text className="text-xs text-lantern-text-tertiary">
@@ -680,7 +686,7 @@ function CommunityServer({
         }))}
         onClose={() => setMenuOpen(false)}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 

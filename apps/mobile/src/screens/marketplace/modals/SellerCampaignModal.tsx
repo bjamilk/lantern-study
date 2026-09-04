@@ -1,6 +1,6 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';
 import { sendSellerCampaign } from '../../../services/api';
 import type { SellerCustomerSegment } from '@lantern/shared/types';
 import { Button } from '../../../components/ui';
@@ -22,7 +22,7 @@ interface Props {
 
 export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props) {
   const [segment, setSegment] = useState<SellerCustomerSegment | ''>('');
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -49,13 +49,24 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/40">
+      {/* A bottom-anchored sheet occupies exactly the band the keyboard
+          replaces, so its inputs and its submit button were covered. Lifting
+          the sheet with the KAV also makes the percentage max-height resolve
+          against the keyboard-free box, so the sheet self-limits. */}
+      <KeyboardAvoidingView
+        behavior={SCREEN_KEYBOARD_BEHAVIOR}
+        className="flex-1 justify-end bg-black/40"
+      >
         <View className="bg-lantern-surface rounded-t-3xl max-h-[85%]">
           <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold">Message customers</Text>
             <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
-          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+          <ScrollView
+            className="p-4"
+            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text className="text-sm text-lantern-text-secondary mb-3">
               Sends an in-app notification and DM to up to 25 customers.
             </Text>
@@ -93,7 +104,7 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
             </Button>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

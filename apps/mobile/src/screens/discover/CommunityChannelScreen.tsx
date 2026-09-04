@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, SafeAreaView } from 'react-native';
+import { ActivityIndicator } from 'react-native';
+// react-native's own SafeAreaView is iOS-only and applies nothing on Android.
+// This route is in IMMERSIVE_SCREENS, so the shell renders no TopBar above it
+// and the screen owns both insets itself.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { GroupChatView, type GroupChatNavigation } from '../groups/GroupChatScreen';
@@ -106,7 +110,10 @@ export function CommunityChannelScreen({
 
   if (!canDecide) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
+      <SafeAreaView
+        edges={['top', 'bottom']}
+        className="flex-1 bg-lantern-background items-center justify-center"
+      >
         <ActivityIndicator color="#6366f1" />
       </SafeAreaView>
     );

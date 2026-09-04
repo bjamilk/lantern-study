@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFlashcardStore, type Flashcard } from '../../stores';
 import { Button, Card } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { FlashcardImage } from '../../components/FlashcardImage';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
@@ -29,7 +29,10 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 export function LearnStudyScreen({ navigation, route }: Props) {
-  const insets = useSafeAreaInsets();
+  // fullScreenModal route: the raw safe-area hook reports 0 on every edge in
+  // its detached window, so the header drew under the clock and the answer
+  // options ran into the gesture bar. The primitive restores both.
+  const listPadding = useScreenBottomPadding({ bottom: 'safe', bottomExtra: 24 });
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Learn';
   const { flashcards } = useFlashcardStore();
@@ -108,29 +111,33 @@ export function LearnStudyScreen({ navigation, route }: Props) {
 
   if (!eligible.length) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-lantern-text mb-2">No cards to learn</Text>
-        <Button onPress={() => navigation.goBack()}>Back</Button>
-      </SafeAreaView>
+      <Screen edges={['top']} bottom="safe">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-lg font-semibold text-lantern-text mb-2">No cards to learn</Text>
+          <Button onPress={() => navigation.goBack()}>Back</Button>
+        </View>
+      </Screen>
     );
   }
 
   if (isDone) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-2xl font-bold text-violet-600 dark:text-violet-400 mb-2">Learn complete</Text>
-        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-          {deckName} · {mastered} card{mastered !== 1 ? 's' : ''} mastered
-        </Text>
-        <Button onPress={() => navigation.goBack()}>Done</Button>
-      </SafeAreaView>
+      <Screen edges={['top']} bottom="safe">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-violet-600 dark:text-violet-400 mb-2">Learn complete</Text>
+          <Text className="text-sm text-lantern-text-secondary text-center mb-6">
+            {deckName} · {mastered} card{mastered !== 1 ? 's' : ''} mastered
+          </Text>
+          <Button onPress={() => navigation.goBack()}>Done</Button>
+        </View>
+      </Screen>
     );
   }
 
   const { front } = getCardDisplayText(current);
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen edges={['top']} bottom="none">
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
@@ -143,7 +150,7 @@ export function LearnStudyScreen({ navigation, route }: Props) {
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingBottom: Math.max(insets.bottom, 16) + 24,
+          paddingBottom: listPadding,
           flexGrow: 1,
           justifyContent: 'center',
         }}
@@ -180,7 +187,7 @@ export function LearnStudyScreen({ navigation, route }: Props) {
           })}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

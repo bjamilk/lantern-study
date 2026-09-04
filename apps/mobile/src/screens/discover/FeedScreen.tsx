@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   describeFeedItem,
@@ -9,6 +8,7 @@ import {
   type LearningConnectionSummary,
 } from '@lantern/shared/network';
 import { fetchFeed, fetchLearningConnections } from '../../services/api';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 type NavigationProp = {
   goBack: () => void;
@@ -46,6 +46,10 @@ function targetFor(item: FeedItem): { screen: string; params: Record<string, unk
 }
 
 export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
+  // `Feed` is not immersive, so the absolutely-positioned bottom tab bar draws
+  // over the list; the old hard-coded 32 buried the last row and the paging
+  // spinner under it.
+  const listBottomPadding = useScreenBottomPadding();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [connections, setConnections] = useState<LearningConnectionSummary | null>(null);
@@ -123,7 +127,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable
           onPress={() => navigation.goBack()}
@@ -151,7 +155,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
           data={items}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: listBottomPadding }}
           onEndReachedThreshold={0.4}
           onEndReached={() => void loadMore()}
           refreshControl={
@@ -174,7 +178,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
           }
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

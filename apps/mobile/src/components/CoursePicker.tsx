@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -28,6 +29,7 @@ import { useAuthStore } from '../stores/authStore';
 import { createCourse } from '../services/api';
 import { useCourseSearch, useMyActiveCourses } from '../hooks/useCourseSearch';
 import { formatCourseLabel } from '../utils/courseSelection';
+import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
 
 export interface CoursePickerProps {
   /** Selected course id (null/undefined = none). */
@@ -203,7 +205,12 @@ export function CoursePicker({
       )}
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={close}>
-        <View style={styles.overlay}>
+        {/* Bottom-anchored sheet + a search / create-course field: on Android 15+
+            (this app targets SDK 36) the window is not resized, so the keyboard
+            covered the field being typed into and the Create row beneath it.
+            The KeyboardAvoidingView IS the overlay, so the sheet lifts and its
+            85% max-height resolves against the keyboard-free box. */}
+        <KeyboardAvoidingView behavior={SCREEN_KEYBOARD_BEHAVIOR} style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close course picker" />
           <View style={[styles.sheet, { paddingBottom: insets.bottom + 12, backgroundColor: colors.modalBackground }]}>
             <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
@@ -324,7 +331,7 @@ export function CoursePicker({
               ) : null}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );

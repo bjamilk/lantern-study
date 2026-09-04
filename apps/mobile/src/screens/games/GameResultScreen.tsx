@@ -12,8 +12,9 @@ import {
   Image,
   Animated,
   Dimensions,
+  ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
@@ -72,6 +73,12 @@ type GameResultRouteParams = {
 
 export default function GameResultScreen() {
   const { colors } = useTheme();
+  // `presentation: 'fullScreenModal'` gives this route its own native window,
+  // so the raw safe-area hook read 0 on every edge. The body was also a fixed
+  // `justifyContent: 'center'` View with no scroller: on a short device, or
+  // with a large system font, the 120px result icon + stats pushed Rematch and
+  // Exit off BOTH ends with no way to reach them.
+  const bottomPadding = useScreenBottomPadding({ bottom: 'safe', bottomExtra: 24 });
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<GameResultRouteParams, 'GameResult'>>();
   const { resetGame, setChallengeOpponent, activeSession, refreshChallengeSession } = useGameStore();
@@ -252,8 +259,11 @@ export default function GameResultScreen() {
   const oppTime = isCurrentUserChallenger ? session.opponentTime : session.userTime;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.content}>
+    <Screen edges={['top']} bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPadding }]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Result Icon & Text */}
         <Animated.View
           style={[
@@ -333,19 +343,17 @@ export default function GameResultScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Show confetti on win */}
-        {isWinner && <Confetti />}
-      </View>
-    </SafeAreaView>
+      </ScrollView>
+      {/* Show confetti on win — kept OUTSIDE the scroller so the absolutely
+          filled overlay still covers the window instead of scrolling away. */}
+      {isWinner && <Confetti />}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   content: {
-    flex: 1,
+    flexGrow: 1,
     padding: 20,
     justifyContent: 'center',
   },

@@ -13,7 +13,7 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding, useScreenInsets } from '../../components/layout';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
@@ -85,7 +85,11 @@ export default function TestScreen() {
   const { user } = useAuthStore();
   const defaultTestMode = useSettingsStore(s => s.settings.study.defaultTestMode);
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
+  // `paddingBottom: 100` was a guess at the absolutely positioned bottom tab
+  // bar, which is 102px at minimum and ~118px with Android 3-button nav — so
+  // the last test card was 2-18px short of clearing it.
+  const listPadding = useScreenBottomPadding();
   const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, deleteAttempt, clearTestHistory } = useTestStore();
 
   const visibleAttempts = useMemo(() => {
@@ -414,7 +418,7 @@ export default function TestScreen() {
   ), [activeTab, colors, historyCourse]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <Screen edges={['top']} bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
@@ -532,7 +536,7 @@ export default function TestScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderTestItem}
           ListEmptyComponent={ListEmptyComponent}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: listPadding }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -550,7 +554,7 @@ export default function TestScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderAttemptItem}
           ListEmptyComponent={ListEmptyComponent}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: listPadding }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -765,7 +769,7 @@ export default function TestScreen() {
           testName={configTest.name || ''}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 
@@ -829,7 +833,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
   },
   testCard: {
     flexDirection: 'row',

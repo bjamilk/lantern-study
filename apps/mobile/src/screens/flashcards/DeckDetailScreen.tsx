@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView, useScreenBottomPadding } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -592,6 +593,11 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     },
   ];
 
+  // `pb-8` is 28px at NativeWind's rem-14, against an ~102-118px absolutely
+  // positioned bottom tab bar: the last card row and the empty state's
+  // "Add manually" / "Generate with AI" buttons sat under it.
+  const listPadding = useScreenBottomPadding();
+
   const openManageDeck = () => setManageOpen(true);
 
   return (
@@ -726,7 +732,8 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         <FlatList
           data={cards}
           keyExtractor={(item) => item.id}
-          contentContainerClassName="px-4 pb-8"
+          contentContainerClassName="px-4"
+          contentContainerStyle={{ paddingBottom: listPadding }}
           ListEmptyComponent={
             <Card className="py-6">
               <Text className="text-base font-semibold text-lantern-text mb-1">Get this deck ready</Text>
@@ -827,8 +834,23 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       />
 
       <Modal transparent visible={editDeckOpen} animationType="fade" onRequestClose={() => setEditDeckOpen(false)}>
-        <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setEditDeckOpen(false)}>
-          <Pressable onPress={(e) => e.stopPropagation?.()}>
+        {/* A centred, non-scrolling View put the multiline Description field
+            and Save behind the keyboard with no way to reach them. The
+            keyboard-aware scroller supplies the KeyboardAvoidingView, the
+            first-tap-through and the scroll range; `flexGrow` (not `flex-1`)
+            on the backdrop keeps tap-to-dismiss covering the whole window
+            while still letting a tall card grow past the viewport. */}
+        <View className="flex-1 bg-black/40">
+          <KeyboardAwareScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ flexGrow: 1 }}
+          >
+            <Pressable
+              className="px-6"
+              style={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 24 }}
+              onPress={() => setEditDeckOpen(false)}
+            >
+              <Pressable onPress={(e) => e.stopPropagation?.()}>
             <Card>
               <Text className="text-lg font-bold text-lantern-text mb-3">Edit deck</Text>
               <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Name</Text>
@@ -886,9 +908,11 @@ export function DeckDetailScreen({ navigation, route }: Props) {
                   Save
                 </Button>
               </View>
-            </Card>
-          </Pressable>
-        </Pressable>
+              </Card>
+              </Pressable>
+            </Pressable>
+          </KeyboardAwareScrollView>
+        </View>
       </Modal>
     </SafeAreaView>
   );

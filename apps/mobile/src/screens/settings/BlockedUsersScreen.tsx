@@ -15,10 +15,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores';
 import { ScreenHeader } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { listBlockedUsers, unblockUser, fetchUserProfile } from '../../services/api';
 import { useTheme } from '../../theme';
@@ -35,6 +35,7 @@ interface Props {
 
 export function BlockedUsersScreen({ navigation }: Props) {
   const { colors } = useTheme();
+  const bottomPadding = useScreenBottomPadding();
   const user = useAuthStore(s => s.user);
   const [blocked, setBlocked] = useState<BlockedUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +114,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <ScreenHeader
         title="Blocked users"
         subtitle={blocked.length > 0 ? `${blocked.length} blocked` : undefined}
@@ -141,6 +142,9 @@ export function BlockedUsersScreen({ navigation }: Props) {
         <FlatList
           data={blocked}
           keyExtractor={item => item.id}
+          // The list had no bottom padding at all, so the last row's Unblock
+          // button ended under the system navigation bar.
+          contentContainerStyle={{ paddingBottom: bottomPadding }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
@@ -192,7 +196,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
           )}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

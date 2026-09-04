@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -45,6 +46,7 @@ import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import * as ImagePicker from 'expo-image-picker';
@@ -941,6 +943,10 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         animationType="fade"
         onRequestClose={() => !renamingFolder && setRenameFolder(null)}
       >
+        {/* The input autoFocuses, so the keyboard is up the moment this opens
+            and Rename/Cancel sit in the band it covers. The window does not
+            resize itself on Android 15+, so the card has to be lifted. */}
+        <KeyboardAvoidingView behavior={SCREEN_KEYBOARD_BEHAVIOR} style={{ flex: 1 }}>
         <Pressable
           className="flex-1 bg-black/40 justify-center px-6"
           onPress={() => !renamingFolder && setRenameFolder(null)}
@@ -978,6 +984,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
             </Card>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <ActionSheet
@@ -1426,6 +1433,9 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           data={filteredNotes}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
+          // The search box sits above this list; without this the first tap on
+          // a note row is swallowed dismissing the keyboard.
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }

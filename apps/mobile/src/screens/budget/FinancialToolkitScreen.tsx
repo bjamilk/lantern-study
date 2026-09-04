@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 import { useBudgetStore, formatCurrency } from '../../stores/budgetStore';
 import { ScreenHeader, Card } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 type ToolkitMode = 'tips' | 'simulator' | 'calculator';
 
@@ -21,6 +21,9 @@ const QUICK_TIPS = [
 
 export default function FinancialToolkitScreen() {
   const navigation = useNavigation<any>();
+  // Budget-stack screen: the bottom tab bar overlays it, so the calculator
+  // result card and the last tip need its clearance, not a `pb-8`.
+  const bottomPadding = useScreenBottomPadding();
   const { monthlyExpenses, monthlyIncome } = useBudgetStore();
   const [mode, setMode] = useState<ToolkitMode>('tips');
   const [simIncome, setSimIncome] = useState('');
@@ -53,7 +56,7 @@ export default function FinancialToolkitScreen() {
   }, [calcAmount, calcRate, calcMonths]);
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none" keyboard>
       <ScreenHeader title="Financial toolkit" onBack={() => navigation.goBack()} subtitle="Tips, simulator & calculator" />
       <View className="flex-row border-b border-lantern-border px-2">
         {([
@@ -72,7 +75,11 @@ export default function FinancialToolkitScreen() {
           </Text>
         ))}
       </View>
-      <ScrollView contentContainerClassName="px-4 pb-8 gap-3 pt-3">
+      <ScrollView
+        contentContainerClassName="px-4 gap-3 pt-3"
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="flex-row gap-3">
           <Card className="flex-1 items-center py-3">
             <Text className="text-xs text-lantern-text-secondary">Income</Text>
@@ -152,6 +159,6 @@ export default function FinancialToolkitScreen() {
           </Card>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }

@@ -1,7 +1,18 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Pressable,
+  ScrollView,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
@@ -152,7 +163,15 @@ export function PublishStudyPackModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+      {/* The sheet is anchored to the bottom edge and its price/sources fields
+          and the Publish button sit at the end of it — exactly where the
+          keyboard lands. Android 15+ (this app targets SDK 36) stopped
+          honouring adjustResize, so nothing moves without this. The sheet's
+          `maxHeight: '88%'` then resolves against the keyboard-free box. */}
+      <KeyboardAvoidingView
+        behavior={SCREEN_KEYBOARD_BEHAVIOR}
+        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
+      >
         <View
           style={{
             backgroundColor: colors.card,
@@ -180,7 +199,7 @@ export function PublishStudyPackModal({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
             <Text style={{ fontSize: 13, color: hasContent ? colors.textSecondary : '#ef4444' }}>
               {hasContent
                 ? `${countSummary}. Buyers get a copy in their Library instantly — on web and mobile.`
@@ -392,7 +411,7 @@ export function PublishStudyPackModal({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

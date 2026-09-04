@@ -18,7 +18,7 @@ import {
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
@@ -132,12 +132,14 @@ export default function GameScreen() {
   // Safety check
   if (!session) {
     return (
-      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <Text style={{ color: colors.text, fontSize: 18 }}>No active game session</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 20, padding: 12, backgroundColor: colors.primary, borderRadius: 8 }}>
-          <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Go Back</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={{ backgroundColor: colors.background }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: colors.text, fontSize: 18 }}>No active game session</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 20, padding: 12, backgroundColor: colors.primary, borderRadius: 8 }}>
+            <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </Screen>
     );
   }
 
@@ -145,7 +147,12 @@ export default function GameScreen() {
   const currentQuestion = session.questions[currentQuestionIndex];
   const diagramImageUri = useResolvedStorageUrl(currentQuestion?.imageUrl);
   const [diagramAspectRatio, setDiagramAspectRatio] = useState(4 / 3);
-  const insets = useSafeAreaInsets();
+  // `presentation: 'fullScreenModal'` gives this route its own native window,
+  // so the raw safe-area hook read 0 on every edge: the HUD quit button drew
+  // under the clock. The old container also used default `edges` (all four)
+  // AND re-added the system bottom inset to the scroll content, paying it
+  // twice once the window is measured correctly.
+  const scrollPadding = useScreenBottomPadding({ bottom: 'safe', bottomExtra: 24 });
   const totalQuestions = session.questions.length;
 
   const [currentSelections, setCurrentSelections] = useState<string[]>([]);
@@ -530,7 +537,10 @@ export default function GameScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    // `keyboard` supplies the KeyboardAvoidingView the fill-in-the-blank answer
+    // field never had: on Android 15+ (this app targets SDK 36) the window is
+    // not resized, so the keyboard covered both the input and Submit Answer.
+    <Screen edges={['top']} bottom="none" keyboard className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Game HUD */}
       <View style={[styles.hudContainer, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.hudTopRow}>
@@ -595,7 +605,8 @@ export default function GameScreen() {
       {/* Question Area */}
       <ScrollView
         style={styles.scrollContainer}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollPadding }]}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.questionCard, { backgroundColor: colors.card }]}>
           <Text style={[styles.questionNumber, { color: colors.primary }]}>
@@ -633,14 +644,11 @@ export default function GameScreen() {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   hudContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,

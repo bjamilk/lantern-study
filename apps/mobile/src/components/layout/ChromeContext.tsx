@@ -25,6 +25,14 @@ interface ChromeContextValue {
   immersive: boolean;
   /** Published by CustomTabBar, the one place that knows the focused route. */
   setTabState: (state: { activeTab: TabKey; immersive: boolean }) => void;
+  /**
+   * True only inside the real provider, i.e. inside MainTabs. The inert
+   * default leaves it false, which is what tells a layout primitive that it is
+   * on the auth stack or in a root-stack modal — hosts with NO bottom tab bar.
+   * `immersive` alone cannot answer that: it is false in both the tabbed and
+   * the untabbed case.
+   */
+  withinChrome: boolean;
   /** A screen borrowing the top-bar row (e.g. chat multi-select) sets this so
       the icons yield their space until the interaction completes. */
   topBarSuppressed: boolean;
@@ -40,6 +48,7 @@ const inertValue: ChromeContextValue = {
   activeTab: 'Chat',
   immersive: false,
   setTabState: () => {},
+  withinChrome: false,
   topBarSuppressed: false,
   setTopBarSuppressed: () => {},
 };
@@ -113,6 +122,7 @@ export function ChromeProvider({ children }: { children: React.ReactNode }) {
       activeTab: tabState.activeTab,
       immersive: tabState.immersive,
       setTabState,
+      withinChrome: true,
       topBarSuppressed,
       setTopBarSuppressed,
     }),

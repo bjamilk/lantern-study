@@ -20,6 +20,7 @@ import {
   type JobOffer,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
+import { Screen } from "../../components/layout";
 import { JobInterviewInvite } from "../../components/jobs/JobInterviewInvite";
 import { JobOfferCard } from "../../components/jobs/JobOfferCard";
 import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
@@ -256,7 +257,14 @@ export function MyJobApplicationsScreen() {
   ).length;
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    /* ScreenHeader safeTop already pays the top inset, so `edges={[]}`; the
+       list keeps its own tab-bar clearance, so `bottom="none"`. What was
+       missing is `keyboard`: this app targets SDK 36, where Android no longer
+       honours adjustResize, so with no KeyboardAvoidingView the window never
+       resizes, the scroll viewport never shrinks, and a covered input cannot
+       be scrolled to. The offset is measured, because a bare KAV under the
+       in-flow TopBar under-lifts by the bar's (animating) height. */
+    <Screen edges={[]} bottom="none" keyboard>
       <ScreenHeader safeTop
         title="My applications"
         onBack={() => navigation.goBack()}
@@ -264,6 +272,7 @@ export function MyJobApplicationsScreen() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: tabBarClearance }}
+        keyboardShouldPersistTaps="handled"
       >
         <View className="px-4">
           <Text className="text-2xl font-bold text-lantern-text">
@@ -536,7 +545,7 @@ export function MyJobApplicationsScreen() {
           ) : null}
         </View>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 

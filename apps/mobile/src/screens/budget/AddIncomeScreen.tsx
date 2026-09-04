@@ -1,5 +1,4 @@
 // ===========================================
-import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 // Lantern Study Mobile - Add Income Screen
 // ===========================================
@@ -13,16 +12,14 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore, INCOME_CATEGORIES } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 export default function AddIncomeScreen() {
   const navigation = useNavigation<any>();
@@ -70,9 +67,12 @@ export default function AddIncomeScreen() {
   }, [amount, category, description, date, addTransaction, navigation, userId]);
 
   const { colors } = useTheme();
+  // Replaces the hand-typed `<View style={{ height: 100 }} />` spacer: 100 is
+  // short of the tab bar's real height on a 3-button-nav device.
+  const bottomPadding = useScreenBottomPadding();
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <Screen keyboard bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <TouchableOpacity
@@ -91,110 +91,110 @@ export default function AddIncomeScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
+      <ScrollView
         style={styles.keyboardView}
-        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
+        // Padding belongs on the content container, never on the ScrollView's
+        // own style — vertical padding there clips the scrollable extent on
+        // Android.
+        contentContainerStyle={{ padding: 20, paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Amount Input */}
-          <View style={styles.amountSection}>
-            <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Amount</Text>
-            <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
-              <Text style={styles.currencySymbol}>₦</Text>
-              <TextInput
-                style={[styles.amountInput, { color: colors.text }]}
-                placeholder="0.00"
-                placeholderTextColor={colors.textSecondary}
-                value={amount}
-                onChangeText={(val) => setAmount(formatAmountInput(val))}
-                keyboardType="decimal-pad"
-                autoFocus
-              />
-            </View>
-          </View>
-
-          {/* Category Selection */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Source / Category</Text>
-            <View style={styles.categoryGrid}>
-              {INCOME_CATEGORIES.map(cat => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.categoryItem,
-                    { backgroundColor: colors.card },
-                    category === cat.id && styles.categoryItemActive,
-                  ]}
-                  onPress={() => setCategory(cat.id)}
-                >
-                  <View
-                    style={[
-                      styles.categoryIcon,
-                      category === cat.id && styles.categoryIconActive,
-                    ]}
-                  >
-                    <Text style={{ fontSize: 18 }}>{cat.icon}</Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.categoryName,
-                      { color: colors.textSecondary },
-                      category === cat.id && styles.categoryNameActive,
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Description */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description (optional)</Text>
+        {/* Amount Input */}
+        <View style={styles.amountSection}>
+          <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Amount</Text>
+          <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
+            <Text style={styles.currencySymbol}>₦</Text>
             <TextInput
-              style={[styles.textInput, { backgroundColor: colors.card, color: colors.text }]}
-              placeholder="What is this income from?"
+              style={[styles.amountInput, { color: colors.text }]}
+              placeholder="0.00"
               placeholderTextColor={colors.textSecondary}
-              value={description}
-              onChangeText={setDescription}
+              value={amount}
+              onChangeText={(val) => setAmount(formatAmountInput(val))}
+              keyboardType="decimal-pad"
+              autoFocus
             />
           </View>
+        </View>
 
-          {/* Date */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Date</Text>
-            <TouchableOpacity
-              style={[styles.dateButton, { backgroundColor: colors.card }]}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
-              <Text style={[styles.dateText, { color: colors.text }]}>
-                {date.toLocaleDateString('en-NG', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
+        {/* Category Selection */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Source / Category</Text>
+          <View style={styles.categoryGrid}>
+            {INCOME_CATEGORIES.map(cat => (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.categoryItem,
+                  { backgroundColor: colors.card },
+                  category === cat.id && styles.categoryItemActive,
+                ]}
+                onPress={() => setCategory(cat.id)}
+              >
+                <View
+                  style={[
+                    styles.categoryIcon,
+                    category === cat.id && styles.categoryIconActive,
+                  ]}
+                >
+                  <Text style={{ fontSize: 18 }}>{cat.icon}</Text>
+                </View>
+                <Text
+                  style={[
+                    styles.categoryName,
+                    { color: colors.textSecondary },
+                    category === cat.id && styles.categoryNameActive,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
+        </View>
 
-          <BudgetDatePicker
-            visible={showDatePicker}
-            date={date}
-            accentColor="#22c55e"
-            onSelect={setDate}
-            onClose={() => setShowDatePicker(false)}
+        {/* Description */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Description (optional)</Text>
+          <TextInput
+            style={[styles.textInput, { backgroundColor: colors.card, color: colors.text }]}
+            placeholder="What is this income from?"
+            placeholderTextColor={colors.textSecondary}
+            value={description}
+            onChangeText={setDescription}
           />
+        </View>
 
-          {/* Bottom spacing */}
-          <View style={{ height: 100 }} />
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        {/* Date */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Date</Text>
+          <TouchableOpacity
+            style={[styles.dateButton, { backgroundColor: colors.card }]}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
+            <Text style={[styles.dateText, { color: colors.text }]}>
+              {date.toLocaleDateString('en-NG', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        <BudgetDatePicker
+          visible={showDatePicker}
+          date={date}
+          accentColor="#22c55e"
+          onSelect={setDate}
+          onClose={() => setShowDatePicker(false)}
+        />
+      </ScrollView>
+    </Screen>
   );
 }
 

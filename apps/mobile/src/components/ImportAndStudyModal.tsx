@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
   Modal,
@@ -23,6 +24,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { Button } from './ui';
+import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
 
 export interface ImportAndStudyResult {
   noteId: string;
@@ -233,7 +235,15 @@ export default function ImportAndStudyModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <View className="flex-1 bg-black/50 justify-center px-4">
+      {/* The keyboard lands exactly where a bottom-anchored sheet sits, and on
+          Android 15+ (this app targets SDK 36) the window is not resized, so
+          the input and its confirm button were covered with no scroll range.
+          Making the KeyboardAvoidingView the overlay lifts the sheet, and its
+          max-height then resolves against the keyboard-free box. */}
+      <KeyboardAvoidingView
+        behavior={SCREEN_KEYBOARD_BEHAVIOR}
+        className="flex-1 bg-black/50 justify-center px-4"
+      >
         <View className="bg-lantern-surface rounded-2xl overflow-hidden">
           <View className="flex-row items-center justify-between px-4 py-3 border-b border-lantern-border">
             <View className="flex-row items-center gap-2">
@@ -353,7 +363,7 @@ export default function ImportAndStudyModal({
             ) : null}
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

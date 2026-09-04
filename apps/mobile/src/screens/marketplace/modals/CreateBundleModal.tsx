@@ -1,6 +1,6 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';
 import { createMarketplaceBundle, fetchMarketplaceCampuses } from '../../../services/api';
 import type { MarketplaceListing } from '@lantern/shared/types';
 import { isOtherCityCampus, isDigitalListingKind, type MarketplaceCampus } from '@lantern/shared/marketplace';
@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function CreateBundleModal({ visible, listings, onClose, onCreated }: Props) {
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
   const activeListings = useMemo(
     () =>
       listings.filter(
@@ -103,13 +103,24 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/40">
+      {/* A bottom-anchored sheet occupies exactly the band the keyboard
+          replaces, so its inputs and its submit button were covered. Lifting
+          the sheet with the KAV also makes the percentage max-height resolve
+          against the keyboard-free box, so the sheet self-limits. */}
+      <KeyboardAvoidingView
+        behavior={SCREEN_KEYBOARD_BEHAVIOR}
+        className="flex-1 justify-end bg-black/40"
+      >
         <View className="bg-lantern-surface rounded-t-3xl max-h-[90%]">
           <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold">Create bundle</Text>
             <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
-          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+          <ScrollView
+            className="p-4"
+            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <TextInput
               value={title}
               onChangeText={setTitle}
@@ -178,7 +189,7 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
             <Button loading={saving} onPress={() => void handleCreate()}>Create bundle</Button>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

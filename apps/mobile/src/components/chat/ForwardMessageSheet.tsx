@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SCREEN_KEYBOARD_BEHAVIOR } from '../layout';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores/authStore';
 import { useGroupStore } from '../../stores/groupStore';
@@ -88,74 +89,79 @@ export function ForwardMessageSheet({ visible, onClose, messageText }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        className="flex-1 justify-end"
-        style={{ backgroundColor: colors.modalOverlay }}
-        onPress={onClose}
-      >
+      {/* The search field sits in a bottom-anchored sheet, exactly where the
+          keyboard lands; Android 15+ does not resize the window (this app
+          targets SDK 36), so the list of chats to forward to was covered. */}
+      <KeyboardAvoidingView behavior={SCREEN_KEYBOARD_BEHAVIOR} className="flex-1">
         <Pressable
-          className="rounded-t-2xl px-4 pt-3"
-          style={{
-            backgroundColor: colors.modalBackground,
-            paddingBottom: insets.bottom + 16,
-            maxHeight: '75%',
-          }}
-          onPress={(e) => e.stopPropagation()}
+          className="flex-1 justify-end"
+          style={{ backgroundColor: colors.modalOverlay }}
+          onPress={onClose}
         >
-          <View
-            className="w-10 h-1 rounded-full self-center mb-3"
-            style={{ backgroundColor: colors.border }}
-          />
-          <Text className="text-sm font-semibold mb-2 px-1" style={{ color: colors.textSecondary }}>
-            Forward to…
-          </Text>
-          <View className="flex-row items-center gap-2 px-3 mb-2 rounded-xl border border-lantern-border bg-lantern-background-secondary min-h-[42px]">
-            <Ionicons name="search" size={15} color={colors.inputPlaceholder} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search chats…"
-              placeholderTextColor={colors.inputPlaceholder}
-              autoCorrect={false}
-              className="flex-1 text-sm py-1"
-              style={{ color: colors.text }}
-              accessibilityLabel="Search chats to forward to"
+          <Pressable
+            className="rounded-t-2xl px-4 pt-3"
+            style={{
+              backgroundColor: colors.modalBackground,
+              paddingBottom: insets.bottom + 16,
+              maxHeight: '75%',
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View
+              className="w-10 h-1 rounded-full self-center mb-3"
+              style={{ backgroundColor: colors.border }}
             />
-          </View>
-          <FlatList
-            data={targets}
-            keyExtractor={(t) => t.key}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              <Text className="text-sm text-center py-6" style={{ color: colors.textSecondary }}>
-                No chats found
-              </Text>
-            }
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => void handlePick(item)}
-                disabled={!!sendingKey}
-                accessibilityRole="button"
-                accessibilityLabel={`Forward to ${item.name}`}
-                className="flex-row items-center gap-3 px-2 py-2.5 rounded-xl active:bg-lantern-background-secondary"
-                style={{ opacity: sendingKey && sendingKey !== item.key ? 0.5 : 1 }}
-              >
-                <ResolvedAvatar name={item.name} uri={resolveAvatarSrc(item.avatarUrl)} size={38} />
-                <Text className="flex-1 text-base font-medium" style={{ color: colors.text }} numberOfLines={1}>
-                  {item.name}
+            <Text className="text-sm font-semibold mb-2 px-1" style={{ color: colors.textSecondary }}>
+              Forward to…
+            </Text>
+            <View className="flex-row items-center gap-2 px-3 mb-2 rounded-xl border border-lantern-border bg-lantern-background-secondary min-h-[42px]">
+              <Ionicons name="search" size={15} color={colors.inputPlaceholder} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search chats…"
+                placeholderTextColor={colors.inputPlaceholder}
+                autoCorrect={false}
+                className="flex-1 text-sm py-1"
+                style={{ color: colors.text }}
+                accessibilityLabel="Search chats to forward to"
+              />
+            </View>
+            <FlatList
+              data={targets}
+              keyExtractor={(t) => t.key}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <Text className="text-sm text-center py-6" style={{ color: colors.textSecondary }}>
+                  No chats found
                 </Text>
-                {sendingKey === item.key ? (
-                  <Text className="text-xs" style={{ color: colors.textSecondary }}>
-                    Sending…
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => void handlePick(item)}
+                  disabled={!!sendingKey}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Forward to ${item.name}`}
+                  className="flex-row items-center gap-3 px-2 py-2.5 rounded-xl active:bg-lantern-background-secondary"
+                  style={{ opacity: sendingKey && sendingKey !== item.key ? 0.5 : 1 }}
+                >
+                  <ResolvedAvatar name={item.name} uri={resolveAvatarSrc(item.avatarUrl)} size={38} />
+                  <Text className="flex-1 text-base font-medium" style={{ color: colors.text }} numberOfLines={1}>
+                    {item.name}
                   </Text>
-                ) : (
-                  <Ionicons name="arrow-redo-outline" size={18} color={colors.primary} />
-                )}
-              </Pressable>
-            )}
-          />
+                  {sendingKey === item.key ? (
+                    <Text className="text-xs" style={{ color: colors.textSecondary }}>
+                      Sending…
+                    </Text>
+                  ) : (
+                    <Ionicons name="arrow-redo-outline" size={18} color={colors.primary} />
+                  )}
+                </Pressable>
+              )}
+            />
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

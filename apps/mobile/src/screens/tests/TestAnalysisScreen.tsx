@@ -12,7 +12,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Screen } from '../../components/layout';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import TestAnalysisContent from '../../components/TestAnalysisContent';
@@ -167,7 +168,11 @@ export default function TestAnalysisScreen() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      {/* `bottom="safe"` reserves the system inset for the whole body. The
+          analysis list lives in TestAnalysisContent, whose scroll content
+          container is a bare `padding: 20`, so without this the last card
+          ended inside the Android gesture/navigation bar band. */}
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={{ backgroundColor: colors.background }}>
         <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -210,15 +215,12 @@ export default function TestAnalysisScreen() {
             </TouchableOpacity>
           </View>
         )}
-      </SafeAreaView>
+      </Screen>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

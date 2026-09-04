@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen } from '../../components/layout';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -554,7 +554,15 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    /* This form has eight inputs ending in a multiline description and then the
+       Publish button, and it never got the KeyboardAvoidingView its twin
+       EditListingScreen has. Without one nothing helps on Android 15+: the app
+       targets SDK 36, where adjustResize is no longer honoured, so the window
+       does not resize, the scroll viewport never shrinks, and the covered
+       fields cannot be scrolled to. `keyboard` also supplies the MEASURED
+       vertical offset — a bare KAV under the in-flow TopBar under-lifts by the
+       bar's height, which itself animates as the chrome collapses on scroll. */
+    <Screen bottom="none" keyboard>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -585,7 +593,11 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         </Pressable>
       ) : null}
 
-      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
+      <ScrollView
+        className="flex-1 px-4"
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
+        keyboardShouldPersistTaps="handled"
+      >
         {draftRestored ? (
           <View className="flex-row items-center justify-between bg-lantern-primary-background rounded-xl px-3 py-2 mb-4">
             <View className="flex-row items-center flex-1 mr-2">
@@ -889,6 +901,6 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           Publish Listing
         </Button>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }

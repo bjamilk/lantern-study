@@ -1,8 +1,6 @@
-import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -10,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { useMarketplaceStore } from '../../stores';
 import { Button, Card } from '../../components/ui';
@@ -77,11 +75,7 @@ export function MakeOfferScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
-      >
+    <Screen bottom="none" keyboard>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
           <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
             <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -89,7 +83,13 @@ export function MakeOfferScreen({ navigation, route }: Props) {
           <Text className="text-xl font-bold text-lantern-text">Make an Offer</Text>
         </View>
 
-        <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
+        {/* Without persist-taps the first tap on Save/Send is swallowed
+            dismissing the keyboard, so the button needs two taps. */}
+        <ScrollView
+          className="flex-1 px-4"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          keyboardShouldPersistTaps="handled"
+        >
           {listing ? (
             <Card className="mb-4">
               <Text className="text-xs text-lantern-text-secondary mb-1">Making an offer on</Text>
@@ -135,7 +135,6 @@ export function MakeOfferScreen({ navigation, route }: Props) {
             Submit Offer
           </Button>
         </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </Screen>
   );
 }

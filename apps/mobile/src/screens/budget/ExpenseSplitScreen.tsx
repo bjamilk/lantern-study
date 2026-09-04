@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TextInput, Pressable, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
@@ -12,9 +11,13 @@ import {
   type ExpenseSplit,
 } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 export default function ExpenseSplitScreen() {
   const navigation = useNavigation<any>();
+  // The Budget stack sits under the absolutely-positioned bottom tab bar, so
+  // the trailing action needs its clearance rather than a hand-typed `pb-8`.
+  const bottomPadding = useScreenBottomPadding();
   const userId = useAuthStore(s => s.user?.id) || '';
   const userName = useAuthStore(s => (s.user as any)?.profileName) || 'You';
   const { expenseSplits, loadExpenseSplits, addExpenseSplit, toggleSplitParticipantPaid, settleExpenseSplit, removeExpenseSplit } = useBudgetStore();
@@ -63,9 +66,13 @@ export default function ExpenseSplitScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none" keyboard>
       <ScreenHeader title="Expense splits" onBack={() => navigation.goBack()} subtitle="Share rent, data, gas with friends" />
-      <ScrollView contentContainerClassName="px-4 pb-8 gap-3" keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerClassName="px-4 gap-3"
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* ─── Create ─── */}
         <Card className="p-4 gap-3">
           <TextInput value={title} onChangeText={setTitle} placeholder="What are you splitting? (e.g. hostel rent)" placeholderTextColor="#94a3b8" className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white bg-lantern-surface" />
@@ -189,6 +196,6 @@ export default function ExpenseSplitScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }

@@ -126,7 +126,7 @@ export function TopBar({
         backgroundColor: colors.tabBar,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: colors.tabBarBorder,
-        shadowColor: isDark ? '#000000' : '#0f172a',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: isDark ? 0.3 : 0.06,
         shadowRadius: 8,

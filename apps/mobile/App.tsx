@@ -1,7 +1,7 @@
 import './global.css';
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { RootNavigator } from './src/navigation';
@@ -41,7 +41,10 @@ function AppInner() {
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
+      {/* Seeded with the metrics the native side already knows at load, so the
+          first frame of every screen paints with the real insets instead of 0
+          and then jumping once measurement lands. */}
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <ThemeProvider>
           <AppInner />
         </ThemeProvider>

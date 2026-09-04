@@ -10,7 +10,6 @@ import {
   TextInput,
   BackHandler,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -44,6 +43,7 @@ import { useToastStore } from '../../stores/toastStore';
 import { confirmSheet } from '../../stores/confirmStore';
 import type { ChatStackParamList } from '../../navigation/types';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { Screen } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTheme } from '../../theme';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
@@ -942,7 +942,7 @@ export function GroupsScreen({ navigation }: Props) {
   };
     
     return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       {/* No title row: the bottom tab already names this screen. A live
           search bar replaces it, with new-DM alongside; creating a group
           moved to the floating button bottom-right. While chats are selected
@@ -1076,6 +1076,10 @@ export function GroupsScreen({ navigation }: Props) {
                       : `group-${item.group.id}-L${item.nestingLevel}`
           }
           contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          // The live search box sits directly above this list: without this the
+          // first tap on a result (a chat, a message hit, a user to DM) is
+          // swallowed dismissing the keyboard, so opening one took two taps.
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
           }
@@ -1274,7 +1278,7 @@ export function GroupsScreen({ navigation }: Props) {
         style={{
           bottom: tabBarClearance - 8,
           elevation: 8,
-          shadowColor: '#0f172a',
+          shadowColor: '#000',
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.2,
           shadowRadius: 8,
@@ -1282,7 +1286,7 @@ export function GroupsScreen({ navigation }: Props) {
       >
         <Ionicons name="add" size={28} color="#ffffff" />
       </Pressable>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchCreatorProfile, followCreator, unfollowCreator } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
@@ -78,9 +78,12 @@ export function CreatorProfileScreen({
   };
 
   const isSelf = currentUserId === userId;
+  // 32px did not clear the absolute bottom tab bar, so the tail of the
+  // creator's product list sat under it.
+  const bottomPadding = useScreenBottomPadding();
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="mr-2 -ml-1 p-1">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -98,7 +101,7 @@ export function CreatorProfileScreen({
           <Text className="mt-3 text-base font-semibold text-lantern-text">Creator not found</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPadding }}>
           <View className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
             <View className="flex-row items-start" style={{ gap: 12 }}>
               <View className="w-16 h-16 rounded-full bg-lantern-primary/10 items-center justify-center">
@@ -199,7 +202,7 @@ export function CreatorProfileScreen({
           )}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

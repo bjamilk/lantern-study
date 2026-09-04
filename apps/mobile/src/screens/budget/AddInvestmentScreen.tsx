@@ -1,4 +1,3 @@
-import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useState, useCallback } from 'react';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {
@@ -9,21 +8,22 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 export default function AddInvestmentScreen() {
   const navigation = useNavigation<any>();
   const userId = useAuthStore(s => s.user?.id) || '';
   const { addTransaction, isLoading } = useBudgetStore();
   const { colors } = useTheme();
+  // `padding: 20` left the description box under the absolute tab bar; this is
+  // the bar's real clearance and it lives on the content container.
+  const bottomPadding = useScreenBottomPadding();
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [date] = useState(new Date());
@@ -56,7 +56,7 @@ export default function AddInvestmentScreen() {
   }, [amount, description, date, addTransaction, navigation, userId]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <Screen keyboard bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       <View style={[styles.header, { backgroundColor: colors.card }]}>
         <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
           <Ionicons name="close" size={24} color={colors.text} />
@@ -66,39 +66,40 @@ export default function AddInvestmentScreen() {
           <Text style={styles.saveButtonText}>Save</Text>
         </TouchableOpacity>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
-          <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
-            Log money put into savings, investments, or long-term funds.
-          </Text>
-          <View>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
-            <View style={[styles.inputRow, { backgroundColor: colors.card }]}>
-              <Text style={styles.currency}>₦</Text>
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
-                placeholder="0.00"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-          </View>
-          <View>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Description</Text>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, gap: 16, paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
+          Log money put into savings, investments, or long-term funds.
+        </Text>
+        <View>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
+          <View style={[styles.inputRow, { backgroundColor: colors.card }]}>
+            <Text style={styles.currency}>₦</Text>
             <TextInput
-              style={[styles.textArea, { backgroundColor: colors.card, color: colors.text }]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="e.g. Mutual fund contribution"
+              style={[styles.input, { color: colors.text }]}
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
               placeholderTextColor={colors.textSecondary}
-              multiline
             />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+        <View>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Description</Text>
+          <TextInput
+            style={[styles.textArea, { backgroundColor: colors.card, color: colors.text }]}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="e.g. Mutual fund contribution"
+            placeholderTextColor={colors.textSecondary}
+            multiline
+          />
+        </View>
+      </ScrollView>
+    </Screen>
   );
 }
 

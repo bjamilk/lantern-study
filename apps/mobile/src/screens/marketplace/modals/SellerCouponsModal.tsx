@@ -1,6 +1,6 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';
 import { createSellerCoupon, fetchSellerCoupons } from '../../../services/api';
 import type { MarketplaceCoupon } from '@lantern/shared/types';
 import { Button } from '../../../components/ui';
@@ -13,7 +13,7 @@ interface Props {
 
 export function SellerCouponsModal({ visible, onClose }: Props) {
   const [coupons, setCoupons] = useState<MarketplaceCoupon[]>([]);
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
   const [code, setCode] = useState('');
   const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
   const [discountValue, setDiscountValue] = useState('');
@@ -54,13 +54,24 @@ export function SellerCouponsModal({ visible, onClose }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/40">
+      {/* A bottom-anchored sheet occupies exactly the band the keyboard
+          replaces, so its inputs and its submit button were covered. Lifting
+          the sheet with the KAV also makes the percentage max-height resolve
+          against the keyboard-free box, so the sheet self-limits. */}
+      <KeyboardAvoidingView
+        behavior={SCREEN_KEYBOARD_BEHAVIOR}
+        className="flex-1 justify-end bg-black/40"
+      >
         <View className="bg-lantern-surface rounded-t-3xl max-h-[85%]">
           <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold text-lantern-text">Seller coupons</Text>
             <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
-          <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+          <ScrollView
+            className="p-4"
+            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text className="text-sm text-lantern-text-secondary mb-3">Buyers apply these at checkout on your listings.</Text>
             <TextInput
               value={code}
@@ -105,7 +116,7 @@ export function SellerCouponsModal({ visible, onClose }: Props) {
             ))}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

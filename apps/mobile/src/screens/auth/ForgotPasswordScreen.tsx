@@ -16,10 +16,14 @@ import { LanternLogo } from '../../components/LanternLogo';
 import { ResendEmailButton } from '../../components/auth/ResendEmailButton';
 import { resetPassword } from '../../services/supabase';
 import type { AuthStackParamList } from '../../navigation/types';
+// The cookie notice is an app-root `absolute bottom-0` overlay during the
+// whole first-run flow; without its height reserved it covers the footer links.
+import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
 export function ForgotPasswordScreen({ navigation }: Props) {
+  const cookieNoticeInset = useCookieNoticeBottomInset();
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
@@ -75,7 +79,13 @@ export function ForgotPasswordScreen({ navigation }: Props) {
         behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         className="flex-1"
       >
-        <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
+        {/* Without persist-taps the first tap on the primary button is
+            swallowed dismissing the keyboard, so it needs two. */}
+        <ScrollView
+          contentContainerClassName="flex-grow px-6 py-8 justify-center"
+          contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
             <Text className="text-2xl font-bold text-lantern-text dark:text-white">Reset password</Text>

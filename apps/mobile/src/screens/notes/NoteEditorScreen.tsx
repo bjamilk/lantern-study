@@ -1,10 +1,9 @@
-import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
+import { Screen } from '../../components/layout';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Linking,
   Platform,
   Pressable,
@@ -15,7 +14,6 @@ import {
   View,
 } from 'react-native';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
@@ -841,11 +839,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
     return (
 
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
+      <Screen bottom="none">
 
-        <ActivityIndicator size="large" color="#6366f1" />
+        <View className="flex-1 items-center justify-center">
 
-      </SafeAreaView>
+          <ActivityIndicator size="large" color="#6366f1" />
+
+        </View>
+
+      </Screen>
 
     );
 
@@ -855,7 +857,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   return (
 
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none" keyboard>
 
       <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
 
@@ -942,13 +944,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
-      <KeyboardAvoidingView
-
-        className="flex-1"
-
-        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
-
-      >
+      {/* Keyboard handling moved up to <Screen keyboard>: this screen sits
+          under the in-flow TopBar, and RN's KeyboardAvoidingView measures its
+          own frame PARENT-relative, so a KAV here under-lifted by the whole
+          height of the chrome above it. `Screen` measures its window position
+          and feeds that back as keyboardVerticalOffset. */}
+      <View className="flex-1">
 
         <ScrollView
           className="flex-1"
@@ -1404,7 +1405,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
         </ScrollView>
 
-      </KeyboardAvoidingView>
+      </View>
 
       <NoteCollaboratorsModal
         visible={showCollaborators}
@@ -1414,7 +1415,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         onClose={() => setShowCollaborators(false)}
       />
 
-    </SafeAreaView>
+    </Screen>
 
   );
 

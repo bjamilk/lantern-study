@@ -300,7 +300,6 @@ export default function BudgetScreen() {
         <FeatureHero
           title="Budget"
           subtitle={formatMonthYear(selectedMonth)}
-          accentColor={featureAccents.budget}
           right={
             <TouchableOpacity
               className="p-2 rounded-xl bg-lantern-primary-background min-w-[44px] min-h-[44px] items-center justify-center"

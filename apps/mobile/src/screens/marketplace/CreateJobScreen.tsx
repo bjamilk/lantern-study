@@ -34,6 +34,7 @@ import {
   type JobPostingStatus,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
+import { Screen } from "../../components/layout";
 import {
   createJobPosting,
   fetchJobPosting,
@@ -303,7 +304,14 @@ export function CreateJobScreen() {
     `text-xs ${active ? "text-white" : "text-lantern-text"}`;
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    /* ScreenHeader safeTop already pays the top inset, so `edges={[]}`; the
+       list keeps its own tab-bar clearance, so `bottom="none"`. What was
+       missing is `keyboard`: this app targets SDK 36, where Android no longer
+       honours adjustResize, so with no KeyboardAvoidingView the window never
+       resizes, the scroll viewport never shrinks, and a covered input cannot
+       be scrolled to. The offset is measured, because a bare KAV under the
+       in-flow TopBar under-lifts by the bar's (animating) height. */
+    <Screen edges={[]} bottom="none" keyboard>
       <ScreenHeader safeTop
         title={isEdit ? "Edit job" : "Post a job"}
         onBack={() => navigation.goBack()}
@@ -311,6 +319,7 @@ export function CreateJobScreen() {
       <ScrollView
         className="flex-1 px-4"
         contentContainerStyle={{ paddingBottom: tabBarClearance }}
+        keyboardShouldPersistTaps="handled"
       >
         <Card className="mb-3 space-y-3">
           {isEdit ? (
@@ -626,7 +635,7 @@ export function CreateJobScreen() {
           </Pressable>
         </Card>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 

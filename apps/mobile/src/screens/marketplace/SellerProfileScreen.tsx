@@ -1,9 +1,9 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   RefreshControl,
@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useMarketplaceStore, type MarketplaceListing } from '../../stores';
@@ -36,7 +37,7 @@ interface Props {
 export function SellerProfileScreen({ navigation, route }: Props) {
   // Scroll content must clear the absolutely-positioned bottom tab bar.
   const tabBarClearance = useTabBarClearance(16);
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
   const sellerId = route.params?.sellerId ?? '';
   const { user } = useAuthStore();
   const { sellerProfile, fetchSellerProfile, updateMyShop, isLoading } = useMarketplaceStore();
@@ -332,7 +333,12 @@ export function SellerProfileScreen({ navigation, route }: Props) {
       )}
 
       <Modal visible={editOpen} animationType="slide" transparent onRequestClose={() => setEditOpen(false)}>
-        <View className="flex-1 justify-end bg-black/40">
+        {/* Bottom-anchored sheet: without the KAV the keyboard covered the bio
+            field and the Save button it sits directly above. */}
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          className="flex-1 justify-end bg-black/40"
+        >
           <View className="bg-lantern-surface rounded-t-2xl p-4 border-t border-lantern-border" style={{ paddingBottom: insets.bottom + 16 }}>
             <Text className="text-base font-bold text-lantern-text mb-3">Edit shop</Text>
             <Text className="text-xs font-semibold text-lantern-text-secondary mb-1">Shop name</Text>
@@ -366,7 +372,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
               </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

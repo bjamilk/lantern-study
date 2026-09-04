@@ -18,7 +18,7 @@ import {
   Pressable,
   AppState,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Screen, useScreenInsets } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp, useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
@@ -526,7 +526,11 @@ export default function TestTakingScreen() {
   const route = useRoute<RouteProp<TestTakingRouteParams, 'TestTaking'>>();
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
+  // `presentation: 'fullScreenModal'` gives this route its own native window,
+  // which the app-root provider never measures — the raw hook returned 0 on
+  // every edge, so the close button, test name and countdown drew under the
+  // status bar and the Prev/Next footer collapsed onto the gesture bar.
+  const insets = useScreenInsets();
   const userId = useAuthStore(s => s.user?.id) || '';
   const { testName, isOffline, groupName, groupId, offlineTestId } = route.params;
 
@@ -900,7 +904,7 @@ export default function TestTakingScreen() {
       ? 'Submitting your answers…'
       : 'This test session has ended.';
     return (
-      <SafeAreaView style={[s(colors).container, { backgroundColor: colors.background }]}>
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={{ backgroundColor: colors.background }}>
         <View style={s(colors).errorContainer}>
           <Text style={[s(colors).errorText, { color: colors.textSecondary }]}>{endedCopy}</Text>
           {!isSubmitting && (
@@ -909,12 +913,17 @@ export default function TestTakingScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={[s(colors).container, { backgroundColor: colors.background }]} edges={['top']}>
+    // `keyboard` wraps the header, the question scroller AND the Prev/Next
+    // footer in a KeyboardAvoidingView. The fill-in-the-blank field and the
+    // open-ended answer box had none, and on Android 15+ (this app targets
+    // SDK 36) the window is not resized, so the keyboard covered the field
+    // being typed into and the whole footer with no scroll range to recover.
+    <Screen edges={['top']} bottom="none" keyboard className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={[s(colors).header, { backgroundColor: colors.card, borderBottomColor: colors.border }, isStudyMode && s(colors).headerStudy]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={s(colors).exitButton}>
@@ -1246,7 +1255,7 @@ export default function TestTakingScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

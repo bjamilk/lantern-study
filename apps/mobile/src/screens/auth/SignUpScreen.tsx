@@ -322,9 +322,11 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 40 : insets.top + 12 }]}>
+        {/* 40 is less than the 59pt inset on a Dynamic Island iPhone, so the
+            title and back button drew under the clock. Read the inset. */}
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity
-            style={[styles.backButton, { top: Platform.OS === 'ios' ? 40 : insets.top + 12 }]}
+            style={[styles.backButton, { top: insets.top + 12 }]}
             hitSlop={10}
             onPress={() => navigation.goBack()}
             disabled={isLoading}

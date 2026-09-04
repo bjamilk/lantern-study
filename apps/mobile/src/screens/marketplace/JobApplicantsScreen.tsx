@@ -27,6 +27,7 @@ import {
   type JobPosting,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
+import { Screen } from "../../components/layout";
 import {
   sanitizeFileName,
   shareTextFile,
@@ -217,7 +218,12 @@ export function JobApplicantsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-lantern-background">
+    /* Same shape as the other job screens: ScreenHeader safeTop owns the top
+       inset, the scroller owns the tab-bar clearance, and `keyboard` supplies
+       the KeyboardAvoidingView the "Search candidates" field needs — on SDK 36
+       Android the window is not resized, so a covered field cannot be scrolled
+       to without it. */
+    <Screen edges={[]} bottom="none" keyboard>
       <ScreenHeader safeTop title="Applicants" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 px-4"
@@ -494,7 +500,7 @@ export function JobApplicantsScreen() {
           </Text>
         ) : null}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 

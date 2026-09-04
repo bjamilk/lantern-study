@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import {
   fetchMarketplacePurchases,
@@ -29,6 +29,9 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  // The bottom tab bar is an absolute overlay on this route; the old
+  // paddingBottom: 24 buried the last purchase row under it.
+  const bottomPadding = useScreenBottomPadding();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,7 +126,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="mr-2 -ml-1 p-1">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -163,10 +166,10 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
           data={purchases}
           keyExtractor={(p) => p.listingId}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: bottomPadding }}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -14,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { DeckCollaborator } from '@lantern/shared/types';
 import * as api from '../services/api';
 import { Button } from './ui';
+import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
 
 interface SearchUser {
   id: string;
@@ -134,7 +136,15 @@ export default function CollaboratorsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View className="flex-1 bg-black/50 justify-end">
+      {/* The keyboard lands exactly where a bottom-anchored sheet sits, and on
+          Android 15+ (this app targets SDK 36) the window is not resized, so
+          the input and its confirm button were covered with no scroll range.
+          Making the KeyboardAvoidingView the overlay lifts the sheet, and its
+          max-height then resolves against the keyboard-free box. */}
+      <KeyboardAvoidingView
+        behavior={SCREEN_KEYBOARD_BEHAVIOR}
+        className="flex-1 bg-black/50 justify-end"
+      >
         <View className="bg-lantern-surface rounded-t-3xl max-h-[85%] min-h-[50%]" style={{ paddingBottom: insets.bottom + 8 }}>
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-lantern-border dark:border-lantern-border">
             <View className="flex-row items-center gap-2">
@@ -232,7 +242,7 @@ export default function CollaboratorsModal({
             />
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

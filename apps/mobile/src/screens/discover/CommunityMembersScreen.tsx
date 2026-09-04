@@ -7,7 +7,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   COMMUNITY_COPY,
@@ -25,6 +24,7 @@ import { useCommunityPresence } from '../../hooks/useCommunityPresence';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useChrome } from '../../components/layout/ChromeContext';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BackButton } from '../../components/ui';
 import { MemberRow } from '../../components/community';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
@@ -49,6 +49,10 @@ function CommunityMembersList({
   route: { params: Params };
 }) {
   const { slug } = route.params;
+  // The "Load more members" footer is the last row in this list and the bottom
+  // tab bar is an absolute overlay over this route, so paging was impossible
+  // until the bar happened to slide away. 32 was never enough.
+  const listBottomPadding = useScreenBottomPadding();
   const { lowDataMode } = useLowDataMode();
   const { onScroll: chromeOnScroll } = useChrome();
   const detail = useCommunityStore((s) => s.detailBySlug[slug]);
@@ -144,7 +148,7 @@ function CommunityMembersList({
   }, [members, query, onlineIds]);
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="border-b border-lantern-border">
         <View className="flex-row items-center h-[56px] pr-4">
           <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
@@ -179,7 +183,11 @@ function CommunityMembersList({
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
           stickySectionHeadersEnabled={false}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          // The search box above keeps the keyboard open; without this the
+          // first tap on a member row (or on "Load more") is swallowed
+          // dismissing it.
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: listBottomPadding }}
           renderSectionHeader={({ section }) => (
             <Text className="px-4 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
               {section.title}
@@ -219,7 +227,7 @@ function CommunityMembersList({
           }
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

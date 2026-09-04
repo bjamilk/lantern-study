@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -44,6 +45,7 @@ import {
   renameCourseTopic,
   reorderCourseTopics,
 } from '../../services/academic';
+import { SCREEN_KEYBOARD_BEHAVIOR } from '../layout';
 
 export interface ManageOutlineSheetProps {
   courseId: string | null;
@@ -227,7 +229,12 @@ export function ManageOutlineSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <View style={styles.overlay}>
+      {/* Bottom-anchored sheet + an add/rename topic field: on Android 15+
+          (this app targets SDK 36) the window is not resized, so the keyboard
+          covered the field being typed into and the Save row beneath it.
+          The KeyboardAvoidingView IS the overlay, so the sheet lifts and its
+          85% max-height resolves against the keyboard-free box. */}
+      <KeyboardAvoidingView behavior={SCREEN_KEYBOARD_BEHAVIOR} style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close manage topics" />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 12, backgroundColor: colors.modalBackground }]}>
           <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
@@ -374,7 +381,7 @@ export function ManageOutlineSheet({
             </View>
           ) : null}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

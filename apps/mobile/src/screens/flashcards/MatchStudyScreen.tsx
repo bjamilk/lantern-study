@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFlashcardStore } from '../../stores';
 import { Button } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
 import { trackStudyModeCompleted, trackStudyModeSelected } from '../../services/productAnalytics';
@@ -35,7 +35,10 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 export function MatchStudyScreen({ navigation, route }: Props) {
-  const insets = useSafeAreaInsets();
+  // fullScreenModal route: the raw safe-area hook reports 0 on every edge in
+  // its detached window, so the timer row drew under the clock and the bottom
+  // row of match tiles overlapped the gesture bar. The primitive restores both.
+  const listPadding = useScreenBottomPadding({ bottom: 'safe', bottomExtra: 24 });
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Match';
   const { flashcards } = useFlashcardStore();
@@ -136,30 +139,34 @@ export function MatchStudyScreen({ navigation, route }: Props) {
 
   if (!basicCards.length) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-lantern-text mb-2">Need more basic cards</Text>
-        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-          Match mode needs at least one front/back pair.
-        </Text>
-        <Button onPress={() => navigation.goBack()}>Back</Button>
-      </SafeAreaView>
+      <Screen edges={['top']} bottom="safe">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-lg font-semibold text-lantern-text mb-2">Need more basic cards</Text>
+          <Text className="text-sm text-lantern-text-secondary text-center mb-6">
+            Match mode needs at least one front/back pair.
+          </Text>
+          <Button onPress={() => navigation.goBack()}>Back</Button>
+        </View>
+      </Screen>
     );
   }
 
   if (isComplete) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">All matched!</Text>
-        <Text className="text-sm text-lantern-text-secondary mb-6">
-          {deckName} · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
-        </Text>
-        <Button onPress={() => navigation.goBack()}>Done</Button>
-      </SafeAreaView>
+      <Screen edges={['top']} bottom="safe">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">All matched!</Text>
+          <Text className="text-sm text-lantern-text-secondary mb-6">
+            {deckName} · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+          </Text>
+          <Button onPress={() => navigation.goBack()}>Done</Button>
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen edges={['top']} bottom="none">
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
@@ -175,7 +182,7 @@ export function MatchStudyScreen({ navigation, route }: Props) {
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingBottom: Math.max(insets.bottom, 16) + 24,
+          paddingBottom: listPadding,
         }}
       >
         <View className="flex-row flex-wrap gap-2 justify-center">
@@ -207,7 +214,7 @@ export function MatchStudyScreen({ navigation, route }: Props) {
           })}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

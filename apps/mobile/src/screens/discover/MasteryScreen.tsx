@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   MASTERY_BAND_LABELS,
@@ -12,6 +11,7 @@ import {
   type TopicMastery,
 } from '@lantern/shared/network';
 import { fetchCourseReadiness, fetchMasteryGraph, refreshMasteryGraph } from '../../services/api';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 type NavigationProp = { goBack: () => void };
 type RouteProp = { params?: { courseId?: string } };
@@ -149,6 +149,10 @@ export function MasteryScreen({
   route?: RouteProp;
 }) {
   const focusCourseId = route?.params?.courseId;
+  // Non-immersive route: the absolute bottom tab bar draws over the last rows
+  // of "Strongest", and this scroller wires no chrome handler so the bar never
+  // slides away. The old hard-coded 32 was ~70px short.
+  const scrollBottomPadding = useScreenBottomPadding();
   const [graph, setGraph] = useState<MasteryGraph | null>(null);
   const [readiness, setReadiness] = useState<CourseReadiness[]>([]);
   const [classSignal, setClassSignal] = useState<CourseClassSignal | null>(null);
@@ -198,7 +202,7 @@ export function MasteryScreen({
   const hasAny = (graph?.topics?.length ?? 0) > 0 || readiness.length > 0;
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable
           onPress={() => navigation.goBack()}
@@ -230,7 +234,7 @@ export function MasteryScreen({
           <ActivityIndicator color="#6366f1" />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: scrollBottomPadding }}>
           {readiness.map((course) => (
             <CourseBlock
               key={course.courseId}
@@ -286,7 +290,7 @@ export function MasteryScreen({
           ) : null}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

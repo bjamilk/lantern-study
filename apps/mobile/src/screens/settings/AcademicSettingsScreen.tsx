@@ -4,12 +4,10 @@
  * semester). Mirrors the web Settings → Academic section
  * (docs/phase1-academic-identity-contract.md §4/§5).
  */
-import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -18,12 +16,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { Course, UserCourse } from '@lantern/shared/types';
 import { currentAcademicYear, semesterLabel, studyLevelLabel } from '@lantern/shared/academic';
 import { useAuthStore } from '../../stores/authStore';
 import { useTheme } from '../../theme';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { StudyLevelPicker } from '../../components/academic/StudyLevelPicker';
 import { SemesterPicker } from '../../components/academic/SemesterPicker';
@@ -52,6 +50,9 @@ function parseYear(value: string): number | null {
 
 export default function AcademicSettingsScreen({ navigation }: { navigation: NavigationProp }) {
   const { colors } = useTheme();
+  // `paddingBottom: 48` was a literal; this tracks the device's own inset so
+  // the archive action clears the system navigation bar.
+  const bottomPadding = useScreenBottomPadding();
   const user = useAuthStore(s => s.user);
   const storedProfile = useAuthStore(s => s.academicProfile);
   const { institutions, loading: institutionsLoading } = useInstitutions();
@@ -256,7 +257,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
   ];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <Screen keyboard bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Pressable onPress={() => navigation.goBack()} style={styles.headerButton} accessibilityLabel="Close">
           <Ionicons name="close" size={24} color={colors.textSecondary} />
@@ -265,206 +266,204 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         <View style={styles.headerButton} />
       </View>
 
-      <KeyboardAvoidingView style={styles.flex} behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {loading ? <ActivityIndicator color={colors.primary} style={{ marginBottom: 12 }} /> : null}
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPadding }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {loading ? <ActivityIndicator color={colors.primary} style={{ marginBottom: 12 }} /> : null}
 
-          {/* Identity */}
-          <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Your university</Text>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Institution</Text>
-            <CampusPicker
-              campuses={institutions}
-              value={institutionId}
-              onChange={setInstitutionId}
-              emptyLabel={institutionsLoading ? 'Loading institutions…' : 'Choose your university or polytechnic'}
-              searchPlaceholder="Search universities and polytechnics…"
-            />
+        {/* Identity */}
+        <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Your university</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Institution</Text>
+          <CampusPicker
+            campuses={institutions}
+            value={institutionId}
+            onChange={setInstitutionId}
+            emptyLabel={institutionsLoading ? 'Loading institutions…' : 'Choose your university or polytechnic'}
+            searchPlaceholder="Search universities and polytechnics…"
+          />
 
-            <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Programme</Text>
-            <TextInput
-              value={programme}
-              onChangeText={setProgramme}
-              placeholder="e.g. Medicine and Surgery"
-              placeholderTextColor={colors.inputPlaceholder}
-              autoCapitalize="words"
-              style={inputStyle}
-              accessibilityLabel="Programme"
-            />
+          <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Programme</Text>
+          <TextInput
+            value={programme}
+            onChangeText={setProgramme}
+            placeholder="e.g. Medicine and Surgery"
+            placeholderTextColor={colors.inputPlaceholder}
+            autoCapitalize="words"
+            style={inputStyle}
+            accessibilityLabel="Programme"
+          />
 
-            <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Faculty (optional)</Text>
-            <TextInput
-              value={faculty}
-              onChangeText={setFaculty}
-              placeholder="e.g. Faculty of Science"
-              placeholderTextColor={colors.inputPlaceholder}
-              autoCapitalize="words"
-              style={inputStyle}
-              accessibilityLabel="Faculty"
-            />
+          <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Faculty (optional)</Text>
+          <TextInput
+            value={faculty}
+            onChangeText={setFaculty}
+            placeholder="e.g. Faculty of Science"
+            placeholderTextColor={colors.inputPlaceholder}
+            autoCapitalize="words"
+            style={inputStyle}
+            accessibilityLabel="Faculty"
+          />
 
-            <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>
-              Level{studyLevel ? ` · ${studyLevelLabel(studyLevel)}` : ''}
-            </Text>
-            <StudyLevelPicker value={studyLevel} onChange={setStudyLevel} />
+          <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>
+            Level{studyLevel ? ` · ${studyLevelLabel(studyLevel)}` : ''}
+          </Text>
+          <StudyLevelPicker value={studyLevel} onChange={setStudyLevel} />
 
-            <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>
-              Semester{currentSemester ? ` · ${semesterLabel(currentSemester)}` : ''}
-            </Text>
-            <SemesterPicker value={currentSemester} onChange={setCurrentSemester} />
+          <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>
+            Semester{currentSemester ? ` · ${semesterLabel(currentSemester)}` : ''}
+          </Text>
+          <SemesterPicker value={currentSemester} onChange={setCurrentSemester} />
 
-            <View style={styles.yearRow}>
-              <View style={styles.yearCol}>
-                <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Entry year</Text>
-                <TextInput
-                  value={entryYear}
-                  onChangeText={text => setEntryYear(text.replace(/[^\d]/g, '').slice(0, 4))}
-                  placeholder="2024"
-                  placeholderTextColor={colors.inputPlaceholder}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  style={inputStyle}
-                  accessibilityLabel="Entry year"
-                />
-              </View>
-              <View style={styles.yearCol}>
-                <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Expected graduation</Text>
-                <TextInput
-                  value={graduationYear}
-                  onChangeText={text => setGraduationYear(text.replace(/[^\d]/g, '').slice(0, 4))}
-                  placeholder="2029"
-                  placeholderTextColor={colors.inputPlaceholder}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  style={inputStyle}
-                  accessibilityLabel="Expected graduation year"
-                />
-              </View>
+          <View style={styles.yearRow}>
+            <View style={styles.yearCol}>
+              <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Entry year</Text>
+              <TextInput
+                value={entryYear}
+                onChangeText={text => setEntryYear(text.replace(/[^\d]/g, '').slice(0, 4))}
+                placeholder="2024"
+                placeholderTextColor={colors.inputPlaceholder}
+                keyboardType="number-pad"
+                maxLength={4}
+                style={inputStyle}
+                accessibilityLabel="Entry year"
+              />
             </View>
-
-            <Pressable
-              onPress={() => void handleSaveProfile()}
-              disabled={saving || loading}
-              accessibilityRole="button"
-              style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: saving || loading ? 0.6 : 1 }]}
-            >
-              {saving ? (
-                <ActivityIndicator color={colors.textInverse} />
-              ) : (
-                <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>Save academic profile</Text>
-              )}
-            </Pressable>
+            <View style={styles.yearCol}>
+              <Text style={[styles.label, styles.labelSpaced, { color: colors.textSecondary }]}>Expected graduation</Text>
+              <TextInput
+                value={graduationYear}
+                onChangeText={text => setGraduationYear(text.replace(/[^\d]/g, '').slice(0, 4))}
+                placeholder="2029"
+                placeholderTextColor={colors.inputPlaceholder}
+                keyboardType="number-pad"
+                maxLength={4}
+                style={inputStyle}
+                accessibilityLabel="Expected graduation year"
+              />
+            </View>
           </View>
 
-          {/* My courses */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>My courses · {academicYear}</Text>
-            {coursesLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
-          </View>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Add a course</Text>
-            <CourseMultiSelect
-              selected={selectedCourses}
-              onChange={() => {}}
-              onPick={course => void handleAddCourse(course)}
-              institutionId={institutionId || null}
-              includeMyCourses={false}
-              showChips={false}
-              placeholder="Search or add a course, e.g. BIO 201"
-            />
+          <Pressable
+            onPress={() => void handleSaveProfile()}
+            disabled={saving || loading}
+            accessibilityRole="button"
+            style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: saving || loading ? 0.6 : 1 }]}
+          >
+            {saving ? (
+              <ActivityIndicator color={colors.textInverse} />
+            ) : (
+              <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>Save academic profile</Text>
+            )}
+          </Pressable>
+        </View>
 
-            {coursesError ? <Text style={[styles.errorText, { color: colors.error }]}>{coursesError}</Text> : null}
+        {/* My courses */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>My courses · {academicYear}</Text>
+          {coursesLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+        </View>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Add a course</Text>
+          <CourseMultiSelect
+            selected={selectedCourses}
+            onChange={() => {}}
+            onPick={course => void handleAddCourse(course)}
+            institutionId={institutionId || null}
+            includeMyCourses={false}
+            showChips={false}
+            placeholder="Search or add a course, e.g. BIO 201"
+          />
 
-            {!coursesLoading && courses.length === 0 ? (
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No active courses yet. Add the courses you are taking this semester — notes, decks and tests
-                can then be filed under them.
-              </Text>
-            ) : null}
+          {coursesError ? <Text style={[styles.errorText, { color: colors.error }]}>{coursesError}</Text> : null}
 
-            {courses.map(row => {
-              const draft = examDrafts[row.course.id] ?? '';
-              const dirty = draft.trim() !== (row.examDate ?? '');
-              return (
-                <View key={`${row.course.id}-${row.academicYear}`} style={[styles.courseRow, { borderTopColor: colors.border }]}>
-                  <View style={styles.courseHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.courseCode, { color: colors.text }]}>{formatCourseLabel(row.course)}</Text>
-                      <Text style={[styles.courseMeta, { color: colors.textTertiary }]}>
-                        {row.academicYear}
-                        {row.semester ? ` · Semester ${row.semester}` : ''}
-                        {row.examDate ? ` · Exam ${row.examDate}` : ''}
-                      </Text>
-                    </View>
-                    <Pressable
-                      onPress={() => handleRemoveCourse(row)}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${row.course.code}`}
-                    >
-                      <Ionicons name="trash-outline" size={18} color={colors.error} />
-                    </Pressable>
-                  </View>
-                  <View style={styles.examRow}>
-                    <TextInput
-                      value={draft}
-                      onChangeText={text =>
-                        setExamDrafts(prev => ({ ...prev, [row.course.id]: text.replace(/[^\d-]/g, '').slice(0, 10) }))
-                      }
-                      placeholder="Exam date YYYY-MM-DD"
-                      placeholderTextColor={colors.inputPlaceholder}
-                      keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-                      style={[inputStyle, styles.examInput]}
-                      accessibilityLabel={`Exam date for ${row.course.code}`}
-                    />
-                    <Pressable
-                      onPress={() => void handleSaveExamDate(row)}
-                      disabled={!dirty || savingExamFor === row.course.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Save exam date for ${row.course.code}`}
-                      style={[
-                        styles.examSave,
-                        { backgroundColor: dirty ? colors.primary : colors.inputBackground, borderColor: colors.inputBorder },
-                      ]}
-                    >
-                      {savingExamFor === row.course.id ? (
-                        <ActivityIndicator size="small" color={dirty ? colors.textInverse : colors.primary} />
-                      ) : (
-                        <Ionicons name="checkmark" size={18} color={dirty ? colors.textInverse : colors.textTertiary} />
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-
-            <Pressable
-              onPress={handleArchiveSemester}
-              disabled={archiving || coursesLoading}
-              accessibilityRole="button"
-              style={[styles.secondaryButton, { borderColor: colors.border, opacity: archiving ? 0.6 : 1 }]}
-            >
-              {archiving ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <>
-                  <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
-                  <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>Archive this semester</Text>
-                </>
-              )}
-            </Pressable>
-            <Text style={[styles.hint, { color: colors.textTertiary }]}>
-              Archiving keeps everything — it just moves {academicYear} out of your active list so next
-              semester starts clean.
+          {!coursesLoading && courses.length === 0 ? (
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No active courses yet. Add the courses you are taking this semester — notes, decks and tests
+              can then be filed under them.
             </Text>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          ) : null}
+
+          {courses.map(row => {
+            const draft = examDrafts[row.course.id] ?? '';
+            const dirty = draft.trim() !== (row.examDate ?? '');
+            return (
+              <View key={`${row.course.id}-${row.academicYear}`} style={[styles.courseRow, { borderTopColor: colors.border }]}>
+                <View style={styles.courseHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.courseCode, { color: colors.text }]}>{formatCourseLabel(row.course)}</Text>
+                    <Text style={[styles.courseMeta, { color: colors.textTertiary }]}>
+                      {row.academicYear}
+                      {row.semester ? ` · Semester ${row.semester}` : ''}
+                      {row.examDate ? ` · Exam ${row.examDate}` : ''}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => handleRemoveCourse(row)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${row.course.code}`}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={colors.error} />
+                  </Pressable>
+                </View>
+                <View style={styles.examRow}>
+                  <TextInput
+                    value={draft}
+                    onChangeText={text =>
+                      setExamDrafts(prev => ({ ...prev, [row.course.id]: text.replace(/[^\d-]/g, '').slice(0, 10) }))
+                    }
+                    placeholder="Exam date YYYY-MM-DD"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                    style={[inputStyle, styles.examInput]}
+                    accessibilityLabel={`Exam date for ${row.course.code}`}
+                  />
+                  <Pressable
+                    onPress={() => void handleSaveExamDate(row)}
+                    disabled={!dirty || savingExamFor === row.course.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Save exam date for ${row.course.code}`}
+                    style={[
+                      styles.examSave,
+                      { backgroundColor: dirty ? colors.primary : colors.inputBackground, borderColor: colors.inputBorder },
+                    ]}
+                  >
+                    {savingExamFor === row.course.id ? (
+                      <ActivityIndicator size="small" color={dirty ? colors.textInverse : colors.primary} />
+                    ) : (
+                      <Ionicons name="checkmark" size={18} color={dirty ? colors.textInverse : colors.textTertiary} />
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+
+          <Pressable
+            onPress={handleArchiveSemester}
+            disabled={archiving || coursesLoading}
+            accessibilityRole="button"
+            style={[styles.secondaryButton, { borderColor: colors.border, opacity: archiving ? 0.6 : 1 }]}
+          >
+            {archiving ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+                <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>Archive this semester</Text>
+              </>
+            )}
+          </Pressable>
+          <Text style={[styles.hint, { color: colors.textTertiary }]}>
+            Archiving keeps everything — it just moves {academicYear} out of your active list so next
+            semester starts clean.
+          </Text>
+        </View>
+      </ScrollView>
+    </Screen>
   );
 }
 
@@ -481,7 +480,7 @@ const styles = StyleSheet.create({
   },
   headerButton: { width: 40, alignItems: 'center', justifyContent: 'center', padding: 4 },
   headerTitle: { fontSize: 18, fontWeight: '700' },
-  content: { padding: 16, paddingBottom: 48 },
+  content: { padding: 16 },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '700',

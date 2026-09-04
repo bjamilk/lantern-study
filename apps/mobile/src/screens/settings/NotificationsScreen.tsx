@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import {
   CommonActions,
@@ -23,6 +22,7 @@ import {
   isNotificationRead,
   getNotificationDate,
 } from "@lantern/shared";
+import { Screen, useScreenBottomPadding } from "../../components/layout";
 import { useAuthStore } from "../../stores/authStore";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { buildCurrentGameUser } from "../../utils/currentGameUser";
@@ -68,6 +68,7 @@ type NotificationsNavigationProp = CompositeNavigationProp<
 
 export default function NotificationsScreen() {
   const { onScroll: chromeOnScroll } = useChrome();
+  const bottomPadding = useScreenBottomPadding();
   const navigation = useNavigation<NotificationsNavigationProp>();
   const { colors } = useTheme();
   const user = useAuthStore((s) => s.user);
@@ -335,7 +336,7 @@ export default function NotificationsScreen() {
   const showCloseButton = navigation.canGoBack();
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={["top"]}>
+    <Screen bottom="none">
       <View className="flex-row items-center px-4 py-2 border-b border-lantern-border bg-lantern-surface">
         {showCloseButton ? (
           <Pressable
@@ -375,7 +376,10 @@ export default function NotificationsScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
-          contentContainerClassName="px-4 py-3 pb-8"
+          contentContainerClassName="px-4 pt-3"
+          // NotificationsTab is a real tab, so the absolute bottom bar overlays
+          // the list: the last row needs its clearance, not `pb-8` (28px).
+          contentContainerStyle={{ paddingBottom: bottomPadding }}
           ListHeaderComponent={
             <AcademicFeedPanel
               limit={6}
@@ -424,6 +428,6 @@ export default function NotificationsScreen() {
           )}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }

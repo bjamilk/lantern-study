@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Badge } from '../ui';
 import { useTheme } from '../../theme';
+import { TAB_BAR_CONTENT_HEIGHT, tabBarClearance } from './screenInsets';
 
 export type TabKey =
   | 'Home'
@@ -78,13 +79,19 @@ function TabButton({
 }
 
 /** Approximate content height above the home indicator; used by screens for bottom padding. */
-export const BOTTOM_TAB_BAR_CONTENT_HEIGHT = 56;
+export const BOTTOM_TAB_BAR_CONTENT_HEIGHT = TAB_BAR_CONTENT_HEIGHT;
 
-/** Bottom padding so scroll content clears the absolute tab bar + system nav. */
+/**
+ * Bottom padding so scroll content clears the absolute tab bar + system nav.
+ *
+ * The arithmetic moved to screenInsets.ts (pure, unit-tested) so the bar, this
+ * hook and the layout primitives cannot drift apart. Behaviour is unchanged:
+ * 56 + max(inset, 20) + 10 + extra. Prefer `useScreenBottomPadding` on new
+ * code — it also knows when the bar is NOT over the route.
+ */
 export function useTabBarClearance(extra = 16): number {
   const insets = useSafeAreaInsets();
-  // Android 3-button / gesture nav often reports a small inset; keep a firm minimum.
-  return BOTTOM_TAB_BAR_CONTENT_HEIGHT + Math.max(insets.bottom, 20) + 10 + extra;
+  return tabBarClearance(insets.bottom, extra);
 }
 
 /**
@@ -155,7 +162,7 @@ export function BottomTabBar({
         paddingHorizontal: 0,
         backgroundColor: colors.tabBar,
         borderTopColor: colors.tabBarBorder,
-        shadowColor: isDark ? '#000000' : '#0f172a',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: isDark ? 0.35 : 0.08,
         shadowRadius: 12,

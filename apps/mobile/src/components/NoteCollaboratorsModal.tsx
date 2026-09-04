@@ -1,6 +1,7 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
   Modal,
@@ -25,6 +26,7 @@ import {
   revokeNoteShareLink,
   updateNoteCollaboratorRole,
 } from '../services/notes';
+import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
 
 type Role = 'viewer' | 'editor';
 type Collaborator = {
@@ -191,7 +193,15 @@ export function NoteCollaboratorsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/50">
+      {/* The keyboard lands exactly where a bottom-anchored sheet sits, and on
+          Android 15+ (this app targets SDK 36) the window is not resized, so
+          the input and its confirm button were covered with no scroll range.
+          Making the KeyboardAvoidingView the overlay lifts the sheet, and its
+          max-height then resolves against the keyboard-free box. */}
+      <KeyboardAvoidingView
+        behavior={SCREEN_KEYBOARD_BEHAVIOR}
+        className="flex-1 justify-end bg-black/50"
+      >
         <View className="bg-lantern-surface rounded-t-2xl max-h-[88%]">
           <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
             <Text className="text-lg font-semibold text-lantern-text">Share note</Text>
@@ -306,7 +316,7 @@ export function NoteCollaboratorsModal({
             )}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

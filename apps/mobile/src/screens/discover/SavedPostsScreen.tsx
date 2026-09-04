@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   BOARD_BOOKMARKS_PAGE_SIZE,
@@ -11,6 +10,7 @@ import {
 } from '@lantern/shared/network';
 import * as boardApi from '../../services/boardActions';
 import { BackButton } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 type Navigation = {
   goBack: () => void;
@@ -33,6 +33,11 @@ type Navigation = {
  * here rather than leave a private reader for a members-only board.
  */
 export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
+  // `SavedPosts` is NOT immersive, so `edges={['bottom']}` was the wrong tool:
+  // it paid the ~20-48px system inset while the absolute tab bar over this
+  // route is ~86-114px tall. This list also wires no scroll handler, so the bar
+  // never slides away — the clearance has to be paid in full.
+  const listBottomPadding = useScreenBottomPadding();
   const [entries, setEntries] = useState<BoardBookmarkEntry[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,7 +145,7 @@ export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
+    <Screen bottom="none">
       <View className="h-[56px] flex-row items-center border-b border-lantern-border pr-2">
         <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
         <Text
@@ -158,7 +163,7 @@ export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
         renderItem={renderEntry}
         onEndReachedThreshold={0.4}
         onEndReached={loadMore}
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 16 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: listBottomPadding }}
         ListEmptyComponent={
           loading ? (
             <View className="items-center py-10">
@@ -182,7 +187,7 @@ export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
           ) : null
         }
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 

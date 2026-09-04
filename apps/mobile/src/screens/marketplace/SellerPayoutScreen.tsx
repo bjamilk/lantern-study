@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchSellerPayments } from '../../services/api';
 import { Button } from '../../components/ui';
@@ -119,7 +119,11 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
           : { bg: colors.backgroundSecondary, fg: colors.textSecondary };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    /* SellerPayoutSetup's NUBAN account-number field and its "Save bank
+       account" button are on the money path, and the number pad covered both:
+       on SDK 36 Android the window is not resized, so the scroll viewport
+       never shrinks and there is no range to scroll them clear. */
+    <Screen bottom="none" keyboard>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
         <Pressable
           hitSlop={10}
@@ -141,6 +145,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
+        keyboardShouldPersistTaps="handled"
       >
         <SellerPayoutSetup />
 
@@ -265,7 +270,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
           ) : null}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

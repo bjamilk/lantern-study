@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   ScrollView,
@@ -8,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import type { SellerAnalytics } from '@lantern/shared/types';
 import { Button } from '../../../components/ui';
@@ -39,7 +40,7 @@ export function SellerInsightsModal({
   onHallDropoffEnabledChange,
   onHallDropoffMinChange,
 }: Props) {
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
   const [savingPrefs, setSavingPrefs] = useState(false);
   // Earnings ledger (Phase 2 · I): what each sale paid out after the Lantern fee.
   const [payments, setPayments] = useState<Awaited<ReturnType<typeof fetchSellerPayments>>>([]);
@@ -70,7 +71,9 @@ export function SellerInsightsModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 justify-end">
+      {/* Bottom-anchored sheet: the keyboard lands exactly where it sits, so
+          the preferences input was covered. The KAV lifts the whole sheet. */}
+      <KeyboardAvoidingView behavior={SCREEN_KEYBOARD_BEHAVIOR} className="flex-1 justify-end">
         <Pressable className="flex-1 bg-black/40" onPress={onClose} />
         <View
           style={{ paddingBottom: insets.bottom + 12, maxHeight: '88%' }}
@@ -89,7 +92,11 @@ export function SellerInsightsModal({
             </Pressable>
           </View>
 
-          <ScrollView className="px-4" contentContainerStyle={{ paddingBottom: 24 }}>
+          <ScrollView
+            className="px-4"
+            contentContainerStyle={{ paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+          >
             {analytics ? (
               <>
                 <View className="flex-row flex-wrap gap-2 mb-3">
@@ -248,7 +255,7 @@ export function SellerInsightsModal({
             </View>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { Pressable, Text, ActivityIndicator, View, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// Imported from the module, not the layout barrel: the barrel re-exports
+// BottomTabBar, which imports from this file, and that would be a cycle.
+import { useScreenBottomPadding } from '../layout/Screen';
 import { useToastStore } from '../../stores/toastStore';
 import { useConfirmStore } from '../../stores/confirmStore';
 import { BackButton } from './BackButton';
@@ -87,7 +90,10 @@ export function Card({ children, className = '' }: { children: React.ReactNode; 
     <View
       className={`bg-lantern-surface rounded-lantern-xl border border-lantern-border p-4 ${className}`}
       style={{
-        shadowColor: '#0f172a',
+        // Neutral black, never a tinted slate: on this app's warm cream
+        // surfaces a blue-black shadow reads as a coloured edge around the box
+        // rather than as depth. The softness is unchanged — only the hue.
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.06,
         shadowRadius: 8,
@@ -179,6 +185,13 @@ const toastBg: Record<string, string> = {
 
 export function ToastHost() {
   const { message, type, dismissToast } = useToastStore();
+  // `bottom-10` is 35px at this project's NativeWind rem of 14, and the bottom
+  // tab bar is an absolutely-positioned overlay 86-114px tall drawn at
+  // elevation 12. Every toast on a tabbed screen was therefore behind the bar:
+  // on Android elevation wins over sibling order, so `z-50` alone did nothing.
+  // Clearing the bar (or the plain system inset where no bar is over the
+  // route) and out-elevating it puts the toast back on screen.
+  const bottom = useScreenBottomPadding({ bottomExtra: 8 });
   useEffect(() => {
     if (!message) return;
     const t = setTimeout(dismissToast, 4000);
@@ -186,7 +199,11 @@ export function ToastHost() {
   }, [message, dismissToast]);
   if (!message) return null;
   return (
-    <View className="absolute left-4 right-4 bottom-10 z-50" pointerEvents="box-none">
+    <View
+      className="absolute left-4 right-4 z-50"
+      style={{ bottom, elevation: 16 }}
+      pointerEvents="box-none"
+    >
       <Pressable
         onPress={dismissToast}
         className={`${toastBg[type] || toastBg.info} rounded-2xl px-4 py-3 shadow-lg`}

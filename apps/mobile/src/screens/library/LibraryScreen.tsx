@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Pressable, Text, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { featureAccents } from '@lantern/shared/design';
@@ -21,6 +20,7 @@ import { useTheme } from '../../theme';
 import { useLibrarySearch } from '../../hooks/useLibrarySearch';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { Screen } from '../../components/layout';
 import {
   buildLibraryTree,
   courseNodeLabel,
@@ -265,7 +265,7 @@ export function LibraryScreen({ navigation, route }: Props) {
   const heroDecks = tree ? tree.totals.decks : decks.length;
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="px-4 pt-2 bg-lantern-background">
         {/* The screen title shares the search row: the bottom tab bar already
             names this screen and carries its icon and due-card badge, so a hero
@@ -421,7 +421,6 @@ export function LibraryScreen({ navigation, route }: Props) {
                       ? 'bg-lantern-surface border-lantern-border'
                       : 'border-transparent'
                   }`}
-                  style={active ? { borderTopWidth: 3, borderTopColor: featureAccents.library } : undefined}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                 >
@@ -488,7 +487,7 @@ export function LibraryScreen({ navigation, route }: Props) {
           setCourseFilter({ id: courseFilter.id, label: courseFilter.label });
         }}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 

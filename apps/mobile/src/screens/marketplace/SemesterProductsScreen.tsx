@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { createStudyPackDraft, fetchSemesterPackProposals } from '../../services/api';
@@ -41,6 +41,9 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
     void load();
   }, [load]);
 
+  // 40px did not clear the absolute bottom tab bar, so the last course
+  // proposal and the generate button were untappable.
+  const bottomPadding = useScreenBottomPadding();
   const proposals = data?.proposals ?? [];
   const cap = data?.maxSelectable ?? 0;
   const remaining = data?.creditsRemaining ?? 0;
@@ -80,7 +83,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="flex-row items-center px-4 py-2">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Back">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -89,7 +92,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
         {/* Seller tool: You carries the seller's own badges, Cart would only be clutter here. */}
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} hide={['cart']} />
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPadding }}>
         <Text className="text-sm text-lantern-text-secondary mb-4">
           Each selected course costs {STUDY_PACK_DRAFT_CREDITS} AI credits. Packs generate one at a
           time.
@@ -152,7 +155,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

@@ -1,8 +1,12 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import {
+  SCREEN_KEYBOARD_BEHAVIOR,
+  Screen,
+  useScreenBottomPadding,
+  useScreenInsets,
+} from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
@@ -57,7 +61,11 @@ export function OrderDetailScreen({
   };
 }) {
   const { user } = useAuthStore();
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
+  // The old `className="px-4 pb-8"` put 28px of padding on the ScrollView's
+  // OWN style (which clips the scrollable extent on Android) and did not clear
+  // the ~102px absolute bottom tab bar, burying 'Leave a review'.
+  const bottomPadding = useScreenBottomPadding();
   const { fetchMyListings, fetchSellerStats } = useMarketplaceStore();
   const [order, setOrder] = useState<MarketplaceOrder | null>(null);
   const [loading, setLoading] = useState(true);
@@ -237,14 +245,16 @@ export function OrderDetailScreen({
 
   if (loading || !order) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-lantern-background">
-        {loading ? <ActivityIndicator /> : <Text>Order not found</Text>}
-      </SafeAreaView>
+      <Screen bottom="safe">
+        <View className="flex-1 items-center justify-center">
+          {loading ? <ActivityIndicator /> : <Text>Order not found</Text>}
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <OpenDisputeModal
         visible={disputeOpen}
         onClose={() => setDisputeOpen(false)}
@@ -264,7 +274,11 @@ export function OrderDetailScreen({
         </Text>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
       </View>
-      <ScrollView className="px-4 pb-8" contentContainerStyle={{ gap: 16 }}>
+      <ScrollView
+        className="px-4"
+        contentContainerStyle={{ gap: 16, paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="p-4 rounded-xl bg-lantern-surface">
           <Text className="text-2xl font-bold text-lantern-primary">{formatPrice(Number(order.amount))}</Text>
           {(order.quantity || 1) > 1 ? (
@@ -466,7 +480,13 @@ export function OrderDetailScreen({
       </ScrollView>
 
       <Modal visible={showReview} transparent animationType="slide" onRequestClose={() => setShowReview(false)}>
-        <View className="flex-1 justify-end bg-black/40">
+        {/* A bottom-anchored sheet sits exactly where the keyboard lands, so the
+            multiline review box and the Submit button below it were covered.
+            The KAV lifts the whole sheet — the shape OpenDisputeModal uses. */}
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          className="flex-1 justify-end bg-black/40"
+        >
           <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
             <Text className="text-lg font-bold text-lantern-text mb-3">Rate your purchase</Text>
             <View className="flex-row gap-2 mb-4">
@@ -498,8 +518,8 @@ export function OrderDetailScreen({
               </Button>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+    </Screen>
   );
 }

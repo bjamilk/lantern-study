@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../../stores/authStore';
 import { useBudgetStore, EXPENSE_CATEGORIES, formatCurrency } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 export default function SetCategoryBudgetScreen() {
   const navigation = useNavigation<any>();
+  // The bottom tab bar is an absolute overlay on every Budget-stack screen, so
+  // the only save control on this page needs its clearance, not a `pb-8`.
+  const bottomPadding = useScreenBottomPadding();
   const userId = useAuthStore(s => s.user?.id) || '';
   const { budget, fetchBudget, setBudget } = useBudgetStore();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -48,9 +51,13 @@ export default function SetCategoryBudgetScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none" keyboard>
       <ScreenHeader title="Category budgets" onBack={() => navigation.goBack()} subtitle="Monthly limits per category" />
-      <ScrollView contentContainerClassName="px-4 pb-8 gap-3">
+      <ScrollView
+        contentContainerClassName="px-4 gap-3"
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
         {EXPENSE_CATEGORIES.map(cat => (
           <Card key={cat.id} className="p-3 flex-row items-center gap-3">
             <Text className="text-lg">{cat.icon}</Text>
@@ -70,6 +77,6 @@ export default function SetCategoryBudgetScreen() {
           <Text className="text-center text-xs text-lantern-text-secondary">Overall budget: {formatCurrency(budget.monthlyLimit)}</Text>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }

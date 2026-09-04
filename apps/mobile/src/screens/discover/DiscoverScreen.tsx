@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import { studyRoomTimeLeftLabel, type StudyRoomListItem } from '@lantern/shared/network';
@@ -40,6 +39,7 @@ import { DiscoverComingSoon } from './DiscoverComingSoon';
 
 import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
 import { useChrome } from '../../components/layout/ChromeContext';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BackButton } from '../../components/ui';
 import { UnreadPill } from '../../components/community';
 import { toChannelOverlayGroups } from '../../utils/communityOverlay';
@@ -66,6 +66,10 @@ function DiscoverHub({
   route?: { params?: { section?: Section; at?: number } };
 }) {
   const { onScroll: chromeOnScroll } = useChrome();
+  // Every section list is overlaid by the absolute bottom tab bar (Discover is
+  // not immersive); the old hard-coded 32 left ~70px of the last card under it,
+  // and the People/Rooms sections are often too short to scroll the bar away.
+  const listBottomPadding = useScreenBottomPadding();
   // Open on a section that is actually switched on. Defaulting to communities
   // now lands on a hidden section with no tab bar to leave it, because the bar
   // hides itself when fewer than two sections are enabled.
@@ -528,7 +532,12 @@ function DiscoverHub({
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    // `keyboard` wraps the header + list in the shared KeyboardAvoidingView:
+    // the search box and the inline "Start an interest community" form (two
+    // fields plus a Create button, in the communities list header) had no
+    // keyboard handling at all, and on Android 15+ the window does not resize
+    // itself, so nothing could be scrolled clear of the keyboard.
+    <Screen bottom="none" keyboard>
       <View className="border-b border-lantern-border">
         <View className="flex-row items-center">
           <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
@@ -623,7 +632,8 @@ function DiscoverHub({
           scrollEventThrottle={16}
           keyExtractor={(item) => item.key}
           renderItem={renderCommunityItem}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: listBottomPadding }}
+          keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <View className="mx-4 mb-2">
               <Pressable onPress={() => setCreatingCommunity((open) => !open)}>
@@ -674,7 +684,8 @@ function DiscoverHub({
           renderItem={renderRoom}
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: listBottomPadding }}
+          keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={roomsRefreshing} onRefresh={() => void refreshRooms()} />}
           // After a failed fetch the error banner above already says so; an
           // "open rooms" claim under it would be a guess.
@@ -689,7 +700,8 @@ function DiscoverHub({
           renderItem={renderGroup}
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: listBottomPadding }}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View>
               <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
@@ -704,7 +716,8 @@ function DiscoverHub({
           scrollEventThrottle={16}
           keyExtractor={(item) => item.id}
           renderItem={renderPerson}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: listBottomPadding }}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View>
               <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
@@ -713,7 +726,7 @@ function DiscoverHub({
           }
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

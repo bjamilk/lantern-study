@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../services/api';
@@ -12,6 +11,7 @@ import {
   getCategoryIcon,
 } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
 
 interface RecurringRule {
@@ -30,6 +30,9 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export default function RecurringScreen() {
   const navigation = useNavigation<any>();
+  // The Budget stack sits under the absolutely-positioned bottom tab bar, so
+  // the trailing action needs its clearance rather than a hand-typed `pb-8`.
+  const bottomPadding = useScreenBottomPadding();
   const fetchTransactions = useBudgetStore(s => s.fetchTransactions);
   const currentUserId = useBudgetStore(s => s.budget?.userId);
 
@@ -110,9 +113,13 @@ export default function RecurringScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none" keyboard>
       <ScreenHeader title="Recurring" onBack={() => navigation.goBack()} subtitle="Allowance, hostel, data — auto-posted" />
-      <ScrollView contentContainerClassName="px-4 pb-8 gap-3" keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerClassName="px-4 gap-3"
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text className="text-xs text-lantern-text-secondary px-1">
           Set up items that repeat. They post automatically on their date when you open Budget.
         </Text>
@@ -217,6 +224,6 @@ export default function RecurringScreen() {
           onClose={() => setShowDatePicker(false)}
         />
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }

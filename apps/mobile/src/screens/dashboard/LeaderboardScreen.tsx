@@ -4,7 +4,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchLeaderboard, type LeaderboardEntry } from '../../services/gamification';
@@ -98,9 +98,12 @@ export function LeaderboardScreen() {
   };
 
   const selfEntry = entries.find(e => e.user.id === userId);
+  // Infinite list under an absolutely positioned bottom tab bar: 32px never
+  // cleared it, so there was always a rank row buried under the bar.
+  const listPadding = useScreenBottomPadding();
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen edges={['top']} bottom="none">
       <ScreenHeader title="Leaderboard" subtitle="Top students by points" onBack={() => navigation.goBack()} />
 
       {selfEntry ? (
@@ -129,7 +132,7 @@ export function LeaderboardScreen() {
         <FlatList
           data={entries}
           keyExtractor={item => item.user.id}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listPadding }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.primary} />
           }
@@ -153,7 +156,7 @@ export function LeaderboardScreen() {
           }
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

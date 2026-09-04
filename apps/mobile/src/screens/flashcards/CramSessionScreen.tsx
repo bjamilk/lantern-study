@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashcardType } from '@lantern/shared';
 import { shuffleArray } from '@lantern/shared/utils';
 import { useFlashcardStore, type Flashcard } from '../../stores';
 import { Button, Card } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { FlashcardImage } from '../../components/FlashcardImage';
 import { ImageOcclusionView } from '../../components/ImageOcclusionView';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
@@ -23,7 +23,12 @@ interface Props {
 }
 
 export function CramSessionScreen({ navigation, route }: Props) {
-  const insets = useSafeAreaInsets();
+  // `presentation: 'fullScreenModal'` puts this route in its own native
+  // window, which the app-root SafeAreaProvider never measures — the raw
+  // `useSafeAreaInsets()` this used to call returned 0 on every edge, so the
+  // Exit row drew under the clock and the grade buttons sat on the gesture
+  // bar. `Screen`/`useScreenBottomPadding` fall back to initialWindowMetrics.
+  const footerPadding = useScreenBottomPadding({ bottom: 'safe', bottomExtra: 12 });
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Cram';
   const timedMinutes = route.params?.timedMinutes ?? 0;
@@ -140,28 +145,32 @@ export function CramSessionScreen({ navigation, route }: Props) {
 
   if (!queue.length && !allCards.length) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-lantern-text mb-2">No cards to cram</Text>
-        <Button onPress={() => navigation.goBack()}>Back</Button>
-      </SafeAreaView>
+      <Screen edges={['top']} bottom="safe">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-lg font-semibold text-lantern-text mb-2">No cards to cram</Text>
+          <Button onPress={() => navigation.goBack()}>Back</Button>
+        </View>
+      </Screen>
     );
   }
 
   if (isComplete) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-2">Cram complete</Text>
-        <Text className="text-sm text-lantern-text-secondary text-center mb-1">{deckName}</Text>
-        <Text className="text-base text-lantern-text mb-6">
-          {correct} correct · {incorrect} incorrect
-        </Text>
-        {missedCards.length > 0 ? (
-          <Button variant="accent" className="mb-3 w-full" onPress={handleRetryMissed}>
-            Retry missed cards ({missedCards.length})
-          </Button>
-        ) : null}
-        <Button onPress={() => navigation.goBack()}>Done</Button>
-      </SafeAreaView>
+      <Screen edges={['top']} bottom="safe">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-2">Cram complete</Text>
+          <Text className="text-sm text-lantern-text-secondary text-center mb-1">{deckName}</Text>
+          <Text className="text-base text-lantern-text mb-6">
+            {correct} correct · {incorrect} incorrect
+          </Text>
+          {missedCards.length > 0 ? (
+            <Button variant="accent" className="mb-3 w-full" onPress={handleRetryMissed}>
+              Retry missed cards ({missedCards.length})
+            </Button>
+          ) : null}
+          <Button onPress={() => navigation.goBack()}>Done</Button>
+        </View>
+      </Screen>
     );
   }
 
@@ -172,7 +181,7 @@ export function CramSessionScreen({ navigation, route }: Props) {
   const isImageOcclusion = currentCard!.type === FlashcardType.IMAGE_OCCLUSION;
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen edges={['top']} bottom="none">
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
@@ -219,7 +228,7 @@ export function CramSessionScreen({ navigation, route }: Props) {
         </Pressable>
       </View>
 
-      <View className="px-4 gap-2" style={{ paddingBottom: Math.max(insets.bottom, 12) + 12 }}>
+      <View className="px-4 gap-2" style={{ paddingBottom: footerPadding }}>
         {!showBack ? (
           <Button variant="accent" fullWidth onPress={() => setShowBack(true)}>
             Show Answer
@@ -235,7 +244,7 @@ export function CramSessionScreen({ navigation, route }: Props) {
           </View>
         )}
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

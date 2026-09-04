@@ -1,6 +1,7 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   View,
   Text,
   Modal,
@@ -27,6 +28,7 @@ import {
   importUserAccountBackup,
   reactivateUserAccount,
 } from '../services/accountLifecycle';
+import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
 
 export function AccountPausedBannerMobile({
   lifecycle,
@@ -223,7 +225,15 @@ export function AccountLifecycleModals({
   return (
     <>
       <Modal visible={deleteOpen} animationType="slide" transparent onRequestClose={handleCloseDelete}>
-        <View className="flex-1 justify-end bg-black/50">
+        {/* A bottom-anchored sheet sits exactly where the keyboard lands, and
+            Android 15+ does not resize the window (this app targets SDK 36), so
+            the confirmation fields and the destructive button were covered with
+            no scroll range. The KeyboardAvoidingView IS the overlay, so the
+            sheet lifts and its max-height resolves against what is left. */}
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          className="flex-1 justify-end bg-black/50"
+        >
           <View className="bg-lantern-surface rounded-t-2xl max-h-[85%]">
             <ScrollView contentContainerClassName="p-5" contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
               <Text className="text-lg font-semibold text-lantern-text mb-2">
@@ -314,11 +324,19 @@ export function AccountLifecycleModals({
               ) : null}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={importOpen} animationType="slide" transparent onRequestClose={onCloseImport}>
-        <View className="flex-1 justify-end bg-black/50">
+        {/* A bottom-anchored sheet sits exactly where the keyboard lands, and
+            Android 15+ does not resize the window (this app targets SDK 36), so
+            the confirmation fields and the destructive button were covered with
+            no scroll range. The KeyboardAvoidingView IS the overlay, so the
+            sheet lifts and its max-height resolves against what is left. */}
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          className="flex-1 justify-end bg-black/50"
+        >
           <View className="bg-lantern-surface rounded-t-2xl p-5" style={{ paddingBottom: insets.bottom + 32 }}>
             <Text className="text-lg font-semibold text-lantern-text mb-2">Import backup</Text>
             <Text className="text-sm text-lantern-text-secondary mb-3">{ACCOUNT_EXPORT_COPY.restoreHint}</Text>
@@ -345,7 +363,7 @@ export function AccountLifecycleModals({
               </Button>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {renderPausedBanner && lifecycle?.status === 'deactivated' ? (

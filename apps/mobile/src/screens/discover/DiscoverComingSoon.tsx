@@ -1,10 +1,10 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   DISCOVER_COMING_SOON_BODY,
   DISCOVER_COMING_SOON_TITLE,
 } from '@lantern/shared/network';
+import { Screen } from '../../components/layout';
 
 export function DiscoverComingSoon({
   onBack,
@@ -14,7 +14,7 @@ export function DiscoverComingSoon({
   backLabel?: string;
 }) {
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']} testID="discover-coming-soon">
+    <Screen bottom="none" testID="discover-coming-soon">
       <View className="px-4 pt-3">
         <Text className="text-lg font-semibold text-lantern-text">{DISCOVER_COMING_SOON_TITLE}</Text>
         <View className="mt-3 rounded-xl border border-dashed border-lantern-border bg-lantern-surface p-8">
@@ -33,7 +33,7 @@ export function DiscoverComingSoon({
           ) : null}
         </View>
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

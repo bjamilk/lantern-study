@@ -13,7 +13,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen } from '../../components/layout';
+import { KeyboardSafePanel } from './components/KeyboardSafePanel';
 import { Ionicons } from '@expo/vector-icons';
 import { Skeleton, Button, Badge } from '../../components/ui';
 import {
@@ -707,7 +708,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="pt-1 pb-2 gap-2">
         {/* No Discover section bar here. With Community switched back on it
             would put a Community | Market tab row above the Shop header for
@@ -1062,8 +1063,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         </View>
         ) : null}
 
+        {/* The filters live in the FIXED header chrome, above the product list
+            rather than inside it, so nothing here could ever be scrolled: with
+            the keyboard over "Min ₦"/"Max ₦"/"Pickup or delivery area" the
+            covered field was simply unreachable. KeyboardSafePanel bounds the
+            panel to the room actually left above the keyboard and lets it
+            scroll inside that; with the keyboard down it is unbounded and lays
+            out exactly as before. */}
         {activeTab !== 'shops' && openPanel === 'filters' ? (
-          <View className="px-3 pb-3 gap-2">
+          <KeyboardSafePanel className="px-3 pb-3" contentClassName="gap-2">
             <View className="flex-row items-center justify-between">
               <Text accessibilityRole="header" className="text-xs font-semibold text-lantern-text">
                 Filters
@@ -1252,7 +1260,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 );
               })}
             </View>
-          </View>
+          </KeyboardSafePanel>
         ) : null}
 
         {/* No tab gate: the header Alerts button works on Shops too, and it is
@@ -1441,6 +1449,6 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           renderItem={renderListing}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }

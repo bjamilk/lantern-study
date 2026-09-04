@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { fetchSellerBuyers } from '../../services/api';
@@ -38,6 +38,9 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
   const [segment, setSegment] = useState<string>('');
   const [showCampaign, setShowCampaign] = useState(false);
   const [campaignBuyerIds, setCampaignBuyerIds] = useState<string[] | undefined>();
+  // The list had no bottom padding at all, so the last customer card and its
+  // Message/Campaign actions sat entirely under the absolute bottom tab bar.
+  const bottomPadding = useScreenBottomPadding();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,7 +67,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none">
       <View className="px-4 py-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -114,7 +117,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
         <FlatList
           data={buyers}
           keyExtractor={item => item.buyerId}
-          contentContainerStyle={{ padding: 16, gap: 12 }}
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: bottomPadding }}
           ListEmptyComponent={<Text className="text-center text-lantern-text-secondary mt-12">No customers yet</Text>}
           renderItem={({ item }) => (
             <View className="p-4 rounded-xl bg-lantern-surface border border-lantern-border">
@@ -176,6 +179,6 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
           setCampaignBuyerIds(undefined);
         }}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }

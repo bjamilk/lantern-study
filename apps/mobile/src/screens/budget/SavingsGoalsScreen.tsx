@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
 import { useBudgetStore, formatCurrency, type SavingsGoal } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
 
 const GOAL_ICONS = ['🎯', '📱', '💻', '📚', '✈️', '🏠', '🚗', '👕', '🎓', '💰', '🎁', '⚽'];
 
 export default function SavingsGoalsScreen() {
   const navigation = useNavigation<any>();
+  // The Budget stack sits under the absolutely-positioned bottom tab bar, so
+  // the trailing action needs its clearance rather than a hand-typed `pb-8`.
+  const bottomPadding = useScreenBottomPadding();
   const userId = useAuthStore(s => s.user?.id) || '';
   const { savingsGoals, loadSavingsGoals, addSavingsGoal, contributeToGoal, removeSavingsGoal } = useBudgetStore();
   const [name, setName] = useState('');
@@ -107,9 +110,13 @@ export default function SavingsGoalsScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <Screen bottom="none" keyboard>
       <ScreenHeader title="Savings goals" onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerClassName="px-4 pb-8 gap-3" keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerClassName="px-4 gap-3"
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
+        keyboardShouldPersistTaps="handled"
+      >
         <Card className="p-4 gap-3">
           <Text className="font-semibold text-lantern-text dark:text-white">New goal</Text>
           {/* Icon picker */}
@@ -160,6 +167,6 @@ export default function SavingsGoalsScreen() {
           onClose={() => setShowDatePicker(false)}
         />
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }

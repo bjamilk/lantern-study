@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { FlashcardType, FLASHCARD_GRADE_LABELS } from '@lantern/shared';
 import type { PerformanceRating } from '@lantern/shared/utils';
@@ -18,6 +17,7 @@ import {
 } from '@lantern/shared/settings';
 import { useAuthStore, useFlashcardStore, type Flashcard } from '../../stores';
 import { Button } from '../../components/ui';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { SwipeableFlashcard } from '../../components/SwipeableFlashcard';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
@@ -115,7 +115,11 @@ function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
 
 export function FlashcardReviewScreen({ navigation, route }: Props) {
   const { reduceMotion, colors } = useTheme();
-  const insets = useSafeAreaInsets();
+  // `presentation: 'fullScreenModal'` gives this route its own native window,
+  // which the app-root SafeAreaProvider never measures: the raw
+  // `useSafeAreaInsets()` returned 0 on every edge here, so the Exit/Undo row
+  // drew under the clock and Again/Hard/Good/Easy sat on the gesture bar.
+  const footerPadding = useScreenBottomPadding({ bottom: 'safe', bottomExtra: 12 });
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Review';
   const deck = useFlashcardStore(s => s.decks.find(d => d.id === deckId));
@@ -379,12 +383,14 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
 
   if (!deckId) {
     return (
-      <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={shellStyle}>
+        <View className="flex-1 items-center justify-center px-6">
         <Text className="text-lg font-semibold text-lantern-text mb-2" style={{ color: colors.text }}>
           Deck not found
         </Text>
         <Button onPress={() => navigation.goBack()}>Go back</Button>
-      </SafeAreaView>
+        </View>
+      </Screen>
     );
   }
 
@@ -392,7 +398,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     const stillLoading = isLoading || (deckCards.length === 0 && queueSnapshotRef.current === null);
     const hasNewLeft = deckCards.some((c) => isNewFlashcard(c));
     return (
-      <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={shellStyle}>
+        <View className="flex-1 items-center justify-center px-6">
         <Text className="text-lg font-semibold text-lantern-text mb-2" style={{ color: colors.text }}>
           {stillLoading ? 'Loading cards…' : 'Nothing to review'}
         </Text>
@@ -407,13 +414,15 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
               : 'No cards are due right now. Try Cram to practice every card, or come back later.'}
         </Text>
         <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
-      </SafeAreaView>
+        </View>
+      </Screen>
     );
   }
 
   if (!currentCard && !isComplete && sessionTotal > 0) {
     return (
-      <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={shellStyle}>
+        <View className="flex-1 items-center justify-center px-6">
         <Text className="text-lg font-semibold text-lantern-text mb-2" style={{ color: colors.text }}>
           Card unavailable
         </Text>
@@ -437,7 +446,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
             Exit
           </Button>
         </View>
-      </SafeAreaView>
+        </View>
+      </Screen>
     );
   }
 
@@ -451,7 +461,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
       { rating: 'easy', textClass: 'text-blue-500' },
     ];
     return (
-      <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={shellStyle}>
+        <View className="flex-1 items-center justify-center px-6">
         <Text className="text-2xl font-bold text-lantern-primary mb-1" style={{ color: colors.primary }}>
           Session complete
         </Text>
@@ -506,7 +517,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
             Done
           </Button>
         </View>
-      </SafeAreaView>
+        </View>
+      </Screen>
     );
   }
 
@@ -546,7 +558,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   );
 
   return (
-    <SafeAreaView style={shellStyle} edges={['top']}>
+    <Screen edges={['top']} bottom="none" className="flex-1" style={shellStyle}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
@@ -613,7 +625,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         />
       </ScrollView>
 
-      <View className="px-4 gap-3" style={{ paddingBottom: Math.max(insets.bottom, 12) + 12 }}>
+      <View className="px-4 gap-3" style={{ paddingBottom: footerPadding }}>
         {!showBack ? (
           <Button
             fullWidth
@@ -636,7 +648,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
           </>
         )}
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

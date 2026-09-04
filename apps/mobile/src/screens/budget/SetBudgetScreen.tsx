@@ -2,7 +2,6 @@
 // Lantern Study Mobile - Set Budget Screen
 // ===========================================
 
-import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -11,10 +10,7 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScrollView } from 'react-native';
@@ -26,12 +22,16 @@ import {
 import { summarizeBudgetPlan } from '@lantern/shared/utils';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 export default function SetBudgetScreen() {
   const navigation = useNavigation<any>();
   const userId = useAuthStore(s => s.user?.id) || '';
   const { budget, setBudget, setBudgetPlan, isLoading } = useBudgetStore();
   const { colors } = useTheme();
+  // `paddingBottom: 48` did not clear the absolute bottom tab bar; this does,
+  // and it tracks the device's own inset.
+  const bottomPadding = useScreenBottomPadding();
 
   const [amount, setAmount] = useState('');
   // Planned income per category and a savings allocation — the half that turns a
@@ -119,7 +119,7 @@ export default function SetBudgetScreen() {
   const suggestedAmounts = [50000, 100000, 150000, 200000, 300000, 500000];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <Screen keyboard bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card }]}>
         <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
@@ -137,181 +137,176 @@ export default function SetBudgetScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
+      <ScrollView
         style={styles.keyboardView}
-        behavior={COMPOSER_KEYBOARD_BEHAVIOR}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          style={styles.keyboardView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Month Display */}
-          <View style={[styles.monthContainer, { backgroundColor: colors.card }]}>
-            <Ionicons name="calendar" size={20} color="#6366f1" />
-            <Text style={[styles.monthText, { color: colors.text }]}>{currentMonth}</Text>
-          </View>
+        {/* Month Display */}
+        <View style={[styles.monthContainer, { backgroundColor: colors.card }]}>
+          <Ionicons name="calendar" size={20} color="#6366f1" />
+          <Text style={[styles.monthText, { color: colors.text }]}>{currentMonth}</Text>
+        </View>
 
-          {/* Amount Input */}
-          <View style={styles.amountSection}>
-            <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Monthly Budget</Text>
-            <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
-              <Text style={styles.currencySymbol}>₦</Text>
-              <TextInput
-                style={[styles.amountInput, { color: colors.text }]}
-                placeholder="0.00"
-                placeholderTextColor={colors.textSecondary}
-                value={amount}
-                onChangeText={(val) => setAmount(formatAmountInput(val))}
-                keyboardType="decimal-pad"
-                autoFocus
-              />
-            </View>
-            <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
-              Set a spending limit for this month
-            </Text>
+        {/* Amount Input */}
+        <View style={styles.amountSection}>
+          <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Monthly Budget</Text>
+          <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
+            <Text style={styles.currencySymbol}>₦</Text>
+            <TextInput
+              style={[styles.amountInput, { color: colors.text }]}
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+              value={amount}
+              onChangeText={(val) => setAmount(formatAmountInput(val))}
+              keyboardType="decimal-pad"
+              autoFocus
+            />
           </View>
+          <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
+            Set a spending limit for this month
+          </Text>
+        </View>
 
-          {/* Planned income — without it there is nothing to balance against. */}
-          <View style={styles.planSection}>
-            <Text style={[styles.suggestionsTitle, { color: colors.text }]}>
-              Expected income
-            </Text>
-            <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
-              What you expect to receive this month. Leave a row blank if it does
-              not apply.
-            </Text>
-            {INCOME_CATEGORIES.map(cat => (
-              <View
-                key={cat.id}
-                style={[styles.planRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-              >
-                <Text style={[styles.planRowLabel, { color: colors.text }]} numberOfLines={1}>
-                  {cat.icon}  {cat.label}
-                </Text>
-                <View style={styles.planRowInputWrap}>
-                  <Text style={[styles.planRowCurrency, { color: colors.textSecondary }]}>₦</Text>
-                  <TextInput
-                    style={[styles.planRowInput, { color: colors.text }]}
-                    placeholder="0"
-                    placeholderTextColor={colors.textSecondary}
-                    value={income[cat.id] ?? ''}
-                    onChangeText={val =>
-                      setIncome(prev => ({ ...prev, [cat.id]: val.replace(/[^0-9.]/g, '') }))
-                    }
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-              </View>
-            ))}
-          </View>
-
-          {/* Savings as a planned allocation, competing with expenses. */}
-          <View style={styles.planSection}>
-            <Text style={[styles.suggestionsTitle, { color: colors.text }]}>
-              Planned savings
-            </Text>
-            <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
-              <Text style={styles.currencySymbol}>₦</Text>
-              <TextInput
-                style={[styles.amountInput, { color: colors.text }]}
-                placeholder="0.00"
-                placeholderTextColor={colors.textSecondary}
-                value={savings}
-                onChangeText={val => setSavings(val.replace(/[^0-9.]/g, ''))}
-                keyboardType="decimal-pad"
-              />
-            </View>
-            <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
-              Set aside first, rather than hoping for leftovers
-            </Text>
-          </View>
-
-          {/* The zero-based check, live as you type. */}
-          {planSummary.totalPlannedIncome > 0 && (
+        {/* Planned income — without it there is nothing to balance against. */}
+        <View style={styles.planSection}>
+          <Text style={[styles.suggestionsTitle, { color: colors.text }]}>
+            Expected income
+          </Text>
+          <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
+            What you expect to receive this month. Leave a row blank if it does
+            not apply.
+          </Text>
+          {INCOME_CATEGORIES.map(cat => (
             <View
+              key={cat.id}
+              style={[styles.planRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Text style={[styles.planRowLabel, { color: colors.text }]} numberOfLines={1}>
+                {cat.icon}  {cat.label}
+              </Text>
+              <View style={styles.planRowInputWrap}>
+                <Text style={[styles.planRowCurrency, { color: colors.textSecondary }]}>₦</Text>
+                <TextInput
+                  style={[styles.planRowInput, { color: colors.text }]}
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                  value={income[cat.id] ?? ''}
+                  onChangeText={val =>
+                    setIncome(prev => ({ ...prev, [cat.id]: val.replace(/[^0-9.]/g, '') }))
+                  }
+                  keyboardType="decimal-pad"
+                />
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Savings as a planned allocation, competing with expenses. */}
+        <View style={styles.planSection}>
+          <Text style={[styles.suggestionsTitle, { color: colors.text }]}>
+            Planned savings
+          </Text>
+          <View style={[styles.amountInputContainer, { backgroundColor: colors.card }]}>
+            <Text style={styles.currencySymbol}>₦</Text>
+            <TextInput
+              style={[styles.amountInput, { color: colors.text }]}
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+              value={savings}
+              onChangeText={val => setSavings(val.replace(/[^0-9.]/g, ''))}
+              keyboardType="decimal-pad"
+            />
+          </View>
+          <Text style={[styles.amountHint, { color: colors.textSecondary }]}>
+            Set aside first, rather than hoping for leftovers
+          </Text>
+        </View>
+
+        {/* The zero-based check, live as you type. */}
+        {planSummary.totalPlannedIncome > 0 && (
+          <View
+            style={[
+              styles.balanceCard,
+              {
+                backgroundColor: planSummary.isBalanced ? '#22c55e18' : colors.card,
+                borderColor: planSummary.isBalanced ? '#22c55e' : colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>
+              {planSummary.isBalanced
+                ? 'Balanced — every naira has a job'
+                : planSummary.leftToAllocate > 0
+                  ? 'Left to allocate'
+                  : 'Over-committed by'}
+            </Text>
+            <Text
               style={[
-                styles.balanceCard,
+                styles.balanceValue,
                 {
-                  backgroundColor: planSummary.isBalanced ? '#22c55e18' : colors.card,
-                  borderColor: planSummary.isBalanced ? '#22c55e' : colors.border,
+                  color: planSummary.isBalanced
+                    ? '#22c55e'
+                    : planSummary.leftToAllocate > 0
+                      ? colors.text
+                      : '#ef4444',
                 },
               ]}
             >
-              <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>
-                {planSummary.isBalanced
-                  ? 'Balanced — every naira has a job'
-                  : planSummary.leftToAllocate > 0
-                    ? 'Left to allocate'
-                    : 'Over-committed by'}
-              </Text>
-              <Text
+              {planSummary.isBalanced
+                ? '✓'
+                : formatCurrency(Math.abs(Math.round(planSummary.leftToAllocate)))}
+            </Text>
+            <Text style={[styles.balanceHint, { color: colors.textSecondary }]}>
+              {formatCurrency(planSummary.totalPlannedIncome)} income −{' '}
+              {formatCurrency(planSummary.totalPlannedExpenses)} expenses −{' '}
+              {formatCurrency(planSummary.plannedSavings)} savings
+            </Text>
+          </View>
+        )}
+
+        {/* Quick Amount Suggestions */}
+        <View style={styles.suggestionsSection}>
+          <Text style={[styles.suggestionsTitle, { color: colors.text }]}>Quick Select</Text>
+          <View style={styles.suggestionsGrid}>
+            {suggestedAmounts.map(suggestedAmount => (
+              <TouchableOpacity
+                key={suggestedAmount}
                 style={[
-                  styles.balanceValue,
-                  {
-                    color: planSummary.isBalanced
-                      ? '#22c55e'
-                      : planSummary.leftToAllocate > 0
-                        ? colors.text
-                        : '#ef4444',
-                  },
+                  styles.suggestionChip,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  parseFloat(amount) === suggestedAmount && styles.suggestionChipActive,
                 ]}
+                onPress={() => setAmount(suggestedAmount.toString())}
               >
-                {planSummary.isBalanced
-                  ? '✓'
-                  : formatCurrency(Math.abs(Math.round(planSummary.leftToAllocate)))}
-              </Text>
-              <Text style={[styles.balanceHint, { color: colors.textSecondary }]}>
-                {formatCurrency(planSummary.totalPlannedIncome)} income −{' '}
-                {formatCurrency(planSummary.totalPlannedExpenses)} expenses −{' '}
-                {formatCurrency(planSummary.plannedSavings)} savings
-              </Text>
-            </View>
-          )}
-
-          {/* Quick Amount Suggestions */}
-          <View style={styles.suggestionsSection}>
-            <Text style={[styles.suggestionsTitle, { color: colors.text }]}>Quick Select</Text>
-            <View style={styles.suggestionsGrid}>
-              {suggestedAmounts.map(suggestedAmount => (
-                <TouchableOpacity
-                  key={suggestedAmount}
+                <Text
                   style={[
-                    styles.suggestionChip,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                    parseFloat(amount) === suggestedAmount && styles.suggestionChipActive,
+                    styles.suggestionText,
+                    { color: colors.textSecondary },
+                    parseFloat(amount) === suggestedAmount && styles.suggestionTextActive,
                   ]}
-                  onPress={() => setAmount(suggestedAmount.toString())}
                 >
-                  <Text
-                    style={[
-                      styles.suggestionText,
-                      { color: colors.textSecondary },
-                      parseFloat(amount) === suggestedAmount && styles.suggestionTextActive,
-                    ]}
-                  >
-                    {formatCurrency(suggestedAmount)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  {formatCurrency(suggestedAmount)}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
+        </View>
 
-          {/* Info Card */}
-          <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
-            <Ionicons name="information-circle" size={24} color="#6366f1" />
-            <View style={styles.infoContent}>
-              <Text style={[styles.infoTitle, { color: colors.text }]}>How budgets work</Text>
-              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                Your budget helps you track spending. When you add expenses, 
-                we'll show you how much of your budget you've used and alert 
-                you when you're approaching your limit.
-              </Text>
-            </View>
+        {/* Info Card */}
+        <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
+          <Ionicons name="information-circle" size={24} color="#6366f1" />
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoTitle, { color: colors.text }]}>How budgets work</Text>
+            <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+              Your budget helps you track spending. When you add expenses, 
+              we'll show you how much of your budget you've used and alert 
+              you when you're approaching your limit.
+            </Text>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+      </ScrollView>
+    </Screen>
   );
 }
 
@@ -369,7 +364,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: 20,
-    paddingBottom: 48,
   },
   monthContainer: {
     flexDirection: 'row',

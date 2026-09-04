@@ -18,7 +18,7 @@ import {
 
 } from 'react-native';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
@@ -330,9 +330,15 @@ export default function ChallengesInboxScreen() {
 
 
 
+  // The bottom tab bar is an absolute overlay on this route, so a bare
+  // `padding: 16` left the last challenge row's Accept/Decline buttons under
+  // it. The container also used to take the bottom inset via default `edges`,
+  // which is the wrong quantity — the bar is ~102-118px, not ~20-48px.
+  const listPadding = useScreenBottomPadding();
+
   return (
 
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <Screen edges={['top']} bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
 
       <View style={styles.header}>
 
@@ -368,7 +374,7 @@ export default function ChallengesInboxScreen() {
 
           )}
 
-          contentContainerStyle={{ padding: 16, gap: 12 }}
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: listPadding }}
 
           ListEmptyComponent={
 
@@ -384,7 +390,7 @@ export default function ChallengesInboxScreen() {
 
       )}
 
-    </SafeAreaView>
+    </Screen>
 
   );
 
@@ -393,8 +399,6 @@ export default function ChallengesInboxScreen() {
 
 
 const styles = StyleSheet.create({
-
-  container: { flex: 1 },
 
   header: {
 

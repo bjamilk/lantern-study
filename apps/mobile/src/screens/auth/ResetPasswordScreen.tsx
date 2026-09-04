@@ -19,10 +19,14 @@ import { isAllowedMobileAuthUrl } from '../../utils/deepLinkAllowlist';
 import { establishSessionFromAuthUrl, updateAuthPassword } from '../../services/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import type { AuthStackParamList } from '../../navigation/types';
+// The cookie notice is an app-root `absolute bottom-0` overlay during the
+// whole first-run flow; without its height reserved it covers the footer links.
+import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ResetPassword'>;
 
 export function ResetPasswordScreen({ navigation }: Props) {
+  const cookieNoticeInset = useCookieNoticeBottomInset();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -86,7 +90,13 @@ export function ResetPasswordScreen({ navigation }: Props) {
         behavior={COMPOSER_KEYBOARD_BEHAVIOR}
         className="flex-1"
       >
-        <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
+        {/* Without persist-taps the first tap on the primary button is
+            swallowed dismissing the keyboard, so it needs two. */}
+        <ScrollView
+          contentContainerClassName="flex-grow px-6 py-8 justify-center"
+          contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
             <Text className="text-2xl font-bold text-lantern-text dark:text-white">Set new password</Text>

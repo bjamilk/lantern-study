@@ -8,9 +8,9 @@
  * course.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ScreenScroll } from '../../components/layout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FlashcardType } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
@@ -187,8 +187,13 @@ export function OnboardingScreen({ onComplete }: Props) {
   const headingText = isDark ? 'text-white' : 'text-lantern-text';
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background">
-      <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-8" keyboardShouldPersistTaps="handled">
+    // The starter step's topic box is the first TextInput a new user ever sees,
+    // and its "Generate flashcards & continue" button sits directly under it.
+    // ScreenScroll supplies the KeyboardAvoidingView, the persist-taps and the
+    // scroll-to-focused-input pass together; the horizontal padding moved to an
+    // inner View so the content container can own the bottom clearance.
+    <ScreenScroll contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
+      <View className="px-6 pt-8">
         {step === 'welcome' && (
           <View className="items-center">
             <View className="w-16 h-16 rounded-2xl bg-lantern-primary items-center justify-center mb-4">
@@ -274,8 +279,8 @@ export function OnboardingScreen({ onComplete }: Props) {
             </Button>
           </View>
         )}
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+    </ScreenScroll>
   );
 }
 

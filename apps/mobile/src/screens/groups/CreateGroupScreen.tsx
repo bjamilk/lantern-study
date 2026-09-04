@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -24,6 +23,7 @@ import { useCommunityStore } from '../../stores/communityStore';
 import { useToastStore } from '../../stores/toastStore';
 import * as api from '../../services/api';
 import { Button, ScreenHeader, Avatar } from '../../components/ui';
+import { Screen, useScreenInsets } from '../../components/layout';
 import { CoursePicker } from '../../components/CoursePicker';
 import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../discover/GroupDiscoverabilityFields';
 import type { ChatStackParamList } from '../../navigation/types';
@@ -78,8 +78,15 @@ function PermissionToggle({
   );
 }
 
+/**
+ * The pinned step button. It is the ONLY layer that pays the bottom inset:
+ * the screen container passes `bottom="none"` so the inset is not applied
+ * twice (it used to be, via `edges={['top', 'bottom']}` around a footer that
+ * also added `Math.max(insets.bottom, 16)`, floating the primary button a
+ * whole inset above where it belongs).
+ */
 function StepFooter({ children }: { children: React.ReactNode }) {
-  const insets = useSafeAreaInsets();
+  const insets = useScreenInsets();
   return (
     <View
       className="px-4 pt-2 border-t border-lantern-border dark:border-lantern-border bg-lantern-background"
@@ -359,7 +366,12 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
   if (step === 'select_members') {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
+      // `keyboard` puts the header, the scroller AND the StepFooter inside one
+      // KeyboardAvoidingView. The footer holds the only way forward, and the
+      // member search autoFocuses, so the keyboard was over the "Next" button
+      // from the first frame — and the footer is a sibling of the ScrollView,
+      // so no amount of scrolling could ever reach it.
+      <Screen bottom="none" keyboard>
         <ScreenHeader
           title={
             lockedCommunity
@@ -462,12 +474,12 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             </Text>
           ) : null}
         </StepFooter>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
+    <Screen bottom="none" keyboard>
       <ScreenHeader
         title={
           lockedCommunity
@@ -620,7 +632,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
               : 'Create Group'}
         </Button>
       </StepFooter>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

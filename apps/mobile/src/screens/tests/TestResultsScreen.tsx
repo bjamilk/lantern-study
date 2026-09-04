@@ -11,7 +11,8 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type TestQuestion } from '../../stores/testStore';
@@ -42,6 +43,11 @@ export default function TestResultsScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { attempts, startQuestionSet, hydrateAttemptDetail } = useTestStore();
+  // Called above the early return so hook order is stable. It reads the
+  // app-root provider (this component's own SafeAreaProvider is inside the
+  // returned tree), which reports 0 in a fullScreenModal window — the
+  // primitive falls back to initialWindowMetrics there.
+  const actionsPadding = useScreenBottomPadding({ bottom: 'safe', bottomExtra: 20 });
 
   // A lean results row carries no per-question detail, so pull the full session
   // when this attempt has no answers to show.
@@ -155,14 +161,17 @@ export default function TestResultsScreen() {
 
   if (!attempt) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      // This branch used to render OUTSIDE the local SafeAreaProvider below,
+      // so it got 0 on every edge in the modal's own window. `Screen` falls
+      // back to initialWindowMetrics, so it no longer needs the provider.
+      <Screen edges={['top']} bottom="safe" className="flex-1" style={{ backgroundColor: colors.background }}>
         <View style={styles.errorContainer}>
           <Text style={[styles.errorText, { color: colors.textSecondary }]}>Results not found</Text>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Text style={[styles.errorLink, { color: colors.primary }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
@@ -185,7 +194,7 @@ export default function TestResultsScreen() {
     // provider never measures it, so edges={['top']} resolved to 0 and the back
     // button sat under the status bar.
     <SafeAreaProvider>
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <Screen edges={['top']} bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -383,7 +392,10 @@ export default function TestResultsScreen() {
       )}
 
       {/* Bottom Actions */}
-      <View style={styles.bottomActions}>
+      {/* The pinned action row hard-coded `paddingBottom: 32` and never read
+          an inset, so under edge-to-edge Done / Try Again sat inside the
+          Android navigation-bar band with a sub-44px effective target. */}
+      <View style={[styles.bottomActions, { paddingBottom: actionsPadding }]}>
         {failedQuestions.length > 0 ? (
           <TouchableOpacity
             style={styles.practiceFailedButton}
@@ -416,7 +428,7 @@ export default function TestResultsScreen() {
           <Text style={styles.doneButtonText}>Done</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </Screen>
     </SafeAreaProvider>
   );
 }
@@ -681,7 +693,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     padding: 20,
-    paddingBottom: 32,
     backgroundColor: c.card,
     borderTopWidth: 1,
     borderTopColor: c.border,

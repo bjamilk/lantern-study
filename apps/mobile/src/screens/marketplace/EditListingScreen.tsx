@@ -1,9 +1,7 @@
-import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -11,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Screen } from '../../components/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import * as ImagePicker from 'expo-image-picker';
@@ -327,7 +325,7 @@ export function EditListingScreen({
   const loadedListing = currentListing?.id === listingId ? currentListing : null;
   if (loadedListing && !isMarketplaceListingEditable(loadedListing.status)) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+      <Screen>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
           <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
             <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -341,13 +339,12 @@ export function EditListingScreen({
             Go back
           </Button>
         </View>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
+    <Screen bottom="none" keyboard>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
           <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
             <Ionicons name="arrow-back" size={24} color="#64748b" />
@@ -356,7 +353,13 @@ export function EditListingScreen({
           <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
         </View>
 
-        <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: tabBarClearance }}>
+        {/* Without persist-taps the first tap on Save/Send is swallowed
+            dismissing the keyboard, so the button needs two taps. */}
+        <ScrollView
+          className="flex-1 px-4"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text className="text-sm font-semibold text-lantern-text mb-2">Photos</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
             {images.map((uri, i) => (
@@ -603,7 +606,6 @@ export function EditListingScreen({
             Save changes
           </Button>
         </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </Screen>
   );
 }
