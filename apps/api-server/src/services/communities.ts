@@ -451,6 +451,41 @@ export class CommunitiesService {
     let created = false;
 
     if (!groupId) {
+      // The pointer is ON DELETE SET NULL, so anything that removes the lounge
+      // row — or any write outside this service — leaves it null while the
+      // community may still HAVE a lounge. Minting a second one then strands
+      // the first, and members open an empty General with their history
+      // apparently gone (2026-09-03). Adopt the existing one first; only mint
+      // when the community genuinely has none.
+      //
+      // Oldest first: if duplicates already exist, the original is the one
+      // holding the conversation. A lounge is minted with no admins and
+      // community visibility, which is what distinguishes it from a board that
+      // a member happened to name "<Community> Lounge".
+      const { data: existingLounges, error: existingError } = await this.db
+        .from('groups')
+        .select('id, created_at')
+        .eq('community_id', communityId)
+        .eq('visibility', 'community')
+        .eq('name', loungeName)
+        .neq('is_archived', true)
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (existingError) throw existingError;
+      const adopted = (existingLounges as Array<{ id: string }> | null)?.[0]?.id ?? null;
+      if (adopted) {
+        groupId = adopted;
+        // Re-point the community at the lounge it already had. Guarded on null
+        // so a concurrent opener that just claimed the pointer still wins.
+        await this.db
+          .from('communities')
+          .update({ lounge_group_id: adopted })
+          .eq('id', communityId)
+          .is('lounge_group_id', null);
+      }
+    }
+
+    if (!groupId) {
       const { data: group, error: groupError } = await this.db
         .from('groups')
         .insert({
@@ -508,6 +543,26 @@ export class CommunitiesService {
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
     return { groupId: groupId as string, name: loungeName, created };
+  }
+
+  /**
+   * True when this group is a community's lounge. The lounge is the community's
+   * only conversation room and is minted with no admins precisely so nobody
+   * owns it; deleting one takes its whole history with it (messages cascade).
+   */
+  async isCommunityLounge(groupId: string): Promise<boolean> {
+    if (!groupId) return false;
+    const { data, error } = await this.db
+      .from('communities')
+      .select('id')
+      .eq('lounge_group_id', groupId)
+      .limit(1);
+    if (error) {
+      // Pre-migration the column does not exist; nothing can be a lounge yet.
+      if ((error as { code?: string }).code === '42703') return false;
+      throw error;
+    }
+    return !!(data && data.length > 0);
   }
 
   /**

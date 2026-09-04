@@ -559,6 +559,18 @@ router.delete(
       });
     }
 
+    // A community's lounge is its only conversation room and belongs to the
+    // community, not to whoever opened it. Deleting one takes every message in
+    // it (messages cascade on the group). It is minted with no admins, so the
+    // check above already refuses today — this makes the rule explicit rather
+    // than an accident of how the lounge happens to be configured.
+    if (await getCommunitiesService(supabaseService).isCommunityLounge(groupId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'This is a community chat and cannot be deleted.',
+      });
+    }
+
     await supabaseService.deleteGroup(groupId);
 
     // Invalidate caches
