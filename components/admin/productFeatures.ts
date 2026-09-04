@@ -1085,6 +1085,52 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     ],
     commits: ['2f37242', '53059ce'],
   },
+  {
+    id: 'community-boards-1-0-43',
+    title: 'Community boards \u2014 a community stops being a chat app (1.0.43)',
+    area: 'groups',
+    status: 'shipped',
+    shippedAt: '2026-09-03',
+    summary:
+      'A community channel is now a BOARD: titled posts newest-first with reactions, comments and one server-side pin. The lounge stays a live chat renamed General. Study moves to study groups, which are created from the community and live in Chat.',
+    details: [
+      'Founder decisions: the lounge stays a live chat (not a board) and is renamed General; any member may create a board while roles are display-only; board posts do NOT push \u2014 unread badge only, with @mentions still notifying.',
+      'A board post is an ordinary message row with a subject and no thread parent; a comment is the same row with a thread parent. Migration 20260903120000 adds groups.community_surface, messages.subject/pinned_at/pinned_by, a roots-only index and a one-pin-per-board unique index.',
+      'The surface is derived, not stored, for the lounge: id = communities.lounge_group_id renders as chat, any other community group renders as a board unless community_surface is study_group.',
+      'Study groups are created from the community, open in Chat with questions/tests/games, and stay listed under STUDY GROUPS as "Opens in Chat". Boards are filtered out of the Chat tab; the lounge stays in it.',
+      'Existing question posts in a former channel render as read-only cards pointing at study groups, so nothing is orphaned.',
+    ],
+    howToUse: ['Profile menu \u2192 Community \u2192 a community \u2192 General, a board, or + to start a board / study group / room.'],
+    surfaces: ['mobile', 'web', 'api'],
+    adminNotes: [
+      'Still behind canAccessDiscoverHub (platform admins only).',
+      'Migration 20260903120000 was hand-applied in production before the merge; the API degrades with an explicit 503 if it is ever missing.',
+      'A community can no longer end up with a second, empty lounge: openLounge adopts an existing lounge before minting, and the group-delete route refuses a lounge outright. A lounge WAS deleted outside the app on 2026-09-03 and its messages were lost; the cause was never identified.',
+    ],
+    commits: ['82757f5', '682a28d', 'dc3b5bf'],
+  },
+  {
+    id: 'chat-wallpaper-1-0-43',
+    title: 'Chat wallpaper \u2014 your own photo behind a conversation (1.0.43)',
+    area: 'chat',
+    status: 'shipped',
+    shippedAt: '2026-09-03',
+    summary:
+      'A student can set a photo from their device as a chat background, per chat from the chat menu or as a default for every chat from Settings, with a chat able to stay plain despite a default.',
+    details: [
+      'Local only: the photo is downscaled and copied into the app document directory under the signed-in user id, stored as a RELATIVE path rebuilt at read time. Nothing is uploaded, so it costs no data.',
+      'Legibility is structural \u2014 with a wallpaper on, no transcript text is drawn on the photo. Bubbles were already opaque; sender names, the replies link, own question bubbles, own reaction chips, date separators and the empty state now sit on opaque pills. The scrim has no path to zero and there is deliberately no dim slider.',
+      'Applies to group chats, direct messages and the community lounge; not to boards, which are a post list rather than a transcript.',
+      'A file that has genuinely gone missing is forgotten and the chat falls back to plain; a transient decode error never deletes the preference.',
+    ],
+    howToUse: ['A chat \u2192 \u22ee \u2192 Chat background \u2192 Choose a photo (or No background). Settings for the default across all chats.'],
+    surfaces: ['mobile'],
+    adminNotes: [
+      'Nothing is stored server-side, so there is no moderation surface and no cost; a wallpaper is invisible to everyone but its owner.',
+      'An absolute file path would break when iOS rewrites the app container on update, and the cache directory is reclaimed by Android \u2014 hence document directory plus relative paths.',
+    ],
+    commits: ['3106b35'],
+  },
 ];
 
 export function sortProductFeatures(entries: ProductFeatureEntry[]): ProductFeatureEntry[] {
