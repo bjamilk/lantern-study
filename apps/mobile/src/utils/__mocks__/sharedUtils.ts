@@ -15,3 +15,10 @@ export {
   parseChatAudioUrl,
   parseChatImageUrl,
 } from '../../../../../packages/shared/src/utils/chatMedia';
+
+/**
+ * Same reasoning as the parsers above: "Member" is the literal a reader sees
+ * when nothing identifies a sender, so a stub that returned something else
+ * would let a test pass while the app showed the wrong label.
+ */
+export { formatChatSenderLabel } from '../../../../../packages/shared/src/utils/displayNames';

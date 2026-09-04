@@ -23,6 +23,10 @@ Community posts work like Twitter, and shared photos stop disappearing.
   or on a board became invisible 24 hours later — no error, no placeholder, the
   picture simply gone, and a broken image on the web. Photos now load however
   old they are, including ones already posted.
+- **Fixed: your own new post showed you as "Member".** A post you had just
+  written showed the author as "Member" with grey initials instead of your name
+  and photo, until you closed and reopened the app. Your name is now correct the
+  moment the post appears.
 - **Fixed: reaction counts read zero.** Counts on messages and posts showed
   nothing until someone reacted while you were watching. They are now correct
   the moment a conversation opens.

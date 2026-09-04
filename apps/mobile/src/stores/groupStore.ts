@@ -28,6 +28,7 @@ import { isTransientSyncError } from '@lantern/shared';
 import { syncService } from '../services/syncService';
 import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
+import { resolveSenderIdentity } from '../utils/senderIdentity';
 
 export type DMThread = SharedDMThread;
 export type DirectMessage = SharedDirectMessage;
@@ -522,6 +523,25 @@ export function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): 
   const rosterMember = roster?.find(
     (member) => member.userId === senderId || member.id === senderId
   );
+  const auth = useAuthStore.getState();
+  const ownMetadata = auth.user?.user_metadata as
+    | { username?: string | null; avatar_url?: string | null }
+    | undefined;
+  const identity = resolveSenderIdentity({
+    senderId,
+    sender: {
+      username: sender.username,
+      name: sender.name,
+      avatarUrl: sender.avatar_url || sender.avatarUrl,
+    },
+    rosterMember,
+    viewer: {
+      id: auth.user?.id ?? null,
+      username: ownMetadata?.username ?? null,
+      name: auth.profileName,
+      avatarUrl: ownMetadata?.avatar_url ?? null,
+    },
+  });
   const timestamp = m.timestamp || m.created_at || m.createdAt || new Date().toISOString();
   const rawOptions = m.options || questionData.options || parsed.options || [];
   const optionItems = rawOptions
@@ -555,12 +575,14 @@ export function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): 
     id: m.id,
     groupId: m.group_id || m.groupId || groupId,
     senderId,
-    senderName: formatChatSenderLabel({
-      username: sender.username || rosterMember?.username,
-      name: sender.name || rosterMember?.name,
-    }),
-    senderAvatar:
-      sender.avatar_url || sender.avatarUrl || rosterMember?.avatarUrl,
+    // A board's roster is not fetched, and the board endpoints do not embed a
+    // `sender`, so for the viewer's own freshly posted row both sources are
+    // empty and formatChatSenderLabel falls through to "Member" (with initials
+    // for an avatar) until a restart re-reads the server copy. The signed-in
+    // user's own profile is the authoritative fallback — same rule as the
+    // optimistic send path below.
+    senderName: identity.name,
+    senderAvatar: identity.avatarUrl,
     text: isRemoved ? '' : isQuestion ? (questionStem || rawContent) : (m.text || rawContent),
     type: isQuestion ? 'question' : 'text',
     createdAt: typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString(),
