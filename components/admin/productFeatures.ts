@@ -1131,6 +1131,56 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     ],
     commits: ['3106b35'],
   },
+  {
+    id: 'board-twitter-actions-1-0-44',
+    title: 'Twitter-shaped board posts \u2014 favorite, repost, bookmark, share (1.0.44)',
+    area: 'groups',
+    status: 'shipped',
+    shippedAt: '2026-09-04',
+    summary:
+      'Community board posts get the four Twitter actions in place of the single emoji reaction, and a post can carry a title, a body and one photo or animated GIF as a single row.',
+    details: [
+      'Founder decisions: GIF means an uploaded .gif (no Giphy/Tenor integration); video is deliberately out of scope; share is a members-only link via the OS share sheet; a repost returns to the top of the SAME board; favorite replaces the emoji react on boards only, leaving group-chat reactions untouched.',
+      'Favorite reuses message_reactions with one fixed emoji, so the per-user state, the count and the denormalising trigger all come free \u2014 no new table and no new endpoint.',
+      'Repost writes client_message_id = repost:<originalId>, so the existing UNIQUE (group_id, sender_id, client_message_id) partial index enforces one repost per person per post in the database rather than in the UI. A repost whose original is hard-deleted recovers the id from that key and renders a tombstone instead of a blank card.',
+      'Bookmarks are account-level and private. Migration 20260904120000 adds message_bookmarks with RLS on, no policies and no anon/authenticated grants \u2014 service-role only, matching message_reactions. There is deliberately no denormalised count: on a board with a visible roster, a save count would turn a private "read later" into a social signal.',
+      'The device-local saves it replaces (mobile AsyncStorage per board, web localStorage flat) are imported once per account, each row carrying its own descending timestamp so the strict keyset pagination cannot skip ties.',
+      'The 5MB GIF cap is enforced in the upload route, not only in the composers, because the route otherwise accepted 10MB and passed animated GIFs through byte-for-byte.',
+    ],
+    howToUse: [
+      'A community \u2192 a board \u2192 any post: heart to favorite, arrows to repost, bookmark to save, share for the link. Saved posts lists everything you bookmarked.',
+      'Composer: title, body, then the photo or GIF button \u2014 all posted as one post.',
+    ],
+    surfaces: ['mobile', 'web'],
+    adminNotes: [
+      'Migration 20260904120000_board_bookmarks.sql must be hand-applied. Until it is, bookmark writes answer 503 and reads report serverBacked: false; boards keep loading normally.',
+      'The note-files bucket declares no file_size_limit, so the route-level GIF cap is the only server-side limit on passthrough GIFs.',
+    ],
+    commits: ['41df865'],
+  },
+  {
+    id: 'board-media-signing-fix-1-0-44',
+    title: 'Shared photos stopped disappearing after 24 hours (1.0.44)',
+    area: 'chat',
+    status: 'shipped',
+    shippedAt: '2026-09-04',
+    summary:
+      'Every photo and voice note shared in a chat or on a board became unreachable one day after posting, silently on mobile and as a broken image on the web. Media is now re-signed on read.',
+    details: [
+      'uploadChatImage and uploadChatAudio requested a 7-day signed URL; createSignedStorageUrl runs that through clampSignedUrlTtl, whose ceiling is 24 hours. The already-clamped URL was written verbatim into messages.text and nothing ever re-signed it.',
+      'Mobile passed the stored URL through normalizeStorageUrl, which returns cloud URLs unchanged, and ChatImageThumbnail returned null when the image failed \u2014 so the photo vanished with no error and no placeholder. Web used a bare <img> and showed a broken image.',
+      'Fixed on read rather than by raising the cap: the stored URL is treated as a reference and re-signed through POST /storage/signed-urls. A shared coalescer batches every resolve in one tick into a single request, de-duped by (bucket, path, variant) and chunked to the route cap, so a 20-photo screen is one call.',
+      'Nothing is lost retroactively \u2014 only the link had expired, and the object path survives in the stored URL, so photos posted before this release load again.',
+      'Separately, no message query selected the reactions column, so every count read {} until a realtime update or the viewer own tap. Fixed for group messages, threads, pinned posts and DMs, each degrading if the column is absent.',
+    ],
+    howToUse: ['Nothing to do \u2014 old photos load again on next open.'],
+    surfaces: ['mobile', 'web'],
+    adminNotes: [
+      'STORAGE_SIGNED_URL_MAX_TTL stays 24 hours deliberately; the fix is on the read path, so raising it would only widen the window on a leaked URL.',
+      'POST /storage/signed-url (singular) now has no client callers \u2014 the batch route replaced it.',
+    ],
+    commits: ['41df865'],
+  },
 ];
 
 export function sortProductFeatures(entries: ProductFeatureEntry[]): ProductFeatureEntry[] {
