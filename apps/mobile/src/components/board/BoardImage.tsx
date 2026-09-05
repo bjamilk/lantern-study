@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 import { ChatImageThumbnail } from '../chat/ChatMessageBody';
 import { BOARD_GIF_COPY, isGifUpload } from '../../utils/boardAttachments';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 /** Same chip shape the board card already uses for its media affordance. */
 const CHIP_CLASS =
@@ -15,18 +15,18 @@ function Chip({
   label,
   accessibilityLabel,
   onPress,
-  icon = 'image-outline',
+  icon = 'image',
   dim = false,
 }: {
   label: string;
   accessibilityLabel?: string;
   onPress?: () => void;
-  icon?: React.ComponentProps<typeof Ionicons>['name'];
+  icon?: AppIconName;
   dim?: boolean;
 }) {
   const body = (
     <>
-      <Ionicons name={icon} size={14} color={CHIP_ICON_COLOR} />
+      <AppIcon name={icon} size={14} color={CHIP_ICON_COLOR} />
       <Text
         className={`ml-1.5 text-[12px] ${dim ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}
       >

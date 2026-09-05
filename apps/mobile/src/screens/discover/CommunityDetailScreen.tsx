@@ -10,7 +10,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   COMMUNITY_COPY,
   COMMUNITY_LOUNGE_CHANNEL_NAME,
@@ -23,6 +22,7 @@ import {
   communityOnlineCount,
   communityShareUrl,
   presenceLabel,
+  requestFailureSentence,
   shouldSubscribeCommunityPresence,
   type CommunityChannel,
   type CommunityChannelRow,
@@ -38,6 +38,7 @@ import {
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
+import { RequestError } from '../../components/RequestError';
 import { useCommunityStore } from '../../stores/communityStore';
 import { useCommunityPresence } from '../../hooks/useCommunityPresence';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
@@ -49,6 +50,7 @@ import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { ChannelRow, RoomRow, StudyGroupRow } from '../../components/community';
 import { toChannelOverlayGroups } from '../../utils/communityOverlay';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -105,7 +107,14 @@ function CommunityServer({
 
   const [loading, setLoading] = useState(!community);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // `loadError` is "this community did not arrive" — with nothing on screen it
+  // becomes the full failure surface (with a way back), instead of the bare red
+  // line that used to leave the student on a blank page. `actionFailure` is
+  // "the thing you tapped did not happen" and only ever banners.
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [actionFailure, setActionFailure] = useState<{ error: unknown; detail: string } | null>(
+    null,
+  );
   const [loungeError, setLoungeError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [loungeBusy, setLoungeBusy] = useState(false);
@@ -116,19 +125,22 @@ function CommunityServer({
   const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
-    setError(null);
+    setLoadError(null);
     let detail;
     try {
       detail = await loadCommunity(slug);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Community not found');
+      // Kept raw: RequestError classifies it, so a 404 reads as "we couldn't
+      // find this" and a dropped connection reads as a connection problem —
+      // the two used to collapse into one "Community not found".
+      setLoadError(err);
       return;
     }
     // The server view is secondary — if it fails the header still renders.
     try {
       await loadChannels(detail.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load this community');
+      setLoadError(err);
     }
   }, [slug, loadCommunity, loadChannels]);
 
@@ -218,7 +230,10 @@ function CommunityServer({
       invalidate(community.id);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update membership');
+      setActionFailure({
+        error: err,
+        detail: 'Your membership wasn’t changed. Check your connection and try again.',
+      });
     } finally {
       setPending(false);
     }
@@ -257,13 +272,12 @@ function CommunityServer({
       invalidate(community.id);
       openChannel(lounge.groupId, lounge.name, true);
     } catch (err) {
+      // 503 is the one product-specific case (the lounge has not been minted
+      // yet); everything else speaks the shared failure vocabulary rather than
+      // leaking a raw "Network request failed" under the row.
       const status = (err as { status?: number } | null)?.status;
       setLoungeError(
-        status === 503
-          ? COMMUNITY_COPY.loungeUnavailable
-          : err instanceof Error
-            ? err.message
-            : COMMUNITY_COPY.loungeUnavailable
+        status === 503 ? COMMUNITY_COPY.loungeUnavailable : requestFailureSentence(err)
       );
     } finally {
       setLoungeBusy(false);
@@ -279,7 +293,10 @@ function CommunityServer({
       invalidate(community.id);
       openChannel(channel.id, channel.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join this channel');
+      setActionFailure({
+        error: err,
+        detail: 'You haven’t joined this board. Check your connection and try again.',
+      });
     } finally {
       setJoiningId(null);
     }
@@ -358,7 +375,10 @@ function CommunityServer({
       invalidate(community.id);
       openStudyGroup(group);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join this study group');
+      setActionFailure({
+        error: err,
+        detail: 'You haven’t joined this study group. Check your connection and try again.',
+      });
     } finally {
       setJoiningId(null);
     }
@@ -387,12 +407,12 @@ function CommunityServer({
     const items: ActionSheetItem[] = [];
     // Private communities have no invite in phase 1 (§6) — same rule as web.
     if (community.visibility === 'public') {
-      items.push({ label: COMMUNITY_COPY.invite, icon: 'link-outline', onPress: () => void shareInvite() });
+      items.push({ label: COMMUNITY_COPY.invite, icon: 'link', onPress: () => void shareInvite() });
     }
     items.push(
-      { label: COMMUNITY_COPY.createBoard, icon: 'add-circle-outline', onPress: createBoard },
-      { label: COMMUNITY_COPY.startStudyGroup, icon: 'people-outline', onPress: startStudyGroup },
-      { label: COMMUNITY_COPY.startRoom, icon: 'volume-medium-outline', onPress: startRoom }
+      { label: COMMUNITY_COPY.createBoard, icon: 'add-circle', onPress: createBoard },
+      { label: COMMUNITY_COPY.startStudyGroup, icon: 'people', onPress: startStudyGroup },
+      { label: COMMUNITY_COPY.startRoom, icon: 'volume-medium', onPress: startRoom }
     );
     return items;
     // Handlers close over `community` and `navigation`, both stable per render.
@@ -451,7 +471,7 @@ function CommunityServer({
                 }
                 className="min-h-[44px] min-w-[44px] items-center justify-center -mr-3"
               >
-                <Ionicons name="add" size={20} color="#64748b" />
+                <AppIcon name="add" size={20} color="#64748b" />
               </Pressable>
             ) : null}
           </View>
@@ -506,7 +526,7 @@ function CommunityServer({
             <Text className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
               {COMMUNITY_COPY.sectionMembers} · {item.count.toLocaleString()}
             </Text>
-            <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
+            <AppIcon name="chevron-forward" size={16} color="#94a3b8" />
           </Pressable>
         );
       default:
@@ -536,8 +556,13 @@ function CommunityServer({
   if (loading && !community) {
     return (
       <Screen bottom="none">
+        {/* A spinner with no way out was one of the failure modes the audit
+            found: if this load never resolves, the student was trapped. */}
+        <View className="flex-row items-center h-[56px] pr-2">
+          <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
+        </View>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color="#6366f1" accessibilityLabel="Loading this community" />
         </View>
       </Screen>
     );
@@ -562,7 +587,7 @@ function CommunityServer({
             {community?.name ?? 'Community'}
           </Text>
           {community?.is_official ? (
-            <Ionicons
+            <AppIcon
               name="checkmark-circle"
               size={16}
               color="#6366f1"
@@ -580,7 +605,7 @@ function CommunityServer({
               accessibilityLabel={`Members${onlineCount > 0 ? `, ${onlineCount} online` : ''}`}
               className="flex-row items-center min-h-[44px] min-w-[44px] justify-center px-1.5"
             >
-              <Ionicons name="people-outline" size={22} color="#64748b" />
+              <AppIcon name="people" size={22} color="#64748b" />
               {onlineCount > 0 ? (
                 <Text className="ml-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                   {onlineCount.toLocaleString()}
@@ -594,13 +619,33 @@ function CommunityServer({
               accessibilityLabel="More actions"
               className="min-h-[44px] min-w-[44px] items-center justify-center"
             >
-              <Ionicons name="ellipsis-vertical" size={20} color="#64748b" />
+              <AppIcon name="ellipsis-vertical" size={20} color="#64748b" />
             </Pressable>
           </>
         ) : null}
       </View>
 
-      {error ? <Text className="mx-4 mt-3 text-xs text-red-500">{error}</Text> : null}
+      {/* Nothing arrived: the whole surface says so, and offers both a real
+          retry and a way back — this used to be one line of red text over a
+          blank screen. */}
+      {loadError && !community ? (
+        <RequestError
+          error={loadError}
+          onRetry={() => void load()}
+          onBack={() => navigation.goBack()}
+        />
+      ) : loadError ? (
+        <RequestError variant="banner" error={loadError} onRetry={() => void load()} />
+      ) : null}
+
+      {actionFailure ? (
+        <RequestError
+          variant="banner"
+          error={actionFailure.error}
+          detail={actionFailure.detail}
+          onRetry={() => setActionFailure(null)}
+        />
+      ) : null}
 
       {community ? (
         <FlatList

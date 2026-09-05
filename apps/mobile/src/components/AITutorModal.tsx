@@ -18,11 +18,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
 import { AIDisclaimer } from './AIDisclaimer';
+import { AppIcon } from './ui/AppIcon';
 
 interface AITutorModalProps {
   visible: boolean;
@@ -89,10 +89,10 @@ export default function AITutorModal({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
-              <Ionicons name="school" size={20} color={colors.primary} />
+              <AppIcon name="school" size={20} color={colors.primary} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Tutor</Text>
             </View>
             <AIUsageBadge variant="badge" />
@@ -110,7 +110,7 @@ export default function AITutorModal({
           >
             {chatHistory.length === 0 && (
               <View style={styles.emptyState}>
-                <Ionicons name="school-outline" size={48} color={colors.textTertiary} />
+                <AppIcon name="school" size={48} color={colors.textTertiary} />
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>
                   Ask me anything!
                 </Text>
@@ -133,7 +133,7 @@ export default function AITutorModal({
               >
                 {msg.role === 'assistant' && (
                   <View style={styles.botIcon}>
-                    <Ionicons name="sparkles" size={14} color={colors.primary} />
+                    <AppIcon name="sparkles" size={14} color={colors.primary} />
                   </View>
                 )}
                 <Text
@@ -188,7 +188,7 @@ export default function AITutorModal({
               onPress={handleAsk}
               disabled={!question.trim() || isAILoading}
             >
-              <Ionicons
+              <AppIcon
                 name="send"
                 size={18}
                 color={question.trim() && !isAILoading ? '#fff' : colors.textTertiary}

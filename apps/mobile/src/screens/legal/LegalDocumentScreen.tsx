@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   LEGAL_DOCUMENT_TITLES,
@@ -11,6 +10,7 @@ import { MarkdownRenderer } from '@lantern/shared';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useTheme } from '../../theme';
 import type { RootStackParamList } from '../../navigation/types';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LegalDocument'>;
 
@@ -33,7 +33,7 @@ export default function LegalDocumentScreen({ navigation, route }: Props) {
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+          <AppIcon name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
           {title}

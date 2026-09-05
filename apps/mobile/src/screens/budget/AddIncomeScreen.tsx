@@ -14,12 +14,12 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore, INCOME_CATEGORIES } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 export default function AddIncomeScreen() {
   const navigation = useNavigation<any>();
@@ -79,7 +79,7 @@ export default function AddIncomeScreen() {
           style={[styles.closeButton, { backgroundColor: colors.backgroundSecondary }]}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="close" size={24} color={colors.text} />
+          <AppIcon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Add Income</Text>
         <TouchableOpacity
@@ -173,7 +173,7 @@ export default function AddIncomeScreen() {
             style={[styles.dateButton, { backgroundColor: colors.card }]}
             onPress={() => setShowDatePicker(true)}
           >
-            <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
+            <AppIcon name="calendar" size={20} color={colors.textSecondary} />
             <Text style={[styles.dateText, { color: colors.text }]}>
               {date.toLocaleDateString('en-NG', {
                 weekday: 'long',
@@ -182,7 +182,7 @@ export default function AddIncomeScreen() {
                 day: 'numeric',
               })}
             </Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            <AppIcon name="chevron-forward" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 

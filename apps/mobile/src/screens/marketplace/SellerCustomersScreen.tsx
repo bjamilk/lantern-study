@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { fetchSellerBuyers } from '../../services/api';
 import type { SellerBuyerContact, SellerCustomerSegment } from '@lantern/shared/types';
 import { formatPrice } from './marketplaceHelpers';
 import { SellerCampaignModal } from './modals/SellerCampaignModal';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 const SEGMENT_LABELS: Record<SellerCustomerSegment, string> = {
   repeat_buyer: 'Repeat buyers',
@@ -70,7 +70,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
     <Screen bottom="none">
       <View className="px-4 py-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-xl font-bold ml-2 flex-1">Customers</Text>
         {/* Seller tool: You carries the seller's own badges, Cart would only be clutter here. */}

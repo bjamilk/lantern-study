@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Share, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import {
   REFERRAL_ACTIVATION_EXPLAINER,
@@ -15,6 +14,7 @@ import { fetchAmbassadors, fetchReferralSummary } from '../../services/api';
 import { fetchLeaderboard } from '../../services/gamification';
 import { useAuthStore } from '../../stores/authStore';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = { goBack: () => void };
 
@@ -62,7 +62,7 @@ export function InviteFriendsScreen({ navigation }: { navigation: NavigationProp
     <Screen bottom="none">
       <View className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityRole="button">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-lg font-semibold text-lantern-text">Invite friends</Text>
       </View>

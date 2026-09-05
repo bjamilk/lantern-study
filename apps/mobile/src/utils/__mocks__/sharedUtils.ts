@@ -22,3 +22,17 @@ export {
  * would let a test pass while the app showed the wrong label.
  */
 export { formatChatSenderLabel } from '../../../../../packages/shared/src/utils/displayNames';
+
+/**
+ * Peer-verification rule + the one copy object the question card shows.
+ * Re-exported, not restubbed: QuestionVoteBar imports these from
+ * `@lantern/shared/utils`, and a stub would let the card's copy drift from the
+ * server's 409 body while a test still passed.
+ */
+export {
+  canVerifyQuestion,
+  countPeerUpvotes,
+  peerUpvotesRemaining,
+  QUESTION_VERIFY_COPY,
+  VERIFY_PEER_UPVOTES,
+} from '../../../../../packages/shared/src/utils/questionVerification';

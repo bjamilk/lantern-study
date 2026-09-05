@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import {
   MARKETPLACE_DEPARTMENTS,
@@ -16,6 +15,7 @@ import {
 import { useMarketplaceStore } from '../../stores';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { taxonomyIcon } from './marketplaceHelpers';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -82,7 +82,7 @@ export function ShopBrowseScreen({
           accessibilityLabel="Back"
           className="p-2 -ml-2 mr-1"
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text numberOfLines={1} className="flex-1 text-xl font-bold text-lantern-text">
           {node ? node.label : 'Shop by department'}
@@ -139,7 +139,7 @@ export function ShopBrowseScreen({
               style={{ minHeight: 56 }}
             >
               <View className="w-9 h-9 mr-3 rounded-lg items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
-                <Ionicons name={taxonomyIcon(item.icon)} size={18} color="#64748b" />
+                <AppIcon name={taxonomyIcon(item.icon)} size={18} color="#64748b" />
               </View>
               <View className="flex-1 pr-2">
                 <Text numberOfLines={1} className="text-sm font-medium text-lantern-text">
@@ -151,7 +151,7 @@ export function ShopBrowseScreen({
                   </Text>
                 ) : null}
               </View>
-              <Ionicons
+              <AppIcon
                 name={leaf ? 'arrow-forward' : 'chevron-forward'}
                 size={16}
                 color="#94a3b8"

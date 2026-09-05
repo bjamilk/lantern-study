@@ -18,11 +18,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { ThemeScope, useTheme } from '../theme';
 import * as api from '../services/api';
 import { ResolvedAvatar } from './ResolvedAvatar';
+import { AppIcon } from './ui/AppIcon';
 
 interface Contact {
   id: string;
@@ -201,7 +201,7 @@ export default function NewDirectMessageModal({
         ) : null}
       </View>
 
-      <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
+      <AppIcon name="chatbubble" size={20} color={colors.primary} />
     </TouchableOpacity>
   );
 
@@ -217,7 +217,7 @@ export default function NewDirectMessageModal({
     if (useApiSearch && listData.length === 0) {
       return (
         <View style={styles.emptyContainer}>
-          <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
+          <AppIcon name="people" size={48} color={colors.textTertiary} />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No users found</Text>
           <Text style={[styles.emptySubtext, { color: colors.textTertiary }]}>
             Try a different name or @username
@@ -236,7 +236,7 @@ export default function NewDirectMessageModal({
     if (!trimmedSearch && listData.length === 0) {
       return (
         <View style={styles.emptyContainer}>
-          <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
+          <AppIcon name="people" size={48} color={colors.textTertiary} />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No contacts available</Text>
           <Text style={[styles.emptySubtext, { color: colors.textTertiary }]}>
             Join groups to connect with others
@@ -276,7 +276,7 @@ export default function NewDirectMessageModal({
               onPress={onClose}
               style={[styles.closeButton, { backgroundColor: colors.background }]}
             >
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -286,7 +286,7 @@ export default function NewDirectMessageModal({
               { backgroundColor: colors.background, borderColor: colors.border },
             ]}
           >
-            <Ionicons name="search" size={20} color={colors.textSecondary} />
+            <AppIcon name="search" size={20} color={colors.textSecondary} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
               placeholder="Search by name or @username"
@@ -297,7 +297,7 @@ export default function NewDirectMessageModal({
             />
             {searchTerm.length > 0 && (
               <TouchableOpacity onPress={() => setSearchTerm('')}>
-                <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+                <AppIcon name="close-circle" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>

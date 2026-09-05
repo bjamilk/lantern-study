@@ -5,10 +5,10 @@
  */
 import React, { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { LibrarySearchMatchField, LibrarySearchResult } from '@lantern/shared/types';
 import { useTheme } from '../../theme';
 import { groupLibrarySearchResults, type LibraryDeckGroup } from '../../utils/libraryArchive';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 interface Props {
   results: LibrarySearchResult[];
@@ -53,7 +53,7 @@ function ResultRow({
   onPress,
   accessibilityLabel,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: AppIconName;
   title: string;
   snippet?: string;
   matchedIn?: LibrarySearchMatchField;
@@ -71,7 +71,7 @@ function ResultRow({
         indent ? 'ml-6' : ''
       }`}
     >
-      <Ionicons name={icon} size={18} color={colors.primary} style={{ marginTop: 1 }} />
+      <AppIcon name={icon} size={18} color={colors.primary} style={{ marginTop: 1 }} />
       <View className="flex-1 min-w-0">
         <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
           {title || 'Untitled'}
@@ -83,7 +83,7 @@ function ResultRow({
         ) : null}
         <MatchBadge field={matchedIn} />
       </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={{ marginTop: 2 }} />
+      <AppIcon name="chevron-forward" size={16} color={colors.textTertiary} style={{ marginTop: 2 }} />
     </Pressable>
   );
 }
@@ -115,7 +115,7 @@ export function LibrarySearchResults({
   const renderDeckGroup = (group: LibraryDeckGroup) => (
     <View key={group.deckId}>
       <ResultRow
-        icon="layers-outline"
+        icon="layers"
         title={group.title}
         snippet={group.deck?.snippet || (group.cards.length ? `${group.cards.length} matching ${group.cards.length === 1 ? 'card' : 'cards'}` : undefined)}
         matchedIn={group.deck?.matchedIn}
@@ -125,7 +125,7 @@ export function LibrarySearchResults({
       {group.cards.map(card => (
         <ResultRow
           key={card.id}
-          icon="albums-outline"
+          icon="albums"
           title={card.title}
           snippet={card.snippet}
           matchedIn={card.matchedIn}
@@ -160,7 +160,7 @@ export function LibrarySearchResults({
 
       {!searching && !error && grouped.total === 0 ? (
         <View className="items-center py-10 px-6">
-          <Ionicons name="search-outline" size={36} color={colors.textTertiary} />
+          <AppIcon name="search" size={36} color={colors.textTertiary} />
           <Text className="text-sm text-lantern-text-secondary text-center mt-3">
             Nothing matched{scopeLabel ? ` in ${scopeLabel}` : ''}. Notes (including attachment text), decks, flashcards and offline bundles are searched.
           </Text>
@@ -180,7 +180,7 @@ export function LibrarySearchResults({
           {grouped.notes.map(note => (
             <ResultRow
               key={note.id}
-              icon="document-text-outline"
+              icon="document-text"
               title={note.title}
               snippet={note.snippet}
               matchedIn={note.matchedIn}
@@ -204,7 +204,7 @@ export function LibrarySearchResults({
           {grouped.bundles.map(bundle => (
             <ResultRow
               key={bundle.id}
-              icon={bundle.id.startsWith('qbank-') ? 'bag-handle-outline' : 'cloud-download-outline'}
+              icon={bundle.id.startsWith('qbank-') ? 'bag-handle' : 'cloud-download'}
               title={bundle.title}
               snippet={bundle.snippet}
               matchedIn={bundle.matchedIn}

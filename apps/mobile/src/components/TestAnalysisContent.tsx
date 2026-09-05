@@ -15,12 +15,12 @@ import {
   Pressable,
   TouchableOpacity,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-gifted-charts';
 import type { RecentTest, TestAnalysisQuestionTime } from '../types/dashboardStats';
 import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
 import { useTheme } from '../theme';
 import { ErrorBoundary } from './ErrorBoundary';
+import { AppIcon } from './ui/AppIcon';
 
 interface TestAnalysisContentProps {
   test: RecentTest;
@@ -177,7 +177,7 @@ export default function TestAnalysisContent({
               style={[styles.closeButton, { backgroundColor: colors.background }]}
               onPress={onClose}
             >
-              <Ionicons name="close" size={24} color={colors.text} />
+              <AppIcon name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -216,7 +216,7 @@ export default function TestAnalysisContent({
         {pieData.length > 0 ? (
           <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
             <View style={styles.chartHeader}>
-              <Ionicons name="pie-chart" size={20} color="#22c55e" />
+              <AppIcon name="pie-chart" size={20} color="#22c55e" />
               <Text style={[styles.chartTitle, { color: colors.text }]}>Question Performance</Text>
             </View>
             <ErrorBoundary fallbackTitle="Performance chart failed to render">
@@ -251,7 +251,7 @@ export default function TestAnalysisContent({
 
         <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
           <View style={styles.chartHeader}>
-            <Ionicons name="time" size={20} color={colors.primary} />
+            <AppIcon name="time" size={20} color={colors.primary} />
             <Text style={[styles.chartTitle, { color: colors.text }]}>Time per Question (seconds)</Text>
           </View>
           {hasBars ? (
@@ -290,7 +290,7 @@ export default function TestAnalysisContent({
                       Q{selectedQuestion.questionNumber} · {selectedQuestion.time}s · {statusLabel}
                     </Text>
                     <Pressable onPress={() => setSelectedQuestion(null)} hitSlop={8}>
-                      <Ionicons name="close" size={18} color={colors.textSecondary} />
+                      <AppIcon name="close" size={18} color={colors.textSecondary} />
                     </Pressable>
                   </View>
                   <Text style={[styles.questionStem, { color: colors.text }]}>
@@ -344,7 +344,7 @@ export default function TestAnalysisContent({
         {analysis.timePerTag.length > 0 && (
           <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
             <View style={styles.chartHeader}>
-              <Ionicons name="pricetag" size={20} color="#8b5cf6" />
+              <AppIcon name="pricetag" size={20} color="#8b5cf6" />
               <Text style={[styles.chartTitle, { color: colors.text }]}>Average Time by Topic</Text>
             </View>
             <View style={styles.barChartContainer}>
@@ -360,7 +360,7 @@ export default function TestAnalysisContent({
         {analysis.tagPerformance.length > 0 && (
           <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
             <View style={styles.chartHeader}>
-              <Ionicons name="stats-chart" size={20} color="#10b981" />
+              <AppIcon name="stats-chart" size={20} color="#10b981" />
               <Text style={[styles.chartTitle, { color: colors.text }]}>Performance by Topic</Text>
             </View>
             <View style={styles.tagPerformanceList}>

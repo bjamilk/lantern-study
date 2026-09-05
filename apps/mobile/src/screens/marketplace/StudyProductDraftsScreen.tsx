@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import {
   createStudyPackDraft,
@@ -13,6 +12,7 @@ import { waitForNoteOcr } from '../../services/notes';
 import type { StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/marketplace';
 import { summarizeStudyPackCounts, STUDY_PACK_DRAFT_CREDITS } from '@lantern/shared/marketplace';
 import { PublishStudyPackModal } from '../settings/PublishStudyPackModal';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -105,8 +105,8 @@ export function StudyProductDraftsScreen({
           {pending ? (
             <ActivityIndicator size="small" color="#6366f1" />
           ) : (
-            <Ionicons
-              name={item.status === 'failed' ? 'alert-circle-outline' : 'sparkles-outline'}
+            <AppIcon
+              name={item.status === 'failed' ? 'alert-circle' : 'sparkles'}
               size={18}
               color={item.status === 'failed' ? '#ef4444' : '#6366f1'}
             />
@@ -131,12 +131,12 @@ export function StudyProductDraftsScreen({
               className="flex-row items-center rounded-lg bg-lantern-primary px-3 py-1.5"
               style={{ gap: 5 }}
             >
-              <Ionicons name="storefront-outline" size={13} color="#fff" />
+              <AppIcon name="storefront" size={13} color="#fff" />
               <Text className="text-xs font-semibold text-white">Review</Text>
             </Pressable>
           ) : null}
           <Pressable onPress={() => handleDelete(item.id)} hitSlop={8} className="p-1">
-            <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+            <AppIcon name="trash" size={16} color="#94a3b8" />
           </Pressable>
         </View>
       </View>
@@ -147,7 +147,7 @@ export function StudyProductDraftsScreen({
     <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="mr-2 -ml-1 p-1">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-1">
           <Text className="text-lg font-bold text-lantern-text">Study Products</Text>
@@ -158,7 +158,7 @@ export function StudyProductDraftsScreen({
         {/* Seller tool: You carries the seller's own badges, Cart would only be clutter here. */}
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} hide={['cart']} />
         <Pressable onPress={() => void load()} hitSlop={8} className="p-1">
-          <Ionicons name="refresh" size={20} color="#64748b" />
+          <AppIcon name="refresh" size={20} color="#64748b" />
         </Pressable>
       </View>
 
@@ -176,7 +176,7 @@ export function StudyProductDraftsScreen({
         </View>
       ) : drafts.length === 0 && !source ? (
         <View className="flex-1 items-center justify-center px-8">
-          <Ionicons name="sparkles-outline" size={40} color="#94a3b8" />
+          <AppIcon name="sparkles" size={40} color="#94a3b8" />
           <Text className="mt-3 text-base font-semibold text-lantern-text">No study products yet</Text>
           <Text className="mt-1 text-sm text-lantern-text-secondary text-center">
             Open a note and tap the shop icon, or pick a course in your Library and choose "Create a

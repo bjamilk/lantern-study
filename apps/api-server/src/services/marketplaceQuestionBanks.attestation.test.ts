@@ -5,12 +5,15 @@
  */
 import { MarketplaceQuestionBanksService } from './marketplaceQuestionBanks';
 import { ATTESTATION_REQUIRED_MESSAGE, RIGHTS_ATTESTATION_VERSION } from '@lantern/shared/moderation';
+import { COURSE_ANCHOR_COPY } from '@lantern/shared/marketplace';
 
 jest.mock('./learningEvents', () => ({ recordLearningEvent: jest.fn(async () => undefined) }));
 
 const CAMPUS = '11111111-1111-4111-8111-111111111111';
 const LISTING = '22222222-2222-4222-8222-222222222222';
 const SELLER = '33333333-3333-4333-8333-333333333333';
+/** A publish now has to name a real course (Gap 3). */
+const COURSE = '44444444-4444-4444-8444-444444444444';
 
 function makeDb() {
   const writes: Array<{ table: string; kind: string; payload: any }> = [];
@@ -22,8 +25,16 @@ function makeDb() {
     chain.insert = (p: any) => ((kind = 'insert'), (payload = p), chain);
     chain.update = (p: any) => ((kind = 'update'), (payload = p), chain);
     chain.delete = () => ((kind = 'delete'), chain);
-    chain.eq = () => chain;
+    let eqId: unknown;
+    chain.eq = (column?: string, value?: unknown) => {
+      if (column === 'id') eqId = value;
+      return chain;
+    };
     chain.maybeSingle = async () => {
+      // Only the one known course resolves; any other id is "no such course".
+      if (table === 'courses') {
+        return { data: eqId === COURSE ? { id: COURSE } : null, error: null };
+      }
       if (table === 'marketplace_question_banks') {
         return { data: { id: 'b1', listing_id: LISTING, version: 1, question_count: 1, content: { questions: [{}] } }, error: null };
       }
@@ -83,6 +94,7 @@ describe('publishQuestionBank attestation', () => {
     await svc.publishQuestionBank(SELLER, {
       title: 'CHM 101 PQ',
       campusId: CAMPUS,
+      courseId: COURSE,
       content,
       attestation: true,
       aiAssisted: true,
@@ -145,7 +157,39 @@ describe('publishQuestionBank attestation', () => {
         attestation: true,
         courseId: 'not-a-uuid',
       }),
-    ).rejects.toThrow(/valid course id/);
+    ).rejects.toThrow(/course could not be found/);
+  });
+
+  it('refuses a publish with NO course at all (Gap 3), before touching the DB', async () => {
+    const db = makeDb();
+    const { svc, createMarketplaceListing } = service(db);
+    await expect(
+      svc.publishQuestionBank(SELLER, {
+        title: 'CHM 101 PQ',
+        campusId: CAMPUS,
+        content,
+        attestation: true,
+      }),
+    ).rejects.toThrow(COURSE_ANCHOR_COPY.required);
+    expect(createMarketplaceListing).not.toHaveBeenCalled();
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it('refuses a course id that names no course', async () => {
+    const db = makeDb();
+    const { svc, createMarketplaceListing } = service(db);
+    await expect(
+      svc.publishQuestionBank(SELLER, {
+        title: 'CHM 101 PQ',
+        campusId: CAMPUS,
+        courseId: '55555555-5555-4555-8555-555555555555',
+        content,
+        attestation: true,
+        // The double answers `courses` with the known COURSE row only for that
+        // id; any other id resolves to null.
+      }),
+    ).rejects.toThrow(COURSE_ANCHOR_COPY.invalid);
+    expect(createMarketplaceListing).not.toHaveBeenCalled();
   });
 
   it('still publishes a legitimate "past questions" title (filter must not over-match) (finding D)', async () => {
@@ -154,6 +198,7 @@ describe('publishQuestionBank attestation', () => {
     await svc.publishQuestionBank(SELLER, {
       title: 'CHM 101 Past Questions and Answers',
       campusId: CAMPUS,
+      courseId: COURSE,
       content,
       attestation: true,
     });

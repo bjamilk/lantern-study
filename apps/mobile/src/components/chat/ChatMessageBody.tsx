@@ -3,10 +3,10 @@ import React, { useEffect, useState } from 'react';
 import { Image, Modal, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
 import { segmentMentions } from '@lantern/shared/utils';
 import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { AppIcon } from '../ui/AppIcon';
 
 const IMAGE_MARKDOWN = /!\[.*?\]\((https?:\/\/[^)]+)\)/;
 
@@ -86,7 +86,7 @@ function ChatImageViewer({ uri, onClose }: { uri: string; onClose: () => void })
             accessibilityRole="button"
             accessibilityLabel="Close image"
           >
-            <Ionicons name="close" size={28} color="#fff" />
+            <AppIcon name="close" size={28} color="#fff" />
           </Pressable>
         </View>
         <GestureDetector gesture={Gesture.Simultaneous(pinch, doubleTap)}>
@@ -163,7 +163,7 @@ export function ChatImageThumbnail({
         accessibilityLabel={unavailableLabel}
         className="self-start min-h-[44px] flex-row items-center rounded-full border border-lantern-border px-3"
       >
-        <Ionicons name="image-outline" size={14} color="#94a3b8" />
+        <AppIcon name="image" size={14} color="#94a3b8" />
         <Text className="ml-1.5 text-[12px] text-lantern-text-tertiary">{unavailableLabel}</Text>
       </View>
     );
@@ -239,7 +239,7 @@ export function ChatTextBody({
           accessibilityLabel={IMAGE_UNAVAILABLE}
           className="self-start min-h-[44px] flex-row items-center rounded-full border border-lantern-border px-3"
         >
-          <Ionicons name="image-outline" size={14} color="#94a3b8" />
+          <AppIcon name="image" size={14} color="#94a3b8" />
           <Text className="ml-1.5 text-[12px] text-lantern-text-tertiary">{IMAGE_UNAVAILABLE}</Text>
         </View>
       ) : null}

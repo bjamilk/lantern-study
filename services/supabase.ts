@@ -1655,8 +1655,19 @@ export const updateQuestionStatus = async (messageId: string, questionStatus: st
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update question status');
+      const error = await response.json().catch(() => ({}));
+      // This endpoint answers `{ success: false, error }` like the rest of the
+      // API. Reading only `message` swallowed every reason it gives — including
+      // the 409 that refuses VERIFIED below the peer-vote threshold, which is
+      // the one sentence the person needs to see.
+      const failure = new Error(
+        error.error || error.message || 'Failed to update question status'
+      ) as Error & { status?: number; peerUpvotes?: number };
+      failure.status = response.status;
+      if (typeof error?.data?.peerUpvotes === 'number') {
+        failure.peerUpvotes = error.data.peerUpvotes;
+      }
+      throw failure;
     }
 
     const result = await response.json();

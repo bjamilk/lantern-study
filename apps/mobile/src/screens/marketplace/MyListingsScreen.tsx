@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
 import { useMarketplaceStore, useAuthStore, getCategoryInfo } from '../../stores';
 import {
   fetchSellerAnalytics,
@@ -42,6 +41,7 @@ import { SUPPORT_EMAIL } from '@lantern/shared/contactForm';
 import { LISTING_APPEAL_STATUS_LABELS } from '@lantern/shared/moderation';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type StatusTab = 'active' | 'sold' | 'inactive';
 
@@ -229,20 +229,20 @@ export function MyListingsScreen({
     const offers = (to: MarketplaceListingStatus) =>
       item.status !== to && canSellerSetListingStatus(item.status, to);
     const actions: ActionSheetItem[] = [
-      { label: 'Edit', icon: 'create-outline', onPress: () => navigation.navigate('EditListing', { listingId: item.id }) },
+      { label: 'Edit', icon: 'create', onPress: () => navigation.navigate('EditListing', { listingId: item.id }) },
     ];
     if (offers('sold')) {
-      actions.push({ label: 'Mark sold', icon: 'checkmark-done-outline', onPress: () => void handleStatusChange(item.id, 'sold') });
+      actions.push({ label: 'Mark sold', icon: 'checkmark-done', onPress: () => void handleStatusChange(item.id, 'sold') });
     }
     if (offers('inactive')) {
-      actions.push({ label: 'Deactivate', icon: 'eye-off-outline', onPress: () => void handleStatusChange(item.id, 'inactive') });
+      actions.push({ label: 'Deactivate', icon: 'eye-off', onPress: () => void handleStatusChange(item.id, 'inactive') });
     }
     if (offers('active')) {
-      actions.push({ label: 'Reactivate', icon: 'refresh-outline', onPress: () => void handleStatusChange(item.id, 'active') });
+      actions.push({ label: 'Reactivate', icon: 'refresh', onPress: () => void handleStatusChange(item.id, 'active') });
     }
     actions.push({
       label: 'Delete',
-      icon: 'trash-outline',
+      icon: 'trash',
       destructive: true,
       onPress: () => handleDelete(item.id, item.title),
     });
@@ -313,7 +313,7 @@ export function MyListingsScreen({
               accessibilityRole="button"
               accessibilityLabel="Back"
             >
-              <Ionicons name="arrow-back" size={24} color="#64748b" />
+              <AppIcon name="arrow-back" size={24} color="#64748b" />
             </Pressable>
             <View className="flex-1 min-w-0">
               <Text className="text-xl font-bold text-lantern-text">Your Listings</Text>
@@ -335,7 +335,7 @@ export function MyListingsScreen({
                 accessibilityRole="button"
                 accessibilityLabel="View my shop"
               >
-                <Ionicons name="storefront-outline" size={18} color="#6366f1" />
+                <AppIcon name="storefront" size={18} color="#6366f1" />
               </Pressable>
               <Pressable
                 onPress={() =>
@@ -347,7 +347,7 @@ export function MyListingsScreen({
                 accessibilityRole="button"
                 accessibilityLabel="Share my shop"
               >
-                <Ionicons name="share-outline" size={18} color="#64748b" />
+                <AppIcon name="share" size={18} color="#64748b" />
               </Pressable>
             </View>
           ) : null}
@@ -378,7 +378,7 @@ export function MyListingsScreen({
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
           ListEmptyComponent={
             <View className="items-center py-16">
-              <Ionicons name="storefront-outline" size={48} color="#cbd5e1" />
+              <AppIcon name="storefront" size={48} color="#cbd5e1" />
               <Text className="text-lg font-semibold text-lantern-text mt-4">
                 No {activeTab} listings
               </Text>
@@ -428,7 +428,7 @@ export function MyListingsScreen({
                   accessibilityLabel={`Actions for ${item.title}`}
                   className="px-3 justify-center min-w-[44px] min-h-[44px]"
                 >
-                  <Ionicons name="ellipsis-vertical" size={18} color="#64748b" />
+                  <AppIcon name="ellipsis-vertical" size={18} color="#64748b" />
                 </Pressable>
               </Pressable>
             );

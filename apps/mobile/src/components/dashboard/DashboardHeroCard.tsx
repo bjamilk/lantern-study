@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Card, Button } from '../ui';
 import type { UserLevel } from '../../types/dashboardStats';
+import { AppIcon } from '../ui/AppIcon';
 
 interface DashboardHeroCardProps {
   userName: string;
@@ -52,11 +52,11 @@ export function DashboardHeroCard({
 
       <View className="flex-row flex-wrap gap-2 mt-3">
         <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-lantern-accent-background">
-          <Ionicons name="flame" size={14} color="#d97706" />
+          <AppIcon name="flame" size={14} color="#d97706" />
           <Text className="text-xs font-semibold text-lantern-accent">{streak}d streak</Text>
         </View>
         <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-lantern-primary-background">
-          <Ionicons name="sparkles" size={14} color="#4f46e5" />
+          <AppIcon name="sparkles" size={14} color="#4f46e5" />
           <Text className="text-xs font-semibold text-lantern-primary">{points.toLocaleString()} pts</Text>
         </View>
       </View>

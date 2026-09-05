@@ -7,7 +7,6 @@
  */
 import React, { useState } from 'react';
 import { Alert, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   APPEAL_NOTE_MAX_LENGTH,
   LISTING_APPEAL_STATUS_LABELS,
@@ -23,6 +22,7 @@ import type { ListingAppealStatus } from '@lantern/shared/types';
 import { useMarketplaceStore, type MarketplaceListing } from '../../stores';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
+import { AppIcon } from '../ui/AppIcon';
 
 interface Props {
   listing: Pick<
@@ -208,7 +208,7 @@ export function ListingTakedownNotice({ listing, compact }: Props) {
         <View className="flex-1 bg-black/50 items-center justify-center px-5">
           <View className="w-full rounded-2xl bg-lantern-surface p-5">
             <View className="flex-row items-center gap-2 mb-2">
-              <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.primary} />
+              <AppIcon name="chatbubble-ellipses" size={18} color={colors.primary} />
               <Text className="text-base font-semibold text-lantern-text flex-1">Appeal takedown</Text>
             </View>
             <Text className="text-xs text-lantern-text-secondary mb-3">

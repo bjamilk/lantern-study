@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { Screen } from '../../components/layout';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -47,6 +46,7 @@ import { CampusPicker } from './CampusPicker';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ATTESTATION_REQUIRED_MESSAGE, isAcademicListing } from '@lantern/shared/moderation';
 import { RightsAttestationCheckbox } from '../../components/moderation/RightsAttestationCheckbox';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -565,7 +565,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     <Screen bottom="none" keyboard>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-xl font-bold text-lantern-text flex-1">Create Listing</Text>
         {/* Mid-flow seller form: the cart is noise here, You keeps the seller's badges. */}
@@ -585,11 +585,11 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           accessibilityLabel="Set up payouts to get paid"
           className="mx-4 mb-3 flex-row items-center gap-2 px-3 py-2 rounded-xl bg-lantern-primary-background"
         >
-          <Ionicons name="card-outline" size={16} color="#64748b" />
+          <AppIcon name="card" size={16} color="#64748b" />
           <Text className="flex-1 text-xs text-lantern-text" numberOfLines={1}>
             Set up payouts to get paid
           </Text>
-          <Ionicons name="chevron-forward" size={14} color="#64748b" />
+          <AppIcon name="chevron-forward" size={14} color="#64748b" />
         </Pressable>
       ) : null}
 
@@ -601,7 +601,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         {draftRestored ? (
           <View className="flex-row items-center justify-between bg-lantern-primary-background rounded-xl px-3 py-2 mb-4">
             <View className="flex-row items-center flex-1 mr-2">
-              <Ionicons name="save-outline" size={16} color="#64748b" />
+              <AppIcon name="save" size={16} color="#64748b" />
               <Text className="text-xs text-lantern-text-secondary ml-2 flex-1">
                 Draft restored — we saved your progress automatically.
               </Text>
@@ -621,7 +621,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
                 onPress={() => setPendingImages(prev => prev.filter((_, idx) => idx !== i))}
                 className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5"
               >
-                <Ionicons name="close" size={14} color="#fff" />
+                <AppIcon name="close" size={14} color="#fff" />
               </Pressable>
             </View>
           ))}
@@ -633,7 +633,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
               {uploading ? (
                 <ActivityIndicator size="small" color="#64748b" />
               ) : (
-                <Ionicons name="add" size={24} color="#64748b" />
+                <AppIcon name="add" size={24} color="#64748b" />
               )}
             </Pressable>
           ) : null}
@@ -859,7 +859,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
             {generatingDesc ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Ionicons name="sparkles" size={14} color="#fff" />
+              <AppIcon name="sparkles" size={14} color="#fff" />
             )}
             <Text className="text-xs font-semibold text-white ml-1.5">
               {generatingDesc ? 'Generating…' : 'AI Generate'}

@@ -23,7 +23,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { CourseTopic } from '@lantern/shared/types';
 import { COURSE_TOPIC_COPY, TOPIC_TITLE_MAX, formatAddTopicOffer } from '@lantern/shared';
 import { useTheme } from '../theme';
@@ -31,6 +30,7 @@ import { createCourseTopic, seedCourseTopics } from '../services/academic';
 import { useCourseTopics, useTopicSearch } from '../hooks/useTopicSearch';
 import { formatTopicLabel } from '../utils/topicSelection';
 import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
+import { AppIcon } from './ui/AppIcon';
 
 export interface TopicPickerProps {
   /** Course the topic must belong to. Without one the picker is disabled. */
@@ -185,8 +185,8 @@ export function TopicPicker({
             },
           ]}
         >
-          <Ionicons
-            name="list-outline"
+          <AppIcon
+            name="list"
             size={18}
             color={value && !noCourse ? colors.primary : colors.inputPlaceholder}
           />
@@ -207,10 +207,10 @@ export function TopicPicker({
               accessibilityLabel="Clear topic"
               style={styles.clearButton}
             >
-              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+              <AppIcon name="close-circle" size={18} color={colors.textTertiary} />
             </Pressable>
           ) : (
-            <Ionicons name="chevron-down" size={16} color={colors.inputPlaceholder} />
+            <AppIcon name="chevron-down" size={16} color={colors.inputPlaceholder} />
           )}
         </Pressable>
       )}
@@ -227,7 +227,7 @@ export function TopicPicker({
             <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.sheetTitle, { color: colors.text }]}>{title}</Text>
               <Pressable onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
+                <AppIcon name="close" size={22} color={colors.textSecondary} />
               </Pressable>
             </View>
 
@@ -237,7 +237,7 @@ export function TopicPicker({
                 { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
               ]}
             >
-              <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+              <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
               <TextInput
                 value={query}
                 onChangeText={text => {
@@ -279,8 +279,8 @@ export function TopicPicker({
                     },
                   ]}
                 >
-                  <Ionicons
-                    name="remove-circle-outline"
+                  <AppIcon
+                    name="remove-circle"
                     size={18}
                     color={!value ? colors.primary : colors.textSecondary}
                   />
@@ -292,7 +292,7 @@ export function TopicPicker({
                   >
                     {COURSE_TOPIC_COPY.none}
                   </Text>
-                  {!value ? <Ionicons name="checkmark-circle" size={18} color={colors.primary} /> : null}
+                  {!value ? <AppIcon name="checkmark-circle" size={18} color={colors.primary} /> : null}
                 </Pressable>
               ) : null}
 
@@ -313,7 +313,7 @@ export function TopicPicker({
                     accessibilityRole="button"
                     style={[styles.row, { borderBottomColor: colors.border, opacity: creating ? 0.6 : 1 }]}
                   >
-                    <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+                    <AppIcon name="add-circle" size={18} color={colors.primary} />
                     <Text style={[styles.rowText, { flex: 1, color: colors.primary, fontWeight: '600' }]}>
                       {creating ? COURSE_TOPIC_COPY.adding : formatAddTopicOffer(addTitle)}
                     </Text>
@@ -358,7 +358,7 @@ export function TopicPicker({
                     accessibilityLabel={COURSE_TOPIC_COPY.seed}
                     style={[styles.row, { borderBottomColor: colors.border, opacity: seeding ? 0.6 : 1 }]}
                   >
-                    <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+                    <AppIcon name="sparkles" size={18} color={colors.primary} />
                     <Text style={[styles.rowText, { flex: 1, color: colors.primary, fontWeight: '600' }]}>
                       {COURSE_TOPIC_COPY.seed}
                     </Text>
@@ -403,7 +403,7 @@ function TopicRow({
       >
         {formatTopicLabel(topic)}
       </Text>
-      {selected ? <Ionicons name="checkmark-circle" size={18} color={colors.primary} /> : null}
+      {selected ? <AppIcon name="checkmark-circle" size={18} color={colors.primary} /> : null}
     </Pressable>
   );
 }

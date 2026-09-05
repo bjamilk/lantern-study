@@ -10,7 +10,6 @@ import {
 import { useGroupStore } from '../stores/groupStore';
 import { useToastStore } from '../stores/toastStore';
 import { confirmDialog } from '../stores/confirmStore';
-import { useToastStore } from '../stores/toastStore';
 import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder, MessageReplyPreview } from '../types';
 import MessageItem from './MessageItem';
 import ReportContentModal from './moderation/ReportContentModal';

@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView, useScreenBottomPadding } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { shareTextFile, toSafeFileName, SharingUnavailableError } from '../../utils/shareFile';
@@ -44,6 +43,7 @@ import {
 } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { getCardDisplayText, getCardStatus, getDeckCardStats } from '../../utils/flashcardHelpers';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -499,11 +499,11 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   // the rest without warning, so Export JSON, Export CSV and Collaborators were
   // simply unreachable there while iOS showed all seven.
   const manageItems: ActionSheetItem[] = [
-    { section: 'Cards', label: 'Add card', icon: 'add-circle-outline', onPress: openCreateCard },
+    { section: 'Cards', label: 'Add card', icon: 'add-circle', onPress: openCreateCard },
     {
       section: 'Cards',
       label: 'Generate with AI',
-      icon: 'sparkles-outline',
+      icon: 'sparkles',
       onPress: () => setAiModalOpen(true),
     },
     // Offline and export sit directly under Cards rather than at the bottom:
@@ -511,7 +511,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     {
       section: 'Share & offline',
       label: isOffline ? 'Remove from offline' : 'Save for offline',
-      icon: isOffline ? 'cloud-offline-outline' : 'cloud-download-outline',
+      icon: isOffline ? 'cloud-offline' : 'cloud-download',
       hint: isOffline
         ? 'Stop keeping this deck on the device'
         : 'Study this deck without a connection',
@@ -520,14 +520,14 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     {
       section: 'Share & offline',
       label: 'Export JSON',
-      icon: 'share-outline',
+      icon: 'share',
       hint: 'Send this deck to another Lantern user',
       onPress: () => void handleExportJson(),
     },
     {
       section: 'Share & offline',
       label: 'Export CSV',
-      icon: 'share-outline',
+      icon: 'share',
       onPress: () => void handleExportCsv(),
     },
     ...(hasCards
@@ -535,7 +535,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
           {
             section: 'Share & offline',
             label: 'Sell as study pack…',
-            icon: 'storefront-outline',
+            icon: 'storefront',
             hint: 'List these flashcards on the Marketplace',
             onPress: () => setTimeout(() => setSellOpen(true), 50),
           } as ActionSheetItem,
@@ -544,21 +544,21 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     {
       section: 'Share & offline',
       label: 'Import',
-      icon: 'download-outline',
+      icon: 'download',
       hint: 'JSON, CSV or Anki .apkg',
       onPress: () => void handleImport(),
     },
     {
       section: 'Share & offline',
       label: 'Collaborators',
-      icon: 'people-outline',
+      icon: 'people',
       onPress: () => setCollaboratorsOpen(true),
     },
-    { section: 'Deck', label: 'Edit deck', icon: 'pencil-outline', onPress: openEditDeck },
+    { section: 'Deck', label: 'Edit deck', icon: 'pencil', onPress: openEditDeck },
     {
       section: 'Deck',
       label: 'Move to course…',
-      icon: 'school-outline',
+      icon: 'school',
       hint: deck?.course_id ? 'Filed under a course — pick another or clear it' : 'File this deck under a course',
       // Let the sheet dismiss before the course picker mounts.
       onPress: () => setTimeout(() => setCourseMoveOpen(true), 50),
@@ -570,7 +570,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
           {
             section: 'Deck',
             label: 'Move to topic…',
-            icon: 'list-outline' as ActionSheetItem['icon'],
+            icon: 'list' as ActionSheetItem['icon'],
             hint: 'Where this sits in the course outline',
             onPress: () => setTimeout(() => setTopicMoveOpen(true), 50),
           } as ActionSheetItem,
@@ -579,7 +579,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     {
       section: 'Deck',
       label: 'Reset progress',
-      icon: 'refresh-outline',
+      icon: 'refresh',
       hint: 'Send every card back to new',
       destructive: true,
       onPress: () => void handleResetProgress(),
@@ -587,7 +587,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     {
       section: 'Deck',
       label: 'Delete deck',
-      icon: 'trash-outline',
+      icon: 'trash',
       destructive: true,
       onPress: () => void handleDeleteDeck(),
     },
@@ -608,7 +608,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         right={
           <View className="flex-row items-center gap-1">
             <Button variant="ghost" size="sm" onPress={openManageDeck} accessibilityLabel="Manage deck">
-              <Ionicons name="ellipsis-horizontal" size={20} color="#6366f1" />
+              <AppIcon name="ellipsis-horizontal" size={20} color="#6366f1" />
             </Button>
             <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
               Back
@@ -625,7 +625,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
           className="mb-1"
         >
           <View className="flex-row items-center justify-center gap-2">
-            <Ionicons name="play-circle" size={20} color="#fff" />
+            <AppIcon name="play-circle" size={20} color="#fff" />
             <Text className="text-base font-semibold text-white">{studyLabel}</Text>
           </View>
         </Button>
@@ -654,7 +654,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         >
           <View className="flex-row items-center justify-between">
             <Text className="text-sm font-medium text-lantern-text">More ways to study</Text>
-            <Ionicons
+            <AppIcon
               name={moreModesOpen ? 'chevron-up' : 'chevron-down'}
               size={16}
               color="#6b7280"

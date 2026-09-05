@@ -10,12 +10,12 @@ import {
   View,
 } from 'react-native';
 import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import type { SellerAnalytics } from '@lantern/shared/types';
 import { Button } from '../../../components/ui';
 import { updateSellerPreferences, fetchSellerPayments } from '../../../services/api';
 import { formatPrice } from '../marketplaceHelpers';
 import { SellerPayoutSetup } from '../SellerPayoutSetup';
+import { AppIcon } from '../../../components/ui/AppIcon';
 
 interface Props {
   visible: boolean;
@@ -88,7 +88,7 @@ export function SellerInsightsModal({
               accessibilityLabel="Close insights"
               className="h-11 w-11 items-center justify-center"
             >
-              <Ionicons name="close" size={22} color="#64748b" />
+              <AppIcon name="close" size={22} color="#64748b" />
             </Pressable>
           </View>
 

@@ -9,12 +9,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { fetchMarketplaceListing, fetchMyInquiries } from '../../services/api';
 import { ListingImage, timeAgo } from './marketplaceHelpers';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type InquiryItem = {
   id: string;
@@ -170,7 +170,7 @@ export function InquiriesScreen({
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-xl font-bold text-lantern-text">
           {tab === 'seller' ? 'Buyer questions' : 'Messages to sellers'}
@@ -231,7 +231,7 @@ export function InquiriesScreen({
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
-              <Ionicons name="chatbubbles-outline" size={48} color="#cbd5e1" />
+              <AppIcon name="chatbubbles" size={48} color="#cbd5e1" />
               <Text className="text-lg font-semibold text-lantern-text mt-4">No inquiries yet</Text>
             </View>
           }
@@ -291,7 +291,7 @@ export function InquiriesScreen({
                 ) : null}
               </View>
               <View className="justify-center pr-3">
-                <Ionicons name="chatbubble-outline" size={18} color="#6366f1" />
+                <AppIcon name="chatbubble" size={18} color="#6366f1" />
               </View>
             </Pressable>
           )}

@@ -3,7 +3,6 @@ import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/share
 import {
   MagnifyingGlassIcon,
   CheckBadgeIcon,
-  ArrowPathIcon,
   SparklesIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -15,6 +14,7 @@ import {
   formatCommunityUnread,
   memberCountLabel,
   presenceLabel,
+  resolveListState,
   shouldShowTrustChip,
   studyRoomTimeLeftLabel,
   trustLabel,
@@ -41,6 +41,7 @@ import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useGroupStore } from '../stores/groupStore';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
+import RequestError from './RequestError';
 
 /**
  * The Discover hub (Phase 3 · L).
@@ -108,7 +109,15 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   );
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<Status>('idle');
-  const [error, setError] = useState<string | null>(null);
+  // Three different things used to share one `error` string: a list that did
+  // not arrive, an action that did not happen, and a form that was filled in
+  // wrong. They are separated now — only the first may decide whether the list
+  // below is a list, an empty state or a failure state.
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [actionFailure, setActionFailure] = useState<{ error: unknown; detail: string } | null>(
+    null,
+  );
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [mine, setMine] = useState<MyCommunity[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -132,7 +141,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       // The marketplace tab is a navigation, not a fetch.
       if (target === 'marketplace') return;
       setStatus('loading');
-      setError(null);
+      setLoadError(null);
       try {
         if (target === 'communities') {
           const [discovered, own] = await Promise.all([
@@ -152,7 +161,9 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         }
         setStatus('idle');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not load Discover');
+        // Kept raw so RequestError can classify it: web and mobile then say
+        // the same sentence for the same failure.
+        setLoadError(err);
         setStatus('error');
       }
     },
@@ -191,6 +202,24 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       [room.title, room.topic ?? ''].some((field) => field.toLowerCase().includes(q))
     );
   }, [rooms, query]);
+
+  // The shared rule, applied once for the whole hub: a failed load is
+  // 'failed', never 'empty' and never 'noMatch'. Searching over a list that
+  // never arrived says "we couldn't load it" — "no groups match that search"
+  // would be a claim about data we never received.
+  const listState = resolveListState({
+    loading: status === 'loading',
+    error: loadError,
+    itemCount:
+      section === 'communities'
+        ? communities.length + mine.length
+        : section === 'groups'
+          ? groups.length
+          : section === 'rooms'
+            ? visibleRooms.length
+            : people.length,
+    query,
+  });
 
   useEffect(() => {
     // Presence is a nicety; a failure here must not blank the hub.
@@ -237,7 +266,10 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           ? [...prev, { ...community, role: 'member', source: 'joined' } as MyCommunity]
           : prev.filter((c) => c.id !== community.id)
       );
-      setError(err instanceof Error ? err.message : 'Could not update membership');
+      setActionFailure({
+        error: err,
+        detail: 'Your membership wasn’t changed. Check your connection and try again.',
+      });
     } finally {
       setPendingId(null);
     }
@@ -260,7 +292,10 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       );
       onNavigate('GroupChat', { groupId: group.id, groupName: group.name, joined: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join this group');
+      setActionFailure({
+        error: err,
+        detail: 'You haven’t joined this group. Check your connection and try again.',
+      });
     } finally {
       setPendingId(null);
     }
@@ -270,11 +305,14 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
     event.preventDefault();
     const name = newName.trim();
     if (name.length < 3) {
-      setError('Name a community in at least 3 characters');
+      // A form-validation problem, not a request failure: it keeps its own
+      // plain sentence rather than borrowing the network vocabulary.
+      setFormError('Name a community in at least 3 characters');
       return;
     }
     setCreateBusy(true);
-    setError(null);
+    setFormError(null);
+    setActionFailure(null);
     try {
       const created = await createCommunity({
         name,
@@ -290,7 +328,10 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       setCommunities((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
       onNavigate('CommunityDetail', { slug: created.slug });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create this community');
+      setActionFailure({
+        error: err,
+        detail: 'The community wasn’t created. Check your connection and try again.',
+      });
     } finally {
       setCreateBusy(false);
     }
@@ -446,30 +487,48 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         </form>
       </header>
 
-      {error && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400"
-        >
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => void load(section, query)}
-            className="inline-flex items-center gap-1 text-xs font-medium underline"
-          >
-            <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden="true" />
-            Retry
-          </button>
-        </div>
+      {/* The thing you just tapped did not happen. Never blanks the lists. */}
+      {actionFailure && (
+        <RequestError
+          variant="banner"
+          error={actionFailure.error}
+          detail={actionFailure.detail}
+          onRetry={() => setActionFailure(null)}
+        />
       )}
 
-      {status === 'loading' && (
+      {formError && (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {formError}
+        </p>
+      )}
+
+      {/* A refresh failed on top of rows we already have: keep the rows. */}
+      {listState === 'stale' && (
+        <RequestError
+          variant="banner"
+          error={loadError}
+          onRetry={() => void load(section, query)}
+        />
+      )}
+
+      {listState === 'loading' && (
         <p className="text-sm text-lantern-text-secondary" role="status">
           Loading…
         </p>
       )}
 
-      {status !== 'loading' && section === 'communities' && (
+      {/* Nothing arrived. This is the one thing that must never render as an
+          empty state, so it replaces the section below entirely. */}
+      {listState === 'failed' && (
+        <RequestError
+          variant="full"
+          error={loadError}
+          onRetry={() => void load(section, query)}
+        />
+      )}
+
+      {listState !== 'loading' && listState !== 'failed' && section === 'communities' && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
@@ -520,7 +579,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           <section className="grid gap-2 sm:grid-cols-2" aria-label="Communities">
             {communities.length === 0 && (
               <div className="sm:col-span-2">
-                {query.trim() ? (
+                {listState === 'noMatch' ? (
                   <EmptyState
                     title="No communities match that search"
                     hint="Try another name, or start an interest community for the topic you study."
@@ -571,11 +630,11 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         </div>
       )}
 
-      {status !== 'loading' && section === 'groups' && (
+      {listState !== 'loading' && listState !== 'failed' && section === 'groups' && (
         <section className="grid gap-2 sm:grid-cols-2" aria-label="Groups">
           {groups.length === 0 && (
             <div className="sm:col-span-2">
-              {query.trim() ? (
+              {listState === 'noMatch' ? (
                 <EmptyState
                   title="No groups match that search"
                   hint="Groups stay private until an owner lists them. Create one and turn on Show in Discover."
@@ -638,11 +697,11 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         </section>
       )}
 
-      {status !== 'loading' && section === 'people' && (
+      {listState !== 'loading' && listState !== 'failed' && section === 'people' && (
         <section className="grid gap-2 sm:grid-cols-2" aria-label="People">
           {people.length === 0 && (
             <div className="sm:col-span-2">
-              {query.trim() ? (
+              {listState === 'noMatch' ? (
                 <EmptyState
                   title="No people match that search"
                   hint="People appear here once they publish a study pack or question bank. Marketplace listings sit in the Market tab."
@@ -701,12 +760,18 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         </section>
       )}
 
-      {status !== 'loading' && section === 'rooms' && (
+      {listState !== 'loading' && listState !== 'failed' && section === 'rooms' && (
         <section className="grid gap-2 sm:grid-cols-2" aria-label="Rooms">
-          {visibleRooms.length === 0 && !error && (
+          {/* A failed fetch never reaches here — resolveListState routes it to
+              RequestError above, because "no rooms are open" would be a guess. */}
+          {visibleRooms.length === 0 && (
             <div className="sm:col-span-2">
               <EmptyState
-                title={query.trim() ? 'No open rooms match that search' : 'No rooms are open right now'}
+                title={
+                  listState === 'noMatch'
+                    ? 'No open rooms match that search'
+                    : 'No rooms are open right now'
+                }
                 hint="Start one above — it stays open for 24 hours, then disappears."
               />
             </div>

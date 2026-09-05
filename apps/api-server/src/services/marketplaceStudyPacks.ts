@@ -17,7 +17,12 @@
 import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
 import { isMissingTopicColumn } from './academicCourses';
-import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
+import {
+  COURSE_ANCHOR_COPY,
+  isCourseAnchorId,
+  isMarketplaceListingModerated,
+  validateCourseAnchor,
+} from '@lantern/shared/marketplace';
 import { normalizePublishProvenance, runListingContentFilter, getModerationService, listingRightsFields } from './moderation';
 import { logger } from '../utils/logger';
 import { recordLearningEvent } from './learningEvents';
@@ -242,6 +247,26 @@ export class MarketplaceStudyPacksService {
    * Copy content + classification from a ready study_pack_draft the caller owns
    * (Phase 2 · H). The draft is marked 'published' once its listing exists.
    */
+  /**
+   * The anchor must point at a real course. Read-only: this is deliberately
+   * NOT a find-or-create — the one creation path is
+   * academicCourses.findOrCreateCourse, reached from POST /api/v1/courses.
+   */
+  private async assertCourseExists(courseId: string): Promise<void> {
+    const { data, error } = await this.db
+      .from('courses')
+      .select('id')
+      .eq('id', courseId)
+      .maybeSingle();
+    if (error) {
+      if (isMissingRelationError(error)) {
+        throw new PublicError('Courses are not available yet — please try again later');
+      }
+      throw error;
+    }
+    if (!data) throw new PublicError(COURSE_ANCHOR_COPY.invalid);
+  }
+
   private async loadDraft(userId: string, draftId: string) {
     if (!UUID_RE.test(String(draftId))) {
       throw new PublicError('draftId must be a valid draft id');
@@ -279,9 +304,11 @@ export class MarketplaceStudyPacksService {
       sourcesCited: input.sourcesCited,
     });
 
+    // The stronger "a course is REQUIRED" rule is applied below, once the draft
+    // has had its chance to supply one.
     let courseId = input.courseId ?? null;
-    if (courseId != null && courseId !== '' && !UUID_RE.test(String(courseId))) {
-      throw new PublicError('courseId must be a valid course id');
+    if (courseId != null && courseId !== '' && !isCourseAnchorId(courseId)) {
+      throw new PublicError(COURSE_ANCHOR_COPY.invalid);
     }
 
     // Same content moderation as the listing routes: hard-block leaked-exam /
@@ -300,6 +327,18 @@ export class MarketplaceStudyPacksService {
       rawContent = draft.content;
       if (!courseId && draft.course_id) courseId = draft.course_id;
     }
+
+    // A NEW publish must be anchored to a course (Gap 3). Existing listings with
+    // course_id = null were published before this rule and stay valid and
+    // readable — the rule gates the transition, never the read.
+    const courseError = validateCourseAnchor(courseId);
+    if (courseError) throw new PublicError(courseError);
+    // The id must name a real course; otherwise the anchor points nowhere and
+    // the pack never appears on any browse surface. A plain read — course
+    // CREATION stays in academicCourses.findOrCreateCourse, which dedupes on
+    // (institution, normalised code) and is race-safe. Never a second one.
+    await this.assertCourseExists(String(courseId));
+
     const { content, counts } = this.normalizeContent(rawContent);
 
     const price = input.price == null ? null : Number(input.price);

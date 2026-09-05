@@ -1,26 +1,26 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   getNotificationMeta,
   formatRelativeTime,
   type NotificationIconKey,
 } from '@lantern/shared';
+import { AppIcon, type AppIconName } from './AppIcon';
 
-const iconMap: Record<NotificationIconKey, keyof typeof Ionicons.glyphMap> = {
-  bell: 'notifications-outline',
-  currency: 'cash-outline',
-  chat: 'chatbubble-ellipses-outline',
-  shopping: 'bag-outline',
-  envelope: 'mail-outline',
-  flashcards: 'albums-outline',
-  test: 'clipboard-outline',
-  game: 'game-controller-outline',
-  briefcase: 'briefcase-outline',
-  order: 'receipt-outline',
-  megaphone: 'megaphone-outline',
-  heart: 'heart-outline',
-  alert: 'warning-outline',
+const iconMap: Record<NotificationIconKey, AppIconName> = {
+  bell: 'notifications',
+  currency: 'cash',
+  chat: 'chatbubble-ellipses',
+  shopping: 'bag',
+  envelope: 'mail',
+  flashcards: 'albums',
+  test: 'clipboard',
+  game: 'game-controller',
+  briefcase: 'briefcase',
+  order: 'receipt',
+  megaphone: 'megaphone',
+  heart: 'heart',
+  alert: 'warning',
 };
 
 interface NotificationRowProps {
@@ -61,7 +61,7 @@ export function NotificationRow({
         <View
           className={`w-9 h-9 rounded-xl items-center justify-center ${meta.mobileBgClass}`}
         >
-          <Ionicons name={iconMap[meta.iconKey]} size={18} color={meta.mobileIconColor} />
+          <AppIcon name={iconMap[meta.iconKey]} size={18} color={meta.mobileIconColor} />
         </View>
         <View className="flex-1 min-w-0">
           <View className="flex-row items-start justify-between gap-2">

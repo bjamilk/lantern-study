@@ -119,6 +119,33 @@ export interface CommunityRow {
   lounge_group_id?: string | null;
 }
 
+/**
+ * The public (unauthenticated) community card. Five fields, chosen so the
+ * payload cannot grow a leak by accident: adding a field here is a deliberate
+ * act, not an inherited `select('*')`.
+ */
+export interface CommunityPublicSummary {
+  slug: string;
+  name: string;
+  kind: CommunityKind;
+  institutionName: string | null;
+  memberCount: number;
+}
+
+/**
+ * Community slugs are machine-minted lowercase kebab (`campus-unilag`,
+ * `course-<32 hex>`, `topic-…`). Anything else never becomes a query.
+ */
+const PUBLIC_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,120}$/;
+
+export function normalizePublicCommunitySlug(raw: unknown): string | null {
+  // Strings only: a number or a null coerced through String() would otherwise
+  // become the perfectly valid-looking slugs "42" and "null".
+  if (typeof raw !== 'string') return null;
+  const slug = raw.trim().toLowerCase();
+  return PUBLIC_SLUG_RE.test(slug) ? slug : null;
+}
+
 export interface DiscoverGroup {
   id: string;
   name: string;
@@ -639,6 +666,70 @@ export class CommunitiesService {
       source: membership?.source ?? null,
       viewerRole: membership ? resolveCommunityRole(membership.role, viewerId, createdBy) : null,
       onlineCount: isMember ? await this.countOnline(community.id) : 0,
+    };
+  }
+
+  /**
+   * GET /communities/public/:slug — the ONLY unauthenticated read of a
+   * community, and the payload behind the crawler join card at
+   * /discover/c/:slug.
+   *
+   * THE RULE THAT MATTERS (same as campusSummary): this client is the SERVICE
+   * ROLE, so it bypasses RLS. Every visibility guard has to be written here by
+   * hand. Two are:
+   *   - `visibility = 'public'` — a private community must not even confirm it
+   *     exists to a stranger holding its URL (getBySlug takes the same line).
+   *   - the select names five columns and nothing else. No created_by, no
+   *     course_id, no member rows, no message rows, no lounge pointer: the
+   *     card says what the room is and how big it is, never who is in it or
+   *     what was said in it.
+   *
+   * Returns null for unknown/private/malformed — the caller answers 404.
+   */
+  async publicSummaryBySlug(rawSlug: unknown): Promise<CommunityPublicSummary | null> {
+    const slug = normalizePublicCommunitySlug(rawSlug);
+    if (!slug) return null;
+
+    const { data, error } = await this.db
+      .from('communities')
+      .select('slug, name, kind, institution_id, member_count')
+      .eq('slug', slug)
+      .eq('visibility', 'public')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    const row = data as unknown as {
+      slug: string;
+      name: string;
+      kind: string;
+      institution_id: string | null;
+      member_count: number | null;
+    };
+
+    // The institution's DISPLAY NAME only, and only for a campus that is still
+    // active — a deactivated campus should not resurface on a public card.
+    let institutionName: string | null = null;
+    if (row.institution_id) {
+      const { data: campus } = await this.db
+        .from('marketplace_campuses')
+        .select('name')
+        .eq('id', row.institution_id)
+        .eq('active', true)
+        .maybeSingle();
+      institutionName = ((campus as { name?: string } | null)?.name ?? null) || null;
+    }
+
+    const kind = (COMMUNITY_KINDS as readonly string[]).includes(row.kind)
+      ? (row.kind as CommunityKind)
+      : 'topic';
+
+    return {
+      slug: row.slug,
+      name: row.name,
+      kind,
+      institutionName,
+      memberCount: Math.max(0, Number(row.member_count) || 0),
     };
   }
 

@@ -19,8 +19,10 @@ export { default as AIGenerateQuestionsModal } from './AIGenerateQuestionsModal'
 export { default as AIGenerateFlashcardsModal } from './AIGenerateFlashcardsModal';
 export { default as CreateFlashcardModal } from './CreateFlashcardModal';
 export { default as CollaboratorsModal } from './CollaboratorsModal';
-export { default as AIUsageBadge } from './AIUsageBadge';
-export { AIUsageFloatingBadge } from './AIUsageFloatingBadge';
+export { default as AIUsageBadge, useAIUsage } from './AIUsageBadge';
+// AIUsageFloatingBadge is gone (2026-09-04): the draggable credit pill was
+// anchored to nothing and had to be moved out of the way per screen. The count
+// is docked on the top bar's Lantern AI sparkle instead.
 export { LanternLogo } from './LanternLogo';
 export { BootLoadingScreen } from './BootLoadingScreen';
 export { default as Confetti } from './Confetti';

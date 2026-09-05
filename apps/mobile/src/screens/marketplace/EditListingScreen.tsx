@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { Screen } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -37,6 +36,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ATTESTATION_REQUIRED_MESSAGE, isAcademicListing } from '@lantern/shared/moderation';
 import { RightsAttestationCheckbox } from '../../components/moderation/RightsAttestationCheckbox';
 import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -328,7 +328,7 @@ export function EditListingScreen({
       <Screen>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
           <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
-            <Ionicons name="arrow-back" size={24} color="#64748b" />
+            <AppIcon name="arrow-back" size={24} color="#64748b" />
           </Pressable>
           <Text className="text-xl font-bold text-lantern-text">Edit Listing</Text>
         </View>
@@ -347,7 +347,7 @@ export function EditListingScreen({
     <Screen bottom="none" keyboard>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
           <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
-            <Ionicons name="arrow-back" size={24} color="#64748b" />
+            <AppIcon name="arrow-back" size={24} color="#64748b" />
           </Pressable>
           <Text className="flex-1 text-xl font-bold text-lantern-text">Edit Listing</Text>
           <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
@@ -369,7 +369,7 @@ export function EditListingScreen({
                   onPress={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
                   className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5"
                 >
-                  <Ionicons name="close" size={14} color="#fff" />
+                  <AppIcon name="close" size={14} color="#fff" />
                 </Pressable>
               </View>
             ))}
@@ -381,7 +381,7 @@ export function EditListingScreen({
                 {uploading ? (
                   <Text className="text-xs text-lantern-text-secondary">…</Text>
                 ) : (
-                  <Ionicons name="add" size={24} color="#64748b" />
+                  <AppIcon name="add" size={24} color="#64748b" />
                 )}
               </Pressable>
             ) : null}
@@ -400,7 +400,7 @@ export function EditListingScreen({
             className="p-3 rounded-xl border border-lantern-border bg-lantern-surface mb-2 flex-row items-center justify-between"
           >
             <Text className="text-lantern-text">{selectedCategory?.name ?? category}</Text>
-            <Ionicons name={showCategories ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+            <AppIcon name={showCategories ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
           </Pressable>
           {showCategories ? (
             <View className="flex-row flex-wrap gap-2 mb-4">
@@ -589,7 +589,7 @@ export function EditListingScreen({
             </>
           ) : isAcademic && alreadyAttested ? (
             <View className="flex-row items-center gap-2 mb-4">
-              <Ionicons name="checkmark-circle" size={16} color="#059669" />
+              <AppIcon name="checkmark-circle" size={16} color="#059669" />
               <Text className="text-xs text-lantern-text-secondary flex-1">
                 Rights confirmed for this listing. Editing keeps your attestation.
               </Text>

@@ -10,12 +10,18 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { AppIcon, type AppIconName } from './AppIcon';
 
 export interface ActionSheetItem {
   label: string;
   onPress: () => void;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: AppIconName;
+  /**
+   * Paints the icon solid. Used where the row toggles a state the icon itself
+   * shows — a starred chat, a pinned note — so the state does not rest on the
+   * label text alone.
+   */
+  iconFilled?: boolean;
   destructive?: boolean;
   disabled?: boolean;
   /** Shown under the label for actions whose effect is not obvious. */
@@ -98,8 +104,9 @@ export function ActionSheet({
                 }`}
               >
                 {item.icon ? (
-                  <Ionicons
+                  <AppIcon
                     name={item.icon}
+                    filled={item.iconFilled}
                     size={20}
                     color={item.destructive ? '#ef4444' : '#6366f1'}
                   />

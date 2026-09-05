@@ -11,7 +11,6 @@ import {
   BackHandler,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
 import { chatMessagePreview, resolveAvatarSrc } from '@lantern/shared/utils';
@@ -47,6 +46,7 @@ import { Screen } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTheme } from '../../theme';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
 
@@ -154,7 +154,7 @@ function ChatRow({
     >
       {hasChildren ? (
         <Pressable onPress={onToggleExpand} hitSlop={8} className="mr-1 p-1">
-          <Ionicons
+          <AppIcon
             name={isExpanded ? 'chevron-down' : 'chevron-forward'}
             size={16}
             color={colors.textTertiary}
@@ -181,7 +181,7 @@ function ChatRow({
         ) : null}
         {selected ? (
           <View className="absolute -bottom-0.5 -right-0.5 h-[18px] w-[18px] rounded-full bg-lantern-primary border border-white items-center justify-center">
-            <Ionicons name="checkmark" size={12} color="#ffffff" />
+            <AppIcon name="checkmark" size={12} color="#ffffff" />
           </View>
         ) : null}
       </View>
@@ -191,10 +191,10 @@ function ChatRow({
             {name}
           </Text>
           {pinned ? (
-            <Ionicons name="pin" size={13} color={colors.textTertiary} />
+            <AppIcon name="pin" size={13} color={colors.textTertiary} />
           ) : null}
           {isArchived ? (
-            <Ionicons name="archive-outline" size={14} color={colors.textTertiary} />
+            <AppIcon name="archive" size={14} color={colors.textTertiary} />
           ) : null}
           {time ? <Text className="text-xs text-lantern-text-tertiary shrink-0">{time}</Text> : null}
         </View>
@@ -957,7 +957,7 @@ export function GroupsScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Cancel selection"
           >
-            <Ionicons name="close" size={24} color={colors.text} />
+            <AppIcon name="close" size={24} color={colors.text} />
           </Pressable>
           <Text
             className="text-lg font-bold text-lantern-text"
@@ -975,8 +975,9 @@ export function GroupsScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel={selectedAllPinned ? 'Unpin selected' : 'Pin selected'}
           >
-            <Ionicons
-              name={selectedAllPinned ? 'pin' : 'pin-outline'}
+            <AppIcon
+              name="pin"
+              filled={selectedAllPinned}
               size={22}
               color={colors.text}
             />
@@ -987,7 +988,7 @@ export function GroupsScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Mute selected for 8 hours"
           >
-            <Ionicons name="volume-mute-outline" size={22} color={colors.text} />
+            <AppIcon name="volume-mute" size={22} color={colors.text} />
           </Pressable>
           <Pressable
             onPress={() => void handleArchiveSelected()}
@@ -995,8 +996,9 @@ export function GroupsScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel={selectedAllArchived ? 'Unarchive selected' : 'Archive selected'}
           >
-            <Ionicons
-              name={selectedAllArchived ? 'archive' : 'archive-outline'}
+            <AppIcon
+              name="archive"
+              filled={selectedAllArchived}
               size={22}
               color={colors.text}
             />
@@ -1007,14 +1009,14 @@ export function GroupsScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Delete selected"
           >
-            <Ionicons name="trash-outline" size={22} color={colors.error} />
+            <AppIcon name="trash" size={22} color={colors.error} />
           </Pressable>
           </View>
         </View>
       ) : (
       <View className="flex-row items-center gap-2 px-4 pt-2 pb-3">
         <View className="flex-1 flex-row items-center gap-2 px-3 rounded-xl border border-lantern-border bg-lantern-surface min-h-[44px]">
-          <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+          <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
           <TextInput
             value={chatQuery}
             onChangeText={setChatQuery}
@@ -1032,7 +1034,7 @@ export function GroupsScreen({ navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Clear search"
             >
-              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+              <AppIcon name="close-circle" size={18} color={colors.textTertiary} />
             </Pressable>
           ) : null}
         </View>
@@ -1042,7 +1044,7 @@ export function GroupsScreen({ navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel="New direct message"
         >
-          <Ionicons name="chatbubble-outline" size={18} color="#6366f1" />
+          <AppIcon name="chatbubble" size={18} color="#6366f1" />
         </Pressable>
       </View>
       )}
@@ -1121,11 +1123,11 @@ export function GroupsScreen({ navigation }: Props) {
                   accessibilityState={{ expanded: archivedExpanded }}
                   accessibilityLabel={`Archived chats, ${item.count}`}
                 >
-                  <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+                  <AppIcon name="archive" size={16} color={colors.textSecondary} />
                   <Text className="flex-1 text-xs font-semibold uppercase tracking-wider text-lantern-text-secondary">
                     Archived ({item.count})
                   </Text>
-                  <Ionicons
+                  <AppIcon
                     name={archivedExpanded ? 'chevron-down' : 'chevron-forward'}
                     size={16}
                     color={colors.textTertiary}
@@ -1174,7 +1176,7 @@ export function GroupsScreen({ navigation }: Props) {
                       {item.text}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                  <AppIcon name="chevron-forward" size={16} color={colors.textTertiary} />
                 </Pressable>
               );
             }
@@ -1201,7 +1203,7 @@ export function GroupsScreen({ navigation }: Props) {
                       </Text>
                     ) : null}
                   </View>
-                  <Ionicons name="chatbubble-outline" size={18} color="#6366f1" />
+                  <AppIcon name="chatbubble" size={18} color="#6366f1" />
                 </Pressable>
               );
             }
@@ -1284,7 +1286,7 @@ export function GroupsScreen({ navigation }: Props) {
           shadowRadius: 8,
         }}
       >
-        <Ionicons name="add" size={28} color="#ffffff" />
+        <AppIcon name="add" size={28} color="#ffffff" />
       </Pressable>
     </Screen>
   );

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Image, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { normalizeStorageUrl } from '@lantern/shared/utils';
 import type { MarketplaceListing } from '../../stores';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 export function formatPrice(price?: number): string {
   if (price == null || price <= 0) return 'Free';
@@ -23,17 +23,17 @@ export function timeAgo(dateStr: string): string {
 type ListingImageProps = {
   uri?: string | null;
   className?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: AppIconName;
 };
 
-export function ListingImage({ uri, className = 'w-full h-full', icon = 'bag-outline' }: ListingImageProps) {
+export function ListingImage({ uri, className = 'w-full h-full', icon = 'bag' }: ListingImageProps) {
   const [failed, setFailed] = useState(false);
   const src = uri ? normalizeStorageUrl(uri) : null;
 
   if (!src || failed) {
     return (
       <View className={`${className} items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary`}>
-        <Ionicons name={icon} size={28} color="#94a3b8" />
+        <AppIcon name={icon} size={28} color="#94a3b8" />
       </View>
     );
   }
@@ -53,49 +53,49 @@ export function isOwnListing(listing: MarketplaceListing, userId?: string): bool
   return listing.user_id === userId || listing.seller_id === userId;
 }
 
-const CATEGORY_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
-  book: 'book-outline',
-  sparkles: 'star-outline',
-  albums: 'albums-outline',
-  'document-text': 'document-text-outline',
-  briefcase: 'briefcase-outline',
-  'chart-bar': 'bar-chart-outline',
-  beaker: 'flask-outline',
-  home: 'home-outline',
-  car: 'car-outline',
-  gift: 'gift-outline',
-  'shirt-outline': 'shirt-outline',
-  people: 'people-outline',
-  ticket: 'ticket-outline',
-  'phone-portrait': 'phone-portrait-outline',
-  restaurant: 'restaurant-outline',
-  'help-circle': 'help-circle-outline',
+const CATEGORY_ICON_MAP: Record<string, AppIconName> = {
+  book: 'book',
+  sparkles: 'star',
+  albums: 'albums',
+  'document-text': 'document-text',
+  briefcase: 'briefcase',
+  'chart-bar': 'bar-chart',
+  beaker: 'flask',
+  home: 'home',
+  car: 'car',
+  gift: 'gift',
+  'shirt-outline': 'shirt',
+  people: 'people',
+  ticket: 'ticket',
+  'phone-portrait': 'phone-portrait',
+  restaurant: 'restaurant',
+  'help-circle': 'help-circle',
 };
 
-export function categoryIcon(name: string): keyof typeof Ionicons.glyphMap {
-  return CATEGORY_ICON_MAP[name] ?? 'bag-outline';
+export function categoryIcon(name: string): AppIconName {
+  return CATEGORY_ICON_MAP[name] ?? 'bag';
 }
 
-/** Taxonomy nodes carry a platform-neutral icon key; this is its Ionicon. */
-const TAXONOMY_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
-  book: 'book-outline',
-  notes: 'document-text-outline',
-  sparkles: 'sparkles-outline',
-  albums: 'albums-outline',
-  briefcase: 'briefcase-outline',
-  beaker: 'flask-outline',
-  chart: 'stats-chart-outline',
-  home: 'home-outline',
-  car: 'car-outline',
-  shirt: 'shirt-outline',
-  gift: 'gift-outline',
-  people: 'people-outline',
-  ticket: 'ticket-outline',
-  phone: 'phone-portrait-outline',
-  food: 'restaurant-outline',
-  plus: 'add-circle-outline',
+/** Taxonomy nodes carry a platform-neutral icon key; this is its app icon. */
+const TAXONOMY_ICON_MAP: Record<string, AppIconName> = {
+  book: 'book',
+  notes: 'document-text',
+  sparkles: 'sparkles',
+  albums: 'albums',
+  briefcase: 'briefcase',
+  beaker: 'flask',
+  chart: 'stats-chart',
+  home: 'home',
+  car: 'car',
+  shirt: 'shirt',
+  gift: 'gift',
+  people: 'people',
+  ticket: 'ticket',
+  phone: 'phone-portrait',
+  food: 'restaurant',
+  plus: 'add-circle',
 };
 
-export function taxonomyIcon(key: string): keyof typeof Ionicons.glyphMap {
-  return TAXONOMY_ICON_MAP[key] ?? 'pricetag-outline';
+export function taxonomyIcon(key: string): AppIconName {
+  return TAXONOMY_ICON_MAP[key] ?? 'pricetag';
 }

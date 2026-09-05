@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import type { GroupMember, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
@@ -19,6 +18,7 @@ import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
 import { VoiceNotePlayer } from './VoiceNotePlayer';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { AppIcon } from '../ui/AppIcon';
 
 interface MessageBubbleProps {
   message: Message;
@@ -385,6 +385,7 @@ function MessageBubbleComponent({
                 downvotes={message.downvotes ?? 0}
                 userVote={userVote}
                 questionStatus={message.questionStatus}
+                peerUpvotes={message.peerUpvotes}
                 memberCount={memberCount}
                 isOwn={isOwn}
                 onVote={onVote}
@@ -409,7 +410,7 @@ function MessageBubbleComponent({
               only the Retry action stays as its own stop. */}
           <View className="flex-row items-center justify-end mt-1.5 gap-0.5">
             {starred ? (
-              <Ionicons
+              <AppIcon
                 name="star"
                 size={10}
                 color="#f59e0b"

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   BOARD_ACTION_ROW_ORDER,
   boardBookmarkAccessibilityLabel,
@@ -11,6 +10,7 @@ import {
   type BoardAction,
 } from '@lantern/shared/network';
 import { useTheme } from '../../theme';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 /**
  * The five-control board action row (§9.1).
@@ -35,8 +35,13 @@ import { useTheme } from '../../theme';
  */
 
 type ActionSpec = {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  activeIcon?: React.ComponentProps<typeof Ionicons>['name'];
+  icon: AppIconName;
+  /**
+   * How the active state reads with the colour taken away. `fill` paints the
+   * glyph solid; `weight` thickens its stroke instead, for open-path glyphs
+   * like Repeat that turn to mush when filled.
+   */
+  activeMark?: 'fill' | 'weight';
   count?: number;
   active?: boolean;
   activeColor?: string;
@@ -49,6 +54,8 @@ type ActionSpec = {
 
 const ICON_COLOR = '#94a3b8';
 const ICON_SIZE = 17;
+/** The 'weight' active mark: heavy enough to read next to an idle 2.25 stroke. */
+const ACTIVE_STROKE = 3;
 
 export function BoardActionRow({
   favoriteCount,
@@ -85,14 +92,14 @@ export function BoardActionRow({
 
   const specs: Record<BoardAction, ActionSpec> = {
     comment: {
-      icon: 'chatbubble-outline',
+      icon: 'chatbubble',
       count: replyCount,
       label: boardCommentAccessibilityLabel(replyCount),
       onPress: onComment,
     },
     repost: {
-      icon: 'repeat-outline',
-      activeIcon: 'repeat',
+      icon: 'repeat',
+      activeMark: 'weight',
       count: repostCount,
       active: repostedByMe,
       activeColor: colors.success,
@@ -102,8 +109,7 @@ export function BoardActionRow({
       disabled: !canRepost && !repostedByMe,
     },
     favorite: {
-      icon: 'heart-outline',
-      activeIcon: 'heart',
+      icon: 'heart',
       count: favoriteCount,
       active: favorited,
       activeColor: colors.error,
@@ -111,8 +117,7 @@ export function BoardActionRow({
       onPress: onFavorite,
     },
     bookmark: {
-      icon: 'bookmark-outline',
-      activeIcon: 'bookmark',
+      icon: 'bookmark',
       active: bookmarked,
       activeColor: colors.primary,
       label: boardBookmarkAccessibilityLabel(bookmarked),
@@ -120,7 +125,7 @@ export function BoardActionRow({
       hidden: !bookmarksSupported,
     },
     share: {
-      icon: 'share-outline',
+      icon: 'share',
       label: boardShareAccessibilityLabel(),
       onPress: onShare,
     },
@@ -132,7 +137,7 @@ export function BoardActionRow({
         const spec = specs[action];
         if (spec.hidden) return null;
         const showCount = typeof spec.count === 'number' && spec.count > 0;
-        const iconName = spec.active && spec.activeIcon ? spec.activeIcon : spec.icon;
+        const activeMark = spec.active ? (spec.activeMark ?? 'fill') : undefined;
         return (
           <Pressable
             key={action}
@@ -150,8 +155,10 @@ export function BoardActionRow({
             className="min-h-[44px] min-w-[44px] flex-1 flex-row items-center justify-start"
             style={{ opacity: spec.disabled ? 0.4 : 1 }}
           >
-            <Ionicons
-              name={iconName}
+            <AppIcon
+              name={spec.icon}
+              filled={activeMark === 'fill'}
+              strokeWidth={activeMark === 'weight' ? ACTIVE_STROKE : undefined}
               size={ICON_SIZE}
               color={spec.active ? (spec.activeColor ?? colors.primary) : ICON_COLOR}
             />

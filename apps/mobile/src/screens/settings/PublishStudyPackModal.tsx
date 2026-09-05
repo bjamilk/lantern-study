@@ -11,7 +11,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -26,11 +25,14 @@ import {
 } from '@lantern/shared/moderation';
 import {
   summarizeStudyPackCounts,
+  validateCourseAnchor,
+  COURSE_ANCHOR_COPY,
   MARKETPLACE_DEFAULT_CREATOR_FEE_BPS,
   type StudyPackContentInput,
 } from '@lantern/shared/marketplace';
 import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { openSellerTerms } from '../../components/moderation/RightsAttestationCheckbox';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type Campus = Awaited<ReturnType<typeof fetchMarketplaceCampuses>>[number];
 
@@ -117,11 +119,25 @@ export function PublishStudyPackModal({
   const priceInvalid = price.trim() !== '' && (!Number.isFinite(priceValue!) || priceValue! < 0);
   const sources = normalizeSourcesCited(sourcesText);
   const sourcesError = sources.ok ? null : sources.error;
+  // Every new pack is filed under a course (Gap 3): the anchor is how a student
+  // finds it months after the seller stops promoting it.
+  const courseError = validateCourseAnchor(courseId);
   const canSubmit =
-    !busy && attested && !sourcesError && hasContent && !!title.trim() && !!campusId && !priceInvalid;
+    !busy &&
+    attested &&
+    !sourcesError &&
+    hasContent &&
+    !!title.trim() &&
+    !!campusId &&
+    !priceInvalid &&
+    !courseError;
 
   const submit = async () => {
     if (!canSubmit) return;
+    if (courseError) {
+      Alert.alert('Course needed', courseError);
+      return;
+    }
     setBusy(true);
     try {
       const result = await publishStudyPack({
@@ -190,12 +206,12 @@ export function PublishStudyPackModal({
               borderBottomColor: colors.border,
             }}
           >
-            <Ionicons name="storefront-outline" size={20} color={colors.primary} />
+            <AppIcon name="storefront" size={20} color={colors.primary} />
             <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: colors.text }}>
               Sell as a Study Pack
             </Text>
             <Pressable onPress={onClose} hitSlop={8} accessibilityLabel="Close">
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
+              <AppIcon name="close" size={22} color={colors.textSecondary} />
             </Pressable>
           </View>
 
@@ -285,7 +301,7 @@ export function PublishStudyPackModal({
 
             <View style={{ gap: 6 }}>
               <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
-                Course (optional)
+                {COURSE_ANCHOR_COPY.label} *
               </Text>
               <CoursePicker
                 value={courseId}
@@ -294,9 +310,22 @@ export function PublishStudyPackModal({
                   setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
                   setCourseId(nextCourseId);
                 }}
-                placeholder="Which course is this pack for?"
+                allowClear={false}
+                placeholder={COURSE_ANCHOR_COPY.placeholder}
                 title="Course for this study pack"
+                accessibilityLabel={`${COURSE_ANCHOR_COPY.label} (required)`}
               />
+              <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                {COURSE_ANCHOR_COPY.hint}
+              </Text>
+              {courseError ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={{ fontSize: 12, color: colors.error }}
+                >
+                  {courseError}
+                </Text>
+              ) : null}
             </View>
 
             <View style={{ gap: 6 }}>

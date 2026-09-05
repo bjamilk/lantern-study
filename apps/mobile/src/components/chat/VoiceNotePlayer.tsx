@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Audio, type AVPlaybackStatus } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { AppIcon } from '../ui/AppIcon';
 
 export function formatChatAudioTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -201,7 +201,7 @@ export function VoiceNotePlayer({ url, isOwn }: { url: string; isOwn: boolean })
           backgroundColor: isOwn ? `${colors.chatBubbleMeta}33` : colors.primaryBackground,
         }}
       >
-        <Ionicons
+        <AppIcon
           name={playing ? 'pause' : 'play'}
           size={18}
           color={iconColor}

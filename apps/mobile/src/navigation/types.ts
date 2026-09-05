@@ -113,6 +113,18 @@ export type MarketStackParamList = {
   MarketplaceHome: undefined;
   /** Shop by department; omitting nodeId opens the department list. */
   ShopBrowse: { nodeId?: string } | undefined;
+  /** "Browse by course" index: courses that have at least one active listing. */
+  CourseBrowse: undefined;
+  /**
+   * One course's banks and packs. `courseLabel`/`institutionName` are the
+   * index row's own values, shown while the page loads so the header is never
+   * blank; the fetched course always wins once it arrives.
+   */
+  CourseListings: {
+    courseId: string;
+    courseLabel?: string;
+    institutionName?: string | null;
+  };
   /** The Amazon-style "You" hub: orders, saved, cart, and everything a seller runs. */
   ShopAccount: undefined;
   ListingDetail: { listingId: string; quantity?: number };
@@ -262,19 +274,79 @@ export type BudgetStackParamList = {
   AddInvestment: undefined;
 };
 
+/**
+ * Campus — one destination with three segments (Communities · Shop · Jobs) —
+ * owns every screen the retired Market and Jobs stacks held, so the Campus tab
+ * stays lit all the way down into a listing, a job, a board or a post.
+ *
+ * `MarketplaceHome` and `JobsHome` are still listed and still registered: they
+ * became SEGMENTS rather than screens, but seven screens across the app still
+ * call `navigate('MarketplaceHome')` / `navigate('JobsHome')`, so the names
+ * survive as one-frame redirects onto the right segment.
+ */
+export type CampusStackParamList = {
+  /** `at` changes per request so the same segment re-applies on a repeat tap. */
+  Campus:
+    | {
+        segment?: import("../screens/campus/campusSegments").CampusSegment;
+        at?: number;
+      }
+    | undefined;
+} & MarketStackParamList &
+  JobsStackParamList;
+
+/**
+ * Me — profile, academic details, Budget, Downloads, the two modes, Settings
+ * and Log out. Budget lives on THIS stack rather than in a tab of its own so
+ * Back returns to Me and the Me tab stays lit while a student is in it.
+ */
+export type MeStackParamList = {
+  Me: undefined;
+} & BudgetStackParamList;
+
+/** What a nested `navigate('<Tab>', …)` hands a tab screen. */
+type NestedNavigateParams = {
+  screen?: string;
+  params?: Record<string, unknown>;
+  initial?: boolean;
+};
+
 export type MainTabParamList = {
+  // The five destinations, in bar order. Home is the launch tab.
   HomeTab: undefined;
   StudyTab: undefined;
   ChatTab: undefined;
+  CampusTab:
+    | import("@react-navigation/native").NavigatorScreenParams<CampusStackParamList>
+    | undefined;
+  MeTab:
+    | import("@react-navigation/native").NavigatorScreenParams<MeStackParamList>
+    | undefined;
+  /**
+   * Notifications follows the reader around from the top bar; it is not one of
+   * the five places, so it lights no bottom tab.
+   */
   NotificationsTab: undefined;
-  BudgetTab: undefined;
-  MarketTab: undefined;
-  JobsTab: undefined;
-  /** Offline mode as a base tab; the root-stack `Offline` modal remains for
-      course-filtered links from the Library tree. */
-  OfflineTab: undefined;
+  /**
+   * RETIRED, kept as compatibility shims (navigation/legacyTabs.ts). Around
+   * fifteen screens this wave does not own still name these routes, and a
+   * `navigate` to a route that does not exist is silently dropped in release
+   * builds. Each is a redirect screen onto Campus or Me.
+   */
+  MarketTab: NestedNavigateParams | undefined;
+  JobsTab: NestedNavigateParams | undefined;
+  BudgetTab: NestedNavigateParams | undefined;
 };
 
+/**
+ * Routes that own the whole window: a study session in a fullScreenModal, or a
+ * detail screen that draws its own header with a back arrow and its real
+ * title. The shared chrome stands down for these — and ONLY for these.
+ *
+ * This is a property of the ROUTE, and it is the only thing that ever takes a
+ * bar away. Scrolling does not; a keyboard opening does not; focusing a search
+ * box does not; a screen borrowing the top row does not.
+ */
 const IMMERSIVE_SCREENS = new Set([
   "FlashcardReview",
   "CramSession",

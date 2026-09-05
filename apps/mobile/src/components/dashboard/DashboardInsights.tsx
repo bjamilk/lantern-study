@@ -5,9 +5,9 @@
  */
 import React from 'react';
 import { Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../ui';
 import type { DashboardStats } from '../../types/dashboardStats';
+import { AppIcon } from '../ui/AppIcon';
 
 const MIN_TOPIC_QUESTIONS = 3;
 
@@ -47,7 +47,7 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
       {hasTopics ? (
         <Card className="mb-4">
           <View className="flex-row items-center gap-2 mb-3">
-            <Ionicons name="pricetag" size={16} color="#8b5cf6" />
+            <AppIcon name="pricetag" size={16} color="#8b5cf6" />
             <Text className="text-sm font-semibold text-lantern-text">Topic insights</Text>
           </View>
           {strongest.length > 0 ? (
@@ -80,7 +80,7 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
       {showQuestions ? (
         <Card className="mb-4">
           <View className="flex-row items-center gap-2 mb-3">
-            <Ionicons name="warning" size={16} color="#f59e0b" />
+            <AppIcon name="warning" size={16} color="#f59e0b" />
             <Text className="text-sm font-semibold text-lantern-text">Questions to review</Text>
           </View>
           <View className="gap-2">

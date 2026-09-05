@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import {
   CommonActions,
   useFocusEffect,
@@ -46,6 +45,7 @@ import {
 import { NotificationRow } from "../../components/ui";
 import { AcademicFeedPanel } from "../../components/AcademicFeedPanel";
 import { useChrome } from '../../components/layout/ChromeContext';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 interface AppNotification {
   id: string;
@@ -343,7 +343,7 @@ export default function NotificationsScreen() {
             onPress={() => navigation.goBack()}
             className="p-2 -ml-2 min-w-[44px] min-h-[44px] items-center justify-center"
           >
-            <Ionicons name="close" size={24} color={colors.textSecondary} />
+            <AppIcon name="close" size={24} color={colors.textSecondary} />
           </Pressable>
         ) : (
           <View className="w-10" />
@@ -400,8 +400,8 @@ export default function NotificationsScreen() {
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               <View className="w-14 h-14 rounded-full bg-lantern-primary-background items-center justify-center">
-                <Ionicons
-                  name="notifications-outline"
+                <AppIcon
+                  name="notifications"
                   size={28}
                   color={colors.primary}
                 />

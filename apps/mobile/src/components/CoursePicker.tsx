@@ -21,7 +21,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { Course } from '@lantern/shared/types';
 import { COURSE_TITLE_MIN_LENGTH } from '@lantern/shared/academic';
 import { useTheme } from '../theme';
@@ -30,6 +29,7 @@ import { createCourse } from '../services/api';
 import { useCourseSearch, useMyActiveCourses } from '../hooks/useCourseSearch';
 import { formatCourseLabel } from '../utils/courseSelection';
 import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
+import { AppIcon } from './ui/AppIcon';
 
 export interface CoursePickerProps {
   /** Selected course id (null/undefined = none). */
@@ -181,7 +181,7 @@ export function CoursePicker({
           { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, opacity: disabled ? 0.6 : 1 },
         ]}
       >
-        <Ionicons name="school-outline" size={18} color={value ? colors.primary : colors.inputPlaceholder} />
+        <AppIcon name="school" size={18} color={value ? colors.primary : colors.inputPlaceholder} />
         <Text
           numberOfLines={1}
           style={[styles.triggerText, { color: value ? colors.inputText : colors.inputPlaceholder }]}
@@ -196,10 +196,10 @@ export function CoursePicker({
             accessibilityLabel="Clear course"
             style={styles.clearButton}
           >
-            <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+            <AppIcon name="close-circle" size={18} color={colors.textTertiary} />
           </Pressable>
         ) : (
-          <Ionicons name="chevron-down" size={16} color={colors.inputPlaceholder} />
+          <AppIcon name="chevron-down" size={16} color={colors.inputPlaceholder} />
         )}
       </Pressable>
       )}
@@ -216,12 +216,12 @@ export function CoursePicker({
             <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.sheetTitle, { color: colors.text }]}>{title}</Text>
               <Pressable onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
+                <AppIcon name="close" size={22} color={colors.textSecondary} />
               </Pressable>
             </View>
 
             <View style={[styles.searchRow, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-              <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+              <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
               <TextInput
                 value={query}
                 onChangeText={text => {
@@ -247,7 +247,7 @@ export function CoursePicker({
                   accessibilityRole="button"
                   style={[styles.row, { borderBottomColor: colors.border }]}
                 >
-                  <Ionicons name="remove-circle-outline" size={18} color={colors.textSecondary} />
+                  <AppIcon name="remove-circle" size={18} color={colors.textSecondary} />
                   <Text style={[styles.rowText, { color: colors.textSecondary }]}>No course</Text>
                 </Pressable>
               ) : null}
@@ -278,7 +278,7 @@ export function CoursePicker({
                   accessibilityRole="button"
                   style={[styles.row, { borderBottomColor: colors.border }]}
                 >
-                  <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+                  <AppIcon name="add-circle" size={18} color={colors.primary} />
                   <Text style={[styles.rowText, { color: colors.primary, fontWeight: '600' }]}>Add ‘{addCode}’</Text>
                 </Pressable>
               ) : null}
@@ -357,7 +357,7 @@ function CourseRow({ course, selected, onPress }: { course: Course; selected: bo
           </Text>
         ) : null}
       </View>
-      {selected ? <Ionicons name="checkmark-circle" size={18} color={colors.primary} /> : null}
+      {selected ? <AppIcon name="checkmark-circle" size={18} color={colors.primary} /> : null}
     </Pressable>
   );
 }

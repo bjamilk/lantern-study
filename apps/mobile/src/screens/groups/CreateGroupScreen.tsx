@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import {
   COMMUNITY_COPY,
@@ -27,6 +26,7 @@ import { Screen, useScreenInsets } from '../../components/layout';
 import { CoursePicker } from '../../components/CoursePicker';
 import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../discover/GroupDiscoverabilityFields';
 import type { ChatStackParamList } from '../../navigation/types';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type CreateGroupParams = ChatStackParamList['CreateGroup'];
 
@@ -398,7 +398,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
         <ScrollView className="flex-1 px-4" keyboardShouldPersistTaps="handled">
           <View className="flex-row items-center border border-lantern-border rounded-2xl px-3 bg-lantern-surface mt-2 mb-3">
-            <Ionicons name="search" size={18} color="#94a3b8" />
+            <AppIcon name="search" size={18} color="#94a3b8" />
             <TextInput
               value={searchTerm}
               onChangeText={setSearchTerm}
@@ -415,7 +415,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
           {!isSearching && searchTerm.length >= 2 && searchResults.length === 0 ? (
             <View className="items-center py-8">
-              <Ionicons name="people-outline" size={40} color="#94a3b8" />
+              <AppIcon name="people" size={40} color="#94a3b8" />
               <Text className="text-sm text-lantern-text-secondary mt-2 text-center">
                 No users found matching &quot;{searchTerm}&quot;
               </Text>
@@ -437,7 +437,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                   <Text className="text-sm text-lantern-primary">@{u.username}</Text>
                 ) : null}
               </View>
-              <Ionicons name="add-circle-outline" size={22} color="#6366f1" />
+              <AppIcon name="add-circle" size={22} color="#6366f1" />
             </Pressable>
           ))}
 
@@ -456,7 +456,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                     <Text className="text-sm text-lantern-primary-dark mr-1">
                       {u.username ? `@${u.username}` : u.name}
                     </Text>
-                    <Ionicons name="close" size={14} color="#6366f1" />
+                    <AppIcon name="close" size={14} color="#6366f1" />
                   </Pressable>
                 ))}
               </View>
@@ -512,13 +512,13 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} className="w-full h-full" />
             ) : (
-              <Ionicons name="people" size={40} color="#94a3b8" />
+              <AppIcon name="people" size={40} color="#94a3b8" />
             )}
             <View className="absolute inset-0 bg-black/30 items-center justify-center">
               {pickingAvatar ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Ionicons name="camera" size={28} color="#fff" />
+                <AppIcon name="camera" size={28} color="#fff" />
               )}
             </View>
           </Pressable>
@@ -579,7 +579,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                 </Text>
               ) : null}
             </View>
-            <Ionicons
+            <AppIcon
               name={permissionsExpanded ? 'chevron-up' : 'chevron-down'}
               size={20}
               color="#94a3b8"

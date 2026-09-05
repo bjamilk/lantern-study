@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { roomSubtitle, type StudyRoomListItem } from '@lantern/shared/network';
+import { AppIcon } from '../ui/AppIcon';
 
 /** One open study room under STUDY ROOMS — the voice-like channel of the server. */
 export function RoomRow({
@@ -23,7 +23,7 @@ export function RoomRow({
       accessibilityLabel={`${action} ${room.title}, ${subtitle}`}
       className="flex-row items-center px-4 min-h-[52px] active:bg-lantern-background-secondary"
     >
-      <Ionicons name="volume-medium-outline" size={16} color="#94a3b8" />
+      <AppIcon name="volume-medium" size={16} color="#94a3b8" />
       <View className="flex-1 min-w-0 ml-2">
         <Text className="text-[15px] font-medium text-lantern-text" numberOfLines={1}>
           {room.title}

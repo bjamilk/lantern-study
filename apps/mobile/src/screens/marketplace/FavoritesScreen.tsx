@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { Button } from '../../components/ui';
 import { formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { getFavoritePriceSnapshots } from './marketplaceFavoritePrices';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -61,7 +61,7 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
           accessibilityLabel="Back"
           className="p-2 -ml-2 mr-1"
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-xl font-bold text-lantern-text">Saved Items</Text>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
@@ -146,7 +146,7 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
                 accessibilityLabel="Remove from favorites"
                 className="justify-center pr-3"
               >
-                <Ionicons name="heart" size={20} color="#ef4444" />
+                <AppIcon name="heart" size={20} color="#ef4444" />
               </Pressable>
             ) : null}
           </Pressable>

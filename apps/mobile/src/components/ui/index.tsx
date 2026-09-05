@@ -258,3 +258,4 @@ export { ActionSheet, type ActionSheetItem } from './ActionSheet';
 export { LoadingState, ErrorState, InlineErrorBanner, EmptyState } from './AsyncStates';
 export { IconButton } from './IconButton';
 export { BackButton } from './BackButton';
+export { AppIcon, type AppIconName, isAppIconName, strokeWidthForSize } from './AppIcon';

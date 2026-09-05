@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 // react-native's own SafeAreaView is iOS-only and applies nothing on Android.
 // This route is in IMMERSIVE_SCREENS, so the shell renders no TopBar above it
 // and the screen owns both insets itself.
@@ -8,6 +8,7 @@ import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { GroupChatView, type GroupChatNavigation } from '../groups/GroupChatScreen';
 import { CommunityBoardScreen } from './CommunityBoardScreen';
+import { BackButton } from '../../components/ui';
 
 type Params = {
   groupId: string;
@@ -110,11 +111,17 @@ export function CommunityChannelScreen({
 
   if (!canDecide) {
     return (
-      <SafeAreaView
-        edges={['top', 'bottom']}
-        className="flex-1 bg-lantern-background items-center justify-center"
-      >
-        <ActivityIndicator color="#6366f1" />
+      // This wait is short but it is not guaranteed to end (the resolve can sit
+      // on a dead connection until it times out), and this route is immersive,
+      // so the shell renders no chrome above it. A blank spinner with no back
+      // arrow was exactly the trap the audit found: give it one.
+      <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-lantern-background">
+        <View className="flex-row items-center h-[56px] pr-2">
+          <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
+        </View>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color="#6366f1" accessibilityLabel="Opening this room" />
+        </View>
       </SafeAreaView>
     );
   }

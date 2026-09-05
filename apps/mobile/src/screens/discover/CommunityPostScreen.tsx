@@ -41,7 +41,6 @@ import { BoardRepostSheet } from '../../components/board/BoardRepostSheet';
 import { VoiceNotePlayer } from '../../components/chat/VoiceNotePlayer';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { BackButton } from '../../components/ui';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { ActionSheet, type ActionSheetItem } from '../../components/ui';
 import {
@@ -52,6 +51,7 @@ import {
   splitBoardBody,
   toBoardPost,
 } from '../../utils/boardPosts';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type Params = {
   groupId: string;
@@ -296,7 +296,7 @@ export function CommunityPostScreen({
     const items: ActionSheetItem[] = [
       {
         label: COMMUNITY_BOARD_COPY.copyLink,
-        icon: 'link-outline',
+        icon: 'link',
         onPress: () => {
           void Clipboard.setStringAsync(payload.url)
             .then(() => AccessibilityInfo.announceForAccessibility(COMMUNITY_BOARD_COPY.linkCopied))
@@ -310,7 +310,7 @@ export function CommunityPostScreen({
     if (body) {
       items.push({
         label: COMMUNITY_BOARD_COPY.copyText,
-        icon: 'copy-outline',
+        icon: 'copy',
         onPress: () => {
           void Clipboard.setStringAsync(body)
             .then(() => AccessibilityInfo.announceForAccessibility('Post copied'))
@@ -322,7 +322,7 @@ export function CommunityPostScreen({
     }
     items.push({
       label: `${COMMUNITY_BOARD_COPY.share} via…`,
-      icon: 'share-outline',
+      icon: 'share',
       onPress: () => {
         void Share.share({ message: payload.url, title: payload.title }).catch(() =>
           useToastStore.getState().showToast(COMMUNITY_BOARD_COPY.shareFailed, 'error')
@@ -453,8 +453,9 @@ export function CommunityPostScreen({
                 )}
                 className="mt-0.5 min-h-[44px] min-w-[44px] flex-row items-center self-start"
               >
-                <Ionicons
-                  name={isBoardFavorited(myReactions[item.id]) ? 'heart' : 'heart-outline'}
+                <AppIcon
+                  name="heart"
+                  filled={isBoardFavorited(myReactions[item.id])}
                   size={15}
                   color={isBoardFavorited(myReactions[item.id]) ? colors.error : '#94a3b8'}
                 />

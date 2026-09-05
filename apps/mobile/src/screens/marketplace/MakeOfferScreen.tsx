@@ -9,11 +9,11 @@ import {
   View,
 } from 'react-native';
 import { Screen } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { useMarketplaceStore } from '../../stores';
 import { Button, Card } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -78,7 +78,7 @@ export function MakeOfferScreen({ navigation, route }: Props) {
     <Screen bottom="none" keyboard>
         <View className="px-4 pt-2 pb-3 flex-row items-center">
           <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
-            <Ionicons name="arrow-back" size={24} color="#64748b" />
+            <AppIcon name="arrow-back" size={24} color="#64748b" />
           </Pressable>
           <Text className="text-xl font-bold text-lantern-text">Make an Offer</Text>
         </View>

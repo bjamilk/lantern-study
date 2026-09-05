@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import {
   checkoutMarketplaceCart,
   fetchMarketplaceCart,
@@ -30,6 +29,7 @@ import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { useMarketplacePaymentsConfig } from '../../hooks/useMarketplacePaymentsConfig';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -142,7 +142,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 py-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-xl font-bold text-lantern-text ml-2">Cart</Text>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} hide={['cart']} />
@@ -237,7 +237,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
                     accessibilityLabel={`Remove ${item.listing?.title ?? 'item'} from cart`}
                     className="p-2"
                   >
-                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                    <AppIcon name="trash" size={20} color="#ef4444" />
                   </Pressable>
                 </View>
               </View>

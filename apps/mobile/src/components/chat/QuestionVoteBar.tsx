@@ -1,13 +1,25 @@
 import React, { useMemo } from 'react';
 import { Pressable, Text, View, type ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
+import {
+  canVerifyQuestion,
+  QUESTION_VERIFY_COPY,
+  VERIFY_PEER_UPVOTES,
+} from '@lantern/shared/utils';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 interface QuestionVoteBarProps {
   upvotes: number;
   downvotes: number;
   userVote?: 'up' | 'down';
   questionStatus?: string;
+  /**
+   * Distinct upvotes from members other than the author — the count the server
+   * enforces before it will grant VERIFIED. Undefined on API builds that do not
+   * report it, and then the older member-share bar is shown instead of a zero
+   * that would read as "nobody has upvoted this".
+   */
+  peerUpvotes?: number;
   memberCount: number;
   isOwn: boolean;
   onVote?: (vote: 'up' | 'down') => void;
@@ -24,6 +36,7 @@ export function QuestionVoteBar({
   downvotes,
   userVote,
   questionStatus,
+  peerUpvotes,
   memberCount,
   isOwn,
   onVote,
@@ -38,6 +51,11 @@ export function QuestionVoteBar({
   const isPending = !isVerified && !isRejected && (questionStatus === 'PENDING' || !questionStatus);
   const threshold = Math.max(1, Math.ceil(memberCount * 0.2));
   const progress = Math.min(100, Math.round((upvotes / threshold) * 100));
+  // Peer votes are the binding gate: the server refuses VERIFIED below
+  // VERIFY_PEER_UPVOTES whoever asks, author and admin alike.
+  const peerCount: number | null = typeof peerUpvotes === 'number' ? peerUpvotes : null;
+  const peerVerifyReady = peerCount !== null && canVerifyQuestion(peerCount);
+  const peerProgress = Math.min(100, Math.round(((peerCount ?? 0) / VERIFY_PEER_UPVOTES) * 100));
 
   const styles = useMemo(() => {
     const pill = (tone: ActionTone, active: boolean): ViewStyle => {
@@ -101,8 +119,8 @@ export function QuestionVoteBar({
   const renderActionPill = (
     tone: ActionTone,
     active: boolean,
-    icon: keyof typeof Ionicons.glyphMap,
-    iconActive: keyof typeof Ionicons.glyphMap,
+    icon: AppIconName,
+    iconActive: AppIconName,
     count: number,
     onPress: () => void,
     label: string,
@@ -127,7 +145,7 @@ export function QuestionVoteBar({
         },
       ]}
     >
-      <Ionicons
+      <AppIcon
         name={active ? iconActive : icon}
         size={14}
         color={styles.iconColor(tone, active)}
@@ -146,7 +164,7 @@ export function QuestionVoteBar({
             className="flex-row items-center gap-1 px-2 py-0.5 rounded-md"
             style={styles.pendingChip.container}
           >
-            <Ionicons name="time-outline" size={11} color={colors.warning} />
+            <AppIcon name="time" size={11} color={colors.warning} />
             <Text className="text-[11px] font-medium" style={styles.pendingChip.text}>
               Pending
             </Text>
@@ -157,7 +175,7 @@ export function QuestionVoteBar({
             className="flex-row items-center gap-1 px-2 py-0.5 rounded-md"
             style={styles.verifiedChip.container}
           >
-            <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+            <AppIcon name="checkmark-circle" size={12} color={colors.success} />
             <Text className="text-[11px] font-semibold" style={styles.verifiedChip.text}>
               Verified
             </Text>
@@ -168,7 +186,7 @@ export function QuestionVoteBar({
             className="flex-row items-center gap-1 px-2 py-0.5 rounded-md"
             style={styles.rejectedChip.container}
           >
-            <Ionicons name="close-circle-outline" size={11} color={colors.error} />
+            <AppIcon name="close-circle" size={11} color={colors.error} />
             <Text className="text-[11px] font-medium" style={styles.rejectedChip.text}>
               Rejected
             </Text>
@@ -181,7 +199,7 @@ export function QuestionVoteBar({
           {renderActionPill(
             'up',
             upActive,
-            'thumbs-up-outline',
+            'thumbs-up',
             'thumbs-up',
             upvotes,
             () => onVote('up'),
@@ -190,7 +208,7 @@ export function QuestionVoteBar({
           {renderActionPill(
             'down',
             downActive,
-            'thumbs-down-outline',
+            'thumbs-down',
             'thumbs-down',
             downvotes,
             () => onVote('down'),
@@ -200,7 +218,7 @@ export function QuestionVoteBar({
             ? renderActionPill(
                 'flag',
                 userFlagged,
-                'flag-outline',
+                'flag',
                 'flag',
                 flagCount,
                 onFlag,
@@ -211,7 +229,45 @@ export function QuestionVoteBar({
         </View>
       ) : null}
 
-      {isPending && memberCount > 0 ? (
+      {isPending && peerCount !== null ? (
+        <View className="gap-1">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-[10px]" style={styles.metaText}>
+              {QUESTION_VERIFY_COPY.progress(peerCount)}
+            </Text>
+            <Text className="text-[10px] font-medium" style={styles.metaText}>
+              {peerProgress}%
+            </Text>
+          </View>
+          <View
+            className="h-1 rounded-full overflow-hidden"
+            style={styles.progressTrack}
+            accessibilityRole="progressbar"
+            accessibilityLabel={QUESTION_VERIFY_COPY.progress(peerCount)}
+            accessibilityValue={{
+              min: 0,
+              max: VERIFY_PEER_UPVOTES,
+              now: Math.min(VERIFY_PEER_UPVOTES, peerCount),
+            }}
+          >
+            <View
+              className="h-full rounded-full"
+              style={{
+                ...styles.progressFill,
+                width: `${peerProgress}%`,
+                minWidth: peerProgress > 0 ? 4 : 0,
+              }}
+            />
+          </View>
+          <Text className="text-[10px]" style={styles.metaText}>
+            {peerVerifyReady
+              ? QUESTION_VERIFY_COPY.ready
+              : QUESTION_VERIFY_COPY.blocked(peerCount)}
+          </Text>
+        </View>
+      ) : null}
+
+      {isPending && peerCount === null && memberCount > 0 ? (
         <View className="gap-1">
           <View className="flex-row items-center justify-between">
             <Text className="text-[10px]" style={styles.metaText}>

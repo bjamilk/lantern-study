@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { chatMessagePreview, parseChatAudioUrl } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
@@ -8,6 +7,7 @@ import { ChatTextBody } from './ChatMessageBody';
 import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
 import { VoiceNotePlayer } from './VoiceNotePlayer';
+import { AppIcon } from '../ui/AppIcon';
 
 interface DmBubbleProps {
   message: {
@@ -206,7 +206,7 @@ function DmBubbleComponent({
               only the Retry action stays as its own stop. */}
           <View className="flex-row items-center justify-end mt-1.5 gap-0.5">
             {starred ? (
-              <Ionicons
+              <AppIcon
                 name="star"
                 size={10}
                 color="#f59e0b"

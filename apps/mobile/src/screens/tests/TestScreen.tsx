@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { Screen, useScreenBottomPadding, useScreenInsets } from '../../components/layout';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
 import { matchesCourseFilter, matchesTopicFilter, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
@@ -26,6 +25,7 @@ import TestConfigModal, { type TestConfigOptions } from '../../components/TestCo
 import { BackButton } from '../../components/ui';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type TabType = 'tests' | 'history';
 
@@ -292,7 +292,7 @@ export default function TestScreen() {
       activeOpacity={0.7}
     >
       <View style={[styles.testIcon, { backgroundColor: colors.primaryLight }]}>
-        <Ionicons name="document-text" size={24} color={colors.primary} />
+        <AppIcon name="document-text" size={24} color={colors.primary} />
       </View>
       
       <View style={styles.testInfo}>
@@ -303,23 +303,23 @@ export default function TestScreen() {
         
         <View style={styles.testMeta}>
           <View style={styles.metaItem}>
-            <Ionicons name="help-circle-outline" size={14} color={colors.textSecondary} />
+            <AppIcon name="help-circle" size={14} color={colors.textSecondary} />
             <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.questionCount} questions</Text>
           </View>
           <View style={styles.metaItem}>
-            <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+            <AppIcon name="time" size={14} color={colors.textSecondary} />
             <Text style={[styles.metaText, { color: colors.textSecondary }]}>
               {item.timeLimit > 0 ? `${item.timeLimit} min` : 'No limit'}
             </Text>
           </View>
           <View style={styles.metaItem}>
-            <Ionicons name="checkmark-circle-outline" size={14} color={colors.textSecondary} />
+            <AppIcon name="checkmark-circle" size={14} color={colors.textSecondary} />
             <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.passingScore}% to pass</Text>
           </View>
         </View>
       </View>
       
-      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+      <AppIcon name="chevron-forward" size={20} color={colors.textSecondary} />
     </TouchableOpacity>
   ), [colors]);
 
@@ -334,7 +334,7 @@ export default function TestScreen() {
           styles.attemptIcon,
           { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
         ]}>
-          <Ionicons 
+          <AppIcon 
             name={item.passed ? 'checkmark-circle' : 'close-circle'} 
             size={24} 
             color={item.passed ? '#10b981' : '#ef4444'} 
@@ -368,7 +368,7 @@ export default function TestScreen() {
           </View>
         </View>
         
-        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+        <AppIcon name="chevron-forward" size={20} color={colors.textSecondary} />
       </TouchableOpacity>
 
       <View style={styles.attemptActions}>
@@ -377,7 +377,7 @@ export default function TestScreen() {
           onPress={() => void handleRetake(item)}
           activeOpacity={0.7}
         >
-          <Ionicons name="refresh" size={16} color={colors.primary} />
+          <AppIcon name="refresh" size={16} color={colors.primary} />
           <Text style={[styles.retakeButtonText, { color: colors.primary }]}>Retake</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -385,7 +385,7 @@ export default function TestScreen() {
           onPress={() => handleDeleteAttempt(item)}
           activeOpacity={0.7}
         >
-          <Ionicons name="trash-outline" size={16} color="#ef4444" />
+          <AppIcon name="trash" size={16} color="#ef4444" />
           <Text style={styles.deleteHistoryButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
@@ -395,8 +395,8 @@ export default function TestScreen() {
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>
       <View style={[styles.emptyIcon, { backgroundColor: colors.primaryLight }]}>
-        <Ionicons 
-          name={activeTab === 'tests' ? 'document-text-outline' : 'time-outline'} 
+        <AppIcon 
+          name={activeTab === 'tests' ? 'document-text' : 'time'} 
           size={64} 
           color={colors.primary} 
         />
@@ -479,7 +479,7 @@ export default function TestScreen() {
               maxWidth: historyCourse.topicId ? '50%' : '70%',
             }}
           >
-            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <AppIcon name="school" size={14} color={colors.primary} />
             <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
               {historyCourse.label}
             </Text>
@@ -489,7 +489,7 @@ export default function TestScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Clear course filter ${historyCourse.label}`}
             >
-              <Ionicons name="close-circle" size={16} color={colors.primary} />
+              <AppIcon name="close-circle" size={16} color={colors.primary} />
             </TouchableOpacity>
           </View>
           {/* The topic narrows the list further, so it gets its own chip: a
@@ -507,7 +507,7 @@ export default function TestScreen() {
                 maxWidth: '40%',
               }}
             >
-              <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+              <AppIcon name="bookmark" size={13} color={colors.textSecondary} />
               <Text style={{ fontSize: 12, color: colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>
                 {historyTopicLabel(historyCourse)}
               </Text>
@@ -518,7 +518,7 @@ export default function TestScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Clear topic filter ${historyTopicLabel(historyCourse)}`}
               >
-                <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+                <AppIcon name="close-circle" size={15} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
           ) : null}
@@ -580,7 +580,7 @@ export default function TestScreen() {
               <>
                 <View style={styles.modalHeader}>
                   <View style={[styles.modalIcon, { backgroundColor: colors.primaryLight }]}>
-                    <Ionicons name="document-text" size={32} color={colors.primary} />
+                    <AppIcon name="document-text" size={32} color={colors.primary} />
                   </View>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedTest.name}</Text>
                   <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>
@@ -606,7 +606,7 @@ export default function TestScreen() {
                         { backgroundColor: colors.card },
                         selectedMode === 'test' && { backgroundColor: colors.primary }
                       ]}>
-                        <Ionicons 
+                        <AppIcon 
                           name="timer" 
                           size={28} 
                           color={selectedMode === 'test' ? '#ffffff' : colors.primary} 
@@ -622,7 +622,7 @@ export default function TestScreen() {
                       </Text>
                       {selectedMode === 'test' && (
                         <View style={styles.modeCheck}>
-                          <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                          <AppIcon name="checkmark-circle" size={20} color={colors.primary} />
                         </View>
                       )}
                     </TouchableOpacity>
@@ -641,7 +641,7 @@ export default function TestScreen() {
                         { backgroundColor: colors.card },
                         selectedMode === 'study' && { backgroundColor: '#10b981' }
                       ]}>
-                        <Ionicons 
+                        <AppIcon 
                           name="book" 
                           size={28} 
                           color={selectedMode === 'study' ? '#ffffff' : '#10b981'} 
@@ -657,7 +657,7 @@ export default function TestScreen() {
                       </Text>
                       {selectedMode === 'study' && (
                         <View style={styles.modeCheck}>
-                          <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                          <AppIcon name="checkmark-circle" size={20} color="#10b981" />
                         </View>
                       )}
                     </TouchableOpacity>
@@ -666,12 +666,12 @@ export default function TestScreen() {
 
                 <View style={styles.modalStats}>
                   <View style={styles.modalStatItem}>
-                    <Ionicons name="help-circle" size={24} color={colors.primary} />
+                    <AppIcon name="help-circle" size={24} color={colors.primary} />
                     <Text style={[styles.modalStatValue, { color: colors.text }]}>{selectedTest.questionCount}</Text>
                     <Text style={[styles.modalStatLabel, { color: colors.textSecondary }]}>Questions</Text>
                   </View>
                   <View style={styles.modalStatItem}>
-                    <Ionicons 
+                    <AppIcon 
                       name={selectedMode === 'test' ? 'time' : 'infinite'} 
                       size={24} 
                       color="#f97316" 
@@ -687,7 +687,7 @@ export default function TestScreen() {
                     </Text>
                   </View>
                   <View style={styles.modalStatItem}>
-                    <Ionicons 
+                    <AppIcon 
                       name={selectedMode === 'test' ? 'trophy' : 'bulb'} 
                       size={24} 
                       color="#10b981" 
@@ -724,7 +724,7 @@ export default function TestScreen() {
                       handleStartTest(test, mode);
                     }}
                   >
-                    <Ionicons 
+                    <AppIcon 
                       name={selectedMode === 'test' ? 'play' : 'book'} 
                       size={20} 
                       color="#ffffff" 
@@ -745,7 +745,7 @@ export default function TestScreen() {
                     setSelectedTest(null);
                   }}
                 >
-                  <Ionicons name="settings-outline" size={16} color="#6366f1" />
+                  <AppIcon name="settings" size={16} color="#6366f1" />
                   <Text style={styles.advancedLinkText}>Advanced Configuration</Text>
                 </TouchableOpacity>
               </>

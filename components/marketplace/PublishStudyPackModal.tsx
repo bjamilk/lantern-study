@@ -8,7 +8,13 @@ import {
   SOURCES_CITED_MAX,
   type MarketplaceCampus,
 } from '@lantern/shared';
-import { summarizeStudyPackCounts, type StudyPackContentInput } from '@lantern/shared/marketplace';
+import {
+  COURSE_ANCHOR_COPY,
+  hasCourseAnchor,
+  summarizeStudyPackCounts,
+  validateCourseAnchor,
+  type StudyPackContentInput,
+} from '@lantern/shared/marketplace';
 import { BuildingStorefrontIcon } from '@heroicons/react/24/outline';
 import { CoursePicker } from '../academic/CoursePicker';
 import { TopicPicker } from '../academic/TopicPicker';
@@ -112,7 +118,15 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
   const sourcesError = parsedSources.ok ? null : parsedSources.error;
 
   const canSubmit =
-    !busy && attested && hasContent && !!title.trim() && !!campusId && !priceInvalid;
+    !busy &&
+    attested &&
+    hasContent &&
+    !!title.trim() &&
+    !!campusId &&
+    !priceInvalid &&
+    // Every new pack is filed under a course (Gap 3) — that anchor is how a
+    // student finds it months after the seller has stopped promoting it.
+    hasCourseAnchor(courseId);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -122,6 +136,11 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
     }
     if (!parsedSources.ok) {
       setSubmitError(parsedSources.error);
+      return;
+    }
+    const courseProblem = validateCourseAnchor(courseId);
+    if (courseProblem) {
+      setSubmitError(courseProblem);
       return;
     }
     setSubmitError(null);
@@ -261,15 +280,20 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
             id="publish-studypack-course"
             label={
               <span className="text-sm font-semibold text-lantern-text">
-                Course <span className="text-lantern-text-tertiary font-normal">(optional)</span>
+                {COURSE_ANCHOR_COPY.label}{' '}
+                <span aria-hidden className="text-lantern-error">*</span>
+                <span className="sr-only">(required)</span>
               </span>
             }
             value={courseId}
             onChange={(course) => {
               setCourseId(course?.id ?? null);
               setTopicId(null);
+              if (submitError === COURSE_ANCHOR_COPY.required) setSubmitError(null);
             }}
-            placeholder="Which course is this pack for?"
+            clearable={false}
+            placeholder={COURSE_ANCHOR_COPY.placeholder}
+            hint={COURSE_ANCHOR_COPY.hint}
           />
 
           <TopicPicker

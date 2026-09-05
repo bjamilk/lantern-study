@@ -52,8 +52,12 @@ export function FeatureTipsHost({
   useEffect(() => {
     setTipReady('nav.library', true);
     setTipReady('nav.chat', true);
-    setTipReady('nav.companion', moreOpen || companionOpen || activeTab === 'AI' || activeTab === 'More');
-    setTipReady('library.tabs', isLibrary || activeTab === 'Library');
+    // Re-keyed for the five destinations (2026-09-04): the 'More' drawer and
+    // the Library/Marketplace/Budget/Offline tabs no longer exist. Study is
+    // where the library lives; Campus holds the Shop; Budget and Downloads are
+    // rows inside Me.
+    setTipReady('nav.companion', moreOpen || companionOpen || activeTab === 'AI');
+    setTipReady('library.tabs', isLibrary || activeTab === 'Study');
     setTipReady('chat.question', isGroupChat);
     setTipReady('chat.test', isGroupChat);
     setTipReady('chat.study', isGroupChat);
@@ -66,14 +70,19 @@ export function FeatureTipsHost({
     // closed to. `setTipAllowed` false suppresses it without consuming it, so
     // it still appears if the pilot later opens.
     setTipAllowed('nav.marketplace', marketplaceAccess === true);
-    setTipReady('nav.marketplace', activeTab === 'Marketplace' || moreOpen);
-    setTipReady('nav.budget', activeTab === 'Budget' || moreOpen);
-    setTipReady('nav.offline', activeTab === 'Offline' || moreOpen);
+    setTipReady('nav.marketplace', activeTab === 'Campus' || moreOpen);
+    // Budget and Downloads are both rows on Me, so Me is where each tip has
+    // something to point at.
+    setTipReady('nav.budget', activeTab === 'Me' || moreOpen);
+    setTipReady('nav.offline', activeTab === 'Me' || moreOpen);
 
-    if (isLibrary || activeTab === 'Library') markChecklist('openLibrary');
+    if (isLibrary || activeTab === 'Study') markChecklist('openLibrary');
     if (companionOpen || activeTab === 'AI') markChecklist('tryCompanion');
-    if (activeTab === 'Marketplace') markChecklist('exploreMarketplace');
-    if (activeTab === 'Offline') markChecklist('tryOffline');
+    if (activeTab === 'Campus') markChecklist('exploreMarketplace');
+    // 'tryOffline' no longer has a tab to watch: Downloads is a screen behind
+    // a row on Me, and ticking it the moment Me opens would claim the student
+    // did something they did not. It needs re-keying to the Downloads screen
+    // itself, which this wave does not own.
   }, [
     activeTab,
     isGroupChat,

@@ -11,7 +11,6 @@ import {
   Modal,
   TouchableOpacity,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { getAIResetLabel, formatAIResetTime } from '@lantern/shared/utils';
 import {
   subscribeToAIUsage,
@@ -21,14 +20,35 @@ import {
 } from '../services/ai';
 import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '../theme';
+import { AppIcon } from './ui/AppIcon';
 
 interface AIUsageBadgeProps {
-  variant?: 'badge' | 'inline' | 'card';
+  /**
+   * `docked` is the top bar's variant: a bare count pill sized to ride on the
+   * Lantern AI sparkle, the way an unread count rides on a bell. It replaced
+   * the floating draggable credit pill, which was anchored to nothing, had to
+   * be dragged out of the way per screen, and was a second door to the same
+   * information the sparkle already carries.
+   */
+  variant?: 'badge' | 'inline' | 'card' | 'docked';
   showLoading?: boolean;
   /** When true, tapping the badge opens a detail modal with reset timing */
   interactive?: boolean;
   /** Credits the adjacent action costs; shown inline, and remaining < cost renders as exhausted. */
   cost?: number;
+}
+
+/**
+ * The live AI-credit figures.
+ *
+ * Exported so a host that draws its own control — the top bar's sparkle —
+ * can put the count into its own accessibility label instead of leaving a
+ * screen reader to stumble over a decorative pill.
+ */
+export function useAIUsage(): AIUsageInfo {
+  const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
+  useEffect(() => subscribeToAIUsage(setUsage), []);
+  return usage;
 }
 
 function useAIUsageTick(hasQuota: boolean, detailOpen: boolean) {
@@ -52,13 +72,9 @@ export default function AIUsageBadge({
 }: AIUsageBadgeProps) {
   const { user } = useAuthStore();
   const { colors } = useTheme();
-  const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
+  const usage = useAIUsage();
   const [detailOpen, setDetailOpen] = useState(false);
   const nowMs = useAIUsageTick(usage.limit > 0, detailOpen);
-
-  useEffect(() => {
-    return subscribeToAIUsage(setUsage);
-  }, []);
 
   const closeDetail = useCallback(() => setDetailOpen(false), []);
 
@@ -104,11 +120,11 @@ export default function AIUsageBadge({
         >
           <View style={styles.modalHeader}>
             <View style={styles.cardHeader}>
-              <Ionicons name="sparkles" size={20} color={colors.primary} />
+              <AppIcon name="sparkles" size={20} color={colors.primary} />
               <Text style={[styles.cardTitle, { color: colors.text }]}>AI Requests</Text>
             </View>
             <TouchableOpacity onPress={closeDetail} hitSlop={12} accessibilityLabel="Close">
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
+              <AppIcon name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -153,6 +169,23 @@ export default function AIUsageBadge({
     </Modal>
   );
 
+  if (variant === 'docked') {
+    // Hidden from assistive tech on purpose: the control this rides on (the
+    // top bar's Lantern AI button) speaks the count itself, via useAIUsage,
+    // so exposing the pill as well would announce the number twice.
+    return (
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[styles.docked, { backgroundColor: statusColor }]}
+      >
+        <Text style={styles.dockedText} numberOfLines={1}>
+          {usage.remaining > 99 ? '99+' : usage.remaining}
+        </Text>
+      </View>
+    );
+  }
+
   if (variant === 'inline') {
     return (
       <Text style={[styles.inlineText, { color: statusColor }]}>
@@ -169,7 +202,7 @@ export default function AIUsageBadge({
     return (
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.cardHeader}>
-          <Ionicons name="sparkles" size={20} color={colors.primary} />
+          <AppIcon name="sparkles" size={20} color={colors.primary} />
           <Text style={[styles.cardTitle, { color: colors.text }]}>AI Usage</Text>
         </View>
 
@@ -209,7 +242,7 @@ export default function AIUsageBadge({
         { backgroundColor: `${statusColor}20`, borderColor: statusColor },
       ]}
     >
-      <Ionicons name="sparkles" size={12} color={statusColor} />
+      <AppIcon name="sparkles" size={12} color={statusColor} />
       <Text style={[styles.badgeText, { color: statusColor }]}>
         {usage.remaining}/{usage.limit}
       </Text>
@@ -255,6 +288,24 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  // Same geometry as ui/Badge, so the credit count on the sparkle and the
+  // unread count on the bell sit at identical offsets in the same row.
+  docked: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dockedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
   },
   inlineText: {
     fontSize: 12,

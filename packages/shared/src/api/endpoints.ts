@@ -15,6 +15,7 @@ import type {
   StudyPackDraftSummary,
   SemesterPackProposalResponse,
 } from "../marketplace/studyPacks";
+import type { MarketplaceCourseSummary } from "../marketplace/courseAnchor";
 import type {
   Community,
   CommunityChannels,
@@ -2020,6 +2021,68 @@ export function createApiEndpoints(client: ApiClient) {
         }
         throw err;
       }
+    },
+
+    /**
+     * "Browse by course" index: every course with at least one ACTIVE listing
+     * filed under it, with real counts. Text only — no image URLs ride on this
+     * payload, so a low-data student pays nothing to read a list of course
+     * codes. Server-cached 600s and sent with a public Cache-Control.
+     */
+    fetchMarketplaceCourses: (
+      options: { institutionId?: string | null; limit?: number } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (options.institutionId) params.append("institutionId", options.institutionId);
+      if (options.limit) params.append("limit", String(options.limit));
+      const qs = params.toString();
+      return apiRequest<{
+        courses: MarketplaceCourseSummary[];
+        /** The index hit its scan ceiling; say so rather than imply completeness. */
+        truncated: boolean;
+      }>(`/marketplace/courses${qs ? `?${qs}` : ""}`, {}, 10000);
+    },
+
+    /** One course page: the active listings filed under that course. */
+    fetchMarketplaceCourseListings: (
+      courseId: string,
+      options: { limit?: number; offset?: number } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (options.limit) params.append("limit", String(options.limit));
+      if (options.offset) params.append("offset", String(options.offset));
+      const qs = params.toString();
+      return apiRequest<{
+        course: {
+          id: string;
+          code: string;
+          title: string;
+          institutionId: string | null;
+          institutionName: string | null;
+        };
+        listings: Array<{
+          id: string;
+          title: string;
+          description: string | null;
+          price: number | null;
+          category: string;
+          listingKind: string | null;
+          status: string;
+          createdAt: string | null;
+          campusId: string | null;
+          campusName: string | null;
+          sellerId: string | null;
+          sellerName: string | null;
+          /** First image only. The browse list must not render it unasked. */
+          imageUrl: string | null;
+          questionCount: number | null;
+        }>;
+        total: number;
+      }>(
+        `/marketplace/courses/${encodeURIComponent(courseId)}/listings${qs ? `?${qs}` : ""}`,
+        {},
+        10000,
+      );
     },
 
     /**

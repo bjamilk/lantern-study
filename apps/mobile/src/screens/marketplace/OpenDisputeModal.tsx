@@ -11,7 +11,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import {
   DISPUTE_CATEGORIES,
@@ -19,6 +18,7 @@ import {
   DISPUTE_REASON_MAX,
   type DisputeCategory,
 } from '@lantern/shared/network';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 /**
  * Open a dispute on an order (Phase 3 · N) — the mobile counterpart of the web
@@ -123,12 +123,12 @@ export function OpenDisputeModal({
               borderBottomColor: colors.border,
             }}
           >
-            <Ionicons name="warning-outline" size={20} color="#f59e0b" />
+            <AppIcon name="warning" size={20} color="#f59e0b" />
             <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: colors.text }}>
               Report a problem
             </Text>
             <Pressable onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
+              <AppIcon name="close" size={22} color={colors.textSecondary} />
             </Pressable>
           </View>
 
@@ -164,7 +164,7 @@ export function OpenDisputeModal({
                         backgroundColor: selected ? colors.primary + '14' : 'transparent',
                       }}
                     >
-                      <Ionicons
+                      <AppIcon
                         name={selected ? 'radio-button-on' : 'radio-button-off'}
                         size={18}
                         color={selected ? colors.primary : colors.textTertiary}

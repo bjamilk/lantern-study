@@ -13,7 +13,6 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ErrorState, InlineErrorBanner, LoadingState } from '../ui';
 import { useAiTutorSend } from '../../hooks/useAiTutorSend';
@@ -31,6 +30,7 @@ import {
   parseAiQuery,
   shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
+import { AppIcon } from '../ui/AppIcon';
 
 type ThreadMessage = Message | DirectMessage;
 
@@ -326,7 +326,7 @@ export function ChatThreadModal({
             className="p-2 rounded-lg active:bg-lantern-background-secondary"
             accessibilityLabel="Close thread"
           >
-            <Ionicons name="close" size={24} color={colors.textSecondary} />
+            <AppIcon name="close" size={24} color={colors.textSecondary} />
           </Pressable>
         </View>
 

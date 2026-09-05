@@ -20,6 +20,7 @@
     "src/utils/marketplacePromo.ts",
     "src/utils/gamification.ts",
     "src/utils/testHelpers.ts",
+    "src/utils/questionVerification.ts",
     "src/utils/activity.ts",
     "src/utils/aiCredits.ts",
     "src/utils/aiUsage.ts",

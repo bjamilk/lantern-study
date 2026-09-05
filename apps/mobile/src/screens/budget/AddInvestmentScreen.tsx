@@ -10,11 +10,11 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 export default function AddInvestmentScreen() {
   const navigation = useNavigation<any>();
@@ -59,7 +59,7 @@ export default function AddInvestmentScreen() {
     <Screen keyboard bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       <View style={[styles.header, { backgroundColor: colors.card }]}>
         <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={24} color={colors.text} />
+          <AppIcon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Add Investment</Text>
         <TouchableOpacity style={styles.saveButton} onPress={() => void handleSubmit()} disabled={isLoading}>

@@ -60,10 +60,13 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { useAcademicStore } from '../stores/academicStore';
 import { UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../utils/libraryArchive';
 import {
-  needsAcademicSetup,
   readAcademicSetupDismissed,
   markAcademicSetupDismissed,
 } from '../utils/academicSetup';
+import {
+  readOnboardingAcademicDone,
+  shouldShowAcademicFallbackBanner,
+} from '../utils/onboardingAcademic';
 import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
 import CourseReadinessCard from './CourseReadinessCard';
 
@@ -73,19 +76,29 @@ export const SHOW_DASHBOARD_QUESTIONS_TO_REVIEW = false;
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 
 /**
- * One-line "Finish setting up your profile" nudge (Phase 1 A/F) shown while
- * `currentUser.institutionId` is null. Opens the profile-setup step. Dismissal
- * is per-user and persistent (shared with the setup step's "Skip for now"), so
- * once a user dismisses it — here or in the modal — it stays dismissed and the
- * auto-open doesn't loop. Setting an institution (in setup or Settings) clears
- * the flag.
+ * LEGACY FALLBACK ONLY — one-line "Finish setting up your profile" nudge
+ * (Phase 1 A/F) for accounts created before onboarding asked for the
+ * institution. Web onboarding now has a required academic step
+ * (components/onboarding/AcademicIdentityStep.tsx), so an account that answered
+ * it with an institution never sees this banner again — not even if the student
+ * later clears that institution in Settings.
+ *
+ * Dismissal is per-user and persistent (shared with the setup step's "Skip for
+ * now"), so once a legacy user dismisses it — here or in the modal — it stays
+ * dismissed and the auto-open doesn't loop. Setting an institution (in setup or
+ * Settings) clears the flag.
  */
 const AcademicSetupBanner: React.FC<{ currentUser: User }> = ({ currentUser }) => {
   const openModal = useUIStore((s) => s.openModal);
   const [dismissed, setDismissed] = useState<boolean>(() =>
     readAcademicSetupDismissed(currentUser.id)
   );
-  if (dismissed || !needsAcademicSetup(currentUser)) return null;
+  const answeredOnboardingStep = useMemo(
+    () => readOnboardingAcademicDone(currentUser.id),
+    [currentUser.id]
+  );
+  if (!shouldShowAcademicFallbackBanner({ user: currentUser, dismissed, answeredOnboardingStep }))
+    return null;
   const dismiss = () => {
     setDismissed(true);
     markAcademicSetupDismissed(currentUser.id);

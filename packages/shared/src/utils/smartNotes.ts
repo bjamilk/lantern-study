@@ -133,3 +133,215 @@ export function chunkTextForSmartNotes(
 
   return chunks;
 }
+
+// ─── Keyword-overlap chunk retrieval (grounded tutor) ────────────────────────
+//
+// The note-scoped tutor must answer from the WHOLE document, not the first N
+// characters of it. Embeddings and a vector store would do that, but both cost
+// money per note and neither survives the free-tier provider cascade this app
+// runs on. Keyword overlap over the chunks we already produce for Smart Notes
+// is cheap, deterministic, testable, and good enough at note scale (a note is
+// tens of KB, not a corpus).
+//
+// The output feeds a prompt, so the numbers below are also a cost control:
+// 3 x 1200 chars is a SMALLER prompt than the flat 4000-char prefix it
+// replaces, while being able to reach the end of a long document.
+
+/** Chunk size used when splitting a document for tutor retrieval. */
+export const TUTOR_CHUNK_SIZE = 1200;
+/** Overlap between tutor chunks, so a fact split across a boundary survives. */
+export const TUTOR_CHUNK_OVERLAP = 120;
+/** Ceiling on chunks considered — caps CPU and bounds the document we can reach. */
+export const TUTOR_MAX_CHUNKS = 24;
+/** Chunks handed to the model for one question. */
+export const TUTOR_CHUNKS_PER_QUESTION = 3;
+
+/**
+ * Words that carry no retrieval signal in a study question. Includes the
+ * question verbs ("explain", "summarize") — a query made only of these has no
+ * topic to match on, which is what triggers the `leading` fallback below.
+ */
+const CHUNK_QUERY_STOPWORDS = new Set([
+  'about', 'after', 'again', 'all', 'already', 'also', 'and', 'another', 'any',
+  'are', 'ask', 'because', 'been', 'before', 'being', 'below', 'better',
+  'between', 'both', 'but', 'can', 'cannot', 'could', 'define', 'describe',
+  'did', 'does', 'doing', 'done', 'down', 'during', 'each', 'else', 'even',
+  'ever', 'every', 'explain', 'few', 'for', 'from', 'further', 'get', 'give',
+  'goes', 'going', 'gonna', 'got', 'had', 'has', 'have', 'having', 'help',
+  'her', 'here', 'hers', 'him', 'his', 'how', 'into', 'its', 'just', 'know',
+  'let', 'like', 'make', 'many', 'may', 'mean', 'means', 'might', 'more',
+  'most', 'much', 'must', 'need', 'nor', 'not', 'note', 'notes', 'now', 'off',
+  'once', 'one', 'only', 'other', 'our', 'out', 'over', 'own', 'part',
+  'please', 'point', 'points', 'question', 'questions', 'quick', 'quickly',
+  'really', 'said', 'same', 'say', 'see', 'she', 'should', 'show', 'simple',
+  'simply', 'some', 'such', 'summarise', 'summarize', 'summary', 'sure',
+  'take', 'tell', 'than', 'that', 'the', 'their', 'them', 'then', 'there',
+  'these', 'they', 'thing', 'things', 'this', 'those', 'through', 'too',
+  'topic', 'topics', 'under', 'until', 'use', 'used', 'using', 'very', 'want',
+  'was', 'way', 'well', 'were', 'what', 'when', 'where', 'which', 'while',
+  'who', 'whom', 'why', 'will', 'with', 'would', 'you', 'your', 'yours',
+]);
+
+/**
+ * Crude plural folding so "mitochondria"/"mitochondrion" style near-misses do
+ * not silently drop a chunk. Deliberately not a real stemmer: a wrong stem
+ * costs a slightly worse excerpt, a dependency costs every bundle.
+ */
+function stemChunkTerm(token: string): string {
+  if (token.length > 4 && token.endsWith('ies')) return `${token.slice(0, -3)}y`;
+  // Strip one trailing "s" only. "-ss", "-us" and "-is" endings are left alone
+  // so words that are already singular ("glycolysis", "class", "nucleus") are
+  // not mangled into a stem their own plural would never produce.
+  if (token.length > 3 && token.endsWith('s') && !/(?:ss|us|is)$/.test(token)) {
+    return token.slice(0, -1);
+  }
+  return token;
+}
+
+function tokenizeChunkText(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3);
+}
+
+/** Distinct, stemmed, stopword-free search terms from a student's question. */
+export function extractQueryKeywords(query: string): string[] {
+  const seen = new Set<string>();
+  const keywords: string[] = [];
+  for (const token of tokenizeChunkText(query || '')) {
+    if (CHUNK_QUERY_STOPWORDS.has(token)) continue;
+    const stem = stemChunkTerm(token);
+    if (stem.length < 3 || seen.has(stem)) continue;
+    seen.add(stem);
+    keywords.push(stem);
+  }
+  return keywords;
+}
+
+export interface SelectedChunk {
+  /** Position in the source document, 0-based — used to label excerpts honestly. */
+  index: number;
+  text: string;
+  /** Overlap score; 0 for chunks picked by the `leading` fallback. */
+  score: number;
+  /** Query terms this chunk actually contains. */
+  matchedTerms: string[];
+}
+
+export type ChunkSelectionStrategy =
+  /** At least one query term matched — these excerpts answer THIS question. */
+  | 'keyword'
+  /** No usable query terms, or none matched — document opening used instead. */
+  | 'leading'
+  /** Nothing to select from. */
+  | 'none';
+
+export interface ChunkSelection {
+  chunks: SelectedChunk[];
+  strategy: ChunkSelectionStrategy;
+  /** Total chunks the document was split into (what `chunks` was drawn from). */
+  totalChunks: number;
+}
+
+export interface SelectRelevantChunksOptions {
+  /** Max chunks to return (default TUTOR_CHUNKS_PER_QUESTION). */
+  limit?: number;
+}
+
+/**
+ * Rank chunks by keyword overlap with a question and return the best few.
+ *
+ * Terms are weighted by how rare they are across the document, so a word that
+ * appears in every chunk (usually the note's own subject) cannot decide the
+ * ranking on its own. Ties break toward the earlier chunk so output is stable
+ * — a tutor that returns different excerpts for the same question every time
+ * is impossible to debug or cache.
+ */
+export function selectRelevantChunks(
+  chunks: string[],
+  query: string,
+  options: SelectRelevantChunksOptions = {}
+): ChunkSelection {
+  const limit = Math.max(1, options.limit ?? TUTOR_CHUNKS_PER_QUESTION);
+  const usable = (chunks || []).filter((chunk) => typeof chunk === 'string' && chunk.trim().length > 0);
+  if (usable.length === 0) return { chunks: [], strategy: 'none', totalChunks: 0 };
+
+  const leading = (): ChunkSelection => ({
+    chunks: usable.slice(0, limit).map((text, index) => ({
+      index,
+      text,
+      score: 0,
+      matchedTerms: [],
+    })),
+    strategy: 'leading',
+    totalChunks: usable.length,
+  });
+
+  const keywords = extractQueryKeywords(query);
+  if (keywords.length === 0) return leading();
+
+  const termCounts: Array<Map<string, number>> = usable.map((chunk) => {
+    const counts = new Map<string, number>();
+    for (const token of tokenizeChunkText(chunk)) {
+      const stem = stemChunkTerm(token);
+      counts.set(stem, (counts.get(stem) || 0) + 1);
+    }
+    return counts;
+  });
+
+  const documentFrequency = new Map<string, number>();
+  for (const keyword of keywords) {
+    documentFrequency.set(
+      keyword,
+      termCounts.reduce((total, counts) => total + (counts.has(keyword) ? 1 : 0), 0)
+    );
+  }
+
+  const scored = usable.map((text, index) => {
+    const counts = termCounts[index] ?? new Map<string, number>();
+    let score = 0;
+    const matchedTerms: string[] = [];
+    for (const keyword of keywords) {
+      const tf = counts.get(keyword) || 0;
+      if (tf === 0) continue;
+      matchedTerms.push(keyword);
+      const df = documentFrequency.get(keyword) || 1;
+      const idf = Math.log(1 + usable.length / df);
+      score += idf * (1 + Math.log(tf));
+    }
+    return { index, text, score, matchedTerms };
+  });
+
+  const hits = scored
+    .filter((chunk) => chunk.score > 0)
+    .sort((a, b) => (b.score - a.score) || (a.index - b.index))
+    .slice(0, limit);
+
+  if (hits.length === 0) return leading();
+
+  // Reading order, so multi-excerpt answers follow the document rather than
+  // the score ranking.
+  return {
+    chunks: hits.slice().sort((a, b) => a.index - b.index),
+    strategy: 'keyword',
+    totalChunks: usable.length,
+  };
+}
+
+/**
+ * One-shot: split a document with the tutor's chunk settings and pick the
+ * excerpts that answer `query`.
+ */
+export function selectDocumentExcerptsForQuestion(
+  document: string,
+  query: string,
+  options: SelectRelevantChunksOptions & ChunkTextOptions = {}
+): ChunkSelection {
+  const chunks = chunkTextForSmartNotes(document || '', {
+    chunkSize: options.chunkSize ?? TUTOR_CHUNK_SIZE,
+    maxChunks: options.maxChunks ?? TUTOR_MAX_CHUNKS,
+    overlap: options.overlap ?? TUTOR_CHUNK_OVERLAP,
+  });
+  return selectRelevantChunks(chunks, query, { limit: options.limit });
+}

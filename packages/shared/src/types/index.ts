@@ -372,6 +372,13 @@ export interface Message {
   questionStatus?: QuestionStatus;
   upvotes: number;
   downvotes: number;
+  /**
+   * Distinct upvotes from members OTHER than the author — the only count that
+   * can grant VERIFIED (see utils/questionVerification). Server-owned and
+   * undefined on API builds that predate it, so clients must degrade rather
+   * than treat it as 0.
+   */
+  peerUpvotes?: number;
   flaggedAsSimilarUserIds?: string[];
   isArchived?: boolean;
   editedAt?: string;
@@ -1665,4 +1672,44 @@ export interface LibrarySearchResult {
   /** Which field matched, when known. */
   matchedIn?: LibrarySearchMatchField;
   updatedAt: string;
+}
+
+// ===========================================
+// Exam formats (AI question generation)
+// ===========================================
+
+/**
+ * The Nigerian exam papers a generated question can be written to imitate.
+ *
+ * This is a TAG, not a table: it rides inside the existing question JSON
+ * (`question.examFormat`), so nothing about it needs a migration. Values are
+ * snake_case and must stay stable — old generated questions already carry them.
+ */
+export type ExamFormat = 'jamb' | 'waec_theory' | 'post_utme' | 'departmental';
+
+export const EXAM_FORMATS: readonly ExamFormat[] = [
+  'jamb',
+  'waec_theory',
+  'post_utme',
+  'departmental',
+];
+
+/** Student-facing labels. Web and mobile must show the same words. */
+export const EXAM_FORMAT_LABELS: Record<ExamFormat, string> = {
+  jamb: 'JAMB',
+  waec_theory: 'WAEC theory',
+  post_utme: 'Post-UTME',
+  departmental: 'Departmental past paper',
+};
+
+/** One-line description of what each preset changes about the questions. */
+export const EXAM_FORMAT_DESCRIPTIONS: Record<ExamFormat, string> = {
+  jamb: 'Four-option objectives, one line each, no calculators assumed.',
+  waec_theory: 'Structured theory questions in (a)/(b) parts, with marks.',
+  post_utme: 'Fast screening objectives — short stems, tight distractors.',
+  departmental: 'Course-style past-paper questions in your lecturer’s wording.',
+};
+
+export function isExamFormat(value: unknown): value is ExamFormat {
+  return typeof value === 'string' && (EXAM_FORMATS as readonly string[]).includes(value);
 }

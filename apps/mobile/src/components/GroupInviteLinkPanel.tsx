@@ -6,10 +6,10 @@
 
 import React, { useCallback, useState } from 'react';
 import { Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { buildGroupInviteLink } from '@lantern/shared';
 import { useTheme } from '../theme';
+import { AppIcon } from './ui/AppIcon';
 
 interface GroupInviteLinkPanelProps {
   groupName: string;
@@ -47,7 +47,7 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
   return (
     <View style={[styles.section, { backgroundColor: colors.background }]}>
       <View style={styles.sectionHeader}>
-        <Ionicons name="link" size={22} color={colors.primary} />
+        <AppIcon name="link" size={22} color={colors.primary} />
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Share Invite Link</Text>
       </View>
       <Text style={[styles.sectionDescription, { color: colors.textSecondary }]}>
@@ -76,7 +76,7 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
               accessibilityRole="button"
               accessibilityLabel={copied ? 'Invite link copied' : 'Copy invite link'}
             >
-              <Ionicons name={copied ? 'checkmark' : 'copy'} size={18} color="#ffffff" />
+              <AppIcon name={copied ? 'checkmark' : 'copy'} size={18} color="#ffffff" />
             </TouchableOpacity>
           </View>
 
@@ -87,7 +87,7 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
               accessibilityRole="button"
               accessibilityLabel={`Share invite link for ${groupName}`}
             >
-              <Ionicons name="share-social" size={20} color="#ffffff" />
+              <AppIcon name="share-social" size={20} color="#ffffff" />
               <Text style={styles.shareButtonText}>Share</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -96,7 +96,7 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
               accessibilityRole="button"
               accessibilityLabel={copied ? 'Invite link copied' : 'Copy invite link'}
             >
-              <Ionicons name="copy" size={20} color="#ffffff" />
+              <AppIcon name="copy" size={20} color="#ffffff" />
               <Text style={styles.shareButtonText}>{copied ? 'Copied!' : 'Copy Link'}</Text>
             </TouchableOpacity>
           </View>

@@ -16,6 +16,7 @@ import { useGroupStore } from '../stores/groupStore';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
+import RequestError from './RequestError';
 import CommunityChannelList from './community/CommunityChannelList';
 import CommunityMembersPanel from './community/CommunityMembersPanel';
 import CommunityTile from './community/CommunityTile';
@@ -55,7 +56,13 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
   const showToast = useToastStore((s) => s.showToast);
 
   const [loading, setLoading] = useState(!detail);
-  const [error, setError] = useState<string | null>(null);
+  // `loadError` is "this community did not arrive" — with nothing on screen
+  // it becomes the full failure surface instead of one line of red text over a
+  // blank page. `actionFailure` is "the thing you tapped did not happen".
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [actionFailure, setActionFailure] = useState<{ error: unknown; detail: string } | null>(
+    null,
+  );
   const [pending, setPending] = useState(false);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [studyPresence, setStudyPresence] = useState<PresenceSnapshot | null>(null);
@@ -67,7 +74,7 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
   const load = useCallback(async () => {
     const run = ++loadRunRef.current;
     const stale = () => loadRunRef.current !== run;
-    setError(null);
+    setLoadError(null);
     try {
       const d = await loadCommunity(slug);
       if (stale()) return;
@@ -87,7 +94,11 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
       await loadChannels(d.id);
     } catch (err) {
       if (stale()) return;
-      setError(err instanceof Error ? err.message : 'Community not found');
+      // Kept raw: RequestError classifies it, so a 404 reads as "we couldn't
+      // find this" while a dropped connection reads as a connection problem.
+      // The two used to collapse into one "Community not found", which blamed
+      // the link for what was usually a network failure.
+      setLoadError(err);
     } finally {
       if (!stale()) setLoading(false);
     }
@@ -108,9 +119,9 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
   // `invalidate` drops the cached payload (join/leave, new channel, lounge
   // mint) — fetch it again without blanking the header.
   useEffect(() => {
-    if (!detail || payload || error) return;
+    if (!detail || payload || loadError) return;
     void loadChannels(detail.id).catch(() => {});
-  }, [detail, payload, error, loadChannels]);
+  }, [detail, payload, loadError, loadChannels]);
 
   // Course communities: the who-is-studying line the hub already shows.
   const courseId = detail?.course_id ?? null;
@@ -143,7 +154,10 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
       invalidate(detail.id);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update membership');
+      setActionFailure({
+        error: err,
+        detail: 'Your membership wasn’t changed. Check your connection and try again.',
+      });
     } finally {
       setPending(false);
     }
@@ -188,13 +202,24 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
         ← Discover
       </button>
 
-      {error && (
-        <p
-          className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400"
-          role="alert"
-        >
-          {error}
-        </p>
+      {/* Nothing arrived: say so once, in the shared vocabulary, with a real
+          retry — not a red line over an otherwise blank page. */}
+      {loadError && !detail && (
+        <RequestError variant="full" error={loadError} onRetry={() => void load()} onBack={onBack} />
+      )}
+
+      {/* The header is already on screen, so the failure banners over it. */}
+      {loadError && detail && (
+        <RequestError variant="banner" error={loadError} onRetry={() => void load()} />
+      )}
+
+      {actionFailure && (
+        <RequestError
+          variant="banner"
+          error={actionFailure.error}
+          detail={actionFailure.detail}
+          onRetry={() => setActionFailure(null)}
+        />
       )}
 
       {detail && (

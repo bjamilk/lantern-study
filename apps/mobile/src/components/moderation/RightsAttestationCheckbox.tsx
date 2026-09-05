@@ -6,10 +6,10 @@
  */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { RIGHTS_ATTESTATION_TEXT } from '@lantern/shared/moderation';
 import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { navigate } from '../../navigation/navigationRef';
+import { AppIcon } from '../ui/AppIcon';
 
 export function openSellerTerms(): void {
   navigate('LegalDocument', { document: 'seller-terms' });
@@ -38,8 +38,8 @@ export function RightsAttestationCheckbox({ value, onChange, error, disabled }: 
         accessibilityLabel="Rights attestation"
         className="flex-row items-start gap-3"
       >
-        <Ionicons
-          name={value ? 'checkbox' : 'square-outline'}
+        <AppIcon
+          name={value ? 'checkbox' : 'square'}
           size={22}
           color={value ? '#4f46e5' : '#94a3b8'}
           style={{ marginTop: 1 }}

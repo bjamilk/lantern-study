@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Pressable, Text, TextInput } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { featureAccents } from '@lantern/shared/design';
 import type { LibraryOverview } from '@lantern/shared/types';
 import { NotesScreen } from '../notes/NotesScreen';
@@ -28,6 +27,7 @@ import {
   LIBRARY_SEARCH_MIN_CHARS,
   UNFILED_COURSE_ID,
 } from '../../utils/libraryArchive';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 type Tab = LibraryTab;
 
@@ -39,9 +39,9 @@ interface Props {
   route?: { params?: { tab?: Tab } };
 }
 
-const tabs: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { id: 'notes', label: 'Notes', icon: 'document-text-outline' },
-  { id: 'flashcards', label: 'Flashcards', icon: 'layers-outline' },
+const tabs: { id: Tab; label: string; icon: AppIconName }[] = [
+  { id: 'notes', label: 'Notes', icon: 'document-text' },
+  { id: 'flashcards', label: 'Flashcards', icon: 'layers' },
 ];
 
 export function LibraryScreen({ navigation, route }: Props) {
@@ -274,7 +274,7 @@ export function LibraryScreen({ navigation, route }: Props) {
         <View className="mb-2 flex-row items-center gap-2">
           <Text className="text-lg font-bold text-lantern-text">Library</Text>
           <View className="flex-1 flex-row items-center gap-2 px-3 py-1.5 rounded-xl border border-lantern-border bg-lantern-surface min-h-[44px]">
-            <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+            <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
             <TextInput
               value={query}
               onChangeText={setQuery}
@@ -298,7 +298,7 @@ export function LibraryScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Clear search"
               >
-                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                <AppIcon name="close-circle" size={18} color={colors.textTertiary} />
               </Pressable>
             ) : null}
           </View>
@@ -338,7 +338,7 @@ export function LibraryScreen({ navigation, route }: Props) {
             {/* Both chips shrink rather than wrap: two long labels used to push
                 this row onto a second line and cost another 36px. */}
             <View className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
-              <Ionicons name="school-outline" size={14} color={colors.primary} />
+              <AppIcon name="school" size={14} color={colors.primary} />
               <Text className="shrink text-xs font-semibold text-lantern-primary" numberOfLines={1}>
                 {courseFilter.label}
               </Text>
@@ -348,12 +348,12 @@ export function LibraryScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={`Clear course filter ${courseFilter.label}`}
               >
-                <Ionicons name="close-circle" size={16} color={colors.primary} />
+                <AppIcon name="close-circle" size={16} color={colors.primary} />
               </Pressable>
             </View>
             {activeTopic ? (
               <View className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
-                <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+                <AppIcon name="bookmark" size={13} color={colors.textSecondary} />
                 <Text className="shrink text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
                   {activeTopic.label}
                 </Text>
@@ -364,7 +364,7 @@ export function LibraryScreen({ navigation, route }: Props) {
                   accessibilityRole="button"
                   accessibilityLabel={`Clear topic filter ${activeTopic.label}`}
                 >
-                  <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+                  <AppIcon name="close-circle" size={15} color={colors.textSecondary} />
                 </Pressable>
               </View>
             ) : null}
@@ -381,7 +381,7 @@ export function LibraryScreen({ navigation, route }: Props) {
                 className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary min-h-[36px]"
                 accessibilityRole="button"
               >
-                <Ionicons name="arrow-back" size={14} color={colors.textSecondary} />
+                <AppIcon name="arrow-back" size={14} color={colors.textSecondary} />
                 <Text className="shrink text-xs font-semibold text-lantern-text-secondary" numberOfLines={1}>
                   Back to {tab === 'notes' ? 'notes' : 'flashcards'}
                 </Text>
@@ -393,7 +393,7 @@ export function LibraryScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityHint="Searches decks, cards and offline bundles as well; the folder and Archived filters do not apply there"
               >
-                <Ionicons name="search" size={14} color={colors.primary} />
+                <AppIcon name="search" size={14} color={colors.primary} />
                 <Text className="shrink text-xs font-semibold text-lantern-primary" numberOfLines={1}>
                   Search everything
                 </Text>
@@ -424,7 +424,7 @@ export function LibraryScreen({ navigation, route }: Props) {
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                 >
-                  <Ionicons
+                  <AppIcon
                     name={icon}
                     size={16}
                     color={active ? featureAccents.library : colors.textTertiary}

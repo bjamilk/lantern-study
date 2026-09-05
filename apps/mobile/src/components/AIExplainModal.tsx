@@ -13,11 +13,11 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
 import { AIDisclaimer } from './AIDisclaimer';
+import { AppIcon } from './ui/AppIcon';
 
 interface AIExplainModalProps {
   visible: boolean;
@@ -68,11 +68,11 @@ export default function AIExplainModal({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <View style={styles.headerLeft}>
-              <Ionicons name="bulb" size={20} color={colors.warning} />
+              <AppIcon name="bulb" size={20} color={colors.warning} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Explanation</Text>
             </View>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -110,7 +110,7 @@ export default function AIExplainModal({
                 </View>
               ) : aiError ? (
                 <View style={styles.errorState}>
-                  <Ionicons name="alert-circle" size={24} color={colors.error} />
+                  <AppIcon name="alert-circle" size={24} color={colors.error} />
                   <Text style={[styles.errorText, { color: colors.error }]}>{aiError}</Text>
                   <TouchableOpacity
                     style={[styles.retryBtn, { backgroundColor: colors.primary }]}
@@ -122,7 +122,7 @@ export default function AIExplainModal({
               ) : explanation ? (
                 <>
                   <View style={styles.explanationHeader}>
-                    <Ionicons name="sparkles" size={16} color={colors.primary} />
+                    <AppIcon name="sparkles" size={16} color={colors.primary} />
                     <Text style={[styles.explanationLabel, { color: colors.primary }]}>
                       AI Explanation
                     </Text>

@@ -24,7 +24,6 @@ import { ForwardMessageSheet } from '../../components/chat/ForwardMessageSheet';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import { MessageActionBar } from '../../components/chat/MessageActionBar';
 import { useToastStore } from '../../stores/toastStore';
-import { Ionicons } from '@expo/vector-icons';
 import {
   canEditChatMessage,
   canRemoveChatMessage,
@@ -88,6 +87,7 @@ import { useTheme, withAlpha } from '../../theme';
 import { applyReactionLocally } from '@lantern/shared/chat';
 import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type ThreadInquiry = Awaited<ReturnType<typeof fetchInquiryByThread>>;
 
@@ -564,7 +564,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const chatMenuItems: ActionSheetItem[] = [
     {
       label: 'Search messages',
-      icon: 'search-outline',
+      icon: 'search',
       onPress: () => afterSheet(() => setChatSearchOpen(true)),
     },
     {
@@ -572,7 +572,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       label: starredOnly
         ? 'Show all messages'
         : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`,
-      icon: starredOnly ? 'star' : 'star-outline',
+      icon: 'star',
+      iconFilled: starredOnly,
       onPress: () =>
         afterSheet(() => {
           setStarredOnly((on) => !on);
@@ -581,13 +582,13 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     },
     {
       label: 'Chat background',
-      icon: 'image-outline',
+      icon: 'image',
       hint: 'Set a photo behind this conversation',
       onPress: () => afterSheet(() => setWallpaperSheetOpen(true)),
     },
     {
       label: chatMuted ? 'Unmute notifications' : 'Mute',
-      icon: chatMuted ? 'notifications-outline' : 'notifications-off-outline',
+      icon: chatMuted ? 'notifications' : 'notifications-off',
       onPress: () =>
         afterSheet(() => {
           if (chatMuted) {
@@ -599,24 +600,24 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     },
     {
       label: thread?.isArchived ? 'Unarchive conversation' : 'Archive conversation',
-      icon: 'archive-outline',
+      icon: 'archive',
       onPress: () => void handleToggleArchive(),
     },
     {
       label: 'Report user',
-      icon: 'flag-outline',
+      icon: 'flag',
       hint: 'Harassment, spam, scams or inappropriate messages',
       onPress: () => afterSheet(() => setShowReportUser(true)),
     },
     {
       label: iBlockedThem ? 'Unblock user' : 'Block user',
-      icon: 'ban-outline',
+      icon: 'ban',
       destructive: !iBlockedThem,
       onPress: () => afterSheet(handleToggleDmBlock),
     },
     {
       label: 'Delete conversation',
-      icon: 'trash-outline',
+      icon: 'trash',
       destructive: true,
       onPress: () => afterSheet(handleDeleteChat),
     },
@@ -1044,7 +1045,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     if (canEdit) {
       items.push({
         label: 'Edit',
-        icon: 'create-outline',
+        icon: 'create',
         onPress: () => beginEdit(message),
       });
     }
@@ -1220,7 +1221,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           onPress={handleBack}
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
         >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+          <AppIcon name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <ResolvedAvatar
           name={displayName}
@@ -1236,14 +1237,14 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
           accessibilityLabel="Conversation options"
         >
-          <Ionicons name="ellipsis-vertical" size={22} color={colors.textSecondary} />
+          <AppIcon name="ellipsis-vertical" size={22} color={colors.textSecondary} />
         </Pressable>
       </View>
       )}
 
       {thread?.isArchived || chatMuted ? (
         <View className="flex-row items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
-          <Ionicons name="information-circle-outline" size={13} color="#d97706" />
+          <AppIcon name="information-circle" size={13} color="#d97706" />
           <Text
             className="flex-1 text-[11px] text-amber-800 dark:text-amber-300"
             numberOfLines={1}
@@ -1302,7 +1303,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               />
             ) : (
               <View className="w-9 h-9 rounded-lg bg-lantern-background-secondary items-center justify-center">
-                <Ionicons name="pricetag-outline" size={16} color="#6366f1" />
+                <AppIcon name="pricetag" size={16} color="#6366f1" />
               </View>
             )}
             <View className="flex-1 min-w-0">
@@ -1453,7 +1454,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           <View className="flex-1">
             {chatSearchOpen ? (
               <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
-                <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+                <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
                 <TextInput
                   value={chatSearchQuery}
                   onChangeText={(v) => {
@@ -1480,7 +1481,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   accessibilityLabel="Previous match"
                   disabled={chatSearchMatches.length === 0}
                 >
-                  <Ionicons name="chevron-up" size={20} color={colors.text} />
+                  <AppIcon name="chevron-up" size={20} color={colors.text} />
                 </Pressable>
                 <Pressable
                   onPress={() => jumpToChatMatch(chatSearchIndex - 1)}
@@ -1488,16 +1489,16 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   accessibilityLabel="Next match"
                   disabled={chatSearchMatches.length === 0}
                 >
-                  <Ionicons name="chevron-down" size={20} color={colors.text} />
+                  <AppIcon name="chevron-down" size={20} color={colors.text} />
                 </Pressable>
                 <Pressable onPress={closeChatSearch} hitSlop={6} accessibilityLabel="Close search">
-                  <Ionicons name="close" size={20} color={colors.textSecondary} />
+                  <AppIcon name="close" size={20} color={colors.textSecondary} />
                 </Pressable>
               </View>
             ) : null}
             {starredOnly ? (
               <View className="flex-row items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
-                <Ionicons name="star" size={14} color="#f59e0b" />
+                <AppIcon name="star" size={14} color="#f59e0b" />
                 <Text className="flex-1 text-[12px] font-semibold text-amber-800 dark:text-amber-300">
                   Starred messages ({visibleMessages.length})
                 </Text>
@@ -1522,7 +1523,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Jump to pinned message"
               >
-                <Ionicons name="pin" size={14} color={colors.primary} />
+                <AppIcon name="pin" size={14} color={colors.primary} />
                 <Text className="flex-1 text-[12px] text-lantern-text" numberOfLines={1}>
                   {pinnedMessage.text || 'Pinned message'}
                 </Text>
@@ -1531,7 +1532,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   hitSlop={8}
                   accessibilityLabel="Unpin message"
                 >
-                  <Ionicons name="close" size={16} color={colors.textSecondary} />
+                  <AppIcon name="close" size={16} color={colors.textSecondary} />
                 </Pressable>
               </Pressable>
             ) : null}
@@ -1578,7 +1579,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 wallpaper.active ? (
                   <View className="px-4 py-4 rounded-2xl mx-8 mt-16" style={wallpaper.pillStyle}>
                     <EmptyState
-                      icon={starredOnly ? 'star-outline' : 'chatbubble-ellipses-outline'}
+                      icon={starredOnly ? 'star' : 'chatbubble-ellipses'}
                       title={
                         starredOnly
                           ? 'No starred messages yet'
@@ -1588,7 +1589,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   </View>
                 ) : (
                   <EmptyState
-                    icon={starredOnly ? 'star-outline' : 'chatbubble-ellipses-outline'}
+                    icon={starredOnly ? 'star' : 'chatbubble-ellipses'}
                     title={
                       starredOnly
                         ? 'No starred messages yet'
@@ -1843,7 +1844,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         title="Mute"
         items={CHAT_MUTE_DURATIONS.map((opt) => ({
           label: opt.label,
-          icon: 'notifications-off-outline' as const,
+          icon: 'notifications-off' as const,
           onPress: () => void applyMute(opt.id),
         }))}
         onClose={() => setMuteSheetOpen(false)}

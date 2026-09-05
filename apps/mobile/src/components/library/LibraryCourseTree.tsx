@@ -10,7 +10,6 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { LibraryCourseNode } from '@lantern/shared/types';
 import { featureAccents } from '@lantern/shared/design';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
@@ -24,6 +23,7 @@ import {
   type LibraryTopicRow,
   type LibraryTree,
 } from '../../utils/libraryArchive';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * A topic selection. It carries its course because a topic is only ever valid
@@ -136,7 +136,7 @@ function TreeRow({
           accessibilityState={{ expanded: topicsOpen }}
           accessibilityLabel={`${topicsOpen ? 'Hide' : 'Show'} topics in ${title}`}
         >
-          <Ionicons name={topicsOpen ? 'chevron-down' : 'chevron-forward'} size={14} color={colors.textTertiary} />
+          <AppIcon name={topicsOpen ? 'chevron-down' : 'chevron-forward'} size={14} color={colors.textTertiary} />
         </Pressable>
       ) : null}
       <Pressable
@@ -146,8 +146,8 @@ function TreeRow({
         accessibilityState={{ selected }}
         accessibilityLabel={`${selected ? 'Clear filter' : 'Filter by'} ${title}`}
       >
-        <Ionicons
-          name={selected ? 'checkmark-circle' : archived ? 'archive-outline' : 'school-outline'}
+        <AppIcon
+          name={selected ? 'checkmark-circle' : archived ? 'archive' : 'school'}
           size={18}
           color={selected ? colors.primary : colors.textTertiary}
         />
@@ -173,7 +173,7 @@ function TreeRow({
         accessibilityRole="button"
         accessibilityLabel={`More actions for ${title}`}
       >
-        <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+        <AppIcon name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
       </Pressable>
     </View>
   );
@@ -199,8 +199,8 @@ function TopicRow({
       accessibilityState={{ selected }}
       accessibilityLabel={`${selected ? 'Clear topic filter' : 'Filter by topic'} ${row.title}`}
     >
-      <Ionicons
-        name={selected ? 'checkmark-circle' : untopiced ? 'ellipse-outline' : 'bookmark-outline'}
+      <AppIcon
+        name={selected ? 'checkmark-circle' : untopiced ? 'ellipse' : 'bookmark'}
         size={15}
         color={selected ? colors.primary : colors.textTertiary}
       />
@@ -242,7 +242,7 @@ function SectionHeader({
       <Text className="text-[11px] font-bold uppercase tracking-wider text-lantern-text-tertiary">
         {label} · {count}
       </Text>
-      <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textTertiary} />
+      <AppIcon name={open ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textTertiary} />
     </Pressable>
   );
 }
@@ -328,12 +328,12 @@ export function LibraryCourseTree({
     const items: ActionSheetItem[] = [
       {
         label: 'Test history',
-        icon: 'clipboard-outline',
+        icon: 'clipboard',
         onPress: () => onOpenTests(target.filter),
       },
       {
         label: 'Offline downloads',
-        icon: 'cloud-download-outline',
+        icon: 'cloud-download',
         onPress: () => onOpenOffline(target.filter),
       },
     ];
@@ -341,13 +341,13 @@ export function LibraryCourseTree({
     items.push(
       {
         label: COURSE_TOPIC_COPY.manageTitle,
-        icon: 'options-outline',
+        icon: 'options',
         hint: 'Rename, reorder or delete this course’s topics',
         onPress: () => onManageTopics(target.filter),
       },
       {
         label: 'Create a study pack',
-        icon: 'storefront-outline',
+        icon: 'storefront',
         hint: 'Turn this course’s notes into something you can sell',
         onPress: () => onCreateStudyPack(target.filter),
       }
@@ -412,7 +412,7 @@ export function LibraryCourseTree({
         accessibilityState={{ expanded: open }}
         accessibilityLabel="My courses"
       >
-        <Ionicons name="git-branch-outline" size={16} color={featureAccents.library} />
+        <AppIcon name="git-branch" size={16} color={featureAccents.library} />
         <Text className="flex-1 text-sm font-semibold text-lantern-text" numberOfLines={1}>
           My courses
         </Text>
@@ -423,7 +423,7 @@ export function LibraryCourseTree({
             {totalDecks === 1 ? 'deck' : 'decks'}
           </Text>
         ) : null}
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
+        <AppIcon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
       </Pressable>
 
       {open ? (

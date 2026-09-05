@@ -22,7 +22,7 @@ import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
 import { useAcademicStore } from './stores/academicStore';
 import { useLibraryStore } from './stores/libraryStore';
-import { activeUserCourses } from './utils/academicSetup';
+import { activeUserCourses, readAcademicSetupDismissed, shouldOpenAcademicSetup } from './utils/academicSetup';
 import { setSentryUser } from './services/sentry';
 import { useGroupStore } from './stores/groupStore';
 import { useFlashcardStore } from './stores/flashcardStore';
@@ -33,7 +33,7 @@ import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
 import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
 import { useCommunityStore } from './stores/communityStore';
-import { COMMUNITY_COPY, studyGroupAnnouncement } from '@lantern/shared/network';
+import { COMMUNITY_COPY, canAccessDiscoverHub, studyGroupAnnouncement } from '@lantern/shared/network';
 import { collectKnownLounges, isBoardGroup } from './utils/communityBoards';
 import { useCommunityPresence } from './hooks/useCommunityPresence';
 import type { CommunityNavigate } from './components/community/communityNavigation';
@@ -141,7 +141,16 @@ import { useInviteLink } from './hooks/useInviteLink';
 import { useNoteShareLink } from './hooks/useNoteShareLink';
 import { useAppNavigation } from './hooks/useAppNavigation';
 import { useRouteSync } from './hooks/useRouteSync';
-import { isPublicMarketplacePath, parseAppRoute } from './utils/appRoutes';
+import {
+    ME_PATH,
+    campusSegmentPath,
+    isPublicMarketplacePath,
+    parseAppRoute,
+    type CampusSegment,
+} from './utils/appRoutes';
+import CampusHubScreen from './components/campus/CampusHubScreen';
+import MeScreen from './components/layout/MeScreen';
+import { useModalHistory } from './components/layout/useModalHistory';
 import { peekStashedAuthLinkError } from './utils/authErrorHash';
 import GuestMarketplaceShell from './components/marketplace/GuestMarketplaceShell';
 import { useAIHandlers } from './hooks/useAIHandlers';
@@ -620,6 +629,39 @@ export const App: React.FC = () => {
     React.useEffect(() => {
         if (showOnboarding && currentUser?.id) void useAcademicStore.getState().loadMyCourses();
     }, [showOnboarding, currentUser?.id]);
+
+    /**
+     * Back closes the open sheet instead of leaving the section.
+     *
+     * Driven off the ui store's modal map, which is where every shared sheet on
+     * web is registered — one place, so a new modal is covered the moment it is
+     * added to that map rather than needing its own history wiring. One is
+     * excluded on purpose: `usernameRequired` is the account-setup gate, and
+     * Back must not be a way past it.
+     */
+    const openModalKeys = React.useMemo(
+        () => [
+            ...(Object.keys(modals) as Array<keyof typeof modals>)
+                .filter((key) => modals[key] && key !== 'usernameRequired')
+                .map((key) => String(key)),
+            // Two full-screen sheets App owns outside the store's map.
+            ...(showImportAndStudy ? ['importAndStudy'] : []),
+            ...(createLabOpen ? ['createLab'] : []),
+        ],
+        [modals, showImportAndStudy, createLabOpen],
+    );
+    useModalHistory(
+        openModalKeys,
+        React.useCallback(
+            (key: string) => {
+                if (key === 'importAndStudy') { setShowImportAndStudy(false); return; }
+                if (key === 'createLab') { setCreateLabOpen(false); setCreateLabCommunity(null); return; }
+                closeModal(key as keyof typeof modals);
+            },
+            [closeModal],
+        ),
+        location.pathname,
+    );
 
     const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction, materializeRecurring } = useBudgetHandlers();
     const { isDownloadingBundle, handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
@@ -1136,6 +1178,41 @@ export const App: React.FC = () => {
         return <NoteShareAcceptScreen token={decodeURIComponent(noteSharePathMatch[1])} />;
     }
 
+    /**
+     * Onboarding is over — ask for anything it could not collect.
+     *
+     * The profile-setup modal is deferred while onboarding is pending (see
+     * hooks/useAppEffects.ts), so this is where it gets its one chance. In
+     * practice it stays shut: onboarding's academic step writes the institution,
+     * and the only thing left to ask about is a username on an account that
+     * never had one.
+     */
+    const finishOnboarding = () => {
+        const user = useAuthStore.getState().currentUser;
+        if (!user) return;
+        if (shouldOpenAcademicSetup(user, readAcademicSetupDismissed(user.id))) {
+            openModal('usernameRequired');
+        }
+    };
+
+    // ---- The five destinations ----
+    const onMePath = location.pathname.replace(/\/$/, '') === ME_PATH;
+    const communitiesSegmentOpen = canAccessDiscoverHub(isPlatformAdmin);
+    /**
+     * Where the Campus tab lands. Never a closed segment: Communities is
+     * admin-only until campus rooms ship and Shop is a private pilot, so an
+     * ordinary student's Campus opens on Jobs rather than on an apology.
+     */
+    const campusEntrySegment: CampusSegment = communitiesSegmentOpen
+        ? 'communities'
+        : marketplaceAccess !== false
+            ? 'shop'
+            : 'jobs';
+    const goToCampus = () => navigateToPath(campusSegmentPath(campusEntrySegment));
+    const selectCampusSegment = (segment: CampusSegment, options?: { replace?: boolean }) => {
+        navigateToPath(campusSegmentPath(segment), options);
+    };
+
     const renderNotesScreen = (embedded = false) => (
         <NotesScreen
             theme={theme}
@@ -1571,7 +1648,7 @@ export const App: React.FC = () => {
         </div>
     );
 
-    const mainContent = () => {
+    const renderScreen = () => {
         // Marketplace private pilot: every goods-commerce mode renders the
         // honest explanation for accounts outside the allowlist (the API
         // 403s them regardless). Jobs modes are not in the set and stay open.
@@ -1711,7 +1788,6 @@ export const App: React.FC = () => {
                     onNavigateToFlashcards={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'flashcards' })}
                     onOpenCreateDeck={handleOpenCreateDeckModal}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
-                    onNavigateToDiscover={() => navigateTo(AppMode.DISCOVER)}
                     onNavigateToInvite={() => navigateTo(AppMode.INVITE_FRIENDS)}
                     onNavigateToCreateGroup={() => {
                         setCreateGroupReturnMode(AppMode.CHAT);
@@ -2086,10 +2162,6 @@ export const App: React.FC = () => {
                     initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
                     initialTab={marketplaceBrowseIntent?.tab}
                     initialCategory={marketplaceBrowseIntent?.category}
-                    onNavigateToDiscover={(section) => {
-                        setDiscoverSection(section as any);
-                        setAppMode(AppMode.DISCOVER);
-                    }}
                     onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
@@ -2501,10 +2573,6 @@ export const App: React.FC = () => {
                     initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
                     initialTab={marketplaceBrowseIntent?.tab}
                     initialCategory={marketplaceBrowseIntent?.category}
-                    onNavigateToDiscover={(section) => {
-                        setDiscoverSection(section as any);
-                        setAppMode(AppMode.DISCOVER);
-                    }}
                     onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
@@ -2589,6 +2657,48 @@ export const App: React.FC = () => {
                 return <div className="p-4">Mode not implemented yet.</div>;
         }
     };
+
+    // Campus is one destination with three segments; each segment renders the
+    // screen that already existed, inside one shared strip. Only the three
+    // ENTRY modes get the strip — a listing, a job posting or a community page
+    // is a screen you opened from a segment, with its own back arrow.
+    const CAMPUS_SEGMENT_BY_MODE: Partial<Record<AppMode, CampusSegment>> = {
+        [AppMode.DISCOVER]: 'communities',
+        [AppMode.MARKETPLACE]: 'shop',
+        [AppMode.MARKETPLACE_JOBS]: 'jobs',
+    };
+
+    const mainContent = () => {
+        // `/me` has no AppMode: it is the one destination that is about the
+        // student rather than about a part of the app, so it renders from the
+        // path and leaves whatever mode they came from untouched underneath.
+        if (onMePath) {
+            return (
+                <MeScreen
+                    currentUser={currentUser}
+                    theme={theme}
+                    onToggleTheme={toggleTheme}
+                    onNavigate={(mode) => navigateTo(mode)}
+                    onOpenSettings={() => openModal('settings')}
+                    onLogout={handleLogoutAndRedirect}
+                    pendingSyncCount={pendingSyncResults.length + pendingFlashcardReviews.length}
+                />
+            );
+        }
+        const screen = renderScreen();
+        const segment = CAMPUS_SEGMENT_BY_MODE[appMode];
+        if (!segment) return screen;
+        return (
+            <CampusHubScreen
+                segment={segment}
+                onSelectSegment={selectCampusSegment}
+                communitiesOpen={canAccessDiscoverHub(isPlatformAdmin)}
+                shopOpen={marketplaceAccess}
+            >
+                {screen}
+            </CampusHubScreen>
+        );
+    };
     const sidebarProps = {
         // Boards are not chats — they live on the community page (§5.2).
         currentUser, groups: chatListGroups, dmThreads,
@@ -2599,18 +2709,14 @@ export const App: React.FC = () => {
             navigateTo(AppMode.CREATE_GROUP);
         },
         onNavigateToDashboard: () => navigateTo(AppMode.DASHBOARD),
-        onNavigateToOfflineMode: () => navigateTo(AppMode.OFFLINE_MODE),
-        onNavigateToLibrary: () => navigateTo(AppMode.LIBRARY),
-        onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
-        onNavigateToMarketplace: () => navigateTo(AppMode.MARKETPLACE),
-        onNavigateToDiscover: () => navigateTo(AppMode.DISCOVER),
-        onNavigateToInvite: () => navigateTo(AppMode.INVITE_FRIENDS),
-        onNavigateToAdmin: () => navigateTo(AppMode.ADMIN),
+        onNavigateToStudy: () => navigateTo(AppMode.STUDY_HUB),
+        onNavigateToChat: () => navigateTo(AppMode.CHAT),
+        onNavigateToCampus: goToCampus,
+        onNavigateToMe: () => navigateToPath(ME_PATH),
+        currentPath: location.pathname,
         pendingSyncCount: pendingSyncResults.length + pendingFlashcardReviews.length, isOnline,
-        onSyncPendingResults: handleSyncResults,
         onUpdateCurrentUserAvatar: handleUpdateCurrentUserAvatar,
-        onOpenSettingsModal: () => openModal('settings'),
-        currentAppMode: appMode, onLogout: handleLogoutAndRedirect,
+        currentAppMode: appMode,
         isExpanded: isSidebarExpanded, onToggleExpand: toggleSidebar,
         onOpenNewDmModal: () => openModal('newDm'),
         unreadNotificationCount: notifications.filter(n => !n.read).length,
@@ -2618,7 +2724,7 @@ export const App: React.FC = () => {
         activeTestSession, activeStudySession, activeGameSession,
         onResumeSession: handleResumeAnySession,
         onCancelSession: handleCancelPausedSession,
-        theme, onToggleTheme: toggleTheme, dueCardsCount,
+        dueCardsCount,
         onToggleCompanion: toggleCompanion,
         isCompanionOpen,
         onCommunityNavigate: handleCommunityNavigate,
@@ -2627,14 +2733,9 @@ export const App: React.FC = () => {
         <ErrorBoundary>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
             unreadChatCount={getTotalActiveUnreadChatCount(chatListGroups, dmThreads)}
-            hideMobileAiUsageBadge={
-                (appMode === AppMode.CHAT && !!selectedChat)
-                || (appMode === AppMode.COMMUNITY_DETAIL && !!communityChannelId)
-                || appMode === AppMode.GAME_ACTIVE
-                || appMode === AppMode.TEST_ACTIVE
-                || appMode === AppMode.STUDY_ACTIVE
-            }
             onOpenLectureNote={(noteId) => { void noteHandlers.openNote(noteId); }}
+            onNavigateToMe={() => navigateToPath(ME_PATH)}
+            onNavigateToCampus={goToCampus}
             onNavigate={handleShellNavigate}>
             <Suspense fallback={<AppContentLoadingFallback />}>
             {routeHydrating ? (
@@ -2642,7 +2743,7 @@ export const App: React.FC = () => {
             ) : (
             <>
             <div className={`shrink-0 ${
-                appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
+                onMePath || appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
                     ? 'hidden'
                     : (appMode === AppMode.CHAT && selectedChat)
                         || (appMode === AppMode.COMMUNITY_DETAIL && communityChannelId)
@@ -2868,11 +2969,12 @@ export const App: React.FC = () => {
                         programme={currentUser.programme ?? null}
                         studyLevel={currentUser.studyLevel ?? null}
                         firstCourse={onboardingFirstCourse}
-                        onSkip={() => { localStorage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, ONBOARDING_COMPLETE_VALUE); setShowOnboarding(false); }}
+                        onSkip={() => { localStorage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, ONBOARDING_COMPLETE_VALUE); setShowOnboarding(false); finishOnboarding(); }}
                         onComplete={({ streakTarget }) => {
                             localStorage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, ONBOARDING_COMPLETE_VALUE);
                             localStorage.setItem('lantern_streak_target', String(streakTarget));
                             setShowOnboarding(false);
+                            finishOnboarding();
                             void import('./services/productAnalytics').then(({ trackOnboardingCompleted }) => {
                                 trackOnboardingCompleted();
                             });

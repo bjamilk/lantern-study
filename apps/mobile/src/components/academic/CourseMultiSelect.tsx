@@ -5,13 +5,13 @@
  */
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { Course } from '@lantern/shared/types';
 import { COURSE_TITLE_MIN_LENGTH } from '@lantern/shared/academic';
 import { useTheme } from '../../theme';
 import { createCourse } from '../../services/api';
 import { useCourseSearch, useMyActiveCourses } from '../../hooks/useCourseSearch';
 import { formatCourseLabel, toggleCourseSelection } from '../../utils/courseSelection';
+import { AppIcon } from '../ui/AppIcon';
 
 interface CourseMultiSelectProps {
   selected: Course[];
@@ -111,7 +111,7 @@ export function CourseMultiSelect({
                   accessibilityRole="button"
                   accessibilityLabel={`Remove ${course.code}`}
                 >
-                  <Ionicons name="close" size={14} color={colors.primary} />
+                  <AppIcon name="close" size={14} color={colors.primary} />
                 </Pressable>
               ) : null}
             </View>
@@ -120,7 +120,7 @@ export function CourseMultiSelect({
       ) : null}
 
       <View style={[styles.searchRow, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-        <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+        <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
         <TextInput
           value={query}
           onChangeText={text => {
@@ -158,7 +158,7 @@ export function CourseMultiSelect({
                   </Text>
                 ) : null}
               </View>
-              <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+              <AppIcon name="add-circle" size={18} color={colors.primary} />
             </Pressable>
           ))}
 
@@ -171,7 +171,7 @@ export function CourseMultiSelect({
               accessibilityRole="button"
               style={[styles.row, { borderBottomColor: colors.border }]}
             >
-              <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+              <AppIcon name="add-circle" size={18} color={colors.primary} />
               <Text style={[styles.addText, { color: colors.primary }]}>Add ‘{addCode}’</Text>
             </Pressable>
           ) : null}

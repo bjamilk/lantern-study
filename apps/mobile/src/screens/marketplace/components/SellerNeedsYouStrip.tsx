@@ -14,9 +14,9 @@
  */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Badge } from '../../../components/ui';
 import { useTheme } from '../../../theme';
+import { AppIcon, type AppIconName } from '../../../components/ui/AppIcon';
 
 export interface SellerNeedsYouStripProps {
   /** Seller orders that are paid (hand over) or cash-pending (confirm payment). */
@@ -35,7 +35,7 @@ export interface SellerNeedsYouStripProps {
 type Tile = {
   id: 'orders' | 'offers' | 'inquiries';
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: AppIconName;
   count: number;
   screen: string;
   params: Record<string, unknown>;
@@ -56,7 +56,7 @@ export function SellerNeedsYouStrip({
     {
       id: 'orders',
       label: 'To hand over',
-      icon: 'cube-outline',
+      icon: 'cube',
       count: handOver,
       screen: 'Orders',
       params: { role: 'seller' },
@@ -64,7 +64,7 @@ export function SellerNeedsYouStrip({
     {
       id: 'offers',
       label: 'Offers',
-      icon: 'pricetags-outline',
+      icon: 'pricetags',
       count: offers,
       screen: 'Offers',
       params: { tab: 'seller' },
@@ -72,7 +72,7 @@ export function SellerNeedsYouStrip({
     {
       id: 'inquiries',
       label: 'Questions',
-      icon: 'chatbubbles-outline',
+      icon: 'chatbubbles',
       count: inquiries,
       screen: 'Inquiries',
       params: { tab: 'seller' },
@@ -95,7 +95,7 @@ export function SellerNeedsYouStrip({
           accessibilityRole="text"
           accessibilityLabel="You're all caught up"
         >
-          <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+          <AppIcon name="checkmark-circle" size={18} color={colors.success} />
           <Text className="text-sm font-medium text-lantern-text">You're all caught up{caughtUpSub}</Text>
         </View>
       ) : (
@@ -115,7 +115,7 @@ export function SellerNeedsYouStrip({
                 }`}
               >
                 <View className="self-start">
-                  <Ionicons
+                  <AppIcon
                     name={tile.icon}
                     size={18}
                     color={pending ? colors.primary : colors.textTertiary}
@@ -142,7 +142,7 @@ export function SellerNeedsYouStrip({
           accessibilityRole="button"
           className="mt-2 flex-row items-center gap-1.5 self-start"
         >
-          <Ionicons name="time-outline" size={13} color={colors.textTertiary} />
+          <AppIcon name="time" size={13} color={colors.textTertiary} />
           <Text className="text-xs text-lantern-text-tertiary">
             {awaitingBuyerPayment} order{awaitingBuyerPayment === 1 ? '' : 's'} awaiting buyer payment
           </Text>

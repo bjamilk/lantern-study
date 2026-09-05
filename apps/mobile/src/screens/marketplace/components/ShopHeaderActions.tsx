@@ -1,9 +1,9 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Badge } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import { useShopBadges } from '../../../hooks/useShopBadges';
+import { AppIcon } from '../../../components/ui/AppIcon';
 
 interface Props {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -41,7 +41,7 @@ export function ShopHeaderActions({ navigate, hide = [], size = 22 }: Props) {
           hitSlop={6}
           className="p-2"
         >
-          <Ionicons name="cart-outline" size={size} color={colors.textSecondary} />
+          <AppIcon name="cart" size={size} color={colors.textSecondary} />
           <Badge count={badges.cartCount} />
         </Pressable>
       )}
@@ -57,7 +57,7 @@ export function ShopHeaderActions({ navigate, hide = [], size = 22 }: Props) {
           hitSlop={6}
           className="p-2"
         >
-          <Ionicons name="person-circle-outline" size={size} color={colors.textSecondary} />
+          <AppIcon name="person-circle" size={size} color={colors.textSecondary} />
           <Badge count={badges.needsYou} />
         </Pressable>
       )}

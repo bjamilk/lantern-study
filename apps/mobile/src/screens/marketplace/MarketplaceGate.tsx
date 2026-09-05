@@ -9,16 +9,16 @@
 import React, { useEffect } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useMarketplaceStore, useAuthStore } from '../../stores';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 /** Which private-pilot surface a gated screen belongs to. */
 export type PilotSurface = 'marketplace' | 'jobs';
 
 const PILOT_COPY: Record<
   PilotSurface,
-  { title: string; body: string; icon: keyof typeof Ionicons.glyphMap }
+  { title: string; body: string; icon: AppIconName }
 > = {
   marketplace: {
     title: 'The marketplace is in a private pilot',
@@ -27,7 +27,7 @@ const PILOT_COPY: Record<
       'right now. It will open up campus by campus — you’ll see it here the ' +
       'moment it’s available on your account. Everything else in Lantern is ' +
       'yours to use in the meantime.',
-    icon: 'storefront-outline',
+    icon: 'storefront',
   },
   jobs: {
     title: 'Jobs is in a private pilot',
@@ -36,7 +36,7 @@ const PILOT_COPY: Record<
       'open up campus by campus — you’ll see it here the moment it’s ' +
       'available on your account. Everything else in Lantern is yours to use ' +
       'in the meantime.',
-    icon: 'briefcase-outline',
+    icon: 'briefcase',
   },
 };
 
@@ -53,12 +53,12 @@ function MarketplacePrivatePilotScreen({ surface }: { surface: PilotSurface }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
       </View>
       <View className="flex-1 items-center justify-center px-8 -mt-10">
         <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/30 items-center justify-center mb-5">
-          <Ionicons name={copy.icon} size={30} color="#6366f1" />
+          <AppIcon name={copy.icon} size={30} color="#6366f1" />
         </View>
         <Text className="text-lg font-bold text-lantern-text text-center mb-2">
           {copy.title}
@@ -91,12 +91,12 @@ function MarketplaceUnavailableScreen({ onRetry }: { onRetry: () => void }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
       </View>
       <View className="flex-1 items-center justify-center px-8 -mt-10">
         <View className="w-16 h-16 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center justify-center mb-5">
-          <Ionicons name="cloud-offline-outline" size={30} color="#64748b" />
+          <AppIcon name="cloud-offline" size={30} color="#64748b" />
         </View>
         <Text className="text-lg font-bold text-lantern-text text-center mb-2">
           Couldn’t check the marketplace

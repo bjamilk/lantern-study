@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   examCountdownLabel,
   masteryBand,
@@ -9,6 +8,7 @@ import {
 import { fetchCourseReadiness } from '../../services/api';
 import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 import { Card } from '../ui';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * Dashboard "Exam readiness" card: one compact bar per active course, a
@@ -88,7 +88,7 @@ export function CourseReadinessCard() {
                   {examCountdownLabel(course.daysUntil)}
                 </Text>
               ) : null}
-              <Ionicons name="chevron-forward" size={12} color="#94a3b8" />
+              <AppIcon name="chevron-forward" size={12} color="#94a3b8" />
             </View>
             <View className="mt-1.5 h-1.5 rounded-full bg-lantern-background-secondary overflow-hidden">
               <View

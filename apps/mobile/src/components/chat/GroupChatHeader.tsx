@@ -10,16 +10,21 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 export interface GroupChatHeaderAction {
   id: string;
   label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  icon: AppIconName;
+  /**
+   * Paints the icon solid. For a row that toggles a state its own glyph shows
+   * (starred messages), so the state is not carried by colour alone.
+   */
+  iconFilled?: boolean;
   iconColor?: string;
   /** Direct-action rows fire this on tap. Omitted on rows that only open a submenu. */
   onPress?: () => void;
@@ -149,8 +154,9 @@ export function GroupChatHeader({
         className="w-9 h-9 rounded-xl items-center justify-center"
         style={{ backgroundColor: colors.backgroundSecondary }}
       >
-        <Ionicons
+        <AppIcon
           name={action.icon}
+          filled={action.iconFilled}
           size={20}
           color={action.iconColor || featureAccents.groups}
         />
@@ -161,7 +167,7 @@ export function GroupChatHeader({
       {/* Only submenu rows keep a chevron — they navigate within the sheet.
           Direct-action rows dropped it (it implied navigation that never happened). */}
       {action.submenu ? (
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
       ) : null}
     </TouchableOpacity>
   );
@@ -181,7 +187,7 @@ export function GroupChatHeader({
     >
       <View className="w-6 items-center justify-center">
         {option.selected ? (
-          <Ionicons name="checkmark" size={20} color={colors.primary} />
+          <AppIcon name="checkmark" size={20} color={colors.primary} />
         ) : null}
       </View>
       <View className="flex-1">
@@ -216,7 +222,7 @@ export function GroupChatHeader({
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
+          <AppIcon name="arrow-back" size={24} color={colors.textSecondary} />
         </Pressable>
 
         {/* Tapping the avatar/title opens Group Info — previously an inert View,
@@ -275,7 +281,7 @@ export function GroupChatHeader({
             accessibilityRole="button"
             accessibilityLabel="Add question"
           >
-            <Ionicons name="add-circle-outline" size={22} color={featureAccents.groups} />
+            <AppIcon name="add-circle" size={22} color={featureAccents.groups} />
           </Pressable>
         ) : null}
 
@@ -285,7 +291,7 @@ export function GroupChatHeader({
           accessibilityRole="button"
           accessibilityLabel="More actions"
         >
-          <Ionicons name="ellipsis-vertical" size={22} color={colors.primary} />
+          <AppIcon name="ellipsis-vertical" size={22} color={colors.primary} />
         </Pressable>
       </View>
 
@@ -316,7 +322,7 @@ export function GroupChatHeader({
                     accessibilityRole="button"
                     accessibilityLabel="Back to group actions"
                   >
-                    <Ionicons name="chevron-back" size={24} color={colors.primary} />
+                    <AppIcon name="chevron-back" size={24} color={colors.primary} />
                   </TouchableOpacity>
                   <Text
                     className="text-sm font-semibold text-lantern-text-secondary"

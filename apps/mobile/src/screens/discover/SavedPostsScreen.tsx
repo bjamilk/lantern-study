@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   BOARD_BOOKMARKS_PAGE_SIZE,
   COMMUNITY_BOARD_COPY,
@@ -11,6 +10,7 @@ import {
 import * as boardApi from '../../services/boardActions';
 import { BackButton } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type Navigation = {
   goBack: () => void;
@@ -132,8 +132,8 @@ export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
         ) : null}
         {mediaLabel ? (
           <View className="mt-1 flex-row items-center">
-            <Ionicons
-              name={post.imageUrl ? 'image-outline' : 'mic-outline'}
+            <AppIcon
+              name={post.imageUrl ? 'image' : 'mic'}
               size={13}
               color="#94a3b8"
             />

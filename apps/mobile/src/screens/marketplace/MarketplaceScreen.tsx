@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { Screen } from '../../components/layout';
 import { KeyboardSafePanel } from './components/KeyboardSafePanel';
-import { Ionicons } from '@expo/vector-icons';
 import { Skeleton, Button, Badge } from '../../components/ui';
 import {
   MARKETPLACE_DEPARTMENTS,
@@ -55,6 +54,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 import {
   CONDITION_ATTRIBUTE,
+  COURSE_ANCHOR_COPY,
   getTaxonomyPath,
   listingTypeLabel,
   suggestMarketplaceSearch,
@@ -68,6 +68,7 @@ import {
   filtersLabel,
   isSearchExpanded,
 } from './marketplaceSearchChrome';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 /** Byte-identical to the inline Cart/You so parity with ShopHeaderActions holds. */
 const ICON_BTN = 'h-9 w-9 items-center justify-center rounded-lg bg-lantern-background-secondary';
@@ -604,7 +605,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             accessibilityState={{ selected: favorited }}
             className="absolute top-2 right-2 p-1.5 rounded-lg bg-lantern-surface/90 min-w-[44px] min-h-[44px] items-center justify-center"
           >
-            <Ionicons name={favorited ? 'heart' : 'heart-outline'} size={16} color={favorited ? '#dc2626' : '#94a3b8'} />
+            <AppIcon name="heart" filled={favorited} size={16} color={favorited ? '#dc2626' : '#94a3b8'} />
           </Pressable>
           {own ? (
             <View className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-lantern-primary/90">
@@ -624,7 +625,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               className="mt-0.5 flex-row items-center gap-0.5"
               accessibilityLabel={`Rated ${Number(item.rating_avg).toFixed(1)} out of 5 from ${item.rating_count} reviews`}
             >
-              <Ionicons name="star" size={11} color="#f59e0b" />
+              <AppIcon name="star" size={11} color="#f59e0b" />
               <Text className="text-[11px] text-lantern-text-secondary">
                 {Number(item.rating_avg).toFixed(1)} ({item.rating_count})
               </Text>
@@ -731,7 +732,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 hitSlop={4}
                 className="h-9 w-9 items-center justify-center"
               >
-                <Ionicons name="arrow-back" size={20} color={colors.textSecondary} />
+                <AppIcon name="arrow-back" size={20} color={colors.textSecondary} />
               </Pressable>
               <TextInput
                 ref={searchInputRef}
@@ -759,7 +760,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   hitSlop={4}
                   className="h-9 w-9 items-center justify-center"
                 >
-                  <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                  <AppIcon name="close-circle" size={18} color={colors.textSecondary} />
                 </Pressable>
               ) : null}
             </View>
@@ -773,7 +774,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               hitSlop={4}
               className={ICON_BTN}
             >
-              <Ionicons name="search" size={19} color={colors.textSecondary} />
+              <AppIcon name="search" size={19} color={colors.textSecondary} />
             </Pressable>
           )}
           {/* Alerts, Cart and You stay mounted in BOTH states. searchExpanded
@@ -797,8 +798,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 controls called Saved a thumb apart meant nobody knew which
                 was which. Sits left of Cart so Cart+You remain the trailing
                 pair every other Shop screen shows. */}
-            <Ionicons
-              name="notifications-outline"
+            <AppIcon
+              name="notifications"
               size={20}
               color={openPanel === 'alerts' ? '#6366f1' : colors.textSecondary}
             />
@@ -821,7 +822,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             hitSlop={4}
             className={headerButton}
           >
-            <Ionicons name="cart-outline" size={19} color={colors.textSecondary} />
+            <AppIcon name="cart" size={19} color={colors.textSecondary} />
             {showHeaderLabels ? (
               <Text numberOfLines={1} className="text-xs font-medium text-lantern-text-secondary">
                 Cart
@@ -840,7 +841,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             hitSlop={4}
             className={headerButton}
           >
-            <Ionicons name="person-circle-outline" size={20} color={colors.textSecondary} />
+            <AppIcon name="person-circle" size={20} color={colors.textSecondary} />
             {showHeaderLabels ? (
               <Text numberOfLines={1} className="text-xs font-medium text-lantern-text-secondary">
                 You
@@ -859,7 +860,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               hitSlop={4}
               className="h-9 flex-1 flex-row items-center justify-center gap-1 px-2 rounded-lg bg-lantern-primary"
             >
-              <Ionicons name="add" size={16} color="#fff" />
+              <AppIcon name="add" size={16} color="#fff" />
               <Text className="text-sm font-semibold text-white">Sell</Text>
             </Pressable>
           )}
@@ -890,7 +891,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                     with the keyboard. The clock is how a buyer tells a recent
                     search from a category or a fresh "Search for" row. */}
                 {suggestion.kind === 'recent' ? (
-                  <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
+                  <AppIcon name="time" size={16} color={colors.textSecondary} />
                 ) : null}
                 <View className="flex-1">
                   <Text className="text-sm text-lantern-text">{suggestion.label}</Text>
@@ -931,8 +932,20 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           accessibilityLabel="Shop by department"
           className="flex-row items-center gap-1 ml-3 mr-1 px-2.5 py-2 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
         >
-          <Ionicons name="menu" size={16} color="#64748b" />
+          <AppIcon name="menu" size={16} color="#64748b" />
           <Text className="text-xs font-semibold text-lantern-text-secondary">Departments</Text>
+        </Pressable>
+        {/* Departments browse SELLERS' shelves; this browses the academic
+            archive — the course a bank or pack was filed under, which is how a
+            student finds it months after the seller stopped promoting it. */}
+        <Pressable
+          onPress={() => navigation.navigate('CourseBrowse')}
+          accessibilityRole="button"
+          accessibilityLabel={COURSE_ANCHOR_COPY.browseTitle}
+          className="flex-row items-center gap-1 mr-1 px-2.5 py-2 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
+        >
+          <AppIcon name="school" size={16} color="#64748b" />
+          <Text className="text-xs font-semibold text-lantern-text-secondary">By course</Text>
         </Pressable>
         <ScrollView
           horizontal
@@ -1000,7 +1013,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               hitSlop={8}
               className="ml-2 py-1"
             >
-              <Ionicons name="close-circle" size={15} color="#94a3b8" />
+              <AppIcon name="close-circle" size={15} color="#94a3b8" />
             </Pressable>
           </View>
         ) : null}
@@ -1023,8 +1036,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 : 'flex-row items-center gap-1 min-h-[32px] px-2.5 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
             }
           >
-            <Ionicons
-              name="options-outline"
+            <AppIcon
+              name="options"
               size={14}
               color={activeFilterCount > 0 || openPanel === 'filters' ? '#6366f1' : colors.textSecondary}
             />
@@ -1042,7 +1055,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 <Text className="text-[9px] font-bold text-white">{activeFilterCount}</Text>
               </View>
             ) : null}
-            <Ionicons
+            <AppIcon
               name={openPanel === 'filters' ? 'chevron-up' : 'chevron-down'}
               size={14}
               color={colors.textSecondary}
@@ -1295,7 +1308,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                     accessibilityLabel={`Delete saved search ${s.name}`}
                     className="h-[44px] w-[44px] items-center justify-center"
                   >
-                    <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                    <AppIcon name="trash" size={16} color="#94a3b8" />
                   </Pressable>
                 </View>
               ))
@@ -1333,7 +1346,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             }
             ListEmptyComponent={
               <View className="items-center py-16 px-6">
-                <Ionicons name="storefront-outline" size={48} color="#cbd5e1" />
+                <AppIcon name="storefront" size={48} color="#cbd5e1" />
                 <Text className="text-lg font-semibold text-lantern-text mt-4">No shops yet</Text>
                 <Text className="text-sm text-lantern-text-secondary mt-2 text-center">
                   Sellers with active listings show up here automatically.
@@ -1420,7 +1433,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
-              <Ionicons name="bag-outline" size={48} color="#cbd5e1" />
+              <AppIcon name="bag" size={48} color="#cbd5e1" />
               <Text className="text-lg font-semibold text-lantern-text mt-4">
                 {taxonomyPath.length > 0
                   ? `Nothing in ${taxonomyPath[taxonomyPath.length - 1]?.label} yet`

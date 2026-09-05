@@ -160,6 +160,12 @@ export interface Message {
   pinnedBy?: string | null;
   upvotes?: number;
   downvotes?: number;
+  /**
+   * Distinct upvotes from members OTHER than the author — the only count that
+   * can grant VERIFIED (@lantern/shared/utils questionVerification). Undefined,
+   * never 0, on API builds that do not report it.
+   */
+  peerUpvotes?: number;
   flaggedAsSimilarUserIds?: string[];
   questionStem?: string;
   questionStatus?: string;
@@ -596,6 +602,12 @@ export function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): 
     pinnedBy: m.pinned_by ?? m.pinnedBy ?? null,
     upvotes: m.upvotes ?? 0,
     downvotes: m.downvotes ?? 0,
+    peerUpvotes:
+      typeof m.peer_upvotes === 'number'
+        ? m.peer_upvotes
+        : typeof m.peerUpvotes === 'number'
+          ? m.peerUpvotes
+          : undefined,
     flaggedAsSimilarUserIds:
       m.flagged_as_similar_user_ids ||
       m.flaggedAsSimilarUserIds ||

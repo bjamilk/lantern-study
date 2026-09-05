@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   MASTERY_BAND_LABELS,
   examCountdownLabel,
@@ -12,6 +11,7 @@ import {
 } from '@lantern/shared/network';
 import { fetchCourseReadiness, fetchMasteryGraph, refreshMasteryGraph } from '../../services/api';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = { goBack: () => void };
 type RouteProp = { params?: { courseId?: string } };
@@ -211,7 +211,7 @@ export function MasteryScreen({
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-lg font-bold text-lantern-text">
           {focusCourseId ? 'Course readiness' : 'Exam readiness'}
@@ -225,7 +225,7 @@ export function MasteryScreen({
           accessibilityRole="button"
           accessibilityLabel="Recalculate topic mastery"
         >
-          <Ionicons name="refresh-outline" size={20} color="#64748b" />
+          <AppIcon name="refresh" size={20} color="#64748b" />
         </Pressable>
       </View>
 

@@ -7,7 +7,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   COMMUNITY_COPY,
   COMMUNITY_MEMBERS_PAGE,
@@ -28,6 +27,7 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BackButton } from '../../components/ui';
 import { MemberRow } from '../../components/community';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -157,7 +157,7 @@ function CommunityMembersList({
           </Text>
         </View>
         <View className="mx-4 mb-2 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
-          <Ionicons name="search-outline" size={16} color="#64748b" />
+          <AppIcon name="search" size={16} color="#64748b" />
           <TextInput
             value={query}
             onChangeText={setQuery}

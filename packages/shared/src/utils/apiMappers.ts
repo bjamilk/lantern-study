@@ -225,6 +225,15 @@ export const mapMessageFromApi = (data: any): Message => {
     questionStatus: data.question_status || data.questionStatus || questionData.questionStatus,
     upvotes: data.upvotes || 0,
     downvotes: data.downvotes || 0,
+    // Distinct upvotes from members other than the author — the count that gates
+    // VERIFIED. Left undefined (never 0) when the API build does not send it, so
+    // the card can tell "no peer votes yet" from "this build has no idea".
+    peerUpvotes:
+      typeof data.peer_upvotes === 'number'
+        ? data.peer_upvotes
+        : typeof data.peerUpvotes === 'number'
+          ? data.peerUpvotes
+          : undefined,
     reactions: normalizeReactions(data.reactions),
     flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || data.flaggedAsSimilarUserIds,
     isArchived: data.is_archived || data.isArchived || false,

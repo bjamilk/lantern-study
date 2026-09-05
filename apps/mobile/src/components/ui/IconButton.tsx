@@ -1,13 +1,19 @@
 import React from 'react';
 import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
+import { AppIcon, type AppIconName } from './AppIcon';
 
 /** Apple's and Android's minimum comfortable target. */
 const MIN_TARGET = 44;
 
 interface IconButtonProps {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: AppIconName;
+  /**
+   * Paints the glyph solid. For a button that toggles the state its own icon
+   * shows — saved, starred, pinned — so `selected` is not carried by the
+   * background tint alone.
+   */
+  filled?: boolean;
   /**
    * Required, and deliberately so. An icon-only control is invisible to a
    * screen reader without it, and every unlabelled icon button in this codebase
@@ -34,6 +40,7 @@ interface IconButtonProps {
  */
 export function IconButton({
   icon,
+  filled = false,
   accessibilityLabel,
   onPress,
   size = 22,
@@ -69,7 +76,7 @@ export function IconButton({
           backgroundColor: selected ? colors.primaryBackground : 'transparent',
         }}
       >
-        <Ionicons name={icon} size={size} color={color || colors.text} />
+        <AppIcon name={icon} filled={filled} size={size} color={color || colors.text} />
       </View>
     </Pressable>
   );

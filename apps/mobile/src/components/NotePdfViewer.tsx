@@ -3,10 +3,10 @@ import { ActivityIndicator, Modal, Platform, Pressable, Text, View } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import * as WebBrowser from 'expo-web-browser';
-import { Ionicons } from '@expo/vector-icons';
 import type { NoteAttachment } from '../services/notes';
 import { refreshNoteAttachmentUrl } from '../services/notes';
 import { useTheme } from '../theme';
+import { AppIcon } from './ui/AppIcon';
 
 interface NotePdfViewerProps {
   noteId: string;
@@ -126,7 +126,7 @@ export function NotePdfViewer({
         className="flex-row items-center gap-2 px-4 py-2 rounded-xl"
         style={{ backgroundColor: colors.primary }}
       >
-        <Ionicons name="open-outline" size={18} color="#fff" />
+        <AppIcon name="open" size={18} color="#fff" />
         <Text className="text-sm font-semibold text-white">Open document</Text>
       </Pressable>
     </View>
@@ -158,7 +158,7 @@ export function NotePdfViewer({
             className="flex-row items-center gap-2 px-4 py-2 rounded-xl"
             style={{ backgroundColor: colors.primary }}
           >
-            <Ionicons name="open-outline" size={18} color="#fff" />
+            <AppIcon name="open" size={18} color="#fff" />
             <Text className="text-sm font-semibold text-white">Open document</Text>
           </Pressable>
         ) : null}
@@ -184,7 +184,7 @@ export function NotePdfViewer({
           accessibilityRole="button"
           accessibilityLabel="View document fullscreen"
         >
-          <Ionicons name="expand-outline" size={16} color={colors.primary} />
+          <AppIcon name="expand" size={16} color={colors.primary} />
           <Text className="text-xs font-medium" style={{ color: colors.primary }}>
             Fullscreen
           </Text>
@@ -195,7 +195,7 @@ export function NotePdfViewer({
           accessibilityRole="button"
           accessibilityLabel="Open document externally"
         >
-          <Ionicons name="open-outline" size={16} color={colors.primary} />
+          <AppIcon name="open" size={16} color={colors.primary} />
           <Text className="text-xs font-medium" style={{ color: colors.primary }}>
             Open
           </Text>
@@ -271,7 +271,7 @@ export function NotePdfViewer({
               accessibilityRole="button"
               accessibilityLabel="Open document externally"
             >
-              <Ionicons name="open-outline" size={20} color={colors.primary} />
+              <AppIcon name="open" size={20} color={colors.primary} />
             </Pressable>
             <Pressable
               onPress={() => setFullscreen(false)}
@@ -279,7 +279,7 @@ export function NotePdfViewer({
               accessibilityRole="button"
               accessibilityLabel="Leave fullscreen"
             >
-              <Ionicons name="close" size={22} color={colors.text} />
+              <AppIcon name="close" size={22} color={colors.text} />
             </Pressable>
           </View>
           {webViewFailed ? (

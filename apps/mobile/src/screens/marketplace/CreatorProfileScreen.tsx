@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { fetchCreatorProfile, followCreator, unfollowCreator } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPrice } from './marketplaceHelpers';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -86,7 +86,7 @@ export function CreatorProfileScreen({
     <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="mr-2 -ml-1 p-1">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-lg font-bold text-lantern-text">Creator</Text>
       </View>
@@ -97,7 +97,7 @@ export function CreatorProfileScreen({
         </View>
       ) : !creator ? (
         <View className="flex-1 items-center justify-center px-8">
-          <Ionicons name="person-outline" size={40} color="#94a3b8" />
+          <AppIcon name="person" size={40} color="#94a3b8" />
           <Text className="mt-3 text-base font-semibold text-lantern-text">Creator not found</Text>
         </View>
       ) : (
@@ -116,7 +116,7 @@ export function CreatorProfileScreen({
                   </Text>
                   {creator.isVerified ? (
                     <View className="flex-row items-center rounded-full bg-lantern-primary/10 px-2 py-0.5" style={{ gap: 3 }}>
-                      <Ionicons name="checkmark-circle" size={11} color="#6366f1" />
+                      <AppIcon name="checkmark-circle" size={11} color="#6366f1" />
                       <Text className="text-[11px] font-semibold text-lantern-primary">Verified</Text>
                     </View>
                   ) : null}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { studyGroupSubtitle, type CommunityStudyGroup } from '@lantern/shared/network';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * A study group listed on a community page but living in Chat (§7).
@@ -34,7 +34,7 @@ export function StudyGroupRow({
       style={busy ? { opacity: 0.5 } : undefined}
     >
       <View className="w-5 items-center">
-        <Ionicons name="school-outline" size={16} color="#94a3b8" />
+        <AppIcon name="school" size={16} color="#94a3b8" />
       </View>
       <View className="flex-1 min-w-0 ml-1">
         <Text className="text-[15px] font-medium text-lantern-text" numberOfLines={1}>
@@ -44,7 +44,7 @@ export function StudyGroupRow({
           {subtitle}
         </Text>
       </View>
-      <Ionicons name="arrow-forward" size={14} color="#94a3b8" />
+      <AppIcon name="arrow-forward" size={14} color="#94a3b8" />
     </Pressable>
   );
 }

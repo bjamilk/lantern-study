@@ -13,8 +13,8 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
+import { AppIcon } from '../ui/AppIcon';
 
 const REPLY_THRESHOLD = 56;
 const MAX_DRAG = 88;
@@ -71,7 +71,7 @@ export function SwipeToReply({ enabled = true, onReply, children }: SwipeToReply
     <View style={styles.row}>
       <Animated.View style={[styles.iconSlot, iconStyle]} pointerEvents="none">
         <View style={[styles.iconCircle, { backgroundColor: colors.primaryBackground }]}>
-          <Ionicons name="arrow-undo" size={16} color={colors.primary} />
+          <AppIcon name="arrow-undo" size={16} color={colors.primary} />
         </View>
       </Animated.View>
       <GestureDetector gesture={pan}>

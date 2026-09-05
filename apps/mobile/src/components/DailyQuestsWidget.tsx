@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { DailyQuest } from '../services/gamification';
 import { Card } from './ui';
+import { AppIcon } from './ui/AppIcon';
 
 const QUEST_LABELS: Record<string, string> = {
   review_cards: 'Review flashcards',
@@ -29,11 +29,11 @@ export function DailyQuestsWidget({ quests, streak, streakFreezes = 0, onPurchas
       <View className="flex-row items-center justify-between mb-3">
         <Text className="font-semibold text-lantern-text">Daily Quests</Text>
         <View className="flex-row items-center gap-1.5">
-          <Ionicons name="flame" size={16} color="#f97316" />
+          <AppIcon name="flame" size={16} color="#f97316" />
           <Text className="text-sm font-bold text-orange-600">{streak} day streak</Text>
           {streakFreezes > 0 ? (
             <View className="flex-row items-center gap-0.5 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30">
-              <Ionicons name="snow" size={12} color="#3b82f6" />
+              <AppIcon name="snow" size={12} color="#3b82f6" />
               <Text className="text-xs font-semibold text-blue-600 dark:text-blue-400">{streakFreezes}</Text>
             </View>
           ) : onPurchaseFreeze ? (
@@ -59,8 +59,8 @@ export function DailyQuestsWidget({ quests, streak, streakFreezes = 0, onPurchas
           const pct = Math.min(100, (quest.progress_count / quest.target_count) * 100);
           return (
             <View key={quest.id || `${quest.quest_type}-${index}`} className="flex-row items-center gap-3">
-              <Ionicons
-                name={quest.completed ? 'checkmark-circle' : 'ellipse-outline'}
+              <AppIcon
+                name={quest.completed ? 'checkmark-circle' : 'ellipse'}
                 size={20}
                 color={quest.completed ? '#10b981' : '#94a3b8'}
               />

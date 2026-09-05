@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { formatCommunityUnread } from '@lantern/shared/network';
+import { AppIcon } from '../ui/AppIcon';
 
 /** The shared community rule (§6): two digits, then 99+. */
 export function formatUnreadPill(unread: number): string {
@@ -67,7 +67,7 @@ export function ChannelRow({
     >
       {chat ? (
         <View className="w-5 items-center">
-          <Ionicons name="chatbubbles-outline" size={16} color="#94a3b8" />
+          <AppIcon name="chatbubbles" size={16} color="#94a3b8" />
         </View>
       ) : (
         <Text className="w-5 text-base font-semibold text-lantern-text-tertiary">#</Text>
@@ -84,9 +84,9 @@ export function ChannelRow({
         </Text>
       </View>
       {visibility === 'community' ? (
-        <Ionicons name="lock-closed-outline" size={12} color="#94a3b8" />
+        <AppIcon name="lock-closed" size={12} color="#94a3b8" />
       ) : visibility === 'public' ? (
-        <Ionicons name="globe-outline" size={12} color="#94a3b8" />
+        <AppIcon name="globe" size={12} color="#94a3b8" />
       ) : null}
       <UnreadPill unread={unread} />
     </Pressable>

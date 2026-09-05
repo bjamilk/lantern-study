@@ -20,12 +20,12 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
 import { AIDisclaimer } from './AIDisclaimer';
 import type { AIGeneratedFlashcard } from '../services/ai';
+import { AppIcon } from './ui/AppIcon';
 
 interface AIGenerateFlashcardsModalProps {
   visible: boolean;
@@ -97,10 +97,10 @@ export default function AIGenerateFlashcardsModal({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
-              <Ionicons name="sparkles" size={20} color={colors.primary} />
+              <AppIcon name="sparkles" size={20} color={colors.primary} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Generate Flashcards</Text>
             </View>
             <AIUsageBadge variant="badge" />
@@ -187,7 +187,7 @@ export default function AIGenerateFlashcardsModal({
                 {/* Error */}
                 {aiError && (
                   <View style={[styles.errorBox, { backgroundColor: colors.errorBackground }]}>
-                    <Ionicons name="alert-circle" size={16} color={colors.error} />
+                    <AppIcon name="alert-circle" size={16} color={colors.error} />
                     <Text style={[styles.errorText, { color: colors.error }]}>{aiError}</Text>
                   </View>
                 )}
@@ -201,7 +201,7 @@ export default function AIGenerateFlashcardsModal({
                   {isAILoading ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Ionicons name="sparkles" size={20} color="#fff" />
+                    <AppIcon name="sparkles" size={20} color="#fff" />
                   )}
                   <Text style={styles.generateBtnText}>
                     {isAILoading ? 'Generating...' : 'Generate Flashcards'}
@@ -228,7 +228,7 @@ export default function AIGenerateFlashcardsModal({
                         <View style={[styles.cardBadge, { backgroundColor: colors.primaryBackground }]}>
                           <Text style={[styles.cardBadgeText, { color: colors.primary }]}>#{idx + 1}</Text>
                         </View>
-                        <Ionicons
+                        <AppIcon
                           name={isExpanded ? 'chevron-up' : 'chevron-down'}
                           size={18}
                           color={colors.textTertiary}
@@ -265,14 +265,14 @@ export default function AIGenerateFlashcardsModal({
                     style={[styles.actionBtn, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}
                     onPress={() => setGenerated([])}
                   >
-                    <Ionicons name="refresh" size={18} color={colors.text} />
+                    <AppIcon name="refresh" size={18} color={colors.text} />
                     <Text style={[styles.actionBtnText, { color: colors.text }]}>Regenerate</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.actionBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
                     onPress={handleUse}
                   >
-                    <Ionicons name="add-circle" size={18} color="#fff" />
+                    <AppIcon name="add-circle" size={18} color="#fff" />
                     <Text style={[styles.actionBtnText, { color: '#fff' }]}>Add to Deck</Text>
                   </TouchableOpacity>
                 </View>

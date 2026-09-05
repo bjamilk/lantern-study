@@ -29,7 +29,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { CourseTopic } from '@lantern/shared/types';
 import {
   COURSE_TOPIC_COPY,
@@ -46,6 +45,7 @@ import {
   reorderCourseTopics,
 } from '../../services/academic';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../layout';
+import { AppIcon } from '../ui/AppIcon';
 
 export interface ManageOutlineSheetProps {
   courseId: string | null;
@@ -247,7 +247,7 @@ export function ManageOutlineSheet({
               ) : null}
             </View>
             <Pressable onPress={close} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
+              <AppIcon name="close" size={22} color={colors.textSecondary} />
             </Pressable>
           </View>
 
@@ -307,7 +307,7 @@ export function ManageOutlineSheet({
                           accessibilityRole="button"
                           accessibilityLabel={COURSE_TOPIC_COPY.rename}
                         >
-                          <Ionicons name="checkmark" size={20} color={colors.primary} />
+                          <AppIcon name="checkmark" size={20} color={colors.primary} />
                         </Pressable>
                         <Pressable
                           onPress={() => setEditingId(null)}
@@ -317,7 +317,7 @@ export function ManageOutlineSheet({
                           accessibilityRole="button"
                           accessibilityLabel={COURSE_TOPIC_COPY.deleteCancel}
                         >
-                          <Ionicons name="close" size={20} color={colors.textSecondary} />
+                          <AppIcon name="close" size={20} color={colors.textSecondary} />
                         </Pressable>
                       </>
                     ) : (
@@ -333,7 +333,7 @@ export function ManageOutlineSheet({
                           accessibilityRole="button"
                           accessibilityLabel={`Move ${topic.title} up`}
                         >
-                          <Ionicons name="chevron-up" size={20} color={colors.textSecondary} />
+                          <AppIcon name="chevron-up" size={20} color={colors.textSecondary} />
                         </Pressable>
                         <Pressable
                           onPress={() => move(index, 1)}
@@ -343,7 +343,7 @@ export function ManageOutlineSheet({
                           accessibilityRole="button"
                           accessibilityLabel={`Move ${topic.title} down`}
                         >
-                          <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+                          <AppIcon name="chevron-down" size={20} color={colors.textSecondary} />
                         </Pressable>
                         <Pressable
                           onPress={() => startRename(topic)}
@@ -353,7 +353,7 @@ export function ManageOutlineSheet({
                           accessibilityRole="button"
                           accessibilityLabel={`${COURSE_TOPIC_COPY.rename} ${topic.title}`}
                         >
-                          <Ionicons name="pencil" size={18} color={colors.textSecondary} />
+                          <AppIcon name="pencil" size={18} color={colors.textSecondary} />
                         </Pressable>
                         <Pressable
                           onPress={() => confirmDelete(topic)}
@@ -363,7 +363,7 @@ export function ManageOutlineSheet({
                           accessibilityRole="button"
                           accessibilityLabel={`${COURSE_TOPIC_COPY.delete} ${topic.title}`}
                         >
-                          <Ionicons name="trash-outline" size={18} color={colors.error} />
+                          <AppIcon name="trash" size={18} color={colors.error} />
                         </Pressable>
                       </>
                     )}

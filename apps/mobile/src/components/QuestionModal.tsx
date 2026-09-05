@@ -19,9 +19,9 @@ import {
   Image,
   ActionSheetIOS,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme, ThemeScope } from '../theme';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 export type QuestionType = 
   | 'mcq-single'
@@ -79,7 +79,7 @@ interface QuestionModalProps {
   onSubmit: (question: Question) => void | Promise<void>;
 }
 
-const QUESTION_TYPES: { type: QuestionType; label: string; icon: string }[] = [
+const QUESTION_TYPES: { type: QuestionType; label: string; icon: AppIconName }[] = [
   { type: 'mcq-single', label: 'Single Choice', icon: 'radio-button-on' },
   { type: 'mcq-multiple', label: 'Multiple Choice', icon: 'checkbox' },
   { type: 'true-false', label: 'True/False', icon: 'swap-horizontal' },
@@ -564,8 +564,8 @@ export default function QuestionModal({
               { backgroundColor: colors.inputBackground },
               questionType === type && { backgroundColor: colors.primary },
             ]}>
-              <Ionicons 
-                name={icon as any} 
+              <AppIcon 
+                name={icon} 
                 size={28} 
                 color={questionType === type ? '#ffffff' : colors.primary} 
               />
@@ -619,7 +619,7 @@ export default function QuestionModal({
                 style={styles.removeImageButton}
                 onPress={() => removeImage('question')}
               >
-                <Ionicons name="close-circle" size={28} color={colors.error} />
+                <AppIcon name="close-circle" size={28} color={colors.error} />
               </TouchableOpacity>
             </View>
           ) : (
@@ -627,7 +627,7 @@ export default function QuestionModal({
               style={[styles.imageUploadButton, themed.imageUpload]}
               onPress={() => pickImage('question')}
             >
-              <Ionicons name="camera" size={24} color={colors.primary} />
+              <AppIcon name="camera" size={24} color={colors.primary} />
               <Text style={[styles.imageUploadText, { color: colors.primary }]}>Add Image</Text>
             </TouchableOpacity>
           )}
@@ -654,8 +654,8 @@ export default function QuestionModal({
                   ]}
                   onPress={() => handleCorrectToggle(option.id)}
                 >
-                  <Ionicons
-                    name={option.isCorrect ? 'checkmark-circle' : 'ellipse-outline'}
+                  <AppIcon
+                    name={option.isCorrect ? 'checkmark-circle' : 'ellipse'}
                     size={24}
                     color={option.isCorrect ? colors.success : colors.textSecondary}
                   />
@@ -673,7 +673,7 @@ export default function QuestionModal({
                     style={styles.removeOption}
                     onPress={() => pickImage('option', option.id)}
                   >
-                    <Ionicons name="camera" size={20} color={colors.primary} />
+                    <AppIcon name="camera" size={20} color={colors.primary} />
                   </TouchableOpacity>
                 )}
                 {questionType !== 'true-false' && options.length > 2 && (
@@ -681,7 +681,7 @@ export default function QuestionModal({
                     style={styles.removeOption}
                     onPress={() => handleRemoveOption(option.id)}
                   >
-                    <Ionicons name="close-circle" size={22} color={colors.error} />
+                    <AppIcon name="close-circle" size={22} color={colors.error} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -693,7 +693,7 @@ export default function QuestionModal({
                       style={styles.removeImageButton}
                       onPress={() => removeImage('option', option.id)}
                     >
-                      <Ionicons name="close-circle" size={24} color={colors.error} />
+                      <AppIcon name="close-circle" size={24} color={colors.error} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -703,7 +703,7 @@ export default function QuestionModal({
 
           {questionType !== 'true-false' && options.length < 8 && (
             <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddOption}>
-              <Ionicons name="add-circle" size={20} color={colors.primary} />
+              <AppIcon name="add-circle" size={20} color={colors.primary} />
               <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Option</Text>
             </TouchableOpacity>
           )}
@@ -743,7 +743,7 @@ export default function QuestionModal({
                   onChangeText={(text) => handleMatchingPairChange(pair.id, 'left', text)}
                 />
                 <View style={[styles.matchingArrow, themed.matchingArrow]}>
-                  <Ionicons name="arrow-forward" size={18} color={colors.primary} />
+                  <AppIcon name="arrow-forward" size={18} color={colors.primary} />
                 </View>
                 <TextInput
                   style={[styles.matchingInput, themed.input]}
@@ -758,7 +758,7 @@ export default function QuestionModal({
                   style={styles.removeOption}
                   onPress={() => handleRemoveMatchingPair(pair.id)}
                 >
-                  <Ionicons name="close-circle" size={22} color={colors.error} />
+                  <AppIcon name="close-circle" size={22} color={colors.error} />
                 </TouchableOpacity>
               )}
             </View>
@@ -766,7 +766,7 @@ export default function QuestionModal({
 
           {matchingPairs.length < 8 && (
             <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddMatchingPair}>
-              <Ionicons name="add-circle" size={20} color={colors.primary} />
+              <AppIcon name="add-circle" size={20} color={colors.primary} />
               <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Pair</Text>
             </TouchableOpacity>
           )}
@@ -791,7 +791,7 @@ export default function QuestionModal({
                 style={styles.removeImageButton}
                 onPress={() => removeImage('diagram')}
               >
-                <Ionicons name="close-circle" size={28} color={colors.error} />
+                <AppIcon name="close-circle" size={28} color={colors.error} />
               </TouchableOpacity>
             </View>
           ) : (
@@ -799,7 +799,7 @@ export default function QuestionModal({
               style={[styles.imageUploadButton, themed.imageUpload]}
               onPress={() => pickImage('diagram')}
             >
-              <Ionicons name="image" size={32} color={colors.primary} />
+              <AppIcon name="image" size={32} color={colors.primary} />
               <Text style={[styles.imageUploadText, { color: colors.primary }]}>Upload Diagram</Text>
             </TouchableOpacity>
           )}
@@ -826,7 +826,7 @@ export default function QuestionModal({
                   style={styles.removeOption}
                   onPress={() => handleRemoveDiagramLabel(label.id)}
                 >
-                  <Ionicons name="close-circle" size={22} color={colors.error} />
+                  <AppIcon name="close-circle" size={22} color={colors.error} />
                 </TouchableOpacity>
               )}
             </View>
@@ -834,7 +834,7 @@ export default function QuestionModal({
 
           {diagramLabels.length < 10 && (
             <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddDiagramLabel}>
-              <Ionicons name="add-circle" size={20} color={colors.primary} />
+              <AppIcon name="add-circle" size={20} color={colors.primary} />
               <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Label</Text>
             </TouchableOpacity>
           )}
@@ -879,7 +879,7 @@ export default function QuestionModal({
         onPress={validateAndSubmit}
         disabled={isSubmitting}
       >
-        <Ionicons name="send" size={20} color="#ffffff" />
+        <AppIcon name="send" size={20} color="#ffffff" />
         <Text style={styles.submitButtonText}>
           {isSubmitting ? 'Submitting...' : 'Submit Question'}
         </Text>
@@ -915,13 +915,13 @@ export default function QuestionModal({
                     style={[styles.backButton, { backgroundColor: colors.background }]}
                     onPress={() => setStep('type')}
                   >
-                    <Ionicons name="arrow-back" size={24} color={colors.text} />
+                    <AppIcon name="arrow-back" size={24} color={colors.text} />
                   </TouchableOpacity>
                 )}
                 <Text style={[styles.title, { color: colors.text }]}>Submit Question</Text>
               </View>
               <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={handleClose}>
-                <Ionicons name="close" size={24} color={colors.text} />
+                <AppIcon name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
 

@@ -298,6 +298,89 @@ router.get(
   })
 );
 
+// ============================================================
+// BROWSE BY COURSE (Gap 3)
+//
+// The course is the durable entry point into the digital marketplace: a bank
+// published in March is still what a stranger finds in November. Both routes
+// sit INSIDE the /api/v1/marketplace mount, so they inherit the private-pilot
+// gate (middleware/marketplaceAccess.ts) exactly like every other listing read
+// — they are commerce, not the shared reference data the gate exempts.
+//
+// Cached hard (600s, plus a public Cache-Control) the way routes/campuses.ts
+// caches its counts: the numbers move slowly and every browse hits them.
+// Publishing already calls `cacheService.deletePattern('marketplace:listings:*')`,
+// which is why both keys live under that prefix — a new bank must not leave a
+// stale zero on its course.
+// ============================================================
+
+// GET /api/v1/marketplace/courses?institutionId&limit — courses with >=1 active listing
+router.get(
+  '/courses',
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceCoursesService, isCourseId } = await import(
+      '../services/marketplaceCourses'
+    );
+    const institutionId =
+      typeof req.query.institutionId === 'string' && isCourseId(req.query.institutionId)
+        ? req.query.institutionId
+        : null;
+    const limitRaw = parseInt(String(req.query.limit ?? ''), 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+
+    const cacheKey = `marketplace:listings:courses:${institutionId || 'all'}:${limit || 'default'}`;
+    const cached = await cacheService.get<unknown>(cacheKey);
+    if (cached) {
+      res.set('Cache-Control', 'public, max-age=600');
+      return res.json({ success: true, data: cached });
+    }
+
+    const data = await getMarketplaceCoursesService(supabaseService).listCoursesWithListings({
+      institutionId,
+      limit,
+    });
+    await cacheService.set(cacheKey, data, 600);
+    res.set('Cache-Control', 'public, max-age=600');
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/marketplace/courses/:courseId/listings?limit&offset — one course page
+router.get(
+  '/courses/:courseId/listings',
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceCoursesService, isCourseId } = await import(
+      '../services/marketplaceCourses'
+    );
+    const courseId = String(req.params.courseId || '');
+    if (!isCourseId(courseId)) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    const limitRaw = parseInt(String(req.query.limit ?? ''), 10);
+    const offsetRaw = parseInt(String(req.query.offset ?? ''), 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+    const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? offsetRaw : 0;
+
+    const cacheKey = `marketplace:listings:course:${courseId}:${limit || 'default'}:${offset}`;
+    const cached = await cacheService.get<unknown>(cacheKey);
+    if (cached) {
+      res.set('Cache-Control', 'public, max-age=600');
+      return res.json({ success: true, data: cached });
+    }
+
+    const data = await getMarketplaceCoursesService(supabaseService).listListingsForCourse(
+      courseId,
+      { limit, offset }
+    );
+    if (!data) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    await cacheService.set(cacheKey, data, 600);
+    res.set('Cache-Control', 'public, max-age=600');
+    res.json({ success: true, data });
+  })
+);
+
 // GET /api/v1/marketplace/listings/:id - Get listing by ID
 router.get(
   '/listings/:id',

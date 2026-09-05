@@ -47,3 +47,18 @@ export {
 
 export { BOTTOM_TAB_BAR_CONTENT_HEIGHT, BottomTabBar, useTabBarClearance } from './BottomTabBar';
 export { ChromeProvider, useChrome } from './ChromeContext';
+// TopBar is deliberately NOT re-exported here. This barrel is imported by
+// ~100 screens; TopBar pulls in the AI-usage service and the auth store, and
+// dragging those into every screen's module graph invites an import cycle.
+// RootNavigator imports it directly, which is the only place that mounts it.
+export {
+  BOTTOM_TABS,
+  TAB_KEY_BY_ROUTE,
+  TAB_LABELS,
+  TAB_ROUTE_BY_KEY,
+  isBottomTab,
+  resolveActiveTab,
+  tabTitle,
+  type BottomTabKey,
+  type TabKey,
+} from './tabRouting';

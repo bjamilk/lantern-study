@@ -12,7 +12,6 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { ScrollView } from 'react-native';
 import {
   useBudgetStore,
@@ -23,6 +22,7 @@ import { summarizeBudgetPlan } from '@lantern/shared/utils';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 export default function SetBudgetScreen() {
   const navigation = useNavigation<any>();
@@ -123,7 +123,7 @@ export default function SetBudgetScreen() {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card }]}>
         <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={24} color={colors.text} />
+          <AppIcon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           {budget ? 'Edit Budget' : 'Set Budget'}
@@ -144,7 +144,7 @@ export default function SetBudgetScreen() {
       >
         {/* Month Display */}
         <View style={[styles.monthContainer, { backgroundColor: colors.card }]}>
-          <Ionicons name="calendar" size={20} color="#6366f1" />
+          <AppIcon name="calendar" size={20} color="#6366f1" />
           <Text style={[styles.monthText, { color: colors.text }]}>{currentMonth}</Text>
         </View>
 
@@ -295,7 +295,7 @@ export default function SetBudgetScreen() {
 
         {/* Info Card */}
         <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
-          <Ionicons name="information-circle" size={24} color="#6366f1" />
+          <AppIcon name="information-circle" size={24} color="#6366f1" />
           <View style={styles.infoContent}>
             <Text style={[styles.infoTitle, { color: colors.text }]}>How budgets work</Text>
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>

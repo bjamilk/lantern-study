@@ -8,7 +8,6 @@ import {
   View,
   findNodeHandle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   BOARD_POST_SUBJECT_MAX,
   COMMUNITY_BOARD_COPY,
@@ -18,6 +17,7 @@ import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { ChatComposer, type MentionCandidate } from '../chat/ChatComposer';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * The board's docked composer (§4.1 region 6).
@@ -135,7 +135,7 @@ export function BoardComposer({
           <Text className="ml-2 flex-1 text-sm text-lantern-text-tertiary" numberOfLines={1}>
             {COMMUNITY_BOARD_COPY.composerPlaceholder}
           </Text>
-          <Ionicons name="camera-outline" size={18} color="#94a3b8" />
+          <AppIcon name="camera" size={18} color="#94a3b8" />
         </Pressable>
       </View>
     );
@@ -171,7 +171,7 @@ export function BoardComposer({
           accessibilityLabel="Close the composer"
           className="ml-1 min-h-[44px] min-w-[44px] items-center justify-center"
         >
-          <Ionicons name="close" size={18} color="#94a3b8" />
+          <AppIcon name="close" size={18} color="#94a3b8" />
         </Pressable>
       </View>
 
@@ -187,7 +187,7 @@ export function BoardComposer({
           {attachingImage ? (
             <ActivityIndicator color={colors.primary} />
           ) : (
-            <Ionicons name="image" size={16} color={colors.primary} />
+            <AppIcon name="image" size={16} color={colors.primary} />
           )}
           <Text
             accessibilityLiveRegion="polite"
@@ -203,7 +203,7 @@ export function BoardComposer({
               accessibilityLabel={COMMUNITY_BOARD_COPY.removePhoto}
               className="ml-1 min-h-[44px] min-w-[44px] items-center justify-center -mr-2"
             >
-              <Ionicons name="close-circle" size={20} color="#94a3b8" />
+              <AppIcon name="close-circle" size={20} color="#94a3b8" />
             </Pressable>
           ) : null}
         </View>

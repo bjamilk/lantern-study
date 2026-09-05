@@ -18,7 +18,6 @@ import {
   useScreenBottomPadding,
   useScreenInsets,
 } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import {
   useMarketplaceStore,
   useAuthStore,
@@ -64,6 +63,7 @@ import { ListingTakedownNotice } from '../../components/moderation/ListingTakedo
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 
 import { useMarketplacePaymentsConfig } from '../../hooks/useMarketplacePaymentsConfig';
+import { AppIcon } from '../../components/ui/AppIcon';
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -79,9 +79,10 @@ function StarRow({ rating }: { rating: number }) {
   return (
     <View className="flex-row gap-0.5">
       {[1, 2, 3, 4, 5].map(i => (
-        <Ionicons
+        <AppIcon
           key={i}
-          name={i <= rating ? 'star' : 'star-outline'}
+          name="star"
+          filled={i <= rating}
           size={14}
           color={i <= rating ? '#f59e0b' : '#94a3b8'}
         />
@@ -547,26 +548,27 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     <Screen bottom="none">
       <View className="px-4 pt-2 pb-2 flex-row items-center justify-between">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-row items-center gap-1">
           {/* Cart and You on the product page, as on every Amazon page. */}
           <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
           {!own && user?.id ? (
             <Pressable onPress={() => void toggleFavorite(listing.id, user.id)} className="p-2">
-              <Ionicons
-                name={favorited ? 'heart' : 'heart-outline'}
+              <AppIcon
+                name="heart"
+                filled={favorited}
                 size={22}
                 color={favorited ? '#ef4444' : '#64748b'}
               />
             </Pressable>
           ) : null}
           <Pressable onPress={handleShare} className="p-2">
-            <Ionicons name="share-outline" size={22} color="#64748b" />
+            <AppIcon name="share" size={22} color="#64748b" />
           </Pressable>
           {!own ? (
             <Pressable onPress={() => setShowReport(true)} className="p-2">
-              <Ionicons name="flag-outline" size={22} color="#64748b" />
+              <AppIcon name="flag" size={22} color="#64748b" />
             </Pressable>
           ) : null}
         </View>
@@ -671,7 +673,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
           {listing.location ? (
             <View className="flex-row items-center gap-1.5 mt-3">
-              <Ionicons name="location-outline" size={16} color="#64748b" />
+              <AppIcon name="location" size={16} color="#64748b" />
               <Text className="text-sm text-lantern-text-secondary">{listing.location}</Text>
             </View>
           ) : null}
@@ -741,7 +743,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                   : 'View seller profile'}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+            <AppIcon name="chevron-forward" size={18} color="#94a3b8" />
           </Pressable>
 
           <Card className="mt-4">
@@ -916,7 +918,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                         className={`flex-row items-center gap-1.5 py-0.5 ${bucketCount === 0 && !active ? 'opacity-40' : ''}`}
                       >
                         <Text className="w-3 text-[11px] text-lantern-text-secondary">{star}</Text>
-                        <Ionicons name="star" size={9} color="#f59e0b" />
+                        <AppIcon name="star" size={9} color="#f59e0b" />
                         <View className="flex-1 h-1.5 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary overflow-hidden">
                           <View
                             className={`h-full rounded-full ${active ? 'bg-lantern-primary' : 'bg-amber-400'}`}
@@ -966,7 +968,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                     <Text className="text-[10px] font-semibold text-lantern-primary">
                       {reviewStarFilter}-star only
                     </Text>
-                    <Ionicons name="close" size={11} color="#6366f1" />
+                    <AppIcon name="close" size={11} color="#6366f1" />
                   </Pressable>
                 ) : null}
               </View>
@@ -991,7 +993,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                       </Text>
                       {review.verifiedPurchase ? (
                         <View className="flex-row items-center gap-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5">
-                          <Ionicons name="checkmark-circle" size={10} color="#059669" />
+                          <AppIcon name="checkmark-circle" size={10} color="#059669" />
                           <Text className="text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
                             Verified purchase
                           </Text>
@@ -1062,7 +1064,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                       </Text>
                       {(item.rating_count ?? 0) > 0 && item.rating_avg != null ? (
                         <View className="flex-row items-center gap-0.5 mt-0.5">
-                          <Ionicons name="star" size={10} color="#f59e0b" />
+                          <AppIcon name="star" size={10} color="#f59e0b" />
                           <Text className="text-[10px] text-lantern-text-secondary">
                             {Number(item.rating_avg).toFixed(1)} ({item.rating_count})
                           </Text>
@@ -1288,7 +1290,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
             <View className="flex-row gap-2 mb-4">
               {[1, 2, 3, 4, 5].map(i => (
                 <Pressable key={i} onPress={() => setReviewRating(i)}>
-                  <Ionicons name={i <= reviewRating ? 'star' : 'star-outline'} size={28} color="#f59e0b" />
+                  <AppIcon name="star" filled={i <= reviewRating} size={28} color="#f59e0b" />
                 </Pressable>
               ))}
             </View>

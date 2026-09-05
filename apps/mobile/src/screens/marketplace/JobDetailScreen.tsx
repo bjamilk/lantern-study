@@ -9,7 +9,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import {
   useNavigation,
   useRoute,
@@ -45,6 +44,7 @@ import {
 import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
 import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 /** Days until the deadline (ceil), negative once it has passed; null when unset. */
 function jobDeadlineDaysLeft(value?: string | null): number | null {
@@ -236,8 +236,9 @@ export function JobDetailScreen() {
                   }
                   className="-mr-1 p-1"
                 >
-                  <Ionicons
-                    name={job.isSaved ? "bookmark" : "bookmark-outline"}
+                  <AppIcon
+                    name="bookmark"
+                    filled={!!job.isSaved}
                     size={22}
                     color={job.isSaved ? "#0f766e" : "#94a3b8"}
                   />

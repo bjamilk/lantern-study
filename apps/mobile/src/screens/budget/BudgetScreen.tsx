@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-gifted-charts';
 import {
   useBudgetStore,
@@ -45,18 +44,19 @@ import * as api from '../../services/api';
 import { featureAccents } from '@lantern/shared/design';
 import StudyWalletPanel from './StudyWalletPanel';
 import { useChrome } from '../../components/layout/ChromeContext';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 const { width } = Dimensions.get('window');
 
 type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights' | 'wallet';
 type TxFilter = 'all' | 'income' | 'expense';
 
-const TABS: { key: BudgetTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'overview', label: 'Overview', icon: 'pie-chart-outline' },
-  { key: 'transactions', label: 'Transactions', icon: 'receipt-outline' },
-  { key: 'goals', label: 'Goals', icon: 'trophy-outline' },
-  { key: 'wallet', label: 'Study wallet', icon: 'wallet-outline' },
-  { key: 'insights', label: 'Insights', icon: 'bulb-outline' },
+const TABS: { key: BudgetTab; label: string; icon: AppIconName }[] = [
+  { key: 'overview', label: 'Overview', icon: 'pie-chart' },
+  { key: 'transactions', label: 'Transactions', icon: 'receipt' },
+  { key: 'goals', label: 'Goals', icon: 'trophy' },
+  { key: 'wallet', label: 'Study wallet', icon: 'wallet' },
+  { key: 'insights', label: 'Insights', icon: 'bulb' },
 ];
 
 export default function BudgetScreen() {
@@ -305,7 +305,7 @@ export default function BudgetScreen() {
               className="p-2 rounded-xl bg-lantern-primary-background min-w-[44px] min-h-[44px] items-center justify-center"
               onPress={() => navigation.navigate('SetBudget')}
             >
-              <Ionicons name="settings-outline" size={22} color={featureAccents.budget} />
+              <AppIcon name="settings" size={22} color={featureAccents.budget} />
             </TouchableOpacity>
           }
         >
@@ -337,7 +337,7 @@ export default function BudgetScreen() {
             accessibilityRole="tab"
             accessibilityState={{ selected: activeTab === tab.key }}
           >
-            <Ionicons
+            <AppIcon
               name={tab.icon}
               size={16}
               color={activeTab === tab.key ? featureAccents.budget : colors.textSecondary}
@@ -380,7 +380,7 @@ export default function BudgetScreen() {
             style={styles.monthArrow}
             accessibilityLabel="Previous month"
           >
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
+            <AppIcon name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.monthLabelWrap}>
             <Text style={[styles.monthLabel, { color: colors.text }]}>
@@ -401,7 +401,7 @@ export default function BudgetScreen() {
             ]}
             accessibilityLabel="Next month"
           >
-            <Ionicons name="chevron-forward" size={20} color={colors.text} />
+            <AppIcon name="chevron-forward" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
 
@@ -418,7 +418,7 @@ export default function BudgetScreen() {
                 : "You've used 80% or more of your monthly budget."}
             </Text>
             <TouchableOpacity onPress={() => setBudgetBannerDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close" size={18} color="rgba(255,255,255,0.85)" />
+              <AppIcon name="close" size={18} color="rgba(255,255,255,0.85)" />
             </TouchableOpacity>
           </View>
         )}
@@ -470,7 +470,7 @@ export default function BudgetScreen() {
               {/* Pace — "85% spent" means nothing without knowing it is day 3. */}
               {spendPace.verdict !== 'no-budget' && (
                 <View style={styles.paceRow}>
-                  <Ionicons
+                  <AppIcon
                     name={
                       spendPace.verdict === 'over'
                         ? 'alert-circle'
@@ -498,8 +498,8 @@ export default function BudgetScreen() {
             </>
           ) : (
             <View style={[styles.noBudgetContainer, { borderColor: colors.border }]}>
-              <Ionicons
-                name={historyError ? 'cloud-offline-outline' : 'wallet-outline'}
+              <AppIcon
+                name={historyError ? 'cloud-offline' : 'wallet'}
                 size={40}
                 color={colors.textSecondary}
               />
@@ -602,7 +602,7 @@ export default function BudgetScreen() {
             style={[styles.actionButton, styles.expenseButton]}
             onPress={() => navigation.navigate('AddExpense')}
           >
-            <Ionicons name="arrow-down" size={24} color="#ffffff" />
+            <AppIcon name="arrow-down" size={24} color="#ffffff" />
             <Text style={styles.actionButtonText}>Add Expense</Text>
           </TouchableOpacity>
 
@@ -610,7 +610,7 @@ export default function BudgetScreen() {
             style={[styles.actionButton, styles.incomeButton]}
             onPress={() => navigation.navigate('AddIncome')}
           >
-            <Ionicons name="arrow-up" size={24} color="#ffffff" />
+            <AppIcon name="arrow-up" size={24} color="#ffffff" />
             <Text style={styles.actionButtonText}>Add Income</Text>
           </TouchableOpacity>
         </View>
@@ -618,22 +618,22 @@ export default function BudgetScreen() {
         {/* Extended tools */}
         <View style={[styles.sectionCard, { backgroundColor: colors.card, marginBottom: 16 }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>More tools</Text>
-          {[
-            { label: 'Savings goals', icon: 'flag-outline', route: 'SavingsGoals' },
-            { label: 'Recurring', icon: 'repeat-outline', route: 'Recurring' },
-            { label: 'Expense splits', icon: 'people-outline', route: 'ExpenseSplit' },
-            { label: 'Category budgets', icon: 'grid-outline', route: 'SetCategoryBudget' },
-            { label: 'Financial toolkit', icon: 'analytics-outline', route: 'FinancialToolkit' },
-            { label: 'Add investment', icon: 'trending-up-outline', route: 'AddInvestment' },
-          ].map(item => (
+          {([
+            { label: 'Savings goals', icon: 'flag', route: 'SavingsGoals' },
+            { label: 'Recurring', icon: 'repeat', route: 'Recurring' },
+            { label: 'Expense splits', icon: 'people', route: 'ExpenseSplit' },
+            { label: 'Category budgets', icon: 'grid', route: 'SetCategoryBudget' },
+            { label: 'Financial toolkit', icon: 'analytics', route: 'FinancialToolkit' },
+            { label: 'Add investment', icon: 'trending-up', route: 'AddInvestment' },
+          ] as { label: string; icon: AppIconName; route: string }[]).map(item => (
             <TouchableOpacity
               key={item.route}
               style={[styles.menuRow, { borderBottomColor: colors.border }]}
               onPress={() => navigation.navigate(item.route)}
             >
-              <Ionicons name={item.icon as any} size={20} color={featureAccents.budget} />
+              <AppIcon name={item.icon} size={20} color={featureAccents.budget} />
               <Text style={[styles.menuRowText, { color: colors.text }]}>{item.label}</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              <AppIcon name="chevron-forward" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           ))}
         </View>
@@ -673,7 +673,7 @@ export default function BudgetScreen() {
             </View>
           ) : (
             <View style={styles.emptyChart}>
-              <Ionicons name="pie-chart-outline" size={48} color={colors.textSecondary} />
+              <AppIcon name="pie-chart" size={48} color={colors.textSecondary} />
               <Text style={[styles.emptyChartText, { color: colors.textSecondary }]}>No expenses logged this month</Text>
             </View>
           )}
@@ -723,7 +723,7 @@ export default function BudgetScreen() {
                           : styles.expenseIcon,
                       ]}
                     >
-                      <Ionicons
+                      <AppIcon
                         name={transaction.type === 'INCOME' ? 'arrow-up' : 'arrow-down'}
                         size={18}
                         color={transaction.type === 'INCOME' ? '#22c55e' : '#ef4444'}
@@ -753,7 +753,7 @@ export default function BudgetScreen() {
                         style={styles.deleteButton}
                         onPress={() => handleDeleteTransaction(transaction)}
                       >
-                        <Ionicons name="trash-outline" size={16} color={colors.textSecondary} />
+                        <AppIcon name="trash" size={16} color={colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -761,7 +761,7 @@ export default function BudgetScreen() {
               </View>
             ) : (
               <View style={styles.emptyTransactions}>
-                <Ionicons name="receipt-outline" size={48} color={colors.textSecondary} />
+                <AppIcon name="receipt" size={48} color={colors.textSecondary} />
                 <Text style={[styles.emptyTransactionsText, { color: colors.textSecondary }]}>
                   No transactions this month
                 </Text>
@@ -772,14 +772,14 @@ export default function BudgetScreen() {
                 style={[styles.actionButton, styles.expenseButton]}
                 onPress={() => navigation.navigate('AddExpense')}
               >
-                <Ionicons name="arrow-down" size={20} color="#ffffff" />
+                <AppIcon name="arrow-down" size={20} color="#ffffff" />
                 <Text style={styles.actionButtonText}>Expense</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionButton, styles.incomeButton]}
                 onPress={() => navigation.navigate('AddIncome')}
               >
-                <Ionicons name="arrow-up" size={20} color="#ffffff" />
+                <AppIcon name="arrow-up" size={20} color="#ffffff" />
                 <Text style={styles.actionButtonText}>Income</Text>
               </TouchableOpacity>
             </View>
@@ -838,12 +838,12 @@ export default function BudgetScreen() {
               style={[styles.sectionCard, { backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', gap: 12 }]}
               onPress={() => selectTab('wallet')}
             >
-              <Ionicons name="wallet-outline" size={24} color="#6366f1" />
+              <AppIcon name="wallet" size={24} color="#6366f1" />
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text, fontWeight: '600' }}>Study wallet</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{walletBalance} coins</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              <AppIcon name="chevron-forward" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </>
         )}
@@ -885,12 +885,12 @@ export default function BudgetScreen() {
               onPress={() => navigation.navigate('FinancialToolkit')}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Ionicons name="bulb-outline" size={28} color="#06b6d4" />
+                <AppIcon name="bulb" size={28} color="#06b6d4" />
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: colors.text, fontWeight: '600' }}>Financial toolkit</Text>
                   <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Tips, simulator & calculator</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                <AppIcon name="chevron-forward" size={18} color={colors.textSecondary} />
               </View>
             </TouchableOpacity>
             {pieData.length > 0 ? (

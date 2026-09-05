@@ -8,12 +8,12 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Linking, Modal, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { SUPPORT_EMAIL, buildSupportMailtoUrl } from '@lantern/shared/contactForm';
 import { Button } from '../ui';
 import { useModerationStore } from '../../stores/moderationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { formatSuspendedUntil, probeAccountSuspension } from '../../services/accountSuspension';
+import { AppIcon } from '../ui/AppIcon';
 
 export function AccountSuspendedBanner() {
   const suspendedUntil = useModerationStore((s) => s.suspendedUntil);
@@ -60,7 +60,7 @@ export function AccountSuspendedBanner() {
       <View className="flex-1 bg-black/60 items-center justify-center px-5">
         <View className="w-full rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 p-5 gap-3">
           <View className="flex-row items-center gap-2">
-            <Ionicons name="pause-circle-outline" size={22} color="#b45309" />
+            <AppIcon name="pause-circle" size={22} color="#b45309" />
             <Text className="text-base font-semibold text-amber-950 dark:text-amber-100 flex-1">
               Your account is suspended
             </Text>

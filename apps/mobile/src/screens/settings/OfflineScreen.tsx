@@ -21,7 +21,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useOfflineStore, OfflineTest, PendingResult } from '../../stores/offlineStore';
 import { matchesCourseFilter } from '../../utils/libraryArchive';
 import { useTestStore } from '../../stores/testStore';
@@ -34,6 +33,7 @@ import { PublishQuestionBankModal } from './PublishQuestionBankModal';
 import { getConnectionStatus, syncCopy, featureAccents } from '@lantern/shared/design';
 import { useNetworkStatus } from '../../hooks';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 // Question type options
 const QUESTION_TYPES = [
@@ -269,7 +269,7 @@ export default function OfflineScreen() {
     <View style={[styles.testItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.testInfo}>
         <View style={styles.testHeader}>
-          <Ionicons name="document-text" size={20} color={colors.primary} />
+          <AppIcon name="document-text" size={20} color={colors.primary} />
           <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{test.testName}</Text>
           {/* Marketplace purchases carry the qbank- bundle id (see web parity). */}
           {test.id.startsWith('qbank-') ? (
@@ -283,11 +283,11 @@ export default function OfflineScreen() {
         </Text>
         <View style={styles.testDetails}>
           <View style={styles.detailBadge}>
-            <Ionicons name="cloud-download" size={12} color={colors.textTertiary} />
+            <AppIcon name="cloud-download" size={12} color={colors.textTertiary} />
             <Text style={[styles.detailText, { color: colors.textTertiary }]}>{formatDate(test.downloadedAt)}</Text>
           </View>
           <View style={styles.detailBadge}>
-            <Ionicons name="server" size={12} color={colors.textTertiary} />
+            <AppIcon name="server" size={12} color={colors.textTertiary} />
             <Text style={[styles.detailText, { color: colors.textTertiary }]}>{formatSize(test.size)}</Text>
           </View>
         </View>
@@ -301,7 +301,7 @@ export default function OfflineScreen() {
             onPress={() => setPublishTarget(test)}
             accessibilityLabel="Publish to marketplace"
           >
-            <Ionicons name="storefront-outline" size={18} color={colors.primary} />
+            <AppIcon name="storefront" size={18} color={colors.primary} />
           </TouchableOpacity>
         ) : null}
         {/* Icon-only: with publish + delete this row holds four controls, and
@@ -311,21 +311,21 @@ export default function OfflineScreen() {
           onPress={() => handleStartOfflineTest(test, 'study')}
           accessibilityLabel="Study this bundle (untimed, unscored)"
         >
-          <Ionicons name="book-outline" size={18} color={colors.primary} />
+          <AppIcon name="book" size={18} color={colors.primary} />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.startButton, { backgroundColor: colors.primary }]}
           onPress={() => handleStartOfflineTest(test, 'test')}
           accessibilityLabel="Take this bundle as a scored test"
         >
-          <Ionicons name="play" size={18} color="#ffffff" />
+          <AppIcon name="play" size={18} color="#ffffff" />
         </TouchableOpacity>
         
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={() => handleDeleteTest(test)}
         >
-          <Ionicons name="trash" size={18} color="#ef4444" />
+          <AppIcon name="trash" size={18} color="#ef4444" />
         </TouchableOpacity>
       </View>
     </View>
@@ -353,7 +353,7 @@ export default function OfflineScreen() {
         styles.syncBadge,
         result.synced ? styles.syncedBadge : styles.pendingBadge
       ]}>
-        <Ionicons 
+        <AppIcon 
           name={result.synced ? 'checkmark-circle' : 'time'} 
           size={14} 
           color={result.synced ? '#10b981' : '#f59e0b'} 
@@ -379,7 +379,7 @@ export default function OfflineScreen() {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+            <AppIcon name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
         )}
         <Text style={[styles.headerTitle, { color: colors.text }]}>Offline Mode</Text>
@@ -409,7 +409,7 @@ export default function OfflineScreen() {
         {/* Storage Status */}
         <View style={[styles.storageCard, { backgroundColor: colors.card }]}>
           <View style={styles.storageHeader}>
-            <Ionicons name="folder" size={24} color={featureAccents.offline} />
+            <AppIcon name="folder" size={24} color={featureAccents.offline} />
             <View style={styles.storageInfo}>
               <Text style={[styles.storageTitle, { color: colors.text }]}>Offline Storage</Text>
               <Text style={[styles.storageSize, { color: colors.textSecondary }]}>
@@ -444,7 +444,7 @@ export default function OfflineScreen() {
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <>
-                  <Ionicons name="cloud-upload" size={18} color="#ffffff" />
+                  <AppIcon name="cloud-upload" size={18} color="#ffffff" />
                   <Text style={styles.syncButtonText}>Sync Results</Text>
                 </>
               )}
@@ -468,7 +468,7 @@ export default function OfflineScreen() {
                   maxWidth: '70%',
                 }}
               >
-                <Ionicons name="school-outline" size={14} color={colors.primary} />
+                <AppIcon name="school" size={14} color={colors.primary} />
                 <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
                   {courseFilter.label}
                 </Text>
@@ -481,7 +481,7 @@ export default function OfflineScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Clear course filter ${courseFilter.label}`}
                 >
-                  <Ionicons name="close-circle" size={16} color={colors.primary} />
+                  <AppIcon name="close-circle" size={16} color={colors.primary} />
                 </TouchableOpacity>
               </View>
               <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
@@ -508,7 +508,7 @@ export default function OfflineScreen() {
             ]}
             onPress={() => setSelectedTab('downloads')}
           >
-            <Ionicons 
+            <AppIcon 
               name="download" 
               size={18} 
               color={selectedTab === 'downloads' ? colors.primary : colors.textTertiary} 
@@ -529,7 +529,7 @@ export default function OfflineScreen() {
             ]}
             onPress={() => setSelectedTab('pending')}
           >
-            <Ionicons 
+            <AppIcon 
               name="time" 
               size={18} 
               color={selectedTab === 'pending' ? colors.primary : colors.textTertiary} 
@@ -560,7 +560,7 @@ export default function OfflineScreen() {
                       <TouchableOpacity
                         onPress={() => unmarkDeckOffline(id)}
                       >
-                        <Ionicons name="trash" size={18} color="#ef4444" />
+                        <AppIcon name="trash" size={18} color="#ef4444" />
                       </TouchableOpacity>
                     </View>
                   );
@@ -572,7 +572,7 @@ export default function OfflineScreen() {
               disabled={restoringBanks}
               onPress={() => void handleRestoreQuestionBanks()}
             >
-              <Ionicons name="bag-handle-outline" size={16} color={colors.primary} />
+              <AppIcon name="bag-handle" size={16} color={colors.primary} />
               <Text style={[styles.restoreButtonText, { color: colors.primary }]}>
                 {restoringBanks ? 'Restoring…' : 'Restore marketplace purchases'}
               </Text>
@@ -586,7 +586,7 @@ export default function OfflineScreen() {
               </>
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="cloud-download" size={48} color={colors.textTertiary} />
+                <AppIcon name="cloud-download" size={48} color={colors.textTertiary} />
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>
                   {courseFilter && downloadedTests.length > 0 ? `Nothing filed under ${courseFilter.label}` : 'No Downloads Yet'}
                 </Text>
@@ -610,7 +610,7 @@ export default function OfflineScreen() {
               </>
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="checkmark-circle" size={48} color="#10b981" />
+                <AppIcon name="checkmark-circle" size={48} color="#10b981" />
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>All Synced!</Text>
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                   All your offline test results have been synced
@@ -623,7 +623,7 @@ export default function OfflineScreen() {
         {/* Clear Data */}
         {(downloadedTests.length > 0 || pendingResults.length > 0) && (
           <TouchableOpacity style={styles.clearButton} onPress={handleClearAll}>
-            <Ionicons name="trash" size={18} color="#ef4444" />
+            <AppIcon name="trash" size={18} color="#ef4444" />
             <Text style={styles.clearButtonText}>Clear All Offline Data</Text>
           </TouchableOpacity>
         )}

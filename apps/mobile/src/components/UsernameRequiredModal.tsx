@@ -20,7 +20,6 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Course } from '@lantern/shared/types';
 import { currentAcademicYear, semesterLabel, studyLevelLabel } from '@lantern/shared/academic';
@@ -34,6 +33,7 @@ import { CampusPicker } from '../screens/marketplace/CampusPicker';
 import { StudyLevelPicker } from './academic/StudyLevelPicker';
 import { SemesterPicker } from './academic/SemesterPicker';
 import { CourseMultiSelect } from './academic/CourseMultiSelect';
+import { AppIcon } from './ui/AppIcon';
 
 interface User {
   id: string;
@@ -306,7 +306,7 @@ export default function UsernameRequiredModal({
           keyboardShouldPersistTaps="handled"
         >
           <View style={[styles.infoBox, { backgroundColor: colors.primaryLight || '#EBF5FF' }]}>
-            <Ionicons name="school" size={24} color={colors.primary} />
+            <AppIcon name="school" size={24} color={colors.primary} />
             <Text style={[styles.infoText, { color: colors.text }]}>{intro}</Text>
           </View>
 
@@ -316,7 +316,7 @@ export default function UsernameRequiredModal({
               <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: colors.textSecondary }]}>First Name</Text>
                 <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-                  <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+                  <AppIcon name="person" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
                   <TextInput
                     style={[styles.input, { color: colors.inputText }]}
                     placeholder="First name"
@@ -333,7 +333,7 @@ export default function UsernameRequiredModal({
               <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: colors.textSecondary }]}>Last Name</Text>
                 <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-                  <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+                  <AppIcon name="person" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
                   <TextInput
                     style={[styles.input, { color: colors.inputText }]}
                     placeholder="Last name"
@@ -378,10 +378,10 @@ export default function UsernameRequiredModal({
                     <ActivityIndicator size="small" color={colors.primary} style={styles.inputIconRight} />
                   )}
                   {!checkingUsername && usernameAvailable === true && username.length >= 3 && (
-                    <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
+                    <AppIcon name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
                   )}
                   {!checkingUsername && usernameAvailable === false && (
-                    <Ionicons name="close-circle" size={20} color={colors.error} style={styles.inputIconRight} />
+                    <AppIcon name="close-circle" size={20} color={colors.error} style={styles.inputIconRight} />
                   )}
                 </View>
                 {usernameAvailable === true && username.length >= 3 && (
@@ -427,7 +427,7 @@ export default function UsernameRequiredModal({
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Programme (Optional)</Text>
             <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-              <Ionicons name="book-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+              <AppIcon name="book" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.inputText }]}
                 placeholder="e.g. Medicine and Surgery"
@@ -488,7 +488,7 @@ export default function UsernameRequiredModal({
 
           {error ? (
             <View style={[styles.errorContainer, { backgroundColor: '#FEF2F2' }]}>
-              <Ionicons name="alert-circle" size={20} color="#DC2626" />
+              <AppIcon name="alert-circle" size={20} color="#DC2626" />
               <Text style={[styles.errorContainerText, { color: '#DC2626' }]}>{error}</Text>
             </View>
           ) : null}

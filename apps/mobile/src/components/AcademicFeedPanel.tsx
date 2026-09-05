@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   describeFeedItem,
   learningConnectionLabel,
@@ -8,6 +7,7 @@ import {
   type LearningConnectionSummary,
 } from '@lantern/shared/network';
 import { fetchFeed, fetchLearningConnections } from '../services/api';
+import { AppIcon } from './ui/AppIcon';
 
 /**
  * The academic feed panel on the mobile dashboard (Phase 3 · M).
@@ -82,7 +82,7 @@ export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: Academic
             accessibilityRole="button"
             accessibilityLabel="Open the full feed"
           >
-            <Ionicons name="chevron-forward" size={18} color="#64748b" />
+            <AppIcon name="chevron-forward" size={18} color="#64748b" />
           </Pressable>
         ) : null}
       </View>

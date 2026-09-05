@@ -16,7 +16,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { Course, UserCourse } from '@lantern/shared/types';
 import { currentAcademicYear, semesterLabel, studyLevelLabel } from '@lantern/shared/academic';
 import { useAuthStore } from '../../stores/authStore';
@@ -38,6 +37,7 @@ import {
 } from '../../services/academic';
 import { formatCourseLabel, isValidExamDateInput, validateAcademicYears } from '../../utils/courseSelection';
 import type { AcademicProfile } from '../../utils/academicProfile';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = { goBack: () => void };
 
@@ -260,7 +260,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
     <Screen keyboard bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Pressable onPress={() => navigation.goBack()} style={styles.headerButton} accessibilityLabel="Close">
-          <Ionicons name="close" size={24} color={colors.textSecondary} />
+          <AppIcon name="close" size={24} color={colors.textSecondary} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Academic</Text>
         <View style={styles.headerButton} />
@@ -406,7 +406,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
                     accessibilityRole="button"
                     accessibilityLabel={`Remove ${row.course.code}`}
                   >
-                    <Ionicons name="trash-outline" size={18} color={colors.error} />
+                    <AppIcon name="trash" size={18} color={colors.error} />
                   </Pressable>
                 </View>
                 <View style={styles.examRow}>
@@ -434,7 +434,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
                     {savingExamFor === row.course.id ? (
                       <ActivityIndicator size="small" color={dirty ? colors.textInverse : colors.primary} />
                     ) : (
-                      <Ionicons name="checkmark" size={18} color={dirty ? colors.textInverse : colors.textTertiary} />
+                      <AppIcon name="checkmark" size={18} color={dirty ? colors.textInverse : colors.textTertiary} />
                     )}
                   </Pressable>
                 </View>
@@ -452,7 +452,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <>
-                <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+                <AppIcon name="archive" size={16} color={colors.textSecondary} />
                 <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>Archive this semester</Text>
               </>
             )}

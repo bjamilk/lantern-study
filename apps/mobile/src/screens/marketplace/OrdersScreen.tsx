@@ -11,7 +11,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMarketplaceStore } from '../../stores/marketplaceStore';
-import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { fetchMarketplaceOrders, resumeMarketplaceOrderCheckout } from '../../services/api';
 // The same predicates drive the You badge count, so a row sorted to the top is
@@ -23,6 +22,7 @@ import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { OrderStatusPill } from './components/OrderStatusPill';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -198,7 +198,7 @@ export function OrdersScreen({
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 py-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-xl font-bold text-lantern-text ml-2">{title}</Text>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />

@@ -12,6 +12,19 @@
   }
 }
 
+/* ===== Icon weight =====
+   Heroicons 24/outline ships stroke-width 1.5 as an SVG presentation
+   attribute, which reads as a hairline on a phone screen — the same
+   "their outline feels too thin" the mobile icons had. A CSS rule beats a
+   presentation attribute, so this one line lifts every outline glyph at once
+   and keeps mobile and web at the same weight.
+
+   `data-slot="icon"` is on every heroicon and nothing else, so the solid
+   (fill-based) set, hand-drawn SVGs and spinner rings are untouched. */
+svg[data-slot="icon"] {
+  stroke-width: 1.85;
+}
+
 /* ===== Lantern Design Tokens (CSS Variables) ===== */
 :root {
   /* Warm off-white: hsl(30°, 50%, 96%) */

@@ -53,7 +53,7 @@ export function ChatWallpaperSheet({
     const rows: ActionSheetItem[] = [
       {
         label: 'Choose a photo',
-        icon: 'image-outline',
+        icon: 'image',
         // Preparing a large photo takes seconds on a cheap Android. A second
         // run would race the first and could delete the winner's file, so the
         // row is closed until the current one finishes.
@@ -91,7 +91,7 @@ export function ChatWallpaperSheet({
     if (!isDefaultScope && overridden && manifest.default) {
       rows.push({
         label: 'Use my default background',
-        icon: 'refresh-outline',
+        icon: 'refresh',
         hint: 'Match the rest of your chats',
         accessibilityLabel: 'Use my default background in this chat',
         onPress: () => {
@@ -102,7 +102,7 @@ export function ChatWallpaperSheet({
 
     rows.push({
       label: 'No background',
-      icon: 'close-circle-outline',
+      icon: 'close-circle',
       hint: 'Back to the plain chat colour',
       // Nothing to undo: this scope already resolves to plain and carries no
       // override to clear.

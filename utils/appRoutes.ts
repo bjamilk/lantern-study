@@ -21,6 +21,43 @@ export type BudgetTabParam = 'overview' | 'transactions' | 'goals' | 'wallet';
 export const isBudgetTabParam = (value: unknown): value is BudgetTabParam =>
   value === 'overview' || value === 'transactions' || value === 'goals' || value === 'wallet';
 
+/**
+ * Campus is ONE destination with three segments. Each segment keeps its own
+ * URL (a segment is a place you can link to and go Back to) and its own
+ * AppMode, because the three are rendered by three different screens.
+ *
+ * The old entry points — `/discover`, `/marketplace`, `/marketplace/jobs` —
+ * redirect here. Their sub-paths (`/marketplace/listing/:id`, `/discover/c/:slug`,
+ * `/marketplace/jobs/:id`, …) are NOT entry points and keep their URLs: they
+ * are detail screens reached from a segment, and every link already minted
+ * points at them.
+ */
+export type CampusSegment = 'communities' | 'shop' | 'jobs';
+
+export const CAMPUS_SEGMENTS: readonly CampusSegment[] = ['communities', 'shop', 'jobs'];
+
+export const isCampusSegment = (value: unknown): value is CampusSegment =>
+  value === 'communities' || value === 'shop' || value === 'jobs';
+
+/**
+ * `/campus` is the Communities segment, not a fourth landing page: a
+ * destination that shows nothing until you pick a tab is a menu, not a place.
+ */
+export function campusSegmentPath(segment: CampusSegment): string {
+  if (segment === 'shop') return '/campus/shop';
+  if (segment === 'jobs') return '/campus/jobs';
+  return '/campus';
+}
+
+export function campusSegmentMode(segment: CampusSegment): AppMode {
+  if (segment === 'shop') return AppMode.MARKETPLACE;
+  if (segment === 'jobs') return AppMode.MARKETPLACE_JOBS;
+  return AppMode.DISCOVER;
+}
+
+/** The Me destination has no AppMode: it is a route App.tsx renders directly. */
+export const ME_PATH = '/me';
+
 export interface AppRouteParams {
   groupId?: string;
   threadId?: string;
@@ -49,6 +86,8 @@ export interface AppRouteParams {
   libraryTab?: LibraryTabParam;
   /** Budget Wallet tab — `/budget/wallet`. Other budget tabs stay on `/budget`. */
   budgetTab?: BudgetTabParam;
+  /** Which Campus segment `/campus`, `/campus/shop` or `/campus/jobs` names. */
+  campusSegment?: CampusSegment;
 }
 
 export interface ParsedAppRoute {
@@ -60,6 +99,19 @@ export interface ParsedAppRoute {
   shareToken?: string;
   clearChat?: boolean;
   clearDeck?: boolean;
+  /**
+   * A signed-in route App.tsx renders straight from the path, with no AppMode
+   * behind it — the same shape `/invite/:id` and `/notes/share/:token` already
+   * use. `useRouteSync` must leave these alone: they are neither a mode to
+   * hydrate nor an unknown path to bounce to the dashboard.
+   */
+  standalone?: 'me';
+}
+
+/** The single capture group of `pattern`, decoded — `null` when it is absent. */
+function segment(path: string, pattern: RegExp): string | null {
+  const raw = path.match(pattern)?.[1];
+  return raw ? decodeURIComponent(raw) : null;
 }
 
 function normalizePath(pathname: string): string {
@@ -89,6 +141,24 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return params.slug
         ? `/campus/${encodeURIComponent(params.slug)}${params.programme ? `/${encodeURIComponent(params.programme)}` : ''}`
         : '/campus';
+    case AppMode.TEST_ACTIVE:
+      return '/tests/active';
+    case AppMode.TEST_REVIEW:
+      return '/tests/review';
+    case AppMode.STUDY_ACTIVE:
+      return '/study/session';
+    case AppMode.GAME_ACTIVE:
+      return '/game';
+    case AppMode.GAME_RESULTS:
+      return '/game/results';
+    case AppMode.FLASHCARD_REVIEW:
+      return '/flashcards/review';
+    case AppMode.FLASHCARD_CRAM:
+      return '/flashcards/cram';
+    case AppMode.FLASHCARD_MATCH:
+      return '/flashcards/match';
+    case AppMode.FLASHCARD_LEARN:
+      return '/flashcards/learn';
     case AppMode.INVITE_FRIENDS:
       return '/invite';
     case AppMode.SEMESTER_PRODUCTS:
@@ -97,24 +167,26 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return params.roomId
         ? `/study-room/${encodeURIComponent(params.roomId)}`
         : '/study-room';
+    // Campus, three segments. `/discover`, `/marketplace` and
+    // `/marketplace/jobs` still parse (and redirect here) so old links live.
     case AppMode.DISCOVER:
-      return '/discover';
+      return '/campus';
     case AppMode.COMMUNITY_DETAIL:
       // A channel opened from the community stays on the community's own
       // path (founder rule: the community owns its chat), so it reloads
       // with the column out rather than on the chat screen.
-      if (!params.slug) return '/discover';
+      if (!params.slug) return '/campus';
       if (!params.groupId) return `/discover/c/${encodeURIComponent(params.slug)}`;
       const channel = `/discover/c/${encodeURIComponent(params.slug)}/ch/${encodeURIComponent(params.groupId)}`;
       // A post is a sub-path of its board, so Back from an open post lands on
       // the board rather than leaving the community.
       return params.postId ? `${channel}/p/${encodeURIComponent(params.postId)}` : channel;
     case AppMode.MARKETPLACE:
-      return '/marketplace';
+      return '/campus/shop';
     case AppMode.MARKETPLACE_LISTING_DETAIL:
       return params.listingId
         ? `/marketplace/listing/${encodeURIComponent(params.listingId)}`
-        : '/marketplace';
+        : '/campus/shop';
     case AppMode.MARKETPLACE_ORDERS:
       return '/marketplace/orders';
     case AppMode.MARKETPLACE_CART:
@@ -132,17 +204,17 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
     case AppMode.SELLER_PROFILE:
       return params.sellerId
         ? `/marketplace/seller/${encodeURIComponent(params.sellerId)}`
-        : '/marketplace';
+        : '/campus/shop';
     case AppMode.CREATE_MARKETPLACE_LISTING:
       return '/marketplace/new';
     case AppMode.SELLER_CUSTOMERS:
       return '/marketplace/seller/customers';
     case AppMode.MARKETPLACE_JOBS:
-      return '/marketplace/jobs';
+      return '/campus/jobs';
     case AppMode.MARKETPLACE_JOB_DETAIL:
       return params.jobId
         ? `/marketplace/jobs/${encodeURIComponent(params.jobId)}`
-        : '/marketplace/jobs';
+        : '/campus/jobs';
     case AppMode.CREATE_MARKETPLACE_JOB:
       // The same screen handles creating and editing; the id decides which.
       return params.jobId
@@ -161,7 +233,7 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
     case AppMode.JOB_COMPANY:
       return params.companyId
         ? `/marketplace/companies/${encodeURIComponent(params.companyId)}`
-        : '/marketplace/jobs';
+        : '/campus/jobs';
     // Notes and Flashcards each have two routes on purpose, and they are not
     // duplicates: `/library/notes` is the Library with its Notes tab open (the
     // screen renders embedded, inside the Library's course rail and scope row),
@@ -206,6 +278,27 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/chat') return { mode: AppMode.CHAT, params: {}, clearChat: true };
   if (path === '/groups/new') return { mode: AppMode.CREATE_GROUP, params: {} };
   if (path === '/flashcards') return { mode: AppMode.FLASHCARDS, params: {}, clearDeck: true };
+  if (path === '/flashcards/review') return { mode: AppMode.FLASHCARD_REVIEW, params: {} };
+  if (path === '/flashcards/cram') return { mode: AppMode.FLASHCARD_CRAM, params: {} };
+  if (path === '/flashcards/match') return { mode: AppMode.FLASHCARD_MATCH, params: {} };
+  if (path === '/flashcards/learn') return { mode: AppMode.FLASHCARD_LEARN, params: {} };
+  if (path === '/tests/active') return { mode: AppMode.TEST_ACTIVE, params: {} };
+  if (path === '/tests/review') return { mode: AppMode.TEST_REVIEW, params: {} };
+  if (path === '/study/session') return { mode: AppMode.STUDY_ACTIVE, params: {} };
+  if (path === '/game') return { mode: AppMode.GAME_ACTIVE, params: {} };
+  if (path === '/game/results') return { mode: AppMode.GAME_RESULTS, params: {} };
+  if (path === ME_PATH) return { mode: null, params: {}, standalone: 'me' };
+  // Campus segments come before the `/campus/:slug` SEO page: `shop` and `jobs`
+  // are reserved words in this namespace, never institution slugs.
+  if (path === '/campus') {
+    return { mode: AppMode.DISCOVER, params: { campusSegment: 'communities' } };
+  }
+  if (path === '/campus/shop') {
+    return { mode: AppMode.MARKETPLACE, params: { campusSegment: 'shop' } };
+  }
+  if (path === '/campus/jobs') {
+    return { mode: AppMode.MARKETPLACE_JOBS, params: { campusSegment: 'jobs' } };
+  }
   if (path.startsWith('/campus/')) {
     const rest = path.slice('/campus/'.length).split('/').filter(Boolean);
     const slug = decodeURIComponent(rest[0] || '');
@@ -223,7 +316,16 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     const roomId = decodeURIComponent(path.slice('/study-room/'.length));
     return roomId ? { mode: AppMode.STUDY_ROOM, params: { roomId } } : { mode: AppMode.STUDY_ROOM, params: {} };
   }
-  if (path === '/discover') return { mode: AppMode.DISCOVER, params: {} };
+  // Old entry points. They still PARSE (so a guest, or a client that never
+  // reloads, lands somewhere real) and carry a redirect to the Campus segment
+  // that replaced them.
+  if (path === '/discover') {
+    return {
+      mode: AppMode.DISCOVER,
+      params: { campusSegment: 'communities' },
+      redirect: '/campus',
+    };
+  }
   if (path.startsWith('/discover/c/')) {
     const rest = path.slice('/discover/c/'.length).split('/').filter(Boolean);
     const slug = decodeURIComponent(rest[0] || '');
@@ -248,7 +350,13 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     }
     return { mode: AppMode.COMMUNITY_DETAIL, params: { slug } };
   }
-  if (path === '/marketplace') return { mode: AppMode.MARKETPLACE, params: {} };
+  if (path === '/marketplace') {
+    return {
+      mode: AppMode.MARKETPLACE,
+      params: { campusSegment: 'shop' },
+      redirect: '/campus/shop',
+    };
+  }
   if (path === '/marketplace/orders') return { mode: AppMode.MARKETPLACE_ORDERS, params: {} };
   if (path === '/marketplace/cart') return { mode: AppMode.MARKETPLACE_CART, params: {} };
   if (path === '/marketplace/my-listings') return { mode: AppMode.MY_LISTINGS, params: {} };
@@ -256,7 +364,13 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/marketplace/inquiries') return { mode: AppMode.MARKETPLACE_INQUIRIES, params: {} };
   if (path === '/marketplace/new') return { mode: AppMode.CREATE_MARKETPLACE_LISTING, params: {} };
   if (path === '/marketplace/seller/customers') return { mode: AppMode.SELLER_CUSTOMERS, params: {} };
-  if (path === '/marketplace/jobs') return { mode: AppMode.MARKETPLACE_JOBS, params: {} };
+  if (path === '/marketplace/jobs') {
+    return {
+      mode: AppMode.MARKETPLACE_JOBS,
+      params: { campusSegment: 'jobs' },
+      redirect: '/campus/jobs',
+    };
+  }
   if (path === '/marketplace/jobs/new') return { mode: AppMode.CREATE_MARKETPLACE_JOB, params: {} };
   if (path === '/marketplace/my-jobs') return { mode: AppMode.MY_JOB_POSTINGS, params: {} };
   if (path === '/marketplace/applications') return { mode: AppMode.MY_JOB_APPLICATIONS, params: {} };
@@ -289,106 +403,69 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/offline') return { mode: AppMode.OFFLINE_MODE, params: {} };
   if (path === '/admin') return { mode: AppMode.ADMIN, params: {} };
 
-  const inviteMatch = path.match(/^\/invite\/([^/]+)$/);
-  if (inviteMatch) {
-    return { mode: null, params: {}, inviteId: decodeURIComponent(inviteMatch[1]) };
+  // Every remaining route is "one path segment, captured". `segment` reads
+  // that capture and decodes it, so a path that matched but somehow captured
+  // nothing falls through to the dashboard rather than routing to `undefined`.
+  const inviteId = segment(path, /^\/invite\/([^/]+)$/);
+  if (inviteId) return { mode: null, params: {}, inviteId };
+
+  const shareToken = segment(path, /^\/notes\/share\/([^/]+)$/);
+  if (shareToken) return { mode: null, params: {}, shareToken };
+
+  const groupId = segment(path, /^\/chat\/group\/([^/]+)$/);
+  if (groupId) return { mode: AppMode.CHAT, params: { groupId } };
+
+  const threadId = segment(path, /^\/chat\/dm\/([^/]+)$/);
+  if (threadId) return { mode: AppMode.CHAT, params: { threadId } };
+
+  const deckId = segment(path, /^\/flashcards\/deck\/([^/]+)$/);
+  if (deckId) return { mode: AppMode.DECK_DETAIL, params: { deckId } };
+
+  const listingId = segment(path, /^\/marketplace\/listing\/([^/]+)$/);
+  if (listingId) return { mode: AppMode.MARKETPLACE_LISTING_DETAIL, params: { listingId } };
+
+  const pipelineJobId = segment(path, /^\/marketplace\/employer\/jobs\/([^/]+)$/);
+  if (pipelineJobId) {
+    return { mode: AppMode.JOB_EMPLOYER_PIPELINE, params: { jobId: pipelineJobId } };
   }
 
-  const noteShareMatch = path.match(/^\/notes\/share\/([^/]+)$/);
-  if (noteShareMatch) {
-    return { mode: null, params: {}, shareToken: decodeURIComponent(noteShareMatch[1]) };
+  const editJobId = segment(path, /^\/marketplace\/jobs\/([^/]+)\/edit$/);
+  if (editJobId && editJobId !== 'new') {
+    return { mode: AppMode.CREATE_MARKETPLACE_JOB, params: { jobId: editJobId } };
   }
 
-  const chatGroup = path.match(/^\/chat\/group\/([^/]+)$/);
-  if (chatGroup) {
-    return { mode: AppMode.CHAT, params: { groupId: decodeURIComponent(chatGroup[1]) } };
+  const jobId = segment(path, /^\/marketplace\/jobs\/([^/]+)$/);
+  if (jobId && jobId !== 'new') {
+    return { mode: AppMode.MARKETPLACE_JOB_DETAIL, params: { jobId } };
   }
 
-  const chatDm = path.match(/^\/chat\/dm\/([^/]+)$/);
-  if (chatDm) {
-    return { mode: AppMode.CHAT, params: { threadId: decodeURIComponent(chatDm[1]) } };
-  }
+  const orderId = segment(path, /^\/marketplace\/orders\/([^/]+)$/);
+  if (orderId) return { mode: AppMode.MARKETPLACE_ORDER_DETAIL, params: { orderId } };
 
-  const deckMatch = path.match(/^\/flashcards\/deck\/([^/]+)$/);
-  if (deckMatch) {
-    return { mode: AppMode.DECK_DETAIL, params: { deckId: decodeURIComponent(deckMatch[1]) } };
-  }
+  const sellerId = segment(path, /^\/marketplace\/seller\/([^/]+)$/);
+  if (sellerId) return { mode: AppMode.SELLER_PROFILE, params: { sellerId } };
 
-  const listingMatch = path.match(/^\/marketplace\/listing\/([^/]+)$/);
-  if (listingMatch) {
-    return {
-      mode: AppMode.MARKETPLACE_LISTING_DETAIL,
-      params: { listingId: decodeURIComponent(listingMatch[1]) },
-    };
-  }
+  const companyId = segment(path, /^\/marketplace\/companies\/([^/]+)$/);
+  if (companyId) return { mode: AppMode.JOB_COMPANY, params: { companyId } };
 
-  const employerJobMatch = path.match(/^\/marketplace\/employer\/jobs\/([^/]+)$/);
-  if (employerJobMatch) {
-    return {
-      mode: AppMode.JOB_EMPLOYER_PIPELINE,
-      params: { jobId: decodeURIComponent(employerJobMatch[1]) },
-    };
-  }
-
-  const jobEditMatch = path.match(/^\/marketplace\/jobs\/([^/]+)\/edit$/);
-  if (jobEditMatch && jobEditMatch[1] !== 'new') {
-    return {
-      mode: AppMode.CREATE_MARKETPLACE_JOB,
-      params: { jobId: decodeURIComponent(jobEditMatch[1]) },
-    };
-  }
-
-  const jobMatch = path.match(/^\/marketplace\/jobs\/([^/]+)$/);
-  if (jobMatch && jobMatch[1] !== 'new') {
-    return {
-      mode: AppMode.MARKETPLACE_JOB_DETAIL,
-      params: { jobId: decodeURIComponent(jobMatch[1]) },
-    };
-  }
-
-  const orderMatch = path.match(/^\/marketplace\/orders\/([^/]+)$/);
-  if (orderMatch) {
-    return {
-      mode: AppMode.MARKETPLACE_ORDER_DETAIL,
-      params: { orderId: decodeURIComponent(orderMatch[1]) },
-    };
-  }
-
-  const sellerMatch = path.match(/^\/marketplace\/seller\/([^/]+)$/);
-  if (sellerMatch) {
-    return {
-      mode: AppMode.SELLER_PROFILE,
-      params: { sellerId: decodeURIComponent(sellerMatch[1]) },
-    };
-  }
-
-  const companyMatch = path.match(/^\/marketplace\/companies\/([^/]+)$/);
-  if (companyMatch) {
-    return {
-      mode: AppMode.JOB_COMPANY,
-      params: { companyId: decodeURIComponent(companyMatch[1]) },
-    };
-  }
-
-  const noteMatch = path.match(/^\/notes\/([^/]+)$/);
-  if (noteMatch) {
-    return { mode: AppMode.NOTE_EDITOR, params: { noteId: decodeURIComponent(noteMatch[1]) } };
-  }
+  const noteId = segment(path, /^\/notes\/([^/]+)$/);
+  if (noteId) return { mode: AppMode.NOTE_EDITOR, params: { noteId } };
 
   return { mode: null, params: {}, redirect: '/dashboard' };
 }
 
-export const EPHEMERAL_APP_MODES: ReadonlySet<AppMode> = new Set([
-  AppMode.TEST_ACTIVE,
-  AppMode.STUDY_ACTIVE,
-  AppMode.GAME_ACTIVE,
-  AppMode.GAME_RESULTS,
-  AppMode.TEST_REVIEW,
-  AppMode.FLASHCARD_REVIEW,
-  AppMode.FLASHCARD_CRAM,
-  AppMode.FLASHCARD_MATCH,
-  AppMode.FLASHCARD_LEARN,
-]);
+/**
+ * Modes with no URL of their own.
+ *
+ * Empty on purpose. A test, its results and every flashcard review mode used
+ * to live here, which meant the browser's address bar and Back button lied
+ * about where the student was: Back from a running test left the whole
+ * section instead of the test. They now have real paths above, and the screens
+ * behind them re-derive their session on arrival (App.tsx bounces a mode whose
+ * session is gone back to its list). The set and `isEphemeralAppMode` stay as
+ * the escape hatch for a future mode that genuinely cannot be linked to.
+ */
+export const EPHEMERAL_APP_MODES: ReadonlySet<AppMode> = new Set<AppMode>([]);
 
 export function isEphemeralAppMode(mode: AppMode): boolean {
   return EPHEMERAL_APP_MODES.has(mode);
@@ -417,6 +494,11 @@ export function isPublicMarketplacePath(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (path === '/marketplace') return true;
   if (path === '/marketplace/jobs') return true;
+  // The Campus segments that replaced them. A guest never gets the signed-in
+  // redirect (useRouteSync only follows `redirect` for a signed-in user), so
+  // both spellings have to reach the guest shell.
+  if (path === '/campus/shop') return true;
+  if (path === '/campus/jobs') return true;
   if (/^\/marketplace\/listing\/[^/]+$/.test(path)) return true;
   if (/^\/marketplace\/jobs\/[^/]+$/.test(path) && path !== '/marketplace/jobs/new') return true;
   if (/^\/marketplace\/seller\/[^/]+$/.test(path)) return true;

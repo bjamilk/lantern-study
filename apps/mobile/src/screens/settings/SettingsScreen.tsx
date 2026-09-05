@@ -19,7 +19,6 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -49,18 +48,19 @@ import { useChatWallpaperStore } from '../../stores/chatWallpaperStore';
 import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner';
 import { shareTextFile, SharingUnavailableError } from '../../utils/shareFile';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 // First entry must match DEFAULT_USER_SETTINGS.appearance.accentColor so a fresh
 // account shows a selected swatch (and matches the web default primary).
 const ACCENT_PRESETS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
 const THEME_OPTIONS = [
-  { value: 'system' as const, label: 'System', icon: 'phone-portrait-outline' as const },
-  { value: 'light' as const, label: 'Light', icon: 'sunny-outline' as const },
-  { value: 'dark' as const, label: 'Dark', icon: 'moon-outline' as const },
+  { value: 'system' as const, label: 'System', icon: 'phone-portrait' as const },
+  { value: 'light' as const, label: 'Light', icon: 'sunny' as const },
+  { value: 'dark' as const, label: 'Dark', icon: 'moon' as const },
 ];
 
 interface SettingItemProps {
-  icon: string;
+  icon: AppIconName;
   iconColor: string;
   title: string;
   subtitle?: string;
@@ -89,14 +89,14 @@ const SettingItem = ({
     accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
   >
     <View style={[styles.settingIcon, { backgroundColor: iconColor + '20' }]}>
-      <Ionicons name={icon as any} size={22} color={iconColor} />
+      <AppIcon name={icon} size={22} color={iconColor} />
     </View>
     <View style={styles.settingContent}>
       <Text style={[styles.settingTitle, { color: colors.text }]}>{title}</Text>
       {subtitle && <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>}
     </View>
     {rightElement || (showChevron && onPress && (
-      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+      <AppIcon name="chevron-forward" size={20} color={colors.textSecondary} />
     ))}
   </TouchableOpacity>
 );
@@ -441,7 +441,7 @@ export default function SettingsScreen() {
         <View style={styles.header}>
           <View style={styles.headerRow}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12, padding: 4 }}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors.text, flex: 1 }]}>Settings</Text>
             <SyncIndicator />
@@ -477,7 +477,7 @@ export default function SettingsScreen() {
             style={styles.editProfileButton}
             onPress={() => navigation.navigate('EditProfile' as never)}
           >
-            <Ionicons name="pencil" size={18} color="#6366f1" />
+            <AppIcon name="pencil" size={18} color="#6366f1" />
           </TouchableOpacity>
         </View>
 
@@ -488,7 +488,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="notifications-outline"
+              icon="notifications"
               iconColor="#8b5cf6"
               title="Push Notifications"
               subtitle="Device push alerts, synced across devices"
@@ -504,7 +504,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="calendar-outline"
+              icon="calendar"
               iconColor="#10b981"
               title="Daily Reminders"
               subtitle="Get reminded to study"
@@ -520,7 +520,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="alarm-outline"
+              icon="alarm"
               iconColor="#ef4444"
               title="Reminder Time"
               subtitle={
@@ -532,7 +532,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="people-outline"
+              icon="people"
               iconColor="#f97316"
               title="Group Activity"
               subtitle="Messages and questions in groups"
@@ -548,7 +548,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="mail-unread-outline"
+              icon="mail-unread"
               iconColor="#6366f1"
               title="Group Invites"
               subtitle="When someone invites you to a group"
@@ -564,7 +564,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="storefront-outline"
+              icon="storefront"
               iconColor="#a855f7"
               title="Marketplace Updates"
               subtitle="Listing and inquiry alerts"
@@ -580,7 +580,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="trophy-outline"
+              icon="trophy"
               iconColor="#fbbf24"
               title="Badge Unlocks"
               subtitle="Achievement notifications"
@@ -596,7 +596,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="refresh-outline"
+              icon="refresh"
               iconColor="#0ea5e9"
               title="Review reminders"
               subtitle="Flashcard review reminders"
@@ -612,7 +612,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="checkmark-done-outline"
+              icon="checkmark-done"
               iconColor="#ec4899"
               title="Test Results"
               subtitle="Get notified of test completions"
@@ -631,7 +631,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="mail-outline"
+              icon="mail"
               iconColor="#6366f1"
               title="Email Notifications"
               subtitle="Job alerts and important account updates"
@@ -654,7 +654,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="timer-outline"
+              icon="timer"
               iconColor="#f97316"
               title="Daily Goal"
               subtitle={`${settings.study.dailyCardGoal} cards, ${settings.study.dailyTestGoal} test(s)`}
@@ -666,7 +666,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="flash-outline"
+              icon="flash"
               iconColor="#fbbf24"
               title="Review settings"
               subtitle={`${settings.study.srsNewCardsPerDay} new cards/day`}
@@ -674,7 +674,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="school-outline"
+              icon="school"
               iconColor="#6366f1"
               title="Default Session Mode"
               subtitle={settings.study.defaultTestMode === 'exam' ? 'Timed test mode' : 'Study mode'}
@@ -696,7 +696,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="shuffle-outline"
+              icon="shuffle"
               iconColor="#8b5cf6"
               title="Shuffle Questions"
               subtitle="Randomize question order in tests"
@@ -712,7 +712,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="options-outline"
+              icon="options"
               iconColor="#10b981"
               title="Shuffle Options"
               subtitle="Randomize answer choices"
@@ -728,7 +728,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="eye-outline"
+              icon="eye"
               iconColor="#0ea5e9"
               title="Show Explanations"
               subtitle="Show immediately after answer"
@@ -744,7 +744,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="lock-closed-outline"
+              icon="lock-closed"
               iconColor="#f59e0b"
               title="Lock answered questions"
               subtitle="Default tests to exam mode — no going back once answered"
@@ -768,7 +768,7 @@ export default function SettingsScreen() {
             <View style={[styles.settingItem, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                 <View style={[styles.settingIcon, { backgroundColor: '#f59e0b20' }]}>
-                  <Ionicons name={isDark ? 'moon' : 'sunny'} size={22} color="#f59e0b" />
+                  <AppIcon name={isDark ? 'moon' : 'sunny'} size={22} color="#f59e0b" />
                 </View>
                 <View style={styles.settingContent}>
                   <Text style={[styles.settingTitle, { color: colors.text }]}>Theme</Text>
@@ -796,7 +796,7 @@ export default function SettingsScreen() {
                       }}
                       activeOpacity={0.7}
                     >
-                      <Ionicons
+                      <AppIcon
                         name={option.icon}
                         size={16}
                         color={selected ? colors.primary : colors.textSecondary}
@@ -817,7 +817,7 @@ export default function SettingsScreen() {
             </View>
             <SettingItem
               colors={colors}
-              icon="cellular-outline"
+              icon="cellular"
               iconColor="#0ea5e9"
               title="Low-Data Mode"
               subtitle="Lighter images, charts, and page loads"
@@ -833,7 +833,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="image-outline"
+              icon="image"
               iconColor="#10b981"
               title="Chat background"
               subtitle={
@@ -848,7 +848,7 @@ export default function SettingsScreen() {
             <View style={[styles.settingItem, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                 <View style={[styles.settingIcon, { backgroundColor: '#ec489920' }]}>
-                  <Ionicons name="color-palette-outline" size={22} color="#ec4899" />
+                  <AppIcon name="color-palette" size={22} color="#ec4899" />
                 </View>
                 <View style={styles.settingContent}>
                   <Text style={[styles.settingTitle, { color: colors.text }]}>Accent color</Text>
@@ -880,7 +880,7 @@ export default function SettingsScreen() {
             </View>
             <SettingItem
               colors={colors}
-              icon="text-outline"
+              icon="text"
               iconColor="#6366f1"
               title="Font Size"
               subtitle={
@@ -906,7 +906,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="school-outline"
+              icon="school"
               iconColor="#6366f1"
               title="University, programme & courses"
               subtitle={
@@ -924,7 +924,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="gift-outline"
+              icon="gift"
               iconColor="#f59e0b"
               title="Invite friends"
               subtitle="Share Lantern with your campus"
@@ -944,7 +944,7 @@ export default function SettingsScreen() {
             </View>
             <SettingItem
               colors={colors}
-              icon="flag-outline"
+              icon="flag"
               iconColor="#10b981"
               title="Country"
               subtitle="Nigeria — more countries coming soon"
@@ -952,7 +952,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="school-outline"
+              icon="school"
               iconColor="#6366f1"
               title="Your campus"
               subtitle={campusesLoading ? 'Loading campuses…' : selectedCampusLabel}
@@ -967,7 +967,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="eye-outline"
+              icon="eye"
               iconColor="#6366f1"
               title="Profile Visibility"
               subtitle={
@@ -981,7 +981,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="chatbubble-ellipses-outline"
+              icon="chatbubble-ellipses"
               iconColor="#8b5cf6"
               title="Direct Messages"
               subtitle={
@@ -995,7 +995,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="ban-outline"
+              icon="ban"
               iconColor="#ef4444"
               title="Blocked Users"
               subtitle="Review and unblock people you have blocked"
@@ -1003,7 +1003,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="search-outline"
+              icon="search"
               iconColor="#6366f1"
               title="Discoverable for Invites"
               subtitle="Let others find you by name or @username in people search and invites"
@@ -1019,7 +1019,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="radio-button-on-outline"
+              icon="radio-button-on"
               iconColor="#10b981"
               title="Online Status"
               subtitle="Show when you're active"
@@ -1035,7 +1035,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="bar-chart-outline"
+              icon="bar-chart"
               iconColor="#f97316"
               title="Study Activity"
               subtitle="Share your study stats"
@@ -1051,7 +1051,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="cookie-outline"
+              icon="cookie"
               iconColor="#a16207"
               title="Manage cookie preferences"
               subtitle="Optional analytics and cookie categories"
@@ -1066,7 +1066,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="sync-outline"
+              icon="sync"
               iconColor="#0ea5e9"
               title="Auto Sync"
               subtitle="Sync changes automatically"
@@ -1082,7 +1082,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="wifi-outline"
+              icon="wifi"
               iconColor="#10b981"
               title="Sync on Wi-Fi Only"
               subtitle="Save mobile data"
@@ -1098,7 +1098,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="cloud-upload-outline"
+              icon="cloud-upload"
               iconColor="#8b5cf6"
               title="Sync Now"
               subtitle={hasUnsyncedChanges ? 'You have unsynced changes' : 'All changes synced'}
@@ -1106,7 +1106,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="cloud-download-outline"
+              icon="cloud-download"
               iconColor="#6366f1"
               title="Offline Mode"
               subtitle="Download tests for offline access"
@@ -1121,7 +1121,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="phone-portrait-outline"
+              icon="phone-portrait"
               iconColor="#a855f7"
               title="Haptic Feedback"
               subtitle="Vibration on interactions"
@@ -1137,7 +1137,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="sparkles-outline"
+              icon="sparkles"
               iconColor="#fbbf24"
               title="Reduce Motion"
               subtitle="Minimize animations"
@@ -1153,7 +1153,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="contrast-outline"
+              icon="contrast"
               iconColor="#ef4444"
               title="High Contrast"
               subtitle="Increase color contrast"
@@ -1176,21 +1176,21 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="help-circle-outline"
+              icon="help-circle"
               iconColor="#6366f1"
               title="Help & FAQ"
               onPress={() => setShowHelpModal(true)}
             />
             <SettingItem
               colors={colors}
-              icon="chatbubble-outline"
+              icon="chatbubble"
               iconColor="#10b981"
               title="Contact Support"
               onPress={() => setShowContactModal(true)}
             />
             <SettingItem
               colors={colors}
-              icon="bulb-outline"
+              icon="bulb"
               iconColor="#8b5cf6"
               title="Replay feature tips"
               subtitle="Show the getting-started tips again"
@@ -1201,7 +1201,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="refresh-circle-outline"
+              icon="refresh-circle"
               iconColor="#f97316"
               title="Reset Settings"
               subtitle="Restore default settings"
@@ -1216,7 +1216,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem
               colors={colors}
-              icon="download-outline"
+              icon="download"
               iconColor="#6366f1"
               title="Export my data"
               subtitle="Download a JSON copy (once per 24h)"
@@ -1224,28 +1224,28 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="document-text-outline"
+              icon="document-text"
               iconColor="#8b5cf6"
               title="Privacy Policy"
               onPress={() => navigation.navigate('LegalDocument' as never, { document: 'privacy' } as never)}
             />
             <SettingItem
               colors={colors}
-              icon="document-outline"
+              icon="document"
               iconColor="#8b5cf6"
               title="Cookie Policy"
               onPress={() => navigation.navigate('LegalDocument' as never, { document: 'cookies' } as never)}
             />
             <SettingItem
               colors={colors}
-              icon="shield-outline"
+              icon="shield"
               iconColor="#8b5cf6"
               title="Terms of Service"
               onPress={() => navigation.navigate('LegalDocument' as never, { document: 'terms' } as never)}
             />
             <SettingItem
               colors={colors}
-              icon="ban-outline"
+              icon="ban"
               iconColor="#8b5cf6"
               title={LEGAL_DOCUMENT_TITLES.prohibited}
               subtitle="What may not be shared or sold, how to report it"
@@ -1253,7 +1253,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="storefront-outline"
+              icon="storefront"
               iconColor="#8b5cf6"
               title={LEGAL_DOCUMENT_TITLES['seller-terms']}
               subtitle="Rights, takedowns, appeals, strikes and payouts"
@@ -1261,7 +1261,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="cloud-upload-outline"
+              icon="cloud-upload"
               iconColor="#6366f1"
               title="Import backup"
               subtitle="Restore notes and flashcards from export"
@@ -1269,7 +1269,7 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
-              icon="trash-outline"
+              icon="trash"
               iconColor="#ef4444"
               title="Delete or pause account"
               subtitle="Pause 30 days or delete with password"
@@ -1280,7 +1280,7 @@ export default function SettingsScreen() {
 
         {/* Sign Out */}
         <TouchableOpacity style={styles.signOutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={22} color="#ef4444" />
+          <AppIcon name="log-out" size={22} color="#ef4444" />
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 
@@ -1290,7 +1290,7 @@ export default function SettingsScreen() {
           <View style={[styles.sectionContent, { backgroundColor: colors.surface }]}>
             <SettingItem
               colors={colors}
-              icon="cloud-download-outline"
+              icon="cloud-download"
               iconColor="#6569EE"
               title="Check for update"
               subtitle={
@@ -1347,7 +1347,7 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Help & FAQ</Text>
               <TouchableOpacity onPress={() => setShowHelpModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                <AppIcon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 420 }}>
@@ -1407,7 +1407,7 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Your campus</Text>
               <TouchableOpacity onPress={() => setShowCampusModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                <AppIcon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             <TextInput
@@ -1557,7 +1557,7 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Daily Goal</Text>
               <TouchableOpacity onPress={() => setShowDailyGoalModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                <AppIcon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
@@ -1615,7 +1615,7 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Review settings</Text>
               <TouchableOpacity onPress={() => setShowSRSSettingsModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                <AppIcon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
@@ -1673,7 +1673,7 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Profile Visibility</Text>
               <TouchableOpacity onPress={() => setShowPrivacyModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                <AppIcon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -1708,7 +1708,7 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 {settings.privacy.profileVisibility === option && (
-                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                  <AppIcon name="checkmark-circle" size={24} color={colors.primary} />
                 )}
               </TouchableOpacity>
             ))}
@@ -1728,7 +1728,7 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Direct Messages</Text>
               <TouchableOpacity onPress={() => setShowDirectMessagesModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                <AppIcon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -1763,7 +1763,7 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 {settings.privacy.allowDirectMessages === option && (
-                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                  <AppIcon name="checkmark-circle" size={24} color={colors.primary} />
                 )}
               </TouchableOpacity>
             ))}

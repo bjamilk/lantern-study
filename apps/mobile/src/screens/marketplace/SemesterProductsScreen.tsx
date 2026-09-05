@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { createStudyPackDraft, fetchSemesterPackProposals } from '../../services/api';
 import {
@@ -10,6 +9,7 @@ import {
   type SemesterPackProposal,
   type SemesterPackProposalResponse,
 } from '@lantern/shared/marketplace';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -86,7 +86,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
     <Screen bottom="none">
       <View className="flex-row items-center px-4 py-2">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Back">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-lg font-semibold text-lantern-text">Semester products</Text>
         {/* Seller tool: You carries the seller's own badges, Cart would only be clutter here. */}
@@ -116,8 +116,8 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
                   onPress={() => toggle(p.courseId)}
                   className="flex-row items-start gap-3 rounded-xl border border-lantern-border bg-lantern-surface p-4 mb-2"
                 >
-                  <Ionicons
-                    name={checked ? 'checkbox' : 'square-outline'}
+                  <AppIcon
+                    name={checked ? 'checkbox' : 'square'}
                     size={22}
                     color={checked ? '#6366f1' : '#94a3b8'}
                   />

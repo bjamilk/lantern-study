@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../services/api';
 import {
   useBudgetStore,
@@ -13,6 +12,7 @@ import {
 import { ScreenHeader, Button, Card } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 interface RecurringRule {
   id: string;
@@ -144,7 +144,7 @@ export default function RecurringScreen() {
                 {rule.type === 'income' ? '+' : '-'}{formatCurrency(rule.amount)}
               </Text>
               <TouchableOpacity onPress={() => void handleDelete(rule.id)} hitSlop={8}>
-                <Ionicons name="trash-outline" size={18} color="#94a3b8" />
+                <AppIcon name="trash" size={18} color="#94a3b8" />
               </TouchableOpacity>
             </Card>
           ))
@@ -208,7 +208,7 @@ export default function RecurringScreen() {
             <Text className="text-lantern-text dark:text-white">
               {frequency === 'monthly' ? `Repeats on day ${date.getDate()} — from ${ymd(date)}` : `First / next date: ${ymd(date)}`}
             </Text>
-            <Ionicons name="calendar-outline" size={18} color="#94a3b8" />
+            <AppIcon name="calendar" size={18} color="#94a3b8" />
           </TouchableOpacity>
 
           <Button onPress={() => void handleAdd()} disabled={saving}>

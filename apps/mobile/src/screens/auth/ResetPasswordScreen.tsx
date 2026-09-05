@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
-import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/ui';
 import { LanternLogo } from '../../components/LanternLogo';
 import { isAllowedMobileAuthUrl } from '../../utils/deepLinkAllowlist';
@@ -22,6 +21,7 @@ import type { AuthStackParamList } from '../../navigation/types';
 // The cookie notice is an app-root `absolute bottom-0` overlay during the
 // whole first-run flow; without its height reserved it covers the footer links.
 import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ResetPassword'>;
 
@@ -134,7 +134,7 @@ export function ResetPasswordScreen({ navigation }: Props) {
                   className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 pr-12 text-lantern-text dark:text-white"
                 />
                 <Pressable onPress={() => setShowPassword((v) => !v)} className="absolute right-3 top-3">
-                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#94a3b8" />
+                  <AppIcon name={showPassword ? 'eye-off' : 'eye'} size={22} color="#94a3b8" />
                 </Pressable>
               </View>
             </View>

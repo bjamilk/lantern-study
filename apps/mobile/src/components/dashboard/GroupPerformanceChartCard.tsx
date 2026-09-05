@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-gifted-charts';
 import { Card } from '../ui';
 import {
@@ -18,6 +17,7 @@ import {
   type LeanTestResultLike,
 } from '@lantern/shared/utils';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { AppIcon } from '../ui/AppIcon';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
@@ -354,7 +354,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
   return (
     <Card className="mb-4">
       <View className="flex-row items-center gap-2 mb-2">
-        <Ionicons name="stats-chart" size={16} color="#4f46e5" />
+        <AppIcon name="stats-chart" size={16} color="#4f46e5" />
         <Text className="text-sm font-semibold text-lantern-text">Group performance</Text>
       </View>
 
@@ -393,7 +393,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
           <Text className="text-sm text-lantern-text flex-1 pr-2" numberOfLines={1}>
             {options.length === 0 ? 'No group data' : buttonLabel}
           </Text>
-          <Ionicons name="chevron-down" size={16} color="#94a3b8" />
+          <AppIcon name="chevron-down" size={16} color="#94a3b8" />
         </Pressable>
         {!isMulti && selectedSeries.length === 1 ? (
           <View className="flex-row rounded-xl overflow-hidden border border-lantern-border">
@@ -592,7 +592,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                         checked ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
                       }`}
                     >
-                      {checked ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+                      {checked ? <AppIcon name="checkmark" size={14} color="#fff" /> : null}
                     </View>
                     <Text className="text-sm text-lantern-text flex-1" numberOfLines={1}>
                       {opt.level > 0 ? '└ ' : ''}

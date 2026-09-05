@@ -11,8 +11,8 @@ interface Props {
   disabled?: boolean;
 }
 
-// Google's four-colour "G". @expo/vector-icons only ships a single-colour glyph,
-// which reads as a generic icon rather than the mark people recognise, so the
+// Google's four-colour "G". An icon set only ships a single-colour glyph, which
+// reads as a generic icon rather than the mark people recognise, so the
 // official artwork is inlined here.
 function GoogleMark({ size = 20 }: { size?: number }) {
   return (

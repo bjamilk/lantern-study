@@ -3,7 +3,7 @@
  */
 import { isCardDue } from '@lantern/shared/utils/srs';
 import type { SupabaseService } from './supabase';
-import type { CompanionContext } from './aiService';
+import { normalizeCompanionMode, type CompanionContext } from './aiService';
 import {
   WEAK_TOPIC_SESSION_LIMIT,
   buildTagBreakdown,
@@ -11,7 +11,16 @@ import {
 } from './companionWeakTopics';
 
 const MAX_HINT_LEN = 120;
-const MAX_NOTE_LEN = 6000;
+/**
+ * How much of the note travels to companionChat.
+ *
+ * This is NOT the prompt size. companionChat splits this into chunks and sends
+ * only the 2-3 that match the question, so raising the cap widens what the
+ * tutor can reach without widening what it costs — at 6000 the tutor simply
+ * could not see past the opening of a lecture-length note, and answered
+ * "from your notes" using material it had never been shown.
+ */
+const MAX_NOTE_LEN = 24000;
 
 function sanitizeHint(value: unknown, maxLen = MAX_HINT_LEN): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -137,6 +146,11 @@ export async function buildTrustedCompanionContext(
     currentScreen: sanitizeHint(clientContext.currentScreen, 80),
     activeSessionSummary: sanitizeHint(clientContext.activeSessionSummary, 200),
     studyGoal: sanitizeHint(clientContext.studyGoal || studyGoalFromPrefs, 40),
+    // The study mode is the one context field the client legitimately owns —
+    // it is a UI choice, not a claim about the student's data. It still goes
+    // through the allowlist, so an unknown value falls back to 'explain'
+    // instead of being pasted into the system prompt.
+    mode: normalizeCompanionMode(clientContext.mode),
   };
 
   const rawNoteId = typeof clientContext.noteId === 'string' ? clientContext.noteId.trim() : '';

@@ -9,7 +9,6 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { ScreenScroll } from '../../components/layout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FlashcardType } from '@lantern/shared';
@@ -31,6 +30,7 @@ import {
   ONBOARDING_COMPLETE_VALUE,
   isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
+import { AppIcon } from '../../components/ui/AppIcon';
 /** Silent defaults the removed goal/streak screens used to write. */
 const DEFAULT_STREAK_TARGET = 7;
 const DEFAULT_STUDY_GOAL = 'retention';
@@ -197,7 +197,7 @@ export function OnboardingScreen({ onComplete }: Props) {
         {step === 'welcome' && (
           <View className="items-center">
             <View className="w-16 h-16 rounded-2xl bg-lantern-primary items-center justify-center mb-4">
-              <Ionicons name="sparkles" size={32} color="#fff" />
+              <AppIcon name="sparkles" size={32} color="#fff" />
             </View>
             <Text className={`text-2xl font-bold text-center mb-2 ${headingText}`}>Welcome to Lantern Study</Text>
             <Text className={`text-center mb-8 ${subtleText}`}>
@@ -218,7 +218,7 @@ export function OnboardingScreen({ onComplete }: Props) {
             </Text>
             {firstCourse ? (
               <View className="flex-row items-center gap-2 mb-3">
-                <Ionicons name="school-outline" size={16} color="#6366f1" />
+                <AppIcon name="school" size={16} color="#6366f1" />
                 <Text className="text-xs font-semibold text-lantern-primary">
                   Filed under {formatCourseLabel(firstCourse)}
                 </Text>
@@ -266,7 +266,7 @@ export function OnboardingScreen({ onComplete }: Props) {
         {step === 'done' && (
           <View className="items-center">
             <View className="w-16 h-16 rounded-2xl bg-lantern-primary items-center justify-center mb-4">
-              <Ionicons name="checkmark" size={32} color="#fff" />
+              <AppIcon name="checkmark" size={32} color="#fff" />
             </View>
             <Text className={`text-2xl font-bold text-center mb-2 ${headingText}`}>You’re all set</Text>
             <Text className={`text-center mb-8 ${subtleText}`}>

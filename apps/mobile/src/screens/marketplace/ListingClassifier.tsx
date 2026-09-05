@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   MARKETPLACE_DEPARTMENTS,
   OTHER_TAXONOMY_NODE_ID,
@@ -15,6 +14,7 @@ import {
   type MarketplaceDepartment,
   type TaxonomyNode,
 } from '@lantern/shared/marketplace';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 interface Props {
   department?: MarketplaceDepartment;
@@ -138,7 +138,7 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
                     <Text className="text-sm font-medium text-lantern-text flex-1">
                       {row.node.label}
                     </Text>
-                    <Ionicons name="sparkles-outline" size={14} color="#0f766e" />
+                    <AppIcon name="sparkles" size={14} color="#0f766e" />
                   </View>
                   <Text className="text-[11px] text-lantern-text-secondary">
                     {taxonomyPathLabel(row.node.id)}
@@ -216,8 +216,8 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
                         </Text>
                       ) : null}
                     </View>
-                    <Ionicons
-                      name={leaf ? (chosen ? 'checkmark-circle' : 'ellipse-outline') : 'chevron-forward'}
+                    <AppIcon
+                      name={leaf ? (chosen ? 'checkmark-circle' : 'ellipse') : 'chevron-forward'}
                       size={leaf ? 18 : 16}
                       color={chosen ? '#6366f1' : '#94a3b8'}
                     />

@@ -11,11 +11,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { DeckCollaborator } from '@lantern/shared/types';
 import * as api from '../services/api';
 import { Button } from './ui';
 import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
+import { AppIcon } from './ui/AppIcon';
 
 interface SearchUser {
   id: string;
@@ -148,11 +148,11 @@ export default function CollaboratorsModal({
         <View className="bg-lantern-surface rounded-t-3xl max-h-[85%] min-h-[50%]" style={{ paddingBottom: insets.bottom + 8 }}>
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-lantern-border dark:border-lantern-border">
             <View className="flex-row items-center gap-2">
-              <Ionicons name="people-outline" size={22} color="#6366f1" />
+              <AppIcon name="people" size={22} color="#6366f1" />
               <Text className="text-lg font-bold text-lantern-text">Collaborators</Text>
             </View>
             <Pressable onPress={onClose} className="p-2">
-              <Ionicons name="close" size={24} color="#94a3b8" />
+              <AppIcon name="close" size={24} color="#94a3b8" />
             </Pressable>
           </View>
 
@@ -234,7 +234,7 @@ export default function CollaboratorsModal({
                   </View>
                   {item.userId !== currentUserId ? (
                     <Pressable onPress={() => handleRemove(item.userId)} className="p-2">
-                      <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                      <AppIcon name="trash" size={20} color="#ef4444" />
                     </Pressable>
                   ) : null}
                 </View>

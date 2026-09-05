@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { ThemeScope, useTheme } from '../../theme';
+import { AppIcon } from '../ui/AppIcon';
 
 interface BudgetDatePickerProps {
   visible: boolean;
@@ -48,7 +48,7 @@ export function BudgetDatePicker({
                   style={[styles.arrow, { backgroundColor: colors.backgroundSecondary }]}
                   onPress={() => changeDay(-1)}
                 >
-                  <Ionicons name="chevron-back" size={28} color={accent} />
+                  <AppIcon name="chevron-back" size={28} color={accent} />
                 </TouchableOpacity>
 
                 <View style={styles.dateDisplay}>
@@ -63,7 +63,7 @@ export function BudgetDatePicker({
                   onPress={() => changeDay(1)}
                   disabled={selectedDate.toDateString() === new Date().toDateString()}
                 >
-                  <Ionicons
+                  <AppIcon
                     name="chevron-forward"
                     size={28}
                     color={

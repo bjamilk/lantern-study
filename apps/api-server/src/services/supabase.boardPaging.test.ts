@@ -112,6 +112,11 @@ function makeSelf(
     attachBoardRepostContext: jest.fn(async (rows: any[]) =>
       rows.map((r) => ({ ...r, repostCount: 0, repostOf: null })),
     ),
+    // Peer-upvote progress, inside the page cache like the repost context.
+    // Stubbed here for the same reason: its own query would shift every
+    // `opsByCall` index the assertions below count on. Covered directly in
+    // supabase.peerUpvotes.test.ts.
+    attachPeerUpvotes: jest.fn(async (rows: any[]) => rows),
     enrichGroupMessageReceipts: jest.fn(async (rows: any[]) => rows),
     enrichBoardViewerState: jest.fn(async (rows: any[]) =>
       rows.map((r) => ({ ...r, repostedByMe: false, bookmarked: false })),

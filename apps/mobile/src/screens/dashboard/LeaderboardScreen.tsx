@@ -6,11 +6,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { fetchLeaderboard, type LeaderboardEntry } from '../../services/gamification';
 import { useAuthStore } from '../../stores/authStore';
 import { Avatar, Button, Card, ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 const PAGE_SIZE = 50;
 
@@ -30,7 +30,7 @@ function LeaderboardRow({ entry, isSelf }: { entry: LeaderboardEntry; isSelf: bo
     >
       <View className="w-8 items-center">
         {medalColor ? (
-          <Ionicons name="medal" size={20} color={medalColor} />
+          <AppIcon name="medal" size={20} color={medalColor} />
         ) : (
           <Text className="text-sm font-bold text-lantern-text-secondary">{entry.rank}</Text>
         )}
@@ -43,7 +43,7 @@ function LeaderboardRow({ entry, isSelf }: { entry: LeaderboardEntry; isSelf: bo
         </Text>
       </View>
       <View className="flex-row items-center gap-1">
-        <Ionicons name="star" size={13} color="#f59e0b" />
+        <AppIcon name="star" size={13} color="#f59e0b" />
         <Text className="text-sm font-bold text-lantern-text">{entry.user.points.toLocaleString()}</Text>
       </View>
     </View>
@@ -109,7 +109,7 @@ export function LeaderboardScreen() {
       {selfEntry ? (
         <View className="px-4 mb-2">
           <Card className="flex-row items-center gap-3 py-3">
-            <Ionicons name="trophy" size={18} color="#f59e0b" />
+            <AppIcon name="trophy" size={18} color="#f59e0b" />
             <Text className="text-sm text-lantern-text flex-1">
               You're ranked <Text className="font-bold">#{selfEntry.rank}</Text> with{' '}
               <Text className="font-bold">{selfEntry.user.points.toLocaleString()}</Text> points
@@ -124,7 +124,7 @@ export function LeaderboardScreen() {
         </View>
       ) : error ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Ionicons name="cloud-offline-outline" size={36} color="#94a3b8" />
+          <AppIcon name="cloud-offline" size={36} color="#94a3b8" />
           <Text className="text-sm text-lantern-text-secondary text-center mt-3 mb-4">{error}</Text>
           <Button onPress={() => void onRefresh()}>Try again</Button>
         </View>
@@ -141,7 +141,7 @@ export function LeaderboardScreen() {
           renderItem={({ item }) => <LeaderboardRow entry={item} isSelf={item.user.id === userId} />}
           ListEmptyComponent={
             <Card className="items-center py-10">
-              <Ionicons name="trophy-outline" size={36} color="#94a3b8" />
+              <AppIcon name="trophy" size={36} color="#94a3b8" />
               <Text className="text-sm text-lantern-text-secondary text-center mt-3 px-4">
                 No rankings yet. Earn points by studying to appear here.
               </Text>

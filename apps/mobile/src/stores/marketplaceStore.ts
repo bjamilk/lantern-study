@@ -627,7 +627,7 @@ const BROWSE_ICONS: Record<string, string> = {
   accommodation: 'home',
   travel_transport: 'car',
   personal_goods: 'gift',
-  aso_ebi: 'shirt-outline',
+  aso_ebi: 'shirt',
   campus_services: 'people',
   events_social: 'ticket',
   electronics: 'phone-portrait',

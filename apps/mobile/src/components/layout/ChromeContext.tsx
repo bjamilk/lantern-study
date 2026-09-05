@@ -1,27 +1,53 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { Animated } from 'react-native';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import type { TabKey } from './BottomTabBar';
+import type { TabKey } from './tabRouting';
 
 /**
- * Shared state for the app chrome: the top icon bar, the bottom tab bar and
- * the profile drawer. Root screens feed their scroll events in through
- * `onScroll`; scrolling down slides both bars away for reading space and
- * scrolling up brings them back.
+ * Shared state for the app chrome: the top bar and the bottom tab bar.
  *
- * The default value is inert (bars always shown, drawer never opens) so the
- * same screens keep working when mounted outside MainTabs — OfflineScreen is
- * also registered as a root-stack modal.
+ * THE BARS DO NOT MOVE (2026-09-04)
+ * ---------------------------------
+ * This context used to slide both bars off screen while you scrolled down and
+ * bring them back when you scrolled up. That is gone. A destination the reader
+ * can lose by scrolling is not a destination, and the effect fought every
+ * other interaction in the app: a keyboard opening scrolled a list, which hid
+ * the tab bar; a search field focusing did the same; and a screen that
+ * borrowed the top-bar row left the chrome suppressed if its interaction was
+ * abandoned.
+ *
+ * `onScroll`, `showChrome`, `chromeProgress` and `setTopBarSuppressed` are
+ * kept as INERT no-ops rather than deleted: eleven screens across the app pass
+ * `onScroll={chromeOnScroll}` to their main list and one calls
+ * `setTopBarSuppressed`. Removing the fields would be a rename across files
+ * this wave does not own, and the honest behaviour — nothing happens — is
+ * expressed exactly once, here.
+ *
+ * `chromeProgress` is a frozen `Animated.Value(1)`, so anything still
+ * interpolating on it (a bar's translate, a fade) resolves to "fully shown"
+ * for ever.
+ *
+ * The default value is inert in a second sense: `withinChrome` is false
+ * outside MainTabs, which is how a layout primitive tells it is on the auth
+ * stack or in a root-stack modal — hosts with NO bottom tab bar at all.
  */
 interface ChromeContextValue {
-  /** 1 = bars visible, 0 = hidden. Drives height/translate animations. */
+  /**
+   * Always 1. Retained so existing interpolations keep type-checking and
+   * resolve to "shown"; nothing animates it any more.
+   */
   chromeProgress: Animated.Value;
-  /** Attach to a root screen's main list with `scrollEventThrottle={16}`. */
+  /** No-op. Kept because eleven screens still pass it to their main list. */
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** No-op: the chrome is never hidden, so there is nothing to restore. */
   showChrome: () => void;
-  drawerOpen: boolean;
-  setDrawerOpen: (open: boolean) => void;
   activeTab: TabKey;
+  /**
+   * True on a route that owns the whole window — a fullScreenModal study
+   * session, a chat with its own header. Those screens draw their own back
+   * arrow and title, so the shared chrome stands down. This is a property of
+   * the ROUTE, decided once in navigation/types.ts, never of scrolling.
+   */
   immersive: boolean;
   /** Published by CustomTabBar, the one place that knows the focused route. */
   setTabState: (state: { activeTab: TabKey; immersive: boolean }) => void;
@@ -33,24 +59,40 @@ interface ChromeContextValue {
    * the untabbed case.
    */
   withinChrome: boolean;
-  /** A screen borrowing the top-bar row (e.g. chat multi-select) sets this so
-      the icons yield their space until the interaction completes. */
-  topBarSuppressed: boolean;
+  /**
+   * No-op. The top bar is never suppressed: a screen that borrows the row for
+   * a selection mode draws its own bar over its own content instead.
+   */
   setTopBarSuppressed: (suppressed: boolean) => void;
+  /**
+   * The signed-in student, published once by the shell so the top bar's avatar
+   * and the Me tab show the same face without fetching the profile twice.
+   */
+  profileName: string;
+  profileAvatarUri: string | null;
+  profileEmail: string | null;
+  setProfile: (profile: {
+    name: string;
+    avatarUri: string | null;
+    email: string | null;
+  }) => void;
 }
 
+const FROZEN_SHOWN = new Animated.Value(1);
+
 const inertValue: ChromeContextValue = {
-  chromeProgress: new Animated.Value(1),
+  chromeProgress: FROZEN_SHOWN,
   onScroll: () => {},
   showChrome: () => {},
-  drawerOpen: false,
-  setDrawerOpen: () => {},
-  activeTab: 'Chat',
+  activeTab: 'Home',
   immersive: false,
   setTabState: () => {},
   withinChrome: false,
-  topBarSuppressed: false,
   setTopBarSuppressed: () => {},
+  profileName: 'Your profile',
+  profileAvatarUri: null,
+  profileEmail: null,
+  setProfile: () => {},
 };
 
 const ChromeContext = createContext<ChromeContextValue>(inertValue);
@@ -59,74 +101,39 @@ export function useChrome(): ChromeContextValue {
   return useContext(ChromeContext);
 }
 
-/** Scroll must travel this far in one direction before the bars react. */
-const DIRECTION_THRESHOLD = 10;
-/** Never hide the bars while this close to the top of the list. */
-const TOP_REVEAL_ZONE = 56;
-
 export function ChromeProvider({ children }: { children: React.ReactNode }) {
+  // One frozen value for the life of the provider. `useRef` rather than the
+  // module constant so a remount (the font-size re-key) cannot share a value
+  // with a torn-down tree.
   const chromeProgress = useRef(new Animated.Value(1)).current;
-  const shownRef = useRef(true);
-  const lastOffsetRef = useRef(0);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [tabState, setTabState] = useState<{ activeTab: TabKey; immersive: boolean }>({
-    activeTab: 'Chat',
+    activeTab: 'Home',
     immersive: false,
   });
-  const [topBarSuppressed, setTopBarSuppressed] = useState(false);
+  const [profile, setProfile] = useState<{
+    name: string;
+    avatarUri: string | null;
+    email: string | null;
+  }>({ name: 'Your profile', avatarUri: null, email: null });
 
-  const animateTo = useCallback(
-    (shown: boolean) => {
-      if (shownRef.current === shown) return;
-      shownRef.current = shown;
-      Animated.timing(chromeProgress, {
-        toValue: shown ? 1 : 0,
-        duration: 180,
-        // Drives the top bar's height (layout), so the native driver is out.
-        useNativeDriver: false,
-      }).start();
-    },
-    [chromeProgress]
-  );
-
-  const onScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const y = e.nativeEvent.contentOffset.y;
-      // Ignore iOS rubber-banding above the top.
-      if (y < 0) return;
-      if (y <= TOP_REVEAL_ZONE) {
-        lastOffsetRef.current = y;
-        animateTo(true);
-        return;
-      }
-      const delta = y - lastOffsetRef.current;
-      if (Math.abs(delta) < DIRECTION_THRESHOLD) return;
-      lastOffsetRef.current = y;
-      animateTo(delta < 0);
-    },
-    [animateTo]
-  );
-
-  const showChrome = useCallback(() => {
-    lastOffsetRef.current = 0;
-    animateTo(true);
-  }, [animateTo]);
+  const noop = useCallback(() => {}, []);
 
   const value = useMemo(
     () => ({
       chromeProgress,
-      onScroll,
-      showChrome,
-      drawerOpen,
-      setDrawerOpen,
+      onScroll: noop,
+      showChrome: noop,
       activeTab: tabState.activeTab,
       immersive: tabState.immersive,
       setTabState,
       withinChrome: true,
-      topBarSuppressed,
-      setTopBarSuppressed,
+      setTopBarSuppressed: noop,
+      profileName: profile.name,
+      profileAvatarUri: profile.avatarUri,
+      profileEmail: profile.email,
+      setProfile,
     }),
-    [chromeProgress, onScroll, showChrome, drawerOpen, tabState, topBarSuppressed]
+    [chromeProgress, noop, tabState, profile]
   );
 
   return <ChromeContext.Provider value={value}>{children}</ChromeContext.Provider>;

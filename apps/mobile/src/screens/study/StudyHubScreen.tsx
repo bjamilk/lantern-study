@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { featureAccents } from '@lantern/shared/design';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { Button, Card, ScreenHeader } from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 interface Props {
   navigation: {
@@ -58,7 +58,7 @@ export function StudyHubScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('Library', { tab: 'notes' })}
             className="flex-1 p-4 rounded-xl border border-lantern-border bg-lantern-surface"
           >
-            <Ionicons name="sparkles" size={24} color={featureAccents.groups} />
+            <AppIcon name="sparkles" size={24} color={featureAccents.groups} />
             <Text className="font-semibold text-lantern-text mt-2">Library</Text>
             <Text className="text-xs text-lantern-text-secondary mt-1">Notes & decks</Text>
           </Pressable>
@@ -66,7 +66,7 @@ export function StudyHubScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('TestsList')}
             className="flex-1 p-4 rounded-xl border border-lantern-border bg-lantern-surface"
           >
-            <Ionicons name="clipboard-outline" size={24} color={featureAccents.groups} />
+            <AppIcon name="clipboard" size={24} color={featureAccents.groups} />
             <Text className="font-semibold text-lantern-text mt-2">Tests</Text>
             <Text className="text-xs text-lantern-text-secondary mt-1">Practice & review</Text>
           </Pressable>
@@ -82,7 +82,7 @@ export function StudyHubScreen({ navigation }: Props) {
               <Text className="font-medium text-lantern-text" numberOfLines={1}>{deck.name}</Text>
               <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>{deck.description || 'Flashcard deck'}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={featureAccents.groups} />
+            <AppIcon name="chevron-forward" size={18} color={featureAccents.groups} />
           </Pressable>
         ))}
       </ScrollView>

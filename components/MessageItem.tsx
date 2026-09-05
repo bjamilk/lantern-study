@@ -12,6 +12,9 @@ import {
   resolveGroupChatSenderLabel,
   resolveGroupChatMentionUsername,
   getQuestionVerificationThreshold,
+  canVerifyQuestion,
+  QUESTION_VERIFY_COPY,
+  VERIFY_PEER_UPVOTES,
   parseChatAudioUrl,
   parseChatImageUrl,
   chatMessagePreview,
@@ -111,12 +114,12 @@ function ReceiptTicks({
     <span className={`inline-flex items-center ml-1 ${color}`} title={title} aria-label={title}>
       {isRead ? (
         <svg width="16" height="12" viewBox="0 0 16 12" fill="none" aria-hidden>
-          <path d="M1 6.5L4.5 10L11 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M5 6.5L8.5 10L15 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M1 6.5L4.5 10L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5 6.5L8.5 10L15 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ) : (
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-          <path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
     </span>
@@ -364,6 +367,17 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
   const approvalProgress = approvalThreshold > 0
     ? Math.min(100, Math.round((message.upvotes / approvalThreshold) * 100))
     : 0;
+  // Peer votes are the binding gate: the server refuses VERIFIED below
+  // VERIFY_PEER_UPVOTES no matter who asks. `undefined` means this API build does
+  // not report the count, so the card falls back to the member-share bar rather
+  // than claiming nobody has upvoted.
+  const peerUpvotes: number | null =
+    typeof message.peerUpvotes === 'number' ? message.peerUpvotes : null;
+  const peerVerifyReady = peerUpvotes !== null && canVerifyQuestion(peerUpvotes);
+  const peerProgress = Math.min(
+    100,
+    Math.round(((peerUpvotes ?? 0) / VERIFY_PEER_UPVOTES) * 100)
+  );
 
   const questionBubbleClasses = isCurrentUserMessage
     ? 'bg-lantern-primary-background text-lantern-text rounded-2xl rounded-br-md shadow-sm ring-1 ring-lantern-primary/30 border border-lantern-primary/25'
@@ -644,7 +658,38 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
               </div>
             )}
 
-            {isPending && memberCount > 0 && (
+            {/* Verification progress. A question is verified by its PEERS, so the
+                bar counts upvotes from members other than the author — the same
+                number the server enforces. Older API builds do not send it; then
+                the older member-share bar is shown rather than a wrong zero. */}
+            {isPending && peerUpvotes !== null && (
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center justify-between text-[10px] text-lantern-text-secondary">
+                  <span>{QUESTION_VERIFY_COPY.progress(peerUpvotes)}</span>
+                  <span>{peerProgress}%</span>
+                </div>
+                <div
+                  className="h-1 rounded-full overflow-hidden bg-lantern-background-secondary"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={VERIFY_PEER_UPVOTES}
+                  aria-valuenow={Math.min(VERIFY_PEER_UPVOTES, peerUpvotes)}
+                  aria-label={QUESTION_VERIFY_COPY.progress(peerUpvotes)}
+                >
+                  <div
+                    className="h-full rounded-full bg-emerald-500"
+                    style={{ width: `${peerProgress}%`, minWidth: peerProgress > 0 ? '4px' : undefined }}
+                  />
+                </div>
+                <p className="text-[10px] text-lantern-text-tertiary">
+                  {peerVerifyReady
+                    ? QUESTION_VERIFY_COPY.ready
+                    : QUESTION_VERIFY_COPY.blocked(peerUpvotes)}
+                </p>
+              </div>
+            )}
+
+            {isPending && peerUpvotes === null && memberCount > 0 && (
               <div className="space-y-1 pt-1">
                 <div className="flex items-center justify-between text-[10px] text-lantern-text-secondary">
                   <span>{message.upvotes} / {approvalThreshold} approvals needed</span>

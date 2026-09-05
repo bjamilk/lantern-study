@@ -129,6 +129,12 @@ export interface Message {
   diagramLabels?: any[];
   upvotes: number;
   downvotes: number;
+  /**
+   * Distinct upvotes from members other than the author — the only count that
+   * can grant VERIFIED (@lantern/shared/utils/questionVerification). Mirrors the
+   * shared Message field so both clients receive it.
+   */
+  peerUpvotes?: number;
   flaggedAsSimilarUserIds?: string[];
   editedAt?: string;
   removedAt?: string;

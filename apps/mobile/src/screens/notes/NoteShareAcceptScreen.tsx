@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { acceptNoteShareLink, previewNoteShareLink } from '../../services/notes';
 import { useNotesStore } from '../../stores/notesStore';
 import { Button, Card } from '../../components/ui';
 import { Screen } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -68,7 +68,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
     <Screen>
       <View className="flex-row items-center px-4 py-3">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2" accessibilityLabel="Go back">
-          <Ionicons name="arrow-back" size={24} color="#475569" />
+          <AppIcon name="arrow-back" size={24} color="#475569" />
         </Pressable>
         <Text className="ml-2 text-lg font-semibold text-lantern-text">Note invitation</Text>
       </View>
@@ -77,7 +77,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
           <ActivityIndicator size="large" color="#6366f1" />
         ) : error ? (
           <Card className="items-center border-red-200">
-            <Ionicons name="link-outline" size={36} color="#ef4444" />
+            <AppIcon name="link" size={36} color="#ef4444" />
             <Text className="mt-3 text-center text-sm text-lantern-text">{error}</Text>
             <Button className="mt-4" size="sm" variant="secondary" onPress={() => navigation.goBack()}>
               Go back
@@ -85,7 +85,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
           </Card>
         ) : preview ? (
           <Card className="border-lantern-primary/30">
-            <Ionicons name="document-text-outline" size={36} color="#6366f1" />
+            <AppIcon name="document-text" size={36} color="#6366f1" />
             <Text className="mt-3 text-lg font-semibold text-lantern-text">{preview.title}</Text>
             <Text className="mt-2 text-sm text-lantern-text-secondary">
               {preview.owner?.name || preview.owner?.username || 'A Lantern Study member'} invited you as an{' '}

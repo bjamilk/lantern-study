@@ -13,7 +13,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -58,6 +57,7 @@ import {
   toBoardPost,
 } from '../../utils/boardPosts';
 import { applyReactionLocally } from '@lantern/shared/chat';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 export type BoardNavigation = {
   goBack: () => void;
@@ -628,7 +628,7 @@ export function CommunityBoardScreen({
     const items: ActionSheetItem[] = [
       {
         label: COMMUNITY_BOARD_COPY.copyLink,
-        icon: 'link-outline',
+        icon: 'link',
         onPress: () => {
           void Clipboard.setStringAsync(payload.url)
             .then(() => AccessibilityInfo.announceForAccessibility(COMMUNITY_BOARD_COPY.linkCopied))
@@ -646,7 +646,7 @@ export function CommunityBoardScreen({
     if (body) {
       items.push({
         label: COMMUNITY_BOARD_COPY.copyText,
-        icon: 'copy-outline',
+        icon: 'copy',
         onPress: () => {
           void Clipboard.setStringAsync(body)
             .then(() => AccessibilityInfo.announceForAccessibility('Post copied'))
@@ -658,7 +658,7 @@ export function CommunityBoardScreen({
     }
     items.push({
       label: `${COMMUNITY_BOARD_COPY.share} via…`,
-      icon: 'share-outline',
+      icon: 'share',
       onPress: () => {
         // The same `Share.share` call the community invite already makes.
         // `message` is the URL alone: Android has no title field and would
@@ -778,7 +778,7 @@ export function CommunityBoardScreen({
     () => [
       {
         label: COMMUNITY_BOARD_COPY.searchBoard,
-        icon: 'search-outline',
+        icon: 'search',
         onPress: () => setSearchOpen(true),
       },
       // Second row, both platforms, same words (§3.4). Hidden when the
@@ -788,7 +788,7 @@ export function CommunityBoardScreen({
         ? [
             {
               label: COMMUNITY_BOARD_COPY.savedPosts,
-              icon: 'bookmark-outline' as const,
+              icon: 'bookmark' as const,
               onPress: () => navigation.navigate('SavedPosts'),
             },
           ]
@@ -799,7 +799,7 @@ export function CommunityBoardScreen({
             ? `Unmute (until ${formatMuteUntilLabel(chatMutedUntil)})`
             : 'Unmute notifications'
           : COMMUNITY_BOARD_COPY.muteBoard,
-        icon: chatMuted ? 'notifications-outline' : 'notifications-off-outline',
+        icon: chatMuted ? 'notifications' : 'notifications-off',
         disabled: muteBusy,
         onPress: () => {
           if (chatMuted) void clearMute();
@@ -808,18 +808,18 @@ export function CommunityBoardScreen({
       },
       {
         label: COMMUNITY_COPY.startStudyGroup,
-        icon: 'people-outline',
+        icon: 'people',
         onPress: () => startStudyGroup(),
       },
-      { label: COMMUNITY_BOARD_COPY.aboutBoard, icon: 'information-circle-outline', onPress: showAbout },
+      { label: COMMUNITY_BOARD_COPY.aboutBoard, icon: 'information-circle', onPress: showAbout },
       {
         label: COMMUNITY_BOARD_COPY.reportBoard,
-        icon: 'flag-outline',
+        icon: 'flag',
         onPress: () => setReportTarget({ type: 'group', id: groupId, label: displayName }),
       },
       {
         label: COMMUNITY_BOARD_COPY.leaveBoard,
-        icon: 'exit-outline',
+        icon: 'exit',
         destructive: true,
         onPress: confirmLeave,
       },
@@ -857,7 +857,8 @@ export function CommunityBoardScreen({
       const starred = starredIds.has(target.id);
       items.push({
         label: starred ? COMMUNITY_BOARD_COPY.saved : COMMUNITY_BOARD_COPY.saveForMe,
-        icon: starred ? 'star' : 'star-outline',
+        icon: 'star',
+        iconFilled: starred,
         hint: 'Only on this device',
         onPress: () => {
           if (!user?.id) return;
@@ -878,7 +879,7 @@ export function CommunityBoardScreen({
     if (target.senderId !== user?.id) {
       items.push({
         label: COMMUNITY_BOARD_COPY.reportPost,
-        icon: 'flag-outline',
+        icon: 'flag',
         onPress: () =>
           setReportTarget({
             type: 'message',
@@ -903,7 +904,7 @@ export function CommunityBoardScreen({
     ) {
       items.push({
         label: COMMUNITY_BOARD_COPY.editPost,
-        icon: 'create-outline',
+        icon: 'create',
         onPress: () => {
           setEditing({ id: target.id, text: body });
           setText(body);
@@ -925,7 +926,7 @@ export function CommunityBoardScreen({
     ) {
       items.push({
         label: COMMUNITY_BOARD_COPY.deletePost,
-        icon: 'trash-outline',
+        icon: 'trash',
         destructive: true,
         onPress: () => {
           Alert.alert(COMMUNITY_BOARD_COPY.deletePost, 'This cannot be undone.', [
@@ -946,14 +947,14 @@ export function CommunityBoardScreen({
       const isPinned = pinnedPost?.id === target.id;
       items.push({
         label: isPinned ? COMMUNITY_BOARD_COPY.unpin : COMMUNITY_BOARD_COPY.pin,
-        icon: 'pin-outline',
+        icon: 'pin',
         disabled: pinBusy,
         onPress: () => void setPin(groupId, target.id, !isPinned),
       });
     }
     items.push({
       label: COMMUNITY_BOARD_COPY.openStudyGroup,
-      icon: 'school-outline',
+      icon: 'school',
       onPress: () => startStudyGroup(target),
     });
     return items;
@@ -1072,13 +1073,13 @@ export function CommunityBoardScreen({
           accessibilityLabel="More actions"
           className="min-h-[44px] min-w-[44px] items-center justify-center"
         >
-          <Ionicons name="ellipsis-vertical" size={20} color="#64748b" />
+          <AppIcon name="ellipsis-vertical" size={20} color="#64748b" />
         </Pressable>
       </View>
 
       {searchOpen ? (
         <View className="flex-row items-center gap-2 border-b border-lantern-border bg-lantern-surface px-3 py-2">
-          <Ionicons name="search" size={16} color="#94a3b8" />
+          <AppIcon name="search" size={16} color="#94a3b8" />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -1098,7 +1099,7 @@ export function CommunityBoardScreen({
             accessibilityLabel="Close search"
             className="min-h-[44px] min-w-[44px] items-center justify-center"
           >
-            <Ionicons name="close" size={18} color="#94a3b8" />
+            <AppIcon name="close" size={18} color="#94a3b8" />
           </Pressable>
         </View>
       ) : null}
@@ -1237,7 +1238,7 @@ export function CommunityBoardScreen({
         title={COMMUNITY_BOARD_COPY.muteBoard}
         items={CHAT_MUTE_DURATIONS.map((option) => ({
           label: option.label,
-          icon: 'notifications-off-outline' as const,
+          icon: 'notifications-off' as const,
           onPress: () => {
             setMuteMenuOpen(false);
             void applyMute(option.id);

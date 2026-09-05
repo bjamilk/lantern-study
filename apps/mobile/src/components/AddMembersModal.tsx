@@ -19,12 +19,12 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { ThemeScope, useTheme } from '../theme';
 import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
 import * as api from '../services/api';
 import { ResolvedAvatar } from './ResolvedAvatar';
+import { AppIcon } from './ui/AppIcon';
 
 interface SearchResult {
   id: string;
@@ -141,7 +141,7 @@ export default function AddMembersModal({
         onPress={() => setView('search')}
       >
         <View style={[styles.optionIconContainer, { backgroundColor: colors.primary + '20' }]}>
-          <Ionicons name="at" size={28} color={colors.primary} />
+          <AppIcon name="at" size={28} color={colors.primary} />
         </View>
         <View style={styles.optionTextContainer}>
           <Text style={[styles.optionTitle, { color: colors.text }]}>Search by Username</Text>
@@ -149,7 +149,7 @@ export default function AddMembersModal({
             Find users by @username or name
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
+        <AppIcon name="chevron-forward" size={24} color={colors.textSecondary} />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -157,7 +157,7 @@ export default function AddMembersModal({
         onPress={() => setView('invite')}
       >
         <View style={[styles.optionIconContainer, { backgroundColor: '#10B98120' }]}>
-          <Ionicons name="link" size={28} color="#10B981" />
+          <AppIcon name="link" size={28} color="#10B981" />
         </View>
         <View style={styles.optionTextContainer}>
           <Text style={[styles.optionTitle, { color: colors.text }]}>Share Invite Link</Text>
@@ -165,7 +165,7 @@ export default function AddMembersModal({
             Send a link for others to join
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
+        <AppIcon name="chevron-forward" size={24} color={colors.textSecondary} />
       </TouchableOpacity>
 
       <View style={[styles.footerActions, { borderTopColor: colors.border }]}>
@@ -182,7 +182,7 @@ export default function AddMembersModal({
   const renderSearchView = () => (
     <View style={styles.searchView}>
       <View style={[styles.searchInputContainer, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} />
+        <AppIcon name="search" size={20} color={colors.textSecondary} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search by @username or name..."
@@ -195,7 +195,7 @@ export default function AddMembersModal({
         />
         {searchTerm.length > 0 && (
           <TouchableOpacity onPress={() => setSearchTerm('')}>
-            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+            <AppIcon name="close-circle" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
@@ -206,7 +206,7 @@ export default function AddMembersModal({
         </View>
       ) : searchTerm.length < 2 ? (
         <View style={styles.emptyStateContainer}>
-          <Ionicons name="at" size={48} color={colors.textSecondary} />
+          <AppIcon name="at" size={48} color={colors.textSecondary} />
           <Text style={[styles.emptyStateTitle, { color: colors.textSecondary }]}>
             Type at least 2 characters to search
           </Text>
@@ -216,7 +216,7 @@ export default function AddMembersModal({
         </View>
       ) : searchResults.length === 0 ? (
         <View style={styles.emptyStateContainer}>
-          <Ionicons name="people" size={48} color={colors.textSecondary} />
+          <AppIcon name="people" size={48} color={colors.textSecondary} />
           <Text style={[styles.emptyStateTitle, { color: colors.textSecondary }]}>
             No users found
           </Text>
@@ -249,7 +249,7 @@ export default function AddMembersModal({
                   />
                   {isSelected && (
                     <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
-                      <Ionicons name="checkmark" size={12} color="#fff" />
+                      <AppIcon name="checkmark" size={12} color="#fff" />
                     </View>
                   )}
                 </View>
@@ -296,7 +296,7 @@ export default function AddMembersModal({
       <GroupInviteLinkPanel groupName={groupName} inviteId={inviteId} />
 
       <View style={[styles.infoBox, { backgroundColor: colors.primary + '15' }]}>
-        <Ionicons name="at" size={20} color={colors.primary} />
+        <AppIcon name="at" size={20} color={colors.primary} />
         <Text style={[styles.infoText, { color: colors.text }]}>
           Ask your friends for their @username and search for them directly to add them to the group.
         </Text>
@@ -324,14 +324,14 @@ export default function AddMembersModal({
                 style={[styles.backButton, { backgroundColor: colors.background }]} 
                 onPress={() => setView('initial')}
               >
-                <Ionicons name="arrow-back" size={24} color={colors.text} />
+                <AppIcon name="arrow-back" size={24} color={colors.text} />
               </TouchableOpacity>
             )}
             <Text style={[styles.title, { color: colors.text }, view !== 'initial' && { marginLeft: 16 }]}>
               Add Members
             </Text>
             <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.text} />
+              <AppIcon name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 

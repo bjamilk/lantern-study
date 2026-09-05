@@ -16,11 +16,11 @@ import {
 } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useGameStore } from '../../stores';
 import { useAuthStore } from '../../stores/authStore';
 import Confetti from '../../components/Confetti';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -171,7 +171,7 @@ export default function GameResultScreen() {
     return '#ef4444';
   };
 
-  const getResultIcon = () => {
+  const getResultIcon = (): AppIconName => {
     if (isDraw) return 'remove-circle';
     if (isWinner) return 'trophy';
     return 'sad';
@@ -279,8 +279,8 @@ export default function GameResultScreen() {
               { backgroundColor: getResultColor() + '20' },
             ]}
           >
-            <Ionicons
-              name={getResultIcon() as any}
+            <AppIcon
+              name={getResultIcon()}
               size={60}
               color={getResultColor()}
             />
@@ -329,7 +329,7 @@ export default function GameResultScreen() {
             onPress={handleRematch}
             activeOpacity={0.8}
           >
-            <Ionicons name="refresh" size={22} color="#fff" />
+            <AppIcon name="refresh" size={22} color="#fff" />
             <Text style={styles.buttonText}>Rematch</Text>
           </TouchableOpacity>
 
@@ -338,7 +338,7 @@ export default function GameResultScreen() {
             onPress={handleExit}
             activeOpacity={0.8}
           >
-            <Ionicons name="exit-outline" size={22} color={colors.text} />
+            <AppIcon name="exit" size={22} color={colors.text} />
             <Text style={[styles.buttonText, { color: colors.text }]}>Exit</Text>
           </TouchableOpacity>
         </Animated.View>

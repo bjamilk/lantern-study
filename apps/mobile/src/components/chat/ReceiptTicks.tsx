@@ -1,7 +1,7 @@
 import React from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
+import { AppIcon } from '../ui/AppIcon';
 
 interface ReceiptTicksProps {
   status?: 'sent' | 'read';
@@ -43,7 +43,7 @@ export function ReceiptTicks({
   const icon = (
     // Label lives on whichever wrapper is announced (or nowhere, when the row
     // speaks the state) — never on the glyph itself.
-    <Ionicons
+    <AppIcon
       name={isRead ? 'checkmark-done' : 'checkmark'}
       size={14}
       color={color}

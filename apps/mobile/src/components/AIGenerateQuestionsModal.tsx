@@ -20,7 +20,6 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared/utils';
 import { useTheme } from '../theme';
@@ -29,6 +28,7 @@ import AIUsageBadge from './AIUsageBadge';
 import { AIDisclaimer } from './AIDisclaimer';
 import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../services/notes';
 import type { AIGeneratedQuestion } from '../services/ai';
+import { AppIcon } from './ui/AppIcon';
 
 interface AIGenerateQuestionsModalProps {
   visible: boolean;
@@ -158,10 +158,10 @@ export default function AIGenerateQuestionsModal({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
-              <Ionicons name="sparkles" size={20} color={colors.primary} />
+              <AppIcon name="sparkles" size={20} color={colors.primary} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Generate Questions</Text>
             </View>
             <AIUsageBadge variant="badge" />
@@ -187,7 +187,7 @@ export default function AIGenerateQuestionsModal({
                     {isUploading ? (
                       <ActivityIndicator size="small" color={colors.primary} />
                     ) : (
-                      <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
+                      <AppIcon name="document-attach" size={16} color={colors.primary} />
                     )}
                     <Text style={[styles.uploadChipText, { color: colors.primary }]}>
                       {isUploading ? 'Uploading…' : 'PDF / PPT'}
@@ -274,7 +274,7 @@ export default function AIGenerateQuestionsModal({
                 {/* Error */}
                 {aiError && (
                   <View style={[styles.errorBox, { backgroundColor: colors.errorBackground }]}>
-                    <Ionicons name="alert-circle" size={16} color={colors.error} />
+                    <AppIcon name="alert-circle" size={16} color={colors.error} />
                     <Text style={[styles.errorText, { color: colors.error }]}>{aiError}</Text>
                   </View>
                 )}
@@ -292,7 +292,7 @@ export default function AIGenerateQuestionsModal({
                   {isAILoading ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Ionicons name="sparkles" size={20} color="#fff" />
+                    <AppIcon name="sparkles" size={20} color="#fff" />
                   )}
                   <Text style={styles.generateBtnText}>
                     {isAILoading ? 'Generating...' : 'Generate Questions'}
@@ -378,7 +378,7 @@ export default function AIGenerateQuestionsModal({
                                 {letter}. {opt}
                               </Text>
                               {isCorrect && (
-                                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                                <AppIcon name="checkmark-circle" size={16} color={colors.success} />
                               )}
                             </View>
                           );
@@ -400,7 +400,7 @@ export default function AIGenerateQuestionsModal({
                     style={[styles.actionBtn, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}
                     onPress={() => setGeneratedQuestions([])}
                   >
-                    <Ionicons name="refresh" size={18} color={colors.text} />
+                    <AppIcon name="refresh" size={18} color={colors.text} />
                     <Text style={[styles.actionBtnText, { color: colors.text }]}>Regenerate</Text>
                   </TouchableOpacity>
 
@@ -408,7 +408,7 @@ export default function AIGenerateQuestionsModal({
                     style={[styles.actionBtn, styles.actionBtnPrimary, { backgroundColor: colors.primary }]}
                     onPress={handleUseQuestions}
                   >
-                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <AppIcon name="checkmark" size={18} color="#fff" />
                     <Text style={[styles.actionBtnText, { color: '#fff' }]}>Use Questions</Text>
                   </TouchableOpacity>
                 </View>

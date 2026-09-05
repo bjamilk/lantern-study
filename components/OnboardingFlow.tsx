@@ -3,8 +3,11 @@ import { AcademicCapIcon, SparklesIcon, ArrowRightIcon, BookOpenIcon } from '@he
 import { Button } from './ui';
 import Modal from './ui/Modal';
 import { buildStarterDeckPrompt } from '../utils/academicSetup';
+import { needsOnboardingAcademicStep } from '../utils/onboardingAcademic';
+import { AcademicIdentityStep } from './onboarding/AcademicIdentityStep';
+import { useAuthStore } from '../stores/authStore';
 
-export type OnboardingStep = 'welcome' | 'starter' | 'done';
+export type OnboardingStep = 'welcome' | 'academic' | 'starter' | 'done';
 
 /** Defaults the removed goal/streak screens used to collect — persisted silently. */
 export const ONBOARDING_DEFAULT_STUDY_GOAL = 'retention';
@@ -26,7 +29,15 @@ interface OnboardingFlowProps {
 const STARTER_STAGES = ['Reading your brief…', 'Building flashcards…', 'Saving your first deck…'];
 
 /**
- * Three-step onboarding: welcome → starter deck → open Learn mode.
+ * Onboarding: welcome → academic identity → starter deck → open Learn mode.
+ *
+ * The academic step is the web equivalent of what mobile's SignUpScreen asks
+ * during sign-up (institution + level required, programme optional). It is
+ * shown only while the account is missing one of those, and while it is showing
+ * the flow cannot be dismissed — the dashboard banner it replaces was skippable
+ * forever, which left the academic graph (auto-communities, campus counts,
+ * Discover) with nothing to work from.
+ *
  * The goal and streak screens were removed; their defaults are passed to
  * onComplete unchanged so downstream persistence keeps working.
  */
@@ -50,7 +61,16 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const [stage, setStage] = useState(0);
   const [generated, setGenerated] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [academicAnswered, setAcademicAnswered] = useState(false);
   const isDark = theme === 'dark';
+
+  // Read from the store rather than props so App.tsx needs no new wiring; the
+  // store object is selected whole (never built in the selector).
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const needsAcademicStep = !academicAnswered && needsOnboardingAcademicStep(currentUser);
+  // No backdrop click, no Escape, no "Skip for now" while the required
+  // academic answers are still outstanding.
+  const blockDismiss = needsAcademicStep && (step === 'welcome' || step === 'academic');
 
   // Keep the seed fresh while the user's courses load, until they edit it.
   useEffect(() => {
@@ -101,11 +121,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onSkip}
+      onClose={blockDismiss ? () => undefined : onSkip}
       ariaLabelledBy="onboarding-title"
-      maxWidthClass="max-w-md"
+      // The academic step carries a picker plus two fields; max-w-md crushes them.
+      maxWidthClass={step === 'academic' ? 'max-w-lg' : 'max-w-md'}
       loading={loading}
-      closeOnBackdrop={!loading}
+      closeOnBackdrop={!loading && !blockDismiss}
       zIndexClass="z-[60]"
       panelClassName="!p-0 rounded-2xl overflow-hidden"
     >
@@ -119,11 +140,26 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
             <p className="text-lantern-text-secondary mb-6">
               Flashcards, notes, tests and AI — filed by course. Let&apos;s build your first deck in under a minute.
             </p>
-            <Button onClick={() => setStep('starter')} className="w-full mb-2">
+            <Button
+              onClick={() => setStep(needsAcademicStep ? 'academic' : 'starter')}
+              className="w-full mb-2"
+            >
               Get started <ArrowRightIcon className="w-4 h-4 ml-1" />
             </Button>
-            <button onClick={onSkip} className="text-sm text-lantern-text-tertiary hover:text-lantern-text-secondary">Skip for now</button>
+            {!needsAcademicStep && (
+              <button onClick={onSkip} className="text-sm text-lantern-text-tertiary hover:text-lantern-text-secondary">Skip for now</button>
+            )}
           </div>
+        )}
+
+        {step === 'academic' && (
+          <AcademicIdentityStep
+            titleId="onboarding-title"
+            onSaved={() => {
+              setAcademicAnswered(true);
+              setStep('starter');
+            }}
+          />
         )}
 
         {step === 'starter' && (

@@ -15,13 +15,13 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores';
 import { ScreenHeader } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { listBlockedUsers, unblockUser, fetchUserProfile } from '../../services/api';
 import { useTheme } from '../../theme';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 interface BlockedUser {
   id: string;
@@ -127,7 +127,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
         </View>
       ) : error && blocked.length === 0 ? (
         <View className="flex-1 items-center justify-center px-6 gap-3">
-          <Ionicons name="alert-circle-outline" size={40} color={colors.textTertiary} />
+          <AppIcon name="alert-circle" size={40} color={colors.textTertiary} />
           <Text className="text-sm text-center text-lantern-text-secondary">{error}</Text>
           <Pressable
             onPress={() => void load()}
@@ -154,7 +154,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
                 className="mx-4 mt-3 px-3 py-2 rounded-xl flex-row items-center gap-2"
                 style={{ backgroundColor: `${colors.error}18` }}
               >
-                <Ionicons name="warning-outline" size={16} color={colors.error} />
+                <AppIcon name="warning" size={16} color={colors.error} />
                 <Text className="flex-1 text-xs" style={{ color: colors.error }}>
                   {error}
                 </Text>
@@ -163,7 +163,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
           }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
-              <Ionicons name="shield-checkmark-outline" size={40} color={colors.textTertiary} />
+              <AppIcon name="shield-checkmark" size={40} color={colors.textTertiary} />
               <Text className="text-base font-semibold text-lantern-text mt-3 mb-1">
                 No blocked users
               </Text>

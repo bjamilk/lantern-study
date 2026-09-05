@@ -4,7 +4,6 @@ import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import {
   isAuthAppPath,
-  isEphemeralAppMode,
   isPublicAppPath,
   parseAppRoute,
 } from '../utils/appRoutes';
@@ -39,9 +38,6 @@ export function useRouteSync() {
   }, [currentUser, location.pathname, navigate]);
 
   useEffect(() => {
-    const ephemeral = isEphemeralAppMode(useUIStore.getState().appMode);
-    if (ephemeral) return;
-
     const parsed = parseAppRoute(location.pathname);
 
     if (location.pathname === '/' && currentUser) {
@@ -50,6 +46,17 @@ export function useRouteSync() {
     }
 
     if (parsed.inviteId || parsed.shareToken) {
+      return;
+    }
+
+    // `/me` is a real destination App.tsx renders from the path. It has no
+    // AppMode, so it must not fall through to the "unknown path" bounce below —
+    // and it must not disturb the mode the student came from, so Back returns
+    // them to the screen they left.
+    if (parsed.standalone) {
+      if (!currentUser) {
+        storePostLoginRedirect(location.pathname + location.search);
+      }
       return;
     }
 

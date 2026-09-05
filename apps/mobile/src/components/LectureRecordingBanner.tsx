@@ -1,7 +1,6 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import {
   formatRecordingDuration,
@@ -9,6 +8,7 @@ import {
   MIN_MOBILE_LECTURE_RECORD_MS,
   useLectureRecordingStore,
 } from '../stores/lectureRecordingStore';
+import { AppIcon } from './ui/AppIcon';
 
 /**
  * Sticky global bar while a lecture recording/transcription session is active.
@@ -78,7 +78,7 @@ export function LectureRecordingBanner() {
               canStop ? 'active:bg-white/30' : 'opacity-50'
             }`}
           >
-            <Ionicons name="stop" size={14} color="#fff" />
+            <AppIcon name="stop" size={14} color="#fff" />
             <Text className="text-white text-xs font-semibold">
               {canStop ? 'Stop' : `${Math.max(0, 2 - seconds)}s`}
             </Text>

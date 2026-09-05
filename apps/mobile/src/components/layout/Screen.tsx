@@ -143,15 +143,11 @@ export function useScreenBottomPadding({
  * same time, reproduces exactly what the auth screens do today: on the auth
  * stack there is no chrome, the measurement is 0, and the offset disappears.
  *
- * KNOWN LIMIT — the measurement does NOT track the TopBar collapsing on
- * scroll. `onLayout` fires only when a node's PARENT-relative layout changes,
- * and collapsing the bar moves the whole navigator, so this container's
- * position inside it never changes and no remeasure happens. With the chrome
- * scrolled away the offset is therefore ~64px too large and the keyboard
- * leaves a dead band above itself. It over-lifts rather than under-lifts, so
- * nothing becomes unreachable — which is why this is left alone: the fix is to
- * subscribe to ChromeContext's progress and remeasure, and a bad remeasure
- * loop running on ~100 screens is worse than a cosmetic gap.
+ * This used to carry a known limit: the measurement did not track the TopBar
+ * collapsing on scroll, so with the chrome scrolled away the offset was ~64px
+ * too large and the keyboard left a dead band above itself. The bars no longer
+ * move (see ChromeContext), so the measured position is now the real one for
+ * the whole life of the screen and the caveat is gone.
  */
 function useMeasuredKeyboardOffset(): {
   offset: number;

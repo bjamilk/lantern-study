@@ -18,7 +18,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   REPORT_DETAILS_MAX_LENGTH,
   REPORT_REASON_LABELS,
@@ -29,6 +28,7 @@ import { reportContent } from '../../services/api';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
 import { describeReportError, isAlreadyReportedError } from './reportErrors';
+import { AppIcon } from '../ui/AppIcon';
 
 export interface ReportContentSheetProps {
   visible: boolean;
@@ -118,12 +118,12 @@ export function ReportContentSheet({
             style={{ paddingBottom: insets.bottom + 32 }}
           >
             <View className="flex-row items-center px-5 mb-1">
-              <Ionicons name="flag-outline" size={18} color={colors.warning} />
+              <AppIcon name="flag" size={18} color={colors.warning} />
               <Text className="text-lg font-bold text-lantern-text ml-2 flex-1" accessibilityRole="header">
                 {TITLE_BY_TARGET[targetType]}
               </Text>
               <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
+                <AppIcon name="close" size={22} color={colors.textSecondary} />
               </Pressable>
             </View>
             {targetLabel ? (

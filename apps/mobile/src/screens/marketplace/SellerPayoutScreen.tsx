@@ -2,7 +2,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { Screen } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { fetchSellerPayments } from '../../services/api';
 import { Button } from '../../components/ui';
 import { useTheme } from '../../theme';
@@ -10,6 +9,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { SellerPayoutSetup } from './SellerPayoutSetup';
 import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -132,7 +132,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
           accessibilityLabel="Back"
           className="p-2 -ml-2 mr-1"
         >
-          <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
+          <AppIcon name="arrow-back" size={24} color={colors.textSecondary} />
         </Pressable>
         <Text className="flex-1 text-xl font-bold text-lantern-text">Payouts</Text>
         {/* Seller tool: the cart is noise here, You stays for the seller's own badges. */}
@@ -193,7 +193,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
             </View>
           ) : payments.length === 0 ? (
             <View className="py-6 items-center">
-              <Ionicons name="wallet-outline" size={28} color={colors.textTertiary} />
+              <AppIcon name="wallet" size={28} color={colors.textTertiary} />
               <Text className="mt-2 text-sm font-medium text-lantern-text">No sales yet</Text>
               <Text className="mt-1 text-xs text-lantern-text-secondary text-center">
                 Paystack sales show up here with their payout status.

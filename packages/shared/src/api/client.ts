@@ -37,15 +37,57 @@ function buildHeaders(
 
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
+/**
+ * Shown when a 401 could not be resolved because the refresh never reached the
+ * auth server. Shared so web and mobile say the same thing (house rule), and
+ * so the copy states the fact that matters most: nothing was lost.
+ */
+export const OFFLINE_AUTH_MESSAGE =
+  'You appear to be offline. Your session is safe — reconnect to continue.';
+
+export interface OfflineAuthError extends Error {
+  status: 401;
+  offline: true;
+}
+
+/** The 401 we throw when the session could not be verified OR disproved. */
+export function createOfflineAuthError(): OfflineAuthError {
+  const error = new Error(OFFLINE_AUTH_MESSAGE) as OfflineAuthError;
+  error.status = 401;
+  error.offline = true;
+  return error;
+}
+
+/** True for the "session is safe, the network is not" 401 above. */
+export function isOfflineAuthError(error: unknown): error is OfflineAuthError {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    (error as { offline?: unknown }).offline === true &&
+    (error as { status?: unknown }).status === 401
+  );
+}
+
 export interface ApiClientConfig {
   getBaseUrl: () => string;
   getAuthHeaders: AuthHeadersProvider;
   defaultTimeoutMs?: number;
   credentials?: RequestCredentials;
-  /** Called once after a 401 when refreshAuth returns true and request is retried. */
-  refreshAuth?: () => Promise<boolean>;
+  /**
+   * Re-mint the session after a 401.
+   *
+   * `true` — refreshed, retry the request once.
+   * `false` — the session is PROVEN dead; onUnauthorized runs (sign out).
+   * `'transient'` — the refresh never reached the auth server, so nothing is
+   *   proven. onOffline runs and an offline 401 is thrown; onUnauthorized must
+   *   NOT run, because a boolean cannot tell "revoked" from "unreachable" and
+   *   collapsing the two is how a dropped connection signed students out.
+   */
+  refreshAuth?: () => Promise<boolean | 'transient'>;
   /** Called when session cannot be refreshed (sign out / show login). */
   onUnauthorized?: () => void;
+  /** Called when a 401 could not be resolved because the network is down. */
+  onOffline?: () => void;
 }
 
 export interface ApiClient {
@@ -116,13 +158,18 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         throw new Error(errBody.message || 'Session ended. Please sign in again.');
       }
 
-      // Retry once after refresh. Only hard-sign-out when refresh fails
-      // (no recoverable session). A post-refresh 401 can be bootstrap race —
+      // Retry once after refresh. Only hard-sign-out when the refresh PROVED
+      // the session is dead. A post-refresh 401 can be a bootstrap race —
       // throw without signing out so login fan-out does not bounce users.
       if (allowRetry && config.refreshAuth) {
         const refreshed = await config.refreshAuth();
-        if (refreshed) {
+        if (refreshed === true) {
           return requestRaw<T>(endpoint, options, timeoutMs, false);
+        }
+        if (refreshed === 'transient') {
+          // Unreachable auth server: nothing is proven, so the session stays.
+          config.onOffline?.();
+          throw createOfflineAuthError();
         }
         config.onUnauthorized?.();
         const errBody = (await response.json().catch(() => ({}))) as { message?: string };
@@ -130,9 +177,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       }
 
       if (allowRetry && !config.refreshAuth) {
-        config.onUnauthorized?.();
-        const errBody = (await response.json().catch(() => ({}))) as { message?: string };
-        throw new Error(errBody.message || 'Session ended. Please sign in again.');
+        // Same gate: with no way to attempt a refresh this 401 carries no proof
+        // either way (the definitive codes were handled above), so it must not
+        // sign anyone out.
+        config.onOffline?.();
+        throw createOfflineAuthError();
       }
     }
 

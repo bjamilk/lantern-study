@@ -78,13 +78,21 @@ const CONTENT = {
   ],
 };
 
+/** A publish now has to name a real course (Gap 3). */
+const COURSE_ID = '44444444-4444-4444-8444-444444444444';
+
 function makeService(overrides: {
   tables?: Record<string, TableResult | TableResult[]>;
   listing?: unknown;
   group?: unknown;
   createdListing?: unknown;
 }) {
-  const { db, writes } = makeDb(overrides.tables || {});
+  const { db, writes } = makeDb({
+    // The course anchor resolves by default; a test that wants the "no such
+    // course" branch overrides `courses` with { data: null }.
+    courses: { data: { id: COURSE_ID }, error: null },
+    ...(overrides.tables || {}),
+  });
   const saveOfflineBundle = jest.fn(async () => undefined);
   const supabaseService: any = {
     getClient: () => db,
@@ -111,6 +119,7 @@ describe('publishQuestionBank', () => {
   const BASE_INPUT = {
     title: 'GST 101 Past Questions',
     campusId: 'campus-1',
+    courseId: COURSE_ID,
     content: CONTENT,
     // Rights attestation is mandatory since Phase 1 · E (see
     // marketplaceQuestionBanks.attestation.test.ts for the refusal path).

@@ -15,8 +15,8 @@
 
 import React from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
+import { AppIcon, type AppIconName } from './AppIcon';
 
 export function LoadingState({ label }: { label?: string }) {
   const { colors } = useTheme();
@@ -42,17 +42,17 @@ export function ErrorState({
   message,
   onRetry,
   retryLabel = 'Retry',
-  icon = 'cloud-offline-outline',
+  icon = 'cloud-offline',
 }: {
   message: string;
   onRetry?: () => void;
   retryLabel?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: AppIconName;
 }) {
   const { colors } = useTheme();
   return (
     <View className="flex-1 items-center justify-center px-6 py-16 gap-3">
-      <Ionicons name={icon} size={40} color={colors.textTertiary} />
+      <AppIcon name={icon} size={40} color={colors.textTertiary} />
       <Text
         className="text-sm text-center text-lantern-text-secondary"
         accessibilityLiveRegion="polite"
@@ -94,7 +94,7 @@ export function InlineErrorBanner({
       className="mx-4 my-2 px-3 py-2.5 rounded-xl flex-row items-center gap-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
       accessibilityLiveRegion="polite"
     >
-      <Ionicons name="cloud-offline-outline" size={20} color="#dc2626" />
+      <AppIcon name="cloud-offline" size={20} color="#dc2626" />
       <View className="flex-1 min-w-0">
         <Text className="text-sm font-semibold text-red-700 dark:text-red-300">{title}</Text>
         {detail ? (
@@ -123,7 +123,7 @@ export function EmptyState({
   description,
   action,
 }: {
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: AppIconName;
   title: string;
   description?: string;
   action?: React.ReactNode;
@@ -133,7 +133,7 @@ export function EmptyState({
     <View className="flex-1 items-center justify-center px-6 py-16">
       {icon ? (
         <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center mb-4">
-          <Ionicons name={icon} size={32} color={colors.primary} />
+          <AppIcon name={icon} size={32} color={colors.primary} />
         </View>
       ) : null}
       <Text className="text-base font-semibold text-lantern-text mb-1 text-center">{title}</Text>

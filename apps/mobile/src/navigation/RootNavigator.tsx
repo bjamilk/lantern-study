@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AppState, View } from 'react-native';
 
@@ -7,11 +7,9 @@ import {
   ONBOARDING_COMPLETE_STORAGE_KEY,
   isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { canAccessDiscoverHub, isCommunityBoardGroupIn } from '@lantern/shared/network';
-import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
-import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import { isCommunityBoardGroupIn } from '@lantern/shared/network';
 
-import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, type NavigationState } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, useFocusEffect, type NavigationState } from '@react-navigation/native';
 import { navigationRef, navigate as navigateFromRoot } from './navigationRef';
 
 /**
@@ -46,18 +44,21 @@ import { useAppTheme, useTheme } from '../theme';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomTabBar, TabKey } from '../components/layout/BottomTabBar';
+import { BottomTabBar } from '../components/layout/BottomTabBar';
+import {
+  TAB_ROUTE_BY_KEY,
+  resolveActiveTab,
+  type BottomTabKey,
+  type TabKey,
+} from '../components/layout/tabRouting';
 
 import { TopBar } from '../components/layout/TopBar';
-import { ProfileDrawer, DrawerEdgeSwipe } from '../components/layout/ProfileDrawer';
 import { ChromeProvider, useChrome } from '../components/layout/ChromeContext';
 import { ToastHost, ConfirmSheetHost } from '../components/ui';
 import { LectureRecordingBanner } from '../components/LectureRecordingBanner';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 
 import { AICompanionPanel } from '../components/AICompanionPanel';
-
-import { AIUsageFloatingBadge } from '../components/AIUsageFloatingBadge';
 
 import { FeatureTipsHost } from '../components/featureTips/FeatureTipsHost';
 
@@ -103,14 +104,14 @@ import {
 
   ChatStackParamList,
 
-  MarketStackParamList,
-  JobsStackParamList,
+  CampusStackParamList,
+
+  MeStackParamList,
 
   MainTabParamList,
 
-  BudgetStackParamList,
-
 } from './types';
+import { resolveCampusRedirect, resolveMeRedirect, type NestedNavigateParams } from './legacyTabs';
 
 import { LoginScreen, SignUpScreen, VerifyEmailScreen, ForgotPasswordScreen, ResetPasswordScreen } from '../screens/auth';
 import LegalDocumentScreen from '../screens/legal/LegalDocumentScreen';
@@ -145,9 +146,9 @@ import { GroupsScreen, GroupChatScreen, DirectMessageScreen, CreateGroupScreen }
 
 import {
 
-  MarketplaceScreen,
-
   ShopBrowseScreen,
+  CourseBrowseScreen,
+  CourseListingsScreen,
 
   ShopAccountScreen,
 
@@ -185,8 +186,6 @@ import {
   SellerCustomersScreen,
   SellerPayoutScreen,
 
-  JobsHomeScreen,
-
   JobDetailScreen,
 
   CreateJobScreen,
@@ -209,14 +208,18 @@ import { useMarketplaceStore } from '../stores/marketplaceStore';
 // accounts (the API 403s everyone else regardless — see MarketplaceGate).
 // Network screens on the same stack (Discover, CommunityDetail, Feed,
 // StudyRoom, CreatorProfile, Mastery) are deliberately NOT gated.
-// Module scope so each wrapped component keeps a stable identity.
-const GatedMarketplaceHome = withMarketplaceGate(MarketplaceScreen);
+// Module scope so each wrapped component keeps a stable identity. The Shop
+// and Jobs HOME screens are gated inside CampusScreen instead: they are
+// segments now, not routes.
 const GatedShopBrowse = withMarketplaceGate(ShopBrowseScreen);
+// "Browse by course" reads the same gated marketplace endpoints as the rest of
+// the shop, so it wears the same gate rather than 403-ing inside the screen.
+const GatedCourseBrowse = withMarketplaceGate(CourseBrowseScreen);
+const GatedCourseListings = withMarketplaceGate(CourseListingsScreen);
 const GatedShopAccount = withMarketplaceGate(ShopAccountScreen);
 // Jobs joins the private pilot: hiding the drawer row is not a gate, since a
 // deep link, a job notification or the marketplace workspace bar all reach
 // these screens directly.
-const GatedJobsHome = withMarketplaceGate(JobsHomeScreen, 'jobs');
 const GatedJobDetail = withMarketplaceGate(JobDetailScreen, 'jobs');
 const GatedCreateJob = withMarketplaceGate(CreateJobScreen, 'jobs');
 const GatedMyJobPostings = withMarketplaceGate(MyJobPostingsScreen, 'jobs');
@@ -242,7 +245,6 @@ const GatedOrderDetail = withMarketplaceGate(OrderDetailScreen);
 const GatedSellerCustomers = withMarketplaceGate(SellerCustomersScreen);
 const GatedSellerPayout = withMarketplaceGate(SellerPayoutScreen);
 import {
-  DiscoverScreen,
   CommunityDetailScreen,
   CommunityMembersScreen,
   CommunityChannelScreen,
@@ -254,6 +256,9 @@ import {
 import { StudyRoomScreen } from '../screens/study/StudyRoomScreen';
 
 import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen, InviteFriendsScreen } from '../screens/settings';
+
+import { CampusScreen } from '../screens/campus';
+import { MeScreen } from '../screens/me';
 
 import { TestScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
@@ -290,8 +295,6 @@ import { linkingConfig } from './linking';
 
 import { registerForPushNotifications, uploadPushToken } from '../services/pushNotifications';
 
-import { useLowDataMode } from '../hooks/useLowDataMode';
-
 import { fetchUserProfile } from '../services/api';
 
 import UsernameRequiredModal from '../components/UsernameRequiredModal';
@@ -317,11 +320,9 @@ const StudyStack = createNativeStackNavigator<StudyStackParamList>();
 
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 
-const JobsStack = createNativeStackNavigator<JobsStackParamList>();
+const CampusStack = createNativeStackNavigator<CampusStackParamList>();
 
-const MarketStack = createNativeStackNavigator<MarketStackParamList>();
-
-const BudgetStack = createNativeStackNavigator<BudgetStackParamList>();
+const MeStack = createNativeStackNavigator<MeStackParamList>();
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -446,161 +447,252 @@ function ChatNavigator() {
 
 
 
-function MarketNavigator() {
+/**
+ * Campus — one destination, three segments, and every screen those segments
+ * lead into.
+ *
+ * The Market and Jobs stacks were merged into this one so a listing, a job, a
+ * board, a post or a roster keeps the Campus tab lit; community screens in
+ * particular used to sit on the Market stack, which lit Shop while a student
+ * read a community board.
+ */
+function CampusNavigator() {
 
   return (
 
-    <MarketStack.Navigator screenOptions={{ headerShown: false }}>
+    <CampusStack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Campus">
 
-      <MarketStack.Screen name="MarketplaceHome" component={GatedMarketplaceHome} />
+      <CampusStack.Screen name="Campus" component={CampusScreen} />
 
-      <MarketStack.Screen name="ShopBrowse" component={GatedShopBrowse} />
+      {/* The two retired home routes. Seven screens still call these names;
+          each lands on the segment that replaced it. */}
+      <CampusStack.Screen name="MarketplaceHome" component={ShopHomeRedirect} />
 
-      <MarketStack.Screen name="ShopAccount" component={GatedShopAccount} />
+      <CampusStack.Screen name="JobsHome" component={JobsHomeRedirect} />
 
-      <MarketStack.Screen name="ListingDetail" component={GatedListingDetail} />
+      <CampusStack.Screen name="ShopBrowse" component={GatedShopBrowse} />
+      <CampusStack.Screen name="CourseBrowse" component={GatedCourseBrowse} />
+      <CampusStack.Screen name="CourseListings" component={GatedCourseListings} />
 
-      <MarketStack.Screen name="MyListings" component={GatedMyListings} />
+      <CampusStack.Screen name="ShopAccount" component={GatedShopAccount} />
 
-      <MarketStack.Screen name="Inquiries" component={GatedInquiries} />
+      <CampusStack.Screen name="ListingDetail" component={GatedListingDetail} />
 
-      <MarketStack.Screen name="CreateListing" component={GatedCreateListing} />
+      <CampusStack.Screen name="MyListings" component={GatedMyListings} />
 
-      <MarketStack.Screen name="EditListing" component={GatedEditListing} />
+      <CampusStack.Screen name="Inquiries" component={GatedInquiries} />
 
-      <MarketStack.Screen name="MakeOffer" component={GatedMakeOffer} />
+      <CampusStack.Screen name="CreateListing" component={GatedCreateListing} />
 
-      <MarketStack.Screen name="SellerProfile" component={GatedSellerProfile} />
+      <CampusStack.Screen name="EditListing" component={GatedEditListing} />
 
-      <MarketStack.Screen name="Offers" component={GatedOffers} />
+      <CampusStack.Screen name="MakeOffer" component={GatedMakeOffer} />
 
-      <MarketStack.Screen name="Favorites" component={GatedMarketFavorites} />
+      <CampusStack.Screen name="SellerProfile" component={GatedSellerProfile} />
 
-      <MarketStack.Screen name="Orders" component={GatedOrders} />
+      <CampusStack.Screen name="Offers" component={GatedOffers} />
 
-      <MarketStack.Screen name="Cart" component={GatedCart} />
+      <CampusStack.Screen name="Favorites" component={GatedMarketFavorites} />
 
-      <MarketStack.Screen name="Purchases" component={GatedPurchases} />
+      <CampusStack.Screen name="Orders" component={GatedOrders} />
 
-      <MarketStack.Screen name="StudyProductDrafts" component={GatedStudyProductDrafts} />
+      <CampusStack.Screen name="Cart" component={GatedCart} />
 
-      <MarketStack.Screen name="SemesterProducts" component={GatedSemesterProducts} />
+      <CampusStack.Screen name="Purchases" component={GatedPurchases} />
 
-      <MarketStack.Screen name="StudyRoom" component={StudyRoomScreen} />
+      <CampusStack.Screen name="StudyProductDrafts" component={GatedStudyProductDrafts} />
 
-      <MarketStack.Screen name="CreatorProfile" component={CreatorProfileScreen} />
+      <CampusStack.Screen name="SemesterProducts" component={GatedSemesterProducts} />
 
-      <MarketStack.Screen name="Discover" component={DiscoverScreen} />
+      <CampusStack.Screen name="StudyRoom" component={StudyRoomScreen} />
 
-      <MarketStack.Screen name="CommunityDetail" component={CommunityDetailScreen} />
+      <CampusStack.Screen name="CreatorProfile" component={CreatorProfileScreen} />
+
+      <CampusStack.Screen name="CommunityDetail" component={CommunityDetailScreen} />
 
       {/* Founder rule (spec §0a): a community's roster, channels and "new
           channel" flow stay on this stack so back returns to the community. */}
-      <MarketStack.Screen name="CommunityMembers" component={CommunityMembersScreen} />
+      <CampusStack.Screen name="CommunityMembers" component={CommunityMembersScreen} />
 
-      <MarketStack.Screen name="CommunityChannel" component={CommunityChannelScreen} />
+      <CampusStack.Screen name="CommunityChannel" component={CommunityChannelScreen} />
 
       {/* A board post and its comments (spec §4.1). */}
-      <MarketStack.Screen name="CommunityPost" component={CommunityPostScreen} />
+      <CampusStack.Screen name="CommunityPost" component={CommunityPostScreen} />
 
       {/* Bookmarks across every board (§7.5). Deliberately NOT gated behind
           canAccessDiscoverHub: the board screen carries no such gate, so
           gating this would hide saved posts from the pilot cohort that has
           them. */}
-      <MarketStack.Screen name="SavedPosts" component={SavedPostsScreen} />
+      <CampusStack.Screen name="SavedPosts" component={SavedPostsScreen} />
 
-      <MarketStack.Screen name="CreateGroup" component={CreateGroupScreen} />
+      <CampusStack.Screen name="CreateGroup" component={CreateGroupScreen} />
 
-      <MarketStack.Screen name="Feed" component={FeedScreen} />
+      <CampusStack.Screen name="Feed" component={FeedScreen} />
 
-      <MarketStack.Screen name="Mastery" component={MasteryScreen} />
+      <CampusStack.Screen name="Mastery" component={MasteryScreen} />
 
-      <MarketStack.Screen name="OrderDetail" component={GatedOrderDetail} />
+      <CampusStack.Screen name="OrderDetail" component={GatedOrderDetail} />
 
-      <MarketStack.Screen name="SellerCustomers" component={GatedSellerCustomers} />
+      <CampusStack.Screen name="SellerCustomers" component={GatedSellerCustomers} />
 
-      <MarketStack.Screen name="SellerPayout" component={GatedSellerPayout} />
+      <CampusStack.Screen name="SellerPayout" component={GatedSellerPayout} />
 
-    </MarketStack.Navigator>
+      <CampusStack.Screen name="JobDetail" component={GatedJobDetail} />
+
+      <CampusStack.Screen name="CreateJob" component={GatedCreateJob} />
+
+      <CampusStack.Screen name="MyJobPostings" component={GatedMyJobPostings} />
+
+      <CampusStack.Screen name="MyJobApplications" component={GatedMyJobApplications} />
+
+      <CampusStack.Screen name="JobEmployer" component={GatedJobEmployer} />
+
+      <CampusStack.Screen name="JobApplicants" component={GatedJobApplicants} />
+
+      <CampusStack.Screen name="JobCompany" component={GatedJobCompany} />
+
+    </CampusStack.Navigator>
 
   );
 
 }
 
 /**
- * Jobs has its own stack and its own bottom-tab destination. It used to live
- * inside MarketStack, reachable only through an unlabelled overflow sheet on
- * the marketplace toolbar — effectively unreachable.
+ * Me — profile and academic details, Budget, Downloads, the two modes,
+ * Settings and Log out. Budget is on this stack, not a tab of its own: it is
+ * one student's ledger, so Back returns to Me and the Me tab stays lit.
  */
-function JobsNavigator() {
+function MeNavigator() {
 
   return (
 
-    <JobsStack.Navigator screenOptions={{ headerShown: false }}>
+    <MeStack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Me">
 
-      <JobsStack.Screen name="JobsHome" component={GatedJobsHome} />
+      <MeStack.Screen name="Me" component={MeScreen} />
 
-      <JobsStack.Screen name="JobDetail" component={GatedJobDetail} />
+      <MeStack.Screen name="BudgetHome" component={BudgetScreen} />
 
-      <JobsStack.Screen name="CreateJob" component={GatedCreateJob} />
+      <MeStack.Screen name="AddExpense" component={AddExpenseScreen} />
 
-      <JobsStack.Screen name="MyJobPostings" component={GatedMyJobPostings} />
+      <MeStack.Screen name="AddIncome" component={AddIncomeScreen} />
 
-      <JobsStack.Screen name="MyJobApplications" component={GatedMyJobApplications} />
+      <MeStack.Screen name="SetBudget" component={SetBudgetScreen} />
 
-      <JobsStack.Screen name="JobEmployer" component={GatedJobEmployer} />
+      <MeStack.Screen name="SavingsGoals" component={SavingsGoalsScreen} />
 
-      <JobsStack.Screen name="JobApplicants" component={GatedJobApplicants} />
+      <MeStack.Screen name="Wallet" component={WalletScreen} />
 
-      <JobsStack.Screen name="JobCompany" component={GatedJobCompany} />
+      <MeStack.Screen name="ExpenseSplit" component={ExpenseSplitScreen} />
 
-    </JobsStack.Navigator>
+      <MeStack.Screen name="Recurring" component={RecurringScreen} />
+
+      <MeStack.Screen name="SetCategoryBudget" component={SetCategoryBudgetScreen} />
+
+      <MeStack.Screen name="FinancialToolkit" component={FinancialToolkitScreen} />
+
+      <MeStack.Screen name="AddInvestment" component={AddInvestmentScreen} />
+
+    </MeStack.Navigator>
 
   );
 
 }
 
-
-
-function BudgetNavigator() {
-
-  return (
-
-    <BudgetStack.Navigator screenOptions={{ headerShown: false }}>
-
-      <BudgetStack.Screen name="BudgetHome" component={BudgetScreen} />
-
-      <BudgetStack.Screen name="AddExpense" component={AddExpenseScreen} />
-
-      <BudgetStack.Screen name="AddIncome" component={AddIncomeScreen} />
-
-      <BudgetStack.Screen name="SetBudget" component={SetBudgetScreen} />
-
-      <BudgetStack.Screen name="SavingsGoals" component={SavingsGoalsScreen} />
-
-      <BudgetStack.Screen name="Wallet" component={WalletScreen} />
-
-      <BudgetStack.Screen name="ExpenseSplit" component={ExpenseSplitScreen} />
-
-      <BudgetStack.Screen name="Recurring" component={RecurringScreen} />
-
-      <BudgetStack.Screen name="SetCategoryBudget" component={SetCategoryBudgetScreen} />
-
-      <BudgetStack.Screen name="FinancialToolkit" component={FinancialToolkitScreen} />
-
-      <BudgetStack.Screen name="AddInvestment" component={AddInvestmentScreen} />
-
-    </BudgetStack.Navigator>
-
-  );
-
+/**
+ * COMPATIBILITY SHIMS
+ * ===================
+ * Roughly fifteen screens this wave does not own still say
+ * `navigate('MarketTab', …)`, `navigate('JobsTab', …)`, `navigate('BudgetTab')`,
+ * `navigate('MarketplaceHome')` or `navigate('JobsHome')`. A navigate to a
+ * route that no longer exists warns in dev and is SILENTLY DROPPED in release
+ * builds, so every one of those names stays registered and forwards to the
+ * destination that replaced it. The translation itself is pure and tested in
+ * legacyTabs.test.ts.
+ *
+ * They render a plain background for the one frame they are mounted, and they
+ * are meant to be deleted once every call site names Campus or Me directly.
+ */
+function RedirectSurface() {
+  return <View className="flex-1 bg-lantern-background" />;
 }
 
+/**
+ * The redirect fires on FOCUS, never on mount.
+ *
+ * A tab screen and a stack screen both stay mounted after you navigate away
+ * from them, and `navigate('MarketTab')` twice in a row delivers the same
+ * (usually undefined) params — so a mount-time or params-keyed effect would
+ * run once and then leave the reader parked on a blank screen the second
+ * time. Focus happens on every arrival.
+ */
+function useRedirectOnFocus(run: () => void) {
+  useFocusEffect(
+    useCallback(() => {
+      run();
+      // `run` is rebuilt per render by design; the caller memoises what matters.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [run])
+  );
+}
 
+function ShopHomeRedirect({ navigation }: { navigation: any }) {
+  // Campus is this stack's initial route, so navigating to it pops back to it
+  // rather than pushing a second copy.
+  useRedirectOnFocus(
+    useCallback(
+      () => navigation.navigate('Campus', { segment: 'shop', at: Date.now() }),
+      [navigation]
+    )
+  );
+  return <RedirectSurface />;
+}
+
+function JobsHomeRedirect({ navigation }: { navigation: any }) {
+  useRedirectOnFocus(
+    useCallback(
+      () => navigation.navigate('Campus', { segment: 'jobs', at: Date.now() }),
+      [navigation]
+    )
+  );
+  return <RedirectSurface />;
+}
+
+function LegacyMarketTab({ navigation, route }: { navigation: any; route: any }) {
+  const params = route?.params as NestedNavigateParams | undefined;
+  useRedirectOnFocus(
+    useCallback(() => {
+      const { tab, params: next } = resolveCampusRedirect(params, 'shop', Date.now());
+      navigation.navigate(tab, next);
+    }, [navigation, params])
+  );
+  return <RedirectSurface />;
+}
+
+function LegacyJobsTab({ navigation, route }: { navigation: any; route: any }) {
+  const params = route?.params as NestedNavigateParams | undefined;
+  useRedirectOnFocus(
+    useCallback(() => {
+      const { tab, params: next } = resolveCampusRedirect(params, 'jobs', Date.now());
+      navigation.navigate(tab, next);
+    }, [navigation, params])
+  );
+  return <RedirectSurface />;
+}
+
+function LegacyBudgetTab({ navigation, route }: { navigation: any; route: any }) {
+  const params = route?.params as NestedNavigateParams | undefined;
+  useRedirectOnFocus(
+    useCallback(() => {
+      const { tab, params: next } = resolveMeRedirect(params);
+      navigation.navigate(tab, next);
+    }, [navigation, params])
+  );
+  return <RedirectSurface />;
+}
 
 function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
-  const { setTabState, showChrome, chromeProgress, drawerOpen } = useChrome();
+  const { setTabState } = useChrome();
 
   const insets = useSafeAreaInsets();
 
@@ -623,98 +715,26 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   const myCommunities = useCommunityStore(s => s.myCommunities);
 
-
-
-  const tabKeyMap: Record<TabKey, string | null> = {
-
-    Home: 'HomeTab',
-
-    Library: 'StudyTab',
-
-    Study: 'StudyTab',
-
-    Chat: 'ChatTab',
-
-    Notifications: 'NotificationsTab',
-
-    Budget: 'BudgetTab',
-
-    Marketplace: 'MarketTab',
-
-    Jobs: 'JobsTab',
-
-    Offline: 'OfflineTab',
-
-    AI: null,
-
-    Notes: null,
-
-    More: null,
-
-  };
-
-
-
-  const routeNameToTabKey: Record<string, TabKey> = {
-
-    HomeTab: 'Home',
-
-    StudyTab: 'Library',
-
-    ChatTab: 'Chat',
-
-    NotificationsTab: 'Notifications',
-
-    BudgetTab: 'Budget',
-
-    MarketTab: 'Marketplace',
-
-    JobsTab: 'Jobs',
-
-    OfflineTab: 'Offline',
-
-  };
-
-
-
   const route = state.routes[state.index];
 
   const focused = getFocusedRouteNameFromRoute(route);
 
   const hideBar = shouldHideTabBar(focused);
 
+  const currentRoute = state.routes[state.index]?.name as string | undefined;
 
-
-  const activeTab: TabKey = useMemo(() => {
-
-    if (companionOpen) return 'AI';
-
-    const currentRoute = state.routes[state.index]?.name as string | undefined;
-
-    if (currentRoute === 'MarketTab') return 'Marketplace';
-
-    if (currentRoute === 'JobsTab') return 'Jobs';
-
-    if (currentRoute === 'StudyTab' && focused) {
-      if (focused === 'Library' || focused === 'NotesList' || focused === 'NoteEditor' || focused === 'StudyHub') return 'Library';
-    }
-
-    return routeNameToTabKey[currentRoute ?? ''] ?? 'Chat';
-
-  }, [companionOpen, state.routes, state.index, focused]);
+  // Which of the five is lit. The arithmetic lives in tabRouting.ts so it can
+  // be unit-tested; this component only knows the focused route.
+  const activeTab: TabKey = useMemo(
+    () => resolveActiveTab({ tabRouteName: currentRoute, companionOpen }),
+    [currentRoute, companionOpen]
+  );
 
   // The top bar lives outside the tab navigator; this is the one place that
   // knows the focused route, so publish it into the chrome context.
   useEffect(() => {
     setTabState({ activeTab, immersive: hideBar });
   }, [activeTab, hideBar, setTabState]);
-
-  // Changing screens always brings the bars back; only scrolling hides them.
-  useEffect(() => {
-    showChrome();
-  }, [state.index, focused, showChrome]);
-
-
 
   const dueCardsCount = useMemo(
 
@@ -755,47 +775,14 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   );
 
+  const navigateTab = (tab: BottomTabKey) => {
 
-
-  const navigateTab = (tab: TabKey) => {
-
-    if (tab === 'AI') {
-
-      openCompanion();
-
-      return;
-
-    }
-
-    if (tab === 'Library') {
-      navigation.navigate('StudyTab', { screen: 'Library' });
-      return;
-    }
-
-    if (tab === 'Notes') {
-
-      jumpStudyNotes();
-
-      return;
-
-    }
-
-    const routeName = tabKeyMap[tab];
+    const routeName = TAB_ROUTE_BY_KEY[tab];
 
     if (routeName) navigation.navigate(routeName);
 
   };
 
-
-
-  const jumpStudyNotes = () => {
-
-    navigation.navigate('StudyTab', { screen: 'NotesList' });
-
-  };
-
-
-  
   return (
 
     <>
@@ -812,18 +799,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
           unreadChatCount={unreadChatCount}
 
-          hideProgress={chromeProgress}
-
         />
 
-      ) : null}
-
-      {!hideBar ? (
-        <AIUsageFloatingBadge
-          activeTab={activeTab}
-          focusedRoute={focused}
-          hidden={drawerOpen || companionOpen || activeTab === 'AI'}
-        />
       ) : null}
 
       <AICompanionPanel />
@@ -835,9 +812,9 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
           focused === 'Library' ||
           focused === 'NotesList' ||
           focused === 'NoteEditor' ||
-          activeTab === 'Library'
+          activeTab === 'Study'
         }
-        moreOpen={drawerOpen}
+        moreOpen={false}
         companionOpen={companionOpen}
       />
       {/* The navigator is pulled up by insets.top (see MainTabsShell); add it
@@ -864,12 +841,14 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
 
 /**
- * The signed-in shell. Chat is the first thing a signed-in user sees; the
- * base bar holds Chat / Library / Dashboard / Offline, the top bar holds
- * Budget / Notifications / Lantern AI / Discover behind the profile avatar,
- * and Settings / log out / low-data / theme live in the profile drawer
- * (avatar tap or a right swipe from the left edge). Scrolling down slides
- * both bars away; scrolling up brings them back (ChromeContext).
+ * The signed-in shell.
+ *
+ * Five destinations, in this order: Home · Study · Chat · Campus · Me. Home is
+ * what a student sees on launch. The top bar carries the avatar (a second door
+ * to Me), the name of where you are, and the only two surfaces that follow you
+ * around — Lantern AI, with the AI-credit count docked on its sparkle, and
+ * Notifications. Nothing in this chrome moves: not on scroll, not when the
+ * keyboard opens, not when a search box takes focus.
  */
 function MainTabs() {
 
@@ -889,29 +868,15 @@ function MainTabs() {
 
 function MainTabsShell() {
 
-  const theme = useAppTheme();
-
   const user = useAuthStore(s => s.user);
 
   const profileName = useAuthStore(s => s.profileName);
-
-  const signOut = useAuthStore(s => s.signOut);
-
-  const { updateSettings } = useSettingsStore();
-
-  const { lowDataMode, toggleLowDataMode } = useLowDataMode();
-  // The Discover hub (Community) has always been platform-admin only; the
-  // drawer row follows the same gate and the section flag, so it never lists
-  // a destination that would bounce the viewer back to the Shop.
-  const isPlatformAdmin = usePlatformAdmin();
-  const showCommunity = canAccessDiscoverHub(isPlatformAdmin) && isDiscoverSectionEnabled('communities');
 
   const openCompanion = useCompanionStore(s => s.open);
 
   const unreadNotificationCount = useNotificationStore(s => s.unreadCount);
 
-
-  const { drawerOpen, setDrawerOpen, immersive, topBarSuppressed } = useChrome();
+  const { immersive, setProfile } = useChrome();
 
   const insets = useSafeAreaInsets();
 
@@ -948,20 +913,18 @@ function MainTabsShell() {
   const displayName =
     profileName || (user?.user_metadata?.name as string | undefined) || 'Your profile';
 
-  const toggleTheme = () => {
-    // Quick toggle switches between light and dark; Settings retains System option.
-    const next = theme === 'dark' ? 'light' : 'dark';
-    void updateSettings('appearance', { theme: next });
-  };
+  // Published once, read by the top bar's avatar AND by the Me tab, so the two
+  // show the same face without fetching the profile twice.
+  useEffect(() => {
+    setProfile({ name: displayName, avatarUri: avatarUrl, email: user?.email ?? null });
+  }, [displayName, avatarUrl, user?.email, setProfile]);
 
   const goTab = (screen: keyof MainTabParamList, params?: object) => {
     navigateFromRoot('Main', { screen, params });
   };
 
   // Private pilot: warm the access answer as soon as the shell mounts, so the
-  // Shop icon and the drawer's Jobs row settle before the first tap. One
-  // allowlist covers both surfaces, so one probe answers for both.
-  const marketplaceAccess = useMarketplaceStore(s => s.marketplaceAccess);
+  // Campus segments settle before the first tap.
   const checkMarketplaceAccess = useMarketplaceStore(s => s.checkMarketplaceAccess);
   useEffect(() => {
     void checkMarketplaceAccess();
@@ -976,21 +939,10 @@ function MainTabsShell() {
       <LectureRecordingBanner />
 
       <TopBar
-        avatarUri={avatarUrl}
-        avatarName={displayName}
         unreadNotificationCount={unreadNotificationCount}
-        onOpenDrawer={() => setDrawerOpen(true)}
-        onBudget={() => goTab('BudgetTab')}
+        onOpenMe={() => goTab('MeTab')}
         onNotifications={() => goTab('NotificationsTab')}
         onAI={openCompanion}
-        // The Shop takes the slot and icon the Discover compass used to hold.
-        // It goes straight to the shop rather than the Discover hub: with
-        // Community, Groups and People switched off the hub has nothing of its
-        // own left to show and forwards here anyway.
-        onShop={() => goTab('MarketTab', { screen: 'MarketplaceHome' })}
-        // Hidden only on a definite no. Unknown keeps it visible, because a
-        // failed probe must not quietly delete a destination.
-        showShop={marketplaceAccess !== false}
       />
 
       {/* Every screen still pads itself insets.top for a status bar the top
@@ -998,77 +950,44 @@ function MainTabsShell() {
           navigator up by exactly that inset so content starts flush at the
           bottom edge of the bar. Immersive screens render with no top bar
           and need their own padding intact. */}
-      <View className="flex-1" style={{ marginTop: immersive || topBarSuppressed ? 0 : -insets.top }}>
+      <View className="flex-1" style={{ marginTop: immersive ? 0 : -insets.top }}>
 
       <Tab.Navigator
-        initialRouteName="ChatTab"
+        initialRouteName="HomeTab"
         tabBar={props => <CustomTabBar {...props} />}
         screenOptions={{ headerShown: false, lazy: true }}
       >
 
-        <Tab.Screen name="ChatTab" component={ChatNavigator} />
+        <Tab.Screen name="HomeTab" component={HomeNavigator} />
 
         <Tab.Screen name="StudyTab" component={StudyNavigator} />
 
-        <Tab.Screen name="HomeTab" component={HomeNavigator} />
+        <Tab.Screen name="ChatTab" component={ChatNavigator} />
 
-        <Tab.Screen name="OfflineTab" component={OfflineScreen} />
+        <Tab.Screen name="CampusTab" component={CampusNavigator} />
 
-        <Tab.Screen name="NotificationsTab" component={NotificationsScreen} options={{ tabBarButton: () => null }} />
+        <Tab.Screen name="MeTab" component={MeNavigator} />
 
-        <Tab.Screen name="BudgetTab" component={BudgetNavigator} options={{ tabBarButton: () => null }} />
+        {/* Follows the reader from the top bar; not one of the five places. */}
+        <Tab.Screen name="NotificationsTab" component={NotificationsScreen} />
 
-        <Tab.Screen name="MarketTab" component={MarketNavigator} />
+        {/* Compatibility shims — see the block above CampusNavigator. */}
+        <Tab.Screen name="MarketTab" component={LegacyMarketTab} />
 
-        <Tab.Screen name="JobsTab" component={JobsNavigator} />
+        <Tab.Screen name="JobsTab" component={LegacyJobsTab} />
+
+        <Tab.Screen name="BudgetTab" component={LegacyBudgetTab} />
 
       </Tab.Navigator>
 
       </View>
-
-      <DrawerEdgeSwipe enabled={!drawerOpen && !immersive} onOpen={() => setDrawerOpen(true)} />
-
-      <ProfileDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        name={displayName}
-        subtitle={user?.email ?? null}
-        avatarUri={avatarUrl}
-        onEditProfile={() => {
-          setDrawerOpen(false);
-          navigateFromRoot('EditProfile');
-        }}
-        // Community lives on the Market stack's Discover screen; the section
-        // param lands it on Communities rather than the default section.
-        onCommunity={() => {
-          setDrawerOpen(false);
-          goTab('MarketTab', { screen: 'Discover', params: { section: 'communities', at: Date.now() } });
-        }}
-        showCommunity={showCommunity}
-        onJobs={() => {
-          setDrawerOpen(false);
-          goTab('JobsTab', { screen: 'JobsHome' });
-        }}
-        showJobs={marketplaceAccess !== false}
-        onSettings={() => {
-          setDrawerOpen(false);
-          navigateFromRoot('Settings');
-        }}
-        onLogout={() => {
-          setDrawerOpen(false);
-          void signOut();
-        }}
-        lowDataMode={lowDataMode}
-        onToggleLowData={toggleLowDataMode}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
 
     </View>
 
   );
 
 }
+
 
 
 
@@ -1200,7 +1119,11 @@ function RootNavigatorInner() {
       }
     };
 
-    void bootstrapAuthenticatedData();
+    // getAuthHeaders now rejects with OfflineAuthError when there is no token
+    // and the last refresh was a transport failure (services/supabase.ts).
+    // That is the correct answer — do nothing, the session is saved — but it
+    // must not surface as an unhandled rejection.
+    void bootstrapAuthenticatedData().catch(() => {});
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'active' || cancelled) return;

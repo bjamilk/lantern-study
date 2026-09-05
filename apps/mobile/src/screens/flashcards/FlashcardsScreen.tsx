@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
 import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
@@ -34,6 +33,7 @@ import { TopicPicker } from '../../components/TopicPicker';
 import { courseHasTopics } from '../../services/academic';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -104,7 +104,7 @@ function DeckCard({
           style={{ height: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
         >
           <View className="flex-row items-center gap-2 flex-1 min-w-0">
-            <Ionicons name="layers-outline" size={18} color="rgba(255,255,255,0.9)" />
+            <AppIcon name="layers" size={18} color="rgba(255,255,255,0.9)" />
             <Text className="text-sm font-bold text-white flex-1" numberOfLines={1}>
               {deck.name}
             </Text>
@@ -130,8 +130,8 @@ function DeckCard({
               className="px-2 py-1 rounded-full bg-white/20"
               hitSlop={8}
             >
-              <Ionicons
-                name={isOffline ? 'cloud-done' : 'cloud-download-outline'}
+              <AppIcon
+                name={isOffline ? 'cloud-done' : 'cloud-download'}
                 size={14}
                 color="#ffffff"
               />
@@ -146,7 +146,7 @@ function DeckCard({
               className="px-2 py-1 rounded-full bg-white/20"
               hitSlop={8}
             >
-              <Ionicons name="share-outline" size={14} color="#ffffff" />
+              <AppIcon name="share" size={14} color="#ffffff" />
             </Pressable>
             <Pressable
               onPress={e => {
@@ -156,7 +156,7 @@ function DeckCard({
               className="flex-row items-center gap-1 px-2 py-1 rounded-full bg-white/20"
               hitSlop={8}
             >
-              <Ionicons name="sparkles-outline" size={14} color="#ffffff" />
+              <AppIcon name="sparkles" size={14} color="#ffffff" />
               <Text className="text-[10px] font-bold text-white">Generate</Text>
             </Pressable>
             {onMore ? (
@@ -170,7 +170,7 @@ function DeckCard({
                 className="px-2 py-1 rounded-full bg-white/20"
                 hitSlop={8}
               >
-                <Ionicons name="ellipsis-horizontal" size={14} color="#ffffff" />
+                <AppIcon name="ellipsis-horizontal" size={14} color="#ffffff" />
               </Pressable>
             ) : null}
           </View>
@@ -413,19 +413,19 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         {
           section: 'Deck',
           label: 'Open deck',
-          icon: 'layers-outline',
+          icon: 'layers',
           onPress: () => navigation.navigate('DeckDetail', { deckId: deckActions.id, deckName: deckActions.name }),
         },
         {
           section: 'Deck',
           label: getStudyCtaLabel(deckActions.due_count ?? 0, deckActions.card_count ?? 0),
-          icon: 'play-circle-outline',
+          icon: 'play-circle',
           onPress: () => navigation.navigate('FlashcardReview', { deckId: deckActions.id, deckName: deckActions.name }),
         },
         {
           section: 'Organise',
           label: 'Move to course…',
-          icon: 'school-outline',
+          icon: 'school',
           hint: deckActions.course_id ? 'Filed under a course — pick another or clear it' : 'Not filed under a course yet',
           // Let the sheet dismiss before the course picker mounts.
           onPress: () => setTimeout(() => setCourseMoveDeck(deckActions), 50),
@@ -437,7 +437,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
               {
                 section: 'Organise',
                 label: 'Move to topic…',
-                icon: 'list-outline' as ActionSheetItem['icon'],
+                icon: 'list' as ActionSheetItem['icon'],
                 hint: 'Where this sits in the course outline',
                 onPress: () =>
                   setTimeout(
@@ -454,13 +454,13 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         {
           section: 'Organise',
           label: offlineDeckIds.includes(deckActions.id) ? 'Remove from offline' : 'Save for offline',
-          icon: offlineDeckIds.includes(deckActions.id) ? 'cloud-offline-outline' : 'cloud-download-outline',
+          icon: offlineDeckIds.includes(deckActions.id) ? 'cloud-offline' : 'cloud-download',
           onPress: () => void handleToggleOffline(deckActions.id),
         },
         {
           section: 'Organise',
           label: 'Share as JSON',
-          icon: 'share-outline',
+          icon: 'share',
           onPress: () => void handleShareDeck(deckActions.id, deckActions.name),
         },
       ]
@@ -539,7 +539,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       {courseFilter && !embedded ? (
         <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2">
           <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
-            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <AppIcon name="school" size={14} color={colors.primary} />
             <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
               {courseFilter.label}
             </Text>
@@ -549,14 +549,14 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
               accessibilityRole="button"
               accessibilityLabel={`Clear course filter ${courseFilter.label}`}
             >
-              <Ionicons name="close-circle" size={16} color={colors.primary} />
+              <AppIcon name="close-circle" size={16} color={colors.primary} />
             </Pressable>
           </View>
           {/* The topic narrows the list further, so it gets its own chip:
               the course chip alone makes a shorter list look like missing decks. */}
           {courseFilter.topicId ? (
             <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
-              <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+              <AppIcon name="bookmark" size={13} color={colors.textSecondary} />
               <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
                 {courseFilter.topicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : courseFilter.topicLabel || COURSE_TOPIC_COPY.filterLabel}
               </Text>
@@ -567,7 +567,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
                 accessibilityRole="button"
                 accessibilityLabel="Clear topic filter"
               >
-                <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+                <AppIcon name="close-circle" size={15} color={colors.textSecondary} />
               </Pressable>
             </View>
           ) : null}

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TextInput, Pressable, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
 import {
   useBudgetStore,
@@ -12,6 +11,7 @@ import {
 } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 export default function ExpenseSplitScreen() {
   const navigation = useNavigation<any>();
@@ -96,7 +96,7 @@ export default function ExpenseSplitScreen() {
           {/* Participants */}
           <Text className="text-xs font-medium text-lantern-text-secondary">Split between you + {namedOthers.length} other{namedOthers.length === 1 ? '' : 's'}</Text>
           <View className="flex-row items-center gap-2 bg-lantern-primary-background rounded-xl px-3 py-2.5">
-            <Ionicons name="person-circle" size={18} color="#6366f1" />
+            <AppIcon name="person-circle" size={18} color="#6366f1" />
             <Text className="text-sm text-lantern-primary font-medium">{userName} (you)</Text>
           </View>
           {others.map((name, i) => (
@@ -110,13 +110,13 @@ export default function ExpenseSplitScreen() {
               />
               {others.length > 1 && (
                 <TouchableOpacity onPress={() => setOthers(prev => prev.filter((_, idx) => idx !== i))} className="p-2">
-                  <Ionicons name="trash-outline" size={18} color="#94a3b8" />
+                  <AppIcon name="trash" size={18} color="#94a3b8" />
                 </TouchableOpacity>
               )}
             </View>
           ))}
           <TouchableOpacity onPress={() => setOthers(prev => [...prev, ''])} className="flex-row items-center gap-1.5 py-1">
-            <Ionicons name="person-add-outline" size={16} color="#6366f1" />
+            <AppIcon name="person-add" size={16} color="#6366f1" />
             <Text className="text-sm text-lantern-primary font-medium">Add person</Text>
           </TouchableOpacity>
 
@@ -142,14 +142,14 @@ export default function ExpenseSplitScreen() {
                   <Text className="text-xs text-lantern-text-tertiary mt-0.5">{formatCurrency(split.totalAmount)} total · {split.participants.length} people</Text>
                 </View>
                 <TouchableOpacity onPress={() => void removeExpenseSplit(split.id)} className="p-1">
-                  <Ionicons name="close" size={18} color="#94a3b8" />
+                  <AppIcon name="close" size={18} color="#94a3b8" />
                 </TouchableOpacity>
               </View>
               <View className="gap-1.5 mt-3">
                 {split.participants.map((p, idx) => (
                   <Pressable key={idx} onPress={() => void toggleSplitParticipantPaid(split.id, idx)} className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
-                      <Ionicons name={p.paid ? 'checkbox' : 'square-outline'} size={18} color={p.paid ? '#10b981' : '#94a3b8'} />
+                      <AppIcon name={p.paid ? 'checkbox' : 'square'} size={18} color={p.paid ? '#10b981' : '#94a3b8'} />
                       <Text className={`text-sm ${p.paid ? 'text-lantern-text-tertiary line-through' : 'text-lantern-text dark:text-white'}`}>
                         {p.userName}{p.userId === userId ? ' (you)' : ''}
                       </Text>
@@ -184,7 +184,7 @@ export default function ExpenseSplitScreen() {
               <Text className="text-xs text-lantern-text-tertiary">{formatCurrency(split.totalAmount)} · all settled</Text>
             </View>
             <TouchableOpacity onPress={() => void removeExpenseSplit(split.id)} className="p-1">
-              <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+              <AppIcon name="trash" size={16} color="#94a3b8" />
             </TouchableOpacity>
           </Card>
         ))}

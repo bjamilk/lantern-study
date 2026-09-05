@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Modal from '../ui/Modal';
 import { CampusSearchSelect } from './CampusSearchSelect';
 import {
@@ -15,6 +15,8 @@ import {
   SOURCES_CITED_MAX,
   type MarketplaceCampus,
 } from '@lantern/shared';
+import { COURSE_ANCHOR_COPY, hasCourseAnchor, validateCourseAnchor } from '@lantern/shared/marketplace';
+import { useGroupStore } from '../../stores/groupStore';
 import { BuildingStorefrontIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { CoursePicker } from '../academic/CoursePicker';
 import { TopicPicker } from '../academic/TopicPicker';
@@ -44,9 +46,23 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [campusId, setCampusId] = useState('');
+  // The group that produced the bundle is usually already filed under a
+  // course; inherit it so a class rep does not re-pick what the group knows.
+  // (The server applies the same fallback, so the two can never disagree.)
+  const groups = useGroupStore((s) => s.groups);
+  const sourceGroupId = (bundle.config as { groupId?: string })?.groupId || null;
+  const groupCourseId = useMemo(
+    () => groups.find((g) => g.id === sourceGroupId)?.courseId ?? null,
+    [groups, sourceGroupId]
+  );
   const [courseId, setCourseId] = useState<string | null>(
     bundle.courseId ?? (bundle.config as { courseId?: string | null })?.courseId ?? null
   );
+  // The group list can arrive after the modal mounts; fill the empty picker
+  // once, and never overwrite a course the publisher chose themselves.
+  useEffect(() => {
+    if (!courseId && groupCourseId) setCourseId(groupCourseId);
+  }, [courseId, groupCourseId]);
   // The bundle's config carries the topic the session was built from, if any.
   const [topicId, setTopicId] = useState<string | null>(
     (bundle.config as { topicId?: string | null })?.topicId ?? null
@@ -95,7 +111,9 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
     !busy &&
     attested &&
     questionCount > 0 &&
-    (isUpdate || (!!title.trim() && !!campusId && !priceInvalid));
+    // A NEW publish must be filed under a course; an update never re-asks
+    // (the listing already carries its anchor and this modal cannot move it).
+    (isUpdate || (!!title.trim() && !!campusId && !priceInvalid && hasCourseAnchor(courseId)));
 
   const parsedSources = parseSourcesCited(sourcesText);
   const sourcesError = parsedSources.ok ? null : parsedSources.error;
@@ -109,6 +127,13 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
     if (!parsedSources.ok) {
       setSubmitError(parsedSources.error);
       return;
+    }
+    if (!isUpdate) {
+      const courseProblem = validateCourseAnchor(courseId);
+      if (courseProblem) {
+        setSubmitError(courseProblem);
+        return;
+      }
     }
     setSubmitError(null);
     setBusy(true);
@@ -290,13 +315,22 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
 
           <CoursePicker
             id="publish-qbank-course"
-            label={<span className="text-sm font-semibold text-lantern-text">Course <span className="text-lantern-text-tertiary font-normal">(optional)</span></span>}
+            label={
+              <span className="text-sm font-semibold text-lantern-text">
+                {COURSE_ANCHOR_COPY.label}{' '}
+                <span aria-hidden className="text-lantern-error">*</span>
+                <span className="sr-only">(required)</span>
+              </span>
+            }
             value={courseId}
             onChange={(course) => {
               setCourseId(course?.id ?? null);
               setTopicId(null);
+              if (submitError === COURSE_ANCHOR_COPY.required) setSubmitError(null);
             }}
-            placeholder="Which course is this bank for?"
+            clearable={false}
+            placeholder={COURSE_ANCHOR_COPY.placeholder}
+            hint={COURSE_ANCHOR_COPY.hint}
           />
 
           <TopicPicker

@@ -1,11 +1,11 @@
 import React from 'react';
 import { Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   COMMUNITY_BOARD_COPY,
   boardRelativeTime,
   type BoardQuotedPost as QuotedPost,
 } from '@lantern/shared/network';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * The original a repost points at (§6.5).
@@ -91,8 +91,8 @@ export function BoardQuotedPost({
       ) : null}
       {mediaLabel ? (
         <View className="mt-1 flex-row items-center">
-          <Ionicons
-            name={quoted.hasImage ? 'image-outline' : 'mic-outline'}
+          <AppIcon
+            name={quoted.hasImage ? 'image' : 'mic'}
             size={13}
             color="#94a3b8"
           />

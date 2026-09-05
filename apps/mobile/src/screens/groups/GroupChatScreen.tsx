@@ -15,7 +15,6 @@ import {
   BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ForwardMessageSheet } from '../../components/chat/ForwardMessageSheet';
@@ -81,6 +80,7 @@ import {
 import { COMMUNITY_COPY, isCommunityBoardGroupIn } from '@lantern/shared/network';
 import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { findMyCommunity } from '../../utils/communityOverlay';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 export type GroupChatNavigation = {
   goBack: () => void;
@@ -1553,7 +1553,7 @@ export function GroupChatView({
     if (canEditChatMessage(message, user?.id)) {
       items.push({
         label: 'Edit',
-        icon: 'create-outline',
+        icon: 'create',
         onPress: () => handleSheetEdit(message),
       });
     }
@@ -1563,14 +1563,14 @@ export function GroupChatView({
     if (studySurface && !isOwn && message.type === 'question') {
       items.push({
         label: 'Flag duplicate',
-        icon: 'copy-outline',
+        icon: 'copy',
         onPress: () => handleSheetFlagDuplicate(message),
       });
     }
     if (!isOwn) {
       items.push({
         label: 'Report message',
-        icon: 'flag-outline',
+        icon: 'flag',
         onPress: () => handleSheetReport(message),
       });
     }
@@ -1620,7 +1620,7 @@ export function GroupChatView({
       {
         id: 'study',
         label: 'Study mode',
-        icon: 'library-outline',
+        icon: 'library',
         section: 'Practice',
         // Read-only practice over existing questions stays available when
         // archived — only write paths (add question, AI generate) are gated.
@@ -1632,7 +1632,7 @@ export function GroupChatView({
       {
         id: 'test',
         label: 'Test mode',
-        icon: 'clipboard-outline',
+        icon: 'clipboard',
         section: 'Practice',
         onPress: () => {
           setTestMode('test');
@@ -1649,7 +1649,7 @@ export function GroupChatView({
       {
         id: 'search-messages',
         label: 'Search messages',
-        icon: 'search-outline',
+        icon: 'search',
         section: 'View',
         onPress: () => setChatSearchOpen(true),
       },
@@ -1660,7 +1660,8 @@ export function GroupChatView({
         label: starredOnly
           ? 'Show all messages'
           : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`,
-        icon: starredOnly ? 'star' : 'star-outline',
+        icon: 'star',
+        iconFilled: starredOnly,
         iconColor: starredOnly ? '#f59e0b' : undefined,
         section: 'View',
         disabled: !starredOnly && starredIds.size === 0,
@@ -1674,7 +1675,7 @@ export function GroupChatView({
         // transcript and keeps the feature.
         id: 'chat-background',
         label: 'Chat background',
-        icon: 'image-outline',
+        icon: 'image',
         section: 'View',
         // GroupChatHeader closes its menu and calls onPress synchronously, and
         // iOS will not present a Modal under one that is still dismissing.
@@ -1686,7 +1687,7 @@ export function GroupChatView({
             {
               id: 'question-filter',
               label: 'All questions',
-              icon: 'filter-outline' as const,
+              icon: 'filter' as const,
               section: 'View',
               submenu: {
                 title: 'All questions',
@@ -1694,7 +1695,7 @@ export function GroupChatView({
                   id: `qvis-${opt.value}`,
                   label: opt.label,
                   helper: opt.helper,
-                  icon: 'filter-outline' as const,
+                  icon: 'filter' as const,
                   selected: questionVisibilityMode === opt.value,
                   onPress: () => setQuestionVisibilityMode(opt.value),
                 })),
@@ -1707,7 +1708,7 @@ export function GroupChatView({
         ? {
             id: 'unmute',
             label: muteUntilLabel ? `Unmute (until ${muteUntilLabel})` : 'Unmute notifications',
-            icon: 'notifications-outline' as const,
+            icon: 'notifications' as const,
             section: 'Notifications',
             onPress: () => void clearMute(),
             disabled: muteBusy,
@@ -1715,7 +1716,7 @@ export function GroupChatView({
         : {
             id: 'mute',
             label: 'Mute',
-            icon: 'notifications-off-outline' as const,
+            icon: 'notifications-off' as const,
             section: 'Notifications',
             disabled: muteBusy,
             submenu: {
@@ -1723,7 +1724,7 @@ export function GroupChatView({
               options: CHAT_MUTE_DURATIONS.map((opt) => ({
                 id: `mute-${opt.id}`,
                 label: opt.label,
-                icon: 'notifications-off-outline' as const,
+                icon: 'notifications-off' as const,
                 onPress: () => void applyMute(opt.id),
               })),
             },
@@ -1732,7 +1733,7 @@ export function GroupChatView({
       {
         id: 'info',
         label: 'About group',
-        icon: 'people-outline',
+        icon: 'people',
         section: 'Manage',
         onPress: () => setShowGroupInfo(true),
       },
@@ -1742,7 +1743,7 @@ export function GroupChatView({
       actions.push({
         id: 'ai-generate',
         label: 'AI generate questions',
-        icon: 'bulb-outline',
+        icon: 'bulb',
         iconColor: colors.warning,
         section: 'Manage',
         // Also an add-question path — no posting into an archived group.
@@ -1835,7 +1836,7 @@ export function GroupChatView({
 
       {chatSearchOpen ? (
         <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
-          <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+          <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
           <TextInput
             value={chatSearchQuery}
             onChangeText={(v) => {
@@ -1862,7 +1863,7 @@ export function GroupChatView({
             accessibilityLabel="Previous match"
             disabled={chatSearchMatches.length === 0}
           >
-            <Ionicons name="chevron-up" size={20} color={colors.text} />
+            <AppIcon name="chevron-up" size={20} color={colors.text} />
           </Pressable>
           <Pressable
             onPress={() => jumpToChatMatch(chatSearchIndex - 1)}
@@ -1870,10 +1871,10 @@ export function GroupChatView({
             accessibilityLabel="Next match"
             disabled={chatSearchMatches.length === 0}
           >
-            <Ionicons name="chevron-down" size={20} color={colors.text} />
+            <AppIcon name="chevron-down" size={20} color={colors.text} />
           </Pressable>
           <Pressable onPress={closeChatSearch} hitSlop={6} accessibilityLabel="Close search">
-            <Ionicons name="close" size={20} color={colors.textSecondary} />
+            <AppIcon name="close" size={20} color={colors.textSecondary} />
           </Pressable>
         </View>
       ) : null}
@@ -1908,7 +1909,7 @@ export function GroupChatView({
 
       {starredOnly ? (
         <View className="flex-row items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
-          <Ionicons name="star" size={14} color="#f59e0b" />
+          <AppIcon name="star" size={14} color="#f59e0b" />
           <Text className="flex-1 text-[12px] font-semibold text-amber-800 dark:text-amber-300">
             Starred messages ({displayMessages.length})
           </Text>
@@ -1935,12 +1936,12 @@ export function GroupChatView({
           accessibilityRole="button"
           accessibilityLabel="Jump to pinned message"
         >
-          <Ionicons name="pin" size={14} color={colors.primary} />
+          <AppIcon name="pin" size={14} color={colors.primary} />
           <Text className="flex-1 text-[12px] text-lantern-text" numberOfLines={1}>
             {pinnedMessage.text || 'Pinned message'}
           </Text>
           <Pressable onPress={handleUnpinFromBanner} hitSlop={8} accessibilityLabel="Unpin message">
-            <Ionicons name="close" size={16} color={colors.textSecondary} />
+            <AppIcon name="close" size={16} color={colors.textSecondary} />
           </Pressable>
         </Pressable>
       ) : null}
@@ -2116,7 +2117,7 @@ export function GroupChatView({
         ) : null}
         {group?.isArchived ? (
           <View className="flex-row items-center justify-center gap-2 px-4 py-4 border-t border-lantern-border bg-lantern-surface">
-            <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+            <AppIcon name="archive" size={16} color={colors.textSecondary} />
             <Text className="text-sm text-lantern-text-secondary">
               This group is archived.
             </Text>

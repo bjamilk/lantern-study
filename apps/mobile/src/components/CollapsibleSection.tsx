@@ -1,8 +1,8 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { useUIStore } from '../stores/uiStore';
+import { AppIcon } from './ui/AppIcon';
 
 interface CollapsibleSectionProps {
   /** Stable id — the persisted collapse state is keyed on it, so do not rename casually. */
@@ -56,7 +56,7 @@ export function CollapsibleSection({
           accessibilityLabel={`${title}, ${collapsed ? 'collapsed' : 'expanded'}`}
           accessibilityHint={collapsed ? `Show ${title}` : `Hide ${title}`}
         >
-          <Ionicons
+          <AppIcon
             name={collapsed ? 'chevron-forward' : 'chevron-down'}
             size={16}
             color={colors.textSecondary}

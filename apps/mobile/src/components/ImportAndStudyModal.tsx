@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { FlashcardType, getNoteStudyContent } from '@lantern/shared';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
@@ -25,6 +24,7 @@ import { useFlashcardStore } from '../stores/flashcardStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { Button } from './ui';
 import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
+import { AppIcon } from './ui/AppIcon';
 
 export interface ImportAndStudyResult {
   noteId: string;
@@ -247,11 +247,11 @@ export default function ImportAndStudyModal({
         <View className="bg-lantern-surface rounded-2xl overflow-hidden">
           <View className="flex-row items-center justify-between px-4 py-3 border-b border-lantern-border">
             <View className="flex-row items-center gap-2">
-              <Ionicons name="sparkles" size={18} color="#8b5cf6" />
+              <AppIcon name="sparkles" size={18} color="#8b5cf6" />
               <Text className="text-lg font-bold text-lantern-text">Import & Study</Text>
             </View>
             <Pressable onPress={handleClose} className="p-1">
-              <Ionicons name="close" size={22} color="#94a3b8" />
+              <AppIcon name="close" size={22} color="#94a3b8" />
             </Pressable>
           </View>
 
@@ -274,7 +274,7 @@ export default function ImportAndStudyModal({
                   onPress={handlePickPhotos}
                   className="flex-row items-center gap-3 border-2 border-dashed border-lantern-border rounded-xl px-3 py-3 mb-3"
                 >
-                  <Ionicons name="camera-outline" size={22} color="#6366f1" />
+                  <AppIcon name="camera" size={22} color="#6366f1" />
                   <View className="flex-1">
                     <Text className="text-sm font-semibold text-lantern-text">Photograph pages</Text>
                     <Text className="text-xs text-lantern-text-secondary">
@@ -323,7 +323,7 @@ export default function ImportAndStudyModal({
 
             {step === 'done' && result ? (
               <View className="items-center py-4 gap-3">
-                <Ionicons name="checkmark-circle" size={48} color="#22c55e" />
+                <AppIcon name="checkmark-circle" size={48} color="#22c55e" />
                 <Text className="font-semibold text-lantern-text">{result.noteTitle} ready!</Text>
                 <View className="flex-row flex-wrap justify-center gap-3">
                   {result.flashcardCount ? (

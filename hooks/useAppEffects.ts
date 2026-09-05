@@ -42,11 +42,32 @@ import {
     exchangeCookieSession,
     refreshCookieSession,
 } from '../services/authCookieSession';
-import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
+import {
+    ONBOARDING_COMPLETE_STORAGE_KEY,
+    isOnboardingCompleteFlag,
+    normalizeUserSettings,
+    getNotificationSettings,
+} from '@lantern/shared/settings';
 import { mapMessageFromApi, computeStudyStreak, getCardsDue, mergeChatMessagesById } from '@lantern/shared/utils';
 import { mapUserStatsFromApi, normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { shouldOpenAcademicSetup, readAcademicSetupDismissed } from '../utils/academicSetup';
+
+/**
+ * Onboarding has not been finished or skipped yet — the same flag App.tsx
+ * seeds `showOnboarding` from. Read live rather than passed in, because the
+ * profile-setup effect runs long before App has a value to hand down.
+ *
+ * A browser that refuses localStorage answers "not pending", so a student in a
+ * locked-down browser still gets asked for a missing username.
+ */
+function isOnboardingPending(): boolean {
+    try {
+        return !isOnboardingCompleteFlag(localStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY));
+    } catch {
+        return false;
+    }
+}
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import { normalizeMonthlyPlans, readPlanForMonth } from '@lantern/shared/utils';
@@ -319,6 +340,20 @@ export function useAppEffects({
             firstName: (profile.firstName as string) || (profile.first_name as string) || undefined,
             lastName: (profile.lastName as string) || (profile.last_name as string) || undefined,
             isAdmin: resolvePlatformAdmin(authUser, profile.settings as Record<string, unknown>),
+            // Academic identity (Phase 1): null = known-missing, the same rule
+            // stores/authStore.ts applies on sign-in. This mapper runs on every
+            // boot and on SIGNED_IN, and it used to drop these fields — leaving
+            // them `undefined`, which every academic gate reads as "profile not
+            // loaded, never ask". That silently skipped the required onboarding
+            // step and the dashboard nudge for any account that reloaded.
+            institutionId: (profile.institutionId as User['institutionId']) ?? null,
+            institution: (profile.institution as User['institution']) ?? null,
+            faculty: (profile.faculty as User['faculty']) ?? null,
+            programme: (profile.programme as User['programme']) ?? null,
+            studyLevel: (profile.studyLevel as User['studyLevel']) ?? null,
+            entryYear: (profile.entryYear as User['entryYear']) ?? null,
+            expectedGraduationYear:
+                (profile.expectedGraduationYear as User['expectedGraduationYear']) ?? null,
         });
 
         const applyFastBoot = (): boolean => {
@@ -718,6 +753,13 @@ export function useAppEffects({
     // --- Profile setup check (username, and academic identity once per dismissal) ---
     useEffect(() => {
         if (!currentUser) return;
+        // A brand-new account used to meet TWO setup forms back to back: the
+        // skippable "Set up your profile" modal, and then onboarding's required
+        // academic step asking for the same institution. Onboarding goes first
+        // and asks for everything it needs; App.tsx re-runs this check the
+        // moment onboarding finishes, so anything still missing (a username, on
+        // an account that never had one) is asked for exactly once, afterwards.
+        if (isOnboardingPending()) return;
         // Opens "Set up your profile" when the username is missing (original
         // trigger) OR when the institution is known-missing and the user has not
         // pressed "Skip for now" (utils/academicSetup.ts).

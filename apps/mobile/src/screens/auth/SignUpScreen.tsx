@@ -19,7 +19,6 @@ import {
   Linking,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
 import { studyLevelLabel } from '@lantern/shared/academic';
 import { useAuthStore } from '../../stores/authStore';
 import { checkUsername } from '../../services/api';
@@ -33,20 +32,20 @@ import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner'
 import { StudyLevelPicker } from '../../components/academic/StudyLevelPicker';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { useInstitutions } from '../../hooks/useInstitutions';
+import {
+  PROGRAMME_MAX_LENGTH,
+  areInstitutionsUnavailable,
+  buildSignUpAcademicFields,
+  isValidUsernameFormat,
+  validateSignUpForm,
+  type SignUpFormErrors,
+} from '../../utils/signUpValidation';
 import type { AuthStackParamList } from '../../navigation/types';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type SignUpScreenProps = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
 
-interface FormErrors {
-  firstName?: string;
-  lastName?: string;
-  username?: string;
-  email?: string;
-  institution?: string;
-  studyLevel?: string;
-  password?: string;
-  confirmPassword?: string;
-}
+type FormErrors = SignUpFormErrors;
 
 export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
   const { colors } = useTheme();
@@ -58,8 +57,11 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [email, setEmail] = useState('');
   // Academic identity (replaces the old phone block): institution + level are
-  // required, programme optional. Written to profiles on insert AND via
-  // PUT /users/:id once a session exists (the API is the source of truth).
+  // required, programme optional — the same rule as the web onboarding step.
+  // Written to profiles on insert AND via PUT /users/:id once a session exists
+  // (the API is the source of truth, and that PUT triggers
+  // refreshAutoMemberships). The one escape is an institution-list outage; see
+  // institutionsUnavailable below.
   const [institutionId, setInstitutionId] = useState('');
   const [programme, setProgramme] = useState('');
   const [studyLevel, setStudyLevel] = useState<number | null>(null);
@@ -79,8 +81,17 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
   const { signUp, isLoading: authLoading, error: authError } = useAuthStore();
   const cookieNoticeInset = useCookieNoticeBottomInset();
 
-  const validateEmail = (emailStr: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr);
-  const validateUsernameFormat = (usernameStr: string) => /^[a-z0-9_]{3,20}$/.test(usernameStr.toLowerCase());
+  // The institution list could not be loaded (failed fetch, or nothing came
+  // back): the picker has nothing to offer, so requiring an institution would
+  // lock this student out of creating an account at all. This is the ONE
+  // deliberate escape — the requirement degrades to optional, level stays
+  // required, and RootNavigator's academic profile-setup modal picks them up on
+  // the next boot. Mirrors the web onboarding step.
+  const institutionsUnavailable = areInstitutionsUnavailable({
+    loading: institutionsLoading,
+    error: institutionsError,
+    count: institutions.length,
+  });
 
   // Debounced username availability check
   useEffect(() => {
@@ -91,7 +102,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
       return;
     }
 
-    if (!validateUsernameFormat(normalizedUsername)) {
+    if (!isValidUsernameFormat(normalizedUsername)) {
       setUsernameAvailable(null);
       return;
     }
@@ -111,62 +122,40 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
     return () => clearTimeout(timeoutId);
   }, [username]);
 
+  // Institution and study level are REQUIRED (programme stays optional) — the
+  // same rule the web onboarding step applies. Both feed auto communities,
+  // course rows, campus counts and Discover, so a blank one is a permanently
+  // empty account. The only way past a missing institution is
+  // `institutionsUnavailable` above. Rules live in utils/signUpValidation.ts.
   const validateForm = useCallback(() => {
-    const newErrors: FormErrors = {};
-
-    if (!firstName.trim()) {
-      newErrors.firstName = 'First name is required';
-    } else if (firstName.trim().length < 2) {
-      newErrors.firstName = 'First name must be at least 2 characters';
-    }
-
-    if (!lastName.trim()) {
-      newErrors.lastName = 'Last name is required';
-    } else if (lastName.trim().length < 2) {
-      newErrors.lastName = 'Last name must be at least 2 characters';
-    }
-
-    // Username validation
-    const normalizedUsername = username.toLowerCase().trim();
-    if (!normalizedUsername) {
-      newErrors.username = 'Username is required';
-    } else if (normalizedUsername.length < 3) {
-      newErrors.username = 'Username must be at least 3 characters';
-    } else if (normalizedUsername.length > 20) {
-      newErrors.username = 'Username must be at most 20 characters';
-    } else if (!validateUsernameFormat(normalizedUsername)) {
-      newErrors.username = 'Username can only contain letters, numbers, and underscores';
-    } else if (usernameAvailable === false) {
-      newErrors.username = 'This username is already taken';
-    }
-
-    if (!email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!validateEmail(email)) {
-      newErrors.email = 'Please enter a valid email';
-    }
-
-    // Institution + level are OPTIONAL: activation must be free and under 3
-    // minutes, and a student at an unlisted school (sentinels are filtered out),
-    // a non-Nigerian student, or anyone hitting a slow/failed campuses fetch
-    // must never be blocked from creating an account. Whatever they pick is
-    // still collected and saved below.
-
-    if (!password) {
-      newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
-    if (!confirmPassword) {
-      newErrors.confirmPassword = 'Please confirm your password';
-    } else if (password !== confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-
+    const newErrors = validateSignUpForm({
+      firstName,
+      lastName,
+      username,
+      usernameAvailable,
+      email,
+      institutionId,
+      programme,
+      studyLevel,
+      institutionsUnavailable,
+      password,
+      confirmPassword,
+    });
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [firstName, lastName, username, usernameAvailable, email, institutionId, studyLevel, password, confirmPassword]);
+  }, [
+    firstName,
+    lastName,
+    username,
+    usernameAvailable,
+    email,
+    institutionId,
+    programme,
+    studyLevel,
+    institutionsUnavailable,
+    password,
+    confirmPassword,
+  ]);
 
   const handleSignUp = useCallback(async () => {
     if (!validateForm()) return;
@@ -175,11 +164,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
       const normalizedUsername = username.toLowerCase().trim();
-      const academicFields = {
-        institutionId: institutionId || null,
-        programme: programme.trim() || null,
-        studyLevel: studyLevel ?? null,
-      };
+      const academicFields = buildSignUpAcademicFields({ institutionId, programme, studyLevel });
 
       void import('../../services/productAnalytics').then(({ trackSignupStarted }) => {
         trackSignupStarted();
@@ -331,7 +316,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
             onPress={() => navigation.goBack()}
             disabled={isLoading}
           >
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+            <AppIcon name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.logoContainer}>
             <LanternLogo size={72} />
@@ -348,7 +333,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
             <View style={[styles.inputContainer, styles.nameInput]}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>First Name</Text>
               <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.firstName && styles.inputError]}>
-                <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+                <AppIcon name="person" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
                 <TextInput
                   style={[styles.input, { color: colors.inputText }]}
                   placeholder="First"
@@ -370,7 +355,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
             <View style={[styles.inputContainer, styles.nameInput]}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>Last Name</Text>
               <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.lastName && styles.inputError]}>
-                <Ionicons name="person-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+                <AppIcon name="person" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
                 <TextInput
                   style={[styles.input, { color: colors.inputText }]}
                   placeholder="Last"
@@ -414,10 +399,10 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
                 <ActivityIndicator size="small" color={colors.primary} style={styles.inputIconRight} />
               )}
               {!checkingUsername && usernameAvailable === true && username.length >= 3 && (
-                <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
+                <AppIcon name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
               )}
               {!checkingUsername && usernameAvailable === false && (
-                <Ionicons name="close-circle" size={20} color={colors.error} style={styles.inputIconRight} />
+                <AppIcon name="close-circle" size={20} color={colors.error} style={styles.inputIconRight} />
               )}
             </View>
             {errors.username && <Text style={[styles.errorText, { color: colors.error }]}>{errors.username}</Text>}
@@ -432,9 +417,16 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
             </Text>
           </View>
 
-          {/* Institution (optional; "Other" sentinels are never offered) */}
+          {/* Institution (required; "Other" sentinels are never offered) */}
           <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>University / Polytechnic (Optional)</Text>
+            {/* The asterisk is decorative — the label spells "required" out for
+                screen readers, so the requirement is never colour/glyph only. */}
+            <Text
+              style={[styles.label, { color: colors.textSecondary }]}
+              accessibilityLabel="University or Polytechnic, required"
+            >
+              University / Polytechnic <Text style={{ color: colors.error }}>*</Text>
+            </Text>
             <CampusPicker
               campuses={institutions}
               value={institutionId}
@@ -445,15 +437,31 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
               emptyLabel={institutionsLoading ? 'Loading institutions…' : 'Choose your institution'}
               searchPlaceholder="Search universities and polytechnics…"
             />
-            {institutionsError ? (
-              <TouchableOpacity onPress={reloadInstitutions} accessibilityRole="button">
+            {institutionsUnavailable ? (
+              // The list is genuinely unavailable, so this student is allowed
+              // through without one — say so honestly and offer the retry.
+              <View style={styles.retryRow}>
                 <Text style={[styles.errorText, { color: colors.error }]}>
-                  Couldn’t load institutions. Tap to retry.
+                  We couldn’t load the list of institutions.
                 </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={reloadInstitutions}
+                  accessibilityRole="button"
+                  accessibilityLabel="Try loading institutions again"
+                  hitSlop={10}
+                  style={styles.retryButton}
+                >
+                  <Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text>
+                </TouchableOpacity>
+                <Text style={[styles.hintText, { color: colors.textSecondary }]}>
+                  You can continue and add your school later.
+                </Text>
+              </View>
+            ) : errors.institution ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>{errors.institution}</Text>
             ) : (
               <Text style={[styles.hintText, { color: colors.textSecondary }]}>
-                Not listed, or not in Nigeria? Skip this — you can add it later.
+                This files your notes, decks and tests by course, and puts you in your campus groups.
               </Text>
             )}
           </View>
@@ -462,7 +470,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Programme (Optional)</Text>
             <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-              <Ionicons name="book-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+              <AppIcon name="book" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.inputText }]}
                 placeholder="e.g. Medicine and Surgery"
@@ -470,15 +478,21 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
                 value={programme}
                 onChangeText={setProgramme}
                 autoCapitalize="words"
+                maxLength={PROGRAMME_MAX_LENGTH}
                 editable={!isLoading}
+                accessibilityLabel="Programme, optional"
               />
             </View>
           </View>
 
-          {/* Level (optional) */}
+          {/* Level (required — needs no network, so no outage escape) */}
           <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>
-              Level (Optional){studyLevel ? ` — ${studyLevelLabel(studyLevel)}` : ''}
+            <Text
+              style={[styles.label, { color: colors.textSecondary }]}
+              accessibilityLabel={`Level, required${studyLevel ? `, ${studyLevelLabel(studyLevel)} selected` : ''}`}
+            >
+              Level <Text style={{ color: colors.error }}>*</Text>
+              {studyLevel ? ` — ${studyLevelLabel(studyLevel)}` : ''}
             </Text>
             <StudyLevelPicker
               value={studyLevel}
@@ -487,6 +501,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
                 clearError('studyLevel');
               }}
               disabled={isLoading}
+              accessibilityLabel="Study level, required"
             />
             {errors.studyLevel && <Text style={[styles.errorText, { color: colors.error }]}>{errors.studyLevel}</Text>}
           </View>
@@ -495,7 +510,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Email</Text>
             <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.email && styles.inputError]}>
-              <Ionicons name="at-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+              <AppIcon name="at" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.inputText }]}
                 placeholder="Enter your email"
@@ -518,7 +533,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Password</Text>
             <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.password && styles.inputError]}>
-              <Ionicons name="lock-closed-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+              <AppIcon name="lock-closed" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.inputText }]}
                 placeholder="Create a password"
@@ -540,8 +555,8 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
                 accessibilityRole="button"
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
-<Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+<AppIcon
+                  name={showPassword ? 'eye-off' : 'eye'}
                   size={20}
                   color={colors.inputPlaceholder}
                 />
@@ -557,7 +572,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Confirm Password</Text>
             <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.confirmPassword && styles.inputError]}>
-              <Ionicons name="lock-closed-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+              <AppIcon name="lock-closed" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.inputText }]}
                 placeholder="Confirm your password"
@@ -579,8 +594,8 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
                 accessibilityRole="button"
                 accessibilityLabel={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
               >
-                <Ionicons
-                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                <AppIcon
+                  name={showConfirmPassword ? 'eye-off' : 'eye'}
                   size={20}
                   color={colors.inputPlaceholder}
                 />
@@ -722,6 +737,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     marginLeft: 4,
+  },
+  retryRow: {
+    marginTop: 2,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  retryText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   hintText: {
     fontSize: 11,

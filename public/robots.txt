@@ -5,3 +5,4 @@ Allow: /
 Sitemap: https://lanternstudy.com/sitemap.xml
 Sitemap: https://lanternstudy.com/sitemap/marketplace.xml
 Sitemap: https://lanternstudy.com/sitemap/jobs.xml
+Sitemap: https://lanternstudy.com/sitemap/campuses.xml

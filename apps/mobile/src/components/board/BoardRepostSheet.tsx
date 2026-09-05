@@ -9,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import {
   BOARD_REPOST_QUOTE_MAX,
   COMMUNITY_BOARD_COPY,
@@ -17,6 +16,7 @@ import {
 } from '@lantern/shared/network';
 import { useTheme } from '../../theme';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../chat/composerKeyboardBehavior';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * Repost, with an optional comment (§6).
@@ -88,7 +88,7 @@ export function BoardRepostSheet({
                 accessibilityLabel="Close"
                 className="min-h-[44px] min-w-[44px] items-center justify-center -mr-2"
               >
-                <Ionicons name="close" size={20} color="#94a3b8" />
+                <AppIcon name="close" size={20} color="#94a3b8" />
               </Pressable>
             </View>
 

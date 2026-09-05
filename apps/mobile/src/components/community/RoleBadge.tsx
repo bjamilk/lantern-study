@@ -1,19 +1,19 @@
 import React from 'react';
 import { Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { communityRoleLabel, type CommunityRole } from '@lantern/shared/network';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 /**
  * Owner = amber star, Admin = indigo shield-checkmark, Moderator = shield
- * outline — the same Ionicons vocabulary GroupInfoModal already uses. Plain
+ * outline — the same icon vocabulary GroupInfoModal already uses. Plain
  * members render nothing. The text label is visible AND on the
  * accessibilityLabel, so the badge is never icon-only.
  */
 export function RoleBadge({ role }: { role: CommunityRole }) {
   const label = communityRoleLabel(role);
   if (!label) return null;
-  const icon: React.ComponentProps<typeof Ionicons>['name'] =
-    role === 'owner' ? 'star' : role === 'admin' ? 'shield-checkmark' : 'shield-outline';
+  const icon: AppIconName =
+    role === 'owner' ? 'star' : role === 'admin' ? 'shield-checkmark' : 'shield';
   const color = role === 'owner' ? '#f59e0b' : role === 'admin' ? '#6366f1' : '#64748b';
   const tone =
     role === 'owner'
@@ -33,7 +33,7 @@ export function RoleBadge({ role }: { role: CommunityRole }) {
       accessibilityLabel={label}
       accessible
     >
-      <Ionicons name={icon} size={10} color={color} />
+      <AppIcon name={icon} size={10} color={color} />
       <Text className={`ml-0.5 text-[10px] font-semibold ${textTone}`}>{label}</Text>
     </View>
   );

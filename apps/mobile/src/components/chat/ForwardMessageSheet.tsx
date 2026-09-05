@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Modal, Pressable, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../layout';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
@@ -9,6 +8,7 @@ import { useGroupStore } from '../../stores/groupStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useTheme } from '../../theme';
 import { ResolvedAvatar } from '../ResolvedAvatar';
+import { AppIcon } from '../ui/AppIcon';
 
 interface ForwardTarget {
   key: string;
@@ -115,7 +115,7 @@ export function ForwardMessageSheet({ visible, onClose, messageText }: Props) {
               Forward to…
             </Text>
             <View className="flex-row items-center gap-2 px-3 mb-2 rounded-xl border border-lantern-border bg-lantern-background-secondary min-h-[42px]">
-              <Ionicons name="search" size={15} color={colors.inputPlaceholder} />
+              <AppIcon name="search" size={15} color={colors.inputPlaceholder} />
               <TextInput
                 value={query}
                 onChangeText={setQuery}
@@ -154,7 +154,7 @@ export function ForwardMessageSheet({ visible, onClose, messageText }: Props) {
                       Sending…
                     </Text>
                   ) : (
-                    <Ionicons name="arrow-redo-outline" size={18} color={colors.primary} />
+                    <AppIcon name="arrow-redo" size={18} color={colors.primary} />
                   )}
                 </Pressable>
               )}

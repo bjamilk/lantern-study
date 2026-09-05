@@ -33,7 +33,10 @@ describe('community server routes', () => {
     expect(buildAppPath(AppMode.COMMUNITY_DETAIL, { slug: 'unilag-med', groupId: 'g1' })).toBe(
       '/discover/c/unilag-med/ch/g1'
     );
-    expect(buildAppPath(AppMode.COMMUNITY_DETAIL, { groupId: 'g1' })).toBe('/discover');
+    // No slug = no community to open, so it falls back to the Campus
+    // destination the community lives under (it used to be `/discover`, which
+    // is now one of the redirects into it).
+    expect(buildAppPath(AppMode.COMMUNITY_DETAIL, { groupId: 'g1' })).toBe('/campus');
   });
 
   it('round-trips encoded slugs and ids', () => {

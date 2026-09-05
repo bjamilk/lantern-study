@@ -8,7 +8,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -43,6 +42,7 @@ import {
 } from "../../services/jobsBoard";
 import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 /** Employment types promoted to one-tap chips; the panel still exposes all 8. */
 const QUICK_TYPE_CHIPS: JobEmploymentType[] = [
@@ -472,8 +472,8 @@ export function JobsHomeScreen() {
               onPress={() => void saveCurrentSearch()}
               className="mt-2 h-11 flex-row items-center justify-center gap-2 rounded-xl border border-lantern-primary"
             >
-              <Ionicons
-                name="notifications-outline"
+              <AppIcon
+                name="notifications"
                 size={16}
                 color="#0f766e"
               />
@@ -490,9 +490,9 @@ export function JobsHomeScreen() {
         <View className="mx-4 mt-3 flex-row gap-2">
           {(
             [
-              { label: "My applications", icon: "document-text-outline", screen: "MyJobApplications" },
-              { label: "My job posts", icon: "megaphone-outline", screen: "MyJobPostings" },
-              { label: "Employer hub", icon: "business-outline", screen: "JobEmployer" },
+              { label: "My applications", icon: "document-text", screen: "MyJobApplications" },
+              { label: "My job posts", icon: "megaphone", screen: "MyJobPostings" },
+              { label: "Employer hub", icon: "business", screen: "JobEmployer" },
             ] as const
           ).map((row) => (
             <Pressable
@@ -503,7 +503,7 @@ export function JobsHomeScreen() {
               className="flex-1 items-center gap-1 rounded-xl border border-lantern-border bg-lantern-surface px-2 py-2.5"
               style={{ minHeight: 64 }}
             >
-              <Ionicons name={row.icon} size={18} color="#6366f1" />
+              <AppIcon name={row.icon} size={18} color="#6366f1" />
               <Text
                 numberOfLines={2}
                 className="text-center text-[11px] font-semibold text-lantern-primary"
@@ -691,8 +691,8 @@ export function JobsHomeScreen() {
               accessibilityRole="checkbox"
               accessibilityState={{ checked: companyOnly }}
             >
-              <Ionicons
-                name={companyOnly ? "checkbox" : "square-outline"}
+              <AppIcon
+                name={companyOnly ? "checkbox" : "square"}
                 size={20}
                 color={companyOnly ? "#0f766e" : "#94a3b8"}
               />
@@ -783,11 +783,11 @@ export function JobsHomeScreen() {
                       : `Turn on alerts for ${saved.name}`
                   }
                 >
-                  <Ionicons
+                  <AppIcon
                     name={
                       saved.notify
                         ? "notifications"
-                        : "notifications-off-outline"
+                        : "notifications-off"
                     }
                     size={20}
                     color={saved.notify ? "#0f766e" : "#94a3b8"}
@@ -799,7 +799,7 @@ export function JobsHomeScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Delete ${saved.name}`}
                 >
-                  <Ionicons name="trash-outline" size={20} color="#94a3b8" />
+                  <AppIcon name="trash" size={20} color="#94a3b8" />
                 </Pressable>
               </View>
             ))}
@@ -909,8 +909,9 @@ export function JobsHomeScreen() {
                         }
                         className="-mr-1 p-1"
                       >
-                        <Ionicons
-                          name={job.isSaved ? "bookmark" : "bookmark-outline"}
+                        <AppIcon
+                          name="bookmark"
+                          filled={!!job.isSaved}
                           size={20}
                           color={job.isSaved ? "#0f766e" : "#94a3b8"}
                         />

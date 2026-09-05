@@ -15,7 +15,6 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useGameStore, GameUser, GameConfig } from '../stores';
 import { useAuthStore } from '../stores/authStore';
@@ -23,6 +22,7 @@ import type { QuestionType } from '../stores/testStore';
 import { buildCurrentGameUser } from '../utils/currentGameUser';
 import { mobileQuestionTypesToWeb } from '../utils/questionHelpers';
 import type { TestConfigAvailableFilter } from './TestConfigModal';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 interface ChallengeModalProps {
   visible: boolean;
@@ -38,7 +38,7 @@ interface ChallengeModalProps {
 
 const QUESTION_COUNT_OPTIONS = [5, 10, 15, 20];
 
-const QUESTION_TYPE_OPTIONS: { type: QuestionType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const QUESTION_TYPE_OPTIONS: { type: QuestionType; label: string; icon: AppIconName }[] = [
   { type: 'multiple_choice_single', label: 'Multiple Choice', icon: 'radio-button-on' },
   { type: 'multiple_choice_multiple', label: 'Multi-Select', icon: 'checkbox' },
   { type: 'true_false', label: 'True/False', icon: 'swap-horizontal' },
@@ -315,7 +315,7 @@ export default function ChallengeModal({
           <View style={styles.header}>
             <Text style={styles.title}>Challenge to a Duel</Text>
             <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -372,7 +372,7 @@ export default function ChallengeModal({
                     style={[styles.typeChip, selected && styles.typeChipSelected]}
                     onPress={() => toggleQuestionType(option.type)}
                   >
-                    <Ionicons
+                    <AppIcon
                       name={option.icon}
                       size={14}
                       color={selected ? '#fff' : colors.textSecondary}

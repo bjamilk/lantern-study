@@ -11,7 +11,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -30,8 +29,11 @@ import {
   SOURCES_CITED_MAX,
   normalizeSourcesCited,
 } from '@lantern/shared/moderation';
+import { COURSE_ANCHOR_COPY, validateCourseAnchor } from '@lantern/shared/marketplace';
+import { useGroupStore } from '../../stores/groupStore';
 import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { openSellerTerms } from '../../components/moderation/RightsAttestationCheckbox';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type MyBank = Awaited<ReturnType<typeof fetchMyQuestionBanks>>[number];
 type Campus = Awaited<ReturnType<typeof fetchMarketplaceCampuses>>[number];
@@ -76,7 +78,13 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
     // web publish modal and with the study-pack modal's defaultCourseId/Topic.
     // topicId only survives with a course (a topic can't exist without one),
     // matching the submit guard below.
-    setCourseId(test.courseId ?? null);
+    // …and when the bundle carries no course, fall back to the SOURCE GROUP's
+    // course. Most class groups are already filed under one, and the server
+    // applies the same fallback on publish, so the two can never disagree.
+    const groupCourseId =
+      useGroupStore.getState().groups.find(g => g.id === test.groupId)?.courseId ?? null;
+    const prefillCourseId = test.courseId ?? groupCourseId;
+    setCourseId(prefillCourseId);
     setTopicId(test.courseId ? test.topicId ?? null : null);
     setAttested(false);
     setAiAssisted(false);
@@ -109,12 +117,15 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
   const isUpdate = mode === 'update' && !!existingBank;
   const sources = normalizeSourcesCited(sourcesText);
   const sourcesError = sources.ok ? null : sources.error;
+  // A NEW publish must be filed under a course (Gap 3); an update never
+  // re-asks, because the listing already carries its anchor.
+  const courseError = isUpdate ? null : validateCourseAnchor(courseId);
   const canSubmit =
     !busy &&
     attested &&
     !sourcesError &&
     questionCount > 0 &&
-    (isUpdate || (!!title.trim() && !!campusId && !priceInvalid));
+    (isUpdate || (!!title.trim() && !!campusId && !priceInvalid && !courseError));
   // The API requires attestation: true on publish AND republish (400 without it).
   const provenance = {
     attestation: true as const,
@@ -134,6 +145,10 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
 
   const submit = async () => {
     if (!canSubmit) return;
+    if (courseError) {
+      Alert.alert('Course needed', courseError);
+      return;
+    }
     setBusy(true);
     try {
       if (isUpdate && existingBank) {
@@ -200,12 +215,12 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
               borderBottomColor: colors.border,
             }}
           >
-            <Ionicons name="storefront-outline" size={20} color={colors.primary} />
+            <AppIcon name="storefront" size={20} color={colors.primary} />
             <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: colors.text }}>
               Publish to Marketplace
             </Text>
             <Pressable onPress={onClose} hitSlop={8} accessibilityLabel="Close">
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
+              <AppIcon name="close" size={22} color={colors.textSecondary} />
             </Pressable>
           </View>
 
@@ -355,7 +370,9 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
                 </View>
 
                 <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Course (optional)</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                    {COURSE_ANCHOR_COPY.label} *
+                  </Text>
                   <CoursePicker
                     value={courseId}
                     onChange={course => {
@@ -363,9 +380,19 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
                       setTopicId(topicIdAfterCourseChange(topicId, courseId, nextCourseId));
                       setCourseId(nextCourseId);
                     }}
-                    placeholder="Which course is this bank for? e.g. GST 101"
+                    allowClear={false}
+                    placeholder={COURSE_ANCHOR_COPY.placeholder}
                     title="Course for this question bank"
+                    accessibilityLabel={`${COURSE_ANCHOR_COPY.label} (required)`}
                   />
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                    {COURSE_ANCHOR_COPY.hint}
+                  </Text>
+                  {courseError ? (
+                    <Text accessibilityLiveRegion="polite" style={{ fontSize: 12, color: colors.error }}>
+                      {courseError}
+                    </Text>
+                  ) : null}
                 </View>
 
                 <View style={{ gap: 6 }}>

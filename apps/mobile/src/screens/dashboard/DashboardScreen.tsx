@@ -20,7 +20,6 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Ionicons } from '@expo/vector-icons';
 
 import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 
@@ -78,6 +77,7 @@ import { featureAccents } from '@lantern/shared/design';
 import { buildActivityHeatmapGrid, getActivityHeatHexColorForCount, getActivityHeatHexColor, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
 
 import { useTheme } from '../../theme';
+import { AppIcon, isAppIconName } from '../../components/ui/AppIcon';
 
 
 
@@ -827,7 +827,7 @@ export function DashboardScreen({ navigation }: Props) {
         {statsError && !statsLoading ? (
           <Card className="mb-4 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
             <View className="flex-row items-center gap-3">
-              <Ionicons name="cloud-offline-outline" size={20} color="#dc2626" />
+              <AppIcon name="cloud-offline" size={20} color="#dc2626" />
               <View className="flex-1">
                 <Text className="text-sm font-semibold text-red-700 dark:text-red-300">
                   Couldn't refresh your stats
@@ -892,7 +892,7 @@ export function DashboardScreen({ navigation }: Props) {
 
             <View className="flex-row items-center gap-1">
 
-              <Ionicons name="flame" size={16} color="#f97316" />
+              <AppIcon name="flame" size={16} color="#f97316" />
 
               <Text className="text-2xl font-bold text-emerald-600">{streak}</Text>
 
@@ -955,9 +955,9 @@ export function DashboardScreen({ navigation }: Props) {
 
                 <Card key={`badge-${badge.id}`} className="w-28 items-center py-3 px-2">
 
-                  <Ionicons
+                  <AppIcon
 
-                    name={(badge.icon as keyof typeof Ionicons.glyphMap) || 'ribbon'}
+                    name={isAppIconName(badge.icon) ? badge.icon : 'ribbon'}
 
                     size={22}
 
@@ -1143,7 +1143,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <View className="w-10 h-10 rounded-xl bg-white/20 items-center justify-center">
 
-            <Ionicons name="flash" size={22} color="#fff" />
+            <AppIcon name="flash" size={22} color="#fff" />
 
           </View>
 
@@ -1159,7 +1159,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           </View>
 
-          <Ionicons name="chevron-forward" size={18} color="#fff" />
+          <AppIcon name="chevron-forward" size={18} color="#fff" />
 
         </Pressable>
 
@@ -1172,13 +1172,13 @@ export function DashboardScreen({ navigation }: Props) {
           accessibilityLabel="Open leaderboard"
         >
           <View className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 items-center justify-center">
-            <Ionicons name="trophy" size={20} color="#f59e0b" />
+            <AppIcon name="trophy" size={20} color="#f59e0b" />
           </View>
           <View className="flex-1">
             <Text className="font-semibold text-lantern-text">Leaderboard</Text>
             <Text className="text-xs text-lantern-text-secondary">See how you rank against other students</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+          <AppIcon name="chevron-forward" size={18} color="#94a3b8" />
         </Pressable>
 
 

@@ -1,128 +1,66 @@
 import React from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Badge } from '../ui';
 import { useTheme } from '../../theme';
 import { ResolvedAvatar } from '../ResolvedAvatar';
+import AIUsageBadge, { useAIUsage } from '../AIUsageBadge';
 import { useChrome } from './ChromeContext';
-import type { TabKey } from './BottomTabBar';
+import { tabTitle } from './tabRouting';
+import { AppIcon } from '../ui/AppIcon';
 
-// Icon + label, matching the bottom bar's stacked layout. 52 fitted an icon
-// alone; the label needs the extra 12.
-export const TOP_BAR_CONTENT_HEIGHT = 64;
+/**
+ * A single row: avatar, title, two icons. 56 is Material's app-bar height and
+ * it fits a 44px touch target with room to spare — the old 64 existed only to
+ * stack a 10sp label under each of four icons.
+ */
+export const TOP_BAR_CONTENT_HEIGHT = 56;
 
-interface TopIconDef {
-  key: string;
-  /** Spoken name — the full one, for screen readers. */
-  label: string;
-  /**
-   * Printed name, or omitted to leave the icon to speak for itself — the bell
-   * is unambiguous and carries the unread badge, and "Notifications" does not
-   * fit a ~72dp column at 10sp anyway.
-   */
-  shortLabel?: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  activeIcon: keyof typeof Ionicons.glyphMap;
-  activeWhen: TabKey | null;
-  badge?: number;
-  onPress: () => void;
-}
+/** 44px is the accessible minimum. NativeWind inlines rem at 14 here, so a
+    Tailwind size class cannot reach it — these are px literals on purpose. */
+const TOUCH = 44;
 
 interface Props {
-  avatarUri: string | null;
-  avatarName: string | null;
-  unreadNotificationCount: number;
-  onOpenDrawer: () => void;
-  onBudget: () => void;
+  /** Opens the Me tab. The avatar is the second door to Me, not to a drawer. */
+  onOpenMe: () => void;
   onNotifications: () => void;
   onAI: () => void;
-  onShop: () => void;
-  /** False hides the Shop icon for accounts outside the private pilot. */
-  showShop: boolean;
+  unreadNotificationCount: number;
 }
 
 /**
- * The top chrome row: profile avatar on the left (opens the drawer), then
- * Budget, Notifications, Lantern AI and Discover on the right. Sits IN FLOW
- * above the tab navigator (the LectureRecordingBanner pattern) so screens are
- * pushed down rather than covered — no per-screen top clearance needed.
+ * The top chrome row: who I am on the left, where I am in the middle, and on
+ * the right the only two surfaces that FOLLOW a student around the app —
+ * Lantern AI and Notifications.
  *
- * On scroll-hide it collapses to a status-bar-high strip instead of height 0:
- * screens keep not touching the top edge, so their SafeAreaView top padding
- * never snaps back mid-animation.
+ * Budget and Shop used to sit here. They are destinations, not companions:
+ * Budget is a row inside Me and Shop is a segment of Campus, each with exactly
+ * one door now. The draggable floating AI-credit pill is gone too — the count
+ * rides on the sparkle, the way an unread count rides on a bell.
+ *
+ * Sits IN FLOW above the tab navigator (the LectureRecordingBanner pattern) so
+ * screens are pushed down rather than covered, and it does not move: no
+ * scroll-away, no suppression. Only an immersive ROUTE — a study session, a
+ * chat that draws its own header — renders without it.
  */
-export function TopBar({
-  avatarUri,
-  avatarName,
-  unreadNotificationCount,
-  onOpenDrawer,
-  onBudget,
-  onNotifications,
-  onAI,
-  onShop,
-  showShop,
-}: Props) {
-  const { chromeProgress, activeTab, immersive, topBarSuppressed } = useChrome();
+export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCount }: Props) {
+  const { activeTab, immersive, profileAvatarUri, profileName } = useChrome();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const usage = useAIUsage();
 
-  if (immersive || topBarSuppressed) return null;
+  if (immersive) return null;
 
-  const icons: TopIconDef[] = [
-    {
-      key: 'budget',
-      shortLabel: 'Budget',
-      label: 'Budget',
-      icon: 'wallet-outline',
-      activeIcon: 'wallet',
-      activeWhen: 'Budget',
-      onPress: onBudget,
-    },
-    {
-      key: 'shop',
-      shortLabel: 'Shop',
-      label: 'Shop',
-      icon: 'storefront-outline',
-      activeIcon: 'storefront',
-      activeWhen: 'Marketplace',
-      onPress: onShop,
-    },
-    {
-      key: 'ai',
-      shortLabel: 'Lantern AI',
-      label: 'Lantern AI',
-      icon: 'sparkles-outline',
-      activeIcon: 'sparkles',
-      activeWhen: 'AI',
-      onPress: onAI,
-    },
-    {
-      key: 'notifications',
-      label: 'Notifications',
-      icon: 'notifications-outline',
-      activeIcon: 'notifications',
-      activeWhen: 'Notifications',
-      badge: unreadNotificationCount,
-      onPress: onNotifications,
-    },
-  ];
-
-  // The Shop is a private-pilot surface. Accounts outside the pilot do not get
-  // a button that only leads to a wall — but an unknown answer still shows it,
-  // because a failed probe must not silently remove navigation.
-  const visibleIcons = showShop ? icons : icons.filter((item) => item.key !== 'shop');
-
-  const height = chromeProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [insets.top, insets.top + TOP_BAR_CONTENT_HEIGHT],
-  });
+  const creditLabel =
+    usage.limit > 0
+      ? `Lantern AI, ${usage.remaining} of ${usage.limit} AI credits left`
+      : 'Lantern AI';
 
   return (
-    <Animated.View
+    <View
       style={{
-        height,
-        overflow: 'hidden',
+        height: insets.top + TOP_BAR_CONTENT_HEIGHT,
+        paddingTop: insets.top,
         backgroundColor: colors.tabBar,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: colors.tabBarBorder,
@@ -134,67 +72,76 @@ export function TopBar({
         zIndex: 20,
       }}
     >
-      {/* Bottom-anchored so collapsing clips the row upward under the status bar. */}
-      <Animated.View
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: TOP_BAR_CONTENT_HEIGHT,
-          opacity: chromeProgress,
-        }}
-        className="flex-row items-center px-3"
-      >
+      <View className="flex-1 flex-row items-center px-2">
         <Pressable
-          onPress={onOpenDrawer}
+          onPress={onOpenMe}
           accessibilityRole="button"
-          accessibilityLabel="Open profile menu"
-          hitSlop={8}
-          className="h-10 w-10 items-center justify-center"
+          accessibilityLabel="Me"
+          accessibilityHint="Your profile, Budget, Downloads and settings"
+          accessibilityState={{ selected: activeTab === 'Me' }}
+          style={{ width: TOUCH, height: TOUCH }}
+          className="items-center justify-center"
         >
-          <ResolvedAvatar name={avatarName} uri={avatarUri} size={32} decorative />
+          <ResolvedAvatar name={profileName} uri={profileAvatarUri} size={30} decorative />
         </Pressable>
-        {/* Icons spread across the remaining width rather than clustering
-            against the right edge. */}
-        <View className="flex-1 flex-row items-center justify-evenly pl-2">
-        {visibleIcons.map(item => {
-          const active = item.activeWhen != null && activeTab === item.activeWhen;
-          return (
-            <Pressable
-              key={item.key}
-              onPress={item.onPress}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              accessibilityState={{ selected: active }}
-              // Top-aligned, not centred: the unlabelled bell would otherwise
-              // sit lower than its labelled neighbours.
-              className="h-14 w-16 items-center justify-start pt-1.5"
-            >
-              <View className="relative">
-                <Ionicons
-                  name={active ? item.activeIcon : item.icon}
-                  size={22}
-                  color={active ? colors.tabBarActive : colors.tabBarInactive}
-                />
-                {item.badge ? <Badge count={item.badge} /> : null}
-              </View>
-              {item.shortLabel ? (
-                <Text
-                  numberOfLines={1}
-                  className={`text-[10px] mt-0.5 font-medium text-center ${
-                    active ? 'text-lantern-primary' : 'text-lantern-text-tertiary'
-                  }`}
-                >
-                  {item.shortLabel}
-                </Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
-        </View>
-      </Animated.View>
-    </Animated.View>
+
+        {/* The title says where you are. Non-tab screens draw their own header
+            with a back arrow and their real name; this names the section. */}
+        <Text
+          numberOfLines={1}
+          accessibilityRole="header"
+          className="flex-1 min-w-0 px-1 text-lg font-bold text-lantern-text"
+        >
+          {tabTitle(activeTab)}
+        </Text>
+
+        <Pressable
+          onPress={onAI}
+          accessibilityRole="button"
+          accessibilityLabel={creditLabel}
+          accessibilityState={{ selected: activeTab === 'AI' }}
+          style={{ width: TOUCH, height: TOUCH }}
+          className="items-center justify-center"
+        >
+          <View className="relative">
+            <AppIcon
+              name="sparkles"
+              filled={activeTab === 'AI'}
+              size={22}
+              color={activeTab === 'AI' ? colors.tabBarActive : colors.tabBarInactive}
+            />
+            {/* The AI-credit count, docked on the sparkle it belongs to. */}
+            <AIUsageBadge variant="docked" />
+          </View>
+        </Pressable>
+
+        <Pressable
+          onPress={onNotifications}
+          accessibilityRole="button"
+          accessibilityLabel={
+            unreadNotificationCount > 0
+              ? `Notifications, ${unreadNotificationCount} unread`
+              : 'Notifications'
+          }
+          accessibilityState={{ selected: activeTab === 'Notifications' }}
+          style={{ width: TOUCH, height: TOUCH }}
+          className="items-center justify-center"
+        >
+          <View className="relative">
+            <AppIcon
+              name="notifications"
+              filled={activeTab === 'Notifications'}
+              size={22}
+              color={
+                activeTab === 'Notifications' ? colors.tabBarActive : colors.tabBarInactive
+              }
+            />
+            {/* No badge at all when there is nothing unread — never a zero. */}
+            <Badge count={unreadNotificationCount} />
+          </View>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 

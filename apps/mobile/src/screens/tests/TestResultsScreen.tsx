@@ -14,7 +14,6 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type TestQuestion } from '../../stores/testStore';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { useTheme, type ThemeColors } from '../../theme';
@@ -25,6 +24,7 @@ import {
   normalizeRecentTest,
 } from '../../utils/testAnalysisHelpers';
 import type { RecentTest } from '../../types/dashboardStats';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -198,7 +198,7 @@ export default function TestResultsScreen() {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+          <AppIcon name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Test Results</Text>
         <View style={{ width: 40 }} />
@@ -218,7 +218,7 @@ export default function TestResultsScreen() {
             styles.resultIcon,
             { backgroundColor: attempt.passed ? '#10b98120' : '#ef444420' }
           ]}>
-            <Ionicons 
+            <AppIcon 
               name={attempt.passed ? 'trophy' : 'close-circle'} 
               size={48} 
               color={attempt.passed ? colors.success : colors.error} 
@@ -247,22 +247,22 @@ export default function TestResultsScreen() {
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+            <AppIcon name="checkmark-circle" size={24} color="#10b981" />
             <Text style={styles.statValue}>{correctCount}</Text>
             <Text style={styles.statLabel}>Correct</Text>
           </View>
           <View style={styles.statCard}>
-            <Ionicons name="close-circle" size={24} color="#ef4444" />
+            <AppIcon name="close-circle" size={24} color="#ef4444" />
             <Text style={styles.statValue}>{incorrectCount}</Text>
             <Text style={styles.statLabel}>Incorrect</Text>
           </View>
           <View style={styles.statCard}>
-            <Ionicons name="star" size={24} color="#fbbf24" />
+            <AppIcon name="star" size={24} color="#fbbf24" />
             <Text style={styles.statValue}>{attempt.score}/{attempt.totalPoints}</Text>
             <Text style={styles.statLabel}>Points</Text>
           </View>
           <View style={styles.statCard}>
-            <Ionicons name="time" size={24} color="#6366f1" />
+            <AppIcon name="time" size={24} color="#6366f1" />
             <Text style={styles.statValue}>{formatTime(attempt.timeSpent)}</Text>
             <Text style={styles.statLabel}>Time</Text>
           </View>
@@ -274,7 +274,7 @@ export default function TestResultsScreen() {
           accessibilityRole="button"
           accessibilityLabel="View detailed analysis of this test"
         >
-          <Ionicons name="bar-chart" size={18} color="#fff" />
+          <AppIcon name="bar-chart" size={18} color="#fff" />
           <Text style={styles.analysisButtonText}>Detailed Analysis</Text>
         </TouchableOpacity>
 
@@ -318,7 +318,7 @@ export default function TestResultsScreen() {
                 styles.questionStatus,
                 { backgroundColor: answer.isCorrect ? '#10b98120' : '#ef444420' }
               ]}>
-                <Ionicons 
+                <AppIcon 
                   name={answer.isCorrect ? 'checkmark' : 'close'} 
                   size={16} 
                   color={answer.isCorrect ? colors.success : colors.error} 
@@ -361,7 +361,7 @@ export default function TestResultsScreen() {
                     setShowExplain(true);
                   }}
                 >
-                  <Ionicons name="sparkles" size={14} color="#6366f1" />
+                  <AppIcon name="sparkles" size={14} color="#6366f1" />
                   <Text style={styles.explainButtonText}>Explain</Text>
                 </TouchableOpacity>
               )}
@@ -401,7 +401,7 @@ export default function TestResultsScreen() {
             style={styles.practiceFailedButton}
             onPress={() => void handlePracticeFailed()}
           >
-            <Ionicons name="school" size={20} color="#10b981" />
+            <AppIcon name="school" size={20} color="#10b981" />
             <Text style={styles.practiceFailedButtonText}>
               Practice Failed ({failedQuestions.length})
             </Text>
@@ -411,14 +411,14 @@ export default function TestResultsScreen() {
           style={styles.analysisFooterButton}
           onPress={openDetailedAnalysis}
         >
-          <Ionicons name="bar-chart" size={20} color="#0f766e" />
+          <AppIcon name="bar-chart" size={20} color="#0f766e" />
           <Text style={styles.analysisFooterButtonText}>Detailed Analysis</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.retryButton}
           onPress={() => navigation.navigate('TestsList')}
         >
-          <Ionicons name="refresh" size={20} color="#6366f1" />
+          <AppIcon name="refresh" size={20} color="#6366f1" />
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
         <TouchableOpacity 

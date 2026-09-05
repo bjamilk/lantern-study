@@ -1,8 +1,8 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useToastStore } from '../../stores/toastStore';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 interface Props {
   onClose: () => void;
@@ -48,9 +48,11 @@ export function MessageActionBar({
 
   const button = (
     label: string,
-    icon: React.ComponentProps<typeof Ionicons>['name'],
+    icon: AppIconName,
     onPress: () => void,
-    color?: string
+    color?: string,
+    // Toggles paint their glyph solid when on, so the state is not colour-only.
+    filled?: boolean
   ) => (
     <Pressable
       key={label}
@@ -59,7 +61,7 @@ export function MessageActionBar({
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Ionicons name={icon} size={22} color={color || colors.text} />
+      <AppIcon name={icon} filled={filled} size={22} color={color || colors.text} />
     </Pressable>
   );
 
@@ -74,17 +76,17 @@ export function MessageActionBar({
         accessibilityRole="button"
         accessibilityLabel="Close message actions"
       >
-        <Ionicons name="close" size={24} color={colors.text} />
+        <AppIcon name="close" size={24} color={colors.text} />
       </Pressable>
       <View className="flex-1" />
       {/* Generous gaps so neighbouring actions cannot be fat-fingered. */}
       <View className="flex-row items-center gap-2 pr-1">
-        {button('Reply', 'arrow-undo-outline', onReply)}
-        {onForward ? button('Forward', 'arrow-redo-outline', onForward) : null}
-        {onCopy ? button('Copy text', 'copy-outline', onCopy) : null}
-        {button(starred ? 'Unstar' : 'Star', starred ? 'star' : 'star-outline', onStar, starred ? '#f59e0b' : undefined)}
-        {button(pinned ? 'Unpin' : 'Pin', 'pin-outline', onPin, pinned ? colors.primary : undefined)}
-        {onDelete ? button('Delete', 'trash-outline', onDelete, colors.error) : null}
+        {button('Reply', 'arrow-undo', onReply)}
+        {onForward ? button('Forward', 'arrow-redo', onForward) : null}
+        {onCopy ? button('Copy text', 'copy', onCopy) : null}
+        {button(starred ? 'Unstar' : 'Star', 'star', onStar, starred ? '#f59e0b' : undefined, starred)}
+        {button(pinned ? 'Unpin' : 'Pin', 'pin', onPin, pinned ? colors.primary : undefined, pinned)}
+        {onDelete ? button('Delete', 'trash', onDelete, colors.error) : null}
         {!onDelete && deleteBlockedReason ? (
           <Pressable
             key="delete-blocked"
@@ -97,7 +99,7 @@ export function MessageActionBar({
             accessibilityHint={deleteBlockedReason}
             style={{ opacity: 0.4 }}
           >
-            <Ionicons name="trash-outline" size={22} color={colors.textSecondary} />
+            <AppIcon name="trash" size={22} color={colors.textSecondary} />
           </Pressable>
         ) : null}
         {onMore ? button('More actions', 'ellipsis-vertical', onMore) : null}

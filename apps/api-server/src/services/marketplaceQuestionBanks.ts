@@ -8,7 +8,12 @@
  */
 import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
-import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
+import {
+  COURSE_ANCHOR_COPY,
+  isCourseAnchorId,
+  isMarketplaceListingModerated,
+  validateCourseAnchor,
+} from '@lantern/shared/marketplace';
 import {
   getModerationService,
   listingRightsFields,
@@ -85,6 +90,28 @@ export class MarketplaceQuestionBanksService {
     return `qbank-${listingId}`;
   }
 
+  /**
+   * The anchor must point at a real course. Read-only: this is deliberately
+   * NOT a find-or-create — the one creation path is
+   * academicCourses.findOrCreateCourse, reached from POST /api/v1/courses.
+   */
+  private async assertCourseExists(courseId: string): Promise<void> {
+    const { data, error } = await this.db
+      .from('courses')
+      .select('id')
+      .eq('id', courseId)
+      .maybeSingle();
+    if (error) {
+      // Pre-migration schema: the courses table is not there. Refuse rather
+      // than publish an anchor nobody can follow.
+      if (isMissingRelationError(error)) {
+        throw new PublicError('Courses are not available yet — please try again later');
+      }
+      throw error;
+    }
+    if (!data) throw new PublicError(COURSE_ANCHOR_COPY.invalid);
+  }
+
   private validateContent(content: QuestionBankContent): number {
     if (!content || !Array.isArray(content.questions) || content.questions.length === 0) {
       throw new PublicError('content.questions must be a non-empty array');
@@ -118,13 +145,15 @@ export class MarketplaceQuestionBanksService {
     });
 
     // A non-UUID courseId would 500 at the DB write; reject it as a 400 the same
-    // way every other courseId-accepting route does.
+    // way every other courseId-accepting route does. (The stronger "a course is
+    // REQUIRED" rule is applied below, after the source group has been read, so
+    // an anchored group can supply the course the publisher did not pick.)
     if (
       input.courseId != null &&
       input.courseId !== '' &&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(input.courseId))
+      !isCourseAnchorId(input.courseId)
     ) {
-      throw new PublicError('courseId must be a valid course id');
+      throw new PublicError(COURSE_ANCHOR_COPY.invalid);
     }
 
     // Same content moderation as the listing routes: hard-block leaked-exam /
@@ -139,19 +168,35 @@ export class MarketplaceQuestionBanksService {
 
     // Publishing from a group requires group admin rights: the bank carries the
     // group's name and collective work, so a rank-and-file member cannot list it.
+    let courseId: string | null = input.courseId || null;
     if (input.groupId) {
       const group = await this.supabaseService.getGroupById(input.groupId, userId);
       if (!group) throw new PublicError('Group not found or access denied');
       const g = group as unknown as {
         permissions?: Record<string, { admin?: boolean }>;
         adminIds?: string[];
+        courseId?: string | null;
       };
       const isAdmin =
         Boolean(g.permissions?.[userId]?.admin) || Boolean(g.adminIds?.includes(userId));
       if (!isAdmin) {
         throw new PublicError('Only group admins can publish a group question bank');
       }
+      // The source group is already filed under a course for most class groups;
+      // inherit it rather than making the publisher re-pick what the group knows.
+      if (!courseId && isCourseAnchorId(g.courseId)) courseId = String(g.courseId).trim();
     }
+
+    // A NEW publish must be anchored to a course (Gap 3). Existing listings with
+    // course_id = null were published before this rule and stay valid and
+    // readable — the rule gates the transition, never the read.
+    const courseError = validateCourseAnchor(courseId);
+    if (courseError) throw new PublicError(courseError);
+    // The id must name a real course; otherwise the anchor points nowhere and
+    // the bank never appears on any browse surface. A plain read — course
+    // CREATION stays in academicCourses.findOrCreateCourse, which dedupes on
+    // (institution, normalised code) and is race-safe. Never a second one.
+    await this.assertCourseExists(courseId as string);
 
     const price = input.price == null ? null : Number(input.price);
     if (price != null && (!Number.isFinite(price) || price < 0)) {
@@ -181,7 +226,7 @@ export class MarketplaceQuestionBanksService {
         listing_kind: 'question_bank',
         quantity: null,
         status: 'active',
-        courseId: input.courseId || null,
+        courseId,
         topicId: input.topicId ?? null,
         categorySpecificFields: {
           questionCount,
@@ -199,7 +244,7 @@ export class MarketplaceQuestionBanksService {
         listing_id: listing.id,
         source_group_id: input.groupId || null,
         published_by: userId,
-        course_id: input.courseId || null,
+        course_id: courseId,
         question_count: questionCount,
         content: { config: input.content.config || {}, questions: input.content.questions },
         rights_attested_at: provenance.rights_attested_at,

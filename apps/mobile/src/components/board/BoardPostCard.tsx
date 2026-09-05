@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   COMMUNITY_BOARD_COPY,
   boardPostAccessibilityLabel,
@@ -18,6 +17,7 @@ import { BoardImage } from './BoardImage';
 import { BoardQuotedPost } from './BoardQuotedPost';
 import { LegacyQuestionCard } from './LegacyQuestionCard';
 import type { Message } from '../../stores/groupStore';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * One card on a board (§4.2).
@@ -178,7 +178,7 @@ export function BoardPostCard({
           accessibilityLabel={COMMUNITY_BOARD_COPY.repostedBy(post.senderName)}
           className="mb-1.5 flex-row items-center"
         >
-          <Ionicons name="repeat" size={13} color="#94a3b8" />
+          <AppIcon name="repeat" size={13} color="#94a3b8" />
           <Text className="ml-1.5 text-[11px] font-semibold text-lantern-text-tertiary">
             {COMMUNITY_BOARD_COPY.repostedBy(post.senderName)}
           </Text>
@@ -226,7 +226,7 @@ export function BoardPostCard({
           accessibilityLabel="More actions for this post"
           className="min-h-[44px] min-w-[44px] items-center justify-center -mr-2"
         >
-          <Ionicons name="ellipsis-horizontal" size={18} color="#94a3b8" />
+          <AppIcon name="ellipsis-horizontal" size={18} color="#94a3b8" />
         </Pressable>
       </View>
 
@@ -286,7 +286,7 @@ export function BoardPostCard({
               accessibilityLabel={COMMUNITY_BOARD_COPY.voiceNote}
               className="mt-2 self-start min-h-[44px] flex-row items-center rounded-full border border-lantern-border px-3"
             >
-              <Ionicons name="mic-outline" size={14} color="#94a3b8" />
+              <AppIcon name="mic" size={14} color="#94a3b8" />
               <Text className="ml-1.5 text-[12px] text-lantern-text-secondary">
                 {COMMUNITY_BOARD_COPY.voiceNote}
               </Text>

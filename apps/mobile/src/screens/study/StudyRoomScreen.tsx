@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { StudyRoomDetail } from '@lantern/shared/network';
 import {
   fetchStudyRoom,
@@ -16,6 +15,7 @@ import { studyRoomPresenceChannel,
 } from '@lantern/shared/network';
 import { CoursePicker } from '../../components/CoursePicker';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -141,7 +141,7 @@ export function StudyRoomScreen({
     <Screen edges={['top']} bottom="none" keyboard>
       <View className="flex-row items-center gap-2 px-4 py-3 border-b border-lantern-border">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Go back" className="p-2">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-1 min-w-0">
           <Text className="text-lg font-semibold text-lantern-text" numberOfLines={1}>

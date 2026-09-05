@@ -2,24 +2,123 @@
  * Mobile API Service — thin wrapper around @lantern/shared/api
  */
 import { createApiClient, createApiEndpoints, type ApiClient } from '@lantern/shared/api';
-import { getAuthHeaders, API_BASE_URL, supabase } from './supabase';
+import { getAuthHeaders, API_BASE_URL, supabase, resetAuthRefreshBackoff } from './supabase';
 import { useAuthStore } from '../stores/authStore';
+import { useUIStore } from '../stores/uiStore';
+import {
+  classifyRefreshError,
+  decideOn401,
+  isOfflineAuthError,
+  type RefreshOutcome,
+} from './authFailure';
 import {
   configureSuspensionProbe,
   isForbiddenError,
   probeAccountSuspension,
 } from './accountSuspension';
 
+const setAuthOffline = (offline: boolean) => useUIStore.getState().setAuthOffline(offline);
+
+/**
+ * One refresh at a time.
+ *
+ * Coming back to the foreground fans out (RootNavigator's refreshUserData
+ * fetches notifications, decks, stats, unread counts … at once). Each 401 used
+ * to fire its own refreshSession and its own onUnauthorized, so ONE expired
+ * token produced N sign-out calls. Sharing a single in-flight promise means
+ * the fan-out asks once and every caller reads the same verdict.
+ */
+let refreshInFlight: Promise<boolean | 'transient'> | null = null;
+
+/**
+ * What the most recent refresh concluded, and when. Read by onUnauthorized as
+ * a last check before the one call in the app that can end a session.
+ */
+let lastRefresh: { outcome: RefreshOutcome; at: number } = { outcome: 'invalid', at: 0 };
+/** How recent a transient verdict has to be to still describe THIS 401. */
+const REFRESH_VERDICT_TTL_MS = 2_000;
+
+const recordOutcome = <T,>(outcome: RefreshOutcome, value: T): T => {
+  lastRefresh = { outcome, at: Date.now() };
+  return value;
+};
+
+const refreshAuthOnce = (): Promise<boolean | 'transient'> => {
+  if (refreshInFlight) return refreshInFlight;
+
+  const attempt = (async (): Promise<boolean | 'transient'> => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (!error && data.session?.access_token) {
+        resetAuthRefreshBackoff();
+        setAuthOffline(false);
+        return recordOutcome('refreshed', true);
+      }
+      // No session and no error is not proof of anything either — classify it
+      // the same way, which defaults to transient.
+      const kind = classifyRefreshError(error ?? new Error('refreshSession returned no session'));
+      if (kind === 'transient') {
+        setAuthOffline(true);
+        return recordOutcome('transient', 'transient');
+      }
+      return recordOutcome('invalid', false);
+    } catch (error) {
+      if (classifyRefreshError(error) === 'transient') {
+        setAuthOffline(true);
+        return recordOutcome('transient', 'transient');
+      }
+      return recordOutcome('invalid', false);
+    }
+  })();
+
+  refreshInFlight = attempt;
+  void attempt.finally(() => {
+    refreshInFlight = null;
+  });
+  return attempt;
+};
+
+/**
+ * Clear the backoff and try once more, now. Wired to "Retry now" on the
+ * offline chip so a student who has just walked back into signal does not wait
+ * out the exponential window.
+ */
+export const retryAuthRefresh = async (): Promise<boolean> => {
+  resetAuthRefreshBackoff();
+  const outcome = await refreshAuthOnce();
+  return outcome === true;
+};
+
 const rawClient = createApiClient({
   getBaseUrl: () => API_BASE_URL,
-  getAuthHeaders,
-  refreshAuth: async () => {
-    const { data, error } = await supabase.auth.refreshSession();
-    return !error && !!data.session?.access_token;
+  getAuthHeaders: async () => {
+    try {
+      return await getAuthHeaders();
+    } catch (error) {
+      // getAuthHeaders refuses to send a header-less request while the auth
+      // server is unreachable; surface that as offline rather than as a 401.
+      if (isOfflineAuthError(error)) setAuthOffline(true);
+      throw error;
+    }
   },
+  refreshAuth: refreshAuthOnce,
+  onOffline: () => setAuthOffline(true),
   onUnauthorized: () => {
-    // Shared client only invokes this for definitive auth codes or failed refresh.
-    void useAuthStore.getState().signOut();
+    // The shared client invokes this ONLY for a definitive auth code or a
+    // refresh that proved the token is dead — never for a network failure.
+    // This is nonetheless the one call in the app that can end a session
+    // without the student asking, so it re-applies the rule itself: if the
+    // most recent refresh (recent enough to be describing THIS 401) could not
+    // reach the auth server, stay offline instead. The verdict expires, so a
+    // genuine revoke is never blocked for more than a couple of seconds.
+    const unreachable =
+      lastRefresh.outcome === 'transient' &&
+      Date.now() - lastRefresh.at < REFRESH_VERDICT_TTL_MS;
+    if (decideOn401({ refresh: unreachable ? 'transient' : 'invalid' }) === 'stay-offline') {
+      setAuthOffline(true);
+      return;
+    }
+    void useAuthStore.getState().signOut({ reason: 'revoked' });
   },
 });
 
@@ -38,12 +137,26 @@ const rethrowAfterSuspensionCheck = (error: unknown): never => {
   throw error;
 };
 
+/**
+ * Any completed round-trip is proof the API is reachable and this session is
+ * accepted, so it retires the offline banner — the flag is never left stuck on
+ * after connectivity comes back.
+ */
+const noteRequestSucceeded = <T,>(value: T): T => {
+  if (useUIStore.getState().authOffline) setAuthOffline(false);
+  return value;
+};
+
 const client: ApiClient = {
   ...rawClient,
   request: <T,>(endpoint: string, options?: RequestInit, timeoutMs?: number) =>
-    rawClient.request<T>(endpoint, options, timeoutMs).catch(rethrowAfterSuspensionCheck),
+    rawClient
+      .request<T>(endpoint, options, timeoutMs)
+      .then(noteRequestSucceeded, rethrowAfterSuspensionCheck),
   requestRaw: <T,>(endpoint: string, options?: RequestInit, timeoutMs?: number) =>
-    rawClient.requestRaw<T>(endpoint, options, timeoutMs).catch(rethrowAfterSuspensionCheck),
+    rawClient
+      .requestRaw<T>(endpoint, options, timeoutMs)
+      .then(noteRequestSucceeded, rethrowAfterSuspensionCheck),
 };
 
 /**
@@ -181,6 +294,9 @@ export const {
   checkBadges,
   syncGamificationProgress,
   fetchMarketplaceListings,
+  // "Browse by course" (Gap 3): the course index and one course's listings.
+  fetchMarketplaceCourses,
+  fetchMarketplaceCourseListings,
   fetchMarketplaceListing,
   fetchMarketplaceListingReviewEligibility,
   createMarketplaceListing,

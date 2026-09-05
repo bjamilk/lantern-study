@@ -20,12 +20,12 @@ import {
 } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useGameStore } from '../../stores';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -348,7 +348,7 @@ export default function GameScreen() {
 
       let optionStyle: StyleProp<ViewStyle>[] = [styles.optionButton, { backgroundColor: colors.card, borderColor: colors.border }];
       const textStyle: StyleProp<TextStyle>[] = [styles.optionText, { color: colors.text }];
-      let iconName: string | null = null;
+      let iconName: AppIconName | null = null;
       let iconColor = '';
 
       if (isQuestionAnswered) {
@@ -375,12 +375,12 @@ export default function GameScreen() {
         >
           {isMulti && (
             <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-              {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+              {isSelected && <AppIcon name="checkmark" size={14} color="#fff" />}
             </View>
           )}
           <Text style={textStyle}>{opt.text}</Text>
           {iconName && (
-            <Ionicons name={iconName as any} size={24} color={iconColor} style={styles.optionIcon} />
+            <AppIcon name={iconName} size={24} color={iconColor} style={styles.optionIcon} />
           )}
         </TouchableOpacity>
       );
@@ -417,7 +417,7 @@ export default function GameScreen() {
                 ? (shuffledAnswers as MatchingItem[]).find(a => a.id === matchSelections[prompt.id])?.text
                 : 'Select...'}
             </Text>
-            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+            <AppIcon name="chevron-down" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
           {showMatchingDropdown === prompt.id && (
             <View style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -496,7 +496,7 @@ export default function GameScreen() {
                     ?.text || 'Selected'
                 : 'Select label...'}
             </Text>
-            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+            <AppIcon name="chevron-down" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
           {showMatchingDropdown === label.id && (
             <View style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -550,7 +550,7 @@ export default function GameScreen() {
             accessibilityLabel="Quit game"
             accessibilityRole="button"
           >
-            <Ionicons name="close" size={22} color={colors.textSecondary} />
+            <AppIcon name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
         {/* Players */}
@@ -639,7 +639,7 @@ export default function GameScreen() {
               <Text style={styles.nextButtonText}>
                 {currentQuestionIndex < totalQuestions - 1 ? 'Next Question' : 'View Results'}
               </Text>
-              <Ionicons name="chevron-forward" size={20} color="#fff" />
+              <AppIcon name="chevron-forward" size={20} color="#fff" />
             </TouchableOpacity>
           )}
         </View>

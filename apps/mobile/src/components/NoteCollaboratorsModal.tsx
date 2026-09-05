@@ -12,7 +12,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { generateNoteShareLink } from '@lantern/shared';
 import { Button } from './ui';
@@ -27,6 +26,7 @@ import {
   updateNoteCollaboratorRole,
 } from '../services/notes';
 import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
+import { AppIcon } from './ui/AppIcon';
 
 type Role = 'viewer' | 'editor';
 type Collaborator = {
@@ -206,7 +206,7 @@ export function NoteCollaboratorsModal({
           <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
             <Text className="text-lg font-semibold text-lantern-text">Share note</Text>
             <Pressable onPress={onClose} className="p-2" accessibilityLabel="Close share note">
-              <Ionicons name="close" size={22} color="#64748b" />
+              <AppIcon name="close" size={22} color="#64748b" />
             </Pressable>
           </View>
           <ScrollView contentContainerClassName="px-5" contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
@@ -279,7 +279,7 @@ export function NoteCollaboratorsModal({
                         </Text>
                       </Pressable>
                       <Pressable onPress={() => void handleRemove(collaborator.userId)} disabled={saving} accessibilityLabel="Remove collaborator">
-                        <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        <AppIcon name="trash" size={18} color="#ef4444" />
                       </Pressable>
                     </View>
                   ) : null}
@@ -308,7 +308,7 @@ export function NoteCollaboratorsModal({
                       </Pressable>
                     ) : null}
                     <Pressable onPress={() => void handleRevoke(link.id)} disabled={saving} accessibilityLabel="Revoke share link">
-                      <Ionicons name="close-circle-outline" size={20} color="#ef4444" />
+                      <AppIcon name="close-circle" size={20} color="#ef4444" />
                     </Pressable>
                   </View>
                 </View>

@@ -44,11 +44,17 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               ChallengesInbox: 'challenges',
             },
           },
-          MarketTab: {
-            // A cold link straight to Cart/Payouts/You must have the Shop home
-            // beneath it, or Back exits the tab instead of going to the shop.
-            initialRouteName: 'MarketplaceHome',
+          // Campus owns Shop, Jobs and every community screen, so every
+          // link that used to resolve under MarketTab or JobsTab resolves
+          // here. The PATHS are unchanged: they are already in the wild, in
+          // push notifications, job alerts, shared postings and board links.
+          CampusTab: {
+            // A cold link straight to Cart/Payouts/a board must have Campus
+            // beneath it, or Back exits the tab instead of returning to the
+            // segment.
+            initialRouteName: 'Campus',
             screens: {
+              Campus: 'campus',
               MarketplaceHome: 'marketplace',
               ListingDetail: 'listing/:listingId',
               SellerProfile: 'marketplace/seller/:sellerId',
@@ -65,6 +71,15 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               ShopAccount: 'marketplace/you',
               StudyProductDrafts: 'marketplace/products',
               SellerPayout: 'marketplace/payouts',
+              // Jobs kept its marketplace/ prefixed paths for the same reason.
+              JobsHome: 'marketplace/jobs',
+              JobDetail: 'marketplace/jobs/:jobId',
+              CreateJob: 'marketplace/jobs/new',
+              MyJobPostings: 'marketplace/my-jobs',
+              MyJobApplications: 'marketplace/applications',
+              JobEmployer: 'marketplace/employer',
+              JobApplicants: 'marketplace/employer/jobs/:jobId',
+              JobCompany: 'marketplace/companies/:companyId',
               // Community server view (spec §4.1) — same paths as the web app.
               CommunityDetail: 'discover/c/:slug',
               CommunityMembers: 'discover/c/:slug/members',
@@ -78,24 +93,13 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               SavedPosts: 'discover/saved',
             },
           },
-          // Jobs owns its own stack, so its links must resolve under JobsTab.
-          // The paths keep their marketplace/ prefix: they are already in the
-          // wild, in job alerts and shared postings.
-          JobsTab: {
-            screens: {
-              JobsHome: 'marketplace/jobs',
-              JobDetail: 'marketplace/jobs/:jobId',
-              CreateJob: 'marketplace/jobs/new',
-              MyJobPostings: 'marketplace/my-jobs',
-              MyJobApplications: 'marketplace/applications',
-              JobEmployer: 'marketplace/employer',
-              JobApplicants: 'marketplace/employer/jobs/:jobId',
-              JobCompany: 'marketplace/companies/:companyId',
-            },
-          },
           NotificationsTab: 'notifications',
-          BudgetTab: {
+          // Budget is a row inside Me now, so its links resolve on MeTab.
+          // The `budget/*` paths are unchanged.
+          MeTab: {
+            initialRouteName: 'Me',
             screens: {
+              Me: 'me',
               BudgetHome: 'budget',
               SavingsGoals: 'budget/savings',
               Wallet: 'budget/wallet',
@@ -130,7 +134,7 @@ export function resolveDeepLinkNavigation(url: string): { screen: string; params
     case 'group':
       return { screen: 'ChatTab', params: { screen: 'GroupChat', params: { groupId: parsed.id }, initial: false } as any };
     case 'listing':
-      return { screen: 'MarketTab', params: { screen: 'ListingDetail', params: { listingId: parsed.id } } as any };
+      return { screen: 'CampusTab', params: { screen: 'ListingDetail', params: { listingId: parsed.id }, initial: false } as any };
     case 'flashcard':
       return parsed.extra?.deckId
         ? { screen: 'StudyTab', params: { screen: 'DeckDetail', params: { deckId: parsed.extra.deckId } } as any }
@@ -141,8 +145,9 @@ export function resolveDeepLinkNavigation(url: string): { screen: string; params
       // marketplace/orders/:orderId (Paystack return / notification deep links)
       if (parsed.id === 'orders' && parsed.extra?.orderId) {
         return {
-          screen: 'MarketTab',
+          screen: 'CampusTab',
           params: {
+            initial: false,
             screen: 'OrderDetail',
             params: {
               orderId: parsed.extra.orderId,
@@ -152,9 +157,9 @@ export function resolveDeepLinkNavigation(url: string): { screen: string; params
           } as any,
         };
       }
-      return { screen: 'MarketTab', params: { screen: 'MarketplaceHome' } as any };
+      return { screen: 'CampusTab', params: { screen: 'Campus', params: { segment: 'shop' } } as any };
     case 'budget':
-      return { screen: 'BudgetTab', params: { screen: 'BudgetHome' } as any };
+      return { screen: 'MeTab', params: { screen: 'BudgetHome', initial: false } as any };
     case 'test':
       return { screen: 'StudyTab', params: { screen: 'TestsList' } as any };
     default:

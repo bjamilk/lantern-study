@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared';
 import { useMarketplaceStore, useAuthStore, type MarketplaceOffer } from '../../stores';
 import { resumeMarketplaceOrderCheckout } from '../../services/api';
@@ -20,6 +19,7 @@ import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { StickyActionBar } from './components/StickyActionBar';
 import { scrollClearanceForActionBar } from './components/keyboardSafeLayout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -290,7 +290,7 @@ export function OffersScreen({
           accessibilityLabel="Back"
           className="p-2 -ml-2 mr-1"
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="flex-1 text-xl font-bold text-lantern-text">Offers</Text>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />

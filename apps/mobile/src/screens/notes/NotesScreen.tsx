@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   assertNoteUploadSize,
@@ -50,6 +49,7 @@ import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import * as ImagePicker from 'expo-image-picker';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -147,7 +147,7 @@ function FolderChip({
           accessibilityRole="button"
           accessibilityLabel={`Folder options for ${folder.name}`}
         >
-          <Ionicons
+          <AppIcon
             name="ellipsis-horizontal"
             size={16}
             color={isActive ? '#ffffff' : '#64748b'}
@@ -184,15 +184,15 @@ function NoteCard({
         <View className="flex-row items-start justify-between gap-2 mb-2">
           <View className="flex-1 flex-row items-start gap-1.5 min-w-0">
             {selectMode ? (
-              <Ionicons
-                name={selected ? 'checkbox' : 'square-outline'}
+              <AppIcon
+                name={selected ? 'checkbox' : 'square'}
                 size={20}
                 color={selected ? '#6366f1' : '#94a3b8'}
                 style={{ marginTop: 1 }}
               />
             ) : null}
             {note.isPinned ? (
-              <Ionicons name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
+              <AppIcon name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
             ) : null}
             <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={2}>
               {note.title}
@@ -206,7 +206,7 @@ function NoteCard({
         </View>
         {isShared ? (
           <View className="flex-row items-center gap-1 mb-2">
-            <Ionicons name="people-outline" size={13} color="#6366f1" />
+            <AppIcon name="people" size={13} color="#6366f1" />
             <Text className="text-xs text-lantern-text-secondary">
               Shared by {note.owner?.name || note.owner?.username || 'another member'} · {note.accessRole}
             </Text>
@@ -535,14 +535,14 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         {
           section: 'Organise',
           label: 'Move to folder',
-          icon: 'folder-outline',
+          icon: 'folder',
           // Let the sheet dismiss before the next modal mounts.
           onPress: () => setTimeout(() => openMovePickerForNotes([noteActions.id]), 50),
         },
         {
           section: 'Organise',
           label: 'Move to course…',
-          icon: 'school-outline',
+          icon: 'school',
           hint: noteActions.courseId ? 'Filed under a course — pick another or clear it' : 'File this note under a course',
           onPress: () =>
             setTimeout(
@@ -557,7 +557,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               {
                 section: 'Organise',
                 label: 'Move to topic…',
-                icon: 'list-outline' as ActionSheetItem['icon'],
+                icon: 'list' as ActionSheetItem['icon'],
                 hint: 'Where this sits in the course outline',
                 onPress: () =>
                   setTimeout(
@@ -575,7 +575,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         {
           section: 'Organise',
           label: 'Select',
-          icon: 'checkbox-outline',
+          icon: 'checkbox',
           hint: 'Move or delete several notes at once',
           onPress: () => {
             setSelectMode(true);
@@ -587,7 +587,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               {
                 section: 'Note',
                 label: noteActions.isPinned ? 'Unpin' : 'Pin',
-                icon: (noteActions.isPinned ? 'bookmark' : 'bookmark-outline') as ActionSheetItem['icon'],
+                icon: 'bookmark' as ActionSheetItem['icon'],
+                iconFilled: noteActions.isPinned,
                 onPress: () => {
                   void saveNote(noteActions.id, { isPinned: !noteActions.isPinned }).catch((e: unknown) => {
                     Alert.alert('Could not update pin', e instanceof Error ? e.message : 'Try again.');
@@ -599,7 +600,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         {
           section: 'Note',
           label: noteActions.isArchived ? 'Unarchive' : 'Archive',
-          icon: 'archive-outline',
+          icon: 'archive',
           onPress: () => {
             void saveNote(noteActions.id, { isArchived: !noteActions.isArchived }).catch((e: unknown) => {
               Alert.alert('Could not update archive', e instanceof Error ? e.message : 'Try again.');
@@ -611,7 +612,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               {
                 section: 'Note',
                 label: 'Delete',
-                icon: 'trash-outline' as ActionSheetItem['icon'],
+                icon: 'trash' as ActionSheetItem['icon'],
                 destructive: true,
                 onPress: () =>
                   setTimeout(() => {
@@ -626,7 +627,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               {
                 section: 'Note',
                 label: 'Report note',
-                icon: 'flag-outline' as ActionSheetItem['icon'],
+                icon: 'flag' as ActionSheetItem['icon'],
                 hint: 'Leaked exam, plagiarism, copyright or inappropriate content',
                 // Let the sheet dismiss before the report sheet mounts.
                 onPress: () => setTimeout(() => setReportNote(noteActions), 50),
@@ -835,25 +836,25 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
   const importActionItems: ActionSheetItem[] = [
     {
       label: 'Import PDF',
-      icon: 'document-outline',
+      icon: 'document',
       section: `From a file · ${formatMaxNoteUploadLabel()}`,
       onPress: () => void handlePickFile('pdf'),
     },
     {
       label: 'Import PowerPoint',
-      icon: 'easel-outline',
+      icon: 'easel',
       section: `From a file · ${formatMaxNoteUploadLabel()}`,
       onPress: () => void handlePickFile('presentation'),
     },
     {
       label: 'Import photos',
-      icon: 'images-outline',
+      icon: 'images',
       section: `From a file · ${formatMaxNoteUploadLabel()}`,
       onPress: handlePickPhotos,
     },
     {
       label: 'Photograph pages',
-      icon: 'camera-outline',
+      icon: 'camera',
       section: `From a file · ${formatMaxNoteUploadLabel()}`,
       hint: 'Camera — text is read off the photo',
       onPress: () => void handleTakePhoto(),
@@ -1064,7 +1065,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                   accessibilityRole="button"
                   accessibilityLabel="Move to All notes"
                 >
-                  <Ionicons name="folder-outline" size={18} color="#64748b" />
+                  <AppIcon name="folder" size={18} color="#64748b" />
                   <Text className="flex-1 text-sm font-medium text-lantern-text">All notes</Text>
                   <Text className="text-xs text-lantern-text-tertiary">Unfiled</Text>
                 </Pressable>
@@ -1219,7 +1220,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       {courseFilter && !embedded ? (
         <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2">
           <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
-            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <AppIcon name="school" size={14} color={colors.primary} />
             <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
               {courseFilter.label}
             </Text>
@@ -1229,14 +1230,14 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               accessibilityRole="button"
               accessibilityLabel={`Clear course filter ${courseFilter.label}`}
             >
-              <Ionicons name="close-circle" size={16} color={colors.primary} />
+              <AppIcon name="close-circle" size={16} color={colors.primary} />
             </Pressable>
           </View>
           {/* The topic narrows the list further, so it gets its own chip:
               the course chip alone makes a shorter list look like missing notes. */}
           {courseFilter.topicId ? (
             <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
-              <Ionicons name="bookmark-outline" size={13} color={colors.textSecondary} />
+              <AppIcon name="bookmark" size={13} color={colors.textSecondary} />
               <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
                 {courseFilter.topicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : courseFilter.topicLabel || COURSE_TOPIC_COPY.filterLabel}
               </Text>
@@ -1247,7 +1248,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                 accessibilityRole="button"
                 accessibilityLabel="Clear topic filter"
               >
-                <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+                <AppIcon name="close-circle" size={15} color={colors.textSecondary} />
               </Pressable>
             </View>
           ) : null}
@@ -1292,8 +1293,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               accessibilityLabel={filter === 'active' ? 'Show active notes' : 'Show archived notes'}
             >
               {filter === 'archived' ? (
-                <Ionicons
-                  name="archive-outline"
+                <AppIcon
+                  name="archive"
                   size={14}
                   color={listFilter === filter ? '#ffffff' : colors.textSecondary}
                 />
@@ -1315,7 +1316,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           a second input here would be two boxes for one intent. */}
       {!embedded ? (
         <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-lantern-border bg-lantern-surface min-h-[44px]">
-          <Ionicons name="search" size={16} color={colors.inputPlaceholder} />
+          <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
           <TextInput
             value={ownSearch}
             onChangeText={setOwnSearch}
@@ -1441,13 +1442,13 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           }
           ListEmptyComponent={
             <Card className="items-center py-10 border-lantern-border">
-              <Ionicons
+              <AppIcon
                 name={
                   search.trim()
-                    ? 'search-outline'
+                    ? 'search'
                     : listFilter === 'archived'
-                      ? 'archive-outline'
-                      : 'document-text-outline'
+                      ? 'archive'
+                      : 'document-text'
                 }
                 size={40}
                 color="#818cf8"

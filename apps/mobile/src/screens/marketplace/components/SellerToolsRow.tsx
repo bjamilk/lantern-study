@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { AppIcon, type AppIconName } from '../../../components/ui/AppIcon';
 
 export type SellerTool = 'coupons' | 'bundles' | 'campaign' | 'insights';
 
@@ -27,7 +27,7 @@ export interface SellerToolsRowProps {
 type Chip = {
   id: string;
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: AppIconName;
   onPress: () => void;
 };
 
@@ -39,19 +39,19 @@ export function SellerToolsRow({
   className = '',
 }: SellerToolsRowProps) {
   const chips: Chip[] = [
-    { id: 'orders', label: 'Orders', icon: 'receipt-outline', onPress: () => onNavigate('Orders', { role: 'seller' }) },
-    { id: 'offers', label: 'Offers', icon: 'pricetag-outline', onPress: () => onNavigate('Offers', { tab: 'seller' }) },
+    { id: 'orders', label: 'Orders', icon: 'receipt', onPress: () => onNavigate('Orders', { role: 'seller' }) },
+    { id: 'offers', label: 'Offers', icon: 'pricetag', onPress: () => onNavigate('Offers', { tab: 'seller' }) },
     {
       id: 'inquiries',
       label: 'Inquiries',
-      icon: 'chatbubble-ellipses-outline',
+      icon: 'chatbubble-ellipses',
       onPress: () => onNavigate('Inquiries', { tab: 'seller' }),
     },
-    { id: 'customers', label: 'Customers', icon: 'people-outline', onPress: () => onNavigate('SellerCustomers') },
-    { id: 'coupons', label: 'Coupons', icon: 'ticket-outline', onPress: () => onOpenTool('coupons') },
-    { id: 'bundles', label: 'Bundles', icon: 'layers-outline', onPress: () => onOpenTool('bundles') },
-    { id: 'campaign', label: 'Campaign', icon: 'megaphone-outline', onPress: () => onOpenTool('campaign') },
-    { id: 'insights', label: 'Insights', icon: 'stats-chart-outline', onPress: () => onOpenTool('insights') },
+    { id: 'customers', label: 'Customers', icon: 'people', onPress: () => onNavigate('SellerCustomers') },
+    { id: 'coupons', label: 'Coupons', icon: 'ticket', onPress: () => onOpenTool('coupons') },
+    { id: 'bundles', label: 'Bundles', icon: 'layers', onPress: () => onOpenTool('bundles') },
+    { id: 'campaign', label: 'Campaign', icon: 'megaphone', onPress: () => onOpenTool('campaign') },
+    { id: 'insights', label: 'Insights', icon: 'stats-chart', onPress: () => onOpenTool('insights') },
   ];
 
   return (
@@ -70,7 +70,7 @@ export function SellerToolsRow({
             accessibilityLabel={chip.label}
             className="h-9 px-3 rounded-lg border border-lantern-border bg-lantern-surface flex-row items-center gap-1.5 min-w-[44px]"
           >
-            <Ionicons name={chip.icon} size={15} color="#64748b" />
+            <AppIcon name={chip.icon} size={15} color="#64748b" />
             <Text className="text-xs font-medium text-lantern-text-secondary">{chip.label}</Text>
           </Pressable>
         ))}
@@ -81,7 +81,7 @@ export function SellerToolsRow({
         accessibilityLabel={newLabel}
         className="h-9 px-2.5 rounded-lg bg-lantern-primary flex-row items-center gap-1 min-w-[44px]"
       >
-        <Ionicons name="add" size={16} color="#fff" />
+        <AppIcon name="add" size={16} color="#fff" />
         <Text className="text-xs font-semibold text-white">{newLabel}</Text>
       </Pressable>
     </View>

@@ -15,7 +15,6 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Screen } from '../../components/layout';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import TestAnalysisContent from '../../components/TestAnalysisContent';
 import { api } from '../../services/api';
 import { useTestStore } from '../../stores/testStore';
@@ -26,6 +25,7 @@ import {
   buildRecentTestFromSessionDetail,
   normalizeRecentTest,
 } from '../../utils/testAnalysisHelpers';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type TestAnalysisParams = {
   TestAnalysis: {
@@ -175,7 +175,7 @@ export default function TestAnalysisScreen() {
       <Screen edges={['top']} bottom="safe" className="flex-1" style={{ backgroundColor: colors.background }}>
         <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+            <AppIcon name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Test Analysis</Text>

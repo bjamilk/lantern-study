@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useMarketplaceStore, type MarketplaceListing } from '../../stores';
 import { isMarketplaceListingStatus } from '@lantern/shared/marketplace';
@@ -23,6 +22,7 @@ import { Avatar } from '../../components/ui';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -197,7 +197,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             onPress={() => navigation.goBack()}
             className="flex-row items-center gap-1 px-2 py-1.5 rounded-lg bg-black/30"
           >
-            <Ionicons name="arrow-back" size={24} color="#f8fafc" />
+            <AppIcon name="arrow-back" size={24} color="#f8fafc" />
             <Text className="text-sm font-medium text-white/90">Back</Text>
           </Pressable>
           <View className="flex-row gap-2">
@@ -216,7 +216,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Report user"
               >
-                <Ionicons name="flag-outline" size={14} color="#fff" />
+                <AppIcon name="flag" size={14} color="#fff" />
                 <Text className="text-xs font-semibold text-white">Report</Text>
               </Pressable>
             ) : null}
@@ -246,7 +246,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
         <View className="flex-row items-center flex-wrap gap-x-3 gap-y-1 mt-2">
           {profile?.average_rating != null && profile.average_rating > 0 ? (
             <View className="flex-row items-center gap-1">
-              <Ionicons name="star" size={14} color="#fbbf24" />
+              <AppIcon name="star" size={14} color="#fbbf24" />
               <Text className="text-sm text-lantern-text-secondary">
                 {profile.average_rating.toFixed(1)}
                 {profile.review_count ? ` (${profile.review_count})` : ''}
@@ -302,7 +302,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
           ListEmptyComponent={
             <View className="items-center py-12">
-              <Ionicons name="bag-outline" size={40} color="#cbd5e1" />
+              <AppIcon name="bag" size={40} color="#cbd5e1" />
               <Text className="text-sm text-lantern-text-secondary mt-3">No active listings</Text>
             </View>
           }

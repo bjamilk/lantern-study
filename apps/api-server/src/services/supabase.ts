@@ -28,6 +28,11 @@ import {
   BADGE_DEFINITIONS,
   createBadge,
 } from "@lantern/shared/utils/gamification";
+import {
+  canVerifyQuestion,
+  countPeerUpvotes,
+} from "@lantern/shared/utils/questionVerification";
+import { QuestionStatus } from "@lantern/shared/types";
 import { mapUserStatsFromApi } from "@lantern/shared/utils/apiMappers";
 import { computeStudyStreak } from "@lantern/shared/utils/activity";
 import { calculateFsrsData } from "@lantern/shared/utils/fsrs";
@@ -1007,6 +1012,11 @@ export class SupabaseService {
       repostOf: msg.repostOf ?? undefined,
       repostCount:
         typeof msg.repostCount === "number" ? msg.repostCount : undefined,
+      // Peer-upvote progress, attached by attachPeerUpvotes before this maps the
+      // row. Absent — not 0 — on paths that do not compute it, so a client can
+      // tell "no peers yet" from "this build does not report it".
+      peerUpvotes:
+        typeof msg.peerUpvotes === "number" ? msg.peerUpvotes : undefined,
       receiptStatus: msg.receiptStatus || undefined,
       seenByCount:
         typeof msg.seenByCount === "number" ? msg.seenByCount : undefined,
@@ -2810,8 +2820,13 @@ export class SupabaseService {
         const withReposts = rootsOnly
           ? await this.attachBoardRepostContext(withCounts, groupId)
           : withCounts;
+        // Verification progress ("1 of 2 peer votes") is the same for every
+        // member, so it belongs inside the 120s page cache alongside the repost
+        // context. Both response profiles get it: `compact` drops
+        // `question_data`, but the count is computed, not selected.
+        const withPeerUpvotes = await this.attachPeerUpvotes(withReposts);
 
-        return withReposts.reverse().map((msg: any) => ({
+        return withPeerUpvotes.reverse().map((msg: any) => ({
           id: msg.id,
           groupId: msg.group_id,
           sender: mapProfileSender(
@@ -2904,21 +2919,24 @@ export class SupabaseService {
       if (!membership || membership.pending === true) return null;
     }
 
+    // Outside the raw-row cache on purpose: votes move faster than its 600s TTL.
+    const [row] = await this.attachPeerUpvotes([data]);
+
     return {
-      id: data.id,
-      groupId: data.group_id,
+      id: row.id,
+      groupId: row.group_id,
       sender: mapProfileSender(
-        resolveNestedProfile((data as any).profiles),
-        data.sender_id,
+        resolveNestedProfile((row as any).profiles),
+        row.sender_id,
       ),
-      senderId: data.sender_id,
-      timestamp: data.timestamp
-        ? new Date(data.timestamp).toISOString()
+      senderId: row.sender_id,
+      timestamp: row.timestamp
+        ? new Date(row.timestamp).toISOString()
         : new Date().toISOString(),
-      flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
-      upvotes: data.upvotes || 0,
-      downvotes: data.downvotes || 0,
-      ...this.normalizeMessageRecord(data),
+      flaggedAsSimilarUserIds: row.flagged_as_similar_user_ids || [],
+      upvotes: row.upvotes || 0,
+      downvotes: row.downvotes || 0,
+      ...this.normalizeMessageRecord(row),
     };
   }
 
@@ -3219,7 +3237,7 @@ export class SupabaseService {
   }> {
     const { data: msg, error } = await this.supabase
       .from("messages")
-      .select("group_id, upvotes, downvotes, type, question_data")
+      .select("group_id, sender_id, upvotes, downvotes, type, question_data")
       .eq("id", messageId)
       .single();
 
@@ -3254,11 +3272,25 @@ export class SupabaseService {
         });
       }
       const memberCount = count ?? 0;
-      const resolved = resolveQuestionStatusAfterVote({
+      let resolved = resolveQuestionStatusAfterVote({
         upvotes: msg.upvotes ?? 0,
         downvotes: msg.downvotes ?? 0,
         memberCount,
       });
+      // VERIFIED is evidence, not a tally (same rule as PUT /:id/status). The
+      // denormalised `upvotes` includes the author's OWN vote and the 20% share
+      // threshold is 1 in any group of five or fewer, so without this clause an
+      // author could auto-verify their own question by upvoting it — a back
+      // door around the peer-vote gate. Distinct non-author upvotes must reach
+      // VERIFY_PEER_UPVOTES; otherwise the question stays PENDING. REJECTED is
+      // untouched: pulling a bad question needs no quorum.
+      if (resolved === QuestionStatus.VERIFIED) {
+        const peerUpvotes = await this.countPeerUpvotesForMessage(
+          messageId,
+          msg.sender_id ?? null,
+        );
+        if (!canVerifyQuestion(peerUpvotes)) resolved = QuestionStatus.PENDING;
+      }
       if (resolved !== questionStatus) {
         const { error: updateError } = await this.supabase
           .from("messages")
@@ -3516,6 +3548,80 @@ export class SupabaseService {
       (out[id] ||= []).push(String((row as any).emoji));
     }
     return out;
+  }
+
+  /**
+   * Distinct UPvotes on a question from members other than its author — the only
+   * count that may grant VERIFIED. `question_votes` is keyed on
+   * (message_id, user_id), so one row is one voter; `countPeerUpvotes` drops the
+   * author's own row. A read failure returns 0, which refuses the verify rather
+   * than granting one on missing evidence.
+   */
+  async countPeerUpvotesForMessage(
+    messageId: string,
+    authorId: string | null | undefined,
+  ): Promise<number> {
+    const { data, error } = await this.supabase
+      .from("question_votes")
+      .select("user_id, vote_type")
+      .eq("message_id", messageId)
+      .eq("vote_type", "up");
+
+    if (error) {
+      logger.warn("countPeerUpvotesForMessage failed", { messageId, error });
+      return 0;
+    }
+    return countPeerUpvotes(data || [], authorId);
+  }
+
+  /**
+   * Peer-upvote counts for a page of messages, in one query.
+   *
+   * This rides INSIDE the page cache because the number is the same for every
+   * viewer, and casting a vote already invalidates `messages:group:*`. It runs
+   * for both response profiles: the compact profile drops `question_data`, and
+   * leaving the count out of it would repeat the hole that once hid reaction
+   * counts from a freshly loaded chat.
+   */
+  private async attachPeerUpvotes(messages: any[]): Promise<any[]> {
+    const questionIds = messages
+      .filter((m) => String(m?.type || "").toUpperCase() === "QUESTION" && m?.id)
+      .map((m) => m.id as string);
+    if (!questionIds.length) return messages;
+
+    const { data, error } = await this.supabase
+      .from("question_votes")
+      .select("message_id, user_id, vote_type")
+      .eq("vote_type", "up")
+      .in("message_id", questionIds);
+
+    if (error) {
+      // No count is honest; a zero would read as "nobody has upvoted this".
+      logger.warn("attachPeerUpvotes failed", { error });
+      return messages;
+    }
+
+    const byMessage = new Map<string, any[]>();
+    for (const row of (data || []) as any[]) {
+      const id = row?.message_id;
+      if (!id) continue;
+      const bucket = byMessage.get(id);
+      if (bucket) bucket.push(row);
+      else byMessage.set(id, [row]);
+    }
+
+    const questionIdSet = new Set(questionIds);
+    return messages.map((m) =>
+      questionIdSet.has(m?.id)
+        ? {
+            ...m,
+            peerUpvotes: countPeerUpvotes(
+              byMessage.get(m.id) || [],
+              m.sender_id ?? m.senderId ?? null,
+            ),
+          }
+        : m,
+    );
   }
 
   async getUserVotesForGroup(
@@ -11340,7 +11446,11 @@ export class SupabaseService {
 
         if (error) throw error;
 
-        return data.map((msg: any) => ({
+        // The question pool is read from here, so it needs the same
+        // verification progress the chat card shows.
+        const withPeerUpvotes = await this.attachPeerUpvotes(data as any[]);
+
+        return withPeerUpvotes.map((msg: any) => ({
           id: msg.id,
           groupId: msg.group_id,
           sender: mapProfileSender(

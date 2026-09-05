@@ -7,7 +7,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { buildChatAudioMarkdown, chatMessagePreview } from '@lantern/shared/utils';
 import { Button } from '../ui';
@@ -15,6 +14,7 @@ import { useTheme } from '../../theme';
 import { getFontScaleValue } from '../../theme/installFontScale';
 import { featureAccents } from '@lantern/shared/design';
 import { uploadChatAudio } from '../../services/chatAudioUpload';
+import { AppIcon } from '../ui/AppIcon';
 
 export type MentionCandidate = {
   id: string;
@@ -289,7 +289,7 @@ export function ChatComposer({
             </Text>
           </View>
           <Pressable onPress={onClearReply} accessibilityLabel="Cancel reply" className="p-2">
-            <Ionicons name="close" size={18} color={colors.textTertiary} />
+            <AppIcon name="close" size={18} color={colors.textTertiary} />
           </Pressable>
         </View>
       ) : null}
@@ -308,7 +308,7 @@ export function ChatComposer({
             </Text>
           </View>
           <Pressable onPress={onCancelEdit} accessibilityLabel="Cancel edit" className="p-2">
-            <Ionicons name="close" size={18} color={colors.textTertiary} />
+            <AppIcon name="close" size={18} color={colors.textTertiary} />
           </Pressable>
         </View>
       ) : null}
@@ -357,7 +357,7 @@ export function ChatComposer({
                   className="flex-row items-center gap-3 px-4 py-3"
                   accessibilityLabel="Attach image"
                 >
-                  <Ionicons name="image-outline" size={22} color={featureAccents.groups} />
+                  <AppIcon name="image" size={22} color={featureAccents.groups} />
                   <Text className="text-sm font-medium" style={{ color: colors.text }}>
                     Photo
                   </Text>
@@ -375,7 +375,7 @@ export function ChatComposer({
               {attaching ? (
                 <ActivityIndicator size="small" color={colors.primary} />
               ) : (
-                <Ionicons
+                <AppIcon
                   name={trayOpen ? 'close' : 'add'}
                   size={26}
                   color={featureAccents.groups}
@@ -399,7 +399,7 @@ export function ChatComposer({
             {uploadingAudio ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <Ionicons name="mic" size={22} color={isRecording ? '#fff' : colors.primary} />
+              <AppIcon name="mic" size={22} color={isRecording ? '#fff' : colors.primary} />
             )}
           </Pressable>
         ) : null}

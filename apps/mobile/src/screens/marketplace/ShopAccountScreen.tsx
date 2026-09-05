@@ -3,7 +3,6 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { fetchSellerPayoutProfile } from '../../services/api';
 import { Badge } from '../../components/ui';
@@ -12,6 +11,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useShopBadges } from '../../hooks/useShopBadges';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { buildQuickActions, ShopQuickActions, type QuickAction } from './components/ShopQuickActions';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -27,7 +27,7 @@ interface Row {
   key: string;
   label: string;
   detail?: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: AppIconName;
   badge?: number;
   onPress: () => void;
 }
@@ -116,7 +116,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'orders',
       label: 'Your Orders',
       detail: badges.buyerActionOrders > 0 ? 'Payment or pickup waiting on you' : 'Track, pay, buy again',
-      icon: 'receipt-outline',
+      icon: 'receipt',
       badge: badges.buyerActionOrders,
       onPress: go('Orders', { role: 'buyer' }),
     },
@@ -124,7 +124,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'cart',
       label: 'Cart',
       detail: badges.cartCount > 0 ? `${badges.cartCount} item${badges.cartCount === 1 ? '' : 's'} ready to check out` : 'Nothing in it yet',
-      icon: 'cart-outline',
+      icon: 'cart',
       badge: badges.cartCount,
       onPress: go('Cart'),
     },
@@ -132,21 +132,21 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'purchases',
       label: 'Your Purchases',
       detail: 'Study packs and question banks you own',
-      icon: 'albums-outline',
+      icon: 'albums',
       onPress: go('Purchases'),
     },
     {
       key: 'saved',
       label: 'Saved Items',
       detail: badges.savedCount > 0 ? `${badges.savedCount} saved` : 'Tap ♡ on any listing',
-      icon: 'heart-outline',
+      icon: 'heart',
       onPress: go('Favorites'),
     },
     {
       key: 'offers-made',
       label: 'Offers You Made',
       detail: badges.offersAwaitingYou > 0 ? 'A seller countered — your move' : 'Counter-offers and replies from sellers',
-      icon: 'pricetag-outline',
+      icon: 'pricetag',
       badge: badges.offersAwaitingYou,
       onPress: go('Offers', { tab: 'buyer' }),
     },
@@ -154,7 +154,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'messages',
       label: 'Messages to Sellers',
       detail: badges.unreadBuyerInquiries > 0 ? 'A seller replied' : 'Questions you asked about listings',
-      icon: 'chatbubble-ellipses-outline',
+      icon: 'chatbubble-ellipses',
       badge: badges.unreadBuyerInquiries,
       onPress: go('Inquiries', { tab: 'buyer' }),
     },
@@ -165,14 +165,14 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'listings',
       label: 'Your Listings',
       detail: badges.activeListings > 0 ? `${badges.activeListings} live` : 'Nothing listed yet',
-      icon: 'storefront-outline',
+      icon: 'storefront',
       onPress: go('MyListings'),
     },
     {
       key: 'fulfil',
       label: 'Orders to Hand Over',
       detail: badges.sellerActionOrders > 0 ? 'Confirm payment or hand over' : 'Nothing waiting',
-      icon: 'cube-outline',
+      icon: 'cube',
       badge: badges.sellerActionOrders,
       onPress: go('Orders', { role: 'seller' }),
     },
@@ -180,7 +180,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'offers-received',
       label: 'Offers Received',
       detail: badges.offersAwaitingMe > 0 ? 'Accept, counter or decline' : 'No offers waiting on you',
-      icon: 'pricetags-outline',
+      icon: 'pricetags',
       badge: badges.offersAwaitingMe,
       onPress: go('Offers', { tab: 'seller' }),
     },
@@ -193,7 +193,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           : badges.openInquiries > 0
             ? `${badges.openInquiries} open`
             : 'All answered',
-      icon: 'chatbubbles-outline',
+      icon: 'chatbubbles',
       badge: badges.unreadSellerInquiries,
       onPress: go('Inquiries', { tab: 'seller' }),
     },
@@ -201,14 +201,14 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'customers',
       label: 'Your Customers',
       detail: 'People who have bought from you',
-      icon: 'people-outline',
+      icon: 'people',
       onPress: go('SellerCustomers'),
     },
     {
       key: 'products',
       label: 'Study Products',
       detail: 'Drafts of packs and question banks',
-      icon: 'sparkles-outline',
+      icon: 'sparkles',
       onPress: go('StudyProductDrafts'),
     },
     {
@@ -220,7 +220,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           : payoutMissing
             ? 'Not set up — Buy Now and Cart checkout are off'
             : 'Where your earnings go',
-      icon: 'card-outline',
+      icon: 'card',
       badge: payoutMissing ? 1 : 0,
       onPress: go('SellerPayout'),
     },
@@ -230,7 +230,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
             key: 'shop',
             label: 'Your Shop',
             detail: 'View or share your shop page',
-            icon: 'storefront-outline' as const,
+            icon: 'storefront' as const,
             onPress: go('SellerProfile', { sellerId: user.id }),
           },
         ]
@@ -239,7 +239,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'semester',
       label: 'Semester Packs',
       detail: 'Turn a semester of notes into packs',
-      icon: 'layers-outline',
+      icon: 'layers',
       onPress: go('SemesterProducts'),
     },
   ];
@@ -255,7 +255,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'hand-over',
       label: 'Hand over',
       hint: badges.sellerActionOrders > 0 ? `${badges.sellerActionOrders} waiting` : 'Nothing waiting',
-      icon: 'cube-outline',
+      icon: 'cube',
       badge: badges.sellerActionOrders,
       screen: 'Orders',
       params: { role: 'seller' },
@@ -264,7 +264,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'offers-received',
       label: 'Offers',
       hint: badges.offersAwaitingMe > 0 ? `${badges.offersAwaitingMe} to answer` : 'None waiting',
-      icon: 'pricetags-outline',
+      icon: 'pricetags',
       badge: badges.offersAwaitingMe,
       screen: 'Offers',
       params: { tab: 'seller' },
@@ -278,7 +278,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           : badges.openInquiries > 0
             ? `${badges.openInquiries} open`
             : 'All answered',
-      icon: 'chatbubbles-outline',
+      icon: 'chatbubbles',
       badge: badges.unreadSellerInquiries,
       screen: 'Inquiries',
       params: { tab: 'seller' },
@@ -287,7 +287,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       key: 'payouts',
       label: 'Payouts',
       hint: payoutActive === true ? 'Bank on file' : payoutMissing ? 'Not set up' : 'Earnings',
-      icon: 'card-outline',
+      icon: 'card',
       badge: payoutMissing ? 1 : 0,
       screen: 'SellerPayout',
     },
@@ -303,7 +303,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       style={{ minHeight: 60 }}
     >
       <View className="w-10 h-10 rounded-xl items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
-        <Ionicons name={row.icon} size={20} color={colors.primary} />
+        <AppIcon name={row.icon} size={20} color={colors.primary} />
         <Badge count={row.badge ?? 0} />
       </View>
       <View className="flex-1">
@@ -314,7 +314,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           </Text>
         ) : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+      <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
     </Pressable>
   );
 
@@ -344,7 +344,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           accessibilityLabel="Back"
           className="p-2 -ml-2 mr-1"
         >
-          <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
+          <AppIcon name="arrow-back" size={24} color={colors.textSecondary} />
         </Pressable>
         <Text className="flex-1 text-xl font-bold text-lantern-text">
           {firstName ? `Hello, ${firstName}` : 'You'}
@@ -359,7 +359,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           accessibilityLabel="Sell an item"
           className="flex-row items-center gap-1 px-3 py-2 rounded-lg bg-lantern-primary"
         >
-          <Ionicons name="add" size={16} color="#fff" />
+          <AppIcon name="add" size={16} color="#fff" />
           <Text className="text-sm font-semibold text-white">Sell</Text>
         </Pressable>
       </View>

@@ -22,7 +22,6 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
-import { Ionicons } from '@expo/vector-icons';
 
 import type { GroupChallenge } from '@lantern/shared/types';
 
@@ -42,6 +41,7 @@ import {
   declineChallenge,
 
 } from '../../services/challenges';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 
 
@@ -344,7 +344,7 @@ export default function ChallengesInboxScreen() {
 
         <TouchableOpacity onPress={() => navigation.goBack()}>
 
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+          <AppIcon name="arrow-back" size={24} color={colors.text} />
 
         </TouchableOpacity>
 

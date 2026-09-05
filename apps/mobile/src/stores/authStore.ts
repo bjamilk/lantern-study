@@ -19,6 +19,24 @@ import type { User, Session } from '@supabase/supabase-js';
 import { isEmailNotConfirmedError } from '@lantern/shared';
 import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 
+/**
+ * Who ended the session.
+ *
+ * `user`   — the student tapped Sign out. They meant it: wipe the handset.
+ * `revoked` — the server ended it (SESSION_REVOKED / a refresh that proved the
+ *   token is dead). The student did not ask for this and may sign straight
+ *   back in, so their unsynced work MUST survive. A network failure never
+ *   produces this any more — see services/authFailure.ts.
+ */
+export type SignOutReason = 'user' | 'revoked';
+
+/**
+ * Outbound queues holding work the student has done but not yet uploaded.
+ * These are never cleared on a sign-out the student did not ask for: wiping
+ * them is how a dropped connection used to delete a finished offline test.
+ */
+const UNSYNCED_WORK_KEYS = ['@lantern_pending_results', 'lantern_sync_queue'] as const;
+
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -40,7 +58,7 @@ interface AuthState {
   signUp: (email: string, password: string, name?: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (opts?: { reason?: SignOutReason }) => Promise<void>;
   clearError: () => void;
   setPasswordRecovery: (active: boolean) => void;
   refreshProfileName: (userId: string) => Promise<void>;
@@ -315,107 +333,133 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
   
-  signOut: async () => {
+  signOut: async (opts) => {
+    const reason: SignOutReason = opts?.reason ?? 'user';
     set({ isLoading: true, error: null });
     const userId = get().user?.id;
+    let remoteError: any = null;
+    let LEGACY_MARKETPLACE_STORAGE_KEYS: readonly string[] = [];
+
+    // The local cleanup below runs INDEPENDENTLY of the remote revoke. It used
+    // to sit after it in one try block, so an offline sign-out threw at the
+    // network call and left every cache — and the refresh token — on the
+    // handset while the UI claimed the student was logged out.
+    try {
+      const marketplace = await import('./marketplaceStore');
+      LEGACY_MARKETPLACE_STORAGE_KEYS = marketplace.LEGACY_MARKETPLACE_STORAGE_KEYS;
+      await marketplace.useMarketplaceStore.getState().reset();
+    } catch {
+      // continue with local sign-out
+    }
+
+    // Chat wallpapers: the AsyncStorage key is user-scoped and stays put on
+    // purpose, but the IN-MEMORY manifest is module state that outlives the
+    // sign-out. On a shared handset that meant the next account's first chat
+    // frame was painted with the previous student's personal photo.
+    try {
+      const { useChatWallpaperStore } = await import('./chatWallpaperStore');
+      useChatWallpaperStore.getState().reset();
+    } catch {
+      // continue with local sign-out
+    }
+
+    // Signed storage URLs are module-level, in-memory and keyed only by
+    // (bucket, path, variant) — nothing in the key says WHOSE session minted
+    // them. Board and chat photos are now re-signed on read against that
+    // cache, so on a shared handset the next account would be handed URLs
+    // minted under the previous student's authorisation, for up to six hours.
+    // Exactly the chat-wallpaper problem above, one cache over.
+    try {
+      const { clearSignedUrlCache } = await import('../utils/signedUrlCache');
+      clearSignedUrlCache();
+    } catch {
+      // continue with local sign-out
+    }
+
+    // Drop user-scoped settings cache so pending patches cannot leak across accounts.
+    try {
+      const { clearLocalSettings } = await import('./settingsStore');
+      await clearLocalSettings(userId);
+    } catch {
+      // continue with local sign-out
+    }
+
+    // Remote revoke — best effort. supabaseSignOut() itself falls back to a
+    // local scope when the network is the thing that failed, so the refresh
+    // token is dropped from storage either way (services/supabase.ts).
+    try {
+      const { API_BASE_URL, getAuthHeaders } = await import('../services/supabase');
+      const headers = await getAuthHeaders();
+      if (headers.Authorization) {
+        await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST', headers });
+      }
+    } catch {
+      // continue with local sign-out
+    }
 
     try {
-      const { useMarketplaceStore, LEGACY_MARKETPLACE_STORAGE_KEYS } = await import('./marketplaceStore');
-      await useMarketplaceStore.getState().reset();
-
-      // Chat wallpapers: the AsyncStorage key is user-scoped and stays put on
-      // purpose, but the IN-MEMORY manifest is module state that outlives the
-      // sign-out. On a shared handset that meant the next account's first chat
-      // frame was painted with the previous student's personal photo.
-      try {
-        const { useChatWallpaperStore } = await import('./chatWallpaperStore');
-        useChatWallpaperStore.getState().reset();
-      } catch {
-        // continue with local sign-out
-      }
-
-      // Signed storage URLs are module-level, in-memory and keyed only by
-      // (bucket, path, variant) — nothing in the key says WHOSE session minted
-      // them. Board and chat photos are now re-signed on read against that
-      // cache, so on a shared handset the next account would be handed URLs
-      // minted under the previous student's authorisation, for up to six hours.
-      // Exactly the chat-wallpaper problem above, one cache over.
-      try {
-        const { clearSignedUrlCache } = await import('../utils/signedUrlCache');
-        clearSignedUrlCache();
-      } catch {
-        // continue with local sign-out
-      }
-
-      // Drop user-scoped settings cache so pending patches cannot leak across accounts.
-      try {
-        const { clearLocalSettings } = await import('./settingsStore');
-        await clearLocalSettings(userId);
-      } catch {
-        // continue with local sign-out
-      }
-
-      try {
-        const { API_BASE_URL, getAuthHeaders } = await import('../services/supabase');
-        const headers = await getAuthHeaders();
-        if (headers.Authorization) {
-          await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST', headers });
-        }
-      } catch {
-        // continue with local sign-out
-      }
       await supabaseSignOut();
-
-      const keysToRemove = [
-        '@lantern_offline_data',
-        '@lantern_pending_results',
-        'lantern_groups',
-        'lantern_messages',
-        'lantern_sync_queue',
-        'lantern_decks',
-        'lantern_flashcards',
-        'lantern_stats',
-        'lantern_tests',
-        'lantern_test_attempts',
-        'lantern_test_questions',
-        'budgetTransactions',
-        'monthlyBudget',
-        'lantern-settings',
-        ...LEGACY_MARKETPLACE_STORAGE_KEYS,
-      ];
-
-      if (userId) {
-        keysToRemove.push(
-          `walletBalance_${userId}`,
-          `savingsGoals_${userId}`,
-          `expenseSplits_${userId}`,
-          `lantern-settings:${userId}`,
-        );
-      }
-
-      await AsyncStorage.multiRemove([...new Set(keysToRemove)]).catch(() => {});
     } catch (error: any) {
-      const sessionAlreadyGone =
-        error?.name === 'AuthSessionMissingError' ||
-        String(error?.message ?? '').includes('Auth session missing');
+      remoteError = error;
+    }
 
-      if (!sessionAlreadyGone) {
-        console.error('Sign out failed:', error);
-        set({
-          error: error.message || 'Failed to sign out',
-          isLoading: false,
-        });
-        throw error;
+    const keysToRemove = [
+      '@lantern_offline_data',
+      '@lantern_pending_results',
+      'lantern_groups',
+      'lantern_messages',
+      'lantern_sync_queue',
+      'lantern_decks',
+      'lantern_flashcards',
+      'lantern_stats',
+      'lantern_tests',
+      'lantern_test_attempts',
+      'lantern_test_questions',
+      'budgetTransactions',
+      'monthlyBudget',
+      'lantern-settings',
+      ...LEGACY_MARKETPLACE_STORAGE_KEYS,
+    ];
+
+    if (userId) {
+      keysToRemove.push(
+        `walletBalance_${userId}`,
+        `savingsGoals_${userId}`,
+        `expenseSplits_${userId}`,
+        `lantern-settings:${userId}`,
+      );
+    }
+
+    // Only a sign-out the student asked for wipes everything. On a revoked
+    // session their unsynced work stays put so it can still be uploaded when
+    // they sign back in — a session ending is not permission to delete a
+    // finished test they have not managed to submit yet.
+    const preserved = reason === 'user' ? new Set<string>() : new Set<string>(UNSYNCED_WORK_KEYS);
+    const finalKeys = [...new Set(keysToRemove)].filter((key) => !preserved.has(key));
+
+    await AsyncStorage.multiRemove(finalKeys).catch(() => {});
+
+    set({
+      user: null,
+      session: null,
+      profileName: null,
+      profileFirstName: null,
+      academicProfile: null,
+      isLoading: false,
+    });
+
+    if (remoteError) {
+      const sessionAlreadyGone =
+        remoteError?.name === 'AuthSessionMissingError' ||
+        String(remoteError?.message ?? '').includes('Auth session missing');
+
+      // The handset is already clean at this point; the throw only tells a
+      // user-initiated caller that the server was not told.
+      if (!sessionAlreadyGone && reason === 'user') {
+        console.error('Sign out failed:', remoteError);
+        set({ error: remoteError.message || 'Failed to sign out' });
+        throw remoteError;
       }
-    } finally {
-      set({
-        user: null,
-        session: null,
-        profileName: null,
-        profileFirstName: null,
-        academicProfile: null,
-        isLoading: false,
-      });
     }
   },
   

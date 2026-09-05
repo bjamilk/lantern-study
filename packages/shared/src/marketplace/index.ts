@@ -10,3 +10,4 @@ export * from './reviews';
 export * from './classify';
 export * from './shop';
 export * from './discoverSections';
+export * from './courseAnchor';

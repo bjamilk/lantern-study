@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo } from 'react';
-import { XMarkIcon, ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon, StopIcon } from '@heroicons/react/24/outline';
+import { useLocation } from 'react-router-dom';
+import { XMarkIcon, ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon, StopIcon, SparklesIcon, BellIcon } from '@heroicons/react/24/outline';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
 import BottomNav from './BottomNav';
-import AIUsageBadge from '../AIUsageBadge';
 import { ConnectionBadge } from '../ui/ConnectionBadge';
 import { useUIStore } from '../../stores/uiStore';
 import { useTestStore } from '../../stores/testStore';
@@ -18,7 +18,8 @@ import {
   MIN_LECTURE_RECORD_MS,
 } from '../../services/lectureRecording';
 import { fetchAIUsage } from '../../services/ai';
-import { resolveSideColumn } from '../../utils/sideColumn';
+import { resolveShellSideColumn } from './shellSideColumn';
+import { useAiCredits } from './useAiCredits';
 
 interface AppShellProps {
     children: React.ReactNode;
@@ -26,10 +27,11 @@ interface AppShellProps {
     dueCardsCount?: number;
     unreadChatCount?: number;
     onNavigate: (mode: AppMode, params?: AppRouteParams) => void;
+    /** The two destinations that are not a plain AppMode jump. */
+    onNavigateToMe: () => void;
+    onNavigateToCampus: () => void;
     /** Open the note currently being recorded (Return from sticky banner). */
     onOpenLectureNote?: (noteId: string) => void;
-    /** Hide floating AI badge on mobile (e.g. active chat composer) */
-    hideMobileAiUsageBadge?: boolean;
 }
 
 const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
@@ -46,16 +48,20 @@ const AppShell: React.FC<AppShellProps> = ({
     dueCardsCount = 0,
     unreadChatCount = 0,
     onNavigate,
+    onNavigateToMe,
+    onNavigateToCampus,
     onOpenLectureNote,
-    hideMobileAiUsageBadge = false,
 }) => {
+    const location = useLocation();
     const { appMode, isSidebarExpanded, isChatsSectionExpanded, activeCommunity, lowDataMode, importProgress, clearImportProgress } = useUIStore();
     const uploadJobList = useNoteUploadStore((s) => s.jobs);
     const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
     const activeUploadJob = useMemo(() => getActiveUploadJob(uploadJobList), [uploadJobList]);
     const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
     const { activeTestSession, activeStudySession, activeGameSession } = useTestStore();
-    const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
+    const isCompanionOpen = useCompanionStore((s) => s.isOpen);
+    const toggleCompanion = useCompanionStore((s) => s.toggle);
+    const aiCredits = useAiCredits();
     const currentUser = useAuthStore(s => s.currentUser);
     const isAuthLoading = useAuthStore(s => s.isAuthLoading);
     const lectureStatus = useLectureRecordingStore((s) => s.status);
@@ -154,6 +160,7 @@ const AppShell: React.FC<AppShellProps> = ({
     const finishedUploadJobs = uploadJobs.filter(
         (j) => j.status === 'complete' || j.status === 'failed'
     );
+    const sideColumn = resolveShellSideColumn({ isChatsSectionExpanded, appMode, activeCommunity });
     const bottomNavHidden = [
         AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE,
         AppMode.GAME_RESULTS, AppMode.TEST_REVIEW,
@@ -174,12 +181,13 @@ const AppShell: React.FC<AppShellProps> = ({
 
             {/* Main content area */}
             <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'safe-area-pb'} md:pb-0 ${
-                // While a column (chats flyout or community channels) is out,
-                // the sidebar renders as its 5rem icon rail (Sidebar derives
-                // this), so the offset is always rail + 20rem column = 25rem.
-                // Sidebar decides from the same resolveSideColumn call.
-                resolveSideColumn({ isChatsSectionExpanded, appMode, activeCommunity }) !== null
-                  ? 'md:ml-[25rem]'
+                // Sidebar (what the aside shows) and this offset come from the
+                // SAME resolveShellSideColumn call — they drifted once and the
+                // content sat under the column. A column no longer forces the
+                // sidebar down to its icon rail, so the offset is the sidebar's
+                // real width (18rem or 5rem) plus the column's 20rem.
+                sideColumn !== null
+                  ? (isSidebarExpanded ? 'md:ml-[38rem]' : 'md:ml-[25rem]')
                   : isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'
             } ${isSessionPaused || lectureBannerVisible ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
@@ -274,12 +282,62 @@ const AppShell: React.FC<AppShellProps> = ({
                         compact={false}
                         className="hidden md:inline-flex"
                     />
-                    {/* Mobile AI usage — top strip instead of mid-screen float (avoids covering XP/content) */}
-                    {!hideMobileAiUsageBadge && (
-                        <div className="md:hidden min-w-0 max-w-[9.5rem] shrink">
-                            <AIUsageBadge compact className="shadow-none px-2 py-1" />
-                        </div>
-                    )}
+                    {/*
+                      The two things that FOLLOW you. On desktop they are
+                      labelled rows in the sidebar; at phone width the bar below
+                      is the five destinations and nothing else, so they live
+                      here — the same place mobile keeps them. This also retires
+                      the standalone AI-usage badge: a count belongs on the thing
+                      it counts, not floating beside it.
+                    */}
+                    <div className="md:hidden flex items-center gap-1 shrink-0">
+                        <button
+                            type="button"
+                            onClick={toggleCompanion}
+                            data-tip-id="nav.companion"
+                            aria-label={
+                                aiCredits != null
+                                    ? `Lantern AI, ${aiCredits} AI credits`
+                                    : 'Lantern AI'
+                            }
+                            aria-pressed={isCompanionOpen}
+                            className={`relative flex items-center justify-center min-w-[44px] min-h-[44px] rounded-full transition-colors ${
+                                isCompanionOpen
+                                    ? 'text-lantern-primary bg-lantern-primary-background'
+                                    : 'text-lantern-text-secondary hover:text-lantern-text'
+                            }`}
+                        >
+                            <SparklesIcon className="w-6 h-6" aria-hidden="true" />
+                            {aiCredits != null ? (
+                                <span
+                                    aria-hidden="true"
+                                    className="absolute top-1 right-0.5 rounded-full bg-lantern-primary px-1 text-[10px] font-bold leading-4 text-white"
+                                >
+                                    {aiCredits > 99 ? '99+' : aiCredits}
+                                </span>
+                            ) : null}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={sidebarProps.onOpenNotificationModal}
+                            aria-label={
+                                sidebarProps.unreadNotificationCount > 0
+                                    ? `Notifications, ${sidebarProps.unreadNotificationCount > 99 ? '99+' : sidebarProps.unreadNotificationCount} unread`
+                                    : 'Notifications'
+                            }
+                            className="relative flex items-center justify-center min-w-[44px] min-h-[44px] rounded-full text-lantern-text-secondary hover:text-lantern-text transition-colors"
+                        >
+                            <BellIcon className="w-6 h-6" aria-hidden="true" />
+                            {sidebarProps.unreadNotificationCount > 0 ? (
+                                <span
+                                    aria-hidden="true"
+                                    className="absolute top-1 right-0.5 rounded-full bg-lantern-error px-1 text-[10px] font-bold leading-4 text-white"
+                                >
+                                    {sidebarProps.unreadNotificationCount > 99 ? '99+' : sidebarProps.unreadNotificationCount}
+                                </span>
+                            ) : null}
+                        </button>
+                    </div>
                 </div>
                 {importProgress ? (
                     <div
@@ -375,20 +433,12 @@ const AppShell: React.FC<AppShellProps> = ({
             {!bottomNavHidden ? (
             <BottomNav
                 currentMode={appMode}
+                currentPath={location.pathname}
                 onNavigate={onNavigate}
+                onNavigateToMe={onNavigateToMe}
+                onNavigateToCampus={onNavigateToCampus}
                 dueCardsCount={dueCardsCount}
                 unreadChatCount={unreadChatCount}
-                unreadNotificationCount={sidebarProps.unreadNotificationCount}
-                onOpenNotifications={sidebarProps.onOpenNotificationModal}
-                onOpenSettings={sidebarProps.onOpenSettingsModal}
-                onToggleTheme={sidebarProps.onToggleTheme}
-                theme={sidebarProps.theme}
-                onLogout={sidebarProps.onLogout}
-                onToggleCompanion={toggleCompanion}
-                isCompanionOpen={isCompanionOpen}
-                isOnline={sidebarProps.isOnline}
-                pendingSyncCount={sidebarProps.pendingSyncCount}
-                lowDataMode={lowDataMode}
             />
             ) : null}
         </div>

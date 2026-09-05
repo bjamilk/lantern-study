@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * A `type='QUESTION'` row posted before this channel became a board (§4.2).
@@ -40,7 +40,7 @@ export function LegacyQuestionCard({
         }, ${stem}`}
       >
         <View className="flex-row items-center">
-          <Ionicons name="help-circle-outline" size={14} color="#94a3b8" />
+          <AppIcon name="help-circle" size={14} color="#94a3b8" />
           <Text className="ml-1 flex-1 text-[11px] text-lantern-text-tertiary" numberOfLines={2}>
             {COMMUNITY_BOARD_COPY.legacyQuestion}
           </Text>
@@ -51,7 +51,7 @@ export function LegacyQuestionCard({
 
       {hasImage ? (
         <View className="mt-2 self-start flex-row items-center rounded-full border border-lantern-border px-2 py-1">
-          <Ionicons name="image-outline" size={12} color="#94a3b8" />
+          <AppIcon name="image" size={12} color="#94a3b8" />
           <Text className="ml-1 text-[11px] text-lantern-text-secondary">
             {COMMUNITY_BOARD_COPY.photoTapToLoad}
           </Text>

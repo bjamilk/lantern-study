@@ -24,6 +24,11 @@ import {
   isBoardImageUrlAllowed,
 } from '@lantern/shared/network';
 import { parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
+import {
+  canVerifyQuestion,
+  QUESTION_VERIFY_COPY,
+  VERIFY_PEER_UPVOTES,
+} from '@lantern/shared/utils/questionVerification';
 import { clientErrorMessage } from '../utils/safeError';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
@@ -1836,6 +1841,28 @@ router.put(
       });
     }
 
+    // VERIFIED is a peer signal, so it is gated on evidence rather than on who
+    // is asking: the author and a group admin are refused identically below the
+    // threshold, which is why the rule cannot live on a client. PENDING and
+    // REJECTED stay free — pulling a bad question needs no quorum.
+    //
+    // Only the transition is gated. Questions already stored as VERIFIED keep
+    // that status; there is no backfill and no migration.
+    let peerUpvotes: number | undefined;
+    if (questionStatus === 'VERIFIED') {
+      peerUpvotes = await supabaseService.countPeerUpvotesForMessage(
+        messageId,
+        authorized.sender_id
+      );
+      if (!canVerifyQuestion(peerUpvotes)) {
+        return res.status(409).json({
+          success: false,
+          error: QUESTION_VERIFY_COPY.blocked(peerUpvotes),
+          data: { peerUpvotes, requiredPeerUpvotes: VERIFY_PEER_UPVOTES },
+        });
+      }
+    }
+
     const result = await supabaseService.updateQuestionStatus(messageId, questionStatus);
 
     // Invalidate message cache
@@ -1876,6 +1903,8 @@ router.put(
     res.json({
       success: true,
       data: result,
+      peerUpvotes,
+      requiredPeerUpvotes: VERIFY_PEER_UPVOTES,
     });
   })
 );

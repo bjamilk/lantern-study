@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
 import { useBudgetStore, formatCurrency, type SavingsGoal } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 const GOAL_ICONS = ['🎯', '📱', '💻', '📚', '✈️', '🏠', '🚗', '👕', '🎓', '💰', '🎁', '⚽'];
 
@@ -86,7 +86,7 @@ export default function SavingsGoalsScreen() {
             </View>
           </View>
           <Pressable onPress={() => void removeSavingsGoal(goal.id)} hitSlop={8}>
-            <Ionicons name="trash-outline" size={20} color="#ef4444" />
+            <AppIcon name="trash" size={20} color="#ef4444" />
           </Pressable>
         </View>
         <View className="h-2 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full mt-3 overflow-hidden">
@@ -140,7 +140,7 @@ export default function SavingsGoalsScreen() {
             <Text className={deadline ? 'text-lantern-text dark:text-white' : 'text-lantern-text-tertiary'}>
               {deadline ? `Target date: ${deadline.toISOString().slice(0, 10)}` : 'Target date (optional)'}
             </Text>
-            <Ionicons name="calendar-outline" size={18} color="#94a3b8" />
+            <AppIcon name="calendar" size={18} color="#94a3b8" />
           </TouchableOpacity>
           <Button onPress={() => void handleAdd()}>Add goal</Button>
         </Card>

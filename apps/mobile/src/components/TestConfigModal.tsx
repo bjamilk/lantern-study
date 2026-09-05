@@ -14,7 +14,6 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '../stores/testStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme, type ThemeColors } from '../theme';
@@ -28,6 +27,7 @@ import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
 import { CoursePicker } from './CoursePicker';
 import { TopicPicker } from './TopicPicker';
 import { topicIdAfterCourseChange } from '../utils/topicSelection';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 // Timer presets in seconds
 const TIMER_PRESETS = [
@@ -40,7 +40,7 @@ const TIMER_PRESETS = [
   { label: '1 hour', value: 3600 },
 ];
 
-const QUESTION_TYPE_OPTIONS: { type: QuestionType; label: string; icon: string }[] = [
+const QUESTION_TYPE_OPTIONS: { type: QuestionType; label: string; icon: AppIconName }[] = [
   { type: 'multiple_choice_single', label: 'Multiple Choice', icon: 'radio-button-on' },
   { type: 'multiple_choice_multiple', label: 'Multi-Select', icon: 'checkbox' },
   { type: 'true_false', label: 'True/False', icon: 'swap-horizontal' },
@@ -450,11 +450,11 @@ export default function TestConfigModal({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={onClose} style={[styles.closeButton, { backgroundColor: colors.background }]}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
               <View style={[styles.headerIcon, isStudyMode && styles.headerIconStudy]}>
-                <Ionicons 
+                <AppIcon 
                   name={isStudyMode ? 'book' : 'document-text'} 
                   size={24} 
                   color={isStudyMode ? '#10b981' : colors.primary} 
@@ -475,7 +475,7 @@ export default function TestConfigModal({
           >
             {/* Mode Description */}
             <View style={[styles.infoBox, isStudyMode && styles.infoBoxStudy]}>
-              <Ionicons 
+              <AppIcon 
                 name={isStudyMode ? 'bulb' : 'timer'} 
                 size={20} 
                 color={isStudyMode ? '#10b981' : '#10b981'} 
@@ -490,7 +490,7 @@ export default function TestConfigModal({
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="filter" size={20} color={colors.primary} />
+                <AppIcon name="filter" size={20} color={colors.primary} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Question visibility</Text>
               </View>
               <View style={{ gap: 8, marginTop: 8 }}>
@@ -534,7 +534,7 @@ export default function TestConfigModal({
             {/* Number of Questions */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="list" size={20} color={colors.primary} />
+                <AppIcon name="list" size={20} color={colors.primary} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Number of Questions</Text>
                 <Text style={[styles.questionCount, { color: colors.primary }]}>
                   {numberOfQuestions} / {effectiveMaxQuestions}
@@ -553,7 +553,7 @@ export default function TestConfigModal({
                     onPress={() => setNumberOfQuestions(Math.max(1, numberOfQuestions - 1))}
                     disabled={numberOfQuestions <= 1}
                   >
-                    <Ionicons name="remove" size={20} color={numberOfQuestions <= 1 ? colors.textSecondary : '#ffffff'} />
+                    <AppIcon name="remove" size={20} color={numberOfQuestions <= 1 ? colors.textSecondary : '#ffffff'} />
                   </TouchableOpacity>
                   
                   <TextInput
@@ -573,7 +573,7 @@ export default function TestConfigModal({
                     onPress={() => setNumberOfQuestions(Math.min(effectiveMaxQuestions, numberOfQuestions + 1))}
                     disabled={numberOfQuestions >= effectiveMaxQuestions}
                   >
-                    <Ionicons name="add" size={20} color={numberOfQuestions >= effectiveMaxQuestions ? colors.textSecondary : '#ffffff'} />
+                    <AppIcon name="add" size={20} color={numberOfQuestions >= effectiveMaxQuestions ? colors.textSecondary : '#ffffff'} />
                   </TouchableOpacity>
                 </View>
                 
@@ -620,7 +620,7 @@ export default function TestConfigModal({
             {!isStudyMode && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="time" size={20} color="#f97316" />
+                  <AppIcon name="time" size={20} color="#f97316" />
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>Timer</Text>
                   <Text style={[styles.timerValue, { color: '#f97316' }]}>{formatTime(timerDuration)}</Text>
                 </View>
@@ -654,7 +654,7 @@ export default function TestConfigModal({
               <View style={[styles.toggleSection, { backgroundColor: colors.inputBackground }]}>
                 <View style={styles.toggleInfo}>
                   <View style={styles.toggleIcon}>
-                    <Ionicons name="lock-closed" size={20} color="#f59e0b" />
+                    <AppIcon name="lock-closed" size={20} color="#f59e0b" />
                   </View>
                   <View style={styles.toggleContent}>
                     <Text style={[styles.toggleTitle, { color: colors.text }]}>Lock answered questions</Text>
@@ -675,7 +675,7 @@ export default function TestConfigModal({
             {/* Question Types */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="apps" size={20} color="#8b5cf6" />
+                <AppIcon name="apps" size={20} color="#8b5cf6" />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Question Types</Text>
                 {selectedQuestionTypes.length > 0 && (
                   <Text style={[styles.selectedCount, { color: '#8b5cf6' }]}>
@@ -686,7 +686,7 @@ export default function TestConfigModal({
               
               {(useSpacedRepetition || focusOnNew) ? (
                 <View style={styles.disabledMessage}>
-                  <Ionicons name="information-circle" size={16} color={colors.textSecondary} />
+                  <AppIcon name="information-circle" size={16} color={colors.textSecondary} />
                   <Text style={[styles.disabledMessageText, { color: colors.textSecondary }]}>
                     All types included with {useSpacedRepetition ? 'Spaced Repetition' : 'Focus on New'}
                   </Text>
@@ -703,8 +703,8 @@ export default function TestConfigModal({
                       ]}
                       onPress={() => toggleQuestionType(option.type)}
                     >
-                      <Ionicons 
-                        name={option.icon as any} 
+                      <AppIcon 
+                        name={option.icon} 
                         size={18} 
                         color={selectedQuestionTypes.includes(option.type) ? '#ffffff' : colors.textSecondary} 
                       />
@@ -725,7 +725,7 @@ export default function TestConfigModal({
             {onSavePreset ? (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="bookmark" size={20} color="#10b981" />
+                  <AppIcon name="bookmark" size={20} color="#10b981" />
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>Presets</Text>
                 </View>
                 {presets.length > 0 ? (
@@ -773,7 +773,7 @@ export default function TestConfigModal({
                         ]);
                       }}
                     >
-                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                      <AppIcon name="trash" size={18} color="#ef4444" />
                     </TouchableOpacity>
                   ) : null}
                 </View>
@@ -784,7 +784,7 @@ export default function TestConfigModal({
             {subgroups.length > 0 && !useSpacedRepetition && !focusOnNew ? (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="git-network" size={20} color="#0ea5e9" />
+                  <AppIcon name="git-network" size={20} color="#0ea5e9" />
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>Include Sub-groups</Text>
                 </View>
                 <TouchableOpacity
@@ -797,8 +797,8 @@ export default function TestConfigModal({
                     }
                   }}
                 >
-                  <Ionicons
-                    name={selectedSubgroupIds.length === subgroups.length ? 'checkbox' : 'square-outline'}
+                  <AppIcon
+                    name={selectedSubgroupIds.length === subgroups.length ? 'checkbox' : 'square'}
                     size={18}
                     color="#0ea5e9"
                   />
@@ -810,8 +810,8 @@ export default function TestConfigModal({
                     style={[styles.subgroupRow, { paddingLeft: 12 + sub.level * 16 }]}
                     onPress={() => toggleSubgroup(sub.id)}
                   >
-                    <Ionicons
-                      name={selectedSubgroupIds.includes(sub.id) ? 'checkbox' : 'square-outline'}
+                    <AppIcon
+                      name={selectedSubgroupIds.includes(sub.id) ? 'checkbox' : 'square'}
                       size={18}
                       color="#0ea5e9"
                     />
@@ -824,7 +824,7 @@ export default function TestConfigModal({
             {/* Course (academic archive) */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="school-outline" size={20} color={colors.primary} />
+                <AppIcon name="school" size={20} color={colors.primary} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Course</Text>
               </View>
               <CoursePicker
@@ -854,7 +854,7 @@ export default function TestConfigModal({
               onPress={() => setShowAdvanced(!showAdvanced)}
             >
               <Text style={[styles.advancedToggleText, { color: colors.primary }]}>Advanced Options</Text>
-              <Ionicons 
+              <AppIcon 
                 name={showAdvanced ? 'chevron-up' : 'chevron-down'} 
                 size={20} 
                 color={colors.primary} 
@@ -867,7 +867,7 @@ export default function TestConfigModal({
                 <View style={[styles.toggleSection, { backgroundColor: colors.inputBackground }]}>
                   <View style={styles.toggleInfo}>
                     <View style={styles.toggleIcon}>
-                      <Ionicons name="sync" size={20} color="#f59e0b" />
+                      <AppIcon name="sync" size={20} color="#f59e0b" />
                     </View>
                     <View style={styles.toggleContent}>
                       <Text style={[styles.toggleTitle, { color: colors.text }]}>Spaced Repetition</Text>
@@ -888,7 +888,7 @@ export default function TestConfigModal({
                 <View style={[styles.toggleSection, { backgroundColor: colors.inputBackground }]}>
                   <View style={styles.toggleInfo}>
                     <View style={styles.toggleIcon}>
-                      <Ionicons name="sparkles" size={20} color="#10b981" />
+                      <AppIcon name="sparkles" size={20} color="#10b981" />
                     </View>
                     <View style={styles.toggleContent}>
                       <Text style={[styles.toggleTitle, { color: colors.text }]}>Focus on New</Text>
@@ -909,7 +909,7 @@ export default function TestConfigModal({
                 {availableTags.length > 0 && (
                   <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                      <Ionicons name="pricetags" size={20} color="#ec4899" />
+                      <AppIcon name="pricetags" size={20} color="#ec4899" />
                       <Text style={[styles.sectionTitle, { color: colors.text }]}>Filter by Tags</Text>
                     </View>
                     
@@ -956,7 +956,7 @@ export default function TestConfigModal({
                 onPress={handleDownload}
                 disabled={isDownloading || effectiveMaxQuestions === 0}
               >
-                <Ionicons name="cloud-download-outline" size={18} color={colors.primary} />
+                <AppIcon name="cloud-download" size={18} color={colors.primary} />
                 <Text style={[styles.downloadButtonText, { color: colors.primary }]}>
                   {isDownloading ? 'Downloading…' : 'Download for offline'}
                 </Text>
@@ -976,7 +976,7 @@ export default function TestConfigModal({
                 onPress={handleSubmit}
                 disabled={!isValid}
               >
-                <Ionicons
+                <AppIcon
                   name={isStudyMode ? 'book' : 'play'}
                   size={20}
                   color="#ffffff"

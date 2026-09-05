@@ -1,0 +1,407 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
+import {
+  canAccessDiscoverHub,
+  communityKindLabel,
+  communityMembershipAction,
+  memberCountLabel,
+  type Community,
+  type MyCommunity,
+} from '@lantern/shared/network';
+import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { useTheme } from '../../theme';
+import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { useCommunityStore } from '../../stores/communityStore';
+import { useMarketplaceStore } from '../../stores/marketplaceStore';
+import { discoverCommunities, joinCommunity } from '../../services/api';
+import { MarketplaceScreen } from '../marketplace/MarketplaceScreen';
+import { JobsHomeScreen } from '../marketplace/JobsHomeScreen';
+import { withMarketplaceGate } from '../marketplace/MarketplaceGate';
+import {
+  CAMPUS_SEGMENT_LABELS,
+  resolveCampusSegment,
+  resolveCampusSegments,
+  shouldShowSegmentBar,
+  type CampusSegment,
+} from './campusSegments';
+import { AppIcon } from '../../components/ui/AppIcon';
+
+interface NavigationProp {
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+}
+
+interface Props {
+  navigation: NavigationProp;
+  route?: { params?: { segment?: CampusSegment; at?: number } };
+}
+
+/** 44px minimum touch target — NativeWind inlines rem at 14, so px literals. */
+const SEGMENT_HEIGHT = 44;
+
+/**
+ * Module scope, so each wrapped component keeps a stable identity across
+ * renders. Hiding the segment is the real gate — a definite refusal removes it
+ * from the bar entirely — but the wrapper still matters for the window between
+ * "not answered yet" and the answer: it holds the screen back rather than
+ * letting it fire a wall of 403s.
+ */
+const GatedShop = withMarketplaceGate(MarketplaceScreen);
+const GatedJobs = withMarketplaceGate(JobsHomeScreen, 'jobs');
+
+function SegmentBar({
+  segments,
+  active,
+  onSelect,
+}: {
+  segments: readonly CampusSegment[];
+  active: CampusSegment;
+  onSelect: (segment: CampusSegment) => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View className="flex-row px-2" accessibilityRole="tablist">
+      {segments.map((segment) => {
+        const selected = segment === active;
+        return (
+          <Pressable
+            key={segment}
+            onPress={() => onSelect(segment)}
+            accessibilityRole="tab"
+            accessibilityLabel={CAMPUS_SEGMENT_LABELS[segment]}
+            accessibilityState={{ selected }}
+            style={{ minHeight: SEGMENT_HEIGHT }}
+            className="flex-1 items-center justify-center"
+          >
+            <Text
+              numberOfLines={1}
+              className={`text-sm ${
+                selected
+                  ? 'font-bold text-lantern-primary'
+                  : 'font-medium text-lantern-text-secondary'
+              }`}
+            >
+              {CAMPUS_SEGMENT_LABELS[segment]}
+            </Text>
+            {/* A second, non-colour signal for the current segment. */}
+            <View
+              style={{
+                height: 2,
+                width: '60%',
+                marginTop: 4,
+                borderRadius: 1,
+                backgroundColor: selected ? colors.primary : 'transparent',
+              }}
+            />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * The Communities segment.
+ *
+ * Deliberately its own lean list rather than the Discover hub embedded whole:
+ * that screen carries its own back arrow and its own section bar, and two
+ * stacked segment rows with a back arrow that leaves the tab is exactly the
+ * "one feature, two doors" problem this wave is closing. Community DETAIL,
+ * boards, posts and the roster are unchanged — they live on CampusStack now,
+ * so the Campus tab stays lit all the way down.
+ */
+function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
+  const { colors } = useTheme();
+  const listBottomPadding = useScreenBottomPadding();
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
+  const loadMine = useCommunityStore((s) => s.loadMine);
+
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Community[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const load = useCallback(
+    async (q: string, options?: { silent?: boolean }) => {
+      if (!options?.silent) setLoading(true);
+      setError(null);
+      try {
+        const [, discovered] = await Promise.all([
+          loadMine(true),
+          discoverCommunities(q ? { q, limit: 30 } : { limit: 30 }),
+        ]);
+        setResults(discovered);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not load communities');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [loadMine]
+  );
+
+  useEffect(() => {
+    void load('');
+  }, [load]);
+
+  const mineIds = useMemo(
+    () => new Set(myCommunities.map((community) => community.id)),
+    [myCommunities]
+  );
+
+  // Anything already joined is shown in "Your communities"; repeating it under
+  // Discover would be the same room behind two rows.
+  const discoverable = useMemo(
+    () => results.filter((community) => !mineIds.has(community.id)),
+    [results, mineIds]
+  );
+
+  const open = useCallback(
+    (slug: string) => navigation.navigate('CommunityDetail', { slug }),
+    [navigation]
+  );
+
+  const join = useCallback(
+    async (community: Community) => {
+      setPendingId(community.id);
+      try {
+        await joinCommunity(community.id);
+        await loadMine(true);
+        open(community.slug);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not join that community');
+      } finally {
+        setPendingId(null);
+      }
+    },
+    [loadMine, open]
+  );
+
+  const renderRow = (community: Community | MyCommunity, joined: boolean) => {
+    const action = communityMembershipAction(
+      joined,
+      (community as MyCommunity).source ?? null
+    );
+    const busy = pendingId === community.id;
+    return (
+      <Pressable
+        key={community.id}
+        onPress={() => (joined ? open(community.slug) : void join(community))}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={`${community.name}, ${communityKindLabel(community.kind)}, ${memberCountLabel(
+          community.member_count
+        )}. ${joined ? 'Open' : 'Join'}`}
+        style={{ minHeight: 56 }}
+        className="flex-row items-center gap-3 px-4 py-3 border-b border-lantern-border"
+      >
+        <View className="w-10 h-10 rounded-xl bg-lantern-primary-background dark:bg-lantern-primary-dark/30 items-center justify-center">
+          <AppIcon name="people" size={20} color={colors.primary} />
+        </View>
+        <View className="flex-1 min-w-0">
+          <Text className="text-base font-semibold text-lantern-text" numberOfLines={1}>
+            {community.name}
+          </Text>
+          <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>
+            {communityKindLabel(community.kind)} · {memberCountLabel(community.member_count)}
+          </Text>
+        </View>
+        {busy ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <Text
+            className={`text-xs font-semibold px-2 py-1.5 ${
+              joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+            }`}
+          >
+            {joined ? 'Open' : action}
+          </Text>
+        )}
+      </Pressable>
+    );
+  };
+
+  return (
+    <Screen bottom="none" keyboard>
+      <View className="mx-4 mt-2 mb-1 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
+        <AppIcon name="search" size={16} color={colors.textSecondary} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={() => void load(query)}
+          returnKeyType="search"
+          placeholder="Search communities"
+          placeholderTextColor={colors.inputPlaceholder}
+          accessibilityLabel="Search communities"
+          className="flex-1 ml-2 py-2 text-sm text-lantern-text"
+        />
+      </View>
+
+      {error ? (
+        <Text className="px-4 py-2 text-xs text-lantern-error">{error}</Text>
+      ) : null}
+
+      {loading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={discoverable}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => renderRow(item, false)}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: listBottomPadding }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                void load(query, { silent: true });
+              }}
+              tintColor={colors.primary}
+            />
+          }
+          ListHeaderComponent={
+            myCommunities.length > 0 ? (
+              <View>
+                <Text className="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
+                  Your communities
+                </Text>
+                {myCommunities.map((community) => renderRow(community, true))}
+                <Text className="px-4 pt-4 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
+                  Discover
+                </Text>
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            error ? null : (
+              <Text className="mx-4 mt-3 text-xs text-lantern-text-tertiary">
+                No other communities to join yet. Yours are made from your university,
+                programme and courses — add them in Me → Academic details.
+              </Text>
+            )
+          }
+        />
+      )}
+    </Screen>
+  );
+}
+
+/** Campus with every gate closed: honest, and never an empty segment bar. */
+function CampusEmpty() {
+  const { colors } = useTheme();
+  return (
+    <Screen>
+      <View className="flex-1 items-center justify-center px-8">
+        <View className="w-16 h-16 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center justify-center mb-5">
+          <AppIcon name="business" size={30} color={colors.textSecondary} />
+        </View>
+        <Text className="text-lg font-bold text-lantern-text text-center mb-2">
+          Campus is opening university by university
+        </Text>
+        <Text className="text-sm text-lantern-text-secondary text-center">
+          Communities, the Shop and Jobs land here the moment they reach your account.
+          Everything else in Lantern is yours to use in the meantime.
+        </Text>
+      </View>
+    </Screen>
+  );
+}
+
+/**
+ * Campus — one destination, three segments: Communities · Shop · Jobs.
+ *
+ * Before this wave those three were a bottom tab (Shop), a top-bar icon
+ * (Shop again), a drawer row (Jobs), a second drawer row (Community) and a
+ * Discover hub that also listed the marketplace: five doors to three places.
+ * They are one place now, and a segment whose gate is closed is not drawn at
+ * all — Campus never shows a segment with nothing behind it.
+ */
+export function CampusScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const isPlatformAdmin = usePlatformAdmin();
+  const marketplaceAccess = useMarketplaceStore((s) => s.marketplaceAccess);
+  const checkMarketplaceAccess = useMarketplaceStore((s) => s.checkMarketplaceAccess);
+
+  // Warm the pilot answer so the bar settles before the first tap rather than
+  // re-flowing under the reader's thumb.
+  useEffect(() => {
+    void checkMarketplaceAccess();
+  }, [checkMarketplaceAccess]);
+
+  const segments = useMemo(
+    () =>
+      resolveCampusSegments({
+        canSeeCommunities:
+          canAccessDiscoverHub(isPlatformAdmin) && isDiscoverSectionEnabled('communities'),
+        marketplaceAccess,
+      }),
+    [isPlatformAdmin, marketplaceAccess]
+  );
+
+  const [picked, setPicked] = useState<CampusSegment | null>(null);
+  const requestedSegment = route?.params?.segment;
+  // `at` changes on every legacy navigate('MarketTab'/'JobsTab'), so the same
+  // request re-applies even when Campus is already the focused screen.
+  const requestedAt = route?.params?.at;
+  useEffect(() => {
+    if (requestedSegment) setPicked(requestedSegment);
+  }, [requestedSegment, requestedAt]);
+
+  const active = resolveCampusSegment(picked ?? requestedSegment, segments);
+
+  if (!active) return <CampusEmpty />;
+
+  const panel =
+    active === 'communities' ? (
+      <CommunitiesPanel navigation={navigation} />
+    ) : active === 'shop' ? (
+      <GatedShop navigation={navigation} />
+    ) : (
+      <GatedJobs />
+    );
+
+  return (
+    <View className="flex-1 bg-lantern-background">
+      {/* The tab navigator is pulled up by insets.top (MainTabsShell) and every
+          screen pays it back, so the bar pays it here and the panel below —
+          which pays it too — is pulled back up by the same amount. zIndex keeps
+          the bar drawn above the panel's own opaque background. */}
+      {shouldShowSegmentBar(segments) ? (
+        <View
+          style={{
+            paddingTop: insets.top,
+            backgroundColor: colors.background,
+            zIndex: 10,
+            elevation: 2,
+          }}
+        >
+          <SegmentBar segments={segments} active={active} onSelect={setPicked} />
+        </View>
+      ) : null}
+      <View
+        className="flex-1"
+        style={{ marginTop: shouldShowSegmentBar(segments) ? -insets.top : 0 }}
+      >
+        {panel}
+      </View>
+    </View>
+  );
+}
+
+export default CampusScreen;

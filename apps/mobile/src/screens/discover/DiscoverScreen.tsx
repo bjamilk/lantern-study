@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
-import { studyRoomTimeLeftLabel, type StudyRoomListItem } from '@lantern/shared/network';
+import {
+  resolveListState,
+  studyRoomTimeLeftLabel,
+  type StudyRoomListItem,
+} from '@lantern/shared/network';
 import {
   DISCOVER_SECTION_INTRO,
   canAccessDiscoverHub,
@@ -43,6 +46,8 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BackButton } from '../../components/ui';
 import { UnreadPill } from '../../components/community';
 import { toChannelOverlayGroups } from '../../utils/communityOverlay';
+import { RequestError } from '../../components/RequestError';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -81,7 +86,15 @@ function DiscoverHub({
   });
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Two failures, one vocabulary. `loadError` is "the list did not arrive" —
+  // it is what decides between a list, an empty state and a failure state, and
+  // it must NEVER fall through to "no results" (resolveListState enforces
+  // that). `actionFailure` is "the thing you just tapped did not happen" and
+  // only ever banners; it must not make the list below it look broken.
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [actionFailure, setActionFailure] = useState<{ error: unknown; detail: string } | null>(
+    null,
+  );
 
   const [mine, setMine] = useState<MyCommunity[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -116,7 +129,7 @@ function DiscoverHub({
       return;
     }
     if (!options?.silent) setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       if (target === 'communities') {
         const [discovered, own] = await Promise.all([
@@ -135,7 +148,9 @@ function DiscoverHub({
         setPeople(await discoverPeople({ q: q || undefined }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load Discover');
+      // The raw error is kept, not its message: RequestError classifies it so
+      // every screen says the same sentence for the same failure.
+      setLoadError(err);
     } finally {
       setLoading(false);
     }
@@ -223,7 +238,10 @@ function DiscoverHub({
           ? [...prev, { ...community, role: 'member', source: 'joined' } as MyCommunity]
           : prev.filter((c) => c.id !== community.id)
       );
-      setError(err instanceof Error ? err.message : 'Could not update membership');
+      setActionFailure({
+        error: err,
+        detail: 'Your membership wasn’t changed. Check your connection and try again.',
+      });
     } finally {
       setPendingId(null);
     }
@@ -247,7 +265,10 @@ function DiscoverHub({
       );
       tabNav?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId: group.id, groupName: group.name } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join this group');
+      setActionFailure({
+        error: err,
+        detail: 'You haven’t joined this group. Check your connection and try again.',
+      });
     } finally {
       setPendingId(null);
     }
@@ -260,7 +281,7 @@ function DiscoverHub({
       return;
     }
     setCreateBusy(true);
-    setError(null);
+    setActionFailure(null);
     try {
       const created = await createCommunity({
         name,
@@ -271,7 +292,10 @@ function DiscoverHub({
       setCreatingCommunity(false);
       navigation.navigate('CommunityDetail', { slug: created.slug });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create this community');
+      setActionFailure({
+        error: err,
+        detail: 'The community wasn’t created. Check your connection and try again.',
+      });
     } finally {
       setCreateBusy(false);
     }
@@ -319,7 +343,7 @@ function DiscoverHub({
                 {item.name}
               </Text>
               {item.is_official ? (
-                <Ionicons name="checkmark-circle" size={16} color="#6366f1" />
+                <AppIcon name="checkmark-circle" size={16} color="#6366f1" />
               ) : null}
               <UnreadPill unread={unread} />
               <View className="flex-1" />
@@ -466,22 +490,6 @@ function DiscoverHub({
       </Pressable>
     );
 
-  const emptyText = query.trim()
-    ? section === 'communities'
-      ? 'No communities match that search.'
-      : section === 'groups'
-        ? 'No groups match that search.'
-        : section === 'rooms'
-          ? 'No open rooms match that search.'
-          : 'No people match that search.'
-    : section === 'communities'
-      ? 'Add your university and courses so campus rooms can appear — or start an interest community.'
-      : section === 'groups'
-        ? 'Groups stay private until an owner lists them on Discover. Create one and turn on Show in Discover.'
-        : section === 'rooms'
-          ? 'No rooms are open right now. Start one above — it stays open for 24 hours, then disappears.'
-          : 'People appear here once they publish a study pack or question bank.';
-
   // Rooms are filtered locally: the search box narrows by title or topic.
   const visibleRooms = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -490,6 +498,43 @@ function DiscoverHub({
       [room.title, room.topic ?? ''].some((field) => field.toLowerCase().includes(q)),
     );
   }, [rooms, query]);
+
+  // The shared rule, applied once for the whole screen: a failed load is
+  // 'failed', never 'empty' and never 'noMatch'. Searching over a list that
+  // never arrived says "we couldn't load it", because "no match" would be a
+  // claim about data we never received.
+  const listState = resolveListState({
+    loading,
+    error: loadError,
+    itemCount:
+      section === 'communities'
+        ? communityList.length
+        : section === 'groups'
+          ? groups.length
+          : section === 'rooms'
+            ? visibleRooms.length
+            : people.length,
+    query,
+  });
+
+  // Only ever rendered when the load SUCCEEDED, so these sentences are safe to
+  // make claims about the data.
+  const emptyText =
+    listState === 'noMatch'
+      ? section === 'communities'
+        ? 'No communities match that search.'
+        : section === 'groups'
+          ? 'No groups match that search.'
+          : section === 'rooms'
+            ? 'No open rooms match that search.'
+            : 'No people match that search.'
+      : section === 'communities'
+        ? 'Add your university and courses so campus rooms can appear — or start an interest community.'
+        : section === 'groups'
+          ? 'Groups stay private until an owner lists them on Discover. Create one and turn on Show in Discover.'
+          : section === 'rooms'
+            ? 'No rooms are open right now. Start one above — it stays open for 24 hours, then disappears.'
+            : 'People appear here once they publish a study pack or question bank.';
 
   const renderRoom = ({ item }: { item: StudyRoomListItem }) => {
     const timeLeft = studyRoomTimeLeftLabel(item.startedAt, now);
@@ -584,7 +629,7 @@ function DiscoverHub({
           </View>
         ) : null}
         <View className="mx-4 mt-2 mb-2 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
-          <Ionicons name="search-outline" size={16} color="#64748b" />
+          <AppIcon name="search" size={16} color="#64748b" />
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -610,21 +655,35 @@ function DiscoverHub({
         </View>
       </View>
 
-      {error ? (
-        <Pressable
-          onPress={() => void load(section, query)}
-          className="mx-4 mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2"
-          accessibilityRole="button"
-          accessibilityLabel="Retry loading Discover"
-        >
-          <Text className="text-xs text-red-500">{error} — tap to retry</Text>
-        </Pressable>
+      {/* The thing you just tapped did not happen. Never blanks the list. */}
+      {actionFailure ? (
+        <RequestError
+          variant="banner"
+          error={actionFailure.error}
+          detail={actionFailure.detail}
+          onRetry={() => setActionFailure(null)}
+        />
       ) : null}
 
-      {loading ? (
+      {/* A refresh failed on top of rows we already have: keep the rows. */}
+      {listState === 'stale' ? (
+        <RequestError
+          variant="banner"
+          error={loadError}
+          onRetry={() => void load(section, query)}
+        />
+      ) : null}
+
+      {listState === 'loading' ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color="#6366f1" />
         </View>
+      ) : listState === 'failed' ? (
+        <RequestError
+          error={loadError}
+          onRetry={() => void load(section, query)}
+          onBack={() => navigation.goBack()}
+        />
       ) : section === 'communities' ? (
         <FlatList
           data={communityList}
@@ -687,10 +746,10 @@ function DiscoverHub({
           contentContainerStyle={{ paddingTop: 12, paddingBottom: listBottomPadding }}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={roomsRefreshing} onRefresh={() => void refreshRooms()} />}
-          // After a failed fetch the error banner above already says so; an
-          // "open rooms" claim under it would be a guess.
+          // A failed fetch never reaches here — resolveListState routes it to
+          // RequestError above, because an "open rooms" claim would be a guess.
           ListEmptyComponent={
-            error ? null : <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
+            <Text className="mx-4 text-xs text-lantern-text-tertiary">{emptyText}</Text>
           }
         />
       ) : section === 'groups' ? (

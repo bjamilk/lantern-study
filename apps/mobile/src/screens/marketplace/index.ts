@@ -38,4 +38,6 @@ export { JobEmployerScreen } from './JobEmployerScreen';
 export { JobApplicantsScreen } from './JobApplicantsScreen';
 export { JobCompanyScreen } from './JobCompanyScreen';
 export * from './ShopBrowseScreen';
+export { CourseBrowseScreen } from './CourseBrowseScreen';
+export { CourseListingsScreen } from './CourseListingsScreen';
 export * from './ShopAccountScreen';

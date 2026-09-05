@@ -78,6 +78,9 @@ const CONTENT = {
   ],
 };
 
+/** A publish now has to name a real course (Gap 3). */
+const COURSE_ID = '44444444-4444-4444-8444-444444444444';
+
 function makeSupabase(overrides: {
   tables?: Record<string, TableResult | TableResult[]>;
   listing?: unknown;
@@ -85,7 +88,12 @@ function makeSupabase(overrides: {
   importedDeck?: unknown;
   createdNote?: unknown;
 }) {
-  const { db, writes } = makeDb(overrides.tables || {});
+  const { db, writes } = makeDb({
+    // The course anchor resolves by default; a test that wants the "no such
+    // course" branch overrides `courses` with { data: null }.
+    courses: { data: { id: COURSE_ID }, error: null },
+    ...(overrides.tables || {}),
+  });
   const saveOfflineBundle = jest.fn(async () => undefined);
   const importDeck = jest.fn(async () => overrides.importedDeck ?? { deck: { id: 'deck-1' }, flashcards: [] });
   const replaceDeckCards = jest.fn(async () => undefined);
@@ -129,6 +137,7 @@ describe('publishStudyPack', () => {
   const BASE_INPUT = {
     title: 'Cell Biology Study Pack',
     campusId: 'campus-1',
+    courseId: COURSE_ID,
     content: CONTENT,
     attestation: true,
   };

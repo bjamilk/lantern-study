@@ -19,7 +19,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
@@ -30,6 +29,7 @@ import { ReportContentSheet } from './moderation/ReportContentSheet';
 import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../screens/discover/GroupDiscoverabilityFields';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { selectIsLoungeGroup, useCommunityStore } from '../stores/communityStore';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 type TabType = 'details' | 'members' | 'danger';
 
@@ -276,7 +276,7 @@ export default function GroupInfoModal({
     );
   };
 
-  const renderTab = (tab: TabType, label: string, icon: string) => (
+  const renderTab = (tab: TabType, label: string, icon: AppIconName) => (
     <TouchableOpacity
       style={[styles.tab, { borderBottomColor: activeTab === tab ? colors.primary : 'transparent' }]}
       onPress={() => setActiveTab(tab)}
@@ -284,8 +284,8 @@ export default function GroupInfoModal({
       accessibilityLabel={label}
       accessibilityState={{ selected: activeTab === tab }}
     >
-      <Ionicons 
-        name={icon as any} 
+      <AppIcon 
+        name={icon} 
         size={18} 
         color={activeTab === tab ? colors.primary : colors.textSecondary} 
       />
@@ -316,7 +316,7 @@ export default function GroupInfoModal({
               <ActivityIndicator size="small" color="#ffffff" />
             ) : (
               <>
-                <Ionicons name="camera" size={16} color="#ffffff" />
+                <AppIcon name="camera" size={16} color="#ffffff" />
                 <Text style={styles.changeAvatarText}>Change</Text>
               </>
             )}
@@ -412,7 +412,7 @@ export default function GroupInfoModal({
           accessibilityRole="button"
           accessibilityLabel="Create sub-group"
         >
-          <Ionicons name="git-network" size={20} color="#ffffff" />
+          <AppIcon name="git-network" size={20} color="#ffffff" />
           <Text style={styles.createSubgroupText}>Create Sub-group</Text>
         </TouchableOpacity>
       ) : null}
@@ -429,7 +429,7 @@ export default function GroupInfoModal({
           accessibilityRole="button"
           accessibilityLabel="Add or invite members"
         >
-          <Ionicons name="person-add" size={20} color="#ffffff" />
+          <AppIcon name="person-add" size={20} color="#ffffff" />
           <Text style={styles.addMembersText}>Add or Invite Members</Text>
         </TouchableOpacity>
       )}
@@ -460,13 +460,13 @@ export default function GroupInfoModal({
               <View style={styles.roleBadge}>
                 {member.role === 'owner' && (
                   <View style={styles.ownerBadge}>
-                    <Ionicons name="star" size={10} color="#fbbf24" />
+                    <AppIcon name="star" size={10} color="#fbbf24" />
                     <Text style={styles.ownerBadgeText}>Owner</Text>
                   </View>
                 )}
                 {member.role === 'admin' && (
                   <View style={styles.adminBadge}>
-                    <Ionicons name="shield-checkmark" size={10} color="#6366f1" />
+                    <AppIcon name="shield-checkmark" size={10} color="#6366f1" />
                     <Text style={styles.adminBadgeText}>Admin</Text>
                   </View>
                 )}
@@ -486,7 +486,7 @@ export default function GroupInfoModal({
                   accessibilityLabel={`Challenge ${member.name}`}
                   onPress={() => onChallenge(member)}
                 >
-                  <Ionicons name="game-controller" size={18} color="#ef4444" />
+                  <AppIcon name="game-controller" size={18} color="#ef4444" />
                 </TouchableOpacity>
               )}
 
@@ -501,7 +501,7 @@ export default function GroupInfoModal({
                       accessibilityLabel={`Remove admin from ${member.name}`}
                       onPress={() => handleDemote(member)}
                     >
-                      <Ionicons name="arrow-down" size={18} color="#f59e0b" />
+                      <AppIcon name="arrow-down" size={18} color="#f59e0b" />
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
@@ -511,7 +511,7 @@ export default function GroupInfoModal({
                       accessibilityLabel={`Make ${member.name} an admin`}
                       onPress={() => handlePromote(member)}
                     >
-                      <Ionicons name="arrow-up" size={18} color="#10b981" />
+                      <AppIcon name="arrow-up" size={18} color="#10b981" />
                     </TouchableOpacity>
                   )}
                 </>
@@ -526,7 +526,7 @@ export default function GroupInfoModal({
                   accessibilityLabel={`Remove ${member.name} from group`}
                   onPress={() => handleRemove(member)}
                 >
-                  <Ionicons name="close-circle" size={18} color="#ef4444" />
+                  <AppIcon name="close-circle" size={18} color="#ef4444" />
                 </TouchableOpacity>
               )}
             </View>
@@ -541,7 +541,7 @@ export default function GroupInfoModal({
       {isLounge ? null : (
       <View style={styles.dangerSection}>
         <View style={styles.dangerHeader}>
-          <Ionicons name="exit-outline" size={24} color="#f97316" />
+          <AppIcon name="exit" size={24} color="#f97316" />
           <View style={styles.dangerInfo}>
             <Text style={styles.dangerTitle}>Leave Group</Text>
             <Text style={styles.dangerDescription}>
@@ -565,7 +565,7 @@ export default function GroupInfoModal({
           }
           accessibilityState={{ disabled: isSoleAdmin }}
         >
-          <Ionicons name="exit-outline" size={18} color="#ffffff" />
+          <AppIcon name="exit" size={18} color="#ffffff" />
           <Text style={styles.dangerButtonText}>Leave Group</Text>
         </TouchableOpacity>
       </View>
@@ -575,7 +575,7 @@ export default function GroupInfoModal({
       {isLounge ? null : (
       <View style={styles.dangerSection}>
         <View style={styles.dangerHeader}>
-          <Ionicons name="archive" size={24} color="#f59e0b" />
+          <AppIcon name="archive" size={24} color="#f59e0b" />
           <View style={styles.dangerInfo}>
             <Text style={styles.dangerTitle}>
               {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
@@ -593,7 +593,7 @@ export default function GroupInfoModal({
           accessibilityLabel={group.isArchived ? 'Unarchive group' : 'Archive group'}
           onPress={handleArchive}
         >
-          <Ionicons name="archive" size={18} color="#ffffff" />
+          <AppIcon name="archive" size={18} color="#ffffff" />
           <Text style={styles.dangerButtonText}>
             {group.isArchived ? 'Unarchive' : 'Archive'}
           </Text>
@@ -604,7 +604,7 @@ export default function GroupInfoModal({
       {/* Report Section — any member; routes to Lantern moderation (Phase 1 · E) */}
       <View style={styles.dangerSection}>
         <View style={styles.dangerHeader}>
-          <Ionicons name="flag-outline" size={24} color="#f59e0b" />
+          <AppIcon name="flag" size={24} color="#f59e0b" />
           <View style={styles.dangerInfo}>
             <Text style={styles.dangerTitle}>Report Group</Text>
             <Text style={styles.dangerDescription}>
@@ -618,7 +618,7 @@ export default function GroupInfoModal({
           accessibilityLabel="Report group"
           onPress={() => setShowReportGroup(true)}
         >
-          <Ionicons name="flag-outline" size={18} color="#ffffff" />
+          <AppIcon name="flag" size={18} color="#ffffff" />
           <Text style={styles.dangerButtonText}>Report Group</Text>
         </TouchableOpacity>
       </View>
@@ -626,7 +626,7 @@ export default function GroupInfoModal({
       {isOwner && !isLounge ? (
           <View style={[styles.dangerSection, styles.deleteSection]}>
             <View style={styles.dangerHeader}>
-              <Ionicons name="trash" size={24} color="#ef4444" />
+              <AppIcon name="trash" size={24} color="#ef4444" />
               <View style={styles.dangerInfo}>
                 <Text style={[styles.dangerTitle, styles.deleteTitle]}>
                   Delete Group
@@ -642,7 +642,7 @@ export default function GroupInfoModal({
               accessibilityLabel="Delete group permanently"
               onPress={handleDelete}
             >
-              <Ionicons name="trash" size={18} color="#ffffff" />
+              <AppIcon name="trash" size={18} color="#ffffff" />
               <Text style={styles.dangerButtonText}>Delete Permanently</Text>
             </TouchableOpacity>
           </View>
@@ -673,7 +673,7 @@ export default function GroupInfoModal({
               accessibilityLabel="Close group info"
               onPress={onClose}
             >
-              <Ionicons name="close" size={24} color={colors.text} />
+              <AppIcon name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 

@@ -1,9 +1,9 @@
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Badge } from '../../../components/ui';
 import { useTheme } from '../../../theme';
 import type { ShopBadges } from '../../../hooks/useShopBadges';
+import { AppIcon, type AppIconName } from '../../../components/ui/AppIcon';
 
 interface Props {
   /** From useShopBadges — the caller owns the subscription so one read feeds the whole screen. */
@@ -26,7 +26,7 @@ export interface QuickAction {
   key: string;
   label: string;
   hint: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: AppIconName;
   badge: number;
   screen: string;
   params?: Record<string, unknown>;
@@ -50,7 +50,7 @@ export function buildQuickActions(badges: ShopBadges): QuickAction[] {
       key: 'orders',
       label: 'Your Orders',
       hint: badges.buyerActionOrders > 0 ? `${badges.buyerActionOrders} need you` : 'Track & buy again',
-      icon: 'receipt-outline',
+      icon: 'receipt',
       badge: badges.buyerActionOrders,
       screen: 'Orders',
       params: { role: 'buyer' },
@@ -59,7 +59,7 @@ export function buildQuickActions(badges: ShopBadges): QuickAction[] {
       key: 'buy-again',
       label: 'Buy Again',
       hint: 'Reorder in a tap',
-      icon: 'repeat-outline',
+      icon: 'repeat',
       // Nothing to count: a past purchase is never "attention".
       badge: 0,
       screen: 'Orders',
@@ -69,7 +69,7 @@ export function buildQuickActions(badges: ShopBadges): QuickAction[] {
       key: 'saved',
       label: 'Saved',
       hint: badges.savedCount > 0 ? plural(badges.savedCount, 'item') : 'Tap ♡ to save',
-      icon: 'heart-outline',
+      icon: 'heart',
       badge: 0,
       screen: 'Favorites',
     },
@@ -77,7 +77,7 @@ export function buildQuickActions(badges: ShopBadges): QuickAction[] {
       key: 'cart',
       label: 'Cart',
       hint: badges.cartCount > 0 ? plural(badges.cartCount, 'item') : 'Empty',
-      icon: 'cart-outline',
+      icon: 'cart',
       badge: badges.cartCount,
       screen: 'Cart',
     },
@@ -90,7 +90,7 @@ export function buildQuickActions(badges: ShopBadges): QuickAction[] {
           : badges.activeListings > 0
             ? `${badges.activeListings} live`
             : 'List an item',
-      icon: 'storefront-outline',
+      icon: 'storefront',
       badge: badges.sellerAttention,
       // The seller's home is MyListings, which carries its own needs-you strip;
       // the hub is where the buyer side lives.
@@ -116,10 +116,10 @@ export function ShopQuickActions({ badges, onNavigate, layout = 'scroll', action
     >
       <View className="flex-row items-center justify-between">
         <View className="w-8 h-8 rounded-lg items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
-          <Ionicons name={action.icon} size={17} color={colors.primary} />
+          <AppIcon name={action.icon} size={17} color={colors.primary} />
           <Badge count={action.badge} />
         </View>
-        <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+        <AppIcon name="chevron-forward" size={14} color={colors.textTertiary} />
       </View>
       <Text numberOfLines={1} className="mt-1.5 text-xs font-semibold text-lantern-text">
         {action.label}

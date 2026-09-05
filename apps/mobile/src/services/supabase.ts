@@ -15,6 +15,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
+import { classifyRefreshError, OfflineAuthError } from './authFailure';
 
 const isAndroidEmulator = () => {
   if (Platform.OS !== 'android') return false;
@@ -152,6 +153,76 @@ if (!isDevRuntime && (!supabaseUrl || !supabaseAnonKey || !API_BASE_URL)) {
 // AsyncStorage there — it is reliable and still persists the session across launches.
 const authStorage = Platform.OS === 'android' ? AsyncStorage : ExpoSecureStoreAdapter;
 
+// ─── Auth-refresh transport hardening ───────────────────────────────────────
+// gotrue-js only KEEPS a session when the refresh fails in a way it recognises
+// as retryable (AuthRetryableFetchError). Anything else — a captive portal's
+// HTML login page, an ISP error page, a Cloudflare 520-527, a 429 — is parsed
+// as a real answer, becomes AuthUnknownError, and gotrue then calls
+// _removeSession and persists SIGNED_OUT. On a Nigerian campus link that is a
+// logout caused by the network, not by the account.
+//
+// So: intercept POST /auth/v1/token and convert those non-answers back into a
+// network error, which is what they actually are. Genuine gotrue verdicts —
+// a JSON 400 carrying invalid_grant / refresh_token_not_found — pass through
+// untouched, so a truly revoked session still signs out. Same shape as the web
+// fix in d922d44.
+const AUTH_TOKEN_PATH = '/auth/v1/token';
+
+function isNonAnswerStatus(status: number): boolean {
+  // 429 and every 5xx (Cloudflare's 520-527 included) say nothing about the token.
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function requestUrlOf(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return (input as Request).url ?? '';
+}
+
+function requestMethodOf(input: RequestInfo | URL, init?: RequestInit): string {
+  const method = init?.method ?? (typeof input === 'object' && 'method' in input ? (input as Request).method : undefined);
+  return (method ?? 'GET').toUpperCase();
+}
+
+/**
+ * Only the refresh grant can destroy a stored session — gotrue posts it as
+ * `/auth/v1/token?grant_type=refresh_token`. A password or PKCE grant failing
+ * has no session to protect, and rewriting ITS 429 into "network request
+ * failed" would hide "too many sign-in attempts" from the login screen. If a
+ * future auth-js moves grant_type out of the query string we see no grant at
+ * all and protect the request anyway, which is the safe default.
+ */
+function isSessionRefreshRequest(url: string): boolean {
+  if (!url.includes(AUTH_TOKEN_PATH)) return false;
+  if (!url.includes('grant_type=')) return true;
+  return url.includes('grant_type=refresh_token');
+}
+
+const supabaseFetch: typeof fetch = async (input, init) => {
+  const response = await fetch(input as RequestInfo, init);
+
+  if (response.ok) return response;
+  if (requestMethodOf(input, init) !== 'POST') return response;
+  if (!isSessionRefreshRequest(requestUrlOf(input))) return response;
+
+  // Content-type rather than the body: reading it here would consume the
+  // stream gotrue is about to parse.
+  const contentType = response.headers.get('content-type') ?? '';
+  const isJson = contentType.toLowerCase().includes('json');
+
+  if (isNonAnswerStatus(response.status) || !isJson) {
+    console.warn(
+      `[auth] treating ${response.status} on ${AUTH_TOKEN_PATH} as a network failure ` +
+        `(content-type: ${contentType || 'none'}); the session is kept.`
+    );
+    // The one error shape gotrue-js maps to AuthRetryableFetchError, which
+    // leaves the stored session alone and retries later.
+    throw new TypeError('Network request failed');
+  }
+
+  return response;
+};
+
 // Create Supabase client with device-appropriate session persistence
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -161,6 +232,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false, // Not needed in React Native
   },
   global: {
+    fetch: supabaseFetch,
     headers: {
       'Accept': 'application/json, text/plain, */*, application/vnd.pgrst.object+json',
     },
@@ -177,22 +249,62 @@ export const getSession = async () => {
   return session;
 };
 
-// Refresh cooldown: without it every getAuthHeaders call re-attempts a failing
+// Refresh backoff: without it every getAuthHeaders call re-attempts a failing
 // refresh, which is how one bad session turned into a 27-request 401 cascade.
+// It used to be a flat 30 s, which is both too long for a two-second tunnel and
+// too short for a lecture hall with no signal; exponential (1s → 2s → 4s …,
+// capped at 60s, reset on any success) fits both.
+const BASE_REFRESH_BACKOFF_MS = 1_000;
+const MAX_REFRESH_BACKOFF_MS = 60_000;
+
 let lastFailedRefreshAt = 0;
-const REFRESH_RETRY_COOLDOWN_MS = 30_000;
+let consecutiveRefreshFailures = 0;
+/** Why the last refresh failed — decides whether a header-less request is honest. */
+let lastRefreshFailureKind: 'transient' | 'invalid' | null = null;
 let missingAuthOccurrences = 0;
+
+function currentRefreshBackoffMs(): number {
+  if (consecutiveRefreshFailures === 0) return 0;
+  const exponential = BASE_REFRESH_BACKOFF_MS * 2 ** (consecutiveRefreshFailures - 1);
+  return Math.min(exponential, MAX_REFRESH_BACKOFF_MS);
+}
+
+/** True while the backoff window from the last failed refresh is still open. */
+function refreshBackoffActive(): boolean {
+  return consecutiveRefreshFailures > 0 && Date.now() - lastFailedRefreshAt < currentRefreshBackoffMs();
+}
+
+/**
+ * Drop the backoff so the very next call retries immediately. Called by a
+ * successful refresh and by the "Retry now" affordance on the offline chip.
+ */
+export function resetAuthRefreshBackoff(): void {
+  lastFailedRefreshAt = 0;
+  consecutiveRefreshFailures = 0;
+  lastRefreshFailureKind = null;
+}
+
+function recordRefreshFailure(error: unknown): void {
+  consecutiveRefreshFailures += 1;
+  lastFailedRefreshAt = Date.now();
+  lastRefreshFailureKind = classifyRefreshError(error);
+}
 
 // Helper to get auth headers for API calls
 export const getAuthHeaders = async (): Promise<Record<string, string>> => {
   let session = await getSession();
 
-  if (!session?.access_token && Date.now() - lastFailedRefreshAt > REFRESH_RETRY_COOLDOWN_MS) {
-    const { data, error } = await supabase.auth.refreshSession();
-    if (!error && data.session) {
-      session = data.session;
-    } else {
-      lastFailedRefreshAt = Date.now();
+  if (!session?.access_token && !refreshBackoffActive()) {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (!error && data.session?.access_token) {
+        session = data.session;
+        resetAuthRefreshBackoff();
+      } else {
+        recordRefreshFailure(error ?? new Error('refreshSession returned no session'));
+      }
+    } catch (error) {
+      recordRefreshFailure(error);
     }
   }
 
@@ -205,15 +317,29 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
 
   if (session?.access_token) {
     headers['Authorization'] = `Bearer ${session.access_token}`;
-  } else {
-    // Never silent: an unauthenticated header set means every consumer 401s.
-    // Loud log (and a counter, so a cascade is obvious in one glance at logcat).
-    missingAuthOccurrences += 1;
-    console.error(
-      `[auth] getAuthHeaders has NO access token (occurrence ${missingAuthOccurrences}); ` +
-        'request will be sent unauthenticated and will 401. Session missing and refresh unavailable.'
-    );
+    // A live token is proof auth is healthy again, whatever happened before.
+    if (consecutiveRefreshFailures > 0 || lastRefreshFailureKind !== null) {
+      resetAuthRefreshBackoff();
+    }
+    return headers;
   }
+
+  if (lastRefreshFailureKind === 'transient') {
+    // Sending this request anyway would 401 for certain, and that manufactured
+    // 401 is what used to sign the student out. Fail loudly and honestly
+    // instead: callers get an offline error, the session stays on the handset.
+    throw new OfflineAuthError();
+  }
+
+  // No token and no transient excuse: the device genuinely has no session
+  // (signed out, or a proven-dead refresh token). Send unauthenticated — public
+  // endpoints still work — but never silently: a counter makes a cascade
+  // obvious in one glance at logcat.
+  missingAuthOccurrences += 1;
+  console.error(
+    `[auth] getAuthHeaders has NO access token (occurrence ${missingAuthOccurrences}); ` +
+      'request will be sent unauthenticated and will 401. Session missing and refresh unavailable.'
+  );
 
   return headers;
 };
@@ -263,7 +389,13 @@ export const signOut = async () => {
 
   const { error } = await supabase.auth.signOut();
   if (error) {
-    if (isAuthSessionMissingError(error)) {
+    // A global sign-out that never reached the server used to rethrow, and
+    // gotrue skips _removeSession on a retryable error — so the UI showed the
+    // user logged out while the refresh token and their data stayed on the
+    // handset. On a shared phone that is the next student's problem. Clear
+    // locally instead; the server-side revoke is retried by the API logout
+    // call on the next successful sign-in.
+    if (isAuthSessionMissingError(error) || classifyRefreshError(error) === 'transient') {
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       return;
     }

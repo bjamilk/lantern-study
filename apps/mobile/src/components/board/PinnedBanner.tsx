@@ -1,9 +1,9 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { COMMUNITY_BOARD_COPY, pinnedPostAccessibilityLabel } from '@lantern/shared/network';
 import { splitBoardBody } from '../../utils/boardPosts';
 import type { Message } from '../../stores/groupStore';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * The board's one server-side pinned post (§4.1 region 2). Every member sees
@@ -43,7 +43,7 @@ export function PinnedBanner({
         className="flex-1 min-w-0 min-h-[44px] justify-center"
       >
         <View className="flex-row items-center">
-          <Ionicons name="pin" size={12} color="#6366f1" />
+          <AppIcon name="pin" size={12} color="#6366f1" />
           <Text className="ml-1 text-[10px] font-bold tracking-wide text-lantern-primary">
             {COMMUNITY_BOARD_COPY.pinnedLabel}
           </Text>

@@ -7,7 +7,6 @@ import {
   useScreenBottomPadding,
   useScreenInsets,
 } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
 import {
@@ -28,6 +27,7 @@ import { buildOrderReceiptText } from './orderReceipt';
 import { OpenDisputeModal } from './OpenDisputeModal';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { OrderStatusPill, orderNextStep } from './components/OrderStatusPill';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
 
@@ -267,7 +267,7 @@ export function OrderDetailScreen({
       />
       <View className="px-4 py-3 flex-row items-center">
         <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <Text className="text-lg font-bold flex-1 ml-2" numberOfLines={1}>
           {order.listing?.title || 'Order'}
@@ -492,8 +492,9 @@ export function OrderDetailScreen({
             <View className="flex-row gap-2 mb-4">
               {[1, 2, 3, 4, 5].map(i => (
                 <Pressable key={i} onPress={() => setReviewRating(i)}>
-                  <Ionicons
-                    name={i <= reviewRating ? 'star' : 'star-outline'}
+                  <AppIcon
+                    name="star"
+                    filled={i <= reviewRating}
                     size={28}
                     color="#f59e0b"
                   />

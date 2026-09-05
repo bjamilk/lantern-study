@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { CHECKLIST_ITEMS, shouldShowChecklist, type ChecklistItemKey } from '@lantern/shared/featureTips';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useTheme } from '../../theme';
+import { AppIcon } from '../ui/AppIcon';
 
 interface Props {
   hasDecks: boolean;
@@ -125,7 +125,7 @@ export function GettingStartedChecklist({
           accessibilityLabel="Dismiss getting started"
           className="p-1"
         >
-          <Ionicons name="close" size={18} color={colors.primary} />
+          <AppIcon name="close" size={18} color={colors.primary} />
         </Pressable>
       </View>
       <View className="gap-1.5">
@@ -136,8 +136,8 @@ export function GettingStartedChecklist({
             disabled={item.done || !item.onClick}
             className="flex-row items-center gap-2 px-2 py-2 rounded-lg"
           >
-            <Ionicons
-              name={item.done ? 'checkmark-circle' : 'checkmark-circle-outline'}
+            <AppIcon
+              name={item.done ? 'checkmark-circle' : 'ellipse'}
               size={20}
               color={item.done ? '#10b981' : colors.primary}
             />

@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 
 
-import { Ionicons } from '@expo/vector-icons';
 
 import {
   aggregatePhotoOcrStatus,
@@ -73,6 +72,7 @@ import {
 } from '../../stores/lectureRecordingStore';
 import * as ImagePicker from 'expo-image-picker';
 import type { NoteAttachment } from '../../services/notes';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
 
@@ -871,7 +871,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
         >
 
-          <Ionicons name="arrow-back" size={24} color="#475569" />
+          <AppIcon name="arrow-back" size={24} color="#475569" />
 
         </Pressable>
 
@@ -910,7 +910,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
           accessibilityLabel="Turn into a Study Product"
         >
-          <Ionicons name="storefront-outline" size={20} color="#6366f1" />
+          <AppIcon name="storefront" size={20} color="#6366f1" />
         </Pressable>
         ) : null}
 
@@ -920,7 +920,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
           accessibilityLabel="Manage collaborators"
         >
-          <Ionicons name="people-outline" size={20} color="#6366f1" />
+          <AppIcon name="people" size={20} color="#6366f1" />
         </Pressable>
         ) : null}
 
@@ -935,7 +935,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
         >
 
-          <Ionicons name="trash-outline" size={20} color="#ef4444" />
+          <AppIcon name="trash" size={20} color="#ef4444" />
 
         </Pressable>
         ) : null}
@@ -1099,7 +1099,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               }
               className="mb-4 rounded-xl border border-lantern-border bg-lantern-background-secondary p-4 flex-row items-center gap-3"
             >
-              <Ionicons name="logo-youtube" size={28} color="#ef4444" />
+              <AppIcon name="logo-youtube" size={28} color="#ef4444" />
               <View className="flex-1">
                 <Text className="text-sm font-medium text-lantern-text">
                   Linked YouTube video

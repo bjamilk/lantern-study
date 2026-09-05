@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { Ionicons } from '@expo/vector-icons';
 import {
   fetchMarketplacePurchases,
   downloadStudyPack,
   downloadQuestionBank,
 } from '../../services/api';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -75,8 +75,8 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
     return (
       <View className="mx-4 mb-3 rounded-xl border border-lantern-border bg-lantern-surface p-4 flex-row items-start">
         <View className="w-9 h-9 rounded-lg bg-lantern-primary/10 items-center justify-center mr-3 mt-0.5">
-          <Ionicons
-            name={isStudyPack ? 'albums-outline' : 'star-outline'}
+          <AppIcon
+            name={isStudyPack ? 'albums' : 'star'}
             size={18}
             color="#6366f1"
           />
@@ -113,7 +113,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
             className="ml-2 self-center flex-row items-center rounded-lg bg-lantern-primary px-3 py-1.5"
             style={{ opacity: updatingId === item.listingId ? 0.5 : 1, gap: 5 }}
           >
-            <Ionicons name="download-outline" size={13} color="#fff" />
+            <AppIcon name="download" size={13} color="#fff" />
             <Text className="text-xs font-semibold text-white">
               {updatingId === item.listingId ? 'Updating…' : 'Update'}
             </Text>
@@ -129,7 +129,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
     <Screen bottom="none">
       <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
         <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="mr-2 -ml-1 p-1">
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-1">
           <Text className="text-lg font-bold text-lantern-text">Your purchases</Text>
@@ -139,7 +139,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
         </View>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />
         <Pressable onPress={() => void load()} hitSlop={8} className="p-1">
-          <Ionicons name="refresh" size={20} color="#64748b" />
+          <AppIcon name="refresh" size={20} color="#64748b" />
         </Pressable>
       </View>
 
@@ -149,7 +149,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
         </View>
       ) : purchases.length === 0 ? (
         <View className="flex-1 items-center justify-center px-8">
-          <Ionicons name="bag-outline" size={40} color="#94a3b8" />
+          <AppIcon name="bag" size={40} color="#94a3b8" />
           <Text className="mt-3 text-base font-semibold text-lantern-text">No purchases yet</Text>
           <Text className="mt-1 text-sm text-lantern-text-secondary text-center">
             Study packs and question banks you buy or download show up here.

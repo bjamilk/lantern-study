@@ -8,7 +8,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../stores/authStore';
 import { updateUserProfile, fetchUserProfile, uploadProfileAvatar } from '../../services/api';
@@ -16,6 +15,7 @@ import { supabase } from '../../services/supabase';
 import { Button, Card, ScreenHeader } from '../../components/ui';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -206,7 +206,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
               {uploadingAvatar ? (
                 <ActivityIndicator size="small" color="#6366f1" />
               ) : (
-                <Ionicons name="camera" size={16} color="#6366f1" />
+                <AppIcon name="camera" size={16} color="#6366f1" />
               )}
             </View>
           </Pressable>
@@ -243,7 +243,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
         <Card className="mb-4">
           <Pressable onPress={() => setShowPasswordSection(v => !v)} className="flex-row items-center justify-between">
             <Text className="text-sm font-semibold text-lantern-text">Change password</Text>
-            <Ionicons name={showPasswordSection ? 'chevron-up' : 'chevron-down'} size={18} color="#94a3b8" />
+            <AppIcon name={showPasswordSection ? 'chevron-up' : 'chevron-down'} size={18} color="#94a3b8" />
           </Pressable>
           {showPasswordSection ? (
             <View className="mt-3 gap-2">

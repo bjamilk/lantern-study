@@ -2,7 +2,7 @@
  * Sync Status Indicator
  * Shows sync status and pending changes in the UI
  */
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,16 +10,65 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { getConnectionStatus, featureAccents } from '@lantern/shared/design';
 import { useSyncStatus, useNetworkStatus } from '../hooks';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useUIStore } from '../stores/uiStore';
+import { retryAuthRefresh } from '../services/api';
 import { useTheme } from '../theme';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
+
+/**
+ * Copy for the auth-offline state. NetInfo says the radio is up; this says we
+ * still could not reach the auth server. The second half is the part that
+ * matters to a student who has just lost a session before: nothing was lost.
+ */
+const AUTH_OFFLINE_LABEL = 'Offline — your session is saved';
+const AUTH_OFFLINE_SHORT = 'Session saved';
 
 interface SyncStatusIndicatorProps {
   compact?: boolean;
   showLabel?: boolean;
   onPress?: () => void;
+}
+
+/**
+ * Shared wiring for the auth-offline state.
+ *
+ * `authOffline` is set by services/api.ts when a refresh could not reach the
+ * auth server, and cleared by the next successful refresh or request. The
+ * effect here is the automatic half of the recovery: the moment NetInfo says
+ * the link is back, drop the exponential backoff and try once, so a student
+ * who walks out of a dead spot does not have to wait out a 60 s window or find
+ * the button. It fires once per reconnection — a failed retry leaves
+ * `authOffline` true and the deps unchanged, so it cannot loop.
+ */
+function useAuthOffline(isConnected: boolean) {
+  // Primitive selectors only: an object built in a selector is a fresh object
+  // every render and froze production once.
+  const authOffline = useUIStore((s) => s.authOffline);
+  const [retrying, setRetrying] = useState(false);
+
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    try {
+      await retryAuthRefresh();
+    } catch {
+      // retryAuthRefresh already classified the failure; the banner stays.
+    } finally {
+      setRetrying(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authOffline || !isConnected) return;
+    const timer = setTimeout(() => {
+      void retry();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [authOffline, isConnected, retry]);
+
+  return { authOffline, retrying, retry };
 }
 
 function statusColor(state: string): string {
@@ -39,7 +88,7 @@ function statusColor(state: string): string {
 function statusIcon(
   icon: 'wifi' | 'wifi-off' | 'sync' | 'signal' | 'clock',
   isSyncing: boolean
-): keyof typeof Ionicons.glyphMap {
+): AppIconName {
   if (isSyncing) return 'sync';
   switch (icon) {
     case 'wifi-off':
@@ -63,21 +112,30 @@ export function SyncStatusIndicator({
   const network = useNetworkStatus();
   const sync = useSyncStatus();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
+  const { authOffline, retrying, retry } = useAuthOffline(network.isConnected);
   const { colors } = useTheme();
 
   const status = useMemo(
     () =>
       getConnectionStatus({
-        isOnline: network.isConnected,
+        // A refresh that cannot reach the auth server is an outage the radio
+        // cannot see: a captive portal or a DNS failure leaves NetInfo saying
+        // "connected" while nothing gets through.
+        isOnline: network.isConnected && !authOffline,
         lowDataMode,
         pendingSyncCount: sync.pendingCount,
         isSyncing: sync.isSyncing,
       }),
-    [network.isConnected, lowDataMode, sync.pendingCount, sync.isSyncing]
+    [network.isConnected, authOffline, lowDataMode, sync.pendingCount, sync.isSyncing]
   );
 
   const color = statusColor(status.state);
   const hasPending = sync.pendingCount > 0;
+  // Only speak for auth while the radio itself is fine; a genuinely offline
+  // phone should keep saying "Offline".
+  const showAuthOffline = authOffline && network.isConnected;
+  const label = showAuthOffline ? AUTH_OFFLINE_SHORT : status.shortLabel;
+  const a11yLabel = showAuthOffline ? AUTH_OFFLINE_LABEL : status.label;
 
   // The compact chip is a floating overlay on every screen. When everything is
   // online and synced it states the default and only covers content, so it
@@ -87,25 +145,41 @@ export function SyncStatusIndicator({
   }
 
   const content = (
-    <View style={[styles.container, compact && styles.containerCompact, { backgroundColor: `${color}15` }]}>
-      {sync.isSyncing ? (
+    <View
+      accessible
+      accessibilityLabel={a11yLabel}
+      style={[styles.container, compact && styles.containerCompact, { backgroundColor: `${color}15` }]}
+    >
+      {sync.isSyncing || retrying ? (
         <ActivityIndicator size="small" color={color} />
       ) : (
-        <Ionicons
-          name={statusIcon(status.icon, sync.isSyncing)}
+        <AppIcon
+          name={showAuthOffline ? 'cloud-offline' : statusIcon(status.icon, sync.isSyncing)}
           size={compact ? 16 : 20}
           color={color}
         />
       )}
       {showLabel && !compact && (
         <Text style={[styles.label, { color: compact ? colors.textSecondary : color }]}>
-          {status.shortLabel}
+          {label}
         </Text>
       )}
       {hasPending && !sync.isSyncing && !compact && (
         <View style={[styles.badge, { backgroundColor: color }]}>
           <Text style={styles.badgeText}>{sync.pendingCount}</Text>
         </View>
+      )}
+      {showAuthOffline && !compact && (
+        <TouchableOpacity
+          onPress={() => void retry()}
+          disabled={retrying}
+          accessibilityRole="button"
+          accessibilityLabel="Retry now"
+          accessibilityState={{ disabled: retrying }}
+          style={styles.inlineRetry}
+        >
+          <Text style={[styles.inlineRetryText, { color }]}>Retry now</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -125,9 +199,10 @@ export function SyncDot() {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
+  const authOffline = useUIStore((s) => s.authOffline);
 
   const status = getConnectionStatus({
-    isOnline: network.isConnected,
+    isOnline: network.isConnected && !authOffline,
     lowDataMode,
     pendingSyncCount: sync.pendingCount,
     isSyncing: sync.isSyncing,
@@ -154,9 +229,10 @@ export function SyncBanner({
   const network = useNetworkStatus();
   const sync = useSyncStatus();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
+  const { authOffline, retrying, retry } = useAuthOffline(network.isConnected);
 
   const status = getConnectionStatus({
-    isOnline: network.isConnected,
+    isOnline: network.isConnected && !authOffline,
     lowDataMode,
     pendingSyncCount: sync.pendingCount,
     isSyncing: sync.isSyncing,
@@ -167,26 +243,49 @@ export function SyncBanner({
   }
 
   const isOffline = status.state === 'offline';
-  const bannerColor = isOffline ? featureAccents.offline : featureAccents.offline;
+  const showAuthOffline = authOffline && network.isConnected;
+  const bannerColor = featureAccents.offline;
+
+  const message = showAuthOffline
+    ? AUTH_OFFLINE_LABEL
+    : isOffline
+      ? 'You are offline. Study progress will sync when you reconnect.'
+      : `${sync.pendingCount} changes waiting to sync`;
 
   return (
     <View style={[styles.banner, { backgroundColor: bannerColor }]}>
       <View style={styles.bannerContent}>
-        <Ionicons
+        <AppIcon
           name={isOffline ? 'cloud-offline' : 'cloud-upload'}
           size={18}
           color="#fff"
         />
-        <Text style={styles.bannerText}>
-          {isOffline
-            ? 'You are offline. Study progress will sync when you reconnect.'
-            : `${sync.pendingCount} changes waiting to sync`}
-        </Text>
+        <Text style={styles.bannerText}>{message}</Text>
       </View>
-      {!isOffline && sync.pendingCount > 0 && onSyncPress && (
-        <TouchableOpacity onPress={onSyncPress} style={styles.bannerButton}>
-          <Text style={styles.bannerButtonText}>Sync Now</Text>
+      {showAuthOffline ? (
+        <TouchableOpacity
+          onPress={() => void retry()}
+          disabled={retrying}
+          accessibilityRole="button"
+          accessibilityLabel="Retry now"
+          accessibilityState={{ disabled: retrying }}
+          style={[styles.bannerButton, retrying && styles.bannerButtonDisabled]}
+        >
+          <Text style={styles.bannerButtonText}>{retrying ? 'Retrying…' : 'Retry now'}</Text>
         </TouchableOpacity>
+      ) : (
+        !isOffline &&
+        sync.pendingCount > 0 &&
+        onSyncPress && (
+          <TouchableOpacity
+            onPress={onSyncPress}
+            accessibilityRole="button"
+            accessibilityLabel="Sync now"
+            style={styles.bannerButton}
+          >
+            <Text style={styles.bannerButtonText}>Sync Now</Text>
+          </TouchableOpacity>
+        )
       )}
     </View>
   );
@@ -260,6 +359,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
+  },
+  bannerButtonDisabled: {
+    opacity: 0.6,
+  },
+  inlineRetry: {
+    marginLeft: 8,
+    // px literal, not a Tailwind h-*: NativeWind inlines rem at 14 here, so
+    // h-11 would be 38.5px and miss the 44px touch target.
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  inlineRetryText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });
 

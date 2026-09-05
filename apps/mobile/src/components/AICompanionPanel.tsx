@@ -12,7 +12,6 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { CompanionConversation, CompanionUserContext } from '@lantern/shared';
 import { useCompanionStore } from '../stores/companionStore';
@@ -88,6 +87,7 @@ import { useAppTheme } from '../theme';
 import { Button } from './ui';
 import { transcribeAudioForNote } from '../services/notes';
 import { trackAIAnalyticsEvent } from '../services/ai';
+import { AppIcon } from './ui/AppIcon';
 
 function formatRelativeTime(iso: string): string {
   const ts = Date.parse(iso);
@@ -552,19 +552,19 @@ export function AICompanionPanel({ context }: Props) {
       >
         <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
-          <Ionicons name="sparkles" size={22} color="#c45c26" />
+          <AppIcon name="sparkles" size={22} color="#c45c26" />
           <Text className="flex-1 ml-2 text-lg font-bold text-lantern-text dark:text-white">Lantern AI</Text>
           <Pressable onPress={handleOpenHistory} className="p-2" accessibilityLabel="Past chats">
-            <Ionicons name="time-outline" size={20} color={showHistoryList ? '#c45c26' : '#94a3b8'} />
+            <AppIcon name="time" size={20} color={showHistoryList ? '#c45c26' : '#94a3b8'} />
           </Pressable>
           <Pressable onPress={handleNewChat} className="p-2" accessibilityLabel="New chat">
-            <Ionicons name="create-outline" size={20} color="#94a3b8" />
+            <AppIcon name="create" size={20} color="#94a3b8" />
           </Pressable>
           <Pressable onPress={handleDeleteChat} className="p-2" accessibilityLabel="Delete this chat">
-            <Ionicons name="trash-outline" size={20} color="#94a3b8" />
+            <AppIcon name="trash" size={20} color="#94a3b8" />
           </Pressable>
           <Pressable onPress={close} className="p-2">
-            <Ionicons name="close" size={24} color="#94a3b8" />
+            <AppIcon name="close" size={24} color="#94a3b8" />
           </Pressable>
         </View>
         <View className="px-4 pb-2 flex-row items-center justify-between">
@@ -742,12 +742,9 @@ export function AICompanionPanel({ context }: Props) {
                           }}
                           className="p-1"
                         >
-                          <Ionicons
-                            name={
-                              rating === 'up'
-                                ? active ? 'thumbs-up' : 'thumbs-up-outline'
-                                : active ? 'thumbs-down' : 'thumbs-down-outline'
-                            }
+                          <AppIcon
+                            name={rating === 'up' ? 'thumbs-up' : 'thumbs-down'}
+                            filled={active}
                             size={14}
                             color={active ? '#4f46e5' : '#94a3b8'}
                           />
@@ -779,7 +776,7 @@ export function AICompanionPanel({ context }: Props) {
         <View className="px-4 py-3 border-t border-lantern-border">
           {activeNoteContext ? (
             <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
-              <Ionicons name="document-text-outline" size={14} color="#c45c26" />
+              <AppIcon name="document-text" size={14} color="#c45c26" />
               <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary" numberOfLines={1}>
                 {activeNoteContext.title}
               </Text>
@@ -791,7 +788,7 @@ export function AICompanionPanel({ context }: Props) {
                 hitSlop={8}
                 accessibilityLabel="Remove note context"
               >
-                <Ionicons name="close" size={14} color="#c45c26" />
+                <AppIcon name="close" size={14} color="#c45c26" />
               </Pressable>
             </View>
           ) : null}
@@ -861,7 +858,7 @@ export function AICompanionPanel({ context }: Props) {
                   : 'bg-lantern-background-secondary'
               } ${isBusy ? 'opacity-40' : ''}`}
             >
-              <Ionicons name="add" size={22} color="#6366f1" />
+              <AppIcon name="add" size={22} color="#6366f1" />
             </Pressable>
             <Pressable
               onPress={() => {
@@ -876,7 +873,7 @@ export function AICompanionPanel({ context }: Props) {
                 isRecording ? 'bg-red-500' : 'bg-lantern-background-secondary'
               } ${(isBusy || isTranscribing) ? 'opacity-40' : ''}`}
             >
-              <Ionicons
+              <AppIcon
                 name={isRecording ? 'stop' : 'mic'}
                 size={20}
                 color={isRecording ? '#fff' : '#6366f1'}

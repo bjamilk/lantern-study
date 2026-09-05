@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   filterCampusesByQuery,
   formatCampusLabel,
   type MarketplaceCampus,
 } from '@lantern/shared/marketplace';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 export type MarketplaceCampusOption = Pick<
   MarketplaceCampus,
@@ -62,7 +62,7 @@ export function CampusPicker({
             {selectedCampus ? formatCampusLabel(selectedCampus) : emptyLabel}
           </Text>
         </View>
-        <Ionicons
+        <AppIcon
           name={open ? 'chevron-up' : 'chevron-down'}
           size={18}
           color="#64748b"
@@ -72,7 +72,7 @@ export function CampusPicker({
       {open ? (
         <View className="mt-2 border border-lantern-border rounded-xl bg-lantern-surface overflow-hidden">
           <View className="flex-row items-center border-b border-lantern-border px-3">
-            <Ionicons name="search" size={16} color="#94a3b8" />
+            <AppIcon name="search" size={16} color="#94a3b8" />
             <TextInput
               value={query}
               onChangeText={setQuery}

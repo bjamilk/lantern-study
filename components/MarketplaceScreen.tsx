@@ -8,12 +8,10 @@ import {
   fetchMarketplaceShops,
 } from '../services/supabase';
 import { RateLimitError } from '@lantern/shared';
-import { browseListingCategories, browseFilterForNode, customCategoryName, getTaxonomyNode, getTaxonomyPath, isCustomListingCategory, listingTypeLabel } from '@lantern/shared/marketplace';
-import { canAccessDiscoverHub } from '@lantern/shared/network';
+import { browseListingCategories, browseFilterForNode, customCategoryName, getTaxonomyNode, getTaxonomyPath, isCustomListingCategory, listingTypeLabel, COURSE_ANCHOR_COPY } from '@lantern/shared/marketplace';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import type { MarketplaceCampus } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
-import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { MarketplaceListing, MarketplaceShopCard, SavedSearch } from '../types';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { usePageSeo } from '../hooks/usePageSeo';
@@ -23,8 +21,8 @@ import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
 import MarketplaceSearchSuggest from './marketplace/MarketplaceSearchSuggest';
 import { MarketplaceBrowseTree } from './marketplace/MarketplaceBrowseTree';
+import { CourseBrowsePanel } from './marketplace/CourseBrowsePanel';
 import { MarketplaceListingRail } from './marketplace/MarketplaceListingRail';
-import DiscoverWorkspaceBar from './discover/DiscoverWorkspaceBar';
 import {
   buildMarketplaceSavedSearchFilters,
   restoreMarketplaceSavedSearchFilters,
@@ -60,7 +58,6 @@ interface MarketplaceScreenProps {
    * Phase 3 L: return to a Discover tab. Optional so the marketplace still
    * renders anywhere Discover is not wired (guest/embedded surfaces).
    */
-  onNavigateToDiscover?: (section: string) => void;
   guestMode?: boolean;
   onSignInRequired?: () => void;
   /** Bump after create/edit so the browse grid reloads without a manual refresh. */
@@ -101,7 +98,6 @@ const writeRecentSearch = (query: string): string[] => {
 
 const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   onNavigate,
-  onNavigateToDiscover,
   guestMode = false,
   onSignInRequired,
   refreshKey = 0,
@@ -110,7 +106,6 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   initialCategory = '',
 }) => {
   const { currentUser } = useAuthStore();
-  const isPlatformAdmin = usePlatformAdmin();
   const initialNode = initialBrowseNodeId ? getTaxonomyNode(initialBrowseNodeId) : undefined;
   const [activeTab, setActiveTab] = useState<'academic' | 'student-life' | 'shops'>(
     initialTab || (initialNode?.department === 'student-life' ? 'student-life' : 'academic'),
@@ -128,6 +123,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [browseNodeId, setBrowseNodeId] = useState<string>(initialNode ? initialBrowseNodeId : '');
   const [showBrowseTree, setShowBrowseTree] = useState(Boolean(initialNode));
+  // "Browse by course" (Gap 3): the durable entry point into the digital
+  // marketplace, kept as a panel so it needs no new route.
+  const [showCourseBrowse, setShowCourseBrowse] = useState(false);
   const [dealListings, setDealListings] = useState<MarketplaceListing[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
@@ -940,20 +938,6 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         <MarketplaceComplianceBanner />
         <h1 className="sr-only">Marketplace</h1>
 
-        {/*
-          Phase 3 L / decision D12: the marketplace is a TAB INSIDE Discover.
-          One underline row is the only section chrome — Goods/Jobs sit next
-          to search, and Orders/Cart/Selling live in More.
-        */}
-        {onNavigateToDiscover && canAccessDiscoverHub(isPlatformAdmin) ? (
-          <DiscoverWorkspaceBar
-            active="marketplace"
-            onSelect={(sectionId) => {
-              if (sectionId !== 'marketplace') onNavigateToDiscover(sectionId);
-            }}
-          />
-        ) : null}
-
         <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full items-center">
           <MarketplaceSearchSuggest
             appliedQuery={searchTerm}
@@ -985,25 +969,6 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               <span className="hidden sm:inline">{campusIdFilter === userCampusId ? 'Your campus' : 'Shop campus'}</span>
             </button>
           ) : null}
-          <div
-            role="group"
-            aria-label="Goods or jobs"
-            className="hidden sm:inline-flex shrink-0 rounded-lg border border-lantern-border bg-lantern-surface p-0.5"
-          >
-            <span
-              aria-current="page"
-              className="inline-flex items-center gap-1 rounded-md bg-lantern-primary px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-white"
-            >
-              Goods
-            </span>
-            <button
-              type="button"
-              onClick={() => onNavigate('MarketplaceJobs')}
-              className="inline-flex items-center gap-1 rounded-md px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text transition-colors"
-            >
-              Jobs
-            </button>
-          </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
             aria-label="Toggle filters"
@@ -1169,6 +1134,16 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showBrowseTree ? 'rotate-180' : ''}`} />
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => setShowCourseBrowse(true)}
+                aria-haspopup="dialog"
+                aria-label={COURSE_ANCHOR_COPY.browseTitle}
+                className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
+              >
+                <AcademicCapIcon className="w-3.5 h-3.5" aria-hidden />
+                By course
+              </button>
               <button
                 type="button"
                 onClick={() => setShowCategoryPanel(v => !v)}
@@ -1357,6 +1332,12 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           </div>
         </TabPanel>
       </Tabs>
+
+      <CourseBrowsePanel
+        isOpen={showCourseBrowse}
+        onClose={() => setShowCourseBrowse(false)}
+        onOpenListing={(listingId) => onNavigate('MarketplaceListingDetail', { listingId })}
+      />
     </div>
   );
 };

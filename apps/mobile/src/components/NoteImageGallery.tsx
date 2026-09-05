@@ -11,11 +11,11 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
 import type { NoteAttachment } from '../services/notes';
 import { refreshNoteAttachmentUrl, reorderNoteAttachments } from '../services/notes';
 import { Button, Card } from './ui';
 import { useTheme } from '../theme';
+import { AppIcon } from './ui/AppIcon';
 
 interface NoteImageGalleryProps {
   noteId: string;
@@ -59,7 +59,7 @@ function ZoomableImage({ uri, onClose }: { uri: string; onClose: () => void }) {
       <View className="flex-1 bg-black">
         <View className="flex-row items-center justify-end px-4 pb-3" style={{ paddingTop: insets.top + 8 }}>
           <Pressable onPress={onClose} className="p-2" accessibilityLabel="Close">
-            <Ionicons name="close" size={28} color="#fff" />
+            <AppIcon name="close" size={28} color="#fff" />
           </Pressable>
         </View>
         <GestureDetector gesture={Gesture.Simultaneous(pinch, doubleTap)}>
@@ -230,14 +230,14 @@ export function NoteImageGallery({
                     onPress={() => moveImage(index, -1)}
                     className="p-2 rounded-md bg-black/55"
                   >
-                    <Ionicons name="arrow-up" size={16} color="#fff" />
+                    <AppIcon name="arrow-up" size={16} color="#fff" />
                   </Pressable>
                   <Pressable
                     disabled={index === ordered.length - 1 || reordering}
                     onPress={() => moveImage(index, 1)}
                     className="p-2 rounded-md bg-black/55"
                   >
-                    <Ionicons name="arrow-down" size={16} color="#fff" />
+                    <AppIcon name="arrow-down" size={16} color="#fff" />
                   </Pressable>
                 </View>
               )}

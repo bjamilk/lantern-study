@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
 import { isEmailNotConfirmedError } from '@lantern/shared';
 import { Button } from '../../components/ui';
@@ -20,6 +19,7 @@ import { LanternLogo } from '../../components/LanternLogo';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
 import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
 import type { AuthStackParamList } from '../../navigation/types';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -96,7 +96,7 @@ export function LoginScreen({ navigation }: Props) {
                   accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                   className="absolute right-3 top-3"
                 >
-                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#64748b" />
+                  <AppIcon name={showPassword ? 'eye-off' : 'eye'} size={22} color="#64748b" />
                 </Pressable>
               </View>
             </View>

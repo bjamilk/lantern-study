@@ -48,6 +48,17 @@ interface UIState {
    */
   collapsedDashboardSections: Record<string, boolean>;
   toggleDashboardSection: (id: string) => void;
+  /**
+   * The auth server could not be reached to refresh the session — the student
+   * is NOT signed out and nothing was lost, we simply cannot prove the token is
+   * still good. Drives the "Offline — your session is saved" chip.
+   *
+   * Deliberately NOT persisted: a stale `true` after relaunch would tell a
+   * perfectly online student they are offline. Set by services/api.ts, cleared
+   * by the next successful refresh or request.
+   */
+  authOffline: boolean;
+  setAuthOffline: (offline: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -59,6 +70,11 @@ export const useUIStore = create<UIState>()(
       setLibraryCourseFilter: (libraryCourseFilter) => set({ libraryCourseFilter }),
       libraryTreeOpen: false,
       setLibraryTreeOpen: (libraryTreeOpen) => set({ libraryTreeOpen }),
+      authOffline: false,
+      setAuthOffline: (authOffline) =>
+        // Guarded: setting the same value would still notify every subscriber,
+        // and this is written from the API layer on every 401 in a fan-out.
+        set((state) => (state.authOffline === authOffline ? state : { authOffline })),
       collapsedDashboardSections: {},
       toggleDashboardSection: (id) =>
         set((state) => {

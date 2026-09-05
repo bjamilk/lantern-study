@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { Card, Button } from './ui';
+import { AppIcon } from './ui/AppIcon';
 
 const GOAL_LABELS: Record<StudyGoalMode, string> = {
   casual: 'Casual review',
@@ -30,7 +30,7 @@ function SourceContext({ noteTitle, topic }: { noteTitle?: string; topic?: strin
     <View className="flex-row flex-wrap items-center gap-2 mb-2">
       {noteTitle ? (
         <View className="flex-row items-center gap-1 flex-shrink">
-          <Ionicons name="document-text-outline" size={14} color="#64748b" />
+          <AppIcon name="document-text" size={14} color="#64748b" />
           <Text className="text-xs text-lantern-text-secondary flex-shrink" numberOfLines={1}>
             From: <Text className="font-medium text-lantern-text">{noteTitle}</Text>
           </Text>
@@ -151,7 +151,7 @@ export function DailyQuizWidget({
     return (
       <Card className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800">
         <View className="flex-row items-center gap-2">
-          <Ionicons name="checkmark-circle" size={22} color="#10b981" />
+          <AppIcon name="checkmark-circle" size={22} color="#10b981" />
           <Text className="font-semibold text-emerald-700 dark:text-emerald-300">Daily quiz complete!</Text>
         </View>
         <SourceContext noteTitle={dailyQuiz.sourceNoteTitle} />

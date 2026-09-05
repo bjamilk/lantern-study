@@ -5,7 +5,6 @@
  */
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { buildFlashcardAccuracyByDeck, countActiveDaysInLastWeek } from '@lantern/shared/utils';
 import type { AIStudyRecommendation } from '../../services/ai';
 import { useAIHandlers } from '../../hooks/useAIHandlers';
@@ -14,6 +13,7 @@ import { useFlashcardStore } from '../../stores/flashcardStore';
 import { Card } from '../ui';
 import { useTheme } from '../../theme';
 import type { DashboardStats } from '../../types/dashboardStats';
+import { AppIcon } from '../ui/AppIcon';
 
 export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | null; streak: number }) {
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
@@ -33,7 +33,7 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
     return (
       <Card className="mb-4">
         <View className="flex-row items-center gap-2">
-          <Ionicons name="sparkles" size={16} color={colors.primary} />
+          <AppIcon name="sparkles" size={16} color={colors.primary} />
           <Text className="text-sm text-lantern-text-secondary flex-1">
             AI Study Coach is paused in low-data mode.
           </Text>
@@ -70,7 +70,7 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
     <Card className="mb-4">
       <View className="flex-row items-center justify-between mb-2">
         <View className="flex-row items-center gap-2">
-          <Ionicons name="sparkles" size={16} color={colors.primary} />
+          <AppIcon name="sparkles" size={16} color={colors.primary} />
           <Text className="text-sm font-semibold text-lantern-text">AI Study Coach</Text>
         </View>
         <Pressable

@@ -9,7 +9,12 @@ import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { SupabaseService } from '../services/supabase';
-import { getCommunitiesService } from '../services/communities';
+import {
+  getCommunitiesService,
+  normalizePublicCommunitySlug,
+  type CommunityPublicSummary,
+} from '../services/communities';
+import { cacheService } from '../services/cache';
 import { getStudyPresenceService } from '../services/studyPresence';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
@@ -35,6 +40,53 @@ function handle(err: unknown, res: Response): void {
   }
   throw err;
 }
+
+// GET /api/v1/communities/public/:slug — the ONE unauthenticated community
+// read. It backs the crawler join card at /discover/c/:slug (functions/discover/
+// c/[[path]].ts), so a community link pasted into a WhatsApp group unfurls as
+// "join this room" instead of nothing.
+//
+// Registered FIRST on purpose. Express matches in registration order, and
+// `/:communityId/members` etc. are also two-segment patterns: a community whose
+// slug were literally "members" would otherwise be swallowed by one of them.
+// (`/:slug` is one segment and can never shadow this.)
+//
+// Public + crawled, so it is cached hard on both sides, exactly like
+// routes/campuses.ts. Unauthenticated callers are still bounded by the global
+// anonymousIpRateLimit that server.ts applies ahead of every router.
+router.get(
+  '/public/:slug',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const slug = normalizePublicCommunitySlug(req.params.slug);
+    if (!slug) {
+      res.set('Cache-Control', 'public, max-age=600');
+      res.status(404).json({ success: false, error: 'Community not found' });
+      return;
+    }
+
+    const cacheKey = `communities:public:${slug}`;
+    const cached = await cacheService.get<CommunityPublicSummary>(cacheKey);
+    if (cached) {
+      res.set('Cache-Control', 'public, max-age=600');
+      res.json({ success: true, data: cached });
+      return;
+    }
+
+    const data = await getCommunitiesService(supabaseService).publicSummaryBySlug(slug);
+    if (!data) {
+      // Unknown AND private answer the same way: the card must not become an
+      // oracle for whether a private room exists.
+      res.set('Cache-Control', 'public, max-age=600');
+      res.status(404).json({ success: false, error: 'Community not found' });
+      return;
+    }
+
+    // Name/kind/institution never move and member_count moves slowly.
+    await cacheService.set(cacheKey, data, 600);
+    res.set('Cache-Control', 'public, max-age=600');
+    res.json({ success: true, data });
+  })
+);
 
 // GET /api/v1/communities — the caller's own communities
 router.get(

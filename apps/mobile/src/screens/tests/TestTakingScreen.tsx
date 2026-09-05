@@ -20,7 +20,6 @@ import {
 } from 'react-native';
 import { Screen, useScreenInsets } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp, useIsFocused } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
 import { useTheme, type ThemeColors } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
@@ -31,6 +30,7 @@ import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 import { hapticSuccess } from '../../utils/haptics';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -135,7 +135,7 @@ const MCQMultipleComponent = ({
               { borderColor: colors.border },
               isSelected && s(colors).optionCheckboxSelected
             ]}>
-              {isSelected && <Ionicons name="checkmark" size={16} color="#ffffff" />}
+              {isSelected && <AppIcon name="checkmark" size={16} color="#ffffff" />}
             </View>
             <Text style={[
               s(colors).optionText,
@@ -176,7 +176,7 @@ const TrueFalseComponent = ({
       ]}
       onPress={() => onAnswer('True')}
     >
-      <Ionicons
+      <AppIcon
         name="checkmark-circle"
         size={32}
         color={selectedAnswer === 'True' ? colors.textInverse : colors.textSecondary}
@@ -200,7 +200,7 @@ const TrueFalseComponent = ({
       ]}
       onPress={() => onAnswer('False')}
     >
-      <Ionicons
+      <AppIcon
         name="close-circle"
         size={32}
         color={selectedAnswer === 'False' ? colors.textInverse : colors.textSecondary}
@@ -297,7 +297,7 @@ const MatchingComponent = ({
                 <Text style={s(colors).matchingItemText}>{pair.left}</Text>
                 {matched && (
                   <View style={s(colors).matchBadge}>
-                    <Ionicons name="link" size={14} color="#10b981" />
+                    <AppIcon name="link" size={14} color="#10b981" />
                   </View>
                 )}
               </TouchableOpacity>
@@ -339,7 +339,7 @@ const MatchingComponent = ({
           style={s(colors).clearMatchesButton}
           onPress={() => onAnswer({})}
         >
-          <Ionicons name="refresh" size={16} color="#f59e0b" />
+          <AppIcon name="refresh" size={16} color="#f59e0b" />
           <Text style={s(colors).clearMatchesText}>Clear all matches</Text>
         </TouchableOpacity>
       )}
@@ -394,7 +394,7 @@ const DiagramLabelingComponent = ({
           />
         ) : (
           <View style={s(colors).diagramImagePlaceholder}>
-            <Ionicons name="image-outline" size={48} color="#64748b" />
+            <AppIcon name="image" size={48} color="#64748b" />
             <Text style={s(colors).diagramPlaceholderText}>
               {imagePending ? 'Loading diagram…' : 'Diagram will appear here'}
             </Text>
@@ -443,7 +443,7 @@ const DiagramLabelingComponent = ({
               >
                 {selectedOptionText(labels?.[label.id])}
               </Text>
-              <Ionicons name="chevron-down" size={16} color="#94a3b8" />
+              <AppIcon name="chevron-down" size={16} color="#94a3b8" />
             </TouchableOpacity>
           </View>
         ))}
@@ -927,7 +927,7 @@ export default function TestTakingScreen() {
       {/* Header */}
       <View style={[s(colors).header, { backgroundColor: colors.card, borderBottomColor: colors.border }, isStudyMode && s(colors).headerStudy]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={s(colors).exitButton}>
-          <Ionicons name="close" size={24} color={colors.text} />
+          <AppIcon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         
         <View style={s(colors).headerCenter}>
@@ -935,7 +935,7 @@ export default function TestTakingScreen() {
             <Text style={[s(colors).testName, { color: colors.text }]} numberOfLines={1}>{testName}</Text>
             {isStudyMode && (
               <View style={s(colors).studyBadge}>
-                <Ionicons name="book" size={12} color="#10b981" />
+                <AppIcon name="book" size={12} color="#10b981" />
                 <Text style={s(colors).studyBadgeText}>Study</Text>
               </View>
             )}
@@ -945,7 +945,7 @@ export default function TestTakingScreen() {
               s(colors).timerBadge,
               timeRemaining < 60 && s(colors).timerWarning
             ]}>
-              <Ionicons name="time" size={14} color={timeRemaining < 60 ? colors.error : colors.text} />
+              <AppIcon name="time" size={14} color={timeRemaining < 60 ? colors.error : colors.text} />
               <Text style={[
                 s(colors).timerText,
                 timeRemaining < 60 && s(colors).timerTextWarning
@@ -974,8 +974,9 @@ export default function TestTakingScreen() {
             onPress={() => toggleFlag(currentQuestion.id)}
             accessibilityLabel={isCurrentFlagged ? 'Remove bookmark' : 'Bookmark for review'}
           >
-            <Ionicons
-              name={isCurrentFlagged ? 'bookmark' : 'bookmark-outline'}
+            <AppIcon
+              name="bookmark"
+              filled={isCurrentFlagged}
               size={18}
               color={isCurrentFlagged ? '#eab308' : '#94a3b8'}
             />
@@ -1000,7 +1001,7 @@ export default function TestTakingScreen() {
         </Text>
         {lockMode && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-            <Ionicons name="lock-closed" size={12} color={colors.warning} />
+            <AppIcon name="lock-closed" size={12} color={colors.warning} />
             <Text style={{ fontSize: 11, fontWeight: '600', color: colors.warning }}>
               Locked — no going back once answered
             </Text>
@@ -1058,7 +1059,7 @@ export default function TestTakingScreen() {
             feedbackResult.isCorrect ? s(colors).feedbackCorrect : s(colors).feedbackIncorrect
           ]}>
             <View style={s(colors).feedbackHeader}>
-              <Ionicons 
+              <AppIcon 
                 name={feedbackResult.isCorrect ? 'checkmark-circle' : 'close-circle'} 
                 size={28} 
                 color={feedbackResult.isCorrect ? colors.success : colors.error} 
@@ -1091,7 +1092,7 @@ export default function TestTakingScreen() {
             onPress={handleCheckAnswer}
             activeOpacity={0.8}
           >
-            <Ionicons name="eye" size={20} color="#ffffff" />
+            <AppIcon name="eye" size={20} color="#ffffff" />
             <Text style={s(colors).checkAnswerText}>Check Answer</Text>
           </TouchableOpacity>
         )}
@@ -1120,7 +1121,7 @@ export default function TestTakingScreen() {
           onPress={previousQuestion}
           disabled={prevDisabled}
         >
-          <Ionicons
+          <AppIcon
             name="chevron-back"
             size={24}
             color={prevDisabled ? colors.textTertiary : colors.text}
@@ -1179,7 +1180,7 @@ export default function TestTakingScreen() {
               onPress={() => handleSubmit()}
             >
               <Text style={[s(colors).finishStudyText, { color: colors.success }]}>Finish</Text>
-              <Ionicons name="checkmark" size={24} color={colors.success} />
+              <AppIcon name="checkmark" size={24} color={colors.success} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -1187,7 +1188,7 @@ export default function TestTakingScreen() {
               disabled
             >
               <Text style={[s(colors).navButtonTextDisabled, { color: colors.textTertiary }]}>Next</Text>
-              <Ionicons name="chevron-forward" size={24} color={colors.textTertiary} />
+              <AppIcon name="chevron-forward" size={24} color={colors.textTertiary} />
             </TouchableOpacity>
           )
         ) : (
@@ -1196,7 +1197,7 @@ export default function TestTakingScreen() {
             onPress={nextQuestion}
           >
             <Text style={[s(colors).navButtonText, { color: colors.primary }]}>Next</Text>
-            <Ionicons name="chevron-forward" size={24} color={colors.primary} />
+            <AppIcon name="chevron-forward" size={24} color={colors.primary} />
           </TouchableOpacity>
         )}
       </View>

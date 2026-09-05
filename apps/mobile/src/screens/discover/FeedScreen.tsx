@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   describeFeedItem,
   learningConnectionLabel,
@@ -9,6 +8,7 @@ import {
 } from '@lantern/shared/network';
 import { fetchFeed, fetchLearningConnections } from '../../services/api';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
   goBack: () => void;
@@ -136,7 +136,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <AppIcon name="arrow-back" size={24} color="#64748b" />
         </Pressable>
         <View className="flex-1">
           <Text className="text-lg font-bold text-lantern-text">From your network</Text>

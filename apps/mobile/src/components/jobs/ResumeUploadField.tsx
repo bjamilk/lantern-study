@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import { Ionicons } from "@expo/vector-icons";
 import {
   JOB_RESUME_ACCEPT_LABEL,
   JOB_RESUME_ALLOWED_MIME_TYPES,
@@ -10,6 +9,7 @@ import {
   type JobApplicantProfile,
 } from "@lantern/shared";
 import { uploadJobResume } from "../../services/jobsBoard";
+import { AppIcon } from '../ui/AppIcon';
 
 interface Props {
   profile: JobApplicantProfile | null;
@@ -56,7 +56,7 @@ export function ResumeUploadField({ profile, onUploaded }: Props) {
 
       {hasResume ? (
         <View className="mt-1.5 flex-row items-center gap-3 rounded-xl border border-lantern-border bg-lantern-background p-3">
-          <Ionicons name="document-text" size={28} color="#0f766e" />
+          <AppIcon name="document-text" size={28} color="#0f766e" />
           <View className="min-w-0 flex-1">
             <Text
               className="text-sm font-medium text-lantern-text"
@@ -94,7 +94,7 @@ export function ResumeUploadField({ profile, onUploaded }: Props) {
           {uploading ? (
             <ActivityIndicator color="#0f766e" />
           ) : (
-            <Ionicons name="document-text-outline" size={26} color="#94a3b8" />
+            <AppIcon name="document-text" size={26} color="#94a3b8" />
           )}
           <Text className="text-sm font-semibold text-lantern-primary">
             {uploading ? "Uploading…" : "Upload your resume"}
