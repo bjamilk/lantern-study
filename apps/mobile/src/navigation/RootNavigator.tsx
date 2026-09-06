@@ -9,7 +9,7 @@ import {
 } from '@lantern/shared/settings';
 import { isCommunityBoardGroupIn } from '@lantern/shared/network';
 
-import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, useFocusEffect, type NavigationState } from '@react-navigation/native';
+import { CommonActions, NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, useFocusEffect, type NavigationState } from '@react-navigation/native';
 import { navigationRef, navigate as navigateFromRoot } from './navigationRef';
 
 /**
@@ -43,6 +43,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useAppTheme, useTheme } from '../theme';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { planTabPress, planTabRootReset, TAB_STACK_ROOT_ROUTE } from './tabPressBehavior';
 
 import { BottomTabBar } from '../components/layout/BottomTabBar';
 import {
@@ -358,7 +360,7 @@ function HomeNavigator() {
 
   return (
 
-    <HomeStack.Navigator screenOptions={{ headerShown: false }}>
+    <HomeStack.Navigator screenOptions={{ headerShown: false }} initialRouteName={TAB_STACK_ROOT_ROUTE.HomeTab}>
 
       <HomeStack.Screen name="Dashboard" component={DashboardScreen} />
 
@@ -378,7 +380,7 @@ function StudyNavigator() {
 
   return (
 
-    <StudyStack.Navigator screenOptions={{ headerShown: false }} initialRouteName="StudyHub">
+    <StudyStack.Navigator screenOptions={{ headerShown: false }} initialRouteName={TAB_STACK_ROOT_ROUTE.StudyTab}>
 
       <StudyStack.Screen name="StudyHub" component={StudyHubScreen} />
 
@@ -423,7 +425,7 @@ function ChatNavigator() {
 
   return (
 
-    <ChatStack.Navigator screenOptions={{ headerShown: false }}>
+    <ChatStack.Navigator screenOptions={{ headerShown: false }} initialRouteName={TAB_STACK_ROOT_ROUTE.ChatTab}>
 
       <ChatStack.Screen name="GroupsList" component={GroupsScreen} />
 
@@ -460,7 +462,7 @@ function CampusNavigator() {
 
   return (
 
-    <CampusStack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Campus">
+    <CampusStack.Navigator screenOptions={{ headerShown: false }} initialRouteName={TAB_STACK_ROOT_ROUTE.CampusTab}>
 
       <CampusStack.Screen name="Campus" component={CampusScreen} />
 
@@ -566,7 +568,7 @@ function MeNavigator() {
 
   return (
 
-    <MeStack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Me">
+    <MeStack.Navigator screenOptions={{ headerShown: false }} initialRouteName={TAB_STACK_ROOT_ROUTE.MeTab}>
 
       <MeStack.Screen name="Me" component={MeScreen} />
 
@@ -775,11 +777,78 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   );
 
+  /**
+   * A bottom-bar press, with the half a custom `tabBar` does not get free.
+   *
+   * `navigate(routeName)` alone is a no-op on the tab you are already on, so
+   * pressing Study while deep in Study -> Tests did nothing at all. The
+   * `tabPress` EVENT is what the nested stacks are waiting for: native-stack
+   * subscribes to it and pops itself to its root when it is focused and not
+   * already there, and `useScrollToTop` uses it to send a list back to the
+   * top. Emit it for every press, on the PRESSED tab's key -- an inactive
+   * tab's listener checks focus itself, so its remembered stack is safe --
+   * and navigate only when the tab is not already focused.
+   *
+   * The event alone is not the whole re-tap, though. native-stack pops to
+   * `routes[0]`, which is only the tab's ROOT when the stack was entered
+   * through it. A nested navigate — `navigate('StudyTab', { screen:
+   * 'TestTaking' })` from Home, a group chat, the offline screen — builds the
+   * child stack as `[TestTaking]` with the initial route DROPPED (see
+   * planTabRootReset), so popToTop has nothing to pop and Study can never get
+   * back to StudyHub. On a re-tap of a stack whose bottom is not its root, we
+   * therefore RESET it. Stacks that are properly rooted (Campus, Chat, and
+   * Study when entered from Study) plan no reset and keep the popToTop
+   * behaviour unchanged.
+   *
+   * The decisions are in navigation/tabPressBehavior.ts, where they are tested.
+   */
   const navigateTab = (tab: BottomTabKey) => {
 
     const routeName = TAB_ROUTE_BY_KEY[tab];
 
-    if (routeName) navigation.navigate(routeName);
+    if (!routeName) return;
+
+    const plan = planTabPress({ routes: state.routes, index: state.index, routeName });
+
+    if (plan.emitTarget) {
+
+      const event = navigation.emit({
+
+        type: 'tabPress',
+
+        target: plan.emitTarget,
+
+        canPreventDefault: true,
+
+      });
+
+      if (event.defaultPrevented) return;
+
+    }
+
+    if (plan.alreadyFocused) {
+
+      // Dispatched synchronously; native-stack runs its popToTop a frame
+      // later, by which time this stack is already a single root route and
+      // the pop is a no-op. Order between them does not matter.
+      const repair = planTabRootReset({
+        childState: state.routes[state.index]?.state,
+        initialRouteName: TAB_STACK_ROOT_ROUTE[routeName as keyof typeof TAB_STACK_ROOT_ROUTE],
+      });
+
+      if (repair.resetTo && repair.target) {
+        navigation.dispatch({
+          ...CommonActions.reset({ index: 0, routes: [{ name: repair.resetTo }] }),
+          target: repair.target,
+        });
+      }
+
+    }
+
+    // Only when it is NOT already the focused tab: TabRouter matches by name
+    // and just moves the index, so the tab reopens on the screen it was left
+    // on. The re-tap case is handled entirely by the event above.
+    if (plan.navigateTo) navigation.navigate(plan.navigateTo);
 
   };
 
@@ -910,8 +979,16 @@ function MainTabsShell() {
     };
   }, [user?.id, user?.user_metadata?.avatar_url]);
 
+  // The avatar draws initials from this, so a placeholder becomes a fake
+  // identity ('Your profile' → "YP" on a cold start, before the profile has
+  // resolved). Fall back to the account's own email local part — the same
+  // stand-in authStore uses when the profile sync fails — and otherwise to
+  // nothing, which the avatar renders as "?".
   const displayName =
-    profileName || (user?.user_metadata?.name as string | undefined) || 'Your profile';
+    profileName ||
+    (user?.user_metadata?.name as string | undefined) ||
+    user?.email?.split('@')[0] ||
+    '';
 
   // Published once, read by the top bar's avatar AND by the Me tab, so the two
   // show the same face without fetching the profile twice.

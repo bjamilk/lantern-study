@@ -4,6 +4,10 @@ import {
   CAMPUS_SEGMENTS,
   EPHEMERAL_APP_MODES,
   ME_PATH,
+  SHOP_COURSES_PATH,
+  SHOP_PATH,
+  SHOP_SELL_PATH,
+  STUDY_PRODUCTS_PATH,
   buildAppPath,
   campusSegmentMode,
   campusSegmentPath,
@@ -11,6 +15,7 @@ import {
   isPublicMarketplacePath,
   isRoutableAppMode,
   parseAppRoute,
+  parseShopRoute,
 } from '../../../utils/appRoutes';
 import { resolveActiveDestination } from '../../../components/layout/destinations';
 import { visibleCampusSegments } from '../../../components/campus/CampusHubScreen';
@@ -200,5 +205,131 @@ describe('the chat screen renders its conversation column', () => {
       resolveShellSideColumn({ isChatsSectionExpanded: false, appMode: AppMode.DASHBOARD, activeCommunity: null }),
     ).toBeNull();
     expect(isSideColumnPinned(AppMode.DASHBOARD, 'chats')).toBe(false);
+  });
+});
+
+describe('no legacy path lands on the dashboard', () => {
+  // Every one of these used to fall into the catch-all, which reads to a
+  // student as "that section does not exist" — `/jobs` is the obvious spelling
+  // of a section literally called Jobs.
+  const redirects: Array<[string, string]> = [
+    ['/jobs', '/campus/jobs'],
+    ['/discover/jobs', '/campus/jobs'],
+    ['/shop', SHOP_PATH],
+    ['/goods', SHOP_PATH],
+    ['/marketplace/goods', SHOP_PATH],
+    ['/marketplace/shop', SHOP_PATH],
+    ['/discover/shop', SHOP_PATH],
+    ['/discover/goods', SHOP_PATH],
+    ['/communities', '/campus'],
+    ['/discover/communities', '/campus'],
+    ['/discover/c', '/campus'],
+    ['/campus/communities', '/campus'],
+    ['/marketplace/sell', SHOP_SELL_PATH],
+    ['/marketplace/new', SHOP_SELL_PATH],
+    ['/marketplace/courses', SHOP_COURSES_PATH],
+    ['/marketplace/study-products', STUDY_PRODUCTS_PATH],
+    ['/campus/shop/study-products', STUDY_PRODUCTS_PATH],
+    ['/study-products', STUDY_PRODUCTS_PATH],
+    ['/downloads', '/offline'],
+    ['/campus-pocket', '/budget'],
+    ['/pocket', '/budget'],
+  ];
+
+  it.each(redirects)('%s redirects to %s', (from, to) => {
+    const parsed = parseAppRoute(from);
+    expect(parsed.redirect).toBe(to);
+    // Never the dashboard bounce, and never a redirect that disagrees with the
+    // screen behind it: a client that does not reload (or a guest, who never
+    // follows the redirect at all) must still land on the right mode.
+    expect(parsed.redirect).not.toBe('/dashboard');
+    expect(parsed.mode).toBe(parseAppRoute(to).mode);
+    expect(parsed.params).toEqual(parseAppRoute(to).params);
+  });
+
+  it('redirects with a trailing slash too', () => {
+    expect(parseAppRoute('/jobs/').redirect).toBe('/campus/jobs');
+    expect(parseAppRoute('/marketplace/goods/').redirect).toBe(SHOP_PATH);
+  });
+
+  it('sends a mistyped sub-path to its segment, not to a campus page', () => {
+    // `/campus/shop/anything` used to parse as the public page of an
+    // institution whose slug is "shop" — a wrong screen, not a missing one.
+    expect(parseAppRoute('/campus/shop/nonsense')).toEqual({
+      mode: AppMode.MARKETPLACE,
+      params: { campusSegment: 'shop' },
+      redirect: SHOP_PATH,
+    });
+    expect(parseAppRoute('/campus/jobs/nonsense')).toEqual({
+      mode: AppMode.MARKETPLACE_JOBS,
+      params: { campusSegment: 'jobs' },
+      redirect: '/campus/jobs',
+    });
+    // A real institution slug is untouched.
+    expect(parseAppRoute('/campus/unilag/medicine').redirect).toBeUndefined();
+  });
+});
+
+describe('the Shop sub-states are places with urls', () => {
+  it('gives the By-course tab and one course their own paths', () => {
+    expect(parseAppRoute(SHOP_COURSES_PATH)).toEqual({
+      mode: AppMode.MARKETPLACE,
+      params: { campusSegment: 'shop', shopView: 'courses' },
+    });
+    expect(parseAppRoute('/campus/shop/courses/c1')).toEqual({
+      mode: AppMode.MARKETPLACE,
+      params: { campusSegment: 'shop', shopView: 'courses', courseId: 'c1' },
+    });
+    expect(buildAppPath(AppMode.MARKETPLACE, { shopView: 'courses' })).toBe(SHOP_COURSES_PATH);
+    expect(buildAppPath(AppMode.MARKETPLACE, { courseId: 'c 1' })).toBe(
+      '/campus/shop/courses/c%201'
+    );
+    // Tapping the Campus > Shop tab still lands on plain browse.
+    expect(buildAppPath(AppMode.MARKETPLACE)).toBe(SHOP_PATH);
+  });
+
+  it('gives the Sell sheet a url under the Shop it opens over', () => {
+    expect(parseAppRoute(SHOP_SELL_PATH)).toEqual({
+      mode: AppMode.CREATE_MARKETPLACE_LISTING,
+      params: { campusSegment: 'shop' },
+    });
+    expect(buildAppPath(AppMode.CREATE_MARKETPLACE_LISTING)).toBe(SHOP_SELL_PATH);
+    expect(isRoutableAppMode(AppMode.CREATE_MARKETPLACE_LISTING)).toBe(true);
+  });
+
+  it('gives Study products a url under Study, where the shell files it', () => {
+    expect(parseAppRoute(STUDY_PRODUCTS_PATH)).toEqual({
+      mode: AppMode.STUDY_PRODUCT_DRAFTS,
+      params: {},
+    });
+    expect(buildAppPath(AppMode.STUDY_PRODUCT_DRAFTS)).toBe(STUDY_PRODUCTS_PATH);
+    expect(resolveActiveDestination(AppMode.STUDY_PRODUCT_DRAFTS, STUDY_PRODUCTS_PATH)).toBe(
+      'study'
+    );
+    // …and does not collide with the Study hub or a running session.
+    expect(parseAppRoute('/study').mode).toBe(AppMode.STUDY_HUB);
+    expect(parseAppRoute('/study/session').mode).toBe(AppMode.STUDY_ACTIVE);
+  });
+
+  it('reads the open sub-state straight off the path', () => {
+    expect(parseShopRoute(SHOP_PATH)).toEqual({ view: 'browse', courseId: null });
+    expect(parseShopRoute(SHOP_COURSES_PATH)).toEqual({ view: 'courses', courseId: null });
+    expect(parseShopRoute('/campus/shop/courses/c1')).toEqual({
+      view: 'courses',
+      courseId: 'c1',
+    });
+    expect(parseShopRoute('/campus/shop/courses/c%201').courseId).toBe('c 1');
+    expect(parseShopRoute(SHOP_SELL_PATH)).toEqual({ view: 'sell', courseId: null });
+    // Anywhere else in the app is not a Shop sub-state.
+    expect(parseShopRoute('/dashboard')).toEqual({ view: 'browse', courseId: null });
+  });
+
+  it('keeps every Shop sub-state inside the Campus tab', () => {
+    for (const path of [SHOP_PATH, SHOP_COURSES_PATH, '/campus/shop/courses/c1']) {
+      expect(resolveActiveDestination(parseAppRoute(path).mode!, path)).toBe('campus');
+    }
+    expect(resolveActiveDestination(AppMode.CREATE_MARKETPLACE_LISTING, SHOP_SELL_PATH)).toBe(
+      'campus'
+    );
   });
 });

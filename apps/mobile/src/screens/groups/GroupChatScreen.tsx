@@ -20,7 +20,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ForwardMessageSheet } from '../../components/chat/ForwardMessageSheet';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import { MessageActionBar } from '../../components/chat/MessageActionBar';
-import { ActionSheet, type ActionSheetItem } from '../../components/ui';
+import {
+  ActionSheet,
+  type ActionSheetItem,
+  ErrorState,
+  InlineErrorBanner,
+  LoadingState,
+} from '../../components/ui';
 import { useToastStore } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
@@ -55,6 +61,13 @@ import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode';
 import { useTheme, withAlpha } from '../../theme';
 import { groupWallpaperScopeKey } from '../../utils/chatWallpaper';
+import { resolveSessionTimeLimitMinutes } from '../../utils/resolveAttemptTimeLimitMinutes';
+import {
+  resolveChatLoadOutcome,
+  resolveChatMessagesState,
+} from '../../components/chat/chatLoadState';
+import { useNetworkStatus } from '../../hooks/useSync';
+import { planReconnectRetry } from './reconnectRetry';
 import { applyReactionLocally } from '@lantern/shared/chat';
 import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
@@ -77,7 +90,11 @@ import {
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
-import { COMMUNITY_COPY, isCommunityBoardGroupIn } from '@lantern/shared/network';
+import {
+  COMMUNITY_COPY,
+  isCommunityBoardGroupIn,
+  requestFailureSentence,
+} from '@lantern/shared/network';
 import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { findMyCommunity } from '../../utils/communityOverlay';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -414,6 +431,7 @@ export function GroupChatView({
   const user = useAuthStore(s => s.user);
   const { colors } = useTheme();
   const { lowDataMode } = useLowDataMode();
+  const { isConnected } = useNetworkStatus();
   const startQuestionSet = useTestStore(s => s.startQuestionSet);
   const userQuestionStats = useTestStore(s => s.userQuestionStats);
   const testPresets = useTestStore(s => s.testPresets);
@@ -429,7 +447,6 @@ export function GroupChatView({
   const currentGroup = useGroupStore(s => s.currentGroup);
   const isLoadingMore = useGroupStore(s => s.isLoadingMore);
   const isLoadingMessages = useGroupStore(s => s.isLoadingMessages);
-  const groupError = useGroupStore(s => s.error);
   const userVotes = useGroupStore(s => s.userVotes);
   const groups = useGroupStore(s => s.groups);
   const messagePagination = useGroupStore(s => s.messagePagination);
@@ -462,6 +479,20 @@ export function GroupChatView({
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  /**
+   * THIS chat's own message-load outcome.
+   *
+   * Deliberately not `groupStore.error` / `isLoadingMessages`: both are single
+   * store-wide fields that unrelated work clears out from under this screen —
+   * `fetchGroups` (which the chat list underneath re-runs on focus and on its
+   * reconnect retry) resets `error` to null AND replaces `messagesCache`
+   * wholesale from disk. When those two landed together this screen was left
+   * with no error and no messages, which the list rendered as "No messages
+   * yet. Say hello!" for a conversation that had been on screen minutes
+   * earlier. See components/chat/chatLoadState.ts.
+   */
+  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [messagesLoadError, setMessagesLoadError] = useState<string | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [messageActionTarget, setMessageActionTarget] = useState<Message | null>(null);
@@ -553,7 +584,14 @@ export function GroupChatView({
               ? config.selectedQuestionTypes
               : undefined,
             questionCount: config.numberOfQuestions,
-            timeLimit: config.timerDuration ? Math.round(config.timerDuration / 60) : 0,
+            // Same one rule as a live session, so a bundle downloaded from
+            // this sheet runs under the timer the reader picked — None
+            // included.
+            timeLimit: resolveSessionTimeLimitMinutes({
+              timerDurationSeconds: config.timerDuration,
+              sessionMode: 'test',
+              fallbackMinutes: 0,
+            }),
             shuffleQuestions: true,
             includeExplanations: true,
             lockAnswered: config.lockAnswered,
@@ -658,6 +696,22 @@ export function GroupChatView({
     return starredOnly ? visible.filter((msg) => starredIds.has(msg.id)) : visible;
   }, [groupMessages, questionVisibilityMode, starredOnly, starredIds]);
 
+  /**
+   * What the thread renders right now, decided by the SAME shared rule the
+   * chat list uses: failed > stale > loading > ready > empty. A failed load
+   * never renders as "No messages yet" — that is a claim about the
+   * conversation, and a request that failed told us nothing about it.
+   *
+   * The count is the CACHED one, not `displayMessages.length`: the starred
+   * filter showing nothing is not a failed load, and a failed refresh with
+   * cached messages sitting behind a filter is `stale`, not `failed`.
+   */
+  const messagesState = resolveChatMessagesState({
+    loading: messagesLoading,
+    error: messagesLoadError,
+    cachedMessageCount: groupMessages?.length ?? 0,
+  });
+
   // Read by handlers that must not take `displayMessages` as a dependency.
   const displayMessagesRef = useRef(displayMessages);
   displayMessagesRef.current = displayMessages;
@@ -742,7 +796,12 @@ export function GroupChatView({
   ]);
 
   const loadChat = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      // Nothing to load without a signed-in reader — but never sit on a
+      // spinner forever waiting for one.
+      setMessagesLoading(false);
+      return;
+    }
     // Reset per-open scroll state
     setUnreadAnchorAt(undefined);
     setFirstUnreadId(null);
@@ -754,14 +813,58 @@ export function GroupChatView({
     isNearBottomRef.current = true;
     suppressLoadOlderRef.current = true;
 
+    // Cleared so a Retry shows a spinner instead of freezing on the failure
+    // it is retrying. Safe here in a way it never was in the store: this state
+    // has exactly one other writer, at the end of this same function.
+    setMessagesLoadError(null);
+    setMessagesLoading(true);
+
     selectGroup(groupId);
+    // `fetchMessages` swallows its own failure, so the only honest success
+    // signal is the pagination slot it writes on a successful page 1.
+    const paginationBefore = useGroupStore.getState().messagePagination[groupId];
     const [, previousLastReadAt] = await Promise.all([
       fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit }),
       markGroupAsRead(groupId, user.id),
       fetchUserVotesForGroup(groupId, user.id),
     ]);
+    const after = useGroupStore.getState();
+    const outcome = resolveChatLoadOutcome({
+      paginationBefore,
+      paginationAfter: after.messagePagination[groupId],
+      storeError: after.error,
+    });
+    setMessagesLoadError(outcome.error);
+    setMessagesLoading(false);
+    // Only a successful load is worth persisting, and it has to be persisted
+    // HERE: `fetchMessages` never writes the cache to disk, so a thread read
+    // online and reopened offline found nothing to fall back on — the cache
+    // it was supposed to degrade to had only ever existed in memory.
+    if (!outcome.failed) void after.saveToStorage();
     setUnreadAnchorAt(previousLastReadAt ?? null);
   }, [user?.id, groupId, selectGroup, fetchMessages, markGroupAsRead, fetchUserVotesForGroup, messageLimit]);
+
+  /**
+   * Come back from a dead spot and the thread fixes itself — the same one-shot
+   * rule the chat list uses (screens/groups/reconnectRetry.ts), latched so a
+   * retry that fails again cannot re-arm itself into a loop.
+   */
+  const reconnectRetried = useRef(false);
+  useEffect(() => {
+    const plan = planReconnectRetry({
+      isConnected,
+      alreadyRetried: reconnectRetried.current,
+      listFailed: !!messagesLoadError,
+      searchFailed: false,
+    });
+    if (plan.resetLatch) reconnectRetried.current = false;
+    if (!plan.schedule) return;
+    const timer = setTimeout(() => {
+      reconnectRetried.current = true;
+      void loadChat();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [isConnected, messagesLoadError, loadChat]);
 
   useEffect(() => {
     void loadChat();
@@ -896,12 +999,17 @@ export function GroupChatView({
       }
 
       const sessionName = `${displayName} ${mode === 'study' ? 'Study' : 'Test'}`;
-      const timeLimitMinutes =
-        config.timerDuration > 0
-          ? Math.ceil(config.timerDuration / 60)
-          : mode === 'test'
-            ? Math.max(config.numberOfQuestions * 2, 5)
-            : 0;
+      // The Timer "None" chip is a choice, not a blank. This used to read
+      // `max(numberOfQuestions * 2, 5)` minutes whenever the chip said None,
+      // so a 5-question group test the reader had asked to be untimed opened
+      // under a 10:00 countdown that auto-submitted. There is nothing to fall
+      // back to here — a session assembled out of chat messages has no
+      // configured limit of its own — so the fallback is 0.
+      const timeLimitMinutes = resolveSessionTimeLimitMinutes({
+        timerDurationSeconds: config.timerDuration,
+        sessionMode: mode === 'study' ? 'study' : 'test',
+        fallbackMinutes: 0,
+      });
       await startQuestionSet(sessionName, questions, mode, {
         timeLimitMinutes,
         groupId,
@@ -1947,20 +2055,15 @@ export function GroupChatView({
       ) : null}
 
       <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
-        {isLoadingMessages && displayMessages.length === 0 ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : groupError && displayMessages.length === 0 ? (
-          <View className="flex-1 items-center justify-center px-6 gap-3">
-            <Text className="text-sm text-center text-lantern-text-secondary">{groupError}</Text>
-            <Pressable
-              onPress={() => void loadChat()}
-              className="px-4 py-2 rounded-xl bg-lantern-primary"
-            >
-              <Text className="text-sm font-semibold text-white">Retry</Text>
-            </Pressable>
-          </View>
+        {messagesState === 'loading' ? (
+          <LoadingState label="Loading messages" />
+        ) : messagesState === 'failed' ? (
+          /* Failed with nothing cached to fall back on: say so in the shared
+             failure vocabulary and offer the one action that can help. */
+          <ErrorState
+            message={requestFailureSentence(messagesLoadError)}
+            onRetry={() => void loadChat()}
+          />
         ) : (
           <View className="flex-1 relative" style={{ backgroundColor: colors.chatBackground }}>
           {/* Absolutely-positioned SIBLING of the list — never inside it. */}
@@ -2008,11 +2111,23 @@ export function GroupChatView({
               }, 100);
             }}
             ListHeaderComponent={
-              isLoadingMore ? (
-                <View className="py-2 items-center">
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : null
+              <>
+                {/* Failed refresh WITH cached messages: keep them on screen,
+                    flag that they are the saved copy, offer Retry — exactly
+                    what the chat list one level up does. */}
+                {messagesState === 'stale' ? (
+                  <InlineErrorBanner
+                    title="Couldn't refresh this chat"
+                    detail="Showing your latest saved messages."
+                    onRetry={() => void loadChat()}
+                  />
+                ) : null}
+                {isLoadingMore ? (
+                  <View className="py-2 items-center">
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : null}
+              </>
             }
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16 px-8">
@@ -2020,6 +2135,9 @@ export function GroupChatView({
                   className={wallpaper.active ? 'px-4 py-3 rounded-2xl' : undefined}
                   style={wallpaper.pillStyle}
                 >
+                  {/* Only ever reached on a SUCCESSFUL load that returned
+                      nothing: `failed` and `stale` are handled above, so this
+                      can no longer speak for a load that never landed. */}
                   <Text className="text-sm text-center text-lantern-text-secondary">
                     {starredOnly
                       ? 'No starred messages in this chat yet. Long-press a message and tap the star to keep it here.'

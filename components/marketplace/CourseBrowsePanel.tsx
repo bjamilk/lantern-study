@@ -22,6 +22,16 @@ import {
 interface CourseBrowsePanelProps {
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * Which course is open, from `/campus/shop/courses/:courseId`. The panel
+   * holds no drill-down state of its own: the url is the authority, so a
+   * refresh lands back on the same course and Back returns to the index.
+   */
+  courseId?: string | null;
+  /** Navigate to a course page. The caller changes the url; this re-renders. */
+  onOpenCourse?: (courseId: string) => void;
+  /** Back to the course index (`/campus/shop/courses`). */
+  onOpenCourseIndex?: () => void;
   /** Opens the listing detail screen; the panel closes first. */
   onOpenListing: (listingId: string) => void;
   /** Scope the index to one institution (defaults to every campus). */
@@ -53,6 +63,9 @@ function kindLabel(kind: string | null): string {
 export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
   isOpen,
   onClose,
+  courseId = null,
+  onOpenCourse,
+  onOpenCourseIndex,
   onOpenListing,
   institutionId = null,
 }) => {
@@ -63,6 +76,8 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
+  // Only a label cache, filled when the reader arrives from the index — a
+  // deep link has no summary, so the header falls back to the loaded page.
   const [openCourse, setOpenCourse] = useState<MarketplaceCourseSummary | null>(null);
   const [page, setPage] = useState<CourseBrowsePage | null>(null);
   const [pageLoading, setPageLoading] = useState(false);
@@ -85,30 +100,41 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
     }
   }, [institutionId]);
 
+  // The index is only needed on the index url; a deep link straight to a
+  // course must not pay for it.
   useEffect(() => {
-    if (!isOpen) return;
-    setOpenCourse(null);
-    setPage(null);
+    if (!isOpen || courseId) return;
     void loadCourses();
-  }, [isOpen, loadCourses]);
+  }, [isOpen, courseId, loadCourses]);
 
   useEffect(() => {
     setShowImages(!lowDataMode);
   }, [lowDataMode]);
 
-  const loadCoursePage = useCallback(async (course: MarketplaceCourseSummary) => {
-    setOpenCourse(course);
+  const loadCoursePage = useCallback(async (id: string) => {
     setPage(null);
     setPageError(null);
     setPageLoading(true);
     try {
-      setPage(await fetchMarketplaceCourseListings(course.courseId));
+      setPage(await fetchMarketplaceCourseListings(id));
     } catch (err) {
       setPageError(err instanceof Error ? err.message : COURSE_ANCHOR_COPY.browseError);
     } finally {
       setPageLoading(false);
     }
   }, []);
+
+  // The open course follows the url — including a Back step out of a course,
+  // which clears `courseId` and returns the reader to the index.
+  useEffect(() => {
+    if (!isOpen || !courseId) {
+      setPage(null);
+      setPageError(null);
+      setOpenCourse(null);
+      return;
+    }
+    void loadCoursePage(courseId);
+  }, [isOpen, courseId, loadCoursePage]);
 
   const visibleCourses = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -163,7 +189,10 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
             <li key={course.courseId}>
               <button
                 type="button"
-                onClick={() => void loadCoursePage(course)}
+                onClick={() => {
+                  setOpenCourse(course);
+                  onOpenCourse?.(course.courseId);
+                }}
                 className="w-full text-left px-3 py-3 min-h-[44px] hover:bg-lantern-background focus:outline-none focus:ring-2 focus:ring-inset focus:ring-lantern-primary"
               >
                 <span className="block text-sm font-semibold text-lantern-text">
@@ -193,11 +222,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
     <>
       <button
         type="button"
-        onClick={() => {
-          setOpenCourse(null);
-          setPage(null);
-          setPageError(null);
-        }}
+        onClick={() => onOpenCourseIndex?.()}
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-lantern-primary min-h-[44px]"
       >
         <ArrowLeftIcon className="w-4 h-4" aria-hidden />
@@ -206,7 +231,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
 
       <div>
         <h4 className="text-base font-bold text-lantern-text">
-          {openCourse ? courseAnchorLabel(openCourse) : ''}
+          {page ? courseAnchorLabel(page.course) : openCourse ? courseAnchorLabel(openCourse) : ''}
         </h4>
         <p className="text-xs text-lantern-text-secondary">
           {page?.course.institutionName || openCourse?.institutionName || 'Not tied to a campus'}
@@ -220,7 +245,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
           <p className="text-sm text-lantern-error">{pageError}</p>
           <button
             type="button"
-            onClick={() => openCourse && void loadCoursePage(openCourse)}
+            onClick={() => courseId && void loadCoursePage(courseId)}
             className="px-3 py-2 rounded-lg border border-lantern-border text-sm font-semibold text-lantern-text hover:bg-lantern-background"
           >
             {COURSE_ANCHOR_COPY.retry}
@@ -314,7 +339,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
           </div>
         </div>
         <div className="p-5 space-y-3 max-h-[70vh] overflow-y-auto">
-          {openCourse ? renderCoursePage() : renderIndex()}
+          {courseId ? renderCoursePage() : renderIndex()}
         </div>
       </div>
     </Modal>

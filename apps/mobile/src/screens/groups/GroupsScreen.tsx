@@ -14,7 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
 import { chatMessagePreview, resolveAvatarSrc } from '@lantern/shared/utils';
-import { isCommunityBoardGroupIn } from '@lantern/shared/network';
+import { isCommunityBoardGroupIn, resolveListState } from '@lantern/shared/network';
 import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type Group } from '../../stores/groupStore';
@@ -46,6 +46,8 @@ import { Screen } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTheme } from '../../theme';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
+import { useNetworkStatus } from '../../hooks/useSync';
+import { planReconnectRetry } from './reconnectRetry';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
@@ -392,6 +394,58 @@ export function GroupsScreen({ navigation }: Props) {
     loadChats();
   }, [loadChats]);
 
+  const { isConnected } = useNetworkStatus();
+
+  /**
+   * True when the server-backed halves of the search bar (people, full message
+   * history) came back empty because the request failed rather than because
+   * nothing matched. They swallow their own errors so the on-device previews
+   * can still answer — but a swallowed error still needs re-running once the
+   * radio is back.
+   */
+  const [userSearchFailed, setUserSearchFailed] = useState(false);
+  const [messageSearchFailed, setMessageSearchFailed] = useState(false);
+  const searchFailed = userSearchFailed || messageSearchFailed;
+
+  /** Bumped once per reconnection to re-run the two server searches. */
+  const [reconnectNonce, setReconnectNonce] = useState(0);
+
+  /**
+   * Come back from a dead spot and the pane fixes itself.
+   *
+   * Before this, a chat list that failed while offline kept its failure on
+   * screen after the connection returned, until the student found Retry — the
+   * app knew it was back online and said nothing. This is the same auto-retry
+   * the SyncStatusIndicator already runs for the auth-offline banner: one
+   * shot, a beat after NetInfo says the link is up.
+   *
+   * ONE shot per reconnection, latched in `reconnectRetried`. The latch is
+   * not optional: `groupStore.fetchGroups` clears `listError` when a fetch
+   * starts and sets it again when the fetch fails, so to this dependency
+   * array a failed retry looks like a brand-new failure ("msg" -> null ->
+   * "msg") and would schedule another timer — an unbounded loop whenever
+   * Wi-Fi is up but Lantern is not. The latch clears only when NetInfo says
+   * the link dropped, so the next real reconnection gets its shot. The rule
+   * is in reconnectRetry.ts, where the loop scenario is a test.
+   */
+  const reconnectRetried = useRef(false);
+  useEffect(() => {
+    const plan = planReconnectRetry({
+      isConnected,
+      alreadyRetried: reconnectRetried.current,
+      listFailed: !!listError,
+      searchFailed,
+    });
+    if (plan.resetLatch) reconnectRetried.current = false;
+    if (!plan.schedule) return;
+    const timer = setTimeout(() => {
+      reconnectRetried.current = true;
+      if (listError) void loadChats();
+      if (searchFailed) setReconnectNonce((n) => n + 1);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [isConnected, listError, searchFailed, loadChats]);
+
   const listItems = useMemo((): ListItem[] => {
     const activeDms = dmThreads.filter((t) => !t.isArchived);
     const inboundRequests = activeDms.filter(
@@ -607,6 +661,7 @@ export function GroupsScreen({ navigation }: Props) {
     const q = chatQuery.trim();
     if (q.length < 2) {
       setUserResults([]);
+      setUserSearchFailed(false);
       return;
     }
     const requestId = ++userSearchRef.current;
@@ -614,6 +669,7 @@ export function GroupsScreen({ navigation }: Props) {
       void searchUsers(q, 10)
         .then((rows) => {
           if (requestId !== userSearchRef.current) return;
+          setUserSearchFailed(false);
           setUserResults(
             (rows || [])
               .filter((u: { id: string }) => u.id !== user?.id)
@@ -626,11 +682,14 @@ export function GroupsScreen({ navigation }: Props) {
           );
         })
         .catch(() => {
-          if (requestId === userSearchRef.current) setUserResults([]);
+          if (requestId !== userSearchRef.current) return;
+          setUserResults([]);
+          // Empty because we could not ask, not because nobody matched.
+          setUserSearchFailed(true);
         });
     }, 300);
     return () => clearTimeout(timer);
-  }, [chatQuery, user?.id]);
+  }, [chatQuery, user?.id, reconnectNonce]);
 
   // Full-history message search via the server. Older deployments without the
   // endpoint just fail quietly and the latest-message fallback below carries on.
@@ -638,6 +697,7 @@ export function GroupsScreen({ navigation }: Props) {
     const q = chatQuery.trim();
     if (q.length < 2) {
       setMessageResults([]);
+      setMessageSearchFailed(false);
       return;
     }
     const requestId = ++messageSearchRef.current;
@@ -645,14 +705,30 @@ export function GroupsScreen({ navigation }: Props) {
       void searchMessages(q, 15)
         .then((data) => {
           if (requestId !== messageSearchRef.current) return;
+          setMessageSearchFailed(false);
           setMessageResults(data?.results || []);
         })
         .catch(() => {
-          if (requestId === messageSearchRef.current) setMessageResults([]);
+          if (requestId !== messageSearchRef.current) return;
+          setMessageResults([]);
+          setMessageSearchFailed(true);
         });
     }, 300);
     return () => clearTimeout(timer);
-  }, [chatQuery]);
+  }, [chatQuery, reconnectNonce]);
+
+  /**
+   * What the chat list should render right now, decided by the shared rule so
+   * web and mobile cannot drift: a failure outranks both "empty" and
+   * "no match", and a search that found nothing says so in the searcher's own
+   * words rather than offering to create a group.
+   */
+  const chatListState = resolveListState({
+    loading: isLoading,
+    error: listError,
+    itemCount: listItems.length,
+    query: chatQuery,
+  });
 
   const persistPinned = (next: Set<string>) => {
     setPinnedKeys(next);
@@ -1049,12 +1125,14 @@ export function GroupsScreen({ navigation }: Props) {
       </View>
       )}
 
-      {/* error + no data -> ErrorState; error + stale data -> banner over the
-          list; no error + no data -> EmptyState. See components/ui/AsyncStates. */}
-      {isLoading && listItems.length === 0 ? (
+      {/* One decision, made by the shared rule (packages/shared/network):
+          failed > stale > loading > ready > noMatch > empty. A load that failed
+          never renders as "no conversations yet" or as "no match" — both are
+          claims about the data, and a failed request told us nothing about it. */}
+      {chatListState === 'loading' ? (
         <LoadingState label="Loading your chats" />
-      ) : listError && listItems.length === 0 ? (
-        <ErrorState message={listError} onRetry={() => void loadChats()} />
+      ) : chatListState === 'failed' ? (
+        <ErrorState message={listError ?? 'We couldn’t load your chats.'} onRetry={() => void loadChats()} />
       ) : (
         <FlatList
           data={listItems}
@@ -1095,14 +1173,27 @@ export function GroupsScreen({ navigation }: Props) {
             ) : null
           }
           ListEmptyComponent={
-            <EmptyState
-              icon="people"
-              title="No conversations yet"
-              description="Join or create a group to start collaborating."
-              action={
-                <Button onPress={() => navigation.navigate('CreateGroup')}>Create Group</Button>
-              }
-            />
+            chatListState === 'noMatch' ? (
+              <EmptyState
+                icon="search"
+                title={`No chats match “${chatQuery.trim()}”`}
+                description="Try a different name or word, or clear the search to see all your chats."
+                action={
+                  <Button variant="secondary" onPress={() => setChatQuery('')}>
+                    Clear search
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon="people"
+                title="No conversations yet"
+                description="Join or create a group to start collaborating."
+                action={
+                  <Button onPress={() => navigation.navigate('CreateGroup')}>Create Group</Button>
+                }
+              />
+            )
           }
           renderItem={({ item }) => {
             if (item.kind === 'section') {

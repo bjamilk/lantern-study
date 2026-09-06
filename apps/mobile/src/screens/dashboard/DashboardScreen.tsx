@@ -34,7 +34,12 @@ import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useGroupStore } from '../../stores/groupStore';
 import { useBudgetStore } from '../../stores/budgetStore';
 
-import { useStatsStore, type TimePeriod, type RecentTest } from '../../stores/statsStore';
+import {
+  useStatsStore,
+  type DashboardStats,
+  type TimePeriod,
+  type RecentTest,
+} from '../../stores/statsStore';
 
 import { useStudyGoalsStore } from '../../stores/studyGoalsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -73,10 +78,22 @@ import { isQuizzableNote } from '@lantern/shared/utils/noteStudyContent';
 import { useToastStore } from '../../stores/toastStore';
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
+import {
+  classifyRequestFailure,
+  lastSyncedLabel,
+  STALE_PROGRESS_COPY,
+  UNAVAILABLE_PROGRESS_COPY,
+} from '@lantern/shared/network';
+import {
+  resolveProgressDisplay,
+  statsHaveSignal,
+  type LastGoodStats,
+} from './dashboardProgressState';
 import { featureAccents } from '@lantern/shared/design';
 import { buildActivityHeatmapGrid, getActivityHeatHexColorForCount, getActivityHeatHexColor, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
 
 import { useTheme } from '../../theme';
+import { RequestError } from '../../components/RequestError';
 import { AppIcon, isAppIconName } from '../../components/ui/AppIcon';
 
 
@@ -104,6 +121,17 @@ const PERIOD_OPTIONS: { value: TimePeriod; label: string }[] = [
 ];
 
 const RECENT_TESTS_PAGE_SIZE = 5;
+
+/**
+ * "We could not reach Lantern", as opposed to "Lantern said no".
+ *
+ * Only these three kinds may demote the dashboard to its last-synced numbers.
+ * A 403 or a 404 is an answer, and an answer is allowed to be believed.
+ */
+function isUnreachable(error: unknown): boolean {
+  const kind = classifyRequestFailure(error);
+  return kind === 'offline' || kind === 'timeout' || kind === 'server';
+}
 
 
 
@@ -181,6 +209,14 @@ export function DashboardScreen({ navigation }: Props) {
   const { notes, loadNotes } = useNotesStore();
 
   const { stats, leanTestResults, selectedPeriod, isLoading: statsLoading, error: statsError, fetchStats, setSelectedPeriod } = useStatsStore();
+  /**
+   * The stats store's own verdict on its last refresh. This is now the primary
+   * signal: the store counts how many of its remote sources never reached
+   * Lantern and, when they didn't, keeps the snapshot it already had instead
+   * of replacing it with the zeros it can always assemble locally.
+   */
+  const statsSyncFailed = useStatsStore(s => s.syncFailed);
+  const statsLastSyncedAt = useStatsStore(s => s.lastSyncedAt);
 
   const activeTest = useTestStore(s => s.activeTest);
   const pausedSessions = useTestStore(s => s.pausedSessions);
@@ -217,6 +253,20 @@ export function DashboardScreen({ navigation }: Props) {
 
   const [quests, setQuests] = useState<DailyQuest[]>([]);
 
+  /**
+   * The screen's own corroborating signal: the two gamification calls in
+   * `load` below throw when the device cannot reach Lantern. It is NOT read
+   * off `statsError`, because a refresh with no network does not fail loudly —
+   * it records no error at all.
+   */
+  const [sideCallsFailed, setSideCallsFailed] = useState(false);
+
+  /** Either witness is enough to stop Home claiming the numbers are current. */
+  const syncFailed = statsSyncFailed || sideCallsFailed;
+
+  /** The last snapshot we know actually came back from the server. */
+  const [lastGood, setLastGood] = useState<LastGoodStats<DashboardStats> | null>(null);
+
   const [serverStreak, setServerStreak] = useState(0);
 
   const [streakFreezes, setStreakFreezes] = useState(0);
@@ -234,6 +284,11 @@ export function DashboardScreen({ navigation }: Props) {
   const [recentPageItems, setRecentPageItems] = useState<RecentTest[]>([]);
   const [recentTotal, setRecentTotal] = useState(0);
   const [recentLoading, setRecentLoading] = useState(false);
+  // Whatever the last page load threw. Kept so the section can say "we
+  // couldn't load these" instead of "no tests in this period yet" — the second
+  // is a claim about the student's history that a failed request cannot make.
+  const [recentError, setRecentError] = useState<unknown>(null);
+  const [recentReload, setRecentReload] = useState(0);
 
   const openDetailedAnalysis = useCallback(
     (test: RecentTest) => {
@@ -265,13 +320,20 @@ export function DashboardScreen({ navigation }: Props) {
     [flashcardsByDeck]
   );
 
+  // Empty, not 'Student', while the profile has not resolved: the auth
+  // listener sets `user` first and fills the name in a beat later (or the
+  // profile fetch failed), and a cold start greeted a real account as
+  // "Good morning, Student". The card drops the name until it knows one.
   const displayName = useMemo(
     () =>
-      getDashboardFirstName({
-        firstName: profileFirstName || (user?.user_metadata?.first_name as string | undefined),
-        name: profileName || (user?.user_metadata?.name as string | undefined),
-        username: user?.user_metadata?.username as string | undefined,
-      }),
+      getDashboardFirstName(
+        {
+          firstName: profileFirstName || (user?.user_metadata?.first_name as string | undefined),
+          name: profileName || (user?.user_metadata?.name as string | undefined),
+          username: user?.user_metadata?.username as string | undefined,
+        },
+        ''
+      ),
     [profileFirstName, profileName, user]
   );
 
@@ -346,11 +408,11 @@ export function DashboardScreen({ navigation }: Props) {
         });
         setRecentPageItems(mapped);
         setRecentTotal(result.pagination?.total ?? mapped.length);
-      } catch {
-        if (!cancelled) {
-          setRecentPageItems([]);
-          setRecentTotal(0);
-        }
+        setRecentError(null);
+      } catch (error) {
+        // Rows already on screen stay: a failed page tells us nothing about
+        // the tests we were already showing.
+        if (!cancelled) setRecentError(error);
       } finally {
         if (!cancelled) setRecentLoading(false);
       }
@@ -359,15 +421,38 @@ export function DashboardScreen({ navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, recentPage, recentSort, recentPeriodBounds.from, recentPeriodBounds.to, groups]);
+  }, [user?.id, recentPage, recentSort, recentPeriodBounds.from, recentPeriodBounds.to, groups, recentReload]);
 
   const recentTotalPages = Math.max(1, Math.ceil(recentTotal / RECENT_TESTS_PAGE_SIZE));
 
+  // Remember every snapshot that carries real work AND arrived while we could
+  // reach Lantern. This is what the screen falls back to, so it must never be
+  // filled from a refresh that failed.
+  useEffect(() => {
+    if (syncFailed) return;
+    if (stats && statsHaveSignal(stats)) {
+      setLastGood({ stats, at: statsLastSyncedAt ?? Date.now() });
+    }
+  }, [stats, syncFailed, statsLastSyncedAt]);
+
+  /**
+   * The single decision about what Home may claim. `shownStats` is what the
+   * whole screen renders from below — never `stats` directly — so one branch
+   * cannot show live numbers while its neighbour shows offline zeros.
+   */
+  const progress = resolveProgressDisplay({ live: stats, lastGood, syncFailed });
+  const shownStats = progress.stats;
+  const progressKnown = progress.mode !== 'unavailable';
+  // Nothing has come back yet — neither the cache nor the server — and the
+  // refresh has not failed either. That is "not loaded", not "zero": a cold
+  // start used to print "0d streak · 0 pts" for the beat before hydration.
+  const progressPending = progressKnown && shownStats == null;
+
   const heatmap = useMemo(
 
-    () => buildActivityHeatmapGrid(stats?.activityDays || []),
+    () => buildActivityHeatmapGrid(shownStats?.activityDays || []),
 
-    [stats?.activityDays]
+    [shownStats?.activityDays]
 
   );
 
@@ -389,9 +474,18 @@ export function DashboardScreen({ navigation }: Props) {
 
     ]);
 
+    // Two live calls, two verdicts. `reached` means Lantern answered at least
+    // once; `unreachable` means at least one call could not get there. Only
+    // "nothing got through" demotes the dashboard — a single flaky endpoint
+    // must not blank numbers the other call just proved are current.
+    let reached = false;
+    let unreachable = false;
+
     try {
 
       const streakRes = await recordLoginStreak();
+
+      reached = true;
 
       setServerStreak(
         streakRes?.current_streak ?? streakRes?.currentStreak ?? streakRes?.current ?? stats?.currentStreak ?? 0
@@ -399,7 +493,9 @@ export function DashboardScreen({ navigation }: Props) {
 
       setStreakFreezes(streakRes?.streak_freezes ?? streakRes?.streakFreezes ?? 0);
 
-    } catch {
+    } catch (error) {
+
+      if (isUnreachable(error)) unreachable = true;
 
       setServerStreak(stats?.currentStreak ?? 0);
 
@@ -409,13 +505,20 @@ export function DashboardScreen({ navigation }: Props) {
 
       const q = await fetchDailyQuests();
 
+      reached = true;
+
       setQuests(q);
 
-    } catch {
+    } catch (error) {
 
-      setQuests([]);
+      if (isUnreachable(error)) unreachable = true;
+
+      // Keep yesterday's quests rather than emptying the widget out of
+      // existence: the last list we were given is still the last true one.
 
     }
+
+    setSideCallsFailed(unreachable && !reached);
 
   };
 
@@ -527,12 +630,16 @@ export function DashboardScreen({ navigation }: Props) {
   const { isDark, colors } = useTheme();
 
   const studyActivityStreak = useMemo(
-    () => computeStudyStreak(stats?.activityDays ?? []).current,
-    [stats?.activityDays]
+    () => computeStudyStreak(shownStats?.activityDays ?? []).current,
+    [shownStats?.activityDays]
   );
-  const streak = Math.max(serverStreak, studyActivityStreak, stats?.currentStreak || 0);
+  // `serverStreak` is 0 when the streak call could not get through, so it only
+  // takes part while we have something real to compare it against.
+  const streak = progressKnown
+    ? Math.max(serverStreak, studyActivityStreak, shownStats?.currentStreak || 0)
+    : 0;
 
-  const level = stats?.userLevel;
+  const level = shownStats?.userLevel;
 
 
 
@@ -664,10 +771,17 @@ export function DashboardScreen({ navigation }: Props) {
         <DashboardHeroCard
           userName={displayName}
           streak={streak}
-          points={stats?.totalPoints ?? 0}
+          points={shownStats?.totalPoints ?? 0}
           dueCount={dueCount}
-          totalTests={stats?.totalTestsTaken ?? 0}
+          totalTests={shownStats?.totalTestsTaken ?? 0}
           level={level}
+          // Offline with nothing real cached: the card drops the figures and
+          // says why, instead of drawing "LEVEL 1 Newcomer · 0 XP".
+          progressKnown={progressKnown}
+          progressPending={progressPending}
+          progressNote={
+            progress.mode === 'stale' ? lastSyncedLabel(progress.syncedAt) : undefined
+          }
           className={heroQuestsSideBySide ? 'mb-0 h-full' : undefined}
           onPrimaryAction={() => {
             if (dueCount > 0) {
@@ -697,7 +811,7 @@ export function DashboardScreen({ navigation }: Props) {
 
         <GettingStartedChecklist
           hasDecks={decks.length > 0}
-          hasTests={(stats?.totalTestsTaken ?? 0) > 0}
+          hasTests={(shownStats?.totalTestsTaken ?? 0) > 0}
           hasGroups={groups.length > 0}
           hasBudget={Boolean(budget?.monthlyLimit && budget.monthlyLimit > 0) || transactions.length > 0}
           hasTriedCompanion={companionOpen}
@@ -824,26 +938,41 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        {statsError && !statsLoading ? (
-          <Card className="mb-4 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+        {/* One banner for "these numbers are not current", whichever way we
+            found out: the stats store threw, or every live call failed to
+            leave the device. It names which of the two states the figures
+            below are in, so "last synced" is never mistaken for "now". */}
+        {(statsError && !statsLoading) || progress.mode !== 'live' ? (
+          <Card className="mb-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
             <View className="flex-row items-center gap-3">
-              <AppIcon name="cloud-offline" size={20} color="#dc2626" />
+              <AppIcon name="cloud-offline" size={20} color="#b45309" />
               <View className="flex-1">
-                <Text className="text-sm font-semibold text-red-700 dark:text-red-300">
-                  Couldn't refresh your stats
+                <Text className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  {progress.mode === 'unavailable'
+                    ? UNAVAILABLE_PROGRESS_COPY.title
+                    : progress.mode === 'stale'
+                      ? STALE_PROGRESS_COPY.title
+                      : "Couldn't refresh your stats"}
                 </Text>
-                <Text className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
-                  Showing your latest saved data.
+                <Text className="text-xs text-amber-800/80 dark:text-amber-200/80 mt-0.5">
+                  {progress.mode === 'unavailable'
+                    ? UNAVAILABLE_PROGRESS_COPY.body
+                    : progress.mode === 'stale'
+                      ? `${STALE_PROGRESS_COPY.body} ${lastSyncedLabel(progress.syncedAt)}.`
+                      : 'Showing your latest saved data.'}
                 </Text>
               </View>
               <Button
                 size="sm"
                 variant="secondary"
                 onPress={() => {
-                  if (user?.id) void fetchStats(user.id, selectedPeriod, { force: true }).catch(() => {});
+                  // The whole load, not just the stats call: `syncFailed` is
+                  // only cleared by the live calls inside it succeeding, and
+                  // `load` re-runs the stats fetch anyway.
+                  void load();
                 }}
               >
-                Retry
+                Try again
               </Button>
             </View>
           </Card>
@@ -851,12 +980,12 @@ export function DashboardScreen({ navigation }: Props) {
 
         <DailyGoalsProgress
           study={studySettings}
-          activityDays={stats?.activityDays ?? []}
+          activityDays={shownStats?.activityDays ?? []}
         />
 
 
 
-        {statsLoading && !stats ? (
+        {statsLoading && !shownStats ? (
           <View className="flex-row gap-3 mb-4">
             {[0, 1, 2].map(i => (
               <Card key={`stat-skeleton-${i}`} className="flex-1 items-center py-3">
@@ -870,7 +999,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-3">
 
-            <Text className="text-2xl font-bold text-lantern-primary">{stats?.totalTestsTaken ?? '—'}</Text>
+            <Text className="text-2xl font-bold text-lantern-primary">{shownStats?.totalTestsTaken ?? '—'}</Text>
 
             <Text className="text-xs text-lantern-text-secondary mt-1">Tests taken</Text>
 
@@ -880,7 +1009,7 @@ export function DashboardScreen({ navigation }: Props) {
 
             <Text className="text-2xl font-bold text-lantern-accent">
 
-              {stats?.averageTimePerQuestion ? `${stats.averageTimePerQuestion}s` : '—'}
+              {shownStats?.averageTimePerQuestion ? `${shownStats.averageTimePerQuestion}s` : '—'}
 
             </Text>
 
@@ -894,7 +1023,7 @@ export function DashboardScreen({ navigation }: Props) {
 
               <AppIcon name="flame" size={16} color="#f97316" />
 
-              <Text className="text-2xl font-bold text-emerald-600">{streak}</Text>
+              <Text className="text-2xl font-bold text-emerald-600">{progressKnown && !progressPending ? streak : '—'}</Text>
 
             </View>
 
@@ -907,7 +1036,7 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        <AIStudyCoachCard stats={stats} streak={streak} />
+        <AIStudyCoachCard stats={shownStats} streak={streak} />
 
         <CourseReadinessCard />
 
@@ -921,7 +1050,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           </Text>
 
-          {statsLoading && !stats ? (
+          {statsLoading && !shownStats ? (
 
             <Text className="text-xs text-lantern-text-tertiary">Loading activity...</Text>
 
@@ -941,17 +1070,17 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        {stats?.badges?.some(b => b.level > 0) ? (
+        {shownStats?.badges?.some(b => b.level > 0) ? (
 
           <CollapsibleSection
             id="badges"
             title="Badges"
-            collapsedSummary={`${stats.badges.filter(b => b.level > 0).length} earned`}
+            collapsedSummary={`${shownStats.badges.filter(b => b.level > 0).length} earned`}
           >
 
             <View className="flex-row flex-wrap gap-2">
 
-              {stats.badges.filter(b => b.level > 0).slice(0, 12).map(badge => (
+              {shownStats.badges.filter(b => b.level > 0).slice(0, 12).map(badge => (
 
                 <Card key={`badge-${badge.id}`} className="w-28 items-center py-3 px-2">
 
@@ -1027,7 +1156,13 @@ export function DashboardScreen({ navigation }: Props) {
           }
         >
 
-          {recentLoading ? (
+          {recentError && recentPageItems.length === 0 ? (
+            <RequestError
+              error={recentError}
+              variant="inline"
+              onRetry={() => setRecentReload((n) => n + 1)}
+            />
+          ) : recentLoading ? (
             <Text className="text-sm text-lantern-text-tertiary py-3">Loading tests…</Text>
           ) : recentPageItems.length > 0 ? (
             recentPageItems.map((test) => (
@@ -1107,7 +1242,7 @@ export function DashboardScreen({ navigation }: Props) {
 
         <GroupPerformanceChartCard groups={groups} testResults={leanTestResults} />
 
-        <DashboardInsights stats={stats} />
+        <DashboardInsights stats={shownStats} />
 
 
 

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import type {
+  BlurEvent,
+  FocusEvent,
   KeyboardEvent,
   LayoutChangeEvent,
   NativeScrollEvent,
@@ -15,6 +17,11 @@ import {
   useScreenBottomPadding,
   type ScreenProps,
 } from './Screen';
+import {
+  focusedInputAfterBlur,
+  measurableFocusTarget,
+  type MeasurableInput,
+} from './focusedInputTracker';
 import { scrollDeltaToRevealInput, type BottomClearance } from './screenInsets';
 
 /**
@@ -38,6 +45,16 @@ import { scrollDeltaToRevealInput, type BottomClearance } from './screenInsets';
  *      dismiss the keyboard;
  *   3. an explicit scroll to the focused input, since the OS will not resize
  *      the viewport for us.
+ *
+ * WHICH INPUT IS FOCUSED
+ * ----------------------
+ * Tracked from the inputs' own bubbling focus/blur events, caught on the
+ * KeyboardAvoidingView that already wraps the scroller. It must NOT be read
+ * from `TextInput.State.currentlyFocusedInput()`: that static is absent at
+ * runtime on React Native 0.81.5, and because this lookup happens on a timer —
+ * with no React error boundary above it — the resulting TypeError killed the
+ * app process rather than breaking one screen (build 138, leaving a community
+ * board). See focusedInputTracker.ts for the whole story.
  */
 
 export interface KeyboardAwareScrollViewProps extends Omit<ScrollViewProps, 'children'> {
@@ -80,6 +97,7 @@ export function KeyboardAwareScrollView({
   const innerRef = useRef<ScrollView | null>(null);
   const ref = scrollableRef ?? innerRef;
   const offsetRef = useRef(0);
+  const focusedInputRef = useRef<MeasurableInput | null>(null);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -89,36 +107,68 @@ export function KeyboardAwareScrollView({
     [onScroll]
   );
 
+  // `topFocus`/`topBlur` bubble from every TextInput below this component, so
+  // these two land on the KeyboardAvoidingView without any input opting in.
+  // They only record; nothing here can throw, and nothing is left to read once
+  // the subtree is gone.
+  const handleFocusedInput = useCallback((event: FocusEvent) => {
+    const next = measurableFocusTarget(event?.target);
+    if (next !== null) focusedInputRef.current = next;
+  }, []);
+
+  const handleBlurredInput = useCallback((event: BlurEvent) => {
+    focusedInputRef.current = focusedInputAfterBlur(focusedInputRef.current, event?.target);
+  }, []);
+
   useEffect(() => {
-    if (!autoRevealFocusedInput) return;
     // iOS fires `will*` before the frame lands, Android only `did*`.
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     let timer: ReturnType<typeof setTimeout> | null = null;
+    // Every async hop below checks this. The measure callback in particular
+    // comes back from the native side and can land after unmount.
+    let live = true;
 
-    const subscription = Keyboard.addListener(showEvent, (event: KeyboardEvent) => {
-      const keyboardTopY = event?.endCoordinates?.screenY;
-      if (typeof keyboardTopY !== 'number') return;
-      // Let the KeyboardAvoidingView's padding land first, or the input is
-      // measured at the position it is about to leave.
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        const input = TextInput.State.currentlyFocusedInput();
-        if (!input?.measureInWindow) return;
-        input.measureInWindow((_x, y, _width, height) => {
-          const delta = scrollDeltaToRevealInput({
-            inputBottomY: y + height,
-            keyboardTopY,
-            margin: revealMargin,
-          });
-          if (delta <= 0) return;
-          ref.current?.scrollTo({ y: offsetRef.current + delta, animated: true });
-        });
-      }, 80);
-    });
+    const subscription = autoRevealFocusedInput
+      ? Keyboard.addListener(showEvent, (event: KeyboardEvent) => {
+          const keyboardTopY = event?.endCoordinates?.screenY;
+          if (typeof keyboardTopY !== 'number') return;
+          // Let the KeyboardAvoidingView's padding land first, or the input is
+          // measured at the position it is about to leave.
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => {
+            timer = null;
+            if (!live) return;
+            const input = focusedInputRef.current;
+            if (typeof input?.measureInWindow !== 'function') return;
+            // A node torn down between the focus event and this measure can
+            // throw from the native module. This runs on a timer, outside any
+            // React error boundary, so an uncaught throw here takes the whole
+            // process down — a missed scroll must never cost more than a
+            // missed scroll.
+            try {
+              input.measureInWindow((_x, y, _width, height) => {
+                if (!live) return;
+                const delta = scrollDeltaToRevealInput({
+                  inputBottomY: y + height,
+                  keyboardTopY,
+                  margin: revealMargin,
+                });
+                if (delta <= 0) return;
+                ref.current?.scrollTo({ y: offsetRef.current + delta, animated: true });
+              });
+            } catch {
+              focusedInputRef.current = null;
+            }
+          }, 80);
+        })
+      : null;
 
     return () => {
+      live = false;
       if (timer) clearTimeout(timer);
-      subscription.remove();
+      timer = null;
+      focusedInputRef.current = null;
+      subscription?.remove();
     };
   }, [autoRevealFocusedInput, revealMargin, ref]);
 
@@ -136,6 +186,8 @@ export function KeyboardAwareScrollView({
       behavior={SCREEN_KEYBOARD_BEHAVIOR}
       keyboardVerticalOffset={keyboardVerticalOffset}
       style={{ flex: 1 }}
+      onFocus={handleFocusedInput}
+      onBlur={handleBlurredInput}
     >
       <ScrollView
         ref={ref}

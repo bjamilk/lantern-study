@@ -118,7 +118,12 @@ export function MeScreen({ navigation }: Props) {
             // a second focusable control would announce the same thing twice.
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
-            trackColor={{ false: colors.border, true: colors.primary }}
+            // The theme's four switch tokens, the same ones Settings uses.
+            // Without an explicit thumb, Android paints its own accent — which
+            // on this device was a green thumb riding a purple track.
+            trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+            thumbColor={row.value === true ? colors.switchThumbOn : colors.switchThumbOff}
+            ios_backgroundColor={colors.switchTrackOff}
           />
         ) : destructive ? null : (
           <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />

@@ -21,7 +21,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     name: 'Alice Johnson',
     avatarUrl: `https://ui-avatars.com/api/?name=Alice+Johnson&background=random&color=fff&size=100`,
     email: 'alice@example.com',
-    password: 'password123',
+    password: 'dev-mock-placeholder', // DEV-only mock user; never used for auth
     phoneNumber: '123-456-7890',
     points: 1250,
     badges: [],
@@ -32,7 +32,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     name: 'Bob Williams',
     avatarUrl: `https://ui-avatars.com/api/?name=Bob+Williams&background=random&color=fff&size=100`,
     email: 'bob@example.com',
-    password: 'password123',
+    password: 'dev-mock-placeholder', // DEV-only mock user; never used for auth
     phoneNumber: '234-567-8901',
     points: 800,
     badges: [],
@@ -43,7 +43,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     name: 'Charlie Brown',
     avatarUrl: `https://ui-avatars.com/api/?name=Charlie+Brown&background=random&color=fff&size=100`,
     email: 'charlie@example.com',
-    password: 'password123',
+    password: 'dev-mock-placeholder', // DEV-only mock user; never used for auth
     phoneNumber: '345-678-9012',
     points: 200,
     badges: [],
@@ -54,7 +54,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     name: 'Diana Prince',
     avatarUrl: `https://ui-avatars.com/api/?name=Diana+Prince&background=random&color=fff&size=100`,
     email: 'diana@example.com',
-    password: 'password123',
+    password: 'dev-mock-placeholder', // DEV-only mock user; never used for auth
     phoneNumber: '456-789-0123',
     points: 2500,
     badges: [],

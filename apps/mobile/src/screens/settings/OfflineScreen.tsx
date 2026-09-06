@@ -1,5 +1,5 @@
 // ===========================================
-// Lantern Study Mobile - Offline Mode Screen
+// Lantern Study Mobile - Downloads Screen
 // ===========================================
 
 import React, { useState, useEffect } from 'react';
@@ -43,6 +43,14 @@ const QUESTION_TYPES = [
   { id: 'fill-blank', label: 'Fill in Blank', icon: 'text' },
 ] as const;
 
+/**
+ * Downloads — one name for one place.
+ *
+ * The Me row said "Downloads" and this screen said "Offline Mode", which read
+ * as two features. The screen is called Downloads everywhere a student can see
+ * it; "offline" stays in the code (the store, the routes) where it describes
+ * the mechanism rather than naming the destination.
+ */
 export default function OfflineScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -177,7 +185,10 @@ export default function OfflineScreen() {
       // Study mode: untimed, unscored practice — web bundles always offered
       // it; mobile hardcoded scored tests.
       await startQuestionSet(test.testName, questions, mode, {
-        timeLimitMinutes: mode === 'test' ? test.timeLimit || Math.max(questions.length * 2, 5) : 0,
+        // The bundle's own limit, 0 ("None") included. This used to invent
+        // `max(questions * 2, 5)` minutes whenever the bundle said untimed —
+        // the same fabricated default the group launcher had.
+        timeLimitMinutes: mode === 'test' ? Math.max(0, test.timeLimit ?? 0) : 0,
         lockAnswered: mode === 'test' ? test.lockAnswered : undefined,
       });
       // Offline is a ROOT-stack modal, so 'StudyTab' is not a sibling route
@@ -230,7 +241,7 @@ export default function OfflineScreen() {
 
   const handleClearAll = () => {
     Alert.alert(
-      'Clear All Offline Data',
+      'Clear all downloads',
       'This will remove all downloaded tests and pending results. This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -382,7 +393,7 @@ export default function OfflineScreen() {
             <AppIcon name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
         )}
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Offline Mode</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Downloads</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -411,7 +422,7 @@ export default function OfflineScreen() {
           <View style={styles.storageHeader}>
             <AppIcon name="folder" size={24} color={featureAccents.offline} />
             <View style={styles.storageInfo}>
-              <Text style={[styles.storageTitle, { color: colors.text }]}>Offline Storage</Text>
+              <Text style={[styles.storageTitle, { color: colors.text }]}>Downloads storage</Text>
               <Text style={[styles.storageSize, { color: colors.textSecondary }]}>
                 {formatSize(totalStorageUsed)} used · {connectionStatus.shortLabel}
               </Text>
@@ -624,7 +635,7 @@ export default function OfflineScreen() {
         {(downloadedTests.length > 0 || pendingResults.length > 0) && (
           <TouchableOpacity style={styles.clearButton} onPress={handleClearAll}>
             <AppIcon name="trash" size={18} color="#ef4444" />
-            <Text style={styles.clearButtonText}>Clear All Offline Data</Text>
+            <Text style={styles.clearButtonText}>Clear all downloads</Text>
           </TouchableOpacity>
         )}
 

@@ -11,6 +11,8 @@ import {
   BADGE_DEFINITIONS,
 } from '@lantern/shared/utils';
 import type { UserStats as SharedUserStats, Badge as SharedBadge, BadgeId } from '@lantern/shared';
+import { classifyRequestFailure } from '@lantern/shared/network';
+import { mergeStatsRefresh } from '../screens/dashboard/dashboardProgressState';
 import {
   fetchTestResultsCached,
   loadCachedDashboardStats,
@@ -58,15 +60,48 @@ async function getBuildDashboardStatsModule(): Promise<BuildDashboardStatsModule
 
 const DEMO_MODE = false;
 
+/**
+ * Deliberately does NOT swallow. It used to answer a failed call with
+ * `{ current: 0, longest: 0 }`, which is indistinguishable from a student who
+ * really has no streak — the caller tallies the failure instead and decides
+ * whether the whole snapshot is trustworthy.
+ */
 async function recordLoginStreak(_userId: string): Promise<{ current: number; longest: number }> {
+  const result = await recordServerLoginStreak();
+  return {
+    current: result?.currentStreak ?? result?.current_streak ?? 0,
+    longest: result?.longestStreak ?? result?.longest_streak ?? 0,
+  };
+}
+
+/**
+ * The only failures that mean "we never got an answer out of the device".
+ * A 404, a 403 or an empty account ARE answers and must not demote the
+ * dashboard — see `mergeStatsRefresh`.
+ */
+function isUnreachableFailure(error: unknown): boolean {
+  const kind = classifyRequestFailure(error);
+  return kind === 'offline' || kind === 'timeout' || kind === 'server';
+}
+
+/** Counts remote sources and how many of them never reached Lantern. */
+interface SourceTally {
+  attempted: number;
+  unreachable: number;
+}
+
+/**
+ * Run one source, keep the tally honest, and fall back so the rest of the
+ * refresh can still build. The fallback is NOT presented as data: if enough
+ * sources land here, `mergeStatsRefresh` throws the whole snapshot away.
+ */
+async function tallySource<T>(tally: SourceTally, run: () => Promise<T>, fallback: T): Promise<T> {
+  tally.attempted += 1;
   try {
-    const result = await recordServerLoginStreak();
-    return {
-      current: result?.currentStreak ?? result?.current_streak ?? 0,
-      longest: result?.longestStreak ?? result?.longest_streak ?? 0,
-    };
-  } catch {
-    return { current: 0, longest: 0 };
+    return await run();
+  } catch (error) {
+    if (isUnreachableFailure(error)) tally.unreachable += 1;
+    return fallback;
   }
 }
 
@@ -201,7 +236,15 @@ interface StatsState {
   isLoading: boolean;
   isRefreshing: boolean;
   error: string | null;
-  
+  /**
+   * The last refresh could not reach Lantern, so `stats` is whatever we held
+   * before it — true, but not current. Separate from `error`, which stays null
+   * here: nothing threw, the sources simply never left the device.
+   */
+  syncFailed: boolean;
+  /** When `stats` last came back from the server, if we know. */
+  lastSyncedAt: number | null;
+
   // Actions
   hydrateFromCache: (userId: string) => Promise<boolean>;
   fetchStats: (userId: string, period: TimePeriod, context?: StatsFetchContext) => Promise<void>;
@@ -515,6 +558,8 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
 export const useStatsStore = create<StatsState>((set, get) => ({
   stats: null,
   leanTestResults: [],
+  syncFailed: false,
+  lastSyncedAt: null,
   // Matches the web dashboard, which defaults to All Time. The two defaulting
   // differently made the same account show different totals side by side —
   // e.g. 13 tests taken on web against 10 on mobile — which reads as a sync bug.
@@ -527,11 +572,16 @@ export const useStatsStore = create<StatsState>((set, get) => ({
     const cached = await loadCachedDashboardStats(userId);
     if (!cached?.stats) return false;
 
+    const cachedAt = Date.parse(cached.cachedAt ?? '');
     set({
       stats: normalizeDashboardStats(cached.stats),
       selectedPeriod: cached.period,
       isLoading: false,
       isRefreshing: false,
+      // Only snapshots that came back from the server are ever cached now, so
+      // a hydrated one carries a real sync time — that is what dates the
+      // "Last synced …" line instead of it guessing "a while ago".
+      lastSyncedAt: Number.isFinite(cachedAt) ? cachedAt : null,
     });
     return true;
   },
@@ -548,12 +598,21 @@ export const useStatsStore = create<StatsState>((set, get) => ({
       isRefreshing: hasExistingStats,
       error: null,
     });
+    const tally: SourceTally = { attempted: 0, unreachable: 0 };
 
     const run = async () => {
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 300));
         const stats = generateMockStats(period);
-        set({ stats, leanTestResults: [], selectedPeriod: period, isLoading: false, isRefreshing: false });
+        set({
+          stats,
+          leanTestResults: [],
+          selectedPeriod: period,
+          isLoading: false,
+          isRefreshing: false,
+          syncFailed: false,
+          lastSyncedAt: Date.now(),
+        });
         return;
       }
 
@@ -563,9 +622,11 @@ export const useStatsStore = create<StatsState>((set, get) => ({
       try {
         // Preferred path: one aggregate request replaces the five parallel calls below.
         let summary: Awaited<ReturnType<typeof api.fetchDashboardSummary>> | null = null;
+        let summaryUnreachable = false;
         try {
           summary = await api.fetchDashboardSummary();
-        } catch {
+        } catch (error) {
+          summaryUnreachable = isUnreachableFailure(error);
           summary = null;
         }
 
@@ -579,7 +640,11 @@ export const useStatsStore = create<StatsState>((set, get) => ({
           testResultsRaw = summary.testResults;
           // null => summary section failed; fall back to dedicated endpoint.
           if (summary.userQuestionStats === null) {
-            questionStatsRaw = await api.fetchUserQuestionStats(userId).catch(() => []);
+            questionStatsRaw = await tallySource(
+              tally,
+              () => api.fetchUserQuestionStats(userId),
+              []
+            );
           } else {
             questionStatsRaw = summary.userQuestionStats;
           }
@@ -592,16 +657,36 @@ export const useStatsStore = create<StatsState>((set, get) => ({
             : { badges: [], totalPoints: 0 };
           activityDaysRaw = normalizeSummaryActivityDays(summary.activityDays);
         } else {
+          // Every one of these used to swallow its own failure, which is how a
+          // phone with no radio produced a complete, confident snapshot of
+          // zeros. They still fall back so the build can finish — but each
+          // failure is counted, and the count decides whether the result is
+          // allowed anywhere near the screen or the cache.
           [testResultsRaw, questionStatsRaw, loginStreak, gamification, activityDaysRaw] = await Promise.all([
-            fetchTestResultsCached(userId, api.fetchTestResults, {
-              limit: 500,
-              force: forceRefresh,
-            }).catch(() => []),
-            api.fetchUserQuestionStats(userId).catch(() => []),
-            recordLoginStreak(userId),
-            loadUserGamificationSnapshot(userId).catch(() => ({ badges: [], totalPoints: 0 })),
-            fetchStudyActivity().catch(() => []),
+            tallySource(
+              tally,
+              () =>
+                fetchTestResultsCached(userId, api.fetchTestResults, {
+                  limit: 500,
+                  force: forceRefresh,
+                }),
+              [] as unknown[]
+            ),
+            tallySource(tally, () => api.fetchUserQuestionStats(userId), [] as unknown[]),
+            tallySource(tally, () => recordLoginStreak(userId), { current: 0, longest: 0 }),
+            tallySource(tally, () => loadUserGamificationSnapshot(userId), {
+              badges: [] as Badge[],
+              totalPoints: 0,
+            }),
+            tallySource(tally, () => fetchStudyActivity(), [] as unknown[]),
           ]);
+          // The aggregate endpoint is the sixth source, not a free lookup: when
+          // it failed because the device is offline, that is one more piece of
+          // evidence that nothing got out.
+          if (summaryUnreachable) {
+            tally.attempted += 1;
+            tally.unreachable += 1;
+          }
         }
 
         syncBadgesInBackground(userId);
@@ -632,18 +717,42 @@ export const useStatsStore = create<StatsState>((set, get) => ({
           activityDays: Array.isArray(activityDaysRaw) ? activityDaysRaw : [],
         });
 
+        // The whole point of the tally. A snapshot built on sources that never
+        // reached Lantern replaces nothing and is cached nowhere — otherwise
+        // the zeros go into AsyncStorage and the "last synced progress" the
+        // student is promised becomes zero too, permanently.
+        const resolution = mergeStatsRefresh({
+          previous: get().stats,
+          incoming: stats,
+          attempted: tally.attempted,
+          unreachable: tally.unreachable,
+        });
+
         set({
-          stats,
-          leanTestResults: testResults,
+          stats: resolution.stats,
+          // Recent tests come back empty from a failed fetch for the same
+          // reason the totals come back zero — keep the rows we already have.
+          leanTestResults: resolution.stale ? get().leanTestResults : testResults,
           selectedPeriod: period,
           isLoading: false,
           isRefreshing: false,
           error: null,
+          syncFailed: resolution.stale,
+          lastSyncedAt: resolution.stale ? get().lastSyncedAt : Date.now(),
         });
-        void saveCachedDashboardStats(userId, period, stats);
+        if (resolution.persist) {
+          void saveCachedDashboardStats(userId, period, stats);
+        }
       } catch (error: any) {
         console.error('Failed to fetch stats from API:', error);
-        if (!get().stats) {
+        const unreachable = isUnreachableFailure(error) || tally.unreachable > 0;
+        const message = error?.message ?? 'Could not load your stats';
+
+        // The same empty-snapshot trap, one level up: this branch used to
+        // build a zeroed dashboard out of local data whenever the store had
+        // nothing yet. Offline, that is a fabricated claim about the
+        // student's work, so we hold nothing and let Home show dashes.
+        if (!get().stats && !unreachable) {
           const { buildDashboardStats } = await getBuildDashboardStatsModule();
           const stats = buildDashboardStats({
             testResults: [],
@@ -662,10 +771,16 @@ export const useStatsStore = create<StatsState>((set, get) => ({
             selectedPeriod: period,
             isLoading: false,
             isRefreshing: false,
-            error: error.message,
+            error: message,
+            syncFailed: false,
           });
         } else {
-          set({ isLoading: false, isRefreshing: false, error: error.message });
+          set({
+            isLoading: false,
+            isRefreshing: false,
+            error: unreachable ? null : message,
+            syncFailed: unreachable,
+          });
         }
       }
     };

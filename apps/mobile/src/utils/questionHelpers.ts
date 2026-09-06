@@ -483,10 +483,77 @@ export function extractTagsFromQuestions(
   return Array.from(tags).sort();
 }
 
+/**
+ * Matching pairs from the canonical session shape.
+ *
+ * `normalizeTestQuestionForSession` stores a matching question as three
+ * parallel lists (prompts, answers, and the id pairs that join them) — never
+ * as `matchingPairs`. Reading only `matchingPairs` back gave a resumed or
+ * reviewed matching question an empty board.
+ */
+function matchingPairsFromSessionShape(q: any): TestQuestion['matchingPairs'] {
+  const prompts = q.matchingPromptItems || q.matching_prompt_items;
+  const answers = q.matchingAnswerItems || q.matching_answer_items;
+  const matches = q.correctMatches || q.correct_matches;
+  if (!Array.isArray(matches) || !matches.length) return undefined;
+  const promptList: Array<{ id?: string; text?: string }> = Array.isArray(prompts) ? prompts : [];
+  const answerList: Array<{ id?: string; text?: string }> = Array.isArray(answers) ? answers : [];
+  return matches.map((m: any, i: number) => {
+    const promptId = String(m?.promptItemId ?? m?.prompt_item_id ?? '');
+    const answerId = String(m?.answerItemId ?? m?.answer_item_id ?? '');
+    const left = promptList.find(p => String(p.id) === promptId)?.text;
+    const right = answerList.find(a => String(a.id) === answerId)?.text;
+    return {
+      id: promptId || `pair-${i}`,
+      left: String(left ?? promptId),
+      right: String(right ?? answerId),
+    };
+  });
+}
+
+/**
+ * A saved matching answer, back in the shape the matching board speaks.
+ *
+ * A draft stores matching answers as ID pairs (`promptItemId`/`answerItemId`),
+ * but the board — and grading — key on the PROMPT TEXT and answer TEXT. Handing
+ * the ids straight back silently unmatched everything the reader had already
+ * paired up. `rawQuestion` is the stored question (which still carries the two
+ * item lists), not the normalized one.
+ */
+export function restoreMatchingAnswerMap(
+  rawQuestion: any,
+  matchingAnswers: Array<{ promptItemId?: string; answerItemId?: string }> | undefined
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!Array.isArray(matchingAnswers)) return map;
+  const prompts: Array<{ id?: string; text?: string }> =
+    rawQuestion?.matchingPromptItems || rawQuestion?.matching_prompt_items || [];
+  const answers: Array<{ id?: string; text?: string }> =
+    rawQuestion?.matchingAnswerItems || rawQuestion?.matching_answer_items || [];
+  for (const pair of matchingAnswers) {
+    const promptId = String(pair?.promptItemId ?? '');
+    const answerId = String(pair?.answerItemId ?? '');
+    if (!promptId) continue;
+    const left = prompts.find(p => String(p.id) === promptId)?.text ?? promptId;
+    const right = answers.find(a => String(a.id) === answerId)?.text ?? answerId;
+    map[String(left)] = String(right);
+  }
+  return map;
+}
+
 export function normalizeApiQuestions(rawQuestions: unknown[]): TestQuestion[] {
   if (!Array.isArray(rawQuestions)) return [];
   return rawQuestions.map((q: any, index) => {
-    const type = normalizeQuestionType(q.type || q.questionType) || 'multiple_choice_single';
+    // `questionType` FIRST. A question stored in a test session carries the
+    // MESSAGE type in `type` — the literal string "QUESTION" — and its real
+    // type in `questionType`. Reading `type` first therefore fell through to
+    // the `multiple_choice_single` default for EVERY resumed, retaken or
+    // reviewed question, so a matching or diagram question came back as a
+    // "Multiple Choice" card with no options to pick and no way to answer it.
+    const type =
+      normalizeQuestionType(q.questionType) ||
+      normalizeQuestionType(q.type) ||
+      'multiple_choice_single';
     const rawOptions = q.options || q.optionItems || [];
     const optionItemsFromField = Array.isArray(q.optionItems)
       ? (q.optionItems as Array<{ id: string; text: string }>)
@@ -520,6 +587,12 @@ export function normalizeApiQuestions(rawQuestions: unknown[]): TestQuestion[] {
     if (!correctAnswers && correctIds.length > 0 && type === 'multiple_choice_multiple') {
       correctAnswers = correctIds.map((id: string) => resolveOptionText(options, optionItems, id));
     }
+    const acceptableAnswers: string[] | undefined = q.keywords || q.acceptableAnswers;
+    // A fill-in-the-blank round-trips its answers as `acceptableAnswers`; its
+    // `correctAnswer` is not stored, and grading compares against that field.
+    if (!correctAnswer && type === 'fill_in_blank' && acceptableAnswers?.length) {
+      correctAnswer = acceptableAnswers[0];
+    }
     if (type === 'true_false' && correctIds.length === 1) {
       const tfOptions: string[] = options.length >= 2 ? options : ['True', 'False'];
       const tfItems =
@@ -537,7 +610,9 @@ export function normalizeApiQuestions(rawQuestions: unknown[]): TestQuestion[] {
       optionItems: optionItems.length ? optionItems : undefined,
       correctAnswer,
       correctAnswers,
-      matchingPairs: q.matchingPairs,
+      matchingPairs: Array.isArray(q.matchingPairs) && q.matchingPairs.length
+        ? q.matchingPairs
+        : matchingPairsFromSessionShape(q),
       diagramUrl: q.diagramUrl || q.imageUrl || q.image_url,
       imageUrl: q.imageUrl || q.image_url || q.diagramUrl,
       diagramLabels: Array.isArray(q.diagramLabels)
@@ -550,7 +625,7 @@ export function normalizeApiQuestions(rawQuestions: unknown[]): TestQuestion[] {
         : undefined,
       blanks: q.blanks,
       sampleAnswer: q.sampleAnswer,
-      keywords: q.keywords || q.acceptableAnswers,
+      keywords: acceptableAnswers,
       explanation: q.explanation,
       points: q.points ?? 10,
       tags: q.tags,

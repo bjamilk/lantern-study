@@ -15,10 +15,12 @@ import {
   communityKindLabel,
   communityMembershipAction,
   memberCountLabel,
+  resolveListState,
   type Community,
   type MyCommunity,
 } from '@lantern/shared/network';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { RequestError } from '../../components/RequestError';
 import { useTheme } from '../../theme';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useCommunityStore } from '../../stores/communityStore';
@@ -129,8 +131,18 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
   const [results, setResults] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The thrown value, not a message: RequestError classifies it and says the
+  // same sentence web says. Printing `e.message` is how this screen came to
+  // show a bare red "Network request failed" over a blank page.
+  const [error, setError] = useState<unknown>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // A failed JOIN is about one row, not about the list — keeping it out of
+  // `error` is what stops one refused tap from banner-ing the whole panel as
+  // unreachable.
+  const [joinError, setJoinError] = useState<string | null>(null);
+  // Whatever the search box held when `results` were last filled. Used so a
+  // stale list is never labelled as the answer to a newer query.
+  const [loadedQuery, setLoadedQuery] = useState('');
 
   const load = useCallback(
     async (q: string, options?: { silent?: boolean }) => {
@@ -142,8 +154,11 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
           discoverCommunities(q ? { q, limit: 30 } : { limit: 30 }),
         ]);
         setResults(discovered);
+        setLoadedQuery(q);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not load communities');
+        // The list already on screen (and the store's joined communities) stay
+        // exactly where they are — a failed request tells us nothing about them.
+        setError(e);
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -168,6 +183,26 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
     [results, mineIds]
   );
 
+  /**
+   * The shared rule decides what this panel shows: a failure with rows already
+   * in hand keeps the rows and banners the failure; a failure with nothing
+   * cached is a full RequestError with Try again; only a load that actually
+   * succeeded may say the list is empty or that a search found no match.
+   */
+  const listState = resolveListState({
+    loading,
+    error,
+    itemCount: myCommunities.length + discoverable.length,
+    query: loadedQuery,
+  });
+
+  /**
+   * A load that failed tells us nothing about the data, so neither "nothing to
+   * join yet" nor "no match" may be rendered on the back of one. Kept as a
+   * boolean so it reads the same wherever it is used.
+   */
+  const listUnknown = listState === 'failed' || listState === 'stale';
+
   const open = useCallback(
     (slug: string) => navigation.navigate('CommunityDetail', { slug }),
     [navigation]
@@ -176,12 +211,13 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
   const join = useCallback(
     async (community: Community) => {
       setPendingId(community.id);
+      setJoinError(null);
       try {
         await joinCommunity(community.id);
         await loadMine(true);
         open(community.slug);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not join that community');
+        setJoinError(e instanceof Error ? e.message : 'Could not join that community');
       } finally {
         setPendingId(null);
       }
@@ -249,14 +285,20 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
         />
       </View>
 
-      {error ? (
-        <Text className="px-4 py-2 text-xs text-lantern-error">{error}</Text>
+      {joinError ? (
+        <Text className="px-4 py-2 text-xs text-lantern-error" accessibilityLiveRegion="polite">
+          {joinError}
+        </Text>
       ) : null}
 
-      {loading ? (
+      {listState === 'loading' ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color={colors.primary} />
         </View>
+      ) : listState === 'failed' ? (
+        // Nothing cached to fall back on: the whole panel says what happened
+        // and offers the one action that can help.
+        <RequestError error={error} onRetry={() => void load(query)} />
       ) : (
         <FlatList
           data={discoverable}
@@ -275,20 +317,38 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
             />
           }
           ListHeaderComponent={
-            myCommunities.length > 0 ? (
-              <View>
-                <Text className="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
-                  Your communities
-                </Text>
-                {myCommunities.map((community) => renderRow(community, true))}
-                <Text className="px-4 pt-4 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
-                  Discover
-                </Text>
-              </View>
-            ) : null
+            <View>
+              {/* Rows we already hold, flagged rather than blanked. */}
+              {listState === 'stale' ? (
+                <RequestError
+                  error={error}
+                  variant="banner"
+                  onRetry={() => void load(query)}
+                  detail="Showing the communities saved on this device."
+                />
+              ) : null}
+              {myCommunities.length > 0 ? (
+                <>
+                  <Text className="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
+                    Your communities
+                  </Text>
+                  {myCommunities.map((community) => renderRow(community, true))}
+                  <Text className="px-4 pt-4 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
+                    Discover
+                  </Text>
+                </>
+              ) : null}
+            </View>
           }
           ListEmptyComponent={
-            error ? null : (
+            // Never claim "nothing to join" on the back of a request that
+            // failed — the banner above has already said what really happened.
+            listUnknown ? null : listState === 'noMatch' ? (
+              <Text className="mx-4 mt-3 text-xs text-lantern-text-tertiary">
+                No communities match “{loadedQuery.trim()}”. Try a different word, or clear the
+                search to see everything open to you.
+              </Text>
+            ) : (
               <Text className="mx-4 mt-3 text-xs text-lantern-text-tertiary">
                 No other communities to join yet. Yours are made from your university,
                 programme and courses — add them in Me → Academic details.

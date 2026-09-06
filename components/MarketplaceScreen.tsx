@@ -66,6 +66,18 @@ interface MarketplaceScreenProps {
   initialBrowseNodeId?: string;
   initialTab?: 'academic' | 'student-life' | 'shops';
   initialCategory?: string;
+  /**
+   * "By course" is a place, not a mode: `/campus/shop/courses` and
+   * `/campus/shop/courses/:courseId`. The screen never holds that state itself
+   * — the url is the authority, so a refresh re-opens the same panel and the
+   * same course, and Back closes it.
+   */
+  courseBrowseOpen?: boolean;
+  courseBrowseCourseId?: string | null;
+  onOpenCourseBrowse?: () => void;
+  onOpenCourse?: (courseId: string) => void;
+  onOpenCourseIndex?: () => void;
+  onCloseCourseBrowse?: () => void;
 }
 
 const RECENT_SEARCHES_KEY = 'lantern_marketplace_recent_searches';
@@ -104,6 +116,12 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   initialBrowseNodeId = '',
   initialTab,
   initialCategory = '',
+  courseBrowseOpen = false,
+  courseBrowseCourseId = null,
+  onOpenCourseBrowse,
+  onOpenCourse,
+  onOpenCourseIndex,
+  onCloseCourseBrowse,
 }) => {
   const { currentUser } = useAuthStore();
   const initialNode = initialBrowseNodeId ? getTaxonomyNode(initialBrowseNodeId) : undefined;
@@ -124,8 +142,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [browseNodeId, setBrowseNodeId] = useState<string>(initialNode ? initialBrowseNodeId : '');
   const [showBrowseTree, setShowBrowseTree] = useState(Boolean(initialNode));
   // "Browse by course" (Gap 3): the durable entry point into the digital
-  // marketplace, kept as a panel so it needs no new route.
-  const [showCourseBrowse, setShowCourseBrowse] = useState(false);
+  // marketplace. It renders as a panel but IS a route — see the courseBrowse
+  // props, which the Shop's url drives.
   const [dealListings, setDealListings] = useState<MarketplaceListing[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
@@ -1136,7 +1154,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               ) : null}
               <button
                 type="button"
-                onClick={() => setShowCourseBrowse(true)}
+                onClick={() => onOpenCourseBrowse?.()}
                 aria-haspopup="dialog"
                 aria-label={COURSE_ANCHOR_COPY.browseTitle}
                 className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
@@ -1334,8 +1352,11 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       </Tabs>
 
       <CourseBrowsePanel
-        isOpen={showCourseBrowse}
-        onClose={() => setShowCourseBrowse(false)}
+        isOpen={courseBrowseOpen}
+        courseId={courseBrowseCourseId}
+        onOpenCourse={(courseId) => onOpenCourse?.(courseId)}
+        onOpenCourseIndex={() => onOpenCourseIndex?.()}
+        onClose={() => onCloseCourseBrowse?.()}
         onOpenListing={(listingId) => onNavigate('MarketplaceListingDetail', { listingId })}
       />
     </div>

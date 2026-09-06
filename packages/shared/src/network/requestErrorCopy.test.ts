@@ -1,7 +1,10 @@
 import {
   REQUEST_FAILURE_COPY,
+  STALE_PROGRESS_COPY,
+  UNAVAILABLE_PROGRESS_COPY,
   classifyRequestFailure,
   isRequestFailureRetryable,
+  lastSyncedLabel,
   requestFailureCopy,
   requestFailureSentence,
   resolveListState,
@@ -125,5 +128,39 @@ describe('resolveListState — a failed load is never an empty state', () => {
     expect(
       resolveListState({ loading: true, error: new Error('Request timed out'), itemCount: 0 }),
     ).toBe('failed');
+  });
+});
+
+describe('lastSyncedLabel', () => {
+  const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+  const minutes = (n: number) => now - n * 60_000;
+
+  it('dates a figure we are showing from cache', () => {
+    expect(lastSyncedLabel(minutes(0), now)).toBe('Last synced just now');
+    expect(lastSyncedLabel(minutes(5), now)).toBe('Last synced 5m ago');
+    expect(lastSyncedLabel(minutes(90), now)).toBe('Last synced 1h ago');
+    expect(lastSyncedLabel(minutes(60 * 26), now)).toBe('Last synced 1d ago');
+  });
+
+  // Never invent a time: a stamp we do not have is said vaguely, not as "now".
+  it('stays honest when no sync time was recorded', () => {
+    expect(lastSyncedLabel(null, now)).toBe('Last synced a while ago');
+    expect(lastSyncedLabel(undefined, now)).toBe('Last synced a while ago');
+    expect(lastSyncedLabel(Number.NaN, now)).toBe('Last synced a while ago');
+  });
+
+  it('does not go backwards when the device clock is ahead', () => {
+    expect(lastSyncedLabel(now + 5_000, now)).toBe('Last synced just now');
+  });
+});
+
+describe('progress copy', () => {
+  it('never offers a number in place of one it could not fetch', () => {
+    for (const copy of [STALE_PROGRESS_COPY, UNAVAILABLE_PROGRESS_COPY]) {
+      expect(copy.title).not.toMatch(/\b0\b/);
+      expect(copy.body).not.toMatch(/\b0\b/);
+      expect(copy.title.length).toBeGreaterThan(0);
+      expect(copy.body.length).toBeGreaterThan(0);
+    }
   });
 });

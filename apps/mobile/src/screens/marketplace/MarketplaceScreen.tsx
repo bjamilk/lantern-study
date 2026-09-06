@@ -51,7 +51,8 @@ import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 import { ShopQuickActions } from './components/ShopQuickActions';
 import { useShopBadges } from '../../hooks/useShopBadges';
 import { useFocusEffect } from '@react-navigation/native';
-import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
+import { resolveListState, shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
+import { RequestError } from '../../components/RequestError';
 import {
   CONDITION_ATTRIBUTE,
   COURSE_ANCHOR_COPY,
@@ -109,6 +110,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     favoriteListings,
     savedSearches,
     isLoading,
+    error: listingsError,
     searchQuery,
     selectedCategory,
     activeTab,
@@ -493,12 +495,30 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     ]
   );
 
+  /**
+   * The last grid we actually managed to render.
+   *
+   * `fetchListings` blanks `listings` the instant a page-1 request starts, so
+   * by the time that request fails there is nothing left on screen to keep —
+   * which is how a phone with no radio ended up showing "No listings found",
+   * a claim about the marketplace that a failed request cannot support.
+   * Pull-to-refresh reloads the AsyncStorage cache into the store on its way
+   * past, so these are genuinely the buyer's last cached listings.
+   */
+  const [lastGoodListings, setLastGoodListings] = useState<MarketplaceListing[]>([]);
+  useEffect(() => {
+    if (listings.length > 0) setLastGoodListings(listings);
+  }, [listings]);
+
   const displayListings = useMemo(() => {
+    // Only a failed load may reach back for the cache. A successful load that
+    // returned nothing is real news and must be allowed to empty the grid.
+    const source = listings.length > 0 || !listingsError ? listings : lastGoodListings;
     const base = showFavoritesOnly
       ? favoriteListings.length
         ? favoriteListings
-        : listings.filter(l => favorites.has(l.id))
-      : listings;
+        : source.filter(l => favorites.has(l.id))
+      : source;
     const filtered = base.filter(listingMatchesFilters);
     if (!searchQuery.trim()) return filtered;
     const q = searchQuery.toLowerCase();
@@ -510,12 +530,31 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     );
   }, [
     listings,
+    lastGoodListings,
+    listingsError,
     favoriteListings,
     favorites,
     showFavoritesOnly,
     searchQuery,
     listingMatchesFilters,
   ]);
+
+  /**
+   * The one decision about what the grid says. `failed` outranks `empty` and
+   * `noMatch` on purpose: a request that never left the device told us nothing
+   * about what is for sale, so it may not answer "is there anything here?".
+   */
+  const listingsState = resolveListState({
+    loading: isLoading,
+    // The shops segment has its own loader and its own errors.
+    error: activeTab === 'shops' ? null : listingsError,
+    itemCount: displayListings.length,
+    query: searchQuery,
+  });
+
+  const retryListings = useCallback(() => {
+    void fetchListings({ page: 1 });
+  }, [fetchListings]);
 
   useEffect(() => {
     if (!searchQuery.trim()) return;
@@ -1395,7 +1434,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             )}
           />
         )
-      ) : isLoading && !displayListings.length ? (
+      ) : listingsState === 'loading' ? (
         <View className="flex-1 flex-row flex-wrap p-2">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <View key={i} className="w-1/2 p-1">
@@ -1420,7 +1459,21 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           keyboardShouldPersistTaps="handled"
           keyExtractor={item => item.id}
           numColumns={2}
-          ListHeaderComponent={listHeader}
+          ListHeaderComponent={
+            <>
+              {listHeader}
+              {/* Rows are still on screen and we could not refresh them: flag
+                  them, never blank them. */}
+              {listingsState === 'stale' ? (
+                <RequestError
+                  error={listingsError}
+                  variant="banner"
+                  onRetry={retryListings}
+                  detail="These are the listings we already had. We couldn’t check for new ones."
+                />
+              ) : null}
+            </>
+          }
           contentContainerStyle={{ padding: 8, paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ justifyContent: 'space-between' }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
@@ -1432,6 +1485,14 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             ) : null
           }
           ListEmptyComponent={
+            listingsState === 'failed' ? (
+              // Not "No listings found" — we do not know that. The Communities
+              // segment already degraded this way; Shop showed a bare empty
+              // state with nothing to tap.
+              <View style={{ minHeight: 320 }}>
+                <RequestError error={listingsError} onRetry={retryListings} />
+              </View>
+            ) : (
             <View className="items-center py-16 px-6">
               <AppIcon name="bag" size={48} color="#cbd5e1" />
               <Text className="text-lg font-semibold text-lantern-text mt-4">
@@ -1458,6 +1519,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 </Button>
               )}
             </View>
+            )
           }
           renderItem={renderListing}
         />

@@ -10,6 +10,12 @@ import {
   SupabaseService,
 } from '../services/supabase';
 import { CacheService } from '../services/cache';
+import {
+  addMessageReaction,
+  removeMessageReaction,
+  REACTION_REMOVE_FAILED,
+  REACTION_SAVE_FAILED,
+} from '../services/messageReactions';
 import { logger } from '../utils/logger';
 import {
   CHAT_REACTION_MAX_DISTINCT_PER_MESSAGE,
@@ -1710,7 +1716,8 @@ router.post(
     }
 
     try {
-      const result = await supabaseService.addMessageReaction(
+      const result = await addMessageReaction(
+        supabaseService,
         messageId,
         userId,
         emoji,
@@ -1722,10 +1729,16 @@ router.post(
       }
       res.json({ success: true, data: result });
     } catch (error: any) {
-      if (error?.statusCode === 503) {
-        return res.status(503).json({ success: false, error: error.message });
-      }
-      throw error;
+      // A reaction that fails must SAY it failed to save. Letting this reach
+      // the global handler produced a 500 whose body is the generic
+      // "Something went wrong" — the toast a student got when Favorite broke,
+      // and the one string that tells them nothing about what to do next.
+      logger.error('Reaction add failed', { messageId, scope: target.scope, error });
+      const statusCode = error?.statusCode === 503 ? 503 : 500;
+      return res.status(statusCode).json({
+        success: false,
+        error: statusCode === 503 ? error.message : REACTION_SAVE_FAILED,
+      });
     }
   })
 );
@@ -1752,7 +1765,8 @@ router.delete(
     }
 
     try {
-      const result = await supabaseService.removeMessageReaction(
+      const result = await removeMessageReaction(
+        supabaseService,
         messageId,
         userId,
         emoji,
@@ -1764,10 +1778,12 @@ router.delete(
       }
       res.json({ success: true, data: result });
     } catch (error: any) {
-      if (error?.statusCode === 503) {
-        return res.status(503).json({ success: false, error: error.message });
-      }
-      throw error;
+      logger.error('Reaction remove failed', { messageId, scope: target.scope, error });
+      const statusCode = error?.statusCode === 503 ? 503 : 500;
+      return res.status(statusCode).json({
+        success: false,
+        error: statusCode === 503 ? error.message : REACTION_REMOVE_FAILED,
+      });
     }
   })
 );

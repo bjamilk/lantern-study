@@ -138,12 +138,16 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
       );
     }
 
+    // Browse-by-course reads a members-only endpoint and the guest shell owns
+    // no app route, so its button asks for sign-in instead of opening a panel
+    // that could only 403.
     return (
       <MarketplaceScreen
         guestMode
         onSignInRequired={promptSignIn}
         initialBrowseNodeId={new URLSearchParams(location.search).get('node') || ''}
         onNavigateToDiscover={() => promptSignIn()}
+        onOpenCourseBrowse={() => promptSignIn()}
         onNavigate={(screen, params) => {
           if (screen === 'MarketplaceListingDetail' && params?.listingId) {
             navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);

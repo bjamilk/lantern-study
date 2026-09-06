@@ -5,6 +5,9 @@ import { Badge } from '../ui';
 import { useTheme } from '../../theme';
 import { TAB_BAR_CONTENT_HEIGHT, tabBarClearance } from './screenInsets';
 import { BOTTOM_TABS, TAB_LABELS, type BottomTabKey, type TabKey } from './tabRouting';
+// Which glyph each destination draws, and why the current one is FILLED
+// rather than merely tinted: see tabIcons.ts, which is pure and unit-tested.
+import { TAB_ICONS } from './tabIcons';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 export type { TabKey, BottomTabKey };
@@ -15,27 +18,6 @@ interface TabDef {
   icon: AppIconName;
   badge?: number;
 }
-
-/**
- * One icon per destination. There is no `activeIcon` any more: the active tab
- * is the SAME glyph drawn heavier.
- *
- * Filling was the obvious move and it is wrong here — several of these are
- * composite glyphs (Building2's windows, CircleUser's face) that a solid fill
- * erases into a blob. Stroke weight reads on all five, and it is the
- * non-colour signal the bar needs alongside the label.
- */
-const TAB_ICONS: Record<BottomTabKey, AppIconName> = {
-  Home: 'home',
-  Study: 'school',
-  Chat: 'chatbubbles',
-  Campus: 'business',
-  Me: 'person-circle',
-};
-
-/** The active tab's icon is drawn heavier — the non-colour half of the signal. */
-const TAB_ICON_STROKE_ACTIVE = 2.7;
-const TAB_ICON_STROKE_IDLE = 2;
 
 interface Props {
   activeTab: TabKey;
@@ -69,19 +51,21 @@ function TabButton({
       accessibilityLabel={tab.label}
     >
       <View className="relative">
+        {/* No strokeWidth: appIconStroke.ts owns the ramp. */}
         <AppIcon
           name={tab.icon}
           size={24}
-          strokeWidth={active ? TAB_ICON_STROKE_ACTIVE : TAB_ICON_STROKE_IDLE}
+          filled={active}
           color={active ? activeColor : inactiveColor}
         />
         {tab.badge ? <Badge count={tab.badge} /> : null}
       </View>
       {/* The label is not decoration: it is the second, non-colour signal for
-          which destination is current, alongside the filled icon. */}
+          which destination is current, alongside the filled icon — bold when
+          current, medium when not. */}
       <Text
         numberOfLines={1}
-        className={`text-[10px] mt-0.5 font-medium text-center ${active ? 'text-lantern-primary' : 'text-lantern-text-tertiary'}`}
+        className={`text-[10px] mt-0.5 text-center ${active ? 'font-bold text-lantern-primary' : 'font-medium text-lantern-text-tertiary'}`}
       >
         {tab.label}
       </Text>

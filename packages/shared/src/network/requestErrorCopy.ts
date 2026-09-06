@@ -175,6 +175,44 @@ export function isRequestFailureRetryable(error: unknown): boolean {
 }
 
 /**
+ * The two things a screen may say about numbers it cannot refresh.
+ *
+ * `stale` is for figures we still hold and know to be true, just not current —
+ * show them, date them. `unavailable` is for the case with nothing real in
+ * hand: say we cannot show it. The one thing neither may do is render a zero,
+ * because "0 tests · 0 pts · Level 1" is not an absence, it is a claim that
+ * the student's work is gone.
+ */
+export const STALE_PROGRESS_COPY: { title: string; body: string } = {
+  title: 'Showing your last synced progress',
+  body: 'We couldn’t reach Lantern just now. Nothing has been lost.',
+};
+
+export const UNAVAILABLE_PROGRESS_COPY: { title: string; body: string } = {
+  title: 'Your progress will show when you reconnect',
+  body: 'We couldn’t reach Lantern, so we’re not guessing at your numbers.',
+};
+
+/**
+ * "Last synced 5m ago" — the date stamp that turns a stale figure from a lie
+ * into a fact. Returns the honest vaguer form when we never recorded a time.
+ */
+export function lastSyncedLabel(
+  syncedAt: number | null | undefined,
+  now: number = Date.now(),
+): string {
+  if (syncedAt == null || !Number.isFinite(syncedAt)) return 'Last synced a while ago';
+  const seconds = Math.floor((now - syncedAt) / 1000);
+  if (seconds < 60) return 'Last synced just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Last synced ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Last synced ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `Last synced ${days}d ago`;
+}
+
+/**
  * What a data-backed list should render right now.
  *
  * `failed` outranks `noMatch` and `empty` on purpose — that precedence IS the

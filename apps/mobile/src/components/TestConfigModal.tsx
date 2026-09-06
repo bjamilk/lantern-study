@@ -28,6 +28,10 @@ import { CoursePicker } from './CoursePicker';
 import { TopicPicker } from './TopicPicker';
 import { topicIdAfterCourseChange } from '../utils/topicSelection';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
+// The start rules are pure and live beside the tests screens, where mobile
+// jest (node env, *.test.ts only) can reach them: this modal renders what
+// they return and holds no judgement of its own.
+import { isTestConfigValid, testConfigValidationHint } from '../screens/tests/testConfigRules';
 
 // Timer presets in seconds
 const TIMER_PRESETS = [
@@ -152,6 +156,15 @@ export default function TestConfigModal({
   const insets = useSafeAreaInsets();
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
 
+  /**
+   * Has the reader picked a timer themselves?
+   *
+   * Until they do, the timer tracks the question count (1 min each). After
+   * they do, it stops moving — including on "None", which used to be undone
+   * by the next tap on the question stepper.
+   */
+  const [timerTouched, setTimerTouched] = useState(false);
+
   const forcesStudyFromVisibility = mode === 'test' && questionVisibilityMode === 'unverified';
   const isStudyMode = mode === 'study' || forcesStudyFromVisibility;
   const effectiveSessionMode: 'test' | 'study' = isStudyMode ? 'study' : 'test';
@@ -197,6 +210,7 @@ export default function TestConfigModal({
       setPresetName('');
       setSelectedPresetId('');
       setShowAdvanced(false);
+      setTimerTouched(false);
       setLockAnswered(isStudyMode ? false : useSettingsStore.getState().settings.study.lockAnsweredQuestions);
     }
   }, [visible, maxQuestions, isStudyMode]);
@@ -216,13 +230,14 @@ export default function TestConfigModal({
     });
   }, [effectiveMaxQuestions, visible]);
 
-  // Auto-set timer to 1 min per question in test mode
+  // Auto-set timer to 1 min per question in test mode — until the reader
+  // states a preference, which then stands.
   useEffect(() => {
-    if (!visible || isStudyMode) return;
+    if (!visible || isStudyMode || timerTouched) return;
     if (numberOfQuestions > 0) {
       setTimerDuration(numberOfQuestions * 60);
     }
-  }, [numberOfQuestions, visible, isStudyMode]);
+  }, [numberOfQuestions, visible, isStudyMode, timerTouched]);
 
   // Mutual exclusion for SR and Focus on New
   useEffect(() => {
@@ -249,7 +264,10 @@ export default function TestConfigModal({
     const preset = presets.find(p => p.id === presetId);
     if (!preset) return;
     setNumberOfQuestions(preset.config.numberOfQuestions);
+    // A saved preset states its timer, 0 (untimed) included: don't let the
+    // question count overwrite it.
     setTimerDuration(preset.config.timerDuration || 0);
+    setTimerTouched(true);
     setSelectedQuestionTypes(webQuestionTypesToMobile(preset.config.allowedQuestionTypes || []));
     setSelectedTags(preset.config.selectedTags || []);
     setFocusOnNew(preset.config.focusOnNew || false);
@@ -301,40 +319,33 @@ export default function TestConfigModal({
     );
   }, []);
 
-  const isValid = useMemo(() => {
-    if (effectiveMaxQuestions === 0) return false;
-    if (numberOfQuestions <= 0) return false;
-    if (numberOfQuestions > effectiveMaxQuestions) return false;
-    if (!isStudyMode && timerDuration <= 0) return false;
-    if (!isStudyMode && !useSpacedRepetition && !focusOnNew && selectedQuestionTypes.length === 0) {
-      return false;
-    }
-    return true;
-  }, [
-    effectiveMaxQuestions,
-    numberOfQuestions,
-    isStudyMode,
-    timerDuration,
-    useSpacedRepetition,
-    focusOnNew,
-    selectedQuestionTypes,
-  ]);
+  /**
+   * Timer "None" is NOT part of this: an untimed test is a real choice, and
+   * the old rule refused to start on it — Start Test sat disabled under "Set
+   * a timer for the test." while "5 min" worked.
+   */
+  const validityInput = useMemo(
+    () => ({
+      effectiveMaxQuestions,
+      numberOfQuestions,
+      isStudyMode,
+      useSpacedRepetition,
+      focusOnNew,
+      selectedQuestionTypeCount: selectedQuestionTypes.length,
+    }),
+    [
+      effectiveMaxQuestions,
+      numberOfQuestions,
+      isStudyMode,
+      useSpacedRepetition,
+      focusOnNew,
+      selectedQuestionTypes,
+    ]
+  );
 
-  const validationHint = useMemo(() => {
-    if (effectiveMaxQuestions === 0) return 'No testable questions match your filters.';
-    if (!isStudyMode && !useSpacedRepetition && !focusOnNew && selectedQuestionTypes.length === 0) {
-      return 'Select at least one question type.';
-    }
-    if (!isStudyMode && timerDuration <= 0) return 'Set a timer for the test.';
-    return null;
-  }, [
-    effectiveMaxQuestions,
-    isStudyMode,
-    useSpacedRepetition,
-    focusOnNew,
-    selectedQuestionTypes,
-    timerDuration,
-  ]);
+  const isValid = useMemo(() => isTestConfigValid(validityInput), [validityInput]);
+
+  const validationHint = useMemo(() => testConfigValidationHint(validityInput), [validityInput]);
 
   const handleSubmit = useCallback(() => {
     if (!isValid) return;
@@ -634,7 +645,10 @@ export default function TestConfigModal({
                         { backgroundColor: colors.inputBackground, borderColor: colors.border },
                         timerDuration === preset.value && { backgroundColor: '#f97316', borderColor: '#f97316' },
                       ]}
-                      onPress={() => setTimerDuration(preset.value)}
+                      onPress={() => {
+                        setTimerDuration(preset.value);
+                        setTimerTouched(true);
+                      }}
                     >
                       <Text style={[
                         styles.timerPresetText,

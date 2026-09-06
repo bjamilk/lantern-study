@@ -819,7 +819,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         set({ groups: JSON.parse(groupsJson) });
       }
       if (messagesJson) {
-        set({ messagesCache: JSON.parse(messagesJson) });
+        // MERGE, memory winning: `fetchGroups` calls this on every run while
+        // a thread may be open underneath, and a wholesale replace wiped the
+        // messages that thread had just fetched (the disk copy rarely holds
+        // them) — the thread then rendered as "No messages yet".
+        const stored = JSON.parse(messagesJson) as GroupState['messagesCache'];
+        set(state => ({ messagesCache: { ...stored, ...state.messagesCache } }));
       }
     } catch (error) {
       console.error('[GroupStore] Failed to load from storage:', error);

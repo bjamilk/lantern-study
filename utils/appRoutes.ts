@@ -58,6 +58,86 @@ export function campusSegmentMode(segment: CampusSegment): AppMode {
 /** The Me destination has no AppMode: it is a route App.tsx renders directly. */
 export const ME_PATH = '/me';
 
+/**
+ * Shop sub-destinations that own a URL.
+ *
+ * The Shop segment is a place; browsing it by course, opening one course and
+ * listing something for sale are places INSIDE it — each is linkable, survives
+ * a refresh and is what Back leaves. They are sub-paths of `/campus/shop`
+ * rather than modes, so the Campus tab stays lit the whole way down.
+ *
+ * Lantern AI is deliberately absent: it is the overlay that FOLLOWS you across
+ * every screen, not somewhere you went, so it has no URL by design.
+ */
+export const SHOP_PATH = '/campus/shop';
+export const SHOP_COURSES_PATH = '/campus/shop/courses';
+export const SHOP_SELL_PATH = '/campus/shop/sell';
+/**
+ * Study products is filed under Study (see `destinations.ts`) and its Back goes
+ * to the Library, so its URL sits under Study too — a path that said
+ * `/campus/shop/...` while the Study tab is lit would contradict the shell.
+ * The Shop spelling redirects here.
+ */
+export const STUDY_PRODUCTS_PATH = '/study/products';
+
+export type ShopView = 'browse' | 'courses' | 'sell';
+
+export interface ShopRoute {
+  view: ShopView;
+  /** The open course on `/campus/shop/courses/:courseId`. */
+  courseId: string | null;
+}
+
+/**
+ * What the Shop screen should be showing, read straight off the path.
+ *
+ * The URL is the authority for these sub-states — the same rule the Library
+ * tabs follow — so a reload, a Back step and a pasted link all agree.
+ */
+export function parseShopRoute(pathname: string): ShopRoute {
+  const path = normalizePath(pathname);
+  if (path === SHOP_SELL_PATH) return { view: 'sell', courseId: null };
+  if (path === SHOP_COURSES_PATH) return { view: 'courses', courseId: null };
+  const courseId = segment(path, /^\/campus\/shop\/courses\/([^/]+)$/);
+  if (courseId) return { view: 'courses', courseId };
+  return { view: 'browse', courseId: null };
+}
+
+/**
+ * Paths from the old four-shelf navigation, plus the spellings the shell's own
+ * labels invite ("Jobs" → `/jobs`, "Downloads" → `/downloads`).
+ *
+ * Every one of these used to fall into the catch-all and land on the dashboard,
+ * which reads as "that section does not exist". A legacy path must always name
+ * the place that replaced it. The target is canonical, so the parser resolves
+ * the mode and params by parsing it — the redirect can never disagree with the
+ * screen it points at.
+ */
+const LEGACY_PATH_REDIRECTS: Readonly<Record<string, string>> = {
+  '/jobs': '/campus/jobs',
+  '/discover/jobs': '/campus/jobs',
+  '/shop': SHOP_PATH,
+  '/goods': SHOP_PATH,
+  '/marketplace/goods': SHOP_PATH,
+  '/marketplace/shop': SHOP_PATH,
+  '/discover/shop': SHOP_PATH,
+  '/discover/goods': SHOP_PATH,
+  '/communities': '/campus',
+  '/discover/communities': '/campus',
+  '/discover/c': '/campus',
+  '/campus/communities': '/campus',
+  '/marketplace/sell': SHOP_SELL_PATH,
+  '/marketplace/new': SHOP_SELL_PATH,
+  '/marketplace/courses': SHOP_COURSES_PATH,
+  '/marketplace/study-products': STUDY_PRODUCTS_PATH,
+  '/campus/shop/study-products': STUDY_PRODUCTS_PATH,
+  '/study-products': STUDY_PRODUCTS_PATH,
+  '/downloads': '/offline',
+  // Budget was Campus Pocket before the rename.
+  '/campus-pocket': '/budget',
+  '/pocket': '/budget',
+};
+
 export interface AppRouteParams {
   groupId?: string;
   threadId?: string;
@@ -88,6 +168,10 @@ export interface AppRouteParams {
   budgetTab?: BudgetTabParam;
   /** Which Campus segment `/campus`, `/campus/shop` or `/campus/jobs` names. */
   campusSegment?: CampusSegment;
+  /** `courses` when the path is `/campus/shop/courses[/:courseId]`. */
+  shopView?: Exclude<ShopView, 'browse' | 'sell'>;
+  /** The course open on `/campus/shop/courses/:courseId`. */
+  courseId?: string;
 }
 
 export interface ParsedAppRoute {
@@ -182,7 +266,13 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       // the board rather than leaving the community.
       return params.postId ? `${channel}/p/${encodeURIComponent(params.postId)}` : channel;
     case AppMode.MARKETPLACE:
-      return '/campus/shop';
+      // The Shop's own sub-destinations. Without params this is plain browse,
+      // so tapping the Campus > Shop tab still lands on `/campus/shop`.
+      if (params.courseId) {
+        return `${SHOP_COURSES_PATH}/${encodeURIComponent(params.courseId)}`;
+      }
+      if (params.shopView === 'courses') return SHOP_COURSES_PATH;
+      return SHOP_PATH;
     case AppMode.MARKETPLACE_LISTING_DETAIL:
       return params.listingId
         ? `/marketplace/listing/${encodeURIComponent(params.listingId)}`
@@ -206,7 +296,11 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
         ? `/marketplace/seller/${encodeURIComponent(params.sellerId)}`
         : '/campus/shop';
     case AppMode.CREATE_MARKETPLACE_LISTING:
-      return '/marketplace/new';
+      // The Sell sheet opens over the Shop, so its url is a sub-path of the
+      // Shop. `/marketplace/new` redirects here.
+      return SHOP_SELL_PATH;
+    case AppMode.STUDY_PRODUCT_DRAFTS:
+      return STUDY_PRODUCTS_PATH;
     case AppMode.SELLER_CUSTOMERS:
       return '/marketplace/seller/customers';
     case AppMode.MARKETPLACE_JOBS:
@@ -274,6 +368,13 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return { mode: null, params: {} };
   }
   if (path === '/welcome') return { mode: null, params: {} };
+  // Legacy and guessable spellings, before anything else so a prefix branch
+  // below can never claim one (`/campus/communities` would otherwise parse as
+  // an institution page for a campus called "communities").
+  const legacyTarget = LEGACY_PATH_REDIRECTS[path];
+  if (legacyTarget) {
+    return { ...parseAppRoute(legacyTarget), redirect: legacyTarget };
+  }
   if (path === '/dashboard') return { mode: AppMode.DASHBOARD, params: {} };
   if (path === '/chat') return { mode: AppMode.CHAT, params: {}, clearChat: true };
   if (path === '/groups/new') return { mode: AppMode.CREATE_GROUP, params: {} };
@@ -298,6 +399,42 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   }
   if (path === '/campus/jobs') {
     return { mode: AppMode.MARKETPLACE_JOBS, params: { campusSegment: 'jobs' } };
+  }
+  // The Shop's sub-destinations. They sit above the `/campus/:slug` page for
+  // the same reason `shop` and `jobs` do: these are reserved words in this
+  // namespace, never institution slugs.
+  if (path === SHOP_SELL_PATH) {
+    return { mode: AppMode.CREATE_MARKETPLACE_LISTING, params: { campusSegment: 'shop' } };
+  }
+  if (path === SHOP_COURSES_PATH) {
+    return {
+      mode: AppMode.MARKETPLACE,
+      params: { campusSegment: 'shop', shopView: 'courses' },
+    };
+  }
+  const shopCourseId = segment(path, /^\/campus\/shop\/courses\/([^/]+)$/);
+  if (shopCourseId) {
+    return {
+      mode: AppMode.MARKETPLACE,
+      params: { campusSegment: 'shop', shopView: 'courses', courseId: shopCourseId },
+    };
+  }
+  // A mistyped sub-path of a reserved segment belongs to that segment. Falling
+  // through would route it to the public campus page for an institution named
+  // "shop" or "jobs", which is a wrong screen rather than a missing one.
+  if (path.startsWith('/campus/shop/')) {
+    return {
+      mode: AppMode.MARKETPLACE,
+      params: { campusSegment: 'shop' },
+      redirect: SHOP_PATH,
+    };
+  }
+  if (path.startsWith('/campus/jobs/')) {
+    return {
+      mode: AppMode.MARKETPLACE_JOBS,
+      params: { campusSegment: 'jobs' },
+      redirect: '/campus/jobs',
+    };
   }
   if (path.startsWith('/campus/')) {
     const rest = path.slice('/campus/'.length).split('/').filter(Boolean);
@@ -362,7 +499,6 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/marketplace/my-listings') return { mode: AppMode.MY_LISTINGS, params: {} };
   if (path === '/marketplace/favorites') return { mode: AppMode.MARKETPLACE_FAVORITES, params: {} };
   if (path === '/marketplace/inquiries') return { mode: AppMode.MARKETPLACE_INQUIRIES, params: {} };
-  if (path === '/marketplace/new') return { mode: AppMode.CREATE_MARKETPLACE_LISTING, params: {} };
   if (path === '/marketplace/seller/customers') return { mode: AppMode.SELLER_CUSTOMERS, params: {} };
   if (path === '/marketplace/jobs') {
     return {
@@ -389,6 +525,7 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return { mode: AppMode.LIBRARY, params: {} };
   }
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
+  if (path === STUDY_PRODUCTS_PATH) return { mode: AppMode.STUDY_PRODUCT_DRAFTS, params: {} };
   if (path === '/ai-tools') return { mode: AppMode.AI_TOOLS, params: {} };
   if (path === '/wallet') {
     return { mode: AppMode.BUDGET_TRACKER, params: { budgetTab: 'wallet' }, redirect: '/budget/wallet' };

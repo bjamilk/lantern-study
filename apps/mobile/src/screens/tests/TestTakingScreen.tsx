@@ -18,7 +18,7 @@ import {
   Pressable,
   AppState,
 } from 'react-native';
-import { Screen, useScreenInsets } from '../../components/layout';
+import { Screen, useScreenInsets, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp, useIsFocused } from '@react-navigation/native';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
 import { useTheme, type ThemeColors } from '../../theme';
@@ -31,6 +31,8 @@ import { hapticSuccess } from '../../utils/haptics';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
+import { planTestExit } from './testSessionExit';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -531,6 +533,18 @@ export default function TestTakingScreen() {
   // every edge, so the close button, test name and countdown drew under the
   // status bar and the Prev/Next footer collapsed onto the gesture bar.
   const insets = useScreenInsets();
+  /**
+   * Clearance for the Prev / dots / Next footer.
+   *
+   * `'auto'` rather than the raw bottom inset: this route is registered
+   * immersive, but when the shared chrome does not stand down (entering the
+   * session from another tab, it stayed up) the absolutely-positioned tab bar
+   * is drawn OVER this screen and buried the whole footer — no Next button,
+   * no question dots, nothing to advance with. `'auto'` pays tab-bar clearance
+   * exactly when the bar is really there, and collapses back to the plain
+   * inset the moment it is not.
+   */
+  const navFooterPadding = useScreenBottomPadding({ bottom: 'auto', bottomExtra: 12 });
   const userId = useAuthStore(s => s.user?.id) || '';
   const { testName, isOffline, groupName, groupId, offlineTestId } = route.params;
 
@@ -720,6 +734,34 @@ export default function TestTakingScreen() {
     return activeTest.flaggedQuestions.has(currentQuestion.id);
   }, [activeTest, currentQuestion]);
 
+  /**
+   * Leave this session AND take this screen with us.
+   *
+   * A bare `goBack()` was the whole defect. Reached by nested navigate (Home,
+   * a group chat, the offline screen), this screen is the Study stack's only
+   * route: GO_BACK is unhandled here, bubbles to the tab navigator and just
+   * switches to Home, leaving the session screen mounted as the Study root —
+   * later rendering the dead "This test session has ended." with no way back
+   * to the Study root at all. planTestExit (testSessionExit.ts) pops when
+   * there is genuinely something below, and otherwise resets this stack onto
+   * StudyHub, which removes this screen and restores the root in one move.
+   *
+   * The reset still runs through useConfirmBeforeExit's `beforeRemove` guard,
+   * so the "Exit Test?" prompt now appears on this path too — it could not
+   * fire before, because nothing was being removed.
+   */
+  const dismissSession = useCallback(() => {
+    const plan = planTestExit({
+      state: navigation.getState?.(),
+      rootRouteName: TAB_STACK_ROOT_ROUTE.StudyTab,
+    });
+    if (plan.action === 'pop') {
+      navigation.goBack();
+      return;
+    }
+    navigation.reset({ index: 0, routes: plan.routes.map(name => ({ name })) });
+  }, [navigation]);
+
   const finalizeSubmit = useCallback(async () => {
     const liveSession = useTestStore.getState().activeTest;
     if (!liveSession || submittingRef.current) return;
@@ -769,7 +811,7 @@ export default function TestTakingScreen() {
           { text: 'Continue', style: 'cancel' },
           { text: 'End Session', onPress: () => {
             exitStudyMode();
-            navigation.goBack();
+            dismissSession();
           }},
         ]
       );
@@ -783,7 +825,7 @@ export default function TestTakingScreen() {
     }
 
     setShowReviewModal(true);
-  }, [finalizeSubmit, exitStudyMode, navigation]);
+  }, [finalizeSubmit, exitStudyMode, dismissSession]);
 
   handleSubmitRef.current = handleSubmit;
 
@@ -908,7 +950,7 @@ export default function TestTakingScreen() {
         <View style={s(colors).errorContainer}>
           <Text style={[s(colors).errorText, { color: colors.textSecondary }]}>{endedCopy}</Text>
           {!isSubmitting && (
-            <TouchableOpacity onPress={() => navigation.goBack()}>
+            <TouchableOpacity onPress={dismissSession}>
               <Text style={[s(colors).errorLink, { color: colors.primary }]}>Go Back</Text>
             </TouchableOpacity>
           )}
@@ -926,7 +968,7 @@ export default function TestTakingScreen() {
     <Screen edges={['top']} bottom="none" keyboard className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={[s(colors).header, { backgroundColor: colors.card, borderBottomColor: colors.border }, isStudyMode && s(colors).headerStudy]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s(colors).exitButton}>
+        <TouchableOpacity onPress={dismissSession} style={s(colors).exitButton}>
           <AppIcon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         
@@ -1105,7 +1147,7 @@ export default function TestTakingScreen() {
           {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
-            paddingBottom: Math.max(insets.bottom, 16) + 12,
+            paddingBottom: navFooterPadding,
           },
           isStudyMode && s(colors).navigationStudy,
         ]}

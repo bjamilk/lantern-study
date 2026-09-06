@@ -156,6 +156,7 @@ import SignalHigh from 'lucide-react-native/icons/signal-high';
 import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal';
 import Smartphone from 'lucide-react-native/icons/smartphone';
 import Snowflake from 'lucide-react-native/icons/snowflake';
+import Sparkle from 'lucide-react-native/icons/sparkle';
 import Sparkles from 'lucide-react-native/icons/sparkles';
 import Square from 'lucide-react-native/icons/square';
 import SquareCheckBig from 'lucide-react-native/icons/square-check-big';
@@ -335,6 +336,10 @@ export const APP_ICONS = {
   'shirt': Shirt,
   'shuffle': Shuffle,
   'snow': Snowflake,
+  // One clean four-point star. `sparkles` adds a stray dot and a tick that
+  // collapse into a scribble below ~28px, which is what the Lantern AI button
+  // in the top bar was showing — use `sparkle` wherever the glyph is small.
+  'sparkle': Sparkle,
   'sparkles': Sparkles,
   'square': Square,
   'star': Star,

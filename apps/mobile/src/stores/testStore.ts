@@ -18,7 +18,7 @@ import { trackStudyActivity } from '../services/gamification';
 import { trackTestCompleted } from '../services/productAnalytics';
 import { syncService } from '../services/syncService';
 import { fetchTestResultsCached, clearTestResultsCache } from '../services/dashboardCache';
-import { normalizeApiQuestions, flashcardsToQuestions, filterTestQuestions, formatCorrectAnswerDisplay, resolveCorrectAnswerLabel } from '../utils/questionHelpers';
+import { normalizeApiQuestions, flashcardsToQuestions, filterTestQuestions, formatCorrectAnswerDisplay, resolveCorrectAnswerLabel, restoreMatchingAnswerMap } from '../utils/questionHelpers';
 import { normalizeUserQuestionStats } from '../utils/buildDashboardStats';
 import { useOfflineStore } from './offlineStore';
 import {
@@ -28,7 +28,16 @@ import {
   nearestPreviousUnlockedIndex,
 } from '@lantern/shared/utils';
 import { useSettingsStore } from './settingsStore';
-import { resolveAttemptTimeLimitMinutes } from '../utils/resolveAttemptTimeLimitMinutes';
+import {
+  hasStoredTimerChoice,
+  resolveAttemptTimeLimitMinutes,
+  resolveResumeTimeLimitMinutes,
+} from '../utils/resolveAttemptTimeLimitMinutes';
+import {
+  activeElapsedSeconds,
+  bankedSecondsFromTimings,
+  timingsFromDraftAnswers,
+} from '../utils/testDuration';
 
 const DEMO_MODE = false;
 
@@ -150,6 +159,10 @@ function buildDraftPayloadFromActive(activeTest: ActiveTest) {
       ...(activeTest.courseId && activeTest.topicId ? { topicId: activeTest.topicId } : {}),
       numberOfQuestions: activeTest.questions.length,
       questionIds: activeTest.questions.map((q) => q.id),
+      // Both units, so a resume never has to guess at the reader's choice —
+      // and so an untimed session reads as 0 minutes rather than as a key
+      // that happens to be missing. See utils/resolveAttemptTimeLimitMinutes.
+      timerDurationMinutes: activeTest.test.timeLimit || 0,
       timerDuration: (activeTest.test.timeLimit || 0) * 60,
       allowedQuestionTypes: [],
       testId: activeTest.test.id,
@@ -303,7 +316,24 @@ export interface ActiveTest {
   currentQuestionIndex: number;
   answers: Record<string, string | string[] | Record<string, string>>; // Support different formats
   answerTimings: Record<string, number>;
+  /**
+   * When the FIRST run of this session began. It is the draft's `start_time`
+   * and the attempt's `startedAt`, so it keeps meaning that across a resume —
+   * it is NOT how long the reader has been working (see `runStartedAt`).
+   */
   startTime: number;
+  /**
+   * When the CURRENT run began: the same as `startTime` on a fresh start, and
+   * the moment of the resume otherwise. Duration is measured from here.
+   */
+  runStartedAt: number;
+  /**
+   * Active seconds banked by earlier runs of this session, recovered on resume
+   * from the per-question timings the draft already persists. A snapshot taken
+   * at the resume: re-answering a question afterwards re-times it for the
+   * per-question chart without revising this total.
+   */
+  bankedSeconds: number;
   timeRemaining: number; // in seconds
   mode: TestMode; // 'test' = timed, no feedback | 'study' = untimed, immediate feedback
   // For study mode - track which questions have been answered and revealed
@@ -727,7 +757,11 @@ export const useTestStore = create<TestState>((set, get) => ({
           deckId: t.config?.deckId,
           deckName: t.config?.deckName || t.config?.groupName,
           questionCount: questions.length || t.config?.numberOfQuestions || 0,
-          timeLimit: t.config?.timerDuration || 0,
+          // `timerDuration` is SECONDS: reading it straight into `timeLimit`
+          // (minutes) turned a 5-minute test into a 300-minute one on the
+          // tests list and in any start that did not go through the config
+          // sheet. One rule decides the units now.
+          timeLimit: resolveAttemptTimeLimitMinutes(t.config),
           passingScore: t.config?.passingScore || 70,
           createdAt: t.created_at,
         };
@@ -846,7 +880,12 @@ export const useTestStore = create<TestState>((set, get) => ({
         const totalQuestions = r.totalQuestions ?? r.total_questions ?? questions.length;
         const correctAnswersCount = r.correctAnswersCount ?? r.correct_answers_count ?? 0;
         const percentage = Math.round(r.score ?? 0);
-        const timeLimitMinutes = resolveAttemptTimeLimitMinutes(config);
+        // `undefined` = the attempt never recorded a timer (legacy rows), so a
+        // retake may fall back on the test's own limit; 0 = the reader chose
+        // "None", which a retake must keep untimed.
+        const timeLimitMinutes = hasStoredTimerChoice(config)
+          ? resolveAttemptTimeLimitMinutes(config)
+          : undefined;
         const originalTestId =
           typeof config.testId === 'string' && config.testId && !String(config.testId).startsWith('custom-')
             ? config.testId
@@ -1008,13 +1047,17 @@ export const useTestStore = create<TestState>((set, get) => ({
       questionCount: questions.length,
     };
 
+    const startedAtMs = Date.now();
     const started: ActiveTest = {
       test: effectiveTest,
       questions,
       currentQuestionIndex: 0,
       answers: {},
       answerTimings: {},
-      startTime: Date.now(),
+      startTime: startedAtMs,
+      // A fresh run: nothing banked, and this run began when the session did.
+      runStartedAt: startedAtMs,
+      bankedSeconds: 0,
       timeRemaining: mode === 'test' && effectiveTest.timeLimit > 0 ? effectiveTest.timeLimit * 60 : 0,
       mode,
       revealedAnswers: new Set(),
@@ -1069,13 +1112,17 @@ export const useTestStore = create<TestState>((set, get) => ({
       createdAt: new Date().toISOString(),
     };
 
+    const startedAtMs = Date.now();
     const started: ActiveTest = {
       test: generatedTest,
       questions,
       currentQuestionIndex: 0,
       answers: {},
       answerTimings: {},
-      startTime: Date.now(),
+      startTime: startedAtMs,
+      // A fresh run: nothing banked, and this run began when the session did.
+      runStartedAt: startedAtMs,
+      bankedSeconds: 0,
       timeRemaining: mode === 'test' && timeLimit > 0 ? timeLimit * 60 : 0,
       mode,
       revealedAnswers: new Set(),
@@ -1290,8 +1337,10 @@ export const useTestStore = create<TestState>((set, get) => ({
 
   resumePausedSession: async (sessionId: string) => {
     const draft = await fetchMobileTestDraft(sessionId);
-    const questions = normalizeApiQuestions(
-      Array.isArray(draft.questions) ? draft.questions : [],
+    const rawQuestions: any[] = Array.isArray(draft.questions) ? draft.questions : [];
+    const questions = normalizeApiQuestions(rawQuestions);
+    const rawQuestionById = new Map<string, any>(
+      rawQuestions.map((q: any) => [String(q?.id ?? ''), q]),
     );
     const answersRaw =
       (draft.userAnswers as Record<string, any>) ||
@@ -1308,11 +1357,12 @@ export const useTestStore = create<TestState>((set, get) => ({
         } else if (typeof record.fillText === 'string') {
           answers[qid] = record.fillText;
         } else if (record.matchingAnswers) {
-          const map: Record<string, string> = {};
-          for (const pair of record.matchingAnswers) {
-            map[pair.promptItemId] = pair.answerItemId;
-          }
-          answers[qid] = map;
+          // Ids in the draft, prompt/answer TEXT on the board (and in
+          // grading). Handing the ids back left every pair unmatched.
+          answers[qid] = restoreMatchingAnswerMap(
+            rawQuestionById.get(qid),
+            record.matchingAnswers,
+          );
         } else if (Array.isArray(record.diagramAnswers)) {
           // Same round-trip as matching: pairs in the draft, map in the store.
           // Without this, a paused diagram-labeling answer vanished on resume
@@ -1334,7 +1384,14 @@ export const useTestStore = create<TestState>((set, get) => ({
     const mode = (draft.sessionKind || draft.session_kind) === 'study' ? 'study' : 'test';
     const draftConfig =
       (draft.config as
-        | { groupId?: string; groupName?: string; lockAnsweredQuestions?: boolean }
+        | {
+            groupId?: string;
+            groupName?: string;
+            lockAnsweredQuestions?: boolean;
+            timerDuration?: number;
+            timerDurationMinutes?: number;
+            timerDurationSeconds?: number;
+          }
         | undefined) || {};
     const title =
       (draft.title as string) ||
@@ -1358,22 +1415,41 @@ export const useTestStore = create<TestState>((set, get) => ({
           )
         : [],
     );
+    // Per-question timings were dropped on resume, which lost the
+    // time-per-question chart AND left the duration model with nothing to
+    // bank. They are already in the draft's answer records; read them back.
+    const restoredTimings = timingsFromDraftAnswers(answersRaw);
+    const resumedTimeLimitMinutes = resolveResumeTimeLimitMinutes({
+      mode,
+      remainingSeconds: remaining,
+      config: draftConfig,
+    });
     const resumed: ActiveTest = {
       test: {
         id: String(draft.id),
         name: title,
         description: 'Resumed session',
         questionCount: questions.length,
-        timeLimit: Math.ceil((remaining || 0) / 60),
+        // An untimed session stays untimed across a resume: the draft's own
+        // config is the authority, and no arithmetic on the remaining
+        // seconds may put a clock back on a test that never had one.
+        timeLimit: resumedTimeLimitMinutes,
         passingScore: 70,
         createdAt: String(draft.startTime || draft.start_time || new Date().toISOString()),
       },
       questions,
       currentQuestionIndex,
       answers,
-      answerTimings: {},
+      answerTimings: restoredTimings,
+      // `startTime` stays the session's ORIGINAL start — the draft and the
+      // attempt both mean "when this began". How long the reader has actually
+      // worked is banked + this run, never `now - startTime`.
       startTime: Date.parse(String(draft.startTime || draft.start_time || Date.now())) || Date.now(),
-      timeRemaining: mode === 'test' ? remaining : 0,
+      runStartedAt: Date.now(),
+      bankedSeconds: bankedSecondsFromTimings(restoredTimings),
+      // Never a clock without a limit: an untimed resume banks 0 here too, so
+      // the header, the countdown and the auto-submit all agree.
+      timeRemaining: resumedTimeLimitMinutes > 0 ? remaining : 0,
       mode,
       revealedAnswers: new Set(),
       flaggedQuestions: new Set(),
@@ -1498,7 +1574,13 @@ export const useTestStore = create<TestState>((set, get) => ({
     if (!activeTest) throw new Error('No active test');
     const testMode = activeTest.mode;
     
-    const timeSpent = Math.round((Date.now() - activeTest.startTime) / 1000);
+    // Active time, not wall-clock since the session was created: a paused
+    // draft resumed the next morning used to report hundreds of minutes.
+    const timeSpent = activeElapsedSeconds({
+      bankedSeconds: activeTest.bankedSeconds,
+      runStartedAtMs: activeTest.runStartedAt,
+      nowMs: Date.now(),
+    });
     
     // Helper function to check if answer is correct based on question type
     const checkAnswer = (q: TestQuestion, userAnswer: string | string[] | Record<string, string> | undefined): boolean => {
@@ -1885,7 +1967,10 @@ export const useTestStore = create<TestState>((set, get) => ({
           deckId,
           deckName,
           numberOfQuestions: config.questionCount,
-          timerDuration: config.timeLimit,
+          // Minutes in the minutes field, seconds in the seconds field —
+          // this wrote minutes into `timerDuration` (seconds).
+          timerDurationMinutes: Math.max(0, config.timeLimit || 0),
+          timerDuration: Math.max(0, config.timeLimit || 0) * 60,
           passingScore: config.passingScore,
         },
         questions,

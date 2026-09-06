@@ -104,10 +104,12 @@ export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCoun
           className="items-center justify-center"
         >
           <View className="relative">
+            {/* `sparkle`, not `sparkles`: at this size the three-mark glyph
+                read as a scribble. One star, filled when Lantern AI is open. */}
             <AppIcon
-              name="sparkles"
+              name="sparkle"
               filled={activeTab === 'AI'}
-              size={22}
+              size={24}
               color={activeTab === 'AI' ? colors.tabBarActive : colors.tabBarInactive}
             />
             {/* The AI-credit count, docked on the sparkle it belongs to. */}
@@ -131,7 +133,7 @@ export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCoun
             <AppIcon
               name="notifications"
               filled={activeTab === 'Notifications'}
-              size={22}
+              size={24}
               color={
                 activeTab === 'Notifications' ? colors.tabBarActive : colors.tabBarInactive
               }

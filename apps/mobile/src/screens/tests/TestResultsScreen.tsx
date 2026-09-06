@@ -25,6 +25,8 @@ import {
 } from '../../utils/testAnalysisHelpers';
 import type { RecentTest } from '../../types/dashboardStats';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
+import { planExitToTestsList, planTestExit } from './testSessionExit';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -159,6 +161,28 @@ export default function TestResultsScreen() {
     });
   };
 
+  /**
+   * Back out of the results without stranding them.
+   *
+   * Submitting from a session that was itself the Study stack's only route
+   * (nested navigate from Home, a group chat or the offline screen) leaves
+   * THIS screen as the only route — `replace` swaps one for one. A plain
+   * `goBack()` there is unhandled by this stack, escapes to the tab navigator
+   * and lands on Home with the results still mounted as the Study root. Pop
+   * when something of ours is below; otherwise reset onto StudyHub.
+   */
+  const dismissResults = () => {
+    const plan = planTestExit({
+      state: navigation.getState?.(),
+      rootRouteName: TAB_STACK_ROOT_ROUTE.StudyTab,
+    });
+    if (plan.action === 'pop') {
+      navigation.goBack();
+      return;
+    }
+    navigation.reset({ index: 0, routes: plan.routes.map((name: string) => ({ name })) });
+  };
+
   if (!attempt) {
     return (
       // This branch used to render OUTSIDE the local SafeAreaProvider below,
@@ -167,7 +191,7 @@ export default function TestResultsScreen() {
       <Screen edges={['top']} bottom="safe" className="flex-1" style={{ backgroundColor: colors.background }}>
         <View style={styles.errorContainer}>
           <Text style={[styles.errorText, { color: colors.textSecondary }]}>Results not found</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity onPress={dismissResults}>
             <Text style={[styles.errorLink, { color: colors.primary }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
@@ -178,11 +202,47 @@ export default function TestResultsScreen() {
   const correctCount = attempt.answers.filter(a => a.isCorrect).length;
   const incorrectCount = attempt.answers.length - correctCount;
 
+  /**
+   * Leave the results behind, never on top of the tests list.
+   *
+   * `navigate('TestsList')` only pops when TestsList is ALREADY below this
+   * screen. Arriving here from a group chat the stack is [StudyHub,
+   * TestResults], so `navigate` PUSHED a second screen — [StudyHub,
+   * TestResults, TestsList] — and back from the tests list walked FORWARD into
+   * the results the reader had just dismissed, over and over.
+   *
+   * `popTo` is the action that means what this button means: pop back to
+   * TestsList when it is in the stack, and otherwise replace this screen with
+   * it (@react-navigation/routers StackRouter, POP_TO). Either way the results
+   * screen is gone.
+   */
+  const exitToTestsList = () => {
+    const plan = planExitToTestsList({
+      state: navigation.getState?.(),
+      rootRouteName: TAB_STACK_ROOT_ROUTE.StudyTab,
+      testsListRouteName: 'TestsList',
+    });
+    if (plan.action === 'popTo') {
+      navigation.popTo(plan.routeName);
+      return;
+    }
+    // The one case popTo cannot serve: this screen is the bottom of the
+    // stack, so popTo would leave a bottomless [TestsList] whose own back
+    // exits to Home. Rebuild with the Study root underneath instead.
+    navigation.reset({
+      index: plan.routes.length - 1,
+      routes: plan.routes.map((name: string) => ({ name })),
+    });
+  };
+
   const handlePracticeFailed = async () => {
     if (!failedQuestions.length) return;
     const sessionName = `${attempt.testName} - Practice Failed`;
     await startQuestionSet(sessionName, failedQuestions, 'study');
-    navigation.navigate('TestTaking', {
+    // `replace`, not `navigate`: the practice session ends by REPLACING itself
+    // with its own results, so pushing it would leave this results screen
+    // buried under a second one for hardware BACK to walk into.
+    navigation.replace('TestTaking', {
       testId: 'custom',
       testName: sessionName,
       mode: 'study',
@@ -197,7 +257,7 @@ export default function TestResultsScreen() {
     <Screen edges={['top']} bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+        <TouchableOpacity onPress={dismissResults} style={styles.backButton}>
           <AppIcon name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Test Results</Text>
@@ -244,6 +304,25 @@ export default function TestResultsScreen() {
           </Text>
         </View>
 
+        {/* Directly under the result, ABOVE the four stat cards.
+            It used to sit below them, which put it off the bottom of the
+            first screenful on a NOT-PASSED result: that layout's action row
+            grows a full-width "Practice Failed (N)" band, the row is in flow
+            below the scroll view, and every point it gains the scroll
+            viewport loses. The button was then reachable only by scrolling,
+            and its window position landed inside the action row — clipped,
+            not covered. The stats read as well in either order; a primary
+            action that needs a scroll to be discovered does not. */}
+        <TouchableOpacity
+          style={[styles.analysisButton, { backgroundColor: colors.primary }]}
+          onPress={openDetailedAnalysis}
+          accessibilityRole="button"
+          accessibilityLabel="View detailed analysis of this test"
+        >
+          <AppIcon name="bar-chart" size={18} color="#fff" />
+          <Text style={styles.analysisButtonText}>Detailed Analysis</Text>
+        </TouchableOpacity>
+
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
@@ -267,16 +346,6 @@ export default function TestResultsScreen() {
             <Text style={styles.statLabel}>Time</Text>
           </View>
         </View>
-
-        <TouchableOpacity
-          style={[styles.analysisButton, { backgroundColor: colors.primary }]}
-          onPress={openDetailedAnalysis}
-          accessibilityRole="button"
-          accessibilityLabel="View detailed analysis of this test"
-        >
-          <AppIcon name="bar-chart" size={18} color="#fff" />
-          <Text style={styles.analysisButtonText}>Detailed Analysis</Text>
-        </TouchableOpacity>
 
         {/* Progress Bar */}
         <View style={styles.progressSection}>
@@ -408,24 +477,17 @@ export default function TestResultsScreen() {
           </TouchableOpacity>
         ) : null}
         <TouchableOpacity
-          style={styles.analysisFooterButton}
-          onPress={openDetailedAnalysis}
-        >
-          <AppIcon name="bar-chart" size={20} color="#0f766e" />
-          <Text style={styles.analysisFooterButtonText}>Detailed Analysis</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
           style={styles.retryButton}
-          onPress={() => navigation.navigate('TestsList')}
+          onPress={exitToTestsList}
         >
           <AppIcon name="refresh" size={20} color="#6366f1" />
-          <Text style={styles.retryButtonText}>Try Again</Text>
+          <Text style={styles.retryButtonText} numberOfLines={1}>Try Again</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.doneButton}
-          onPress={() => navigation.navigate('TestsList')}
+          onPress={exitToTestsList}
         >
-          <Text style={styles.doneButtonText}>Done</Text>
+          <Text style={styles.doneButtonText} numberOfLines={1}>Done</Text>
         </TouchableOpacity>
       </View>
     </Screen>
@@ -550,23 +612,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   analysisButtonText: {
     color: '#fff',
     fontSize: 15,
-    fontWeight: '700',
-  },
-  analysisFooterButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#ccfbf1',
-    borderRadius: 12,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#99f6e4',
-  },
-  analysisFooterButtonText: {
-    color: '#0f766e',
-    fontSize: 13,
     fontWeight: '700',
   },
   progressSection: {
@@ -699,6 +744,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   practiceFailedButton: {
     width: '100%',
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -714,12 +760,20 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.success,
   },
   retryButton: {
-    flex: 1,
+    // `flexBasis: 0` with `flexGrow: 1` — NOT the shorthand `flex: 1` inside a
+    // wrapping row, where the basis stays `auto` and each button is sized by
+    // its own label first. Three of them no longer fitted, so every label
+    // spilled outside the box it was supposed to be inside.
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 120,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    padding: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
     borderRadius: 12,
     backgroundColor: '#6366f120',
   },
@@ -729,11 +783,16 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: '#6366f1',
   },
   doneButton: {
-    flex: 1,
-    padding: 16,
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 120,
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
     borderRadius: 12,
     backgroundColor: '#6366f1',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   doneButtonText: {
     fontSize: 16,

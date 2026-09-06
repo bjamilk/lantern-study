@@ -143,9 +143,12 @@ import { useAppNavigation } from './hooks/useAppNavigation';
 import { useRouteSync } from './hooks/useRouteSync';
 import {
     ME_PATH,
+    SHOP_COURSES_PATH,
+    SHOP_PATH,
     campusSegmentPath,
     isPublicMarketplacePath,
     parseAppRoute,
+    parseShopRoute,
     type CampusSegment,
 } from './utils/appRoutes';
 import CampusHubScreen from './components/campus/CampusHubScreen';
@@ -606,6 +609,34 @@ export const App: React.FC = () => {
     const communityRoute = appMode === AppMode.COMMUNITY_DETAIL ? parseAppRoute(location.pathname) : null;
     const communityChannelId = communityRoute?.params?.groupId ?? null;
     const communityRouteSlug = communityRoute?.params?.slug ?? null;
+    /**
+     * The Shop's sub-states are read off the URL, never held in a local flag:
+     * the By-course panel, one course inside it and the Sell sheet are places,
+     * so a refresh re-opens exactly what the address bar names and Back leaves
+     * it. `useModalHistory` is not involved for the Sell sheet — the route
+     * entry IS its history entry, and a second push would take two Backs to
+     * close one sheet.
+     */
+    const shopRoute = React.useMemo(() => parseShopRoute(location.pathname), [location.pathname]);
+    const isSellRoute = shopRoute.view === 'sell';
+    const previousPathRef = React.useRef<string | null>(null);
+    React.useEffect(() => () => { previousPathRef.current = location.pathname; }, [location.pathname]);
+    /**
+     * Leave a sub-state by its own control (the sheet's X, "All courses").
+     *
+     * If the reader stepped INTO it from the place we are returning to, give
+     * that history entry back — the same bargain `useModalHistory` strikes, so
+     * Back never has to walk through a dead entry that looks like it did
+     * nothing. A reader who arrived by deep link has no entry to give back, so
+     * the url is rewritten in place instead.
+     */
+    const leaveShopSubState = React.useCallback((to: string) => {
+        if (previousPathRef.current === to && typeof window !== 'undefined') {
+            window.history.back();
+            return;
+        }
+        navigateToPath(to, { replace: true });
+    }, [navigateToPath]);
     // Belt and braces for the column: whatever path led here, the community
     // page always has an active community matching its URL (the column then
     // resolves the placeholder by slug).
@@ -2156,16 +2187,28 @@ export const App: React.FC = () => {
                     onOpenRecurring={() => openModal('recurring')}
                     onOpenExpenseSplit={() => openModal('expenseSplit')}
                     onOpenFinancialToolkit={() => openModal('financialToolkit')} />;
+            // The Sell sheet has its own url (`/campus/shop/sell`) and opens
+            // over the Shop, so both paths render the same screen; the sheet
+            // itself is mounted from the route below.
+            case AppMode.CREATE_MARKETPLACE_LISTING:
             case AppMode.MARKETPLACE:
                 return <MarketplaceScreen
                     refreshKey={myListingsRefreshKey}
                     initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
                     initialTab={marketplaceBrowseIntent?.tab}
                     initialCategory={marketplaceBrowseIntent?.category}
+                    courseBrowseOpen={shopRoute.view === 'courses'}
+                    courseBrowseCourseId={shopRoute.courseId}
+                    onOpenCourseBrowse={() => navigateToPath(SHOP_COURSES_PATH)}
+                    onOpenCourse={(courseId) => navigateToPath(
+                        `${SHOP_COURSES_PATH}/${encodeURIComponent(courseId)}`
+                    )}
+                    onOpenCourseIndex={() => leaveShopSubState(SHOP_COURSES_PATH)}
+                    onCloseCourseBrowse={() => leaveShopSubState(SHOP_PATH)}
                     onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
-                        openModal('createMarketplaceListing');
+                        navigateTo(AppMode.CREATE_MARKETPLACE_LISTING);
                     } else if (screen === 'MarketplaceListingDetail') {
                         setSelectedMarketplaceListingId(params.listingId);
                         setSelectedMarketplaceListingInitialQuantity(
@@ -2566,29 +2609,6 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
                         }
                     }} />;
-            case AppMode.CREATE_MARKETPLACE_LISTING:
-                if (!modals.createMarketplaceListing) openModal('createMarketplaceListing');
-                return <MarketplaceScreen
-                    refreshKey={myListingsRefreshKey}
-                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
-                    initialTab={marketplaceBrowseIntent?.tab}
-                    initialCategory={marketplaceBrowseIntent?.category}
-                    onNavigate={(screen, params) => {
-                    if (screen === 'CreateMarketplaceListing') {
-                        setMarketplaceListingCategory(params?.category || 'academic');
-                        openModal('createMarketplaceListing');
-                    } else if (screen === 'MarketplaceListingDetail') {
-                        setSelectedMarketplaceListingId(params.listingId);
-                        setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                    } else if (screen === 'MyListings') setAppMode(AppMode.MY_LISTINGS);
-                    else if (screen === 'MarketplaceInquiries') setAppMode(AppMode.MARKETPLACE_INQUIRIES);
-                    else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
-                        setSellerProfileReturnMode(AppMode.MARKETPLACE);
-                        setSelectedSellerId(params.userId || params.sellerId);
-                        setAppMode(AppMode.SELLER_PROFILE);
-                    }
-                    else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
-                }} />;
             case AppMode.MARKETPLACE_JOBS:
                 return (
                     <JobsBoardScreen onNavigate={handleJobsNavigate} />
@@ -2888,14 +2908,22 @@ export const App: React.FC = () => {
             {duplicateInfo && <DuplicateQuestionModal isOpen={modals.duplicateQuestion}
                 onClose={() => { closeModal('duplicateQuestion'); setDuplicateInfo(null); }}
                 duplicateInfo={duplicateInfo} onUpvoteAndClose={handleUpvoteDuplicateAndClose} />}
-            <CreateMarketplaceListingModal isOpen={modals.createMarketplaceListing}
-                onClose={() => closeModal('createMarketplaceListing')} category={marketplaceListingCategory}
+            {/* Opened either as a route (`/campus/shop/sell`, from the Shop) or
+                as a plain sheet over My listings and Favorites, which keep
+                their own urls. Closing the routed one leaves by the url, so
+                Back and the sheet's own X agree. */}
+            <CreateMarketplaceListingModal isOpen={modals.createMarketplaceListing || isSellRoute}
+                onClose={() => {
+                    if (isSellRoute) leaveShopSubState(SHOP_PATH);
+                    closeModal('createMarketplaceListing');
+                }} category={marketplaceListingCategory}
                 onOpenStudyProducts={() => {
                     closeModal('createMarketplaceListing');
                     setStudyProductSource(null);
-                    setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
+                    navigateTo(AppMode.STUDY_PRODUCT_DRAFTS);
                 }}
                 onSuccess={() => {
+                    if (isSellRoute) leaveShopSubState(SHOP_PATH);
                     closeModal('createMarketplaceListing');
                     setMyListingsRefreshKey((k) => k + 1);
                 }} />

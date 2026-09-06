@@ -5,7 +5,10 @@ import {
   formatCorrectAnswerDisplay,
   canonicalOfflineQuestionType,
   matchesOfflineQuestionTypeFilter,
+  normalizeApiQuestions,
+  restoreMatchingAnswerMap,
 } from './questionHelpers';
+import { normalizeTestQuestionForSession } from '@lantern/shared/utils/testHelpers';
 import type { TestQuestion } from '../stores/testStore';
 
 describe('offline question type normalize', () => {
@@ -88,5 +91,148 @@ describe('resolveCorrectAnswerLabel', () => {
     };
 
     expect(resolveCorrectAnswerLabel(question)).toBe('False');
+  });
+});
+
+describe('normalizeApiQuestions — session round-trip', () => {
+  // What a session/draft row actually stores: the MESSAGE type in `type`
+  // ("QUESTION") and the real question type in `questionType`.
+  const sessionMatching = {
+    id: 'q-match',
+    type: 'QUESTION',
+    questionType: 'MATCHING',
+    questionStem: 'The meaning of life is which matching',
+    matchingPromptItems: [
+      { id: 'p1', text: 'Alpha' },
+      { id: 'p2', text: 'Beta' },
+    ],
+    matchingAnswerItems: [
+      { id: 'p1-ans', text: 'First' },
+      { id: 'p2-ans', text: 'Second' },
+    ],
+    correctMatches: [
+      { promptItemId: 'p1', answerItemId: 'p1-ans' },
+      { promptItemId: 'p2', answerItemId: 'p2-ans' },
+    ],
+  };
+
+  it('keeps a matching question matching instead of a blank Multiple Choice card', () => {
+    const [q] = normalizeApiQuestions([sessionMatching]);
+    expect(q.type).toBe('matching');
+    expect(q.matchingPairs).toEqual([
+      { id: 'p1', left: 'Alpha', right: 'First' },
+      { id: 'p2', left: 'Beta', right: 'Second' },
+    ]);
+  });
+
+  it('keeps a stored multiple-choice question answerable', () => {
+    const [q] = normalizeApiQuestions([
+      {
+        id: 'q-mcq',
+        type: 'QUESTION',
+        questionType: 'MULTIPLE_CHOICE_SINGLE',
+        questionStem: 'Pick one',
+        options: [
+          { id: '1', text: 'Alpha' },
+          { id: '2', text: 'Beta' },
+        ],
+        correctAnswerIds: ['2'],
+      },
+    ]);
+    expect(q.type).toBe('multiple_choice_single');
+    expect(q.options).toEqual(['Alpha', 'Beta']);
+    expect(q.correctAnswer).toBe('Beta');
+  });
+
+  it('keeps a diagram question a diagram', () => {
+    const [q] = normalizeApiQuestions([
+      {
+        id: 'q-diagram',
+        type: 'QUESTION',
+        questionType: 'DIAGRAM_LABELING',
+        questionStem: 'Label it',
+        imageUrl: 'https://example.test/diagram.png',
+        diagramLabels: [{ id: 'l1', text: 'Nucleus', x: 10, y: 20 }],
+      },
+    ]);
+    expect(q.type).toBe('diagram_labeling');
+    expect(q.diagramLabels).toEqual([{ id: 'l1', label: 'Nucleus', x: 10, y: 20 }]);
+  });
+
+  it('restores a fill-in-the-blank answer so grading has something to compare', () => {
+    const [q] = normalizeApiQuestions([
+      {
+        id: 'q-fill',
+        type: 'QUESTION',
+        questionType: 'FILL_IN_THE_BLANK',
+        questionStem: 'The capital is ___',
+        acceptableAnswers: ['Accra', 'accra'],
+      },
+    ]);
+    expect(q.type).toBe('fill_in_blank');
+    expect(q.correctAnswer).toBe('Accra');
+    expect(q.keywords).toEqual(['Accra', 'accra']);
+  });
+
+  it('still reads a mobile-shaped question, which carries its type in `type`', () => {
+    const [q] = normalizeApiQuestions([
+      { id: 'q-mobile', type: 'true_false', question: 'Yes?', options: ['True', 'False'] },
+    ]);
+    expect(q.type).toBe('true_false');
+  });
+
+  it('survives a real normalizeTestQuestionForSession round-trip', () => {
+    const [restored] = normalizeApiQuestions([
+      normalizeTestQuestionForSession(
+        {
+          id: 'q-match',
+          type: 'matching',
+          question: 'Match them',
+          matchingPairs: [
+            { id: 'a', left: 'Alpha', right: 'First' },
+            { id: 'b', left: 'Beta', right: 'Second' },
+          ],
+        },
+        0
+      ) as unknown as Record<string, unknown>,
+    ]);
+    expect(restored.type).toBe('matching');
+    expect(restored.matchingPairs?.map(p => [p.left, p.right])).toEqual([
+      ['Alpha', 'First'],
+      ['Beta', 'Second'],
+    ]);
+  });
+});
+
+describe('restoreMatchingAnswerMap', () => {
+  const stored = {
+    id: 'q-match',
+    matchingPromptItems: [
+      { id: 'p1', text: 'Alpha' },
+      { id: 'p2', text: 'Beta' },
+    ],
+    matchingAnswerItems: [
+      { id: 'a1', text: 'First' },
+      { id: 'a2', text: 'Second' },
+    ],
+  };
+
+  it('turns the draft\'s id pairs back into the board\'s text pairs', () => {
+    expect(
+      restoreMatchingAnswerMap(stored, [
+        { promptItemId: 'p1', answerItemId: 'a2' },
+        { promptItemId: 'p2', answerItemId: 'a1' },
+      ])
+    ).toEqual({ Alpha: 'Second', Beta: 'First' });
+  });
+
+  it('falls back to the ids when the item lists are missing', () => {
+    expect(restoreMatchingAnswerMap({}, [{ promptItemId: 'p1', answerItemId: 'a1' }])).toEqual({
+      p1: 'a1',
+    });
+  });
+
+  it('is empty for a question with no saved matches', () => {
+    expect(restoreMatchingAnswerMap(stored, undefined)).toEqual({});
   });
 });

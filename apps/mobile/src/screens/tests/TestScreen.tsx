@@ -26,6 +26,7 @@ import { BackButton } from '../../components/ui';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { resolveTestTimeLimitMinutes } from './testConfigRules';
 
 type TabType = 'tests' | 'history';
 
@@ -144,7 +145,13 @@ export default function TestScreen() {
     setShowConfigModal(false);
     setConfigTest(null);
     void startTest(test.id, mode, {
-      timeLimit: config.timerDuration > 0 ? Math.ceil(config.timerDuration / 60) : test.timeLimit,
+      // 0 seconds is the "None" chip, not a missing value: honour it as an
+      // untimed test instead of quietly reinstating the test's own limit.
+      timeLimit: resolveTestTimeLimitMinutes({
+        timerDurationSeconds: config.timerDuration,
+        sessionMode: mode === 'test' ? 'test' : 'study',
+        fallbackMinutes: test.timeLimit,
+      }),
       questionCount: config.numberOfQuestions,
       userId: user.id,
       questionTypes: config.selectedQuestionTypes.length ? config.selectedQuestionTypes : undefined,
@@ -207,7 +214,9 @@ export default function TestScreen() {
     if (existingTest) {
       try {
         await startTest(existingTest.id, 'test', {
-          timeLimit: timeLimitMinutes || existingTest.timeLimit,
+          // An attempt that recorded "None" (0) retakes untimed; only an
+          // attempt with NO recorded timer falls back on the test's limit.
+          timeLimit: attempt.timeLimitMinutes ?? existingTest.timeLimit,
           userId: user?.id,
           groupId: attempt.groupId,
           groupName: attempt.groupName,
@@ -291,7 +300,7 @@ export default function TestScreen() {
       onPress={() => setSelectedTest(item)}
       activeOpacity={0.7}
     >
-      <View style={[styles.testIcon, { backgroundColor: colors.primaryLight }]}>
+      <View style={[styles.testIcon, { backgroundColor: colors.primaryBackground }]}>
         <AppIcon name="document-text" size={24} color={colors.primary} />
       </View>
       
@@ -394,7 +403,11 @@ export default function TestScreen() {
 
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>
-      <View style={[styles.emptyIcon, { backgroundColor: colors.primaryLight }]}>
+      {/* `primaryLight` is the SOLID brand colour in the light palette — the
+          same value as `primary` — so this painted a 120px filled purple disc
+          with a purple glyph invisible inside it. `primaryBackground` is the
+          tint token the rest of the app uses behind a primary-coloured icon. */}
+      <View style={[styles.emptyIcon, { backgroundColor: colors.primaryBackground }]}>
         <AppIcon 
           name={activeTab === 'tests' ? 'document-text' : 'time'} 
           size={64} 
@@ -579,7 +592,7 @@ export default function TestScreen() {
             {selectedTest && (
               <>
                 <View style={styles.modalHeader}>
-                  <View style={[styles.modalIcon, { backgroundColor: colors.primaryLight }]}>
+                  <View style={[styles.modalIcon, { backgroundColor: colors.primaryBackground }]}>
                     <AppIcon name="document-text" size={32} color={colors.primary} />
                   </View>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedTest.name}</Text>
@@ -596,7 +609,7 @@ export default function TestScreen() {
                       style={[
                         styles.modeOption,
                         { backgroundColor: colors.background, borderColor: colors.border },
-                        selectedMode === 'test' && { borderColor: colors.primary, backgroundColor: colors.primaryLight }
+                        selectedMode === 'test' && { borderColor: colors.primary, backgroundColor: colors.primaryBackground }
                       ]}
                       onPress={() => setSelectedMode('test')}
                       activeOpacity={0.7}

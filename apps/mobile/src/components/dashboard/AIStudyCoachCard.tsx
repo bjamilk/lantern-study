@@ -33,7 +33,7 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
     return (
       <Card className="mb-4">
         <View className="flex-row items-center gap-2">
-          <AppIcon name="sparkles" size={16} color={colors.primary} />
+          <AppIcon name="sparkle" size={16} color={colors.primary} />
           <Text className="text-sm text-lantern-text-secondary flex-1">
             AI Study Coach is paused in low-data mode.
           </Text>
@@ -70,7 +70,7 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
     <Card className="mb-4">
       <View className="flex-row items-center justify-between mb-2">
         <View className="flex-row items-center gap-2">
-          <AppIcon name="sparkles" size={16} color={colors.primary} />
+          <AppIcon name="sparkle" size={16} color={colors.primary} />
           <Text className="text-sm font-semibold text-lantern-text">AI Study Coach</Text>
         </View>
         <Pressable
