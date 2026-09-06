@@ -28,7 +28,7 @@ export function DiscoverComingSoon({
               accessibilityLabel={backLabel}
               className="mt-4 items-center"
             >
-              <Text className="text-xs font-semibold text-lantern-primary">{backLabel}</Text>
+              <Text className="text-xs font-semibold text-lantern-primary-text">{backLabel}</Text>
             </Pressable>
           ) : null}
         </View>

@@ -96,7 +96,7 @@ export function MakeOfferScreen({ navigation, route }: Props) {
               <Text className="text-base font-semibold text-lantern-text" numberOfLines={2}>
                 {listing.title}
               </Text>
-              <Text className="text-lg font-bold text-lantern-primary mt-1">
+              <Text className="text-lg font-bold text-lantern-primary-text mt-1">
                 {formatPrice(listing.price)}
               </Text>
             </Card>

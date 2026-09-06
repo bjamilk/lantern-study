@@ -243,8 +243,8 @@ export function DmOffersPanel({
       >
         {actionable ? (
           <View className="flex-row items-center gap-1.5 mb-2">
-            <View className="w-1.5 h-1.5 rounded-full bg-lantern-primary" />
-            <Text className="text-[11px] font-semibold uppercase tracking-wide text-lantern-primary">
+            <View className="w-1.5 h-1.5 rounded-full bg-lantern-primary-fill" />
+            <Text className="text-[11px] font-semibold uppercase tracking-wide text-lantern-primary-text">
               {canRespond ? 'Awaiting your response' : 'Awaiting their response'}
             </Text>
           </View>
@@ -279,7 +279,7 @@ export function DmOffersPanel({
                 accessibilityRole="button"
                 accessibilityLabel="Send counter offer"
                 accessibilityState={{ disabled: busy, busy }}
-                className="px-3 py-2 rounded-xl bg-lantern-primary"
+                className="px-3 py-2 rounded-xl bg-lantern-primary-fill"
               >
                 <Text className="text-xs font-semibold text-white">Send counter</Text>
               </Pressable>
@@ -341,7 +341,7 @@ export function DmOffersPanel({
                 <Text className="text-xs font-semibold text-lantern-error">Withdraw</Text>
               </Pressable>
             ) : null}
-            {busy ? <ActivityIndicator color={colors.primary} /> : null}
+            {busy ? <ActivityIndicator color={colors.primaryText} /> : null}
           </View>
         ) : null}
       </View>
@@ -415,7 +415,7 @@ export function DmOffersPanel({
               accessibilityRole="button"
               accessibilityLabel="Send offer"
               accessibilityState={{ disabled: creating, busy: creating }}
-              className="mt-2 px-3 py-2 rounded-xl bg-lantern-primary self-start"
+              className="mt-2 px-3 py-2 rounded-xl bg-lantern-primary-fill self-start"
             >
               <Text className="text-xs font-semibold text-white">
                 {creating ? 'Sending…' : 'Send offer'}

@@ -306,7 +306,7 @@ export function OffersScreen({
             accessibilityLabel={t === 'seller' ? 'Received offers' : 'Sent offers'}
             className={`flex-1 py-2 rounded-lg items-center ${tab === t ? 'bg-lantern-surface dark:bg-lantern-surface-secondary' : ''}`}
           >
-            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}>
+            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-lantern-primary-text' : 'text-lantern-text-secondary'}`}>
               {t === 'seller' ? 'Received' : 'Sent'}
             </Text>
           </Pressable>

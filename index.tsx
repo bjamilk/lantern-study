@@ -14,6 +14,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
+// After index.css: the type-scale tokens must win over any earlier definition.
+import './design/type.css';
 import { bootstrapAuthFromStorage } from './services/supabase';
 import { applyDesignTokensToDom } from './utils/applyDesignTokens';
 import { App } from './App';

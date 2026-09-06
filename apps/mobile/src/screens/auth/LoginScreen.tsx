@@ -107,7 +107,7 @@ export function LoginScreen({ navigation }: Props) {
               Sign in
             </Button>
             <Pressable onPress={() => navigation.navigate('ForgotPassword')} className="py-2">
-              <Text className="text-center text-sm text-lantern-primary">
+              <Text className="text-center text-sm text-lantern-primary-text">
                 Forgot your password?
               </Text>
             </Pressable>

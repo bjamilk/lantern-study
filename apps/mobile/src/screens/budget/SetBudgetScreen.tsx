@@ -129,7 +129,7 @@ export default function SetBudgetScreen() {
           {budget ? 'Edit Budget' : 'Set Budget'}
         </Text>
         <TouchableOpacity
-          style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
+          style={[styles.saveButton, { backgroundColor: colors.primaryFill }, isLoading && styles.saveButtonDisabled]}
           onPress={handleSubmit}
           disabled={isLoading}
         >

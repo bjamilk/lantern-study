@@ -86,7 +86,7 @@ export default function ExpenseSplitScreen() {
                 onPress={() => setCategory(cat.id)}
                 className={`px-3 py-2 rounded-xl border ${category === cat.id ? 'border-lantern-primary bg-lantern-primary-background' : 'border-lantern-border bg-lantern-surface'}`}
               >
-                <Text className={`text-xs ${category === cat.id ? 'text-lantern-primary font-semibold' : 'text-lantern-text-secondary'}`}>
+                <Text className={`text-xs ${category === cat.id ? 'text-lantern-primary-text font-semibold' : 'text-lantern-text-secondary'}`}>
                   {cat.icon} {cat.label.split('/')[0].split('&')[0].trim()}
                 </Text>
               </TouchableOpacity>
@@ -97,7 +97,7 @@ export default function ExpenseSplitScreen() {
           <Text className="text-xs font-medium text-lantern-text-secondary">Split between you + {namedOthers.length} other{namedOthers.length === 1 ? '' : 's'}</Text>
           <View className="flex-row items-center gap-2 bg-lantern-primary-background rounded-xl px-3 py-2.5">
             <AppIcon name="person-circle" size={18} color="#6366f1" />
-            <Text className="text-sm text-lantern-primary font-medium">{userName} (you)</Text>
+            <Text className="text-sm text-lantern-primary-text font-medium">{userName} (you)</Text>
           </View>
           {others.map((name, i) => (
             <View key={i} className="flex-row items-center gap-2">
@@ -117,7 +117,7 @@ export default function ExpenseSplitScreen() {
           ))}
           <TouchableOpacity onPress={() => setOthers(prev => [...prev, ''])} className="flex-row items-center gap-1.5 py-1">
             <AppIcon name="person-add" size={16} color="#6366f1" />
-            <Text className="text-sm text-lantern-primary font-medium">Add person</Text>
+            <Text className="text-sm text-lantern-primary-text font-medium">Add person</Text>
           </TouchableOpacity>
 
           {amountNum > 0 && (

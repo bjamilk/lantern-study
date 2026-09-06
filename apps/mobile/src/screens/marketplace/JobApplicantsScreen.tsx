@@ -273,7 +273,7 @@ export function JobApplicantsScreen() {
               accessibilityRole="button"
               className={`mr-2 rounded-full border px-3 py-2 ${
                 sort === option
-                  ? "border-lantern-primary bg-lantern-primary"
+                  ? "border-lantern-primary bg-lantern-primary-fill"
                   : "border-lantern-border"
               }`}
             >
@@ -314,7 +314,7 @@ export function JobApplicantsScreen() {
               <View
                 className={`mr-2 h-5 w-5 items-center justify-center rounded border ${
                   selectedIds.has(app.id)
-                    ? "border-lantern-primary bg-lantern-primary"
+                    ? "border-lantern-primary bg-lantern-primary-fill"
                     : "border-lantern-border bg-lantern-background"
                 }`}
               >
@@ -370,7 +370,7 @@ export function JobApplicantsScreen() {
                   accessibilityRole="button"
                   className="rounded-lg border border-lantern-border px-3 py-2"
                 >
-                  <Text className="text-sm font-medium text-lantern-primary">
+                  <Text className="text-sm font-medium text-lantern-primary-text">
                     {openingResumeId === app.id ? "Opening…" : "View resume"}
                   </Text>
                 </Pressable>
@@ -384,7 +384,7 @@ export function JobApplicantsScreen() {
                 accessibilityRole="button"
                 className="rounded-lg border border-lantern-border px-3 py-2"
               >
-                <Text className="text-sm font-medium text-lantern-primary">
+                <Text className="text-sm font-medium text-lantern-primary-text">
                   {openNotesId === app.id
                     ? "Hide notes"
                     : app.notesCount
@@ -402,7 +402,7 @@ export function JobApplicantsScreen() {
                   accessibilityRole="button"
                   className="rounded-lg border border-lantern-border px-3 py-2"
                 >
-                  <Text className="text-sm font-medium text-lantern-primary">
+                  <Text className="text-sm font-medium text-lantern-primary-text">
                     {openInterviewsId === app.id
                       ? "Hide interviews"
                       : "Interviews"}
@@ -419,7 +419,7 @@ export function JobApplicantsScreen() {
                   accessibilityRole="button"
                   className="rounded-lg border border-lantern-border px-3 py-2"
                 >
-                  <Text className="text-sm font-medium text-lantern-primary">
+                  <Text className="text-sm font-medium text-lantern-primary-text">
                     {openOfferId === app.id ? "Hide offer" : "Offer"}
                   </Text>
                 </Pressable>
@@ -440,7 +440,7 @@ export function JobApplicantsScreen() {
                     key={status}
                     className={`mr-2 rounded-full border px-3 py-2 ${
                       app.status === status
-                        ? "border-lantern-primary bg-lantern-primary"
+                        ? "border-lantern-primary bg-lantern-primary-fill"
                         : "border-lantern-border"
                     }`}
                     onPress={() =>

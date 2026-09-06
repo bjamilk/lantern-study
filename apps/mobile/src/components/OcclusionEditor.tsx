@@ -328,7 +328,7 @@ export function OcclusionEditor({
       accessibilityRole="button"
       accessibilityState={{ selected: mode === id }}
       className={`px-3 py-1.5 rounded-full ${
-        mode === id ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+        mode === id ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary'
       }`}
     >
       <Text
@@ -396,7 +396,7 @@ export function OcclusionEditor({
               accessibilityLabel="Reset zoom"
               className="px-3 py-1.5 rounded-full bg-lantern-background-secondary active:opacity-80"
             >
-              <Text className="text-xs font-semibold text-lantern-primary">
+              <Text className="text-xs font-semibold text-lantern-primary-text">
                 {view.scale.toFixed(1)}× · Reset
               </Text>
             </Pressable>
@@ -410,7 +410,7 @@ export function OcclusionEditor({
               shapeCount === 0 ? 'opacity-40' : 'active:opacity-80'
             }`}
           >
-            <Text className="text-xs font-semibold text-lantern-primary">Undo</Text>
+            <Text className="text-xs font-semibold text-lantern-primary-text">Undo</Text>
           </Pressable>
           <Pressable
             onPress={clear}

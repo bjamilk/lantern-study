@@ -629,7 +629,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
             </ScrollView>
           ) : null}
           {typeLabel ? (
-            <Text className="text-xs font-medium text-lantern-primary mb-1">
+            <Text className="text-xs font-medium text-lantern-primary-text mb-1">
               {typeLabel}
             </Text>
           ) : null}
@@ -641,7 +641,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
             {pricing?.onSale && listing.price ? (
               <Text className="text-lg text-lantern-text-tertiary line-through">{formatPrice(listing.price)}</Text>
             ) : null}
-            <Text className="text-2xl font-bold text-lantern-primary">
+            <Text className="text-2xl font-bold text-lantern-primary-text">
               {formatPrice(pricing?.effective ?? listing.price)}
             </Text>
             {listing.quantity != null ? (
@@ -731,7 +731,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                 {/* Phase 3 N — see the web screen for why 'new' shows no chip. */}
                 {shouldShowTrustChip((listing.seller as { trustLevel?: string } | undefined)?.trustLevel) ? (
                   <View className="rounded-full bg-lantern-primary/15 px-2 py-0.5">
-                    <Text className="text-[11px] font-semibold text-lantern-primary">
+                    <Text className="text-[11px] font-semibold text-lantern-primary-text">
                       {trustLabel((listing.seller as { trustLevel?: string } | undefined)?.trustLevel)}
                     </Text>
                   </View>
@@ -883,7 +883,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               <Text className="text-sm font-semibold text-lantern-text">Reviews</Text>
               {!own && canReview ? (
                 <Pressable onPress={() => setShowReview(true)}>
-                  <Text className="text-sm font-semibold text-lantern-primary">Write review</Text>
+                  <Text className="text-sm font-semibold text-lantern-primary-text">Write review</Text>
                 </Pressable>
               ) : !own && user?.id ? (
                 <Text className="text-xs text-lantern-text-tertiary max-w-[160px] text-right">
@@ -921,11 +921,11 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                         <AppIcon name="star" size={9} color="#f59e0b" />
                         <View className="flex-1 h-1.5 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary overflow-hidden">
                           <View
-                            className={`h-full rounded-full ${active ? 'bg-lantern-primary' : 'bg-amber-400'}`}
+                            className={`h-full rounded-full ${active ? 'bg-lantern-primary-fill' : 'bg-amber-400'}`}
                             style={{ width: `${pct}%` }}
                           />
                         </View>
-                        <Text className="w-8 text-right text-[10px] text-lantern-text-tertiary">{pct}%</Text>
+                        <Text className="w-8 text-right text-label text-lantern-text-tertiary">{pct}%</Text>
                       </Pressable>
                     );
                   })}
@@ -944,12 +944,12 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                         accessibilityState={{ selected: reviewSort === option }}
                         className={`px-2 py-1 rounded-full ${
                           reviewSort === option
-                            ? 'bg-lantern-primary'
+                            ? 'bg-lantern-primary-fill'
                             : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
                         }`}
                       >
                         <Text
-                          className={`text-[10px] font-medium ${
+                          className={`text-label font-medium ${
                             reviewSort === option ? 'text-white' : 'text-lantern-text-secondary'
                           }`}
                         >
@@ -965,7 +965,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                     accessibilityLabel={`Showing ${reviewStarFilter}-star reviews only. Clear filter`}
                     className="flex-row items-center gap-1 px-2 py-1 rounded-full bg-lantern-primary/15"
                   >
-                    <Text className="text-[10px] font-semibold text-lantern-primary">
+                    <Text className="text-label font-semibold text-lantern-primary-text">
                       {reviewStarFilter}-star only
                     </Text>
                     <AppIcon name="close" size={11} color="#6366f1" />
@@ -994,7 +994,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                       {review.verifiedPurchase ? (
                         <View className="flex-row items-center gap-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5">
                           <AppIcon name="checkmark-circle" size={10} color="#059669" />
-                          <Text className="text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
+                          <Text className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
                             Verified purchase
                           </Text>
                         </View>
@@ -1028,7 +1028,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                         <Text
                           className={`text-[11px] ${
                             review.viewerMarkedHelpful
-                              ? 'text-lantern-primary font-semibold'
+                              ? 'text-lantern-primary-text font-semibold'
                               : 'text-lantern-text-secondary'
                           }`}
                         >
@@ -1059,13 +1059,13 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                       <Text numberOfLines={2} className="text-xs font-medium text-lantern-text">
                         {item.title}
                       </Text>
-                      <Text className="text-xs font-semibold text-lantern-primary mt-1">
+                      <Text className="text-xs font-semibold text-lantern-primary-text mt-1">
                         {formatPrice(item.price)}
                       </Text>
                       {(item.rating_count ?? 0) > 0 && item.rating_avg != null ? (
                         <View className="flex-row items-center gap-0.5 mt-0.5">
                           <AppIcon name="star" size={10} color="#f59e0b" />
-                          <Text className="text-[10px] text-lantern-text-secondary">
+                          <Text className="text-label text-lantern-text-secondary">
                             {Number(item.rating_avg).toFixed(1)} ({item.rating_count})
                           </Text>
                         </View>

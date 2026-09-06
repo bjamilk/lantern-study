@@ -356,7 +356,7 @@ export default function ChallengesInboxScreen() {
 
       {loading ? (
 
-        <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+        <ActivityIndicator style={{ marginTop: 40 }} color={colors.primaryText} />
 
       ) : (
 

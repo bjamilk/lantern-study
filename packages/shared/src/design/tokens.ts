@@ -27,10 +27,29 @@ const lightBase = {
   // this token styles; #5b6a7f clears 4.5:1 on cream and white.
   textTertiary: '#5b6a7f',
   textInverse: '#ffffff',
+  /**
+   * @deprecated The legacy DUAL-ROLE token. It is the value each theme
+   * already used for its dominant role — light `primary` is the fill,
+   * dark `primary` is the text ink — so it stays byte-identical while the
+   * ~1300 un-migrated call sites move to `primaryFill` / `primaryText`.
+   * New code must pick one of those two; never this.
+   */
   primary: lanternColors.primary,
   primaryLight: lanternColors.primaryLight,
   primaryDark: lanternColors.primaryDark,
   primaryBackground: '#eef2ff',
+  /**
+   * Primary used as a FILL under WHITE text (buttons, badges, chips).
+   * White on #4f46e5 is 6.29:1. Identical in both themes on purpose: a fill
+   * that carries white has to be dark, and "dark mode" does not change that.
+   */
+  primaryFill: lanternColors.primary,
+  /**
+   * Primary used as TEXT or an icon glyph, on the surface, the card AND the
+   * `primaryBackground` tint. Light: 6.29 on white, 5.80 on cream, 5.62 on
+   * the #eef2ff tint.
+   */
+  primaryText: lanternColors.primary,
   accent: lanternColors.accent,
   accentBackground: '#fff7ed',
   // UI-02: 700-weight for AA as small text on white/cream (see accent above).
@@ -38,9 +57,22 @@ const lightBase = {
   successBackground: '#d1fae5',
   warning: '#b45309',
   warningBackground: '#fff7ed',
-  error: '#dc2626',
+  // UI-03: red-600 (#dc2626) was 4.46:1 on the warm page ground — 0.04 short
+  // of AA for the field-error copy that renders there. #d42323 is the
+  // smallest step that clears it (4.77 cream / 5.17 white) and also lifts
+  // white labels on error fills from 4.83 to 5.17. Visually indistinguishable.
+  // NOTE: 13 hardcoded '#dc2626' literals remain in apps/mobile; they are
+  // pre-existing drift for the Wave T/V1 call-site migration to fold in.
+  error: '#d42323',
   errorBackground: '#fee2e2',
-  info: '#0ea5e9',
+  // A red that carries WHITE text on top of it — count badges, destructive
+  // fills. `error` itself is tuned to be readable AS text on the page ground,
+  // which in dark mode makes it too light to sit under a white numeral
+  // (#ef4444 + white is 3.76:1). Light needs no separate value.
+  errorStrong: '#d42323',
+  // UI-03: sky-500 (#0ea5e9) was 2.63:1 on cream as text. sky-700 clears AA
+  // on cream (5.48) and white (5.93) and is the value `--color-info` carries.
+  info: '#0369a1',
   infoBackground: '#e0f2fe',
   border: '#c5cedd',
   borderLight: '#e2e8f0',
@@ -87,10 +119,24 @@ const darkBase = {
   // Pure white on the green own-bubble — #e9edef read as dull (user request).
   chatBubbleText: '#ffffff',
   chatBubbleMeta: '#b0c0c8',
+  /** @deprecated See lightBase.primary. Dark's dominant role is TEXT, so this
+   * equals `primaryText`; using it as a FILL under white is the 2.98:1 bug
+   * found on build 153 (Home's "Review due cards"). Use `primaryFill`. */
   primary: '#818cf8',
   primaryLight: '#a5b4fc',
   primaryDark: '#6366f1',
   primaryBackground: '#6366f120',
+  /**
+   * Same value as light: white text needs a dark ground in either theme.
+   * #818cf8 (the dark `primary`) under white is 2.98:1; #4f46e5 is 6.29:1.
+   */
+  primaryFill: lanternColors.primary,
+  /**
+   * Primary used as TEXT on the dark surface, the black page AND the
+   * translucent #6366f120 tint composited over both: 6.29 / 7.04 / 5.58 /
+   * 6.45. The raw #6366f1 is 4.20 on the surface and 4.07 on the tint.
+   */
+  primaryText: '#818cf8',
   accent: '#fbbf24',
   accentBackground: '#f59e0b20',
   success: '#10b981',
@@ -99,7 +145,13 @@ const darkBase = {
   warningBackground: '#f59e0b20',
   error: '#ef4444',
   errorBackground: '#ef444420',
-  info: '#0ea5e9',
+  // red-600: white on it is 4.83:1 (AA), where white on `error` (#ef4444) is
+  // 3.76:1 — the due-count badge failed on every screen. Fill only; red TEXT
+  // on the dark ground stays `error`, which is the lighter of the two there.
+  errorStrong: '#dc2626',
+  // UI-03: sky-300 on the lights-out ground — 12.60:1 on #000, 11.26:1 on
+  // #101214. sky-500 sat at 6.3:1 and dropped under 4.5 on the info tint.
+  info: '#7dd3fc',
   infoBackground: '#0ea5e920',
   border: '#2f3336',
   borderLight: '#26292d',
@@ -129,18 +181,103 @@ export type ThemePalette = { [K in keyof typeof lightBase]: string };
 export const lightColors = lightTheme;
 export const darkColors = darkTheme;
 
-/** Feature accent colors for consistent screen identity */
+/**
+ * The eight feature identities (spec v3 §5.6). Hue = identity, at rest, in
+ * tints; state stays saturated, small and always paired with icon and text.
+ *
+ * `ink` is the only value allowed to carry text or a glyph; `tint` is a
+ * ground. Every pair clears WCAG AA (≥4.5:1) with its ink on its own tint,
+ * on the surface and on the page ground — asserted by
+ * `contrast.test.ts` and by `scripts/design/contrast.mjs`, which is the
+ * gate that must pass before either map changes.
+ *
+ * Two inks are tight: lime (4.60 on tint) and amber (4.51). Per the spec,
+ * use `#3f6212` for lime text under 12px, and never set body copy in an ink.
+ */
+export const FEATURE_KEYS = [
+  'notes',
+  'flashcards',
+  'tests',
+  'recording',
+  'ai',
+  'groups',
+  'campus',
+  'budget',
+] as const;
+
+export type FeatureKey = (typeof FEATURE_KEYS)[number];
+
+export type FeatureAccentPair = { ink: string; tint: string };
+
+export const featureAccentsLight: Record<FeatureKey, FeatureAccentPair> = {
+  notes: { ink: '#0f766e', tint: '#ccfbf1' },
+  flashcards: { ink: '#4d7c0f', tint: '#ecfccb' },
+  tests: { ink: '#0369a1', tint: '#e0f2fe' },
+  recording: { ink: '#a21caf', tint: '#fae8ff' },
+  ai: { ink: '#4f46e5', tint: '#eef2ff' },
+  groups: { ink: '#047857', tint: '#d1fae5' },
+  campus: { ink: '#6d28d9', tint: '#ede9fe' },
+  budget: { ink: '#b45309', tint: '#fef3c7' },
+};
+
+export const featureAccentsDark: Record<FeatureKey, FeatureAccentPair> = {
+  notes: { ink: '#5eead4', tint: '#0f2f2c' },
+  flashcards: { ink: '#bef264', tint: '#1a2e0a' },
+  tests: { ink: '#7dd3fc', tint: '#0c2a3b' },
+  recording: { ink: '#f0abfc', tint: '#3b0f40' },
+  ai: { ink: '#818cf8', tint: '#1c1c3a' },
+  groups: { ink: '#6ee7b7', tint: '#0b2e22' },
+  campus: { ink: '#c4b5fd', tint: '#2a1b4d' },
+  budget: { ink: '#fbbf24', tint: '#3a2a08' },
+};
+
+/**
+ * @deprecated Use `featureAccentsLight` / `featureAccentsDark` and their
+ * `{ ink, tint }` pairs. Kept for ONE release so the ~38 existing call sites
+ * keep compiling; delete with the Wave V1 call-site migration.
+ *
+ * Each old key maps to the light `ink` of the new pair that carries the same
+ * meaning:
+ *
+ * - `dashboard` -> `ai`         — identical hex (#4f46e5); dashboard was the
+ *                                 indigo primary and Lantern AI now owns it,
+ *                                 so nothing on screen changes.
+ * - `library`   -> `notes`      — the spec names the family "Notes & Library".
+ *                                 CHANGES rose #f43f5e -> teal #0f766e.
+ * - `flashcards`-> `flashcards` — CHANGES rose #f43f5e -> lime #4d7c0f. Rose
+ *                                 sat 10 degrees from `error`, which is why
+ *                                 the spec moved it.
+ * - `tests`     -> `tests`      — CHANGES sky-500 #0ea5e9 -> sky-700 #0369a1
+ *                                 (the old value failed AA as text).
+ * - `groups`    -> `groups`     — CHANGES emerald-500 -> emerald-700.
+ * - `campus`-family: `admin` and `marketplace` both -> `campus` violet
+ *                                 #6d28d9. Admin was neutral slate and
+ *                                 marketplace violet-500; both are
+ *                                 campus-scoped surfaces, and the spec gives
+ *                                 the campus/communities family one hue.
+ * - `offline`   -> `budget`     — amber. Spec §5.7 puts Downloads on an amber
+ *                                 disc, and decision 4 gives money the amber
+ *                                 family; #f59e0b -> #b45309 also fixes the
+ *                                 old value's 2.9:1 as text.
+ * - `budget`    -> `budget`     — CHANGES teal #14b8a6 -> amber #b45309 per
+ *                                 decision 4 (teal now means Notes).
+ *
+ * `recording` has no legacy key: it is new in this wave.
+ */
 export const featureAccents = {
-  dashboard: lanternColors.primary,
-  library: '#f43f5e',
-  admin: '#64748b',
-  flashcards: '#f43f5e',
-  groups: '#10b981',
-  marketplace: '#8b5cf6',
-  offline: '#f59e0b',
-  tests: '#0ea5e9',
-  budget: '#14b8a6',
-} as const;
+  dashboard: featureAccentsLight.ai.ink,
+  library: featureAccentsLight.notes.ink,
+  admin: featureAccentsLight.campus.ink,
+  flashcards: featureAccentsLight.flashcards.ink,
+  groups: featureAccentsLight.groups.ink,
+  marketplace: featureAccentsLight.campus.ink,
+  offline: featureAccentsLight.budget.ink,
+  tests: featureAccentsLight.tests.ink,
+  budget: featureAccentsLight.budget.ink,
+};
+
+/** @deprecated Alias of `featureAccents`'s key set; use `FeatureKey`. */
+export type LegacyFeatureKey = keyof typeof featureAccents;
 
 export const spacing = {
   xs: 4,
@@ -161,13 +298,142 @@ export const radius = {
   full: 9999,
 } as const;
 
+/**
+ * The six type steps (spec v3 §6.5). One role each, nothing below 11px.
+ *
+ * Sizes are PIXELS on BOTH platforms this wave (founder decision 2): mobile's
+ * NativeWind rem is 14, so a rem ladder renders 12.5% smaller than its own
+ * names — px until that root cause is fixed.
+ *
+ * `letterSpacing` is the em value CSS wants; `letterSpacingPx` is the same
+ * tracking pre-multiplied for React Native, which takes points only — the
+ * exact product, unrounded, so it equals apps/mobile/src/design/typeScale.ts
+ * and apps/mobile/tailwind.config.js digit for digit.
+ */
+export type TypeStep = {
+  fontSize: number;
+  lineHeight: number;
+  fontWeight: '400' | '600' | '700';
+  letterSpacing: string;
+  letterSpacingPx: number;
+};
+
+export type TypeStepName =
+  | 'display'
+  | 'title'
+  | 'heading'
+  | 'body'
+  | 'caption'
+  | 'label';
+
+export const TYPE_STEP_NAMES = [
+  'display',
+  'title',
+  'heading',
+  'body',
+  'caption',
+  'label',
+] as const;
+
+export const type: Record<TypeStepName, TypeStep> = {
+  /** hero greeting, score numeral */
+  display: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '700',
+    letterSpacing: '-0.02em',
+    letterSpacingPx: -0.56,
+  },
+  /** every screen h1, modal title */
+  title: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    letterSpacing: '-0.02em',
+    letterSpacingPx: -0.44,
+  },
+  /** section h2, card title, flashcard face */
+  heading: {
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: '600',
+    letterSpacing: '-0.011em',
+    letterSpacingPx: -0.187,
+  },
+  /** all prose, chat, list titles (which take weight 600) */
+  body: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    letterSpacing: '-0.011em',
+    letterSpacingPx: -0.165,
+  },
+  /** secondary copy, timestamps, stat labels */
+  caption: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
+    letterSpacing: '0',
+    letterSpacingPx: 0,
+  },
+  /** uppercase eyebrows, badges, tab labels — the 11px floor */
+  label: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+    letterSpacing: '0.04em',
+    letterSpacingPx: 0.44,
+  },
+};
+
+export const typeStack = {
+  sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  /**
+   * System serif only. A real display face (Crimson Pro) is a Wave V3
+   * decision scoped to web `.prose` and page `h1`; it is deliberately not
+   * bundled on mobile, where it would cost 40-60 KB per weight.
+   */
+  serif: "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif",
+  mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+} as const;
+
+/**
+ * @deprecated Use `type`. Kept for one release as a DERIVED alias so it can
+ * never describe a different product than the one that ships (the failure
+ * mode called out in spec v3 §6.2). `subtitle` maps to the `heading` step.
+ * It has no call sites today; delete with Wave T.
+ */
 export const typography = {
-  display: { size: 28, lineHeight: 34, weight: '700' as const },
-  title: { size: 20, lineHeight: 28, weight: '600' as const },
-  subtitle: { size: 16, lineHeight: 24, weight: '600' as const },
-  body: { size: 14, lineHeight: 20, weight: '400' as const },
-  caption: { size: 12, lineHeight: 16, weight: '400' as const },
-  label: { size: 11, lineHeight: 14, weight: '500' as const },
+  display: {
+    size: type.display.fontSize,
+    lineHeight: type.display.lineHeight,
+    weight: type.display.fontWeight,
+  },
+  title: {
+    size: type.title.fontSize,
+    lineHeight: type.title.lineHeight,
+    weight: type.title.fontWeight,
+  },
+  subtitle: {
+    size: type.heading.fontSize,
+    lineHeight: type.heading.lineHeight,
+    weight: type.heading.fontWeight,
+  },
+  body: {
+    size: type.body.fontSize,
+    lineHeight: type.body.lineHeight,
+    weight: type.body.fontWeight,
+  },
+  caption: {
+    size: type.caption.fontSize,
+    lineHeight: type.caption.lineHeight,
+    weight: type.caption.fontWeight,
+  },
+  label: {
+    size: type.label.fontSize,
+    lineHeight: type.label.lineHeight,
+    weight: type.label.fontWeight,
+  },
 } as const;
 
 export const fontStacks = {
@@ -189,11 +455,14 @@ export const cssVarNames = {
   primaryLight: '--color-primary-light',
   primaryDark: '--color-primary-dark',
   primaryBackground: '--color-primary-background',
+  primaryFill: '--color-primary-fill',
+  primaryText: '--color-primary-text',
   accent: '--color-accent',
   accentBackground: '--color-accent-background',
   success: '--color-success',
   warning: '--color-warning',
   error: '--color-error',
+  info: '--color-info',
   border: '--color-border',
   radiusLg: '--radius-lg',
   radiusXl: '--radius-xl',
@@ -232,13 +501,80 @@ export function paletteToCssVars(palette: ThemePalette): Record<string, string> 
     [cssVarNames.primaryLight]: ch(palette.primaryLight),
     [cssVarNames.primaryDark]: ch(palette.primaryDark),
     [cssVarNames.primaryBackground]: palette.primaryBackground,
+    [cssVarNames.primaryFill]: ch(palette.primaryFill),
+    [cssVarNames.primaryText]: ch(palette.primaryText),
     [cssVarNames.accent]: ch(palette.accent),
     [cssVarNames.accentBackground]: palette.accentBackground,
     [cssVarNames.success]: ch(palette.success),
     [cssVarNames.warning]: ch(palette.warning),
     [cssVarNames.error]: ch(palette.error),
+    [cssVarNames.info]: ch(palette.info),
     [cssVarNames.border]: ch(palette.border),
     [cssVarNames.radiusLg]: `${radius.lg}px`,
     [cssVarNames.radiusXl]: `${radius.xl}px`,
   };
+}
+
+// ===========================================
+// CSS-variable bridge (web `index.css` <-> mobile theme vars)
+// ===========================================
+//
+// One source for both platforms. `index.css` `:root` / `.dark` and the mobile
+// `lanternCssVars.ts` must both be expressible as the output of these
+// functions; `scripts/design/contrast.mjs` diffs the CSS file against these
+// values and fails on drift.
+
+/** `--color-feature-<key>-ink` / `-tint` for one theme, as RGB CHANNELS. */
+export function featureAccentPairsToCssVars(
+  pairs: Record<FeatureKey, FeatureAccentPair>,
+  prefix = '--color-feature'
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of FEATURE_KEYS) {
+    out[`${prefix}-${key}-ink`] = hexChannels(pairs[key].ink);
+    out[`${prefix}-${key}-tint`] = hexChannels(pairs[key].tint);
+  }
+  return out;
+}
+
+/**
+ * `--type-<step>-size/-lh/-weight/-tracking`, plus the family stacks that are
+ * theme-independent. `--font-sans` is NOT emitted here: it is owned by the
+ * user's font-mode setting (`useFontMode`), which would fight this.
+ */
+export function typeScaleToCssVars(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of TYPE_STEP_NAMES) {
+    const step = type[name];
+    out[`--type-${name}-size`] = `${step.fontSize}px`;
+    out[`--type-${name}-lh`] = `${step.lineHeight}px`;
+    out[`--type-${name}-weight`] = step.fontWeight;
+    out[`--type-${name}-tracking`] = step.letterSpacing;
+  }
+  out['--font-serif'] = typeStack.serif;
+  out['--font-mono'] = typeStack.mono;
+  return out;
+}
+
+/** Everything one theme needs: palette + feature pairs + (light only) type. */
+export function lanternCssVars(mode: 'light' | 'dark'): Record<string, string> {
+  return {
+    ...paletteToCssVars(mode === 'dark' ? darkTheme : lightTheme),
+    ...featureAccentPairsToCssVars(mode === 'dark' ? featureAccentsDark : featureAccentsLight),
+    ...typeScaleToCssVars(),
+  };
+}
+
+/** Local copy of the hex -> "R G B" conversion (see design/colorChannels.ts). */
+function hexChannels(hex: string): string {
+  const raw = hex.trim().replace('#', '');
+  const full =
+    raw.length === 3 || raw.length === 4
+      ? raw
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : raw;
+  if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(full)) return hex;
+  return `${parseInt(full.slice(0, 2), 16)} ${parseInt(full.slice(2, 4), 16)} ${parseInt(full.slice(4, 6), 16)}`;
 }

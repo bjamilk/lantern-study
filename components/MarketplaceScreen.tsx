@@ -1093,7 +1093,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                     {getCategoryName(item.category)}
                   </p>
                   <p className="text-xs sm:text-sm font-bold text-lantern-primary">{item.total}</p>
-                  <p className="text-[9px] sm:text-[11px] text-lantern-text-tertiary truncate">{item.active} active</p>
+                  <p className="text-[11px] text-lantern-text-tertiary truncate">{item.active} active</p>
                 </div>
               ))}
             </div>

@@ -172,7 +172,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
                 hitSlop={8}
                 className="mt-3"
               >
-                <Text className="text-sm font-semibold text-lantern-primary">See your Saved items</Text>
+                <Text className="text-sm font-semibold text-lantern-primary-text">See your Saved items</Text>
               </Pressable>
             </View>
           }
@@ -193,7 +193,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
                     <Text className="font-semibold text-lantern-text" numberOfLines={2}>
                       {item.listing?.title || 'Listing'}
                     </Text>
-                    <Text className="text-lantern-primary font-bold mt-1">
+                    <Text className="text-lantern-primary-text font-bold mt-1">
                       {formatPrice(lineTotal(item))}
                     </Text>
                   </View>
@@ -264,7 +264,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
           ) : null}
           <View className="flex-row justify-between mb-2">
             <Text className="font-medium text-lantern-text">You pay</Text>
-            <Text className="font-bold text-lantern-primary">{formatPrice(payTotalNaira)}</Text>
+            <Text className="font-bold text-lantern-primary-text">{formatPrice(payTotalNaira)}</Text>
           </View>
           <Text className="text-xs text-lantern-text-tertiary mb-3">
             One Paystack charge per listing. Multi-item carts open the first payment; finish the rest

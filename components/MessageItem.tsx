@@ -341,7 +341,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             </span>
             {cleanText}
           </p>
-          <span className="text-[9px] text-lantern-text-tertiary mt-1 block">
+          <span className="text-[11px] text-lantern-text-tertiary mt-1 block">
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>

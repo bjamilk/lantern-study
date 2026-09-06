@@ -80,7 +80,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
             setCampaignBuyerIds(undefined);
             setShowCampaign(true);
           }}
-          className="px-3 py-1.5 rounded-lg bg-lantern-primary"
+          className="px-3 py-1.5 rounded-lg bg-lantern-primary-fill"
         >
           <Text className="text-xs font-semibold text-white">Campaign</Text>
         </Pressable>
@@ -96,7 +96,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
             <Pressable
               onPress={() => setSegment(item.id)}
               className={`mr-2 px-3 py-1.5 rounded-full ${
-                segment === item.id ? 'bg-lantern-primary' : 'bg-lantern-surface border border-lantern-border'
+                segment === item.id ? 'bg-lantern-primary-fill' : 'bg-lantern-surface border border-lantern-border'
               }`}
             >
               <Text
@@ -130,7 +130,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
                 </View>
                 <View className="items-end">
                   <Text className="text-sm">{item.completedPurchases} purchases</Text>
-                  <Text className="text-sm text-lantern-primary">{formatPrice(item.totalSpent)} spent</Text>
+                  <Text className="text-sm text-lantern-primary-text">{formatPrice(item.totalSpent)} spent</Text>
                 </View>
               </View>
               {(item.openInquiry || item.openOrder) && (
@@ -142,7 +142,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
                 <View className="flex-row flex-wrap gap-1 mt-2">
                   {item.segments.map(s => (
                     <View key={s} className="px-2 py-0.5 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background">
-                      <Text className="text-[10px] text-lantern-primary">
+                      <Text className="text-label text-lantern-primary-text">
                         {SEGMENT_LABELS[s as SellerCustomerSegment] || s}
                       </Text>
                     </View>
@@ -163,7 +163,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
                   }}
                   className="flex-1 py-2 rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-background items-center"
                 >
-                  <Text className="text-xs font-semibold text-lantern-primary">Campaign</Text>
+                  <Text className="text-xs font-semibold text-lantern-primary-text">Campaign</Text>
                 </Pressable>
               </View>
             </View>

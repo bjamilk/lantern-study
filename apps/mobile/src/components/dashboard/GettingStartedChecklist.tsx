@@ -113,7 +113,7 @@ export function GettingStartedChecklist({
     >
       <View className="flex-row items-start justify-between mb-3">
         <View className="flex-1 pr-2">
-          <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+          <Text className="text-sm font-bold" style={{ color: colors.primaryText }}>
             Getting started
           </Text>
           <Text className="text-xs mt-0.5" style={{ color: colors.textSecondary }}>
@@ -125,7 +125,7 @@ export function GettingStartedChecklist({
           accessibilityLabel="Dismiss getting started"
           className="p-1"
         >
-          <AppIcon name="close" size={18} color={colors.primary} />
+          <AppIcon name="close" size={18} color={colors.primaryText} />
         </Pressable>
       </View>
       <View className="gap-1.5">

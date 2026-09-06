@@ -232,10 +232,10 @@ export function QuestionVoteBar({
       {isPending && peerCount !== null ? (
         <View className="gap-1">
           <View className="flex-row items-center justify-between">
-            <Text className="text-[10px]" style={styles.metaText}>
+            <Text className="text-label" style={styles.metaText}>
               {QUESTION_VERIFY_COPY.progress(peerCount)}
             </Text>
-            <Text className="text-[10px] font-medium" style={styles.metaText}>
+            <Text className="text-label font-medium" style={styles.metaText}>
               {peerProgress}%
             </Text>
           </View>
@@ -259,7 +259,7 @@ export function QuestionVoteBar({
               }}
             />
           </View>
-          <Text className="text-[10px]" style={styles.metaText}>
+          <Text className="text-label" style={styles.metaText}>
             {peerVerifyReady
               ? QUESTION_VERIFY_COPY.ready
               : QUESTION_VERIFY_COPY.blocked(peerCount)}
@@ -270,10 +270,10 @@ export function QuestionVoteBar({
       {isPending && peerCount === null && memberCount > 0 ? (
         <View className="gap-1">
           <View className="flex-row items-center justify-between">
-            <Text className="text-[10px]" style={styles.metaText}>
+            <Text className="text-label" style={styles.metaText}>
               {upvotes} / {threshold} approvals needed
             </Text>
-            <Text className="text-[10px] font-medium" style={styles.metaText}>
+            <Text className="text-label font-medium" style={styles.metaText}>
               {progress}%
             </Text>
           </View>

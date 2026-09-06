@@ -90,7 +90,7 @@ export function DashboardHeroCard({
           </View>
           <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-lantern-primary-background">
             <AppIcon name="sparkle" size={14} color="#4f46e5" />
-            <Text className="text-xs font-semibold text-lantern-primary">{points.toLocaleString()} pts</Text>
+            <Text className="text-xs font-semibold text-lantern-primary-text">{points.toLocaleString()} pts</Text>
           </View>
           {progressNote ? (
             <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
@@ -110,13 +110,13 @@ export function DashboardHeroCard({
           <View className="flex-row items-center justify-between mb-2">
             <View>
               <Text className="text-xs text-lantern-text-tertiary uppercase tracking-wide">Level {level.level}</Text>
-              <Text className="text-base font-bold text-lantern-primary">{level.name}</Text>
+              <Text className="text-base font-bold text-lantern-primary-text">{level.name}</Text>
             </View>
             <Text className="text-sm font-semibold text-lantern-text-secondary">{level.currentXP} XP</Text>
           </View>
           <View className="h-2 rounded-full bg-lantern-background-secondary overflow-hidden">
             <View
-              className="h-full bg-lantern-primary rounded-full"
+              className="h-full bg-lantern-primary-fill rounded-full"
               style={{ width: `${level.progressToNextLevel}%` }}
             />
           </View>

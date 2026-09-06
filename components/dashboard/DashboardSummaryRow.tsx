@@ -21,8 +21,8 @@ export const DashboardSummaryRow: React.FC<DashboardSummaryRowProps> = ({
   unreadNotificationCount,
 }) => (
   <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5">
-    <h2 className="text-lg font-semibold text-lantern-text flex items-center mb-4">
-      <RocketLaunchIcon className="w-5 h-5 mr-2 text-lantern-primary" />
+    <h2 className="text-heading text-lantern-text flex items-center mb-4">
+      <RocketLaunchIcon className="w-5 h-5 mr-2 text-lantern-primary-text" />
       Today&apos;s Summary
     </h2>
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -31,8 +31,8 @@ export const DashboardSummaryRow: React.FC<DashboardSummaryRowProps> = ({
           <RectangleStackIcon className="w-6 h-6 text-lantern-success" />
         </div>
         <div>
-          <p className="text-2xl font-bold text-lantern-text">{dueCardsCount}</p>
-          <p className="text-xs text-lantern-text-secondary">Flashcards Due</p>
+          <p className="text-display tabular-nums text-lantern-text">{dueCardsCount}</p>
+          <p className="text-caption text-lantern-text-secondary">Flashcards Due</p>
         </div>
       </div>
       <div className={summaryCardBase}>
@@ -40,8 +40,8 @@ export const DashboardSummaryRow: React.FC<DashboardSummaryRowProps> = ({
           <ClockIcon className="w-6 h-6 text-lantern-accent" />
         </div>
         <div>
-          <p className="text-2xl font-bold text-lantern-text">{pendingSyncCount}</p>
-          <p className="text-xs text-lantern-text-secondary">Pending Syncs</p>
+          <p className="text-display tabular-nums text-lantern-text">{pendingSyncCount}</p>
+          <p className="text-caption text-lantern-text-secondary">Pending Syncs</p>
         </div>
       </div>
       <div className={summaryCardBase}>
@@ -49,8 +49,8 @@ export const DashboardSummaryRow: React.FC<DashboardSummaryRowProps> = ({
           <BellIcon className="w-6 h-6 text-lantern-info" />
         </div>
         <div>
-          <p className="text-2xl font-bold text-lantern-text">{unreadNotificationCount}</p>
-          <p className="text-xs text-lantern-text-secondary">Unread Notifications</p>
+          <p className="text-display tabular-nums text-lantern-text">{unreadNotificationCount}</p>
+          <p className="text-caption text-lantern-text-secondary">Unread Notifications</p>
         </div>
       </div>
     </div>

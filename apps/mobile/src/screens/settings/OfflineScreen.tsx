@@ -30,7 +30,7 @@ import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { restoreQuestionBanks } from '../../services/api';
 import { PublishQuestionBankModal } from './PublishQuestionBankModal';
-import { getConnectionStatus, syncCopy, featureAccents } from '@lantern/shared/design';
+import { getConnectionStatus, syncCopy, featureAccents, lightColors } from '@lantern/shared/design';
 import { useNetworkStatus, usePendingWork } from '../../hooks';
 import { syncService } from '../../services/syncService';
 import {
@@ -359,12 +359,12 @@ export default function OfflineScreen() {
     <View style={[styles.testItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.testInfo}>
         <View style={styles.testHeader}>
-          <AppIcon name="document-text" size={20} color={colors.primary} />
+          <AppIcon name="document-text" size={20} color={colors.primaryText} />
           <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{test.testName}</Text>
           {/* Marketplace purchases carry the qbank- bundle id (see web parity). */}
           {test.id.startsWith('qbank-') ? (
-            <View style={[styles.purchasedBadge, { backgroundColor: colors.primary + '1a' }]}>
-              <Text style={[styles.purchasedBadgeText, { color: colors.primary }]}>PURCHASED</Text>
+            <View style={[styles.purchasedBadge, { backgroundColor: colors.primaryFill + '1a' }]}>
+              <Text style={[styles.purchasedBadgeText, { color: colors.primaryText }]}>PURCHASED</Text>
             </View>
           ) : null}
         </View>
@@ -391,7 +391,7 @@ export default function OfflineScreen() {
             onPress={() => setPublishTarget(test)}
             accessibilityLabel="Publish to marketplace"
           >
-            <AppIcon name="storefront" size={18} color={colors.primary} />
+            <AppIcon name="storefront" size={18} color={colors.primaryText} />
           </TouchableOpacity>
         ) : null}
         {/* Icon-only: with publish + delete this row holds four controls, and
@@ -401,10 +401,10 @@ export default function OfflineScreen() {
           onPress={() => handleStartOfflineTest(test, 'study')}
           accessibilityLabel="Study this bundle (untimed, unscored)"
         >
-          <AppIcon name="book" size={18} color={colors.primary} />
+          <AppIcon name="book" size={18} color={colors.primaryText} />
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.startButton, { backgroundColor: colors.primary }]}
+          style={[styles.startButton, { backgroundColor: colors.primaryFill }]}
           onPress={() => handleStartOfflineTest(test, 'test')}
           accessibilityLabel="Take this bundle as a scored test"
         >
@@ -492,7 +492,7 @@ export default function OfflineScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.primary}
+            tintColor={colors.primaryText}
           />
         }
       >
@@ -572,12 +572,12 @@ export default function OfflineScreen() {
                   paddingHorizontal: 10,
                   paddingVertical: 6,
                   borderRadius: 999,
-                  backgroundColor: colors.primary + '20',
+                  backgroundColor: colors.primaryFill + '20',
                   maxWidth: '70%',
                 }}
               >
-                <AppIcon name="school" size={14} color={colors.primary} />
-                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
+                <AppIcon name="school" size={14} color={colors.primaryText} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primaryText, flexShrink: 1 }} numberOfLines={1}>
                   {courseFilter.label}
                 </Text>
                 <TouchableOpacity
@@ -589,7 +589,7 @@ export default function OfflineScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Clear course filter ${courseFilter.label}`}
                 >
-                  <AppIcon name="close-circle" size={16} color={colors.primary} />
+                  <AppIcon name="close-circle" size={16} color={colors.primaryText} />
                 </TouchableOpacity>
               </View>
               <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
@@ -680,8 +680,8 @@ export default function OfflineScreen() {
               disabled={restoringBanks}
               onPress={() => void handleRestoreQuestionBanks()}
             >
-              <AppIcon name="bag-handle" size={16} color={colors.primary} />
-              <Text style={[styles.restoreButtonText, { color: colors.primary }]}>
+              <AppIcon name="bag-handle" size={16} color={colors.primaryText} />
+              <Text style={[styles.restoreButtonText, { color: colors.primaryText }]}>
                 {restoringBanks ? 'Restoring…' : 'Restore marketplace purchases'}
               </Text>
             </TouchableOpacity>
@@ -924,7 +924,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   purchasedBadgeText: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
@@ -953,7 +953,9 @@ const styles = StyleSheet.create({
   startButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6366f1',
+    // Build 153: a hardcoded #6366f1 under a white label is 4.45:1.
+    // `primaryFill` is identical in both palettes, so a static style is fine.
+    backgroundColor: lightColors.primaryFill,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,

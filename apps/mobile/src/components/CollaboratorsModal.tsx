@@ -186,7 +186,7 @@ export default function CollaboratorsModal({
                       {u.name || u.username || u.id}
                     </Text>
                     {u.username ? (
-                      <Text className="text-xs text-lantern-primary">@{u.username}</Text>
+                      <Text className="text-xs text-lantern-primary-text">@{u.username}</Text>
                     ) : null}
                   </Pressable>
                 ))}

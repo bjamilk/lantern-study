@@ -1060,7 +1060,7 @@ export function CommunityBoardScreen({
           </Text>
           {/* Low-data mode keeps naming the community: it is the only
               community affordance on this screen (§4.1 / §10). */}
-          <Text className="text-xs text-lantern-primary" numberOfLines={1}>
+          <Text className="text-xs text-lantern-primary-text" numberOfLines={1}>
             {[communityName, memberCount > 0 ? `${memberCount.toLocaleString()} members` : null]
               .filter(Boolean)
               .join(' · ') || COMMUNITY_COPY.membersOnly}
@@ -1122,7 +1122,7 @@ export function CommunityBoardScreen({
           accessibilityRole="button"
           accessibilityLiveRegion="polite"
           accessibilityLabel={COMMUNITY_BOARD_COPY.newPosts(newPostCount)}
-          className="mx-auto mt-2 min-h-[44px] justify-center rounded-full bg-lantern-primary px-4"
+          className="mx-auto mt-2 min-h-[44px] justify-center rounded-full bg-lantern-primary-fill px-4"
         >
           <Text className="text-xs font-semibold text-white">
             {COMMUNITY_BOARD_COPY.newPosts(newPostCount)}
@@ -1165,7 +1165,7 @@ export function CommunityBoardScreen({
                   accessibilityLabel={COMMUNITY_BOARD_COPY.studyNudge}
                   className="mt-3 min-h-[44px] justify-center"
                 >
-                  <Text className="text-center text-sm font-semibold text-lantern-primary">
+                  <Text className="text-center text-sm font-semibold text-lantern-primary-text">
                     {COMMUNITY_BOARD_COPY.studyNudge}
                   </Text>
                 </Pressable>
@@ -1185,7 +1185,7 @@ export function CommunityBoardScreen({
                 {isLoadingMore ? (
                   <ActivityIndicator color="#6366f1" />
                 ) : (
-                  <Text className="text-sm font-semibold text-lantern-primary">
+                  <Text className="text-sm font-semibold text-lantern-primary-text">
                     {COMMUNITY_BOARD_COPY.loadOlder}
                   </Text>
                 )}

@@ -112,14 +112,14 @@ function DeckCard({
             </Text>
             {deck.is_shared ? (
               <View className="bg-white/20 px-2 py-0.5 rounded-full">
-                <Text className="text-[10px] font-bold text-white">Shared</Text>
+                <Text className="text-label font-bold text-white">Shared</Text>
               </View>
             ) : null}
           </View>
           <View className="flex-row items-center gap-1.5 ml-2 flex-shrink-0">
             {dueCount > 0 ? (
               <View className="bg-white/25 px-2 py-0.5 rounded-full">
-                <Text className="text-[10px] font-bold text-white">{dueCount} due</Text>
+                <Text className="text-label font-bold text-white">{dueCount} due</Text>
               </View>
             ) : null}
             <Pressable
@@ -159,7 +159,7 @@ function DeckCard({
               hitSlop={8}
             >
               <AppIcon name="sparkles" size={14} color="#ffffff" />
-              <Text className="text-[10px] font-bold text-white">Generate</Text>
+              <Text className="text-label font-bold text-white">Generate</Text>
             </Pressable>
             {onMore ? (
               <Pressable
@@ -541,8 +541,8 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       {courseFilter && !embedded ? (
         <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2">
           <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
-            <AppIcon name="school" size={14} color={colors.primary} />
-            <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+            <AppIcon name="school" size={14} color={colors.primaryText} />
+            <Text className="text-xs font-semibold text-lantern-primary-text" numberOfLines={1}>
               {courseFilter.label}
             </Text>
             <Pressable
@@ -551,7 +551,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
               accessibilityRole="button"
               accessibilityLabel={`Clear course filter ${courseFilter.label}`}
             >
-              <AppIcon name="close-circle" size={16} color={colors.primary} />
+              <AppIcon name="close-circle" size={16} color={colors.primaryText} />
             </Pressable>
           </View>
           {/* The topic narrows the list further, so it gets its own chip:
@@ -578,7 +578,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
 
       {isLoading && decks.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.primaryText} />
         </View>
       ) : (
         <FlatList
@@ -587,7 +587,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           data={visibleDecks}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryText} />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               {/* With a query typed, "No decks yet" would read as if the decks

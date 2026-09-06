@@ -32,7 +32,7 @@ export function DailyGoalsProgress({ study, activityDays }: Props) {
           done={progress.cardsDone}
           goal={progress.cardGoal}
           percent={progress.cardProgressPercent}
-          fillColor={colors.primary}
+          fillColor={colors.primaryText}
           colors={colors}
           fontScale={fontScale}
         />

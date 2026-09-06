@@ -185,7 +185,7 @@ export function InquiriesScreen({
             onPress={() => setTab(t)}
             className={`flex-1 py-2 rounded-lg items-center ${tab === t ? 'bg-lantern-surface dark:bg-lantern-surface-secondary' : ''}`}
           >
-            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}>
+            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-lantern-primary-text' : 'text-lantern-text-secondary'}`}>
               {t === 'seller' ? 'Received' : 'Sent'}
             </Text>
           </Pressable>
@@ -203,7 +203,7 @@ export function InquiriesScreen({
               onPress={() => setStatusFilter(item.id)}
               className={`mr-2 px-3 py-1.5 rounded-full ${
                 statusFilter === item.id
-                  ? 'bg-lantern-primary'
+                  ? 'bg-lantern-primary-fill'
                   : 'bg-lantern-surface border border-lantern-border'
               }`}
             >
@@ -249,7 +249,7 @@ export function InquiriesScreen({
                     {item.listingTitle}
                   </Text>
                   <View className={`px-2 py-0.5 rounded-full ${statusColor(item.status)}`}>
-                    <Text className="text-[10px] font-medium capitalize">{item.status}</Text>
+                    <Text className="text-label font-medium capitalize">{item.status}</Text>
                   </View>
                 </View>
                 <Text className="text-sm text-lantern-text-secondary mt-2" numberOfLines={2}>
@@ -266,7 +266,7 @@ export function InquiriesScreen({
                         }}
                         className="px-2 py-1 rounded-md bg-amber-100"
                       >
-                        <Text className="text-[10px] font-medium text-amber-800">Negotiating</Text>
+                        <Text className="text-label font-medium text-amber-800">Negotiating</Text>
                       </Pressable>
                     ) : null}
                     <Pressable
@@ -276,7 +276,7 @@ export function InquiriesScreen({
                       }}
                       className="px-2 py-1 rounded-md bg-emerald-100"
                     >
-                      <Text className="text-[10px] font-medium text-emerald-800">Mark purchased</Text>
+                      <Text className="text-label font-medium text-emerald-800">Mark purchased</Text>
                     </Pressable>
                     <Pressable
                       onPress={e => {
@@ -285,7 +285,7 @@ export function InquiriesScreen({
                       }}
                       className="px-2 py-1 rounded-md bg-lantern-background-secondary"
                     >
-                      <Text className="text-[10px] font-medium text-lantern-text">Close</Text>
+                      <Text className="text-label font-medium text-lantern-text">Close</Text>
                     </Pressable>
                   </View>
                 ) : null}

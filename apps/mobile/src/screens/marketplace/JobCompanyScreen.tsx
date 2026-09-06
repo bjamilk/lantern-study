@@ -83,7 +83,7 @@ export function JobCompanyScreen() {
                   />
                 ) : (
                   <View className="h-14 w-14 rounded-xl bg-lantern-primary/10 items-center justify-center">
-                    <Text className="text-xl font-bold text-lantern-primary">
+                    <Text className="text-xl font-bold text-lantern-primary-text">
                       {company.displayName.charAt(0).toUpperCase()}
                     </Text>
                   </View>
@@ -103,7 +103,7 @@ export function JobCompanyScreen() {
                     return (
                       <View className="flex-row flex-wrap items-center gap-2 mb-1">
                         <Text
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${toneClass}`}
+                          className={`rounded-full px-2 py-0.5 text-label font-bold uppercase ${toneClass}`}
                         >
                           {trust.label}
                         </Text>
@@ -136,7 +136,7 @@ export function JobCompanyScreen() {
                     <Pressable
                       onPress={() => void Linking.openURL(company.website!)}
                     >
-                      <Text className="text-sm text-lantern-primary mt-1">
+                      <Text className="text-sm text-lantern-primary-text mt-1">
                         Website
                       </Text>
                     </Pressable>
@@ -184,7 +184,7 @@ export function JobCompanyScreen() {
                         {job.title}
                       </Text>
                       {job.hasApplied ? (
-                        <Text className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-800">
+                        <Text className="rounded-full bg-emerald-100 px-2 py-0.5 text-label font-bold uppercase text-emerald-800">
                           Applied
                         </Text>
                       ) : null}

@@ -57,13 +57,13 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
       <div className="flex flex-col gap-4">
         <div className="min-w-0">
           <h1
-            className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-lantern-text break-words"
+            className="font-display text-title md:text-display font-semibold tracking-tight text-lantern-text break-words"
             title={`${greeting}, ${userName}`}
           >
             {greeting},{' '}
             <span className="inline-block max-w-full align-bottom truncate">{userName}</span>
           </h1>
-          <p className="text-lantern-text-secondary mt-1.5 text-sm md:text-base leading-relaxed">
+          <p className="text-lantern-text-secondary mt-1.5 text-body leading-relaxed">
             {dueCardsCount > 0
               ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review.`
               : totalTestsTaken > 0
@@ -92,15 +92,15 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
 
       <div className="mt-4 pt-4 border-t border-lantern-border">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-sm font-bold text-lantern-text">
+          <span className="text-body font-bold tabular-nums text-lantern-text">
             Level {xpLevel} — {xpTitle}
           </span>
-          <span className="text-xs text-lantern-text-secondary">
+          <span className="text-caption text-lantern-text-secondary">
             {pointsToNextLevel > 0 ? `${pointsToNextLevel.toLocaleString()} XP to next level` : 'Max level'}
           </span>
         </div>
         <div className="w-full bg-lantern-background-secondary rounded-full h-2.5 overflow-hidden">
-          <div className="h-full rounded-full bg-lantern-primary transition-all duration-700" style={{ width: `${xpProgressPercent}%` }} />
+          <div className="h-full rounded-full bg-lantern-primary-fill transition-all duration-700" style={{ width: `${xpProgressPercent}%` }} />
         </div>
       </div>
     </Card>

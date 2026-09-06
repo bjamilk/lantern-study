@@ -378,7 +378,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Username</Text>
             <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: errors.username ? colors.error : (usernameAvailable === true ? '#10B981' : colors.inputBorder) }]}>
-              <Text style={[styles.atSymbol, { color: colors.primary }]}>@</Text>
+              <Text style={[styles.atSymbol, { color: colors.primaryText }]}>@</Text>
               <TextInput
                 style={[styles.input, { color: colors.inputText }]}
                 placeholder="username"
@@ -396,7 +396,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
                 editable={!isLoading}
               />
               {checkingUsername && (
-                <ActivityIndicator size="small" color={colors.primary} style={styles.inputIconRight} />
+                <ActivityIndicator size="small" color={colors.primaryText} style={styles.inputIconRight} />
               )}
               {!checkingUsername && usernameAvailable === true && username.length >= 3 && (
                 <AppIcon name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
@@ -451,7 +451,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
                   hitSlop={10}
                   style={styles.retryButton}
                 >
-                  <Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text>
+                  <Text style={[styles.retryText, { color: colors.primaryText }]}>Try again</Text>
                 </TouchableOpacity>
                 <Text style={[styles.hintText, { color: colors.textSecondary }]}>
                   You can continue and add your school later.
@@ -606,7 +606,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
 
           {/* Sign Up Button */}
           <TouchableOpacity
-            style={[styles.signUpButton, { backgroundColor: colors.primary }, isLoading && styles.buttonDisabled]}
+            style={[styles.signUpButton, { backgroundColor: colors.primaryFill }, isLoading && styles.buttonDisabled]}
             onPress={handleSignUp}
             disabled={isLoading}
             activeOpacity={0.8}
@@ -622,14 +622,14 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
           <Text style={[styles.termsText, { color: colors.textSecondary }]}>
             By signing up, you agree to our{' '}
             <Text
-              style={[styles.termsLink, { color: colors.primary }]}
+              style={[styles.termsLink, { color: colors.primaryText }]}
               onPress={() => navigation.navigate('LegalDocument', { document: 'terms' })}
             >
               Terms of Service
             </Text>{' '}
             and{' '}
             <Text
-              style={[styles.termsLink, { color: colors.primary }]}
+              style={[styles.termsLink, { color: colors.primaryText }]}
               onPress={() => navigation.navigate('LegalDocument', { document: 'privacy' })}
             >
               Privacy Policy
@@ -643,7 +643,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.textSecondary }]}>Already have an account? </Text>
           <TouchableOpacity onPress={() => navigation.goBack()} disabled={isLoading}>
-            <Text style={[styles.signInText, { color: colors.primary }]}>Sign In</Text>
+            <Text style={[styles.signInText, { color: colors.primaryText }]}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

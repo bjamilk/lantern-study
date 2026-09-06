@@ -118,7 +118,7 @@ export function BoardRepostSheet({
                 className="mt-4 min-h-[44px] items-center justify-center rounded-2xl border border-lantern-border"
               >
                 {busy ? (
-                  <ActivityIndicator color={colors.primary} />
+                  <ActivityIndicator color={colors.primaryText} />
                 ) : (
                   <Text className="text-sm font-semibold text-lantern-error">
                     {COMMUNITY_BOARD_COPY.undoRepost}
@@ -151,7 +151,7 @@ export function BoardRepostSheet({
                   accessibilityRole="button"
                   accessibilityLabel={COMMUNITY_BOARD_COPY.repost}
                   accessibilityState={{ disabled: busy, busy }}
-                  className="mt-3 min-h-[44px] items-center justify-center rounded-2xl bg-lantern-primary"
+                  className="mt-3 min-h-[44px] items-center justify-center rounded-2xl bg-lantern-primary-fill"
                   style={{ opacity: busy ? 0.6 : 1 }}
                 >
                   {busy ? (

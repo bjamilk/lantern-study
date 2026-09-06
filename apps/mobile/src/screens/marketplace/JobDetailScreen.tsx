@@ -165,7 +165,7 @@ export function JobDetailScreen() {
                   />
                 ) : (
                   <View className="h-14 w-14 items-center justify-center rounded-xl bg-lantern-primary/10">
-                    <Text className="text-xl font-bold text-lantern-primary">
+                    <Text className="text-xl font-bold text-lantern-primary-text">
                       {(
                         job.company?.displayName ||
                         job.poster?.name ||
@@ -180,7 +180,7 @@ export function JobDetailScreen() {
                 <View className="min-w-0 flex-1">
                   <View className="flex-row flex-wrap gap-1">
                     {job.isSponsored ? (
-                      <Text className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                      <Text className="rounded-full bg-amber-100 px-2 py-0.5 text-label font-bold text-amber-800">
                         FEATURED
                       </Text>
                     ) : null}
@@ -194,7 +194,7 @@ export function JobDetailScreen() {
                             : "bg-slate-100 text-slate-700";
                       return (
                         <Text
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${toneClass}`}
+                          className={`rounded-full px-2 py-0.5 text-label font-bold uppercase ${toneClass}`}
                         >
                           {trust.label}
                         </Text>
@@ -212,7 +212,7 @@ export function JobDetailScreen() {
                         })
                       }
                     >
-                      <Text className="mt-1 text-sm font-medium text-lantern-primary">
+                      <Text className="mt-1 text-sm font-medium text-lantern-primary-text">
                         {job.company.displayName}
                       </Text>
                     </Pressable>
@@ -334,7 +334,7 @@ export function JobDetailScreen() {
               applications.
             </Text>
             <Pressable
-              className="mt-4 items-center rounded-xl bg-lantern-primary py-3"
+              className="mt-4 items-center rounded-xl bg-lantern-primary-fill py-3"
               onPress={() => navigation.navigate("MyJobApplications")}
             >
               <Text className="font-semibold text-white">
@@ -383,7 +383,7 @@ export function JobDetailScreen() {
                         }
                         className={`rounded-full border px-3 py-2 ${
                           answers[question.id] === option
-                            ? "border-lantern-primary bg-lantern-primary"
+                            ? "border-lantern-primary bg-lantern-primary-fill"
                             : "border-lantern-border bg-lantern-background"
                         }`}
                       >
@@ -435,7 +435,7 @@ export function JobDetailScreen() {
             </View>
             <Pressable
               disabled={busy}
-              className="mt-4 items-center rounded-xl bg-lantern-primary py-3"
+              className="mt-4 items-center rounded-xl bg-lantern-primary-fill py-3"
               onPress={() =>
                 void (async () => {
                   setBusy(true);
@@ -493,7 +493,7 @@ export function JobDetailScreen() {
               })
             }
           >
-            <Text className="font-semibold text-lantern-primary">
+            <Text className="font-semibold text-lantern-primary-text">
               Apply on company site
             </Text>
           </Pressable>
@@ -560,7 +560,7 @@ export function JobDetailScreen() {
                 />
                 <Pressable
                   disabled={reportBusy}
-                  className="rounded-lg bg-lantern-primary py-2 items-center"
+                  className="rounded-lg bg-lantern-primary-fill py-2 items-center"
                   onPress={() =>
                     void (async () => {
                       setReportBusy(true);

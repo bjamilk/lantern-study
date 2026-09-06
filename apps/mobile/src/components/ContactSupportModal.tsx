@@ -32,8 +32,14 @@ interface ContactSupportModalProps {
     text: string;
     textSecondary: string;
     border: string;
-    primary: string;
-    primaryText: string;
+    /** The filled-button ground. Must be a colour `onPrimary` reads on. */
+    primaryFill: string;
+    /**
+     * The ink painted ON `primaryFill` — white, in practice. Renamed from
+     * `primaryText`, which now means the opposite everywhere else in the
+     * system (primary-coloured text on a NEUTRAL ground).
+     */
+    onPrimary: string;
   };
 }
 
@@ -129,13 +135,13 @@ export function ContactSupportModal({
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: category === key ? colors.primary : colors.card,
+                    backgroundColor: category === key ? colors.primaryFill : colors.card,
                     borderColor: colors.border,
                   },
                 ]}
                 onPress={() => setCategory(key)}
               >
-                <Text style={{ color: category === key ? colors.primaryText : colors.text, fontSize: 13 }}>
+                <Text style={{ color: category === key ? colors.onPrimary : colors.text, fontSize: 13 }}>
                   {CONTACT_CATEGORY_LABELS[key]}
                 </Text>
               </TouchableOpacity>
@@ -173,14 +179,14 @@ export function ContactSupportModal({
           {success ? <Text style={styles.success}>{success}</Text> : null}
 
           <TouchableOpacity
-            style={[styles.submit, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+            style={[styles.submit, { backgroundColor: colors.primaryFill, opacity: loading ? 0.7 : 1 }]}
             onPress={() => void handleSubmit()}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color={colors.primaryText} />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
-              <Text style={[styles.submitText, { color: colors.primaryText }]}>Send message</Text>
+              <Text style={[styles.submitText, { color: colors.onPrimary }]}>Send message</Text>
             )}
           </TouchableOpacity>
 

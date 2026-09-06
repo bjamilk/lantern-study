@@ -28,24 +28,92 @@ module.exports = {
           'primary-light': 'rgb(var(--color-lantern-primary-light) / <alpha-value>)',
           'primary-dark': 'rgb(var(--color-lantern-primary-dark) / <alpha-value>)',
           'primary-background': 'var(--color-lantern-primary-background)',
+          // The build-153 split: `bg-lantern-primary-fill` for a filled
+          // control with a white label, `text-lantern-primary-text` for
+          // primary-coloured text or a glyph. Bare `primary` is deprecated.
+          'primary-fill': 'rgb(var(--color-lantern-primary-fill) / <alpha-value>)',
+          'primary-text': 'rgb(var(--color-lantern-primary-text) / <alpha-value>)',
           accent: 'rgb(var(--color-lantern-accent) / <alpha-value>)',
           'accent-background': 'var(--color-lantern-accent-background)',
           success: 'rgb(var(--color-lantern-success) / <alpha-value>)',
           warning: 'rgb(var(--color-lantern-warning) / <alpha-value>)',
           error: 'rgb(var(--color-lantern-error) / <alpha-value>)',
+          info: 'rgb(var(--color-lantern-info) / <alpha-value>)',
           border: 'rgb(var(--color-lantern-border) / <alpha-value>)',
           feature: {
-            dashboard: '#4f46e5',
-            library: '#f43f5e',
-            admin: '#64748b',
-            flashcards: '#f43f5e',
-            groups: '#10b981',
-            marketplace: '#8b5cf6',
-            offline: '#f59e0b',
-            tests: '#0ea5e9',
-            budget: '#14b8a6',
+            // Spec v3 5.6: eight {ink, tint} pairs, per theme, from
+            // theme/lanternCssVars.ts (source: tokens.ts featureAccentsLight/Dark).
+            // `ink` is the only value allowed to carry text or a glyph; `tint`
+            // is a ground. Was nine hardcoded hexes that ignored dark mode and,
+            // after this wave, no longer matched `featureAccents` in JS.
+            notes: {
+              ink: 'rgb(var(--color-lantern-feature-notes-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-notes-tint) / <alpha-value>)',
+            },
+            flashcards: {
+              ink: 'rgb(var(--color-lantern-feature-flashcards-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-flashcards-tint) / <alpha-value>)',
+            },
+            tests: {
+              ink: 'rgb(var(--color-lantern-feature-tests-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-tests-tint) / <alpha-value>)',
+            },
+            recording: {
+              ink: 'rgb(var(--color-lantern-feature-recording-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-recording-tint) / <alpha-value>)',
+            },
+            ai: {
+              ink: 'rgb(var(--color-lantern-feature-ai-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-ai-tint) / <alpha-value>)',
+            },
+            groups: {
+              ink: 'rgb(var(--color-lantern-feature-groups-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-groups-tint) / <alpha-value>)',
+            },
+            campus: {
+              ink: 'rgb(var(--color-lantern-feature-campus-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-campus-tint) / <alpha-value>)',
+            },
+            budget: {
+              ink: 'rgb(var(--color-lantern-feature-budget-ink) / <alpha-value>)',
+              tint: 'rgb(var(--color-lantern-feature-budget-tint) / <alpha-value>)',
+            },
+            // @deprecated one release: the pre-wave keys, aliased to the ink that
+            // now carries their meaning (same mapping as tokens.ts / index.css).
+            dashboard: 'rgb(var(--color-lantern-feature-dashboard) / <alpha-value>)',
+            library: 'rgb(var(--color-lantern-feature-library) / <alpha-value>)',
+            admin: 'rgb(var(--color-lantern-feature-admin) / <alpha-value>)',
+            flashcards: 'rgb(var(--color-lantern-feature-flashcards) / <alpha-value>)',
+            groups: 'rgb(var(--color-lantern-feature-groups) / <alpha-value>)',
+            marketplace: 'rgb(var(--color-lantern-feature-marketplace) / <alpha-value>)',
+            offline: 'rgb(var(--color-lantern-feature-offline) / <alpha-value>)',
+            tests: 'rgb(var(--color-lantern-feature-tests) / <alpha-value>)',
+            budget: 'rgb(var(--color-lantern-feature-budget) / <alpha-value>)',
           },
         },
+      },
+      // The six-step type scale (Wave T). PIXELS, not rem: NativeWind inlines
+      // rem at 14 in this project, so `text-sm` rendered at 12.25 sp and the
+      // whole default ladder ran a step small. Stating the scale in px makes
+      // `text-body` the same number here and on web.
+      //
+      // Mirrors src/design/typeScale.ts (the StyleSheet side) — change both.
+      // The default text-xs…text-3xl classes are deliberately still here this
+      // wave so the ~700 unmigrated call sites keep rendering; the lint in
+      // src/design/typeScaleLint.test.ts stops new ones being added.
+      // Tracking is stated in PX, not em: React Native's letterSpacing is
+      // points, and em would have to survive a NativeWind conversion to get
+      // there. Each value is the spec's em figure times its own step —
+      // -0.02em on display/title, -0.011em on heading/body, 0 on caption,
+      // +0.04em on label — so `text-title` and `typeScale.title` are the same
+      // three numbers.
+      fontSize: {
+        display: ['28px', { lineHeight: '34px', letterSpacing: '-0.56px', fontWeight: '700' }],
+        title: ['22px', { lineHeight: '28px', letterSpacing: '-0.44px', fontWeight: '700' }],
+        heading: ['17px', { lineHeight: '24px', letterSpacing: '-0.187px', fontWeight: '600' }],
+        body: ['15px', { lineHeight: '22px', letterSpacing: '-0.165px', fontWeight: '400' }],
+        caption: ['13px', { lineHeight: '18px', letterSpacing: '0px', fontWeight: '400' }],
+        label: ['11px', { lineHeight: '16px', letterSpacing: '0.44px', fontWeight: '600' }],
       },
       fontFamily: {
         sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],

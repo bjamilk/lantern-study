@@ -178,11 +178,11 @@ function ChatRow({
         <ResolvedAvatar name={name} uri={resolveAvatarSrc(avatarUrl, lowDataMode)} size={44} />
         {unread && unread > 0 ? (
           <View className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-lantern-error items-center justify-center">
-            <Text className="text-[10px] font-bold text-white">{unread > 99 ? '99+' : unread}</Text>
+            <Text className="text-label font-bold text-white">{unread > 99 ? '99+' : unread}</Text>
           </View>
         ) : null}
         {selected ? (
-          <View className="absolute -bottom-0.5 -right-0.5 h-[18px] w-[18px] rounded-full bg-lantern-primary border border-white items-center justify-center">
+          <View className="absolute -bottom-0.5 -right-0.5 h-[18px] w-[18px] rounded-full bg-lantern-primary-fill border border-white items-center justify-center">
             <AppIcon name="checkmark" size={12} color="#ffffff" />
           </View>
         ) : null}
@@ -269,7 +269,7 @@ function InviteRow({
           accessibilityRole="button"
           accessibilityLabel={`Accept invite to ${invite.groupName}`}
           accessibilityState={{ disabled: busy }}
-          className="px-3 py-1.5 rounded-lg bg-lantern-primary active:opacity-70"
+          className="px-3 py-1.5 rounded-lg bg-lantern-primary-fill active:opacity-70"
           style={{ opacity: busy ? 0.5 : 1 }}
         >
           <Text className="text-xs font-semibold text-white">Accept</Text>
@@ -1367,7 +1367,7 @@ export function GroupsScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('CreateGroup')}
         accessibilityRole="button"
         accessibilityLabel="Create group"
-        className="absolute right-4 h-14 w-14 items-center justify-center rounded-full bg-lantern-primary"
+        className="absolute right-4 h-14 w-14 items-center justify-center rounded-full bg-lantern-primary-fill"
         style={{
           bottom: tabBarClearance - 8,
           elevation: 8,

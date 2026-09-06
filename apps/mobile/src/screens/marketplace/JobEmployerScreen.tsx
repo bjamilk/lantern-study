@@ -234,7 +234,7 @@ export function JobEmployerScreen() {
                     />
                   ) : (
                     <View className="h-8 w-8 rounded-lg bg-lantern-primary/10 items-center justify-center">
-                      <Text className="text-sm font-bold text-lantern-primary">
+                      <Text className="text-sm font-bold text-lantern-primary-text">
                         {(row.company.displayName || '?').charAt(0).toUpperCase()}
                       </Text>
                     </View>
@@ -255,7 +255,7 @@ export function JobEmployerScreen() {
                       navigation.navigate('JobCompany', { companyId: row.company.id })
                     }
                   >
-                    <Text className="text-xs font-semibold text-lantern-primary">View page</Text>
+                    <Text className="text-xs font-semibold text-lantern-primary-text">View page</Text>
                   </Pressable>
                   {canEdit ? (
                     <Pressable
@@ -263,7 +263,7 @@ export function JobEmployerScreen() {
                         editing ? setEditingId(null) : startEdit(row.company, row.role)
                       }
                     >
-                      <Text className="text-xs font-semibold text-lantern-primary">
+                      <Text className="text-xs font-semibold text-lantern-primary-text">
                         {editing ? 'Close' : 'Edit'}
                       </Text>
                     </Pressable>
@@ -280,7 +280,7 @@ export function JobEmployerScreen() {
                         />
                       ) : (
                         <View className="h-12 w-12 rounded-lg bg-lantern-primary/10 items-center justify-center">
-                          <Text className="text-base font-bold text-lantern-primary">
+                          <Text className="text-base font-bold text-lantern-primary-text">
                             {(editDisplayName || '?').charAt(0).toUpperCase()}
                           </Text>
                         </View>
@@ -348,7 +348,7 @@ export function JobEmployerScreen() {
                       className={`rounded-lg py-2 items-center mb-2 ${
                         busy || !editDisplayName.trim()
                           ? 'bg-lantern-primary/50'
-                          : 'bg-lantern-primary'
+                          : 'bg-lantern-primary-fill'
                       }`}
                       onPress={() => saveProfile(row.company)}
                     >
@@ -459,7 +459,7 @@ export function JobEmployerScreen() {
           <Pressable
             disabled={busy || !legalName.trim()}
             className={`rounded-lg py-3 items-center ${
-              busy || !legalName.trim() ? 'bg-lantern-primary/50' : 'bg-lantern-primary'
+              busy || !legalName.trim() ? 'bg-lantern-primary/50' : 'bg-lantern-primary-fill'
             }`}
             onPress={() =>
               void (async () => {

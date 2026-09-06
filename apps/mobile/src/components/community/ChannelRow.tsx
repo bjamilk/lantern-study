@@ -16,7 +16,7 @@ export function UnreadPill({ unread }: { unread: number }) {
   if (!unread || unread <= 0) return null;
   return (
     <View className="ml-2 min-w-[20px] h-[20px] px-1.5 rounded-full bg-lantern-error items-center justify-center">
-      <Text className="text-[10px] font-bold text-white">{formatUnreadPill(unread)}</Text>
+      <Text className="text-label font-bold text-white">{formatUnreadPill(unread)}</Text>
     </View>
   );
 }

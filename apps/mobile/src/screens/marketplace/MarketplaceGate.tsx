@@ -68,7 +68,7 @@ function MarketplacePrivatePilotScreen({ surface }: { surface: PilotSurface }) {
         </Text>
         <Pressable
           onPress={() => (navigation.canGoBack() ? navigation.goBack() : undefined)}
-          className="px-5 py-2.5 rounded-xl bg-lantern-primary"
+          className="px-5 py-2.5 rounded-xl bg-lantern-primary-fill"
           accessibilityRole="button"
         >
           <Text className="text-sm font-semibold text-white">Go back</Text>
@@ -107,7 +107,7 @@ function MarketplaceUnavailableScreen({ onRetry }: { onRetry: () => void }) {
         </Text>
         <Pressable
           onPress={onRetry}
-          className="px-5 py-2.5 rounded-xl bg-lantern-primary"
+          className="px-5 py-2.5 rounded-xl bg-lantern-primary-fill"
           accessibilityRole="button"
           accessibilityLabel="Try again"
         >

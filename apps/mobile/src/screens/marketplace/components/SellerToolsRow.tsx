@@ -79,7 +79,7 @@ export function SellerToolsRow({
         onPress={onNew}
         accessibilityRole="button"
         accessibilityLabel={newLabel}
-        className="h-9 px-2.5 rounded-lg bg-lantern-primary flex-row items-center gap-1 min-w-[44px]"
+        className="h-9 px-2.5 rounded-lg bg-lantern-primary-fill flex-row items-center gap-1 min-w-[44px]"
       >
         <AppIcon name="add" size={16} color="#fff" />
         <Text className="text-xs font-semibold text-white">{newLabel}</Text>

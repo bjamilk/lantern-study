@@ -777,7 +777,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.textSecondary,
   },
   activeTabText: {
-    color: colors.primary,
+    color: colors.primaryText,
     fontWeight: '600',
   },
   scrollContent: {
@@ -801,7 +801,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   changeAvatarButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryFill,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -860,7 +860,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     marginTop: 4,
   },
   saveButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryFill,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -891,7 +891,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryFill,
     borderRadius: 12,
     padding: 14,
     gap: 8,
@@ -971,7 +971,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   adminBadgeText: {
     fontSize: 11,
-    color: colors.primary,
+    color: colors.primaryText,
     fontWeight: '500',
   },
   memberActions: {

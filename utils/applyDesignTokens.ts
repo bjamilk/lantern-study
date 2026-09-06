@@ -1,8 +1,11 @@
 import {
   darkTheme,
+  ensureFillContrast,
+  ensureTextContrastOn,
   featureAccents,
   lightTheme,
   paletteToCssVars,
+  relativeLuminance,
 } from '@lantern/shared/design';
 import { hexToRgbChannels } from '@lantern/shared/design';
 import { DEFAULT_USER_SETTINGS } from '@lantern/shared/settings';
@@ -44,11 +47,12 @@ const LEGACY_INLINE_VARS = [
  * the palette — it removes any inlined tokens (which used to freeze the app
  * in one theme) and applies just the user's custom accent, if any.
  *
- * The `theme` argument is kept for call-site compatibility; the palette now
- * follows the `dark` class, not this value. Fonts are owned by useFontMode.
+ * The palette follows the `dark` class, not `theme`; `theme` only picks which
+ * palette a custom accent is derived against (see `deriveAccentRoles`).
+ * Fonts are owned by useFontMode.
  */
 export function applyDesignTokensToDom(
-  _theme: 'light' | 'dark',
+  theme: 'light' | 'dark',
   opts?: { accentColor?: string }
 ): void {
   if (typeof document === 'undefined') return;
@@ -67,18 +71,65 @@ export function applyDesignTokensToDom(
     // so it MUST be channels. Writing a hex here would compute to transparent
     // and blank out every primary background, border and ring app-wide.
     root.style.setProperty('--lantern-accent', accent);
-    const channels = hexToRgbChannels(accent);
-    if (channels) {
-      root.style.setProperty('--color-primary', channels);
+    const roles = deriveAccentRoles(accent, theme);
+    if (roles) {
+      root.style.setProperty('--color-primary', roles.primary);
+      root.style.setProperty('--color-primary-fill', roles.primaryFill);
+      root.style.setProperty('--color-primary-text', roles.primaryText);
     } else {
       // Unparseable accent: fall back to the designed primary rather than
-      // poisoning the variable.
-      root.style.removeProperty('--color-primary');
+      // poisoning the variables.
+      for (const name of ACCENT_VARS) root.style.removeProperty(name);
     }
   } else {
     // Default accent = no override: each theme keeps its designed primary
     // (#4f46e5 light / #818cf8 dark), which also fixes primary contrast in dark.
     root.style.removeProperty('--lantern-accent');
-    root.style.removeProperty('--color-primary');
+    for (const name of ACCENT_VARS) root.style.removeProperty(name);
   }
+}
+
+const ACCENT_VARS = ['--color-primary', '--color-primary-fill', '--color-primary-text'] as const;
+
+/**
+ * The same split `applyAccentToColors` makes on mobile, for the web vars —
+ * kept in lockstep so a custom accent renders the same roles on both.
+ *
+ *   --color-primary-fill  the accent darkened until a WHITE label clears AA
+ *                         (the default #6366f1 is 4.47:1 and needs one step).
+ *   --color-primary-text  the accent adjusted until it clears AA on the
+ *                         theme's surface AND on `primaryBackground`
+ *                         composited over it — the tint is where the accent
+ *                         ink used to fail (4.07 dark / 4.35 light).
+ *   --color-primary       the deprecated dual-role var: the fill on a light
+ *                         ground, the text ink on a dark one, exactly as the
+ *                         static `:root` / `.dark` values are.
+ *
+ * Runs per theme because `applyUserSettingsToDom` re-applies on every theme
+ * change, so the inline var always matches the class on <html>. Before this
+ * a custom accent wrote only `--color-primary`, so the migrated
+ * `bg-lantern-primary-fill` / `text-lantern-primary-text` call sites kept
+ * the static indigo while everything else took the accent.
+ *
+ * Returns RGB channel strings, or null when the accent does not parse.
+ */
+export function deriveAccentRoles(
+  accent: string,
+  theme: 'light' | 'dark'
+): { primary: string; primaryFill: string; primaryText: string } | null {
+  if (!hexToRgbChannels(accent)) return null;
+  const palette = theme === 'dark' ? darkTheme : lightTheme;
+  let primaryFill: string;
+  let primaryText: string;
+  try {
+    primaryFill = ensureFillContrast(accent, '#ffffff');
+    primaryText = ensureTextContrastOn(accent, [palette.surface, palette.primaryBackground]);
+  } catch {
+    return null;
+  }
+  const isDarkGround = relativeLuminance(palette.surface) < 0.5;
+  const fill = hexToRgbChannels(primaryFill);
+  const text = hexToRgbChannels(primaryText);
+  if (!fill || !text) return null;
+  return { primary: isDarkGround ? text : fill, primaryFill: fill, primaryText: text };
 }

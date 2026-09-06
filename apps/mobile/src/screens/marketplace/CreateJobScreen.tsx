@@ -297,7 +297,7 @@ export function CreateJobScreen() {
   const chip = (active: boolean) =>
     `mr-2 mb-2 px-3 py-1.5 rounded-lg border ${
       active
-        ? "bg-lantern-primary border-lantern-primary"
+        ? "bg-lantern-primary-fill border-lantern-primary"
         : "border-lantern-border"
     }`;
   const chipText = (active: boolean) =>
@@ -545,7 +545,7 @@ export function CreateJobScreen() {
 
           {previewing ? (
             <View className="rounded-xl border border-lantern-primary/30 bg-lantern-background p-3">
-              <Text className="text-xs font-semibold uppercase text-lantern-primary">
+              <Text className="text-xs font-semibold uppercase text-lantern-primary-text">
                 How candidates will see it
               </Text>
               <Text className="mt-2 text-base font-bold text-lantern-text">
@@ -591,7 +591,7 @@ export function CreateJobScreen() {
             onPress={() => setConfirmed((v) => !v)}
             className="flex-row items-start gap-2"
           >
-            <Text className="text-lantern-primary">
+            <Text className="text-lantern-primary-text">
               {confirmed ? "☑" : "☐"}
             </Text>
             <Text className="flex-1 text-xs text-lantern-text-secondary">
@@ -601,7 +601,7 @@ export function CreateJobScreen() {
           {error ? <Text className="text-sm text-red-600">{error}</Text> : null}
           <Pressable
             disabled={busy || locked || !title.trim() || !confirmed}
-            className="rounded-lg bg-lantern-primary py-3 items-center"
+            className="rounded-lg bg-lantern-primary-fill py-3 items-center"
             onPress={() =>
               void submit(isEdit && status !== "draft" ? status : "active")
             }

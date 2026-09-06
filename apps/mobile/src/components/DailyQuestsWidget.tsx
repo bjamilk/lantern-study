@@ -78,7 +78,7 @@ export function DailyQuestsWidget({ quests, streak, streakFreezes = 0, onPurchas
                 </View>
                 <View className="h-1.5 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full overflow-hidden">
                   <View
-                    className={`h-full rounded-full ${quest.completed ? 'bg-emerald-500' : 'bg-lantern-primary'}`}
+                    className={`h-full rounded-full ${quest.completed ? 'bg-emerald-500' : 'bg-lantern-primary-fill'}`}
                     style={{ width: `${pct}%` }}
                   />
                 </View>

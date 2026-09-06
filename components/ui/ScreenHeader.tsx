@@ -25,9 +25,9 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
         </div>
       )}
       <div>
-        <h1 className="text-xl md:text-2xl font-bold text-lantern-text">{title}</h1>
+        <h1 className="text-title text-lantern-text">{title}</h1>
         {subtitle && (
-          <p className="text-sm text-lantern-text-secondary mt-0.5">{subtitle}</p>
+          <p className="text-caption text-lantern-text-secondary mt-0.5">{subtitle}</p>
         )}
       </div>
     </div>

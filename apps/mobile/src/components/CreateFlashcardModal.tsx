@@ -243,7 +243,7 @@ export default function CreateFlashcardModal({
       accessibilityRole="button"
       accessibilityState={{ selected: type === value, disabled: typeLocked && type !== value }}
       className={`flex-1 py-2 rounded-xl items-center ${
-        type === value ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+        type === value ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary'
       } ${typeLocked && type !== value ? 'opacity-40' : ''}`}
     >
       <Text
@@ -322,7 +322,7 @@ export default function CreateFlashcardModal({
                       accessibilityRole="button"
                       className="items-center justify-center py-10 rounded-2xl border-2 border-dashed border-lantern-border active:opacity-80"
                     >
-                      <Text className="text-base font-semibold text-lantern-primary">
+                      <Text className="text-base font-semibold text-lantern-primary-text">
                         Choose an image
                       </Text>
                       <Text className="text-xs text-lantern-text-secondary mt-1 px-6 text-center">
@@ -351,7 +351,7 @@ export default function CreateFlashcardModal({
                       accessibilityRole="button"
                       className="px-3 py-1.5 rounded-full bg-lantern-background-secondary active:opacity-80"
                     >
-                      <Text className="text-xs font-semibold text-lantern-primary">
+                      <Text className="text-xs font-semibold text-lantern-primary-text">
                         + Add deletion
                       </Text>
                     </Pressable>
@@ -402,7 +402,7 @@ export default function CreateFlashcardModal({
                       accessibilityLabel="Attach an image"
                       className="flex-row items-center justify-center gap-2 mb-3 py-2 rounded-xl border border-lantern-border active:opacity-80"
                     >
-                      <Text className="text-sm font-semibold text-lantern-primary">
+                      <Text className="text-sm font-semibold text-lantern-primary-text">
                         🖼  Attach image
                       </Text>
                     </Pressable>
@@ -416,7 +416,7 @@ export default function CreateFlashcardModal({
                       className="flex-row items-center justify-center gap-2 mb-3 py-2 rounded-xl border border-lantern-border active:opacity-80"
                     >
                       {enhancing ? <ActivityIndicator size="small" /> : null}
-                      <Text className="text-sm font-semibold text-lantern-primary">
+                      <Text className="text-sm font-semibold text-lantern-primary-text">
                         {enhancing ? 'Enhancing…' : '✨ Enhance with AI'}
                       </Text>
                     </Pressable>

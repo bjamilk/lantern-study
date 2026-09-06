@@ -90,7 +90,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
             </View>
             {item.updateAvailable ? (
               <View className="rounded-full bg-lantern-primary/15 px-2 py-0.5">
-                <Text className="text-[11px] font-semibold text-lantern-primary">
+                <Text className="text-[11px] font-semibold text-lantern-primary-text">
                   Update available
                 </Text>
               </View>
@@ -110,7 +110,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
           <Pressable
             onPress={() => void handleUpdate(item)}
             disabled={updatingId === item.listingId}
-            className="ml-2 self-center flex-row items-center rounded-lg bg-lantern-primary px-3 py-1.5"
+            className="ml-2 self-center flex-row items-center rounded-lg bg-lantern-primary-fill px-3 py-1.5"
             style={{ opacity: updatingId === item.listingId ? 0.5 : 1, gap: 5 }}
           >
             <AppIcon name="download" size={13} color="#fff" />
@@ -156,7 +156,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
           </Text>
           <Pressable
             onPress={() => navigation.navigate('MarketplaceHome')}
-            className="mt-4 rounded-lg bg-lantern-primary px-4 py-2"
+            className="mt-4 rounded-lg bg-lantern-primary-fill px-4 py-2"
           >
             <Text className="text-sm font-semibold text-white">Browse the marketplace</Text>
           </Pressable>

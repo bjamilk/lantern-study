@@ -217,7 +217,7 @@ export default function ChallengeModal({
       borderColor: colors.border,
     },
     optionChipSelected: {
-      backgroundColor: colors.primary,
+      backgroundColor: colors.primaryFill,
       borderColor: colors.primary,
     },
     optionChipDisabled: {
@@ -242,7 +242,7 @@ export default function ChallengeModal({
       borderColor: colors.border,
     },
     typeChipSelected: {
-      backgroundColor: colors.primary,
+      backgroundColor: colors.primaryFill,
       borderColor: colors.primary,
     },
     tagChip: {

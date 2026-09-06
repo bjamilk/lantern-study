@@ -71,7 +71,7 @@ export function SwipeToReply({ enabled = true, onReply, children }: SwipeToReply
     <View style={styles.row}>
       <Animated.View style={[styles.iconSlot, iconStyle]} pointerEvents="none">
         <View style={[styles.iconCircle, { backgroundColor: colors.primaryBackground }]}>
-          <AppIcon name="arrow-undo" size={16} color={colors.primary} />
+          <AppIcon name="arrow-undo" size={16} color={colors.primaryText} />
         </View>
       </Animated.View>
       <GestureDetector gesture={pan}>

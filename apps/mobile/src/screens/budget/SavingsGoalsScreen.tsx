@@ -73,7 +73,7 @@ export default function SavingsGoalsScreen() {
                 <Text className="font-semibold text-lantern-text dark:text-white">{goal.name}</Text>
                 {done && (
                   <View className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-                    <Text className="text-[10px] font-semibold text-lantern-success">✓ Done</Text>
+                    <Text className="text-label font-semibold text-lantern-success">✓ Done</Text>
                   </View>
                 )}
               </View>

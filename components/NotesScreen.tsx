@@ -82,7 +82,7 @@ interface NotesScreenProps {
 }
 
 const folderButtonClass = (isActive: boolean, compact = false) =>
-  `${compact ? 'w-full text-left px-2 py-1.5' : 'shrink-0 px-3 py-1.5'} rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+  `${compact ? 'w-full text-left px-2 py-1.5' : 'shrink-0 px-3 py-1.5'} rounded-lg text-body font-medium transition-colors ${
     isActive
       ? 'bg-lantern-primary text-white'
       : 'text-lantern-text-secondary bg-lantern-surface border border-lantern-border hover:bg-lantern-background-secondary'
@@ -546,10 +546,10 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
         ariaLabelledBy="move-notes-title"
         maxWidthClass="max-w-sm"
       >
-        <h2 id="move-notes-title" className="text-lg font-bold text-lantern-text mb-1">
+        <h2 id="move-notes-title" className="text-heading font-bold text-lantern-text mb-1">
           Move to folder
         </h2>
-        <p className="text-sm text-lantern-text-secondary mb-4">
+        <p className="text-body text-lantern-text-secondary mb-4">
           {selectedNoteIds.length === 1
             ? 'Choose a folder for this note.'
             : `Choose a folder for ${selectedNoteIds.length} notes.`}
@@ -560,11 +560,11 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             role="option"
             disabled={selectionBusy}
             onClick={() => void handleMoveToFolder(null)}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-body text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
           >
             <FolderIcon className="h-4 w-4 text-lantern-text-secondary shrink-0" aria-hidden />
             <span className="min-w-0 flex-1">All notes</span>
-            <span className="text-xs text-lantern-text-tertiary shrink-0">Unfiled</span>
+            <span className="text-caption text-lantern-text-tertiary shrink-0">Unfiled</span>
           </button>
           {folderTree.flatMap((node) => [
             { folder: node.folder, isChild: false },
@@ -576,7 +576,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               role="option"
               disabled={selectionBusy}
               onClick={() => void handleMoveToFolder(folder.id)}
-              className={`flex w-full items-center gap-2 rounded-lg py-2.5 pr-3 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60 ${
+              className={`flex w-full items-center gap-2 rounded-lg py-2.5 pr-3 text-left text-body text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60 ${
                 isChild ? 'pl-8' : 'pl-3'
               }`}
             >
@@ -590,7 +590,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           ))}
         </div>
         {folders.length === 0 ? (
-          <p className="mt-3 text-xs text-lantern-text-secondary">
+          <p className="mt-3 text-caption text-lantern-text-secondary">
             No folders yet.{' '}
             <button
               type="button"
@@ -634,10 +634,10 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
         ariaLabelledBy="youtube-import-title"
         maxWidthClass="max-w-sm"
       >
-        <h2 id="youtube-import-title" className="text-lg font-bold text-lantern-text mb-1">
+        <h2 id="youtube-import-title" className="text-heading font-bold text-lantern-text mb-1">
           Note from YouTube
         </h2>
-        <p className="text-sm text-lantern-text-secondary mb-4">
+        <p className="text-body text-lantern-text-secondary mb-4">
           Paste a video link — we'll fetch its transcript so you can summarize, quiz, and make
           flashcards from it.
         </p>
@@ -650,7 +650,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             aria-label="YouTube link"
           />
           {youtubeUrl.trim() && !youtubeUrlValid && (
-            <p className="text-xs text-red-500">That doesn't look like a YouTube link.</p>
+            <p className="text-caption text-red-500">That doesn't look like a YouTube link.</p>
           )}
           <div className="flex gap-2 justify-end">
             <Button
@@ -792,7 +792,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
             <div className="inline-flex w-full sm:w-auto rounded-lg border border-lantern-border bg-lantern-surface p-1">
               {(['mine', 'shared'] as const).map((filter) => (
-                <button key={filter} type="button" onClick={() => setAccessFilter(filter)} className={`flex-1 sm:flex-none rounded-md px-3 py-1.5 text-sm font-medium ${accessFilter === filter ? 'bg-lantern-primary text-white' : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'}`}>
+                <button key={filter} type="button" onClick={() => setAccessFilter(filter)} className={`flex-1 sm:flex-none rounded-md px-3 py-1.5 text-body font-medium ${accessFilter === filter ? 'bg-lantern-primary text-white' : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'}`}>
                   {filter === 'mine' ? 'Mine' : 'Shared'}
                 </button>
               ))}
@@ -803,7 +803,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                   key={filter}
                   type="button"
                   onClick={() => setListFilter(filter)}
-                  className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
+                  className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-body font-medium ${
                     listFilter === filter
                       ? 'bg-lantern-primary text-white'
                       : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'
@@ -827,7 +827,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                   onChange={e => setOwnSearch(e.target.value)}
                   placeholder="Search notes..."
                   aria-label="Search notes"
-                  className="flex-1 min-w-0 bg-transparent outline-none text-sm text-lantern-text"
+                  className="flex-1 min-w-0 bg-transparent outline-none text-body text-lantern-text"
                 />
               </div>
             ) : null}
@@ -839,7 +839,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               <MenuTrigger
                 disabled={Boolean(importProgress)}
                 aria-label="Import a note"
-                className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto sm:ml-auto border-lantern-border ${
+                className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-body shrink-0 w-full sm:w-auto sm:ml-auto border-lantern-border ${
                   importProgress
                     ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
                     : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
@@ -888,7 +888,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                     From YouTube
                   </MenuItem>
                 ) : null}
-                <p className="px-4 pb-2 pt-1 text-xs text-lantern-text-secondary">
+                <p className="px-4 pb-2 pt-1 text-caption text-lantern-text-secondary">
                   {formatMaxNoteUploadLabel()}
                 </p>
               </MenuContent>
@@ -939,7 +939,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           </div>
 
           {error && (
-            <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300" role="alert">
+            <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-body text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300" role="alert">
               {error}
             </div>
           )}
@@ -950,7 +950,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               role="toolbar"
               aria-label="Note selection"
             >
-              <span className="text-sm text-lantern-text">
+              <span className="text-body text-lantern-text">
                 {selectedNoteIds.length === 0
                   ? 'Select notes'
                   : `${selectedNoteIds.length} selected`}
@@ -987,7 +987,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           ) : null}
 
           {isLoading ? (
-            <p className="text-sm text-lantern-text-secondary">Loading notes...</p>
+            <p className="text-body text-lantern-text-secondary">Loading notes...</p>
           ) : filteredNotes.length === 0 ? (
             // A query that matches nothing is not an empty library: offering
             // "New note" there reads as if the notes were gone.
@@ -1079,7 +1079,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                         </span>
                       ) : null}
                       <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
-                        <h3 className="font-semibold line-clamp-2 sm:line-clamp-1 min-w-0 text-lantern-text inline-flex items-center gap-1.5">
+                        <h3 className="text-heading line-clamp-2 sm:line-clamp-1 min-w-0 text-lantern-text inline-flex items-center gap-1.5">
                           {note.isPinned ? (
                             <BookmarkSolidIcon
                               className="h-4 w-4 shrink-0 text-lantern-primary"
@@ -1091,27 +1091,27 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                         <span className="flex items-center gap-1 shrink-0">
                           {note.courseId && resolveCourse(note.courseId) ? (
                             <span
-                              className="hidden sm:inline text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-lantern-primary/10 text-lantern-primary font-medium"
+                              className="hidden sm:inline text-label px-2 py-0.5 rounded-full bg-lantern-primary/10 text-lantern-primary"
                               title={resolveCourse(note.courseId)?.title}
                             >
                               {resolveCourse(note.courseId)?.code}
                             </span>
                           ) : null}
-                          <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary">
+                          <span className="text-label px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary">
                             {sourceBadge(note)}
                           </span>
                         </span>
                       </div>
-                      <p className="text-sm line-clamp-3 text-lantern-text-secondary">
+                      <p className="text-body line-clamp-3 text-lantern-text-secondary">
                         {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
                       </p>
                       {note.accessRole === 'viewer' || note.accessRole === 'editor' ? (
-                        <div className="mt-3 flex items-center gap-2 text-xs">
+                        <div className="mt-3 flex items-center gap-2 text-caption">
                           <span className="text-lantern-text-secondary">Owner: {note.owner?.name || note.owner?.username || 'Unknown'}</span>
                           <span className="rounded-full bg-lantern-primary-background px-2 py-0.5 font-semibold capitalize text-lantern-primary">{note.accessRole}</span>
                         </div>
                       ) : null}
-                      <p className="text-xs mt-3 text-lantern-text-secondary">
+                      <p className="text-caption mt-3 text-lantern-text-secondary">
                         Updated {new Date(note.updatedAt).toLocaleDateString()}
                       </p>
                     </button>
@@ -1140,7 +1140,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               <button
                                 type="button"
                                 role="menuitem"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-lantern-text hover:bg-lantern-background-secondary"
                                 onClick={() => openMovePickerForNotes([note.id])}
                               >
                                 <FolderIcon className="h-4 w-4" aria-hidden />
@@ -1151,7 +1151,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               <button
                                 type="button"
                                 role="menuitem"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-lantern-text hover:bg-lantern-background-secondary"
                                 onClick={() => {
                                   setNoteMenuId(null);
                                   window.setTimeout(() => setCourseMoveNote(note), 50);
@@ -1165,7 +1165,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               <button
                                 type="button"
                                 role="menuitem"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-lantern-text hover:bg-lantern-background-secondary"
                                 onClick={() => {
                                   setNoteMenuId(null);
                                   void onTogglePinNote(note.id, !note.isPinned);
@@ -1179,7 +1179,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               <button
                                 type="button"
                                 role="menuitem"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-lantern-text hover:bg-lantern-background-secondary"
                                 onClick={() => {
                                   setNoteMenuId(null);
                                   void onArchiveNote(note.id, !note.isArchived);
@@ -1193,7 +1193,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               <button
                                 type="button"
                                 role="menuitem"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-lantern-text hover:bg-lantern-background-secondary"
                                 onClick={() => {
                                   setNoteMenuId(null);
                                   window.setTimeout(() => setReportNote(note), 50);
@@ -1207,7 +1207,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                               <button
                                 type="button"
                                 role="menuitem"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
                                 onClick={() => {
                                   setNoteMenuId(null);
                                   window.setTimeout(() => handleDeleteNotesByIds([note.id]), 50);

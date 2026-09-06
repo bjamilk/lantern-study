@@ -103,7 +103,7 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
             {taxonomyPathLabel(selected.id)}
           </Text>
           <Text className="text-sm font-semibold text-lantern-text mt-0.5">{selected.label}</Text>
-          <Text className="text-xs text-lantern-primary mt-1">Change</Text>
+          <Text className="text-xs text-lantern-primary-text mt-1">Change</Text>
         </Pressable>
       ) : null}
       {(open || !selected) && (
@@ -158,7 +158,7 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
                 >
                   <Text
                     className={`text-[11px] ${
-                      browseNode ? 'text-lantern-primary' : 'font-semibold text-lantern-text'
+                      browseNode ? 'text-lantern-primary-text' : 'font-semibold text-lantern-text'
                     }`}
                   >
                     All departments
@@ -177,7 +177,7 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
                         className={`text-[11px] ${
                           index === crumbs.length - 1
                             ? 'font-semibold text-lantern-text'
-                            : 'text-lantern-primary'
+                            : 'text-lantern-primary-text'
                         }`}
                       >
                         {crumb.label}
@@ -204,7 +204,7 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
                       <Text
                         className={`text-sm ${
                           chosen
-                            ? 'font-semibold text-lantern-primary'
+                            ? 'font-semibold text-lantern-primary-text'
                             : 'font-medium text-lantern-text'
                         }`}
                       >

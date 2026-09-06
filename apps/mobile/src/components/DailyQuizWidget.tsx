@@ -38,7 +38,7 @@ function SourceContext({ noteTitle, topic }: { noteTitle?: string; topic?: strin
       ) : null}
       {topic ? (
         <View className="px-1.5 py-0.5 rounded bg-lantern-primary-background">
-          <Text className="text-xs font-medium text-lantern-primary">{topic}</Text>
+          <Text className="text-xs font-medium text-lantern-primary-text">{topic}</Text>
         </View>
       ) : null}
     </View>

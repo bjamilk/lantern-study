@@ -226,7 +226,7 @@ export default function GameResultScreen() {
       </View>
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.primary }]}>{correct}</Text>
+          <Text style={[styles.statValue, { color: colors.primaryText }]}>{correct}</Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
             / {session.questions.length}
           </Text>

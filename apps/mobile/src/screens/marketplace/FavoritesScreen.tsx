@@ -94,12 +94,12 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
                   typeof seen === 'number' && typeof current === 'number' && current < seen;
                 return (
                   <View className="flex-row items-center gap-2 mt-1">
-                    <Text className="text-sm font-bold text-lantern-primary">
+                    <Text className="text-sm font-bold text-lantern-primary-text">
                       {formatPrice(current ?? item.price)}
                     </Text>
                     {dropped ? (
                       <View className="px-1.5 py-0.5 rounded-md bg-lantern-success-background">
-                        <Text className="text-[10px] font-semibold text-lantern-success">
+                        <Text className="text-label font-semibold text-lantern-success">
                           Price drop · was {formatPrice(seen)}
                         </Text>
                       </View>

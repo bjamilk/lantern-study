@@ -102,12 +102,12 @@ export function MeScreen({ navigation }: Props) {
         />
         <View className="flex-1 min-w-0">
           <Text
-            className={`text-base font-medium ${destructive ? 'text-red-500' : 'text-lantern-text'}`}
+            className={`text-body font-medium ${destructive ? 'text-red-500' : 'text-lantern-text'}`}
           >
             {row.label}
           </Text>
           {row.hint ? (
-            <Text className="text-xs text-lantern-text-secondary mt-0.5">{row.hint}</Text>
+            <Text className="text-caption text-lantern-text-secondary mt-0.5">{row.hint}</Text>
           ) : null}
         </View>
         {isSwitch ? (
@@ -143,15 +143,15 @@ export function MeScreen({ navigation }: Props) {
       >
         <ResolvedAvatar name={profileName} uri={profileAvatarUri} size={56} decorative />
         <View className="flex-1 min-w-0">
-          <Text className="text-lg font-bold text-lantern-text" numberOfLines={1}>
+          <Text className="text-heading font-bold text-lantern-text" numberOfLines={1}>
             {profileName}
           </Text>
           {profileEmail ? (
-            <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>
+            <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
               {profileEmail}
             </Text>
           ) : null}
-          <Text className="text-xs font-medium text-lantern-primary mt-0.5">Edit profile</Text>
+          <Text className="text-caption font-medium text-lantern-primary-text mt-0.5">Edit profile</Text>
         </View>
         <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
       </Pressable>

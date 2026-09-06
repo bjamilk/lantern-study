@@ -256,7 +256,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 {/* A disclosure, not a second read-out of the filter: whatever is
                     selected, the scope row below says so and can clear it. */}
                 <span className="inline-flex items-center gap-2 min-w-0">
-                  <AcademicCapIcon className="h-4 w-4 shrink-0 text-lantern-primary" aria-hidden />
+                  <AcademicCapIcon className="h-4 w-4 shrink-0 text-lantern-primary-text" aria-hidden />
                   <span className="truncate">Browse by course</span>
                 </span>
                 {railOpen ? (
@@ -346,7 +346,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => setSearchEverything(true)}
-                    className="inline-flex items-center gap-1 rounded-full border border-lantern-primary/30 bg-lantern-primary/5 px-2 py-0.5 font-medium text-lantern-primary hover:bg-lantern-primary/10"
+                    className="inline-flex items-center gap-1 rounded-full border border-lantern-primary/30 bg-lantern-primary/5 px-2 py-0.5 font-medium text-lantern-primary-text hover:bg-lantern-primary/10"
                     title="Search decks, cards and offline bundles as well — this drops the folder and Archived filters"
                   >
                     <MagnifyingGlassIcon className="h-3 w-3" aria-hidden /> Search everything

@@ -281,7 +281,7 @@ export function ChatComposer({
           style={{ backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1 }}
         >
           <View className="flex-1 min-w-0 rounded-lg px-2.5 py-1.5" style={{ backgroundColor: colors.backgroundSecondary }}>
-            <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+            <Text className="text-[11px] font-semibold" style={{ color: colors.primaryText }}>
               Replying to {replyTo.senderName || 'message'}
             </Text>
             <Text className="text-xs" numberOfLines={1} style={{ color: colors.textSecondary }}>
@@ -300,7 +300,7 @@ export function ChatComposer({
           style={{ backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1 }}
         >
           <View className="flex-1 rounded-lg px-2.5 py-1.5" style={{ backgroundColor: colors.primaryBackground }}>
-            <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+            <Text className="text-[11px] font-semibold" style={{ color: colors.primaryText }}>
               Editing message
             </Text>
             <Text className="text-xs" style={{ color: colors.textSecondary }}>
@@ -373,7 +373,7 @@ export function ChatComposer({
               accessibilityState={{ expanded: trayOpen }}
             >
               {attaching ? (
-                <ActivityIndicator size="small" color={colors.primary} />
+                <ActivityIndicator size="small" color={colors.primaryText} />
               ) : (
                 <AppIcon
                   name={trayOpen ? 'close' : 'add'}
@@ -397,7 +397,7 @@ export function ChatComposer({
             accessibilityLabel={isRecording ? 'Stop recording' : 'Record voice note'}
           >
             {uploadingAudio ? (
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.primaryText} />
             ) : (
               <AppIcon name="mic" size={22} color={isRecording ? '#fff' : colors.primary} />
             )}

@@ -427,7 +427,7 @@ export function CommunityPostScreen({
                   <MentionText
                     text={media.body}
                     color={colors.text}
-                    mentionColor={colors.primary}
+                    mentionColor={colors.primaryText}
                   />
                 </View>
               ) : null}
@@ -546,7 +546,7 @@ export function CommunityPostScreen({
                     <MentionText
                       text={rootMedia.body}
                       color={colors.text}
-                      mentionColor={colors.primary}
+                      mentionColor={colors.primaryText}
                     />
                   </View>
                 ) : null}
@@ -620,7 +620,7 @@ export function CommunityPostScreen({
                 accessibilityRole="button"
                 accessibilityLabel={COMMUNITY_BOARD_COPY.comment}
                 accessibilityState={{ disabled: !text.trim() || sending, busy: sending }}
-                className="ml-2 min-h-[44px] min-w-[44px] items-center justify-center rounded-2xl bg-lantern-primary px-3"
+                className="ml-2 min-h-[44px] min-w-[44px] items-center justify-center rounded-2xl bg-lantern-primary-fill px-3"
                 style={{ opacity: !text.trim() || sending ? 0.5 : 1 }}
               >
                 <Text className="text-xs font-semibold text-white">

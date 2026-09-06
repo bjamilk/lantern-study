@@ -78,7 +78,7 @@ export function GroupDiscoverabilityFields({
             className="py-2"
           >
             <Text
-              className={`text-sm ${value.visibility === 'public' ? 'text-lantern-primary font-semibold' : 'text-lantern-text'}`}
+              className={`text-sm ${value.visibility === 'public' ? 'text-lantern-primary-text font-semibold' : 'text-lantern-text'}`}
             >
               Anyone on Discover
             </Text>
@@ -95,7 +95,7 @@ export function GroupDiscoverabilityFields({
             className="py-2"
           >
             <Text
-              className={`text-sm ${value.visibility === 'community' ? 'text-lantern-primary font-semibold' : 'text-lantern-text'}`}
+              className={`text-sm ${value.visibility === 'community' ? 'text-lantern-primary-text font-semibold' : 'text-lantern-text'}`}
             >
               People in one of my communities
             </Text>
@@ -112,7 +112,7 @@ export function GroupDiscoverabilityFields({
                   <Text
                     className={`text-sm ${
                       value.communityId === community.id
-                        ? 'text-lantern-primary font-semibold'
+                        ? 'text-lantern-primary-text font-semibold'
                         : 'text-lantern-text-secondary'
                     }`}
                   >

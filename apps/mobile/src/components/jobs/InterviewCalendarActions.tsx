@@ -43,7 +43,7 @@ export function InterviewCalendarActions({ interview, jobTitle }: Props) {
         onPress={() => void Linking.openURL(url)}
         accessibilityRole="link"
       >
-        <Text className="text-xs font-semibold text-lantern-primary">
+        <Text className="text-xs font-semibold text-lantern-primary-text">
           Add to calendar
         </Text>
       </Pressable>

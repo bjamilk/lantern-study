@@ -135,7 +135,7 @@ export default function GameScreen() {
       <Screen edges={['top']} bottom="safe" className="flex-1" style={{ backgroundColor: colors.background }}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <Text style={{ color: colors.text, fontSize: 18 }}>No active game session</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 20, padding: 12, backgroundColor: colors.primary, borderRadius: 8 }}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 20, padding: 12, backgroundColor: colors.primaryFill, borderRadius: 8 }}>
             <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Go Back</Text>
           </TouchableOpacity>
         </View>
@@ -609,7 +609,7 @@ export default function GameScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.questionCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.questionNumber, { color: colors.primary }]}>
+          <Text style={[styles.questionNumber, { color: colors.primaryText }]}>
             Question {currentQuestion.questionNumber}
           </Text>
           <Text style={[styles.questionText, { color: colors.text }]}>
@@ -632,7 +632,7 @@ export default function GameScreen() {
           {/* Next button after answering */}
           {isQuestionAnswered && (
             <TouchableOpacity
-              style={[styles.nextButton, { backgroundColor: colors.primary }]}
+              style={[styles.nextButton, { backgroundColor: colors.primaryFill }]}
               onPress={handleNextQuestion}
               activeOpacity={0.8}
             >

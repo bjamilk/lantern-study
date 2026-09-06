@@ -1,0 +1,60 @@
+/* ===== Lantern type scale (Wave T) =====
+   Six steps, one role each, in pixels — the same pixels the mobile Tailwind
+   config ships, so `text-title` is 22 px on both platforms.
+
+   These live behind a --type-scale multiplier because the app's text-size
+   setting used to be implemented by moving the root font-size
+   (.font-size-small 14px / .font-size-large 18px in index.css), which only
+   ever reached rem-based sizes. The five hardcoded px sizes on web (15, 13,
+   11, 10, 9) silently ignored it. Scaling the tokens instead means every step
+   — and therefore every migrated string — honours the setting.
+
+   This is the ONLY place --type-* is defined (index.css carries the colour
+   tokens and the font stacks). Mirrors `type` in
+   packages/shared/src/design/tokens.ts; scripts/design/contrast.mjs reads this
+   file and fails if a step is missing or drops below the 11px floor.
+
+   Loaded after index.css (see index.tsx). */
+
+:root {
+  --type-scale: 1;
+
+  --type-display-size: calc(28px * var(--type-scale));
+  --type-display-lh: calc(34px * var(--type-scale));
+  --type-display-weight: 700;
+  --type-display-tracking: -0.02em;
+
+  --type-title-size: calc(22px * var(--type-scale));
+  --type-title-lh: calc(28px * var(--type-scale));
+  --type-title-weight: 700;
+  --type-title-tracking: -0.02em;
+
+  --type-heading-size: calc(17px * var(--type-scale));
+  --type-heading-lh: calc(24px * var(--type-scale));
+  --type-heading-weight: 600;
+  --type-heading-tracking: -0.011em;
+
+  --type-body-size: calc(15px * var(--type-scale));
+  --type-body-lh: calc(22px * var(--type-scale));
+  --type-body-weight: 400;
+  --type-body-tracking: -0.011em;
+
+  --type-caption-size: calc(13px * var(--type-scale));
+  --type-caption-lh: calc(18px * var(--type-scale));
+  --type-caption-weight: 400;
+  --type-caption-tracking: 0;
+
+  --type-label-size: calc(11px * var(--type-scale));
+  --type-label-lh: calc(16px * var(--type-scale));
+  --type-label-weight: 600;
+  --type-label-tracking: 0.04em;
+}
+
+/* Mirrors the 14 / 16 / 18 px root sizes the setting used to set, as ratios. */
+:root.font-size-small {
+  --type-scale: 0.875;
+}
+
+:root.font-size-large {
+  --type-scale: 1.125;
+}

@@ -31,7 +31,7 @@ export function JobHiringFunnelStrip({ funnel }: Props) {
             </Text>
             <View className="mt-2 h-1 overflow-hidden rounded-full bg-lantern-border">
               <View
-                className="h-full rounded-full bg-lantern-primary"
+                className="h-full rounded-full bg-lantern-primary-fill"
                 style={{ width: `${fill}%` }}
               />
             </View>

@@ -218,7 +218,7 @@ export function NoteCollaboratorsModal({
                   onPress={() => setInviteRole(role)}
                   className={`flex-1 rounded-lg border px-3 py-2 ${inviteRole === role ? 'border-lantern-primary bg-lantern-primary-background' : 'border-lantern-border'}`}
                 >
-                  <Text className={`text-center text-sm font-medium ${inviteRole === role ? 'text-lantern-primary' : 'text-lantern-text'}`}>
+                  <Text className={`text-center text-sm font-medium ${inviteRole === role ? 'text-lantern-primary-text' : 'text-lantern-text'}`}>
                     {role === 'viewer' ? 'Viewer' : 'Editor'}
                   </Text>
                 </Pressable>
@@ -274,7 +274,7 @@ export function NoteCollaboratorsModal({
                   {collaborator.userId !== currentUserId ? (
                     <View className="flex-row items-center gap-3">
                       <Pressable onPress={() => void handleRoleChange(collaborator)} disabled={saving}>
-                        <Text className="text-xs font-semibold text-lantern-primary">
+                        <Text className="text-xs font-semibold text-lantern-primary-text">
                           Make {collaborator.role === 'viewer' ? 'editor' : 'viewer'}
                         </Text>
                       </Pressable>
@@ -302,7 +302,7 @@ export function NoteCollaboratorsModal({
                   <View className="flex-row items-center gap-3">
                     {link.token ? (
                       <Pressable onPress={() => void copyLink(link)} disabled={saving}>
-                        <Text className="text-xs font-semibold text-lantern-primary">
+                        <Text className="text-xs font-semibold text-lantern-primary-text">
                           {copiedLinkId === link.id ? 'Copied' : 'Copy'}
                         </Text>
                       </Pressable>

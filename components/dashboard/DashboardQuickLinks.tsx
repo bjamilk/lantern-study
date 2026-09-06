@@ -34,27 +34,27 @@ export const DashboardQuickLinks: React.FC<DashboardQuickLinksProps> = ({
       {onNavigateToAITools && (
         <button type="button" onClick={onNavigateToAITools} className={linkBase}>
           <SparklesIcon className="w-6 h-6 text-lantern-accent" />
-          <span className="text-xs font-semibold text-lantern-text">AI Tools</span>
+          <span className="text-caption font-semibold text-lantern-text">AI Tools</span>
         </button>
       )}
       {onNavigateToNotes && (
         <button type="button" onClick={onNavigateToNotes} className={linkBase}>
-          <DocumentTextIcon className="w-6 h-6 text-lantern-primary" />
-          <span className="text-xs font-semibold text-lantern-text">Notes</span>
+          <DocumentTextIcon className="w-6 h-6 text-lantern-primary-text" />
+          <span className="text-caption font-semibold text-lantern-text">Notes</span>
         </button>
       )}
       <button type="button" onClick={onNavigateToFlashcards} className={linkBase}>
         <RectangleStackIcon className="w-6 h-6 text-lantern-success" />
-        <span className="text-xs font-semibold text-lantern-text">Flashcards</span>
+        <span className="text-caption font-semibold text-lantern-text">Flashcards</span>
         {dueCardsCount > 0 && (
-          <span className="absolute top-2 right-2 bg-lantern-error text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+          <span className="absolute top-2 right-2 bg-lantern-error text-white text-label tracking-normal font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
             {dueCardsCount > 99 ? '99+' : dueCardsCount}
           </span>
         )}
       </button>
       <button type="button" onClick={onNavigateToMarketplace} className={linkBase}>
-        <ShoppingBagIcon className="w-6 h-6 text-lantern-primary" />
-        <span className="text-xs font-semibold text-lantern-text">Explore</span>
+        <ShoppingBagIcon className="w-6 h-6 text-lantern-primary-text" />
+        <span className="text-caption font-semibold text-lantern-text">Explore</span>
       </button>
     </div>
   );

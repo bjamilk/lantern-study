@@ -72,7 +72,7 @@ export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: Academic
         <View className="flex-1">
           <Text className="text-sm font-semibold text-lantern-text">From your network</Text>
           {connectionLine ? (
-            <Text className="text-xs text-lantern-primary">{connectionLine}</Text>
+            <Text className="text-xs text-lantern-primary-text">{connectionLine}</Text>
           ) : null}
         </View>
         {onOpenFeed ? (
@@ -97,7 +97,7 @@ export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: Academic
         rendered.map(({ item, text }) => (
           <View key={item.id} className="py-1.5">
             <Text className="text-xs text-lantern-text">{text}</Text>
-            <Text className="text-[10px] text-lantern-text-tertiary">
+            <Text className="text-label text-lantern-text-tertiary">
               {relativeTime(item.createdAt)}
             </Text>
           </View>

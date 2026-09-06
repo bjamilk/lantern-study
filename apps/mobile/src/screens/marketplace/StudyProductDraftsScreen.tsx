@@ -128,7 +128,7 @@ export function StudyProductDraftsScreen({
           {item.status === 'ready' ? (
             <Pressable
               onPress={() => void handleReview(item.id)}
-              className="flex-row items-center rounded-lg bg-lantern-primary px-3 py-1.5"
+              className="flex-row items-center rounded-lg bg-lantern-primary-fill px-3 py-1.5"
               style={{ gap: 5 }}
             >
               <AppIcon name="storefront" size={13} color="#fff" />

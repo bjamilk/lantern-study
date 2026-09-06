@@ -67,14 +67,14 @@ export function NotificationRow({
           <View className="flex-row items-start justify-between gap-2">
             <View className="flex-1 min-w-0">
               {meta.label ? (
-                <Text className="text-[10px] font-bold uppercase tracking-wider text-lantern-text-tertiary mb-0.5">
+                <Text className="text-label font-bold uppercase tracking-wider text-lantern-text-tertiary mb-0.5">
                   {meta.label}
                 </Text>
               ) : null}
               <Text className="text-sm text-lantern-text">{message}</Text>
             </View>
             {!read ? (
-              <View className="w-2.5 h-2.5 rounded-full bg-lantern-primary mt-1" />
+              <View className="w-2.5 h-2.5 rounded-full bg-lantern-primary-fill mt-1" />
             ) : null}
           </View>
           <Text className="text-xs text-lantern-text-tertiary mt-1">

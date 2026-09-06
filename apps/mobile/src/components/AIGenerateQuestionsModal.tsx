@@ -161,7 +161,7 @@ export default function AIGenerateQuestionsModal({
               <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
-              <AppIcon name="sparkles" size={20} color={colors.primary} />
+              <AppIcon name="sparkles" size={20} color={colors.primaryText} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Generate Questions</Text>
             </View>
             <AIUsageBadge variant="badge" />
@@ -185,16 +185,16 @@ export default function AIGenerateQuestionsModal({
                     style={[styles.uploadChip, { borderColor: colors.border, backgroundColor: colors.inputBackground }]}
                   >
                     {isUploading ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
+                      <ActivityIndicator size="small" color={colors.primaryText} />
                     ) : (
-                      <AppIcon name="document-attach" size={16} color={colors.primary} />
+                      <AppIcon name="document-attach" size={16} color={colors.primaryText} />
                     )}
-                    <Text style={[styles.uploadChipText, { color: colors.primary }]}>
+                    <Text style={[styles.uploadChipText, { color: colors.primaryText }]}>
                       {isUploading ? 'Uploading…' : 'PDF / PPT'}
                     </Text>
                   </TouchableOpacity>
                 </View>
-                <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
+                <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primaryText} />
                 <TextInput
                   style={[
                     styles.notesInput,
@@ -226,7 +226,7 @@ export default function AIGenerateQuestionsModal({
                       style={[
                         styles.optionChip,
                         {
-                          backgroundColor: count === c ? colors.primary : colors.inputBackground,
+                          backgroundColor: count === c ? colors.primaryFill : colors.inputBackground,
                           borderColor: count === c ? colors.primary : colors.border,
                         },
                       ]}
@@ -253,7 +253,7 @@ export default function AIGenerateQuestionsModal({
                       style={[
                         styles.optionChip,
                         {
-                          backgroundColor: difficulty === d ? colors.primary : colors.inputBackground,
+                          backgroundColor: difficulty === d ? colors.primaryFill : colors.inputBackground,
                           borderColor: difficulty === d ? colors.primary : colors.border,
                         },
                       ]}
@@ -283,7 +283,7 @@ export default function AIGenerateQuestionsModal({
                 <TouchableOpacity
                   style={[
                     styles.generateBtn,
-                    { backgroundColor: colors.primary },
+                    { backgroundColor: colors.primaryFill },
                     isAILoading && styles.generateBtnDisabled,
                   ]}
                   onPress={handleGenerate}
@@ -313,7 +313,7 @@ export default function AIGenerateQuestionsModal({
                   >
                     <View style={styles.questionHeader}>
                       <View style={[styles.qBadge, { backgroundColor: colors.primaryBackground }]}>
-                        <Text style={[styles.qBadgeText, { color: colors.primary }]}>Q{idx + 1}</Text>
+                        <Text style={[styles.qBadgeText, { color: colors.primaryText }]}>Q{idx + 1}</Text>
                       </View>
                       <View
                         style={[
@@ -405,7 +405,7 @@ export default function AIGenerateQuestionsModal({
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionBtn, styles.actionBtnPrimary, { backgroundColor: colors.primary }]}
+                    style={[styles.actionBtn, styles.actionBtnPrimary, { backgroundColor: colors.primaryFill }]}
                     onPress={handleUseQuestions}
                   >
                     <AppIcon name="checkmark" size={18} color="#fff" />

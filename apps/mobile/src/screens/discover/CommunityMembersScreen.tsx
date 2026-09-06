@@ -220,7 +220,7 @@ function CommunityMembersList({
                 {loadingMore ? (
                   <ActivityIndicator color="#6366f1" />
                 ) : (
-                  <Text className="text-sm font-semibold text-lantern-primary">Load more</Text>
+                  <Text className="text-sm font-semibold text-lantern-primary-text">Load more</Text>
                 )}
               </Pressable>
             ) : null

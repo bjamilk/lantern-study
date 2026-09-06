@@ -118,7 +118,7 @@ export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
           <Text className="text-[12px] font-semibold text-lantern-text shrink" numberOfLines={1}>
             {post.senderName}
           </Text>
-          <Text className="ml-2 text-[11px] text-lantern-primary shrink" numberOfLines={1}>
+          <Text className="ml-2 text-[11px] text-lantern-primary-text shrink" numberOfLines={1}>
             {`# ${item.boardName}`}
           </Text>
           {when ? (

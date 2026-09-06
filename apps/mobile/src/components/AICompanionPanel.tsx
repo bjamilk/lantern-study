@@ -587,7 +587,7 @@ export function AICompanionPanel({ context }: Props) {
                   Past chats
                 </Text>
                 <Pressable onPress={handleNewChat}>
-                  <Text className="text-xs font-medium text-lantern-primary">New chat</Text>
+                  <Text className="text-xs font-medium text-lantern-primary-text">New chat</Text>
                 </Pressable>
               </View>
             }
@@ -626,7 +626,7 @@ export function AICompanionPanel({ context }: Props) {
                     </Text>
                   </View>
                   {item.noteTitle ? (
-                    <Text className="mt-0.5 text-[11px] text-lantern-primary" numberOfLines={1}>
+                    <Text className="mt-0.5 text-[11px] text-lantern-primary-text" numberOfLines={1}>
                       {item.noteTitle}
                     </Text>
                   ) : null}
@@ -672,7 +672,7 @@ export function AICompanionPanel({ context }: Props) {
                     onPress={() => void handleSend(p)}
                     className="px-3 py-2 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30"
                   >
-                    <Text className="text-xs text-lantern-primary">{p}</Text>
+                    <Text className="text-xs text-lantern-primary-text">{p}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -690,7 +690,7 @@ export function AICompanionPanel({ context }: Props) {
                 <View
                   className={`px-4 py-3 rounded-2xl ${
                     isUser
-                      ? 'bg-lantern-primary rounded-br-sm'
+                      ? 'bg-lantern-primary-fill rounded-br-sm'
                       : 'bg-lantern-background-secondary rounded-bl-sm'
                   }`}
                 >
@@ -714,7 +714,7 @@ export function AICompanionPanel({ context }: Props) {
                         }}
                         className="px-3 py-1.5 rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20"
                       >
-                        <Text className="text-xs font-medium text-lantern-primary">{action.label}</Text>
+                        <Text className="text-xs font-medium text-lantern-primary-text">{action.label}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -778,7 +778,7 @@ export function AICompanionPanel({ context }: Props) {
           {activeNoteContext ? (
             <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
               <AppIcon name="document-text" size={14} color="#c45c26" />
-              <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary" numberOfLines={1}>
+              <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary-text" numberOfLines={1}>
                 {activeNoteContext.title}
               </Text>
               <Pressable

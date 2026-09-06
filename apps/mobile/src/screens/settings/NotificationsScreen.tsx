@@ -358,7 +358,7 @@ export default function NotificationsScreen() {
             onPress={() => void markAllRead()}
             className="min-h-[44px] justify-center px-2"
           >
-            <Text className="text-lantern-primary text-sm font-medium">
+            <Text className="text-lantern-primary-text text-sm font-medium">
               Mark all read
             </Text>
           </Pressable>
@@ -367,7 +367,7 @@ export default function NotificationsScreen() {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.primaryText} />
         </View>
       ) : (
         <FlatList
@@ -405,7 +405,7 @@ export default function NotificationsScreen() {
                 <AppIcon
                   name="notifications"
                   size={28}
-                  color={colors.primary}
+                  color={colors.primaryText}
                 />
               </View>
               <Text className="mt-4 text-sm font-medium text-lantern-text">

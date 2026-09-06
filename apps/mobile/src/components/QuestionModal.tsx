@@ -562,7 +562,7 @@ export default function QuestionModal({
             <View style={[
               styles.typeIcon,
               { backgroundColor: colors.inputBackground },
-              questionType === type && { backgroundColor: colors.primary },
+              questionType === type && { backgroundColor: colors.primaryFill },
             ]}>
               <AppIcon 
                 name={icon} 
@@ -627,8 +627,8 @@ export default function QuestionModal({
               style={[styles.imageUploadButton, themed.imageUpload]}
               onPress={() => pickImage('question')}
             >
-              <AppIcon name="camera" size={24} color={colors.primary} />
-              <Text style={[styles.imageUploadText, { color: colors.primary }]}>Add Image</Text>
+              <AppIcon name="camera" size={24} color={colors.primaryText} />
+              <Text style={[styles.imageUploadText, { color: colors.primaryText }]}>Add Image</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -673,7 +673,7 @@ export default function QuestionModal({
                     style={styles.removeOption}
                     onPress={() => pickImage('option', option.id)}
                   >
-                    <AppIcon name="camera" size={20} color={colors.primary} />
+                    <AppIcon name="camera" size={20} color={colors.primaryText} />
                   </TouchableOpacity>
                 )}
                 {questionType !== 'true-false' && options.length > 2 && (
@@ -703,8 +703,8 @@ export default function QuestionModal({
 
           {questionType !== 'true-false' && options.length < 8 && (
             <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddOption}>
-              <AppIcon name="add-circle" size={20} color={colors.primary} />
-              <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Option</Text>
+              <AppIcon name="add-circle" size={20} color={colors.primaryText} />
+              <Text style={[styles.addOptionText, { color: colors.primaryText }]}>Add Option</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -743,7 +743,7 @@ export default function QuestionModal({
                   onChangeText={(text) => handleMatchingPairChange(pair.id, 'left', text)}
                 />
                 <View style={[styles.matchingArrow, themed.matchingArrow]}>
-                  <AppIcon name="arrow-forward" size={18} color={colors.primary} />
+                  <AppIcon name="arrow-forward" size={18} color={colors.primaryText} />
                 </View>
                 <TextInput
                   style={[styles.matchingInput, themed.input]}
@@ -766,8 +766,8 @@ export default function QuestionModal({
 
           {matchingPairs.length < 8 && (
             <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddMatchingPair}>
-              <AppIcon name="add-circle" size={20} color={colors.primary} />
-              <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Pair</Text>
+              <AppIcon name="add-circle" size={20} color={colors.primaryText} />
+              <Text style={[styles.addOptionText, { color: colors.primaryText }]}>Add Pair</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -799,8 +799,8 @@ export default function QuestionModal({
               style={[styles.imageUploadButton, themed.imageUpload]}
               onPress={() => pickImage('diagram')}
             >
-              <AppIcon name="image" size={32} color={colors.primary} />
-              <Text style={[styles.imageUploadText, { color: colors.primary }]}>Upload Diagram</Text>
+              <AppIcon name="image" size={32} color={colors.primaryText} />
+              <Text style={[styles.imageUploadText, { color: colors.primaryText }]}>Upload Diagram</Text>
             </TouchableOpacity>
           )}
 
@@ -811,7 +811,7 @@ export default function QuestionModal({
 
           {diagramLabels.map((label) => (
             <View key={label.id} style={styles.diagramLabelRow}>
-              <View style={[styles.labelNumber, { backgroundColor: colors.primary }]}>
+              <View style={[styles.labelNumber, { backgroundColor: colors.primaryFill }]}>
                 <Text style={styles.labelNumberText}>{label.labelNumber}</Text>
               </View>
               <TextInput
@@ -834,8 +834,8 @@ export default function QuestionModal({
 
           {diagramLabels.length < 10 && (
             <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddDiagramLabel}>
-              <AppIcon name="add-circle" size={20} color={colors.primary} />
-              <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Label</Text>
+              <AppIcon name="add-circle" size={20} color={colors.primaryText} />
+              <Text style={[styles.addOptionText, { color: colors.primaryText }]}>Add Label</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -929,7 +929,7 @@ export default function QuestionModal({
             <View style={[styles.progressBar, themed.progressTrack]}>
               <View style={[
                 styles.progressFill,
-                { width: step === 'type' ? '50%' : '100%', backgroundColor: colors.primary },
+                { width: step === 'type' ? '50%' : '100%', backgroundColor: colors.primaryFill },
               ]} />
             </View>
 

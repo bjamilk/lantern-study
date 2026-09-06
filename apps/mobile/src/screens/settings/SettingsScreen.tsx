@@ -30,6 +30,7 @@ import { SCREEN_KEYBOARD_BEHAVIOR, Screen, useScreenBottomPadding } from '../../
 import { exportUserData, fetchMarketplaceCampuses, fetchUserProfile } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
 import { marketplaceComplianceBanner } from '@lantern/shared';
+import { lightColors } from '@lantern/shared/design';
 import { SETTINGS_FAQ } from '@lantern/shared/settings';
 import { studyLevelLabel } from '@lantern/shared/academic';
 import { usePaystackEnabled } from '../../hooks/usePaystackEnabled';
@@ -138,7 +139,7 @@ export default function SettingsScreen() {
       content: { backgroundColor: colors.modalBackground },
       title: { color: colors.text },
       label: { color: colors.textSecondary },
-      value: { color: colors.primary },
+      value: { color: colors.primaryText },
       optionItem: {
         backgroundColor: colors.backgroundSecondary,
         borderColor: 'transparent' as const,
@@ -1324,7 +1325,7 @@ export default function SettingsScreen() {
                   .finally(() => setCheckingOta(false));
               }}
               rightElement={
-                checkingOta ? <ActivityIndicator size="small" color={colors.primary} /> : undefined
+                checkingOta ? <ActivityIndicator size="small" color={colors.primaryText} /> : undefined
               }
             />
           </View>
@@ -1361,7 +1362,7 @@ export default function SettingsScreen() {
               ))}
             </ScrollView>
             <TouchableOpacity
-              style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary }]}
+              style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primaryFill }]}
               onPress={() => {
                 setShowHelpModal(false);
                 setShowContactModal(true);
@@ -1384,8 +1385,8 @@ export default function SettingsScreen() {
           text: colors.text,
           textSecondary: colors.textSecondary,
           border: colors.border,
-          primary: colors.primary,
-          primaryText: '#ffffff',
+          primaryFill: colors.primaryFill,
+          onPrimary: '#ffffff',
         }}
       />
 
@@ -1511,7 +1512,7 @@ export default function SettingsScreen() {
                   ]}
                 />
                 <TouchableOpacity
-                  style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary }]}
+                  style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primaryFill }]}
                   onPress={() => {
                     setShowCampusModal(false);
                     setCampusSearch('');
@@ -1594,7 +1595,7 @@ export default function SettingsScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              style={[styles.saveButton, { backgroundColor: colors.primaryFill }]}
               onPress={saveDailyGoals}
             >
               <Text style={styles.saveButtonText}>Save</Text>
@@ -1652,7 +1653,7 @@ export default function SettingsScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              style={[styles.saveButton, { backgroundColor: colors.primaryFill }]}
               onPress={() => setShowSRSSettingsModal(false)}
             >
               <Text style={styles.saveButtonText}>Done</Text>
@@ -1708,7 +1709,7 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 {settings.privacy.profileVisibility === option && (
-                  <AppIcon name="checkmark-circle" size={24} color={colors.primary} />
+                  <AppIcon name="checkmark-circle" size={24} color={colors.primaryText} />
                 )}
               </TouchableOpacity>
             ))}
@@ -1763,7 +1764,7 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 {settings.privacy.allowDirectMessages === option && (
-                  <AppIcon name="checkmark-circle" size={24} color={colors.primary} />
+                  <AppIcon name="checkmark-circle" size={24} color={colors.primaryText} />
                 )}
               </TouchableOpacity>
             ))}
@@ -1843,7 +1844,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#6366f1',
+    // Build 153: the white initials on a hardcoded #6366f1 were 4.45:1.
+    // `primaryFill` is identical in both palettes, so a static style is fine.
+    backgroundColor: lightColors.primaryFill,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -189,7 +189,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
     if (courseId) return null; // already scoped — no need to repeat the code on every row
     const course = resolveCourse(row.courseId);
     return course ? (
-      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-lantern-primary">
+      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-lantern-primary-text">
         {course.code}
       </span>
     ) : null;
@@ -265,7 +265,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                 {groups.notes.map((row) => (
                   <li key={`note-${row.id}`}>
                     <button type="button" onClick={() => onOpenNote(row.id)} className={rowClass}>
-                      <DocumentTextIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-primary" aria-hidden />
+                      <DocumentTextIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-primary-text" aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
                           <span className="truncate text-sm font-medium text-lantern-text">{row.title || 'Untitled note'}</span>

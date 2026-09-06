@@ -183,7 +183,7 @@ export function SellerPayoutScreen({ navigation }: { navigation: NavigationProp 
           </Text>
 
           {loading && payments.length === 0 ? (
-            <ActivityIndicator className="my-4" color={colors.primary} />
+            <ActivityIndicator className="my-4" color={colors.primaryText} />
           ) : error && payments.length === 0 ? (
             <View className="py-3 items-start gap-2">
               <Text className="text-sm text-lantern-error">{error}</Text>

@@ -189,7 +189,7 @@ export default function TestAnalysisContent({
         contentContainerStyle={styles.contentContainer}
       >
         <View style={[styles.scoreSummary, { backgroundColor: colors.inputBackground }]}>
-          <View style={styles.scoreCircle}>
+          <View style={[styles.scoreCircle, { backgroundColor: colors.primaryFill }]}>
             <Text style={styles.scorePercentage}>{test.percentage}%</Text>
             <Text style={styles.scoreLabel}>Score</Text>
           </View>
@@ -251,7 +251,7 @@ export default function TestAnalysisContent({
 
         <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
           <View style={styles.chartHeader}>
-            <AppIcon name="time" size={20} color={colors.primary} />
+            <AppIcon name="time" size={20} color={colors.primaryText} />
             <Text style={[styles.chartTitle, { color: colors.text }]}>Time per Question (seconds)</Text>
           </View>
           {hasBars ? (
@@ -279,7 +279,7 @@ export default function TestAnalysisContent({
                   selectedQuestionNumber={selectedQuestion?.questionNumber}
                   onSelect={selectQuestion}
                   labelColor={colors.textSecondary}
-                  activeColor={colors.primary}
+                  activeColor={colors.primaryText}
                 />
               </View>
 
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   pieCenterLabel: {
-    fontSize: 10,
+    fontSize: 11,
   },
   pieLegend: {
     gap: 12,
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   barValue: {
-    fontSize: 9,
+    fontSize: 11,
     marginBottom: 4,
     fontWeight: '600',
   },
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 3,
   },
   barLabel: {
-    fontSize: 9,
+    fontSize: 11,
     marginTop: 6,
     fontWeight: '600',
   },

@@ -123,7 +123,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.primaryText} />
         </View>
       ) : error && blocked.length === 0 ? (
         <View className="flex-1 items-center justify-center px-6 gap-3">
@@ -133,7 +133,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
             onPress={() => void load()}
             accessibilityRole="button"
             accessibilityLabel="Retry loading blocked users"
-            className="px-4 py-2 rounded-xl bg-lantern-primary"
+            className="px-4 py-2 rounded-xl bg-lantern-primary-fill"
           >
             <Text className="text-sm font-semibold text-white">Retry</Text>
           </Pressable>
@@ -146,7 +146,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
           // button ended under the system navigation bar.
           contentContainerStyle={{ paddingBottom: bottomPadding }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryText} />
           }
           ListHeaderComponent={
             error ? (
@@ -188,7 +188,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
                 className="px-3 py-1.5 rounded-lg border border-lantern-border active:opacity-70"
                 style={{ opacity: busyId === item.id ? 0.5 : 1 }}
               >
-                <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+                <Text className="text-xs font-semibold" style={{ color: colors.primaryText }}>
                   Unblock
                 </Text>
               </Pressable>

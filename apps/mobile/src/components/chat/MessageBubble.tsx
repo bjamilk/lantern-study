@@ -13,6 +13,7 @@ import {
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { ChatImageThumbnail, ChatTextBody } from './ChatMessageBody';
+import { resolveMetaTextColor } from './resolveBodyTextStyle';
 import { QuestionVoteBar } from './QuestionVoteBar';
 import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
@@ -88,6 +89,14 @@ function MessageBubbleComponent({
   // `overflow-hidden` so Android actually clips the pill to its radius.
   const pillClass = wallpaperPillStyle ? ' px-1.5 py-0.5 rounded-md overflow-hidden' : '';
   const isQuestion = message.type === 'question';
+  // Timestamp / "edited" / "Sending…" sit on the own-bubble green, where the
+  // themed meta ink measured 4.19:1 (light) and 4.26:1 (dark) — the smallest
+  // text in the app carrying the worst contrast. Substitute only where the
+  // token fails AA; everywhere it passes it is kept.
+  const metaColor = useMemo(
+    () => resolveMetaTextColor(colors.chatBubbleOwn, colors.chatBubbleMeta),
+    [colors.chatBubbleOwn, colors.chatBubbleMeta]
+  );
   const audioUrl = !isQuestion ? parseChatAudioUrl(message.text) : null;
   const isRemoved = !!message.isRemoved || !!message.removedAt;
   // Everything below must run before the `isRemoved` early return — removed vs
@@ -156,7 +165,7 @@ function MessageBubbleComponent({
             className={`mt-1.5 self-start${pillClass}`}
             style={wallpaperPillStyle}
           >
-            <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+            <Text className="text-xs font-semibold" style={{ color: colors.primaryText }}>
               {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
             </Text>
           </Pressable>
@@ -246,8 +255,8 @@ function MessageBubbleComponent({
             >
               <Text
                 importantForAccessibility="no"
-                className="text-xs font-semibold"
-                style={{ color: colors.primary }}
+                className="text-label font-semibold"
+                style={{ color: colors.primaryText }}
                 numberOfLines={1}
               >
                 {authorLabel}
@@ -257,8 +266,8 @@ function MessageBubbleComponent({
             <View className={`mb-1 ml-0.5 self-start${pillClass}`} style={wallpaperPillStyle}>
               <Text
                 importantForAccessibility="no"
-                className="text-xs font-semibold"
-                style={{ color: colors.primary }}
+                className="text-label font-semibold"
+                style={{ color: colors.primaryText }}
                 numberOfLines={1}
               >
                 {authorLabel}
@@ -368,7 +377,7 @@ function MessageBubbleComponent({
                         className="w-5 h-5 rounded items-center justify-center"
                         style={{ backgroundColor: isOwn ? `${colors.primary}18` : colors.backgroundSecondary }}
                       >
-                        <Text className="text-[10px] font-semibold" style={{ color: colors.textSecondary }}>
+                        <Text className="text-[11px] font-semibold" style={{ color: colors.textSecondary }}>
                           {String.fromCharCode(65 + i)}
                         </Text>
                       </View>
@@ -420,13 +429,9 @@ function MessageBubbleComponent({
             ) : null}
             <Text
               importantForAccessibility="no"
-              className="text-[10px]"
+              className="text-[11px]"
               style={{
-                color: isOwn
-                  ? isQuestion
-                    ? colors.textTertiary
-                    : colors.chatBubbleMeta
-                  : colors.textTertiary,
+                color: isOwn ? (isQuestion ? colors.textTertiary : metaColor) : colors.textTertiary,
               }}
             >
               {timeLabel}
@@ -434,8 +439,8 @@ function MessageBubbleComponent({
             {message.editedAt ? (
               <Text
                 importantForAccessibility="no"
-                className="text-[10px] ml-1"
-                style={{ color: isOwn && !isQuestion ? colors.chatBubbleMeta : colors.textTertiary }}
+                className="text-[11px] ml-1"
+                style={{ color: isOwn && !isQuestion ? metaColor : colors.textTertiary }}
               >
                 edited
               </Text>
@@ -443,8 +448,8 @@ function MessageBubbleComponent({
             {isOwn && message.deliveryState === 'pending' ? (
               <Text
                 importantForAccessibility="no"
-                className="text-[10px] ml-1"
-                style={{ color: colors.chatBubbleMeta }}
+                className="text-[11px] ml-1"
+                style={{ color: metaColor }}
               >
                 Sending…
               </Text>
@@ -456,7 +461,7 @@ function MessageBubbleComponent({
                 accessibilityLabel="Message not sent. Tap to retry."
                 className="ml-1"
               >
-                <Text className="text-[10px] font-semibold" style={{ color: colors.error }}>
+                <Text className="text-[11px] font-semibold" style={{ color: colors.error }}>
                   Not sent · Retry
                 </Text>
               </Pressable>

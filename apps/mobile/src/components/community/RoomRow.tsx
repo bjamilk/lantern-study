@@ -34,7 +34,7 @@ export function RoomRow({
       </View>
       <Text
         className={`text-xs font-semibold ${
-          room.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+          room.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary-text'
         }`}
       >
         {action}

@@ -189,7 +189,7 @@ export function BoardPostCard({
           so it is never mistaken for the original author's words (§6.5). */}
       {isRepost && !isRemoved && body ? (
         <View className="mb-1.5 rounded-xl border-l-2 border-lantern-border pl-2">
-          <MentionText text={body} color={colors.text} mentionColor={colors.primary} />
+          <MentionText text={body} color={colors.text} mentionColor={colors.primaryText} />
         </View>
       ) : null}
 
@@ -262,7 +262,7 @@ export function BoardPostCard({
               accessibilityElementsHidden
               className="mt-1"
             >
-              <MentionText text={body} color={colors.text} mentionColor={colors.primary} />
+              <MentionText text={body} color={colors.text} mentionColor={colors.primaryText} />
             </View>
           ) : null}
 

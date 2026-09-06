@@ -46,7 +46,7 @@ export function SellerOnboardingModal({ visible, status, onComplete, onDismiss }
           </View>
           {!isLast ? (
             <>
-              <Text className="text-xs font-semibold text-lantern-primary mb-2">
+              <Text className="text-xs font-semibold text-lantern-primary-text mb-2">
                 Tip {step + 1} of {tips.length}
               </Text>
               <Text className="text-lantern-text mb-4">{tips[step]}</Text>

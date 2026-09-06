@@ -102,13 +102,13 @@ const CourseBlock: React.FC<{ course: CourseReadiness; expanded: boolean }> = ({
       <View className="mt-1.5 flex-row flex-wrap items-center justify-between" style={{ gap: 6 }}>
         <Text className="text-xs text-lantern-text-secondary">{statusLine}</Text>
         {course.coveragePct != null && course.readinessScore != null ? (
-          <Text className="text-[10px] text-lantern-text-tertiary">
+          <Text className="text-label text-lantern-text-tertiary">
             {course.coveredCount}/{course.outlineTotal} topics
           </Text>
         ) : null}
       </View>
       {course.nextTopic ? (
-        <Text className="mt-1.5 text-xs font-medium text-lantern-primary">
+        <Text className="mt-1.5 text-xs font-medium text-lantern-primary-text">
           Start here: {course.nextTopic.title}
         </Text>
       ) : null}
@@ -123,7 +123,7 @@ const CourseBlock: React.FC<{ course: CourseReadiness; expanded: boolean }> = ({
               <Text className="flex-1 pr-3 text-xs text-lantern-text" numberOfLines={1}>
                 {topic.title}
                 {!topic.inOutline ? (
-                  <Text className="text-[10px] text-lantern-text-tertiary"> (outside outline)</Text>
+                  <Text className="text-label text-lantern-text-tertiary"> (outside outline)</Text>
                 ) : null}
               </Text>
               <Text className={`text-[11px] font-semibold ${BAND_TEXT[topic.band]}`}>

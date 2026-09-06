@@ -105,7 +105,7 @@ export function CreatorProfileScreen({
           <View className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
             <View className="flex-row items-start" style={{ gap: 12 }}>
               <View className="w-16 h-16 rounded-full bg-lantern-primary/10 items-center justify-center">
-                <Text className="text-xl font-bold text-lantern-primary">
+                <Text className="text-xl font-bold text-lantern-primary-text">
                   {(creator.name || '?').charAt(0).toUpperCase()}
                 </Text>
               </View>
@@ -117,7 +117,7 @@ export function CreatorProfileScreen({
                   {creator.isVerified ? (
                     <View className="flex-row items-center rounded-full bg-lantern-primary/10 px-2 py-0.5" style={{ gap: 3 }}>
                       <AppIcon name="checkmark-circle" size={11} color="#6366f1" />
-                      <Text className="text-[11px] font-semibold text-lantern-primary">Verified</Text>
+                      <Text className="text-[11px] font-semibold text-lantern-primary-text">Verified</Text>
                     </View>
                   ) : null}
                 </View>
@@ -144,7 +144,7 @@ export function CreatorProfileScreen({
                 onPress={() => void toggleFollow()}
                 disabled={busy}
                 className={`mt-3 items-center rounded-lg py-2.5 ${
-                  creator.isFollowing ? 'bg-lantern-background-secondary' : 'bg-lantern-primary'
+                  creator.isFollowing ? 'bg-lantern-background-secondary' : 'bg-lantern-primary-fill'
                 }`}
                 style={{ opacity: busy ? 0.5 : 1 }}
               >
@@ -170,7 +170,7 @@ export function CreatorProfileScreen({
               ].map((s) => (
                 <View key={s.label} className="flex-1 rounded-xl bg-lantern-background-secondary py-2.5 items-center">
                   <Text className="text-base font-bold text-lantern-text">{s.value}</Text>
-                  <Text className="text-[10px] text-lantern-text-tertiary">{s.label}</Text>
+                  <Text className="text-label text-lantern-text-tertiary">{s.label}</Text>
                 </View>
               ))}
             </View>

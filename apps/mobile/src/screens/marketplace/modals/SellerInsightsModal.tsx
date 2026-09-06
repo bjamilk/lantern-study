@@ -264,7 +264,7 @@ function Chip({ label, value, accent }: { label: string; value: string; accent?:
   return (
     <View className="px-3 py-2 rounded-lg bg-lantern-background border border-lantern-border min-w-[45%]">
       <Text className="text-xs text-lantern-text-secondary">{label}</Text>
-      <Text className={`font-bold ${accent ? 'text-lantern-primary' : 'text-lantern-text'}`}>{value}</Text>
+      <Text className={`font-bold ${accent ? 'text-lantern-primary-text' : 'text-lantern-text'}`}>{value}</Text>
     </View>
   );
 }

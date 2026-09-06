@@ -264,7 +264,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           ) : null}
           {(profile?.badges ?? []).map(badge => (
             <View key={badge.id} className="px-2 py-0.5 rounded-full bg-lantern-primary-background">
-              <Text className="text-[10px] font-semibold text-lantern-primary">{badge.label}</Text>
+              <Text className="text-label font-semibold text-lantern-primary-text">{badge.label}</Text>
             </View>
           ))}
         </View>
@@ -315,7 +315,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
                 <ListingImage uri={item.images?.[0]} className="w-full h-full" />
                 {item.status === 'reserved' ? (
                   <View className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-amber-100">
-                    <Text className="text-[10px] font-semibold text-amber-900">Sale in progress</Text>
+                    <Text className="text-label font-semibold text-amber-900">Sale in progress</Text>
                   </View>
                 ) : null}
               </View>
@@ -323,7 +323,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
                 <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
                   {item.title}
                 </Text>
-                <Text className="text-sm font-bold text-lantern-primary mt-1">
+                <Text className="text-sm font-bold text-lantern-primary-text mt-1">
                   {formatPrice(item.price)}
                 </Text>
               </View>
@@ -366,7 +366,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
               <Pressable
                 onPress={() => void saveShop()}
                 disabled={saving}
-                className="flex-1 py-3 rounded-xl bg-lantern-primary items-center"
+                className="flex-1 py-3 rounded-xl bg-lantern-primary-fill items-center"
               >
                 <Text className="font-semibold text-white">{saving ? 'Saving…' : 'Save'}</Text>
               </Pressable>

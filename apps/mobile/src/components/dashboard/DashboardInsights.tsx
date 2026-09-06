@@ -52,7 +52,7 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
           </View>
           {strongest.length > 0 ? (
             <View className="mb-3">
-              <Text className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1.5">
+              <Text className="text-label font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1.5">
                 Strongest
               </Text>
               <View className="gap-1.5">
@@ -64,7 +64,7 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
           ) : null}
           {weakest.length > 0 ? (
             <View>
-              <Text className="text-[10px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1.5">
+              <Text className="text-label font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1.5">
                 Needs work
               </Text>
               <View className="gap-1.5">

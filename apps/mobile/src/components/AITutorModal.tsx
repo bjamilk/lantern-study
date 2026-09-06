@@ -92,13 +92,13 @@ export default function AITutorModal({
               <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
-              <AppIcon name="school" size={20} color={colors.primary} />
+              <AppIcon name="school" size={20} color={colors.primaryText} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Tutor</Text>
             </View>
             <AIUsageBadge variant="badge" />
           </View>
           <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-            <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
+            <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primaryText} />
           </View>
 
           {/* Chat History */}
@@ -127,13 +127,13 @@ export default function AITutorModal({
                 style={[
                   styles.chatBubble,
                   msg.role === 'user'
-                    ? [styles.userBubble, { backgroundColor: colors.primary }]
+                    ? [styles.userBubble, { backgroundColor: colors.primaryFill }]
                     : [styles.assistantBubble, { backgroundColor: colors.card, borderColor: colors.border }],
                 ]}
               >
                 {msg.role === 'assistant' && (
                   <View style={styles.botIcon}>
-                    <AppIcon name="sparkles" size={14} color={colors.primary} />
+                    <AppIcon name="sparkles" size={14} color={colors.primaryText} />
                   </View>
                 )}
                 <Text
@@ -150,7 +150,7 @@ export default function AITutorModal({
 
             {isAILoading && (
               <View style={[styles.chatBubble, styles.assistantBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <ActivityIndicator size="small" color={colors.primary} />
+                <ActivityIndicator size="small" color={colors.primaryText} />
                 <Text style={[styles.typingText, { color: colors.textSecondary }]}>
                   Thinking...
                 </Text>
@@ -182,7 +182,7 @@ export default function AITutorModal({
               style={[
                 styles.sendBtn,
                 {
-                  backgroundColor: question.trim() && !isAILoading ? colors.primary : colors.inputBackground,
+                  backgroundColor: question.trim() && !isAILoading ? colors.primaryFill : colors.inputBackground,
                 },
               ]}
               onPress={handleAsk}

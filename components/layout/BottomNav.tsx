@@ -144,13 +144,13 @@ const BottomNav: React.FC<BottomNavProps> = ({
                                 {badgeCount > 0 ? (
                                     <span
                                         aria-hidden="true"
-                                        className="absolute -top-1 -right-2 bg-lantern-error text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
+                                        className="absolute -top-1 -right-2 bg-lantern-error text-white text-label tracking-normal font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
                                     >
                                         {shown}
                                     </span>
                                 ) : null}
                             </div>
-                            <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'font-semibold' : ''}`}>
+                            <span className={`text-label tracking-normal mt-0.5 font-medium ${isActive ? 'font-semibold' : ''}`}>
                                 {label}
                             </span>
                         </button>

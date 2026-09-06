@@ -60,7 +60,7 @@ export function CourseReadinessCard() {
           accessibilityRole="button"
           accessibilityLabel="Open your full readiness breakdown"
         >
-          <Text className="text-xs font-semibold text-lantern-primary">View all</Text>
+          <Text className="text-xs font-semibold text-lantern-primary-text">View all</Text>
         </Pressable>
       </View>
 
@@ -86,7 +86,7 @@ export function CourseReadinessCard() {
                 {course.courseCode || 'Course'}
               </Text>
               {course.daysUntil != null ? (
-                <Text className="text-[10px] text-lantern-text-tertiary">
+                <Text className="text-label text-lantern-text-tertiary">
                   {examCountdownLabel(course.daysUntil)}
                 </Text>
               ) : null}
@@ -102,7 +102,7 @@ export function CourseReadinessCard() {
               <Text className="text-[11px] text-lantern-text-secondary">{statusLine}</Text>
               {course.nextTopic ? (
                 <Text
-                  className="flex-1 text-right text-[11px] font-medium text-lantern-primary"
+                  className="flex-1 text-right text-[11px] font-medium text-lantern-primary-text"
                   numberOfLines={1}
                 >
                   Start here: {course.nextTopic.title}

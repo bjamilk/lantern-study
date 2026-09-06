@@ -124,7 +124,7 @@ export function NotePdfViewer({
       <Pressable
         onPress={() => void openExternally()}
         className="flex-row items-center gap-2 px-4 py-2 rounded-xl"
-        style={{ backgroundColor: colors.primary }}
+        style={{ backgroundColor: colors.primaryFill }}
       >
         <AppIcon name="open" size={18} color="#fff" />
         <Text className="text-sm font-semibold text-white">Open document</Text>
@@ -135,7 +135,7 @@ export function NotePdfViewer({
   if (loading) {
     return (
       <View className="items-center justify-center py-10" style={{ height, backgroundColor: colors.surface }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.primaryText} />
         <Text className="text-sm mt-2" style={{ color: colors.textTertiary }}>
           Loading document...
         </Text>
@@ -156,7 +156,7 @@ export function NotePdfViewer({
           <Pressable
             onPress={() => void openExternally()}
             className="flex-row items-center gap-2 px-4 py-2 rounded-xl"
-            style={{ backgroundColor: colors.primary }}
+            style={{ backgroundColor: colors.primaryFill }}
           >
             <AppIcon name="open" size={18} color="#fff" />
             <Text className="text-sm font-semibold text-white">Open document</Text>
@@ -184,8 +184,8 @@ export function NotePdfViewer({
           accessibilityRole="button"
           accessibilityLabel="View document fullscreen"
         >
-          <AppIcon name="expand" size={16} color={colors.primary} />
-          <Text className="text-xs font-medium" style={{ color: colors.primary }}>
+          <AppIcon name="expand" size={16} color={colors.primaryText} />
+          <Text className="text-xs font-medium" style={{ color: colors.primaryText }}>
             Fullscreen
           </Text>
         </Pressable>
@@ -195,8 +195,8 @@ export function NotePdfViewer({
           accessibilityRole="button"
           accessibilityLabel="Open document externally"
         >
-          <AppIcon name="open" size={16} color={colors.primary} />
-          <Text className="text-xs font-medium" style={{ color: colors.primary }}>
+          <AppIcon name="open" size={16} color={colors.primaryText} />
+          <Text className="text-xs font-medium" style={{ color: colors.primaryText }}>
             Open
           </Text>
         </Pressable>
@@ -241,7 +241,7 @@ export function NotePdfViewer({
                 className="absolute inset-0 items-center justify-center"
                 style={{ backgroundColor: colors.surface }}
               >
-                <ActivityIndicator size="large" color={colors.primary} />
+                <ActivityIndicator size="large" color={colors.primaryText} />
               </View>
             )}
           />
@@ -271,7 +271,7 @@ export function NotePdfViewer({
               accessibilityRole="button"
               accessibilityLabel="Open document externally"
             >
-              <AppIcon name="open" size={20} color={colors.primary} />
+              <AppIcon name="open" size={20} color={colors.primaryText} />
             </Pressable>
             <Pressable
               onPress={() => setFullscreen(false)}
@@ -304,7 +304,7 @@ export function NotePdfViewer({
                   className="absolute inset-0 items-center justify-center"
                   style={{ backgroundColor: colors.background }}
                 >
-                  <ActivityIndicator size="large" color={colors.primary} />
+                  <ActivityIndicator size="large" color={colors.primaryText} />
                 </View>
               )}
             />

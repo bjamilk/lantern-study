@@ -33,7 +33,7 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
     return (
       <Card className="mb-4">
         <View className="flex-row items-center gap-2">
-          <AppIcon name="sparkle" size={16} color={colors.primary} />
+          <AppIcon name="sparkle" size={16} color={colors.primaryText} />
           <Text className="text-sm text-lantern-text-secondary flex-1">
             AI Study Coach is paused in low-data mode.
           </Text>
@@ -70,7 +70,7 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
     <Card className="mb-4">
       <View className="flex-row items-center justify-between mb-2">
         <View className="flex-row items-center gap-2">
-          <AppIcon name="sparkle" size={16} color={colors.primary} />
+          <AppIcon name="sparkle" size={16} color={colors.primaryText} />
           <Text className="text-sm font-semibold text-lantern-text">AI Study Coach</Text>
         </View>
         <Pressable
@@ -81,9 +81,9 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
           accessibilityLabel={coach ? 'Refresh study recommendations' : 'Get study recommendations'}
         >
           {loading ? (
-            <ActivityIndicator size="small" color={colors.primary} />
+            <ActivityIndicator size="small" color={colors.primaryText} />
           ) : (
-            <Text className="text-xs font-semibold text-lantern-primary">
+            <Text className="text-xs font-semibold text-lantern-primary-text">
               {coach ? 'Refresh' : 'Get tips'}
             </Text>
           )}
@@ -93,7 +93,7 @@ export function AIStudyCoachCard({ stats, streak }: { stats: DashboardStats | nu
       {coach ? (
         <View className="gap-2.5">
           <View className="p-3 rounded-xl bg-lantern-primary-background">
-            <Text className="text-xs font-semibold text-lantern-primary mb-1">Study tip</Text>
+            <Text className="text-xs font-semibold text-lantern-primary-text mb-1">Study tip</Text>
             <Text className="text-sm text-lantern-text">{coach.studyTip}</Text>
           </View>
           {coach.weakTopics.length > 0 ? (

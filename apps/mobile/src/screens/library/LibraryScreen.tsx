@@ -271,7 +271,7 @@ export function LibraryScreen({ navigation, route }: Props) {
             block of its own bought nothing but height. The archive totals moved
             into the course tree's collapsed summary. */}
         <View className="mb-2 flex-row items-center gap-2">
-          <Text className="text-lg font-bold text-lantern-text">Library</Text>
+          <Text className="text-title font-bold text-lantern-text">Library</Text>
           <View className="flex-1 flex-row items-center gap-2 px-3 py-1.5 rounded-xl border border-lantern-border bg-lantern-surface min-h-[44px]">
             <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
             <TextInput
@@ -287,7 +287,9 @@ export function LibraryScreen({ navigation, route }: Props) {
               placeholderTextColor={colors.inputPlaceholder}
               autoCorrect={false}
               returnKeyType="search"
-              className="flex-1 text-sm text-lantern-text py-1"
+              // `body` 15/22: the search field and the list it filters read at the
+              // same size. `text-sm` was 12.25 sp here.
+              className="flex-1 text-body text-lantern-text py-1"
               accessibilityLabel={`Search ${tab === 'notes' ? 'notes' : 'flashcards'}`}
             />
             {query ? (
@@ -337,8 +339,8 @@ export function LibraryScreen({ navigation, route }: Props) {
             {/* Both chips shrink rather than wrap: two long labels used to push
                 this row onto a second line and cost another 36px. */}
             <View className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
-              <AppIcon name="school" size={14} color={colors.primary} />
-              <Text className="shrink text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+              <AppIcon name="school" size={14} color={colors.primaryText} />
+              <Text className="shrink text-caption font-semibold text-lantern-primary-text" numberOfLines={1}>
                 {courseFilter.label}
               </Text>
               <Pressable
@@ -347,13 +349,13 @@ export function LibraryScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={`Clear course filter ${courseFilter.label}`}
               >
-                <AppIcon name="close-circle" size={16} color={colors.primary} />
+                <AppIcon name="close-circle" size={16} color={colors.primaryText} />
               </Pressable>
             </View>
             {activeTopic ? (
               <View className="shrink flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
                 <AppIcon name="bookmark" size={13} color={colors.textSecondary} />
-                <Text className="shrink text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
+                <Text className="shrink text-caption font-medium text-lantern-text-secondary" numberOfLines={1}>
                   {activeTopic.label}
                 </Text>
                 <Pressable
@@ -381,7 +383,7 @@ export function LibraryScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
               >
                 <AppIcon name="arrow-back" size={14} color={colors.textSecondary} />
-                <Text className="shrink text-xs font-semibold text-lantern-text-secondary" numberOfLines={1}>
+                <Text className="shrink text-caption font-semibold text-lantern-text-secondary" numberOfLines={1}>
                   Back to {tab === 'notes' ? 'notes' : 'flashcards'}
                 </Text>
               </Pressable>
@@ -392,15 +394,15 @@ export function LibraryScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityHint="Searches decks, cards and offline bundles as well; the folder and Archived filters do not apply there"
               >
-                <AppIcon name="search" size={14} color={colors.primary} />
-                <Text className="shrink text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+                <AppIcon name="search" size={14} color={colors.primaryText} />
+                <Text className="shrink text-caption font-semibold text-lantern-primary-text" numberOfLines={1}>
                   Search everything
                 </Text>
               </Pressable>
             ) : (
               // One character filters the list below just fine; only the server
               // search has a minimum, so say so rather than showing nothing.
-              <Text className="shrink text-xs text-lantern-text-secondary" numberOfLines={1}>
+              <Text className="shrink text-caption text-lantern-text-secondary" numberOfLines={1}>
                 Type {LIBRARY_SEARCH_MIN_CHARS} characters to search decks, cards and bundles too.
               </Text>
             )}
@@ -429,8 +431,8 @@ export function LibraryScreen({ navigation, route }: Props) {
                     color={active ? featureAccents.library : colors.textTertiary}
                   />
                   <Text
-                    className={`text-sm font-medium ${
-                      active ? 'text-lantern-primary' : 'text-lantern-text-secondary'
+                    className={`text-body font-medium ${
+                      active ? 'text-lantern-primary-text' : 'text-lantern-text-secondary'
                     }`}
                     style={active ? { color: featureAccents.library } : undefined}
                   >
@@ -438,7 +440,7 @@ export function LibraryScreen({ navigation, route }: Props) {
                   </Text>
                   {id === 'flashcards' && dueCardsCount > 0 ? (
                     <View className="bg-lantern-error min-w-[18px] h-[18px] px-1 rounded-full items-center justify-center">
-                      <Text className="text-[10px] font-bold text-white">
+                      <Text className="text-label font-bold tracking-normal text-white">
                         {dueCardsCount > 99 ? '99+' : dueCardsCount}
                       </Text>
                     </View>

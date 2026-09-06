@@ -901,7 +901,7 @@ export function DashboardScreen({ navigation }: Props) {
 
                 selectedPeriod === opt.value
 
-                  ? 'bg-lantern-primary'
+                  ? 'bg-lantern-primary-fill'
 
                   : 'bg-lantern-surface border border-lantern-border'
 
@@ -992,7 +992,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-3">
 
-            <Text className="text-2xl font-bold text-lantern-primary">{shownStats?.totalTestsTaken ?? '—'}</Text>
+            <Text className="text-2xl font-bold text-lantern-primary-text">{shownStats?.totalTestsTaken ?? '—'}</Text>
 
             <Text className="text-xs text-lantern-text-secondary mt-1">Tests taken</Text>
 
@@ -1087,7 +1087,7 @@ export function DashboardScreen({ navigation }: Props) {
 
                   />
 
-                  <Text className="text-[10px] font-semibold text-lantern-text mt-1 text-center" numberOfLines={2}>
+                  <Text className="text-label font-semibold text-lantern-text mt-1 text-center" numberOfLines={2}>
 
                     {badge.name}
 
@@ -1095,11 +1095,11 @@ export function DashboardScreen({ navigation }: Props) {
 
                   {badge.level > 0 ? (
 
-                    <Text className="text-[9px] text-lantern-primary mt-0.5">Lv {badge.level}</Text>
+                    <Text className="text-[11px] text-lantern-primary-text mt-0.5">Lv {badge.level}</Text>
 
                   ) : (
 
-                    <Text className="text-[9px] text-lantern-text-tertiary mt-0.5">{badge.progress}%</Text>
+                    <Text className="text-[11px] text-lantern-text-tertiary mt-0.5">{badge.progress}%</Text>
 
                   )}
 
@@ -1133,11 +1133,11 @@ export function DashboardScreen({ navigation }: Props) {
                   accessibilityState={{ selected: recentSort === opt.key }}
                   accessibilityLabel={`Sort recent tests: ${opt.label}`}
                   className={`px-2 py-1 rounded-full ${
-                    recentSort === opt.key ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+                    recentSort === opt.key ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary'
                   }`}
                 >
                   <Text
-                    className={`text-[10px] font-semibold ${
+                    className={`text-label font-semibold ${
                       recentSort === opt.key ? 'text-white' : 'text-lantern-text-secondary'
                     }`}
                   >
@@ -1243,7 +1243,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-4">
 
-            <Text className="text-2xl font-bold text-lantern-primary">{dueCount}</Text>
+            <Text className="text-2xl font-bold text-lantern-primary-text">{dueCount}</Text>
 
             <Text className="text-xs text-lantern-text-secondary mt-1">Due cards</Text>
 

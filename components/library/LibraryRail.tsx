@@ -258,7 +258,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
           onKeyDown={rowActivate(toggle)}
           title={row.untopiced ? 'Items in this course that are not under any topic' : row.title}
           className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-            selected ? 'bg-lantern-primary text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
+            selected ? 'bg-lantern-primary-fill text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
           }`}
         >
           <div className="flex items-center gap-1.5 min-w-0">
@@ -307,7 +307,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
           onKeyDown={rowActivate(select)}
           className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
             courseSelected && !selectedTopicId
-              ? 'bg-lantern-primary text-white'
+              ? 'bg-lantern-primary-fill text-white'
               : 'text-lantern-text hover:bg-lantern-background-secondary'
           }`}
         >
@@ -416,7 +416,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             onClick={() => onSelectCourse(null)}
             onKeyDown={rowActivate(() => onSelectCourse(null))}
             className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-              allSelected ? 'bg-lantern-primary text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
+              allSelected ? 'bg-lantern-primary-fill text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
             }`}
           >
             <span className="flex items-center gap-2">
@@ -464,7 +464,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 <button
                   type="button"
                   onClick={onTurnSemesterIntoProducts}
-                  className="text-[11px] font-semibold text-lantern-primary hover:underline"
+                  className="text-[11px] font-semibold text-lantern-primary-text hover:underline"
                 >
                   Turn into products
                 </button>
@@ -523,7 +523,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               onClick={() => onSelectCourse(unfiledSelected ? null : UNFILED_COURSE_ID)}
               onKeyDown={rowActivate(() => onSelectCourse(unfiledSelected ? null : UNFILED_COURSE_ID))}
               className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-                unfiledSelected ? 'bg-lantern-primary text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
+                unfiledSelected ? 'bg-lantern-primary-fill text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
               }`}
               title="Items not filed under any course"
             >

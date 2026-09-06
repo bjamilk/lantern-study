@@ -370,7 +370,7 @@ function DiscoverHub({
           >
             <Text
               className={`text-xs font-semibold ${
-                isMember ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+                isMember ? 'text-lantern-text-secondary' : 'text-lantern-primary-text'
               }`}
             >
               {pendingId === item.id ? '…' : action}
@@ -424,7 +424,7 @@ function DiscoverHub({
         >
           <Text
             className={`text-xs font-semibold ${
-              item.isMember ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+              item.isMember ? 'text-lantern-text-secondary' : 'text-lantern-primary-text'
             }`}
           >
             {pendingId === item.id ? '…' : item.isMember ? 'Open' : 'Join'}
@@ -449,7 +449,7 @@ function DiscoverHub({
           </Text>
           {chip ? (
             <View className="rounded-full bg-lantern-primary/15 px-2 py-0.5">
-              <Text className="text-[11px] font-semibold text-lantern-primary">{chip}</Text>
+              <Text className="text-[11px] font-semibold text-lantern-primary-text">{chip}</Text>
             </View>
           ) : null}
         </View>
@@ -466,12 +466,12 @@ function DiscoverHub({
       <View className="mx-4 mt-3" style={{ gap: 8 }}>
         <Pressable
           onPress={() => rootNav?.navigate('AcademicSettings')}
-          className="rounded-lg bg-lantern-primary px-3 py-2"
+          className="rounded-lg bg-lantern-primary-fill px-3 py-2"
         >
           <Text className="text-center text-xs font-semibold text-white">Set university & courses</Text>
         </Pressable>
         <Pressable onPress={() => setCreatingCommunity(true)} className="px-3 py-2">
-          <Text className="text-center text-xs font-semibold text-lantern-primary">
+          <Text className="text-center text-xs font-semibold text-lantern-primary-text">
             Start an interest community
           </Text>
         </Pressable>
@@ -479,14 +479,14 @@ function DiscoverHub({
     ) : section === 'groups' ? (
       <Pressable
         onPress={() => tabNav?.navigate('ChatTab', toTab('CreateGroup'))}
-        className="mx-4 mt-3 rounded-lg bg-lantern-primary px-3 py-2"
+        className="mx-4 mt-3 rounded-lg bg-lantern-primary-fill px-3 py-2"
       >
         <Text className="text-center text-xs font-semibold text-white">Create a study group</Text>
       </Pressable>
     ) : section === 'rooms' ? null : (
       <Pressable
         onPress={() => navigation.navigate('MarketplaceHome')}
-        className="mx-4 mt-3 rounded-lg bg-lantern-primary px-3 py-2"
+        className="mx-4 mt-3 rounded-lg bg-lantern-primary-fill px-3 py-2"
       >
         <Text className="text-center text-xs font-semibold text-white">Browse marketplace</Text>
       </Pressable>
@@ -568,7 +568,7 @@ function DiscoverHub({
           </View>
           <Text
             className={`text-xs font-semibold px-2 py-1.5 ${
-              item.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+              item.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary-text'
             }`}
           >
             {item.joined ? 'Open' : 'Join'}
@@ -613,7 +613,7 @@ function DiscoverHub({
                 accessibilityRole="button"
                 accessibilityLabel={`${presenceLine}${presence?.joinCourseId ? ' · Join room' : ''}`}
               >
-                <Text className="text-[11px] text-lantern-primary">
+                <Text className="text-[11px] text-lantern-primary-text">
                   {presenceLine}
                   {presence?.joinCourseId ? ' · Join room' : ''}
                 </Text>
@@ -624,7 +624,7 @@ function DiscoverHub({
               accessibilityRole="button"
               accessibilityLabel="Start a room"
               hitSlop={6}
-              className="self-start min-h-[32px] justify-center rounded-lg bg-lantern-primary px-3"
+              className="self-start min-h-[32px] justify-center rounded-lg bg-lantern-primary-fill px-3"
             >
               <Text className="text-[11px] font-semibold text-white">Start a room</Text>
             </Pressable>
@@ -698,7 +698,7 @@ function DiscoverHub({
           ListHeaderComponent={
             <View className="mx-4 mb-2">
               <Pressable onPress={() => setCreatingCommunity((open) => !open)}>
-                <Text className="text-xs font-semibold text-lantern-primary">
+                <Text className="text-xs font-semibold text-lantern-primary-text">
                   {creatingCommunity ? 'Cancel' : 'Start an interest community'}
                 </Text>
               </Pressable>
@@ -721,7 +721,7 @@ function DiscoverHub({
                   <Pressable
                     onPress={() => void submitCommunity()}
                     disabled={createBusy}
-                    className="mt-2 self-start rounded-md bg-lantern-primary px-3 py-1.5"
+                    className="mt-2 self-start rounded-md bg-lantern-primary-fill px-3 py-1.5"
                   >
                     <Text className="text-xs font-semibold text-white">
                       {createBusy ? 'Creating…' : 'Create community'}

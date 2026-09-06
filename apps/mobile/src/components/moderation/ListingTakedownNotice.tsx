@@ -178,7 +178,7 @@ export function ListingTakedownNotice({ listing, compact }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Appeal takedown"
           >
-            <Text className="text-[11px] font-semibold text-lantern-primary">
+            <Text className="text-[11px] font-semibold text-lantern-primary-text">
               {busy ? 'Submitting appeal…' : 'Appeal'}
             </Text>
           </Pressable>
@@ -208,7 +208,7 @@ export function ListingTakedownNotice({ listing, compact }: Props) {
         <View className="flex-1 bg-black/50 items-center justify-center px-5">
           <View className="w-full rounded-2xl bg-lantern-surface p-5">
             <View className="flex-row items-center gap-2 mb-2">
-              <AppIcon name="chatbubble-ellipses" size={18} color={colors.primary} />
+              <AppIcon name="chatbubble-ellipses" size={18} color={colors.primaryText} />
               <Text className="text-base font-semibold text-lantern-text flex-1">Appeal takedown</Text>
             </View>
             <Text className="text-xs text-lantern-text-secondary mb-3">

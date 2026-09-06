@@ -65,7 +65,9 @@ function TabButton({
           current, medium when not. */}
       <Text
         numberOfLines={1}
-        className={`text-[10px] mt-0.5 text-center ${active ? 'font-bold text-lantern-primary' : 'font-medium text-lantern-text-tertiary'}`}
+        // `label` step: 11/16/+0.04em/600 — 11 sp is Material's floor and
+        // these labels sat under it at 10. Weight still carries "current".
+        className={`text-label mt-0.5 text-center ${active ? 'font-bold text-lantern-primary-text' : 'font-medium text-lantern-text-tertiary'}`}
       >
         {tab.label}
       </Text>

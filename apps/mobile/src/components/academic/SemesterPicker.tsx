@@ -41,7 +41,7 @@ export function SemesterPicker({
             style={[
               styles.chip,
               {
-                backgroundColor: selected ? colors.primary : colors.inputBackground,
+                backgroundColor: selected ? colors.primaryFill : colors.inputBackground,
                 borderColor: selected ? colors.primary : colors.inputBorder,
                 opacity: disabled ? 0.6 : 1,
               },

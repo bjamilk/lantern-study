@@ -116,7 +116,7 @@ export function ShopQuickActions({ badges, onNavigate, layout = 'scroll', action
     >
       <View className="flex-row items-center justify-between">
         <View className="w-8 h-8 rounded-lg items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
-          <AppIcon name={action.icon} size={17} color={colors.primary} />
+          <AppIcon name={action.icon} size={17} color={colors.primaryText} />
           <Badge count={action.badge} />
         </View>
         <AppIcon name="chevron-forward" size={14} color={colors.textTertiary} />
@@ -128,7 +128,7 @@ export function ShopQuickActions({ badges, onNavigate, layout = 'scroll', action
           tap" and "Tap ♡ to save" repeated what the label already said. The
           hub's grid keeps the hint, where it carries live counts. */}
       {layout === 'grid' ? (
-        <Text numberOfLines={1} className="text-[10px] text-lantern-text-tertiary">
+        <Text numberOfLines={1} className="text-label text-lantern-text-tertiary">
           {action.hint}
         </Text>
       ) : null}

@@ -86,7 +86,7 @@ export function InviteFriendsScreen({ navigation }: { navigation: NavigationProp
             <View className="flex-row gap-2 mt-3">
               <Pressable
                 onPress={() => void Clipboard.setStringAsync(link)}
-                className="rounded-lg bg-lantern-primary px-3 py-2"
+                className="rounded-lg bg-lantern-primary-fill px-3 py-2"
               >
                 <Text className="text-sm font-semibold text-white">Copy link</Text>
               </Pressable>

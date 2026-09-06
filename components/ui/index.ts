@@ -21,3 +21,5 @@ export { Modal } from './Modal';
 export { Drawer } from './Drawer';
 export { Tabs, TabList, Tab, TabPanel } from './Tabs';
 export { Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSeparator } from './Menu';
+export { Text, Display, Title, Heading, Body, Caption, Label } from './Text';
+export type { TextProps, TypeStep } from './Text';

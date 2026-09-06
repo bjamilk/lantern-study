@@ -34,7 +34,7 @@ export function RoleBadge({ role }: { role: CommunityRole }) {
       accessible
     >
       <AppIcon name={icon} size={10} color={color} />
-      <Text className={`ml-0.5 text-[10px] font-semibold ${textTone}`}>{label}</Text>
+      <Text className={`ml-0.5 text-label font-semibold ${textTone}`}>{label}</Text>
     </View>
   );
 }

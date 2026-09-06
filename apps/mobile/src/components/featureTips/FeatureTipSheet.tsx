@@ -77,7 +77,7 @@ export function FeatureTipSheet({ tipId }: FeatureTipSheetProps) {
               <Pressable
                 onPress={() => dismiss(tipId)}
                 className="px-4 py-2.5 rounded-lg"
-                style={{ backgroundColor: colors.primary }}
+                style={{ backgroundColor: colors.primaryFill }}
               >
                 <Text className="text-sm font-medium text-white">{copy.gotItLabel || 'Got it'}</Text>
               </Pressable>

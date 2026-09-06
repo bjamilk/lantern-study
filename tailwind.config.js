@@ -22,6 +22,28 @@ module.exports = {
         sans: ['var(--font-sans)'],
         display: ['var(--font-display)'],
       },
+      // ===== Type scale: six steps, one role each =====
+      // Pixel values are identical to apps/mobile/tailwind.config.js, so
+      // `text-title` is the same 22 px on web and on the phone. They are
+      // expressed through --type-*-size / --type-*-lh (design/type.css) rather
+      // than as literal px because the app's text-size setting
+      // (.font-size-small / .font-size-large on <html>) used to work only by
+      // moving the root font-size, which a literal px step would ignore. Those
+      // classes now move --type-scale instead, so every step scales with the
+      // setting and the two platforms stay in step at scale 1.
+      //
+      // Weight, line-height and tracking travel with the step. Tailwind emits
+      // fontWeight (119), lineHeight (123) and letterSpacing (124) after
+      // fontSize (118), so `font-bold`, `leading-*` and `tracking-*` at a call
+      // site still win — the step only supplies the default.
+      fontSize: {
+        display: ['var(--type-display-size)', { lineHeight: 'var(--type-display-lh)', letterSpacing: '-0.02em', fontWeight: '700' }],
+        title: ['var(--type-title-size)', { lineHeight: 'var(--type-title-lh)', letterSpacing: '-0.02em', fontWeight: '700' }],
+        heading: ['var(--type-heading-size)', { lineHeight: 'var(--type-heading-lh)', letterSpacing: '-0.011em', fontWeight: '600' }],
+        body: ['var(--type-body-size)', { lineHeight: 'var(--type-body-lh)', letterSpacing: '-0.011em', fontWeight: '400' }],
+        caption: ['var(--type-caption-size)', { lineHeight: 'var(--type-caption-lh)', letterSpacing: '0em', fontWeight: '400' }],
+        label: ['var(--type-label-size)', { lineHeight: 'var(--type-label-lh)', letterSpacing: '0.04em', fontWeight: '600' }],
+      },
       boxShadow: {
         lantern: 'var(--shadow-sm)',
         'lantern-md': 'var(--shadow-md)',
@@ -49,6 +71,11 @@ module.exports = {
           'primary-light': 'rgb(var(--color-primary-light) / <alpha-value>)',
           'primary-dark': 'rgb(var(--color-primary-dark) / <alpha-value>)',
           'primary-background': 'var(--color-primary-background)',
+          // The build-153 split: `bg-lantern-primary-fill` for a filled
+          // control with a white label, `text-lantern-primary-text` for
+          // primary-coloured text or a glyph. Bare `primary` is deprecated.
+          'primary-fill': 'rgb(var(--color-primary-fill) / <alpha-value>)',
+          'primary-text': 'rgb(var(--color-primary-text) / <alpha-value>)',
           accent: 'rgb(var(--color-accent) / <alpha-value>)',
           'accent-background': 'var(--color-accent-background)',
           success: 'rgb(var(--color-success) / <alpha-value>)',

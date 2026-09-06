@@ -303,7 +303,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       style={{ minHeight: 60 }}
     >
       <View className="w-10 h-10 rounded-xl items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
-        <AppIcon name={row.icon} size={20} color={colors.primary} />
+        <AppIcon name={row.icon} size={20} color={colors.primaryText} />
         <Badge count={row.badge ?? 0} />
       </View>
       <View className="flex-1">
@@ -357,7 +357,7 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
           onPress={go('CreateListing')}
           accessibilityRole="button"
           accessibilityLabel="Sell an item"
-          className="flex-row items-center gap-1 px-3 py-2 rounded-lg bg-lantern-primary"
+          className="flex-row items-center gap-1 px-3 py-2 rounded-lg bg-lantern-primary-fill"
         >
           <AppIcon name="add" size={16} color="#fff" />
           <Text className="text-sm font-semibold text-white">Sell</Text>
@@ -381,14 +381,14 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
             >
               <Text
                 className={`text-sm font-semibold capitalize ${
-                  selected ? 'text-lantern-primary' : 'text-lantern-text-secondary'
+                  selected ? 'text-lantern-primary-text' : 'text-lantern-text-secondary'
                 }`}
               >
                 {s}
               </Text>
               {n > 0 ? (
                 <View className="min-w-[18px] h-[18px] px-1 rounded-full bg-lantern-error items-center justify-center">
-                  <Text className="text-[10px] font-bold text-white">{n > 99 ? '99+' : n}</Text>
+                  <Text className="text-label font-bold text-white">{n > 99 ? '99+' : n}</Text>
                 </View>
               ) : null}
             </Pressable>

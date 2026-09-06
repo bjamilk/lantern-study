@@ -190,7 +190,7 @@ export default function TestAnalysisScreen() {
 
         {loading && !test ? (
           <View style={styles.centered}>
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.primaryText} />
             <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
               Loading analysis…
             </Text>
@@ -211,7 +211,7 @@ export default function TestAnalysisScreen() {
           <View style={styles.centered}>
             <Text style={{ color: colors.textSecondary }}>{error || 'Analysis unavailable'}</Text>
             <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 12 }}>
-              <Text style={{ color: colors.primary, fontWeight: '600' }}>Go Back</Text>
+              <Text style={{ color: colors.primaryText, fontWeight: '600' }}>Go Back</Text>
             </TouchableOpacity>
           </View>
         )}

@@ -115,7 +115,7 @@ function FolderChip({
     <View
       className={`shrink-0 rounded-lg flex-row items-center ${
         isActive
-          ? 'bg-lantern-primary'
+          ? 'bg-lantern-primary-fill'
           : 'bg-lantern-surface border border-lantern-border'
       }`}
     >
@@ -131,7 +131,7 @@ function FolderChip({
           <View className="w-2 h-2 rounded-full" style={{ backgroundColor: folder.color }} />
         ) : null}
         <Text
-          className={`text-sm font-semibold ${
+          className={`text-caption font-semibold ${
             isActive ? 'text-white' : 'text-lantern-text'
           }`}
           numberOfLines={1}
@@ -194,12 +194,12 @@ function NoteCard({
             {note.isPinned ? (
               <AppIcon name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
             ) : null}
-            <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={2}>
+            <Text className="flex-1 text-body font-semibold text-lantern-text" numberOfLines={2}>
               {note.title}
             </Text>
           </View>
           <View className="bg-lantern-primary-background px-2 py-0.5 rounded-full shrink-0">
-            <Text className="text-[10px] font-semibold text-lantern-primary">
+            <Text className="text-label font-semibold text-lantern-primary-text">
               {sourceBadge(note)}
             </Text>
           </View>
@@ -207,18 +207,18 @@ function NoteCard({
         {isShared ? (
           <View className="flex-row items-center gap-1 mb-2">
             <AppIcon name="people" size={13} color="#6366f1" />
-            <Text className="text-xs text-lantern-text-secondary">
+            <Text className="text-caption text-lantern-text-secondary">
               Shared by {note.owner?.name || note.owner?.username || 'another member'} · {note.accessRole}
             </Text>
           </View>
         ) : (
-          <Text className="text-xs text-lantern-text-tertiary mb-2">Mine</Text>
+          <Text className="text-caption text-lantern-text-tertiary mb-2">Mine</Text>
         )}
-        <Text className="text-sm text-lantern-text-secondary" numberOfLines={3}>
+        <Text className="text-body text-lantern-text-secondary" numberOfLines={2}>
           {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
         </Text>
         {note.updatedAt ? (
-          <Text className="text-xs text-lantern-text-tertiary mt-3">
+          <Text className="text-caption text-lantern-text-tertiary mt-3">
             Updated {new Date(note.updatedAt).toLocaleDateString()}
           </Text>
         ) : null}
@@ -954,7 +954,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         >
           <Pressable onPress={(e) => e.stopPropagation?.()}>
             <Card className="border-0 shadow-lg">
-              <Text className="text-lg font-bold text-lantern-text mb-3">Rename folder</Text>
+              <Text className="text-heading font-bold text-lantern-text mb-3">Rename folder</Text>
               <TextInput
                 value={renameValue}
                 onChangeText={setRenameValue}
@@ -1051,8 +1051,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         >
           <Pressable onPress={(e) => e.stopPropagation?.()}>
             <Card className="border-0 shadow-lg max-h-[70%]">
-              <Text className="text-lg font-bold text-lantern-text mb-1">Move to folder</Text>
-              <Text className="text-sm text-lantern-text-secondary mb-3">
+              <Text className="text-heading font-bold text-lantern-text mb-1">Move to folder</Text>
+              <Text className="text-body text-lantern-text-secondary mb-3">
                 {selectedNoteIds.length === 1
                   ? 'Choose a folder for this note.'
                   : `Choose a folder for ${selectedNoteIds.length} notes.`}
@@ -1066,8 +1066,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                   accessibilityLabel="Move to All notes"
                 >
                   <AppIcon name="folder" size={18} color="#64748b" />
-                  <Text className="flex-1 text-sm font-medium text-lantern-text">All notes</Text>
-                  <Text className="text-xs text-lantern-text-tertiary">Unfiled</Text>
+                  <Text className="flex-1 text-body font-medium text-lantern-text">All notes</Text>
+                  <Text className="text-caption text-lantern-text-tertiary">Unfiled</Text>
                 </Pressable>
                 {folders.map((folder) => (
                   <Pressable
@@ -1082,14 +1082,14 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                       className="w-2.5 h-2.5 rounded-full"
                       style={{ backgroundColor: folder.color || '#6366f1' }}
                     />
-                    <Text className="flex-1 text-sm font-medium text-lantern-text" numberOfLines={1}>
+                    <Text className="flex-1 text-body font-medium text-lantern-text" numberOfLines={1}>
                       {folder.name}
                     </Text>
                   </Pressable>
                 ))}
               </ScrollView>
               {folders.length === 0 ? (
-                <Text className="text-xs text-lantern-text-secondary mt-3">
+                <Text className="text-caption text-lantern-text-secondary mt-3">
                   No folders yet. Create one from the Folder button, then move notes here.
                 </Text>
               ) : null}
@@ -1142,7 +1142,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
 
       {selectMode ? (
         <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2">
-          <Text className="flex-1 text-sm text-lantern-text">
+          <Text className="flex-1 text-body text-lantern-text">
             {selectedNoteIds.length === 0
               ? 'Select notes'
               : `${selectedNoteIds.length} selected`}
@@ -1184,12 +1184,12 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           onPress={() => setSelectedFolderId(null)}
           className={`shrink-0 px-2.5 py-2 rounded-lg ${
             !selectedFolderId
-              ? 'bg-lantern-primary'
+              ? 'bg-lantern-primary-fill'
               : 'bg-lantern-surface border border-lantern-border'
           }`}
         >
           <Text
-            className={`text-sm font-semibold ${
+            className={`text-caption font-semibold ${
               !selectedFolderId ? 'text-white' : 'text-lantern-text'
             }`}
             numberOfLines={1}
@@ -1220,8 +1220,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       {courseFilter && !embedded ? (
         <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2">
           <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-primary-background">
-            <AppIcon name="school" size={14} color={colors.primary} />
-            <Text className="text-xs font-semibold text-lantern-primary" numberOfLines={1}>
+            <AppIcon name="school" size={14} color={colors.primaryText} />
+            <Text className="text-caption font-semibold text-lantern-primary-text" numberOfLines={1}>
               {courseFilter.label}
             </Text>
             <Pressable
@@ -1230,7 +1230,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               accessibilityRole="button"
               accessibilityLabel={`Clear course filter ${courseFilter.label}`}
             >
-              <AppIcon name="close-circle" size={16} color={colors.primary} />
+              <AppIcon name="close-circle" size={16} color={colors.primaryText} />
             </Pressable>
           </View>
           {/* The topic narrows the list further, so it gets its own chip:
@@ -1238,7 +1238,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           {courseFilter.topicId ? (
             <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-lantern-background-secondary">
               <AppIcon name="bookmark" size={13} color={colors.textSecondary} />
-              <Text className="text-xs font-medium text-lantern-text-secondary" numberOfLines={1}>
+              <Text className="text-caption font-medium text-lantern-text-secondary" numberOfLines={1}>
                 {courseFilter.topicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : courseFilter.topicLabel || COURSE_TOPIC_COPY.filterLabel}
               </Text>
               <Pressable
@@ -1264,14 +1264,14 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               key={filter}
               onPress={() => setOwnershipFilter(filter)}
               className={`flex-1 min-h-[44px] items-center justify-center ${
-                ownershipFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'
+                ownershipFilter === filter ? 'bg-lantern-primary-fill' : 'bg-lantern-surface'
               }`}
               accessibilityRole="button"
               accessibilityState={{ selected: ownershipFilter === filter }}
               accessibilityLabel={filter === 'mine' ? 'Show notes I own' : 'Show notes shared with me'}
             >
               <Text
-                className={`text-sm font-semibold ${
+                className={`text-caption font-semibold ${
                   ownershipFilter === filter ? 'text-white' : 'text-lantern-text'
                 }`}
               >
@@ -1286,7 +1286,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               key={filter}
               onPress={() => setListFilter(filter)}
               className={`flex-1 min-h-[44px] flex-row items-center justify-center gap-1 ${
-                listFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'
+                listFilter === filter ? 'bg-lantern-primary-fill' : 'bg-lantern-surface'
               }`}
               accessibilityRole="button"
               accessibilityState={{ selected: listFilter === filter }}
@@ -1300,7 +1300,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                 />
               ) : null}
               <Text
-                className={`text-sm font-semibold ${
+                className={`text-caption font-semibold ${
                   listFilter === filter ? 'text-white' : 'text-lantern-text'
                 }`}
                 numberOfLines={1}
@@ -1321,7 +1321,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
             value={ownSearch}
             onChangeText={setOwnSearch}
             placeholder="Search notes..."
-            className="flex-1 text-sm text-lantern-text py-0.5"
+            className="flex-1 text-body text-lantern-text py-0.5"
             placeholderTextColor={colors.inputPlaceholder}
             accessibilityLabel="Search notes"
           />
@@ -1334,12 +1334,12 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       <View className="mx-4 mb-1.5">
         {pendingImport ? (
           <Card className="border-lantern-primary/30 mb-2">
-            <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
+            <Text className="text-body font-semibold text-lantern-text" numberOfLines={2}>
               {pendingImport.mode === 'photos'
                 ? `${pendingImport.assets.length} photo${pendingImport.assets.length === 1 ? '' : 's'}`
                 : pendingImport.name}
             </Text>
-            <Text className="text-xs text-lantern-text-secondary mt-1">
+            <Text className="text-caption text-lantern-text-secondary mt-1">
               {pendingImport.mode === 'photos'
                 ? formatMaxNoteUploadLabel()
                 : `${formatFileSize(pendingImport.size)} · ${formatMaxNoteUploadLabel()}`}
@@ -1366,8 +1366,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           </Card>
         ) : youtubeOpen ? (
           <Card className="border-lantern-primary/30 mb-2">
-            <Text className="text-sm font-semibold text-lantern-text">Note from YouTube</Text>
-            <Text className="text-xs text-lantern-text-secondary mt-1">
+            <Text className="text-body font-semibold text-lantern-text">Note from YouTube</Text>
+            <Text className="text-caption text-lantern-text-secondary mt-1">
               Paste a video link — we'll fetch its transcript so AI tools can use it.
             </Text>
             <TextInput
@@ -1378,11 +1378,11 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               autoCorrect={false}
               keyboardType="url"
               editable={!importingFile}
-              className="mt-2 px-3 py-2 rounded-lg border border-lantern-border bg-lantern-background text-sm text-lantern-text"
+              className="mt-2 px-3 py-2 rounded-lg border border-lantern-border bg-lantern-background text-body text-lantern-text"
               placeholderTextColor={colors.inputPlaceholder}
             />
             {youtubeUrl.trim() && !youtubeUrlValid ? (
-              <Text className="text-xs text-red-500 mt-1">
+              <Text className="text-caption text-red-500 mt-1">
                 That doesn't look like a YouTube link.
               </Text>
             ) : null}
@@ -1419,13 +1419,13 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           onPress={() => setError(null)}
           className="mx-4 mb-1.5 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800"
         >
-          <Text className="text-xs text-red-700 dark:text-red-300">{error}</Text>
+          <Text className="text-caption text-red-700 dark:text-red-300">{error}</Text>
         </Pressable>
       ) : null}
 
       {isLoading && notes.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.primaryText} />
         </View>
       ) : (
         <FlatList
@@ -1438,7 +1438,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           // a note row is swallowed dismissing the keyboard.
           keyboardShouldPersistTaps="handled"
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryText} />
           }
           ListEmptyComponent={
             <Card className="items-center py-10 border-lantern-border">
@@ -1453,7 +1453,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                 size={40}
                 color="#818cf8"
               />
-              <Text className="text-sm text-lantern-text-secondary text-center mt-3 px-4">
+              <Text className="text-body text-lantern-text-secondary text-center mt-3 px-4">
                 {/* A query that matches nothing is not an empty library:
                     "No notes yet" there reads as if the notes had gone. */}
                 {search.trim()

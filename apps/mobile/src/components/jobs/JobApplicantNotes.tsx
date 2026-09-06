@@ -139,7 +139,7 @@ export function JobApplicantNotes({
         className={`mt-2 self-start rounded-lg px-3 py-2 ${
           !draft.trim() || saving
             ? "bg-lantern-primary/50"
-            : "bg-lantern-primary"
+            : "bg-lantern-primary-fill"
         }`}
       >
         <Text className="text-sm font-semibold text-white">

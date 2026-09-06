@@ -175,7 +175,7 @@ function Metric({
       </Text>
       <Text
         className={`mt-0.5 text-xl font-bold ${
-          accent ? "text-lantern-primary" : "text-lantern-text"
+          accent ? "text-lantern-primary-text" : "text-lantern-text"
         }`}
       >
         {value}

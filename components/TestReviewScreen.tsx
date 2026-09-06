@@ -55,7 +55,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
     if (score >= 60) {
         return {
             message: "Great job! Keep reviewing to solidify your knowledge.",
-            colorClass: "text-lantern-primary",
+            colorClass: "text-lantern-primary-text",
             icon: HandThumbUpIcon,
             showConfetti: false,
             rank: 'C', rankColor: 'bg-gradient-to-br from-lantern-primary-light to-lantern-primary text-white',
@@ -64,7 +64,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
     if (score >= 40) {
         return {
             message: "Good effort. Consistent practice will make a difference.",
-            colorClass: "text-lantern-primary",
+            colorClass: "text-lantern-primary-text",
             icon: FaceSmileIcon,
             showConfetti: false,
             rank: 'D', rankColor: 'bg-gradient-to-br from-orange-400 to-orange-600 text-white',
@@ -102,18 +102,18 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
       {scoreFeedback.showConfetti && <Confetti />}
       <div className="mb-6 pb-4 border-b border-lantern-border dark:border-lantern-border">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-            <h1 className="text-2xl md:text-3xl font-semibold text-lantern-primary dark:text-lantern-primary-light mb-2 sm:mb-0">Test Review</h1>
+            <h1 className="text-title text-lantern-primary-text dark:text-lantern-primary-light mb-2 sm:mb-0">Test Review</h1>
             <div className="flex space-x-2">
                 <button
                     onClick={onNavigateToDashboard}
-                    className="px-3 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 dark:focus:ring-teal-500 focus:ring-offset-2 flex items-center text-sm"
+                    className="px-3 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 dark:focus:ring-teal-500 focus:ring-offset-2 flex items-center text-body"
                     aria-label="View Dashboard"
                 >
                     <ChartBarIcon className="w-5 h-5 mr-1.5" /> Dashboard
                 </button>
                 <button
                     onClick={onExit}
-                    className="px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark dark:bg-lantern-primary dark:hover:bg-lantern-primary text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-sm"
+                    className="px-3 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-body"
                     aria-label="Return to Chat"
                 >
                     <ArrowLeftOnRectangleIcon className="w-5 h-5 mr-1.5" /> Return to Chat
@@ -123,29 +123,29 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         <div className="mt-4 p-4 bg-lantern-surface rounded-lg shadow-md">
             <div className="text-center mb-4 pb-4 border-b border-lantern-border">
                 <Icon className={`w-16 h-16 mx-auto ${scoreFeedback.colorClass}`} />
-                <p className={`text-xl font-bold mt-2 ${scoreFeedback.colorClass}`}>{scoreFeedback.message}</p>
+                <p className={`text-title font-bold mt-2 ${scoreFeedback.colorClass}`}>{scoreFeedback.message}</p>
             </div>
             <div className="flex flex-col md:flex-row justify-around items-center space-y-3 md:space-y-0 md:space-x-4">
                 {/* Rank Badge */}
                 <div className="flex flex-col items-center gap-1">
-                  <p className="text-sm text-lantern-text-secondary">Rank</p>
-                  <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-black shadow-lg ${scoreFeedback.rankColor}`}
+                  <p className="text-body text-lantern-text-secondary">Rank</p>
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center text-title font-black shadow-lg ${scoreFeedback.rankColor}`}
                     style={{ animation: 'rankReveal 0.6s ease-out' }}>
                     <style>{`@keyframes rankReveal { 0%{transform:scale(0) rotate(-30deg);opacity:0} 70%{transform:scale(1.2) rotate(5deg);opacity:1} 100%{transform:scale(1) rotate(0)} }`}</style>
                     {scoreFeedback.rank}
                   </div>
                 </div>
                 <div className="text-center">
-                    <p className="text-sm text-lantern-text-secondary">Your Score</p>
-                    <p className={`text-3xl font-bold ${scoreFeedback.colorClass}`}>{score.toFixed(1)}%</p>
+                    <p className="text-body text-lantern-text-secondary">Your Score</p>
+                    <p className={`text-display tabular-nums ${scoreFeedback.colorClass}`}>{score.toFixed(1)}%</p>
                 </div>
                 <div className="text-center">
-                    <p className="text-sm text-lantern-text-secondary">Correct Answers</p>
-                    <p className="text-2xl font-semibold text-lantern-text">{correctAnswersCount} / {totalQuestions}</p>
+                    <p className="text-body text-lantern-text-secondary">Correct Answers</p>
+                    <p className="text-title tabular-nums text-lantern-text">{correctAnswersCount} / {totalQuestions}</p>
                 </div>
                 <div className="text-center">
-                    <p className="text-sm text-lantern-text-secondary">Group</p>
-                    <p className="text-lg font-medium text-lantern-text truncate max-w-[150px] md:max-w-xs" title={groupName}>
+                    <p className="text-body text-lantern-text-secondary">Group</p>
+                    <p className="text-heading font-medium text-lantern-text truncate max-w-[150px] md:max-w-xs" title={groupName}>
                         {groupName} 
                     </p>
                 </div>
@@ -155,11 +155,11 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
       
       {/* Next Steps Section */}
       <div className="mb-6 p-4 bg-lantern-surface rounded-lg shadow-md">
-        <h2 className="text-lg font-semibold mb-3 text-lantern-text">Next Steps</h2>
+        <h2 className="text-heading font-semibold mb-3 text-lantern-text">Next Steps</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <button
             onClick={() => onRetakeTest(session)}
-            className="flex-1 px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark dark:bg-lantern-primary dark:hover:bg-lantern-primary text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center justify-center text-sm font-medium"
+            className="flex-1 px-4 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center justify-center text-body font-medium"
             aria-label="Retake this test with similar settings"
           >
             <ArrowPathIcon className="w-5 h-5 mr-2" />
@@ -168,7 +168,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
           <button
             onClick={() => onPracticeFailedQuestions(failedQuestions)}
             disabled={failedQuestions.length === 0}
-            className="flex-1 px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center justify-center text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center justify-center text-body font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={`Practice the ${failedQuestions.length} questions you failed`}
           >
             <AcademicCapIcon className="w-5 h-5 mr-2" />
@@ -176,7 +176,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
           </button>
            <button
             onClick={() => setIsAnalysisModalOpen(true)}
-            className="flex-1 px-4 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 focus:ring-offset-2 flex items-center justify-center text-sm font-medium"
+            className="flex-1 px-4 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 focus:ring-offset-2 flex items-center justify-center text-body font-medium"
             aria-label="View detailed analysis of this test"
           >
             <PresentationChartLineIcon className="w-5 h-5 mr-2" />
@@ -184,7 +184,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
           </button>
         </div>
         {failedQuestions.length === 0 && (
-            <p className="text-xs text-center mt-2 text-green-600 dark:text-green-400">Perfect score! No questions to practice.</p>
+            <p className="text-caption text-center mt-2 text-green-600 dark:text-green-400">Perfect score! No questions to practice.</p>
         )}
       </div>
 
@@ -223,14 +223,14 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
 
               {question.questionType === QuestionType.FILL_IN_THE_BLANK && (
                 <div className="space-y-2 mb-3">
-                  <div className="p-2 border dark:border-lantern-border rounded-md text-sm">
+                  <div className="p-2 border dark:border-lantern-border rounded-md text-body">
                     <span className="font-semibold text-lantern-text-secondary">Your Answer: </span>
                     <span className={`italic ${!userAnswerRecord?.fillText?.trim() ? 'text-lantern-text-secondary' : isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
                       {userAnswerRecord?.fillText?.trim() ? userAnswerRecord.fillText : 'Not Answered'}
                     </span>
                   </div>
                   {!isCorrect && (
-                    <div className="p-2 border border-green-400 dark:border-green-600 rounded-md text-sm bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-300">
+                    <div className="p-2 border border-green-400 dark:border-green-600 rounded-md text-body bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-300">
                       <span className="font-semibold">Acceptable Answer(s): </span>
                       <span>{question.acceptableAnswers?.join(', ')}</span>
                     </div>
@@ -245,19 +245,19 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                         const correctOptionIds = question.correctAnswerIds || [];
                         const isUserSelected = userSelectedIds.includes(opt.id);
                         const isCorrectOption = correctOptionIds.includes(opt.id);
-                        let classes = "p-2 border dark:border-lantern-border rounded-md text-sm";
+                        let classes = "p-2 border dark:border-lantern-border rounded-md text-body";
                         let annotation = null;
                         
                         if (isCorrectOption) {
                             classes += " bg-green-50 dark:bg-green-900/40 border-green-400 dark:border-green-600 text-green-700 dark:text-green-300 font-medium";
-                            if (!isUserSelected) annotation = <span className="text-xs font-normal ml-2 text-green-700 dark:text-green-300">(Correct Answer - Missed)</span>;
+                            if (!isUserSelected) annotation = <span className="text-caption font-normal ml-2 text-green-700 dark:text-green-300">(Correct Answer - Missed)</span>;
                         }
                         if (isUserSelected) {
                             if (isCorrectOption) {
-                                annotation = <span className="text-xs font-normal ml-2 text-green-700 dark:text-green-300">(Your Answer - Correct)</span>;
+                                annotation = <span className="text-caption font-normal ml-2 text-green-700 dark:text-green-300">(Your Answer - Correct)</span>;
                             } else {
                                 classes += " bg-red-50 dark:bg-red-900/40 border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 line-through";
-                                annotation = <span className="text-xs font-normal ml-2 text-red-700 dark:text-red-300">(Your Answer - Incorrect)</span>;
+                                annotation = <span className="text-caption font-normal ml-2 text-red-700 dark:text-red-300">(Your Answer - Incorrect)</span>;
                             }
                         } else if (!isCorrectOption) {
                             classes += " text-lantern-text-secondary";
@@ -271,7 +271,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                         );
                     })}
                     {!wasAnswered && (
-                        <p className="p-2 border dark:border-yellow-600 rounded-md text-sm bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400 text-yellow-700 dark:text-yellow-300">
+                        <p className="p-2 border dark:border-yellow-600 rounded-md text-body bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400 text-yellow-700 dark:text-yellow-300">
                             Not Answered.
                         </p>
                     )}
@@ -288,7 +288,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                         const userAnswerText = question.matchingAnswerItems?.find(a => a.id === userAnswer?.answerItemId)?.text;
 
                         return (
-                            <div key={prompt.id} className="p-2 border dark:border-lantern-border rounded-md text-sm">
+                            <div key={prompt.id} className="p-2 border dark:border-lantern-border rounded-md text-body">
                                 <div className="flex flex-col items-start sm:flex-row sm:justify-between sm:items-center gap-1">
                                     <span className="font-medium text-lantern-text">{prompt.text}</span>
                                     {isMatchCorrect ? <CheckCircleIcon className="w-5 h-5 text-green-500 flex-shrink-0" /> : <XCircleIcon className="w-5 h-5 text-red-500 flex-shrink-0" />}
@@ -301,7 +301,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                         );
                     })}
                      {!wasAnswered && (
-                        <p className="p-2 border dark:border-yellow-600 rounded-md text-sm bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400 text-yellow-700 dark:text-yellow-300">
+                        <p className="p-2 border dark:border-yellow-600 rounded-md text-body bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400 text-yellow-700 dark:text-yellow-300">
                             Not Answered.
                         </p>
                     )}
@@ -318,7 +318,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                               className="absolute -translate-x-1/2 -translate-y-1/2" 
                               style={{ left: `${label.x}%`, top: `${label.y}%` }}
                           >
-                              <div className="relative flex items-center justify-center w-6 h-6 bg-red-600 text-white font-bold text-xs rounded-full shadow-lg ring-2 ring-white">
+                              <div className="relative flex items-center justify-center w-6 h-6 bg-red-600 text-white font-bold text-caption rounded-full shadow-lg ring-2 ring-white">
                                   {index + 1}
                               </div>
                           </div>
@@ -331,9 +331,9 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                        const isLabelCorrect = label.id === userAnswer?.selectedLabelId;
 
                        return (
-                         <div key={label.id} className="text-sm p-2 border-l-4 dark:bg-lantern-surface-secondary/50 rounded" style={{borderColor: isLabelCorrect ? '#22c55e' : '#ef4444'}}>
+                         <div key={label.id} className="text-body p-2 border-l-4 dark:bg-lantern-surface-secondary/50 rounded" style={{borderColor: isLabelCorrect ? '#22c55e' : '#ef4444'}}>
                             <p className="font-semibold text-lantern-text">
-                              <span className="inline-flex items-center justify-center w-5 h-5 mr-2 bg-red-600 text-white font-bold text-xs rounded-full">{index+1}</span>
+                              <span className="inline-flex items-center justify-center w-5 h-5 mr-2 bg-red-600 text-white font-bold text-caption rounded-full">{index+1}</span>
                               {label.text}
                             </p>
                             <p className="pl-7">
@@ -350,10 +350,10 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
               )}
               
               <div className="mt-3 pt-3 border-t border-lantern-border">
-                <h4 className="text-sm font-semibold text-lantern-text-secondary flex items-center">
-                    <InformationCircleIcon className="w-5 h-5 mr-1 text-lantern-primary" /> Explanation:
+                <h4 className="text-body font-semibold text-lantern-text-secondary flex items-center">
+                    <InformationCircleIcon className="w-5 h-5 mr-1 text-lantern-primary-text" /> Explanation:
                 </h4>
-                <p className="text-sm text-lantern-text-secondary mt-1 whitespace-pre-wrap">{question.explanation}</p>
+                <p className="text-body text-lantern-text-secondary mt-1 whitespace-pre-wrap">{question.explanation}</p>
               </div>
 
               {/* AI Explain button */}
@@ -361,10 +361,10 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                 <div className="mt-2">
                   {aiExplanations[index] ? (
                     <div className="p-3 bg-purple-50 dark:bg-purple-900/30 border border-lantern-primary/30 rounded-md">
-                      <h4 className="text-sm font-semibold text-purple-700 dark:text-purple-300 flex items-center mb-1">
+                      <h4 className="text-body font-semibold text-purple-700 dark:text-purple-300 flex items-center mb-1">
                         <SparklesIcon className="w-4 h-4 mr-1" /> AI Explanation:
                       </h4>
-                      <p className="text-sm text-lantern-text whitespace-pre-wrap">{aiExplanations[index]}</p>
+                      <p className="text-body text-lantern-text whitespace-pre-wrap">{aiExplanations[index]}</p>
                     </div>
                   ) : (
                     <div className="flex items-center">
@@ -390,7 +390,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                           setAiExplainLoading(prev => ({ ...prev, [index]: false }));
                         }}
                         disabled={aiExplainLoading[index]}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary-background border border-lantern-primary/30 rounded-lg transition-colors disabled:opacity-50"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-lantern-primary-text bg-lantern-primary-background hover:bg-lantern-primary-background border border-lantern-primary/30 rounded-lg transition-colors disabled:opacity-50"
                       >
                         <SparklesIcon className="w-4 h-4" />
                         {aiExplainLoading[index] ? 'Explaining...' : 'Explain with AI'}
@@ -407,7 +407,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
        <div className="mt-8 text-center">
          <button
             onClick={onExit}
-            className="px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark dark:bg-lantern-primary dark:hover:bg-lantern-primary text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-base mx-auto"
+            className="px-6 py-3 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-body mx-auto"
             >
              <ArrowLeftOnRectangleIcon className="w-5 h-5 mr-2" /> Return to Chat
             </button>

@@ -92,7 +92,7 @@ function CountChips({ counts }: { counts: Counts }) {
     <View className="flex-row flex-wrap gap-1 mt-1">
       {chips.map(chip => (
         <View key={chip.key} className="px-1.5 py-0.5 rounded-full bg-lantern-background-secondary">
-          <Text className="text-[10px] font-medium text-lantern-text-secondary">{chip.label}</Text>
+          <Text className="text-label font-medium text-lantern-text-secondary">{chip.label}</Text>
         </View>
       ))}
     </View>
@@ -153,7 +153,7 @@ function TreeRow({
         />
         <View className="flex-1 min-w-0">
           <Text
-            className={`text-sm font-semibold ${selected ? 'text-lantern-primary' : 'text-lantern-text'}`}
+            className={`text-sm font-semibold ${selected ? 'text-lantern-primary-text' : 'text-lantern-text'}`}
             numberOfLines={1}
           >
             {title}
@@ -207,7 +207,7 @@ function TopicRow({
       <View className="flex-1 min-w-0">
         <Text
           className={`text-[13px] ${
-            selected ? 'font-semibold text-lantern-primary' : untopiced ? 'text-lantern-text-secondary' : 'text-lantern-text'
+            selected ? 'font-semibold text-lantern-primary-text' : untopiced ? 'text-lantern-text-secondary' : 'text-lantern-text'
           }`}
           numberOfLines={1}
         >
@@ -416,7 +416,7 @@ export function LibraryCourseTree({
         <Text className="flex-1 text-sm font-semibold text-lantern-text" numberOfLines={1}>
           My courses
         </Text>
-        {loading && !tree ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+        {loading && !tree ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
         {!open && tree ? (
           <Text className="text-[11px] text-lantern-text-secondary mr-1" numberOfLines={1}>
             {activeCount} active · {totalNotes} {totalNotes === 1 ? 'note' : 'notes'} · {totalDecks}{' '}
@@ -437,7 +437,7 @@ export function LibraryCourseTree({
             <View className="px-2 py-3">
               <Text className="text-xs text-lantern-error mb-2">Could not load your courses: {error}</Text>
               <Pressable onPress={onRetry} accessibilityRole="button" className="self-start">
-                <Text className="text-xs font-semibold text-lantern-primary">Retry</Text>
+                <Text className="text-xs font-semibold text-lantern-primary-text">Retry</Text>
               </Pressable>
             </View>
           ) : null}
@@ -448,7 +448,7 @@ export function LibraryCourseTree({
                 No courses yet. Add this semester's courses to file notes, decks and tests under them.
               </Text>
               <Pressable onPress={onManageCourses} accessibilityRole="button" className="self-start mt-2 mb-1">
-                <Text className="text-xs font-semibold text-lantern-primary">Add my courses</Text>
+                <Text className="text-xs font-semibold text-lantern-primary-text">Add my courses</Text>
               </Pressable>
               {onTurnSemesterIntoProducts ? (
                 <Pressable
@@ -456,7 +456,7 @@ export function LibraryCourseTree({
                   accessibilityRole="button"
                   className="self-start mt-1"
                 >
-                  <Text className="text-xs font-semibold text-lantern-primary">Turn into products</Text>
+                  <Text className="text-xs font-semibold text-lantern-primary-text">Turn into products</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -475,7 +475,7 @@ export function LibraryCourseTree({
                     hitSlop={6}
                     className="px-2 py-1"
                   >
-                    <Text className="text-[11px] font-semibold text-lantern-primary">Products</Text>
+                    <Text className="text-[11px] font-semibold text-lantern-primary-text">Products</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -505,7 +505,7 @@ export function LibraryCourseTree({
                 <Text className="text-[11px] font-bold uppercase tracking-wider text-lantern-text-tertiary">Unfiled</Text>
                 {hasCourses ? (
                   <Pressable onPress={onManageCourses} accessibilityRole="button" hitSlop={6}>
-                    <Text className="text-[11px] font-semibold text-lantern-primary">Manage courses</Text>
+                    <Text className="text-[11px] font-semibold text-lantern-primary-text">Manage courses</Text>
                   </Pressable>
                 ) : null}
               </View>

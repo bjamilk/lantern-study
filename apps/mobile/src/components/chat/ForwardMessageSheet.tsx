@@ -167,7 +167,7 @@ export function ForwardMessageSheet({ visible, onClose, messageText }: Props) {
                       Sending…
                     </Text>
                   ) : (
-                    <AppIcon name="arrow-redo" size={18} color={colors.primary} />
+                    <AppIcon name="arrow-redo" size={18} color={colors.primaryText} />
                   )}
                 </Pressable>
               )}

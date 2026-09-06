@@ -49,14 +49,14 @@ export function DiscoverWorkspaceBar({ active, onSelect }: DiscoverWorkspaceBarP
             <Text
               numberOfLines={1}
               className={`text-[12px] font-medium ${
-                selected ? 'text-lantern-primary' : 'text-lantern-text-secondary'
+                selected ? 'text-lantern-primary-text' : 'text-lantern-text-secondary'
               }`}
             >
               {tab.shortLabel}
             </Text>
             <View
               className={`mt-1 h-0.5 w-8 rounded-full ${
-                selected ? 'bg-lantern-primary' : 'bg-transparent'
+                selected ? 'bg-lantern-primary-fill' : 'bg-transparent'
               }`}
             />
           </Pressable>

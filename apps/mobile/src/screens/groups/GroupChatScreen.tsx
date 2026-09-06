@@ -271,10 +271,10 @@ function NewMessagesDivider({ pillStyle }: { pillStyle?: ViewStyle }) {
       <View className="flex-1 h-px" style={ruleStyle} />
       {pillStyle ? (
         <View className="px-3 py-1 rounded-full" style={pillStyle}>
-          <Text className="text-[11px] font-semibold text-lantern-primary">New messages</Text>
+          <Text className="text-[11px] font-semibold text-lantern-primary-text">New messages</Text>
         </View>
       ) : (
-        <Text className="text-[11px] font-semibold text-lantern-primary">New messages</Text>
+        <Text className="text-[11px] font-semibold text-lantern-primary-text">New messages</Text>
       )}
       <View className="flex-1 h-px" style={ruleStyle} />
     </View>
@@ -2053,7 +2053,7 @@ export function GroupChatView({
           accessibilityRole="button"
           accessibilityLabel="Jump to pinned message"
         >
-          <AppIcon name="pin" size={14} color={colors.primary} />
+          <AppIcon name="pin" size={14} color={colors.primaryText} />
           <Text className="flex-1 text-[12px] text-lantern-text" numberOfLines={1}>
             {pinnedMessage.text || 'Pinned message'}
           </Text>
@@ -2133,7 +2133,7 @@ export function GroupChatView({
                 ) : null}
                 {isLoadingMore ? (
                   <View className="py-2 items-center">
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <ActivityIndicator size="small" color={colors.primaryText} />
                   </View>
                 ) : null}
               </>
@@ -2216,7 +2216,7 @@ export function GroupChatView({
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={`${newMessagesBelow} new messages, jump to latest`}
-                className="px-3 py-1.5 rounded-full bg-lantern-primary"
+                className="px-3 py-1.5 rounded-full bg-lantern-primary-fill"
               >
                 <Text className="text-xs font-semibold text-white">
                   ↓ {newMessagesBelow} new message{newMessagesBelow === 1 ? '' : 's'}
@@ -2230,7 +2230,7 @@ export function GroupChatView({
         {aiThinking ? (
           <Text
             accessibilityLiveRegion="polite"
-            className="px-4 py-1 text-xs text-lantern-primary"
+            className="px-4 py-1 text-xs text-lantern-primary-text"
           >
             🤖 AI Tutor is thinking…
           </Text>

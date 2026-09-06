@@ -363,7 +363,7 @@ export function MyJobApplicationsScreen() {
               disabled={savingProfile}
               onPress={() => void saveProfile()}
               className={`mt-3 items-center rounded-lg py-2.5 ${
-                savingProfile ? "bg-lantern-primary/60" : "bg-lantern-primary"
+                savingProfile ? "bg-lantern-primary/60" : "bg-lantern-primary-fill"
               }`}
             >
               <Text className="text-sm font-semibold text-white">
@@ -382,7 +382,7 @@ export function MyJobApplicationsScreen() {
                 key={option}
                 onPress={() => setView(option)}
                 className={`flex-1 items-center rounded-lg py-2 ${
-                  view === option ? "bg-lantern-primary" : ""
+                  view === option ? "bg-lantern-primary-fill" : ""
                 }`}
               >
                 <Text
@@ -534,7 +534,7 @@ export function MyJobApplicationsScreen() {
               {apps.length === 0 ? (
                 <Pressable
                   onPress={() => navigation.navigate("JobsHome")}
-                  className="mt-4 items-center rounded-xl bg-lantern-primary py-3"
+                  className="mt-4 items-center rounded-xl bg-lantern-primary-fill py-3"
                 >
                   <Text className="text-sm font-semibold text-white">
                     Browse jobs

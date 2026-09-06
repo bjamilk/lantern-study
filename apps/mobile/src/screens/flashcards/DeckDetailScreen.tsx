@@ -101,7 +101,7 @@ function FlashcardPreview({ card, onPress }: { card: Flashcard; onPress: () => v
           {front}
         </Text>
         <View style={{ backgroundColor: `${status.color}22` }} className="px-2 py-0.5 rounded-full">
-          <Text style={{ color: status.color }} className="text-[10px] font-semibold">
+          <Text style={{ color: status.color }} className="text-label font-semibold">
             {status.label}
           </Text>
         </View>
@@ -110,11 +110,11 @@ function FlashcardPreview({ card, onPress }: { card: Flashcard; onPress: () => v
         <View className="flex-row flex-wrap items-center gap-1 mt-1.5" accessibilityLabel={`Tags: ${tags.join(', ')}`}>
           {tags.slice(0, MAX_PREVIEW_TAGS).map((tag) => (
             <View key={tag} className="px-1.5 py-0.5 rounded-full bg-lantern-background-secondary">
-              <Text className="text-[10px] text-lantern-text-secondary">#{tag}</Text>
+              <Text className="text-label text-lantern-text-secondary">#{tag}</Text>
             </View>
           ))}
           {tags.length > MAX_PREVIEW_TAGS ? (
-            <Text className="text-[10px] text-lantern-text-tertiary">+{tags.length - MAX_PREVIEW_TAGS}</Text>
+            <Text className="text-label text-lantern-text-tertiary">+{tags.length - MAX_PREVIEW_TAGS}</Text>
           ) : null}
         </View>
       ) : null}
@@ -698,7 +698,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
                 </Text>
               </View>
               <View className="items-center flex-1">
-                <Text className="text-xl font-bold text-lantern-primary">{stats.total}</Text>
+                <Text className="text-xl font-bold text-lantern-primary-text">{stats.total}</Text>
                 <Text className="text-[11px] text-lantern-text-secondary text-center mt-0.5">
                   {FLASHCARD_STAT_LABELS.total}
                 </Text>

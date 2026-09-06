@@ -212,7 +212,7 @@ export const ThemedButton: React.FC<ThemedButtonProps> = ({
     
     // Variant styles
     const variantStyles: Record<string, ViewStyle> = {
-      primary: { backgroundColor: colors.primary },
+      primary: { backgroundColor: colors.primaryFill },
       secondary: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
       ghost: { backgroundColor: 'transparent' },
       danger: { backgroundColor: colors.error },

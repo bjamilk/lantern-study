@@ -6,7 +6,13 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { segmentMentions } from '@lantern/shared/utils';
 import { COMMUNITY_BOARD_COPY } from '@lantern/shared/network';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { getFontScaleValue, RawText } from '../../theme/installFontScale';
 import { AppIcon } from '../ui/AppIcon';
+import {
+  resolveBodyTextStyle,
+  type ChatTypeStepName,
+  type TypeStep,
+} from './resolveBodyTextStyle';
 
 const IMAGE_MARKDOWN = /!\[.*?\]\((https?:\/\/[^)]+)\)/;
 
@@ -17,31 +23,52 @@ export function MentionText({
   text,
   color,
   mentionColor,
+  step = 'body',
 }: {
   text: string;
   color: string;
   mentionColor: string;
+  /** The type step this body reads at. One place decides the size. */
+  step?: ChatTypeStepName | TypeStep;
 }) {
   const segments = segmentMentions(text);
+  // Resolved once per body and passed down to every span EXPLICITLY.
+  //
+  // `className="text-sm"` here used to be the size, and it never reached the
+  // spans: `installFontScale` swaps RN's Text export, so a nested span with no
+  // style of its own got `fontSize: round(14 * fontScale)` stamped on it at any
+  // non-1 scale and fell back to RN's 14 sp default — chat and board bodies
+  // measured ~14 sp while the class claimed 12.25. Rendering through the
+  // unpatched RawText with an already-resolved style ends both problems: the
+  // size is deliberate (the `body` step, 15/22) and it cannot be scaled twice.
+  // The font-size setting still applies, because the scale is read here and a
+  // scale change remounts the tree (ThemeProvider's fontRevision key).
+  const bodyStyle = resolveBodyTextStyle(getFontScaleValue(), step);
   return (
     // Not a TalkBack stop of its own: every caller sits inside a bubble whose
     // row Pressable already announces the message text, so leaving this
     // important made each message read out twice back to back.
-    <Text
+    <RawText
       importantForAccessibility="no"
-      className="text-sm leading-relaxed"
-      style={{ color }}
+      allowFontScaling={false}
+      style={[bodyStyle, { color }]}
     >
       {segments.map((seg, i) =>
         seg.type === 'mention' ? (
-          <Text key={i} style={{ color: mentionColor, fontWeight: '700' }}>
+          <RawText
+            key={i}
+            allowFontScaling={false}
+            style={[bodyStyle, { color: mentionColor, fontWeight: '700' }]}
+          >
             {seg.value}
-          </Text>
+          </RawText>
         ) : (
-          <Text key={i}>{seg.value}</Text>
+          <RawText key={i} allowFontScaling={false} style={bodyStyle}>
+            {seg.value}
+          </RawText>
         )
       )}
-    </Text>
+    </RawText>
   );
 }
 

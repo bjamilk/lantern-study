@@ -196,7 +196,7 @@ export function OnboardingScreen({ onComplete }: Props) {
       <View className="px-6 pt-8">
         {step === 'welcome' && (
           <View className="items-center">
-            <View className="w-16 h-16 rounded-2xl bg-lantern-primary items-center justify-center mb-4">
+            <View className="w-16 h-16 rounded-2xl bg-lantern-primary-fill items-center justify-center mb-4">
               <AppIcon name="sparkles" size={32} color="#fff" />
             </View>
             <Text className={`text-2xl font-bold text-center mb-2 ${headingText}`}>Welcome to Lantern Study</Text>
@@ -219,7 +219,7 @@ export function OnboardingScreen({ onComplete }: Props) {
             {firstCourse ? (
               <View className="flex-row items-center gap-2 mb-3">
                 <AppIcon name="school" size={16} color="#6366f1" />
-                <Text className="text-xs font-semibold text-lantern-primary">
+                <Text className="text-xs font-semibold text-lantern-primary-text">
                   Filed under {formatCourseLabel(firstCourse)}
                 </Text>
               </View>
@@ -265,7 +265,7 @@ export function OnboardingScreen({ onComplete }: Props) {
 
         {step === 'done' && (
           <View className="items-center">
-            <View className="w-16 h-16 rounded-2xl bg-lantern-primary items-center justify-center mb-4">
+            <View className="w-16 h-16 rounded-2xl bg-lantern-primary-fill items-center justify-center mb-4">
               <AppIcon name="checkmark" size={32} color="#fff" />
             </View>
             <Text className={`text-2xl font-bold text-center mb-2 ${headingText}`}>You’re all set</Text>

@@ -455,7 +455,7 @@ export function ChatThreadModal({
           {aiThinking ? (
             <Text
               accessibilityLiveRegion="polite"
-              className="px-4 py-1 text-xs text-lantern-primary"
+              className="px-4 py-1 text-xs text-lantern-primary-text"
             >
               🤖 AI Tutor is thinking…
             </Text>

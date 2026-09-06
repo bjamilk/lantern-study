@@ -317,7 +317,7 @@ export default function BudgetScreen() {
               <Text className="text-xs font-medium text-lantern-accent">Spent {formatCurrency(monthExpenses)}</Text>
             </View>
             <View className="px-2.5 py-1 rounded-full bg-lantern-primary-background">
-              <Text className="text-xs font-medium text-lantern-primary">Net {formatCurrency(netAmount)}</Text>
+              <Text className="text-xs font-medium text-lantern-primary-text">Net {formatCurrency(netAmount)}</Text>
             </View>
           </View>
         </FeatureHero>
@@ -1166,7 +1166,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   chartCenterLabel: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#9ca3af',
   },
   legendContainer: {

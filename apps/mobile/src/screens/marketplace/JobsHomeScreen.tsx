@@ -91,7 +91,7 @@ function FilterChip({
       accessibilityState={{ selected: active }}
       className={`flex-row items-center gap-1 rounded-full border px-4 py-2 ${
         active
-          ? "border-lantern-primary bg-lantern-primary"
+          ? "border-lantern-primary bg-lantern-primary-fill"
           : "border-lantern-border bg-lantern-surface"
       }`}
     >
@@ -104,9 +104,9 @@ function FilterChip({
       </Text>
       {badge && badge > 0 ? (
         <View
-          className={`ml-0.5 rounded-full px-1.5 ${active ? "bg-white/25" : "bg-lantern-primary"}`}
+          className={`ml-0.5 rounded-full px-1.5 ${active ? "bg-white/25" : "bg-lantern-primary-fill"}`}
         >
-          <Text className="text-[10px] font-bold text-white">{badge}</Text>
+          <Text className="text-label font-bold text-white">{badge}</Text>
         </View>
       ) : null}
     </Pressable>
@@ -136,7 +136,7 @@ function SelectPill({
     >
       <Text
         className={`text-xs font-medium ${
-          active ? "text-lantern-primary" : "text-lantern-text-secondary"
+          active ? "text-lantern-primary-text" : "text-lantern-text-secondary"
         }`}
       >
         {label}
@@ -420,7 +420,7 @@ export function JobsHomeScreen() {
         right={
           <Pressable
             onPress={() => navigation.navigate("CreateJob")}
-            className="rounded-lg bg-lantern-primary px-3 py-2"
+            className="rounded-lg bg-lantern-primary-fill px-3 py-2"
           >
             <Text className="text-sm font-semibold text-white">Post job</Text>
           </Pressable>
@@ -460,7 +460,7 @@ export function JobsHomeScreen() {
               if (nextQuery === query) void load(1);
               else setQuery(nextQuery);
             }}
-            className="mt-2 h-11 items-center justify-center rounded-xl bg-lantern-primary"
+            className="mt-2 h-11 items-center justify-center rounded-xl bg-lantern-primary-fill"
           >
             <Text className="text-sm font-semibold text-white">
               Search jobs
@@ -477,7 +477,7 @@ export function JobsHomeScreen() {
                 size={16}
                 color="#0f766e"
               />
-              <Text className="text-sm font-semibold text-lantern-primary">
+              <Text className="text-sm font-semibold text-lantern-primary-text">
                 {savingSearch ? "Saving…" : "Save search & get alerts"}
               </Text>
             </Pressable>
@@ -506,7 +506,7 @@ export function JobsHomeScreen() {
               <AppIcon name={row.icon} size={18} color="#6366f1" />
               <Text
                 numberOfLines={2}
-                className="text-center text-[11px] font-semibold text-lantern-primary"
+                className="text-center text-[11px] font-semibold text-lantern-primary-text"
               >
                 {row.label}
               </Text>
@@ -708,7 +708,7 @@ export function JobsHomeScreen() {
                   setMinPay(minPayDraft);
                   setShowFilters(false);
                 }}
-                className="h-11 flex-1 items-center justify-center rounded-xl bg-lantern-primary"
+                className="h-11 flex-1 items-center justify-center rounded-xl bg-lantern-primary-fill"
               >
                 <Text className="text-sm font-semibold text-white">
                   Apply filters
@@ -719,7 +719,7 @@ export function JobsHomeScreen() {
                   onPress={clearFilters}
                   className="h-11 items-center justify-center rounded-xl border border-lantern-border px-4"
                 >
-                  <Text className="text-sm font-semibold text-lantern-primary">
+                  <Text className="text-sm font-semibold text-lantern-primary-text">
                     Clear
                   </Text>
                 </Pressable>
@@ -752,9 +752,9 @@ export function JobsHomeScreen() {
                   {savedSearchMatches[saved.id] ? (
                     <View
                       accessibilityLabel={`${savedSearchMatches[saved.id]} new matches`}
-                      className="rounded-full bg-lantern-primary px-1.5 py-0.5"
+                      className="rounded-full bg-lantern-primary-fill px-1.5 py-0.5"
                     >
-                      <Text className="text-[10px] font-bold text-white">
+                      <Text className="text-label font-bold text-white">
                         {savedSearchMatches[saved.id]}
                       </Text>
                     </View>
@@ -762,7 +762,7 @@ export function JobsHomeScreen() {
                   <Text
                     className={`text-sm font-semibold ${
                       activeSavedId === saved.id
-                        ? "text-lantern-primary"
+                        ? "text-lantern-primary-text"
                         : "text-lantern-text"
                     }`}
                   >
@@ -864,7 +864,7 @@ export function JobsHomeScreen() {
                         />
                       ) : (
                         <View className="h-12 w-12 items-center justify-center rounded-xl bg-lantern-primary/10">
-                          <Text className="text-lg font-bold text-lantern-primary">
+                          <Text className="text-lg font-bold text-lantern-primary-text">
                             {employer.charAt(0).toUpperCase()}
                           </Text>
                         </View>
@@ -875,12 +875,12 @@ export function JobsHomeScreen() {
                             {job.title}
                           </Text>
                           {job.hasApplied ? (
-                            <Text className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                            <Text className="rounded-full bg-emerald-100 px-2 py-0.5 text-label font-bold text-emerald-800">
                               APPLIED
                             </Text>
                           ) : null}
                           {job.isSponsored ? (
-                            <Text className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                            <Text className="rounded-full bg-amber-100 px-2 py-0.5 text-label font-bold text-amber-800">
                               FEATURED
                             </Text>
                           ) : null}
@@ -925,7 +925,7 @@ export function JobsHomeScreen() {
                       <Text className="rounded-full bg-lantern-background px-2 py-1 text-xs text-lantern-text-secondary">
                         {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]}
                       </Text>
-                      <Text className="rounded-full bg-lantern-primary/10 px-2 py-1 text-xs font-medium text-lantern-primary">
+                      <Text className="rounded-full bg-lantern-primary/10 px-2 py-1 text-xs font-medium text-lantern-primary-text">
                         {formatJobCompensation(job.compensation)}
                       </Text>
                       {duration ? (
@@ -941,7 +941,7 @@ export function JobsHomeScreen() {
                       {typeof job.applicationsCount === "number" &&
                       job.applicationsCount < 5 &&
                       !job.hasApplied ? (
-                        <Text className="rounded-full bg-lantern-primary/10 px-2 py-1 text-xs font-medium text-lantern-primary">
+                        <Text className="rounded-full bg-lantern-primary/10 px-2 py-1 text-xs font-medium text-lantern-primary-text">
                           Be an early applicant
                         </Text>
                       ) : null}
@@ -989,7 +989,7 @@ export function JobsHomeScreen() {
                 }}
                 className="mt-4 items-center"
               >
-                <Text className="text-sm font-semibold text-lantern-primary">
+                <Text className="text-sm font-semibold text-lantern-primary-text">
                   {view === "saved" ? "Browse jobs" : "Clear filters"}
                 </Text>
               </Pressable>
@@ -1005,7 +1005,7 @@ export function JobsHomeScreen() {
               {loadingMore ? (
                 <ActivityIndicator color="#0f766e" />
               ) : (
-                <Text className="text-sm font-semibold text-lantern-primary">
+                <Text className="text-sm font-semibold text-lantern-primary-text">
                   Load more jobs
                 </Text>
               )}

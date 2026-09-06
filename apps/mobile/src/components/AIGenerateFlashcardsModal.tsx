@@ -100,7 +100,7 @@ export default function AIGenerateFlashcardsModal({
               <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
-              <AppIcon name="sparkles" size={20} color={colors.primary} />
+              <AppIcon name="sparkles" size={20} color={colors.primaryText} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Generate Flashcards</Text>
             </View>
             <AIUsageBadge variant="badge" />
@@ -117,7 +117,7 @@ export default function AIGenerateFlashcardsModal({
                 <Text style={[styles.label, { color: colors.textSecondary }]}>
                   Paste your notes or lecture content
                 </Text>
-                <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
+                <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primaryText} />
                 <TextInput
                   style={[
                     styles.notesInput,
@@ -149,7 +149,7 @@ export default function AIGenerateFlashcardsModal({
                       style={[
                         styles.chip,
                         {
-                          backgroundColor: count === c ? colors.primary : colors.inputBackground,
+                          backgroundColor: count === c ? colors.primaryFill : colors.inputBackground,
                           borderColor: count === c ? colors.primary : colors.border,
                         },
                       ]}
@@ -171,7 +171,7 @@ export default function AIGenerateFlashcardsModal({
                       style={[
                         styles.chip,
                         {
-                          backgroundColor: style === s ? colors.primary : colors.inputBackground,
+                          backgroundColor: style === s ? colors.primaryFill : colors.inputBackground,
                           borderColor: style === s ? colors.primary : colors.border,
                         },
                       ]}
@@ -194,7 +194,7 @@ export default function AIGenerateFlashcardsModal({
 
                 {/* Generate */}
                 <TouchableOpacity
-                  style={[styles.generateBtn, { backgroundColor: colors.primary }, isAILoading && { opacity: 0.7 }]}
+                  style={[styles.generateBtn, { backgroundColor: colors.primaryFill }, isAILoading && { opacity: 0.7 }]}
                   onPress={handleGenerate}
                   disabled={isAILoading}
                 >
@@ -226,7 +226,7 @@ export default function AIGenerateFlashcardsModal({
                     >
                       <View style={styles.cardPreviewHeader}>
                         <View style={[styles.cardBadge, { backgroundColor: colors.primaryBackground }]}>
-                          <Text style={[styles.cardBadgeText, { color: colors.primary }]}>#{idx + 1}</Text>
+                          <Text style={[styles.cardBadgeText, { color: colors.primaryText }]}>#{idx + 1}</Text>
                         </View>
                         <AppIcon
                           name={isExpanded ? 'chevron-up' : 'chevron-down'}
@@ -244,7 +244,7 @@ export default function AIGenerateFlashcardsModal({
                           <Text style={[styles.cardBackLabel, { color: colors.textTertiary }]}>ANSWER</Text>
                           <Text style={[styles.cardBack, { color: colors.text }]}>{card.back}</Text>
                           {card.mnemonic && (
-                            <Text style={[styles.cardMnemonic, { color: colors.primary }]}>
+                            <Text style={[styles.cardMnemonic, { color: colors.primaryText }]}>
                               💡 {card.mnemonic}
                             </Text>
                           )}
@@ -269,7 +269,7 @@ export default function AIGenerateFlashcardsModal({
                     <Text style={[styles.actionBtnText, { color: colors.text }]}>Regenerate</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                    style={[styles.actionBtn, { backgroundColor: colors.primaryFill, borderColor: colors.primary }]}
                     onPress={handleUse}
                   >
                     <AppIcon name="add-circle" size={18} color="#fff" />
@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
   cardBadgeText: { fontSize: 12, fontWeight: '700' },
   cardFront: { fontSize: 15, lineHeight: 22, fontWeight: '500' },
   cardBackContainer: { marginTop: 10, padding: 10, borderRadius: 8 },
-  cardBackLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 },
+  cardBackLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 },
   cardBack: { fontSize: 14, lineHeight: 20 },
   cardMnemonic: { fontSize: 13, marginTop: 6, fontStyle: 'italic' },
   cardExample: { fontSize: 13, marginTop: 4 },

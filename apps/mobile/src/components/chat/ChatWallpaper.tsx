@@ -174,7 +174,7 @@ export function ChatWallpaperBusyOverlay() {
         accessibilityRole="progressbar"
         accessibilityLabel="Saving your chat background"
       >
-        <ActivityIndicator size="small" color={colors.primary} />
+        <ActivityIndicator size="small" color={colors.primaryText} />
         <Text className="text-sm font-medium" style={{ color: colors.text }}>
           Saving background…
         </Text>

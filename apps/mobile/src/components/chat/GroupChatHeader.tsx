@@ -187,7 +187,7 @@ export function GroupChatHeader({
     >
       <View className="w-6 items-center justify-center">
         {option.selected ? (
-          <AppIcon name="checkmark" size={20} color={colors.primary} />
+          <AppIcon name="checkmark" size={20} color={colors.primaryText} />
         ) : null}
       </View>
       <View className="flex-1">
@@ -251,7 +251,7 @@ export function GroupChatHeader({
               {displayName}
             </Text>
             {lowDataMode ? (
-              <Text className="text-[10px] text-amber-600">Low-data mode</Text>
+              <Text className="text-label text-amber-600">Low-data mode</Text>
             ) : contextLabel ? (
               <Pressable
                 onPress={onContextPress}
@@ -261,7 +261,7 @@ export function GroupChatHeader({
                 accessibilityLabel={`${contextLabel}, open community`}
                 className="self-start min-h-[24px] justify-center"
               >
-                <Text className="text-xs text-lantern-primary" style={{ color: colors.primary }} numberOfLines={1}>
+                <Text className="text-xs text-lantern-primary-text" style={{ color: colors.primaryText }} numberOfLines={1}>
                   {contextLabel} ›
                 </Text>
               </Pressable>
@@ -291,7 +291,7 @@ export function GroupChatHeader({
           accessibilityRole="button"
           accessibilityLabel="More actions"
         >
-          <AppIcon name="ellipsis-vertical" size={22} color={colors.primary} />
+          <AppIcon name="ellipsis-vertical" size={22} color={colors.primaryText} />
         </Pressable>
       </View>
 
@@ -322,7 +322,7 @@ export function GroupChatHeader({
                     accessibilityRole="button"
                     accessibilityLabel="Back to group actions"
                   >
-                    <AppIcon name="chevron-back" size={24} color={colors.primary} />
+                    <AppIcon name="chevron-back" size={24} color={colors.primaryText} />
                   </TouchableOpacity>
                   <Text
                     className="text-sm font-semibold text-lantern-text-secondary"
@@ -371,7 +371,7 @@ export function GroupChatHeader({
             )}
 
             <TouchableOpacity onPress={closeMenu} className="mt-3 py-3 items-center">
-              <Text className="text-base font-medium" style={{ color: colors.primary }}>
+              <Text className="text-base font-medium" style={{ color: colors.primaryText }}>
                 {submenu ? 'Done' : 'Cancel'}
               </Text>
             </TouchableOpacity>

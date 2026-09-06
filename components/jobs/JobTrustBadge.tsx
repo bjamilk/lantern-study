@@ -20,7 +20,7 @@ export function JobTrustBadge({
     <span
       className={`inline-flex items-center rounded-full border font-bold uppercase tracking-wide ${
         TONE_CLASS[trust.tone]
-      } ${compact ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-1 text-[10px]"}`}
+      } ${compact ? "px-1.5 py-0.5 text-[11px]" : "px-2 py-1 text-[10px]"}`}
     >
       {trust.kind === "verified_company" && !compact
         ? "Verified company"

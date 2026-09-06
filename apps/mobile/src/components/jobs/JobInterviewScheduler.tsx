@@ -204,7 +204,7 @@ export function JobInterviewScheduler({
             onPress={() => setFormOpen(true)}
             accessibilityRole="button"
           >
-            <Text className="text-xs font-semibold text-lantern-primary">
+            <Text className="text-xs font-semibold text-lantern-primary-text">
               {interviews.length ? "Propose new times" : "Schedule interview"}
             </Text>
           </Pressable>
@@ -234,7 +234,7 @@ export function JobInterviewScheduler({
                 accessibilityState={{ selected: mode === value }}
                 className={`rounded-full border px-3 py-1.5 ${
                   mode === value
-                    ? "border-lantern-primary bg-lantern-primary"
+                    ? "border-lantern-primary bg-lantern-primary-fill"
                     : "border-lantern-border"
                 }`}
               >
@@ -263,7 +263,7 @@ export function JobInterviewScheduler({
                 accessibilityState={{ selected: durationMinutes === value }}
                 className={`rounded-full border px-3 py-1.5 ${
                   durationMinutes === value
-                    ? "border-lantern-primary bg-lantern-primary"
+                    ? "border-lantern-primary bg-lantern-primary-fill"
                     : "border-lantern-border"
                 }`}
               >
@@ -335,7 +335,7 @@ export function JobInterviewScheduler({
               accessibilityRole="button"
               className="mt-2"
             >
-              <Text className="text-xs font-semibold text-lantern-primary">
+              <Text className="text-xs font-semibold text-lantern-primary-text">
                 Add another time
               </Text>
             </Pressable>
@@ -372,7 +372,7 @@ export function JobInterviewScheduler({
               disabled={saving}
               onPress={() => void submit()}
               accessibilityRole="button"
-              className={`rounded-lg bg-lantern-primary px-3 py-2 ${
+              className={`rounded-lg bg-lantern-primary-fill px-3 py-2 ${
                 saving ? "opacity-50" : ""
               }`}
             >
@@ -438,7 +438,7 @@ export function JobInterviewScheduler({
                   accessibilityRole="button"
                   className="mr-3"
                 >
-                  <Text className="text-xs font-semibold text-lantern-primary">
+                  <Text className="text-xs font-semibold text-lantern-primary-text">
                     Reschedule
                   </Text>
                 </Pressable>

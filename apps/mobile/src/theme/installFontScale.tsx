@@ -21,6 +21,17 @@ import {
 const BaseText = RNText;
 const BaseTextInput = RNTextInput;
 
+/**
+ * The UNPATCHED React Native Text, re-exported for the one case the patch
+ * cannot serve: a block that resolves its own size once and passes that
+ * resolved style down to nested spans (chat/board message bodies — see
+ * `components/chat/resolveBodyTextStyle.ts`). Rendering those through the
+ * patched export would scale an already-scaled size a second time, and letting
+ * their spans go unstyled is what made bodies fall back to RN's 14 sp default.
+ * Everything else must keep importing `Text` from 'react-native'.
+ */
+export const RawText = BaseText;
+
 let fontScale = 1;
 
 export function setFontScale(scale: number) {

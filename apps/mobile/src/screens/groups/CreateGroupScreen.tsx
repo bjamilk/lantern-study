@@ -435,7 +435,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                   {u.name}
                 </Text>
                 {u.username ? (
-                  <Text className="text-sm text-lantern-primary">@{u.username}</Text>
+                  <Text className="text-sm text-lantern-primary-text">@{u.username}</Text>
                 ) : null}
               </View>
               <AppIcon name="add-circle" size={22} color="#6366f1" />

@@ -142,7 +142,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
             <Pressable
               disabled={!selectedList.length || overCap || running}
               onPress={() => void run()}
-              className={`mt-4 rounded-xl bg-lantern-primary py-3 items-center ${
+              className={`mt-4 rounded-xl bg-lantern-primary-fill py-3 items-center ${
                 !selectedList.length || overCap || running ? 'opacity-50' : ''
               }`}
             >

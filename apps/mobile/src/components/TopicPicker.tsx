@@ -254,7 +254,7 @@ export function TopicPicker({
                 style={[styles.searchInput, { color: colors.inputText }]}
                 accessibilityLabel={COURSE_TOPIC_COPY.searchPlaceholderReadOnly}
               />
-              {loading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+              {loading ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
             </View>
 
             <ScrollView
@@ -292,7 +292,7 @@ export function TopicPicker({
                   >
                     {COURSE_TOPIC_COPY.none}
                   </Text>
-                  {!value ? <AppIcon name="checkmark-circle" size={18} color={colors.primary} /> : null}
+                  {!value ? <AppIcon name="checkmark-circle" size={18} color={colors.primaryText} /> : null}
                 </Pressable>
               ) : null}
 
@@ -313,11 +313,11 @@ export function TopicPicker({
                     accessibilityRole="button"
                     style={[styles.row, { borderBottomColor: colors.border, opacity: creating ? 0.6 : 1 }]}
                   >
-                    <AppIcon name="add-circle" size={18} color={colors.primary} />
-                    <Text style={[styles.rowText, { flex: 1, color: colors.primary, fontWeight: '600' }]}>
+                    <AppIcon name="add-circle" size={18} color={colors.primaryText} />
+                    <Text style={[styles.rowText, { flex: 1, color: colors.primaryText, fontWeight: '600' }]}>
                       {creating ? COURSE_TOPIC_COPY.adding : formatAddTopicOffer(addTitle)}
                     </Text>
-                    {creating ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+                    {creating ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
                   </Pressable>
                   {/* Creating a topic changes the outline for everyone on the
                       course. Say so before the tap, as web does — without it a
@@ -358,11 +358,11 @@ export function TopicPicker({
                     accessibilityLabel={COURSE_TOPIC_COPY.seed}
                     style={[styles.row, { borderBottomColor: colors.border, opacity: seeding ? 0.6 : 1 }]}
                   >
-                    <AppIcon name="sparkles" size={18} color={colors.primary} />
-                    <Text style={[styles.rowText, { flex: 1, color: colors.primary, fontWeight: '600' }]}>
+                    <AppIcon name="sparkles" size={18} color={colors.primaryText} />
+                    <Text style={[styles.rowText, { flex: 1, color: colors.primaryText, fontWeight: '600' }]}>
                       {COURSE_TOPIC_COPY.seed}
                     </Text>
-                    {seeding ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+                    {seeding ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
                   </Pressable>
                   <Text style={[styles.seedHint, { color: colors.textTertiary }]}>
                     {seededEmpty ? COURSE_TOPIC_COPY.seedEmpty : COURSE_TOPIC_COPY.seedHint}
@@ -403,7 +403,7 @@ function TopicRow({
       >
         {formatTopicLabel(topic)}
       </Text>
-      {selected ? <AppIcon name="checkmark-circle" size={18} color={colors.primary} /> : null}
+      {selected ? <AppIcon name="checkmark-circle" size={18} color={colors.primaryText} /> : null}
     </Pressable>
   );
 }

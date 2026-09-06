@@ -42,7 +42,7 @@ export function DashboardQuickLinks({ links }: DashboardQuickLinksProps) {
             <AppIcon name={link.icon} size={24} color={link.iconColor} />
             {link.badge != null && link.badge > 0 ? (
               <View className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-lantern-error items-center justify-center">
-                <Text className="text-[10px] font-bold text-white">
+                <Text className="text-label font-bold text-white">
                   {link.badge > 99 ? '99+' : link.badge}
                 </Text>
               </View>

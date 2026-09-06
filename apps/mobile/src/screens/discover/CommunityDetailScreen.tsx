@@ -677,7 +677,7 @@ function CommunityServer({
                 </Pressable>
               ) : null}
               {presenceLine ? (
-                <Text className="mt-2 text-[11px] text-lantern-primary">{presenceLine}</Text>
+                <Text className="mt-2 text-[11px] text-lantern-primary-text">{presenceLine}</Text>
               ) : null}
 
               <View className="flex-row items-center mt-3 mb-3">
@@ -685,7 +685,7 @@ function CommunityServer({
                   onPress={() => void toggleMembership()}
                   disabled={pending}
                   className={`min-h-[40px] justify-center rounded-lg px-4 ${
-                    community.isMember ? 'bg-lantern-background-secondary' : 'bg-lantern-primary'
+                    community.isMember ? 'bg-lantern-background-secondary' : 'bg-lantern-primary-fill'
                   }`}
                   style={{ opacity: pending ? 0.5 : 1 }}
                   accessibilityRole="button"

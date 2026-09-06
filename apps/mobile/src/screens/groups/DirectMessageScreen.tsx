@@ -119,12 +119,12 @@ function NewMessagesDivider({ pillStyle }: { pillStyle?: ViewStyle }) {
       <View className="flex-1 h-px" style={rule} />
       {pillStyle ? (
         <View className="px-3 py-1 rounded-full" style={pillStyle}>
-          <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+          <Text className="text-[11px] font-semibold" style={{ color: colors.primaryText }}>
             New messages
           </Text>
         </View>
       ) : (
-        <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+        <Text className="text-[11px] font-semibold" style={{ color: colors.primaryText }}>
           New messages
         </Text>
       )}
@@ -1315,7 +1315,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               </Text>
               <View className="flex-row items-center gap-1.5">
                 <Text
-                  className="text-[11px] font-bold text-lantern-primary"
+                  className="text-[11px] font-bold text-lantern-primary-text"
                   numberOfLines={1}
                 >
                   {inquiry.listing.price
@@ -1323,7 +1323,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                     : 'Free'}
                 </Text>
                 <Text
-                  className="text-[10px] text-lantern-text-secondary capitalize"
+                  className="text-label text-lantern-text-secondary capitalize"
                   numberOfLines={1}
                 >
                   · {inquiry.status}
@@ -1343,7 +1343,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                   className={`px-3 py-1.5 rounded-lg ${
-                    active ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+                    active ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary'
                   }`}
                 >
                   <Text
@@ -1377,7 +1377,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
                 finally { setOrderBusy(false); }
               }}
-              className="px-3 py-1.5 rounded-lantern bg-lantern-primary"
+              className="px-3 py-1.5 rounded-lantern bg-lantern-primary-fill"
             >
               <Text className="text-xs font-semibold text-white">Mark ready</Text>
             </Pressable>
@@ -1526,7 +1526,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Jump to pinned message"
               >
-                <AppIcon name="pin" size={14} color={colors.primary} />
+                <AppIcon name="pin" size={14} color={colors.primaryText} />
                 <Text className="flex-1 text-[12px] text-lantern-text" numberOfLines={1}>
                   {pinnedMessage.text || 'Pinned message'}
                 </Text>
@@ -1636,7 +1636,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                     isNearBottomRef.current = true;
                   }}
                   className="px-3 py-1.5 rounded-full"
-                  style={{ backgroundColor: colors.primary }}
+                  style={{ backgroundColor: colors.primaryFill }}
                 >
                   <Text className="text-xs font-semibold text-white">
                     ↓ {newMessagesBelow} new message{newMessagesBelow === 1 ? '' : 's'}
@@ -1683,7 +1683,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                   })();
                 }}
                 className="px-3 py-2 rounded-lg"
-                style={{ backgroundColor: colors.primary, opacity: dmRequestBusy ? 0.6 : 1 }}
+                style={{ backgroundColor: colors.primaryFill, opacity: dmRequestBusy ? 0.6 : 1 }}
               >
                 <Text className="text-sm font-semibold text-white">Accept</Text>
               </Pressable>

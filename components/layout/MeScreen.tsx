@@ -58,13 +58,13 @@ const Row: React.FC<{
     }`}
   >
     <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-    <span className="flex-1 min-w-0 text-sm font-medium">{label}</span>
+    <span className="flex-1 min-w-0 text-body font-medium">{label}</span>
     {badge != null && badge > 0 ? (
-      <span className="rounded-full bg-lantern-error px-2 py-0.5 text-[11px] font-semibold text-white">
+      <span className="rounded-full bg-lantern-error px-2 py-0.5 text-label tracking-normal text-white">
         {badge > 99 ? '99+' : badge}
       </span>
     ) : null}
-    {hint ? <span className="text-xs text-lantern-text-secondary">{hint}</span> : null}
+    {hint ? <span className="text-caption text-lantern-text-secondary">{hint}</span> : null}
     {!destructive ? (
       <ChevronRightIcon className="h-4 w-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
     ) : null}
@@ -86,12 +86,12 @@ const SwitchRow: React.FC<{
     className="flex w-full items-center gap-3 px-4 text-left transition-colors min-h-[52px] text-lantern-text hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
   >
     <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-    <span className="flex-1 min-w-0 text-sm font-medium">{label}</span>
+    <span className="flex-1 min-w-0 text-body font-medium">{label}</span>
     {/* Never colour alone: the knob's position says on/off as well as the fill. */}
     <span
       aria-hidden="true"
       className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-        checked ? 'bg-lantern-primary' : 'bg-lantern-border'
+        checked ? 'bg-lantern-primary-fill' : 'bg-lantern-border'
       }`}
     >
       <span
@@ -100,7 +100,7 @@ const SwitchRow: React.FC<{
         }`}
       />
     </span>
-    <span className="w-7 shrink-0 text-right text-xs font-semibold text-lantern-text-secondary">
+    <span className="w-7 shrink-0 text-right text-caption font-semibold tabular-nums text-lantern-text-secondary">
       {checked ? 'On' : 'Off'}
     </span>
   </button>
@@ -137,11 +137,11 @@ const MeScreen: React.FC<MeScreenProps> = ({
             localOnly={lowDataMode}
           />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-lg font-semibold text-lantern-text">{currentUser.name}</h1>
+            <h1 className="truncate text-title text-lantern-text">{currentUser.name}</h1>
             {currentUser.username ? (
-              <p className="truncate text-sm text-lantern-text-secondary">@{currentUser.username}</p>
+              <p className="truncate text-caption text-lantern-text-secondary">@{currentUser.username}</p>
             ) : null}
-            <p className="mt-0.5 text-xs text-lantern-text-secondary">
+            <p className="mt-0.5 text-caption text-lantern-text-secondary">
               {currentUser.points} points
             </p>
           </div>
@@ -154,8 +154,8 @@ const MeScreen: React.FC<MeScreenProps> = ({
         >
           <AcademicCapIcon className="h-5 w-5 shrink-0 text-lantern-text-secondary" aria-hidden="true" />
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium text-lantern-text">Academic details</span>
-            <span className="block truncate text-xs text-lantern-text-secondary">
+            <span className="block text-body font-medium text-lantern-text">Academic details</span>
+            <span className="block truncate text-caption text-lantern-text-secondary">
               {academicLine || 'Add your campus, programme and level'}
             </span>
           </span>

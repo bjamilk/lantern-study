@@ -114,7 +114,7 @@ export function CourseBrowseScreen({ navigation }: { navigation: NavigationProp 
 
         {loading ? (
           <View className="py-10 items-center">
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.primaryText} />
           </View>
         ) : error ? (
           <View className="py-10 items-center gap-3">

@@ -195,13 +195,13 @@ export default function NewDirectMessageModal({
       <View style={styles.contactInfo}>
         <Text style={[styles.contactName, { color: colors.text }]}>{item.name}</Text>
         {item.username ? (
-          <Text style={[styles.contactEmail, { color: colors.primary }]}>@{item.username}</Text>
+          <Text style={[styles.contactEmail, { color: colors.primaryText }]}>@{item.username}</Text>
         ) : item.email ? (
           <Text style={[styles.contactEmail, { color: colors.textSecondary }]}>{item.email}</Text>
         ) : null}
       </View>
 
-      <AppIcon name="chatbubble" size={20} color={colors.primary} />
+      <AppIcon name="chatbubble" size={20} color={colors.primaryText} />
     </TouchableOpacity>
   );
 
@@ -228,7 +228,7 @@ export default function NewDirectMessageModal({
     if (contactsLoading && !trimmedSearch) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={colors.primaryText} />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Loading contacts…</Text>
         </View>
       );
@@ -304,7 +304,7 @@ export default function NewDirectMessageModal({
 
           {isSearching && (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.primaryText} />
             </View>
           )}
 

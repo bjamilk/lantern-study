@@ -114,7 +114,7 @@ export function RequestError({
             accessibilityRole="button"
             accessibilityLabel={retryLabel}
             style={{ minHeight: 44, justifyContent: 'center' }}
-            className="rounded-xl bg-lantern-primary px-5 active:opacity-80"
+            className="rounded-xl bg-lantern-primary-fill px-5 active:opacity-80"
           >
             <Text className="text-sm font-semibold text-white">{retryLabel}</Text>
           </Pressable>

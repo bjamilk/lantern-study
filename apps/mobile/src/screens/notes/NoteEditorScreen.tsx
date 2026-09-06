@@ -1103,7 +1103,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 <Text className="text-sm font-medium text-lantern-text">
                   Linked YouTube video
                 </Text>
-                <Text className="text-xs text-lantern-primary mt-1">
+                <Text className="text-xs text-lantern-primary-text mt-1">
                   Tap to open in YouTube
                 </Text>
               </View>
@@ -1144,7 +1144,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 ) : null}
                 {youtubeTranscriptStatus === 'ready' && youtubeTranscriptText ? (
                   <Pressable onPress={() => setYoutubeTranscriptExpanded((v) => !v)}>
-                    <Text className="text-xs font-medium text-lantern-primary">
+                    <Text className="text-xs font-medium text-lantern-primary-text">
                       {youtubeTranscriptExpanded ? 'Hide' : 'Show'}
                     </Text>
                   </Pressable>
@@ -1339,7 +1339,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                   onPress={() => setSmartNotesDepth(value)}
                   className={`flex-1 px-2 py-1.5 rounded-lg border items-center ${
                     smartNotesDepth === value
-                      ? 'bg-lantern-primary border-lantern-primary'
+                      ? 'bg-lantern-primary-fill border-lantern-primary'
                       : 'bg-lantern-background border-lantern-border'
                   }`}
                 >

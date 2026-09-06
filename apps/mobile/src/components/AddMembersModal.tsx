@@ -140,8 +140,8 @@ export default function AddMembersModal({
         style={[styles.optionCard, { backgroundColor: colors.background, borderColor: colors.border }]}
         onPress={() => setView('search')}
       >
-        <View style={[styles.optionIconContainer, { backgroundColor: colors.primary + '20' }]}>
-          <AppIcon name="at" size={28} color={colors.primary} />
+        <View style={[styles.optionIconContainer, { backgroundColor: colors.primaryFill + '20' }]}>
+          <AppIcon name="at" size={28} color={colors.primaryText} />
         </View>
         <View style={styles.optionTextContainer}>
           <Text style={[styles.optionTitle, { color: colors.text }]}>Search by Username</Text>
@@ -202,7 +202,7 @@ export default function AddMembersModal({
 
       {isSearching ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.primaryText} />
         </View>
       ) : searchTerm.length < 2 ? (
         <View style={styles.emptyStateContainer}>
@@ -248,7 +248,7 @@ export default function AddMembersModal({
                     size={44}
                   />
                   {isSelected && (
-                    <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
+                    <View style={[styles.checkBadge, { backgroundColor: colors.primaryFill }]}>
                       <AppIcon name="checkmark" size={12} color="#fff" />
                     </View>
                   )}
@@ -256,7 +256,7 @@ export default function AddMembersModal({
                 <View style={styles.userInfo}>
                   <Text style={[styles.userName, { color: colors.text }]}>{item.name}</Text>
                   {item.displayUsername && (
-                    <Text style={[styles.userUsername, { color: colors.primary }]}>
+                    <Text style={[styles.userUsername, { color: colors.primaryText }]}>
                       {item.displayUsername}
                     </Text>
                   )}
@@ -279,7 +279,7 @@ export default function AddMembersModal({
         </TouchableOpacity>
         {selectedUserIds.length > 0 && (
           <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: colors.primary, flex: 1 }]}
+            style={[styles.addButton, { backgroundColor: colors.primaryFill, flex: 1 }]}
             onPress={handleAddSelected}
           >
             <Text style={styles.addButtonText}>
@@ -295,8 +295,8 @@ export default function AddMembersModal({
     <ScrollView style={styles.inviteView} showsVerticalScrollIndicator={false}>
       <GroupInviteLinkPanel groupName={groupName} inviteId={inviteId} />
 
-      <View style={[styles.infoBox, { backgroundColor: colors.primary + '15' }]}>
-        <AppIcon name="at" size={20} color={colors.primary} />
+      <View style={[styles.infoBox, { backgroundColor: colors.primaryFill + '15' }]}>
+        <AppIcon name="at" size={20} color={colors.primaryText} />
         <Text style={[styles.infoText, { color: colors.text }]}>
           Ask your friends for their @username and search for them directly to add them to the group.
         </Text>

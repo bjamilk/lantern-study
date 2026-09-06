@@ -77,7 +77,7 @@ export default function AIExplainModal({
           </View>
 
           <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-            <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
+            <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primaryText} />
           </View>
 
           <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -103,7 +103,7 @@ export default function AIExplainModal({
             <View style={[styles.explanationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               {isAILoading ? (
                 <View style={styles.loadingState}>
-                  <ActivityIndicator size="large" color={colors.primary} />
+                  <ActivityIndicator size="large" color={colors.primaryText} />
                   <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
                     AI is analyzing this question...
                   </Text>
@@ -113,7 +113,7 @@ export default function AIExplainModal({
                   <AppIcon name="alert-circle" size={24} color={colors.error} />
                   <Text style={[styles.errorText, { color: colors.error }]}>{aiError}</Text>
                   <TouchableOpacity
-                    style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+                    style={[styles.retryBtn, { backgroundColor: colors.primaryFill }]}
                     onPress={fetchExplanation}
                   >
                     <Text style={styles.retryBtnText}>Retry</Text>
@@ -122,8 +122,8 @@ export default function AIExplainModal({
               ) : explanation ? (
                 <>
                   <View style={styles.explanationHeader}>
-                    <AppIcon name="sparkles" size={16} color={colors.primary} />
-                    <Text style={[styles.explanationLabel, { color: colors.primary }]}>
+                    <AppIcon name="sparkles" size={16} color={colors.primaryText} />
+                    <Text style={[styles.explanationLabel, { color: colors.primaryText }]}>
                       AI Explanation
                     </Text>
                   </View>

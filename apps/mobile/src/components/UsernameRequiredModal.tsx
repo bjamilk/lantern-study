@@ -306,7 +306,7 @@ export default function UsernameRequiredModal({
           keyboardShouldPersistTaps="handled"
         >
           <View style={[styles.infoBox, { backgroundColor: colors.primaryLight || '#EBF5FF' }]}>
-            <AppIcon name="school" size={24} color={colors.primary} />
+            <AppIcon name="school" size={24} color={colors.primaryText} />
             <Text style={[styles.infoText, { color: colors.text }]}>{intro}</Text>
           </View>
 
@@ -358,7 +358,7 @@ export default function UsernameRequiredModal({
                                  colors.inputBorder,
                   },
                 ]}>
-                  <Text style={[styles.atSymbol, { color: colors.primary }]}>@</Text>
+                  <Text style={[styles.atSymbol, { color: colors.primaryText }]}>@</Text>
                   <TextInput
                     style={[styles.input, { color: colors.inputText }]}
                     placeholder="username"
@@ -375,7 +375,7 @@ export default function UsernameRequiredModal({
                     editable={!isSubmitting}
                   />
                   {checkingUsername && (
-                    <ActivityIndicator size="small" color={colors.primary} style={styles.inputIconRight} />
+                    <ActivityIndicator size="small" color={colors.primaryText} style={styles.inputIconRight} />
                   )}
                   {!checkingUsername && usernameAvailable === true && username.length >= 3 && (
                     <AppIcon name="checkmark-circle" size={20} color="#10B981" style={styles.inputIconRight} />
@@ -503,7 +503,7 @@ export default function UsernameRequiredModal({
           <TouchableOpacity
             style={[
               styles.submitButton,
-              { backgroundColor: colors.primary },
+              { backgroundColor: colors.primaryFill },
               submitDisabled && styles.buttonDisabled,
             ]}
             onPress={handleSubmit}

@@ -70,7 +70,7 @@ const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ cla
             </div>
             <span className={`text-[10px] font-bold ${textColor} flex-shrink-0`}>{remaining}</span>
           </div>
-          <p className="text-[9px] leading-tight text-lantern-text-secondary break-words">{resetLabel}</p>
+          <p className="text-[11px] leading-tight text-lantern-text-secondary break-words">{resetLabel}</p>
         </div>
       </div>
     );

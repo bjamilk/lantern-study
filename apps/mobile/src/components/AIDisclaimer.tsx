@@ -40,7 +40,7 @@ const styles = StyleSheet.create({
   text: { fontSize: 11, lineHeight: 16 },
   link: { textDecorationLine: 'underline' },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start' },
-  badgeText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  badgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
 });
 
 export default AIDisclaimer;

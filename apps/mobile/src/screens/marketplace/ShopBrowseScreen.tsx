@@ -100,7 +100,7 @@ export function ShopBrowseScreen({
                 accessibilityLabel={`Back to ${crumb.label}`}
                 className="py-1"
               >
-                <Text className="text-xs font-medium text-lantern-primary">{crumb.label}</Text>
+                <Text className="text-xs font-medium text-lantern-primary-text">{crumb.label}</Text>
               </Pressable>
               <Text className="px-1 text-xs text-lantern-text-tertiary">›</Text>
             </React.Fragment>
@@ -119,9 +119,9 @@ export function ShopBrowseScreen({
               onPress={() => shopNode(node)}
               accessibilityRole="button"
               accessibilityLabel={`See everything in ${node.label}`}
-              className="mx-4 mt-1 mb-3 px-4 py-3 rounded-xl bg-lantern-primary-background dark:bg-lantern-primary-dark/40"
+              className="mx-4 mt-1 mb-3 px-4 py-3 rounded-xl bg-lantern-primary-background"
             >
-              <Text className="text-sm font-semibold text-lantern-primary">
+              <Text className="text-sm font-semibold text-lantern-primary-text">
                 See everything in {node.label}
               </Text>
             </Pressable>

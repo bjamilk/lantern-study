@@ -90,7 +90,8 @@ export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCoun
         <Text
           numberOfLines={1}
           accessibilityRole="header"
-          className="flex-1 min-w-0 px-1 text-lg font-bold text-lantern-text"
+          // `heading` step: 17/24/-0.011em/600. `text-lg` was 15.75 sp here.
+          className="flex-1 min-w-0 px-1 text-heading font-semibold text-lantern-text"
         >
           {tabTitle(activeTab)}
         </Text>

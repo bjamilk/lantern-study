@@ -120,7 +120,7 @@ export function LeaderboardScreen() {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.primaryText} />
         </View>
       ) : error ? (
         <View className="flex-1 items-center justify-center px-6">
@@ -134,7 +134,7 @@ export function LeaderboardScreen() {
           keyExtractor={item => item.user.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listPadding }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.primaryText} />
           }
           onEndReached={onEndReached}
           onEndReachedThreshold={0.4}
@@ -150,7 +150,7 @@ export function LeaderboardScreen() {
           ListFooterComponent={
             loadingMore ? (
               <View className="py-4 items-center">
-                <ActivityIndicator size="small" color={colors.primary} />
+                <ActivityIndicator size="small" color={colors.primaryText} />
               </View>
             ) : null
           }

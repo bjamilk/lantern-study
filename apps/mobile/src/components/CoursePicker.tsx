@@ -237,7 +237,7 @@ export function CoursePicker({
                 style={[styles.searchInput, { color: colors.inputText }]}
                 accessibilityLabel="Search courses"
               />
-              {searching ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+              {searching ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
             </View>
 
             <ScrollView keyboardShouldPersistTaps="handled" style={styles.list} contentContainerStyle={styles.listContent}>
@@ -278,8 +278,8 @@ export function CoursePicker({
                   accessibilityRole="button"
                   style={[styles.row, { borderBottomColor: colors.border }]}
                 >
-                  <AppIcon name="add-circle" size={18} color={colors.primary} />
-                  <Text style={[styles.rowText, { color: colors.primary, fontWeight: '600' }]}>Add ‘{addCode}’</Text>
+                  <AppIcon name="add-circle" size={18} color={colors.primaryText} />
+                  <Text style={[styles.rowText, { color: colors.primaryText, fontWeight: '600' }]}>Add ‘{addCode}’</Text>
                 </Pressable>
               ) : null}
 
@@ -308,7 +308,7 @@ export function CoursePicker({
                       onPress={() => void submitCreate()}
                       disabled={creating}
                       accessibilityRole="button"
-                      style={[styles.createSubmit, { backgroundColor: colors.primary, opacity: creating ? 0.6 : 1 }]}
+                      style={[styles.createSubmit, { backgroundColor: colors.primaryFill, opacity: creating ? 0.6 : 1 }]}
                     >
                       {creating ? (
                         <ActivityIndicator size="small" color={colors.textInverse} />
@@ -357,7 +357,7 @@ function CourseRow({ course, selected, onPress }: { course: Course; selected: bo
           </Text>
         ) : null}
       </View>
-      {selected ? <AppIcon name="checkmark-circle" size={18} color={colors.primary} /> : null}
+      {selected ? <AppIcon name="checkmark-circle" size={18} color={colors.primaryText} /> : null}
     </Pressable>
   );
 }

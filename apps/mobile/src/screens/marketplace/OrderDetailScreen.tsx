@@ -280,7 +280,7 @@ export function OrderDetailScreen({
         keyboardShouldPersistTaps="handled"
       >
         <View className="p-4 rounded-xl bg-lantern-surface">
-          <Text className="text-2xl font-bold text-lantern-primary">{formatPrice(Number(order.amount))}</Text>
+          <Text className="text-2xl font-bold text-lantern-primary-text">{formatPrice(Number(order.amount))}</Text>
           {(order.quantity || 1) > 1 ? (
             <Text className="text-sm text-lantern-text-secondary mt-1">
               Qty {order.quantity} · unit{' '}
@@ -317,7 +317,7 @@ export function OrderDetailScreen({
                 <View
                   key={step}
                   className={`flex-1 h-2 rounded-full ${
-                    stepIndex >= i ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+                    stepIndex >= i ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary'
                   }`}
                 />
               ))}

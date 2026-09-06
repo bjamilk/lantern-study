@@ -463,7 +463,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     return (
       <Screen edges={['top']} bottom="safe" className="flex-1" style={shellStyle}>
         <View className="flex-1 items-center justify-center px-6">
-        <Text className="text-2xl font-bold text-lantern-primary mb-1" style={{ color: colors.primary }}>
+        <Text className="text-2xl font-bold text-lantern-primary-text mb-1" style={{ color: colors.primaryText }}>
           Session complete
         </Text>
         <Text
@@ -582,8 +582,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
 
       <View className="h-1 mx-4 rounded-full bg-lantern-background-secondary overflow-hidden mb-2">
         <View
-          className="h-full bg-lantern-primary rounded-full"
-          style={{ width: `${(progress / sessionTotal) * 100}%`, backgroundColor: colors.primary }}
+          className="h-full bg-lantern-primary-fill rounded-full"
+          style={{ width: `${(progress / sessionTotal) * 100}%`, backgroundColor: colors.primaryFill }}
         />
       </View>
 

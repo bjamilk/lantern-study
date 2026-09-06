@@ -185,9 +185,9 @@ export function BoardComposer({
       {attachingImage || attachedImageUrl ? (
         <View className="mx-3 mt-2 flex-row items-center rounded-2xl border border-lantern-border bg-lantern-surface px-3 py-1.5">
           {attachingImage ? (
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.primaryText} />
           ) : (
-            <AppIcon name="image" size={16} color={colors.primary} />
+            <AppIcon name="image" size={16} color={colors.primaryText} />
           )}
           <Text
             accessibilityLiveRegion="polite"
@@ -216,7 +216,7 @@ export function BoardComposer({
           accessibilityRole="button"
           accessibilityLabel={COMMUNITY_BOARD_COPY.post}
           accessibilityState={{ disabled: sending, busy: sending }}
-          className="mx-3 mt-2 min-h-[44px] items-center justify-center rounded-2xl bg-lantern-primary"
+          className="mx-3 mt-2 min-h-[44px] items-center justify-center rounded-2xl bg-lantern-primary-fill"
           style={{ opacity: sending ? 0.6 : 1 }}
         >
           <Text className="text-sm font-semibold text-white">

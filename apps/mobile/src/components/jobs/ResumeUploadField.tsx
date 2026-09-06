@@ -96,7 +96,7 @@ export function ResumeUploadField({ profile, onUploaded }: Props) {
           ) : (
             <AppIcon name="document-text" size={26} color="#94a3b8" />
           )}
-          <Text className="text-sm font-semibold text-lantern-primary">
+          <Text className="text-sm font-semibold text-lantern-primary-text">
             {uploading ? "Uploading…" : "Upload your resume"}
           </Text>
           <Text className="text-xs text-lantern-text-tertiary">

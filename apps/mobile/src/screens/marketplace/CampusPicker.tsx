@@ -95,7 +95,7 @@ export function CampusPicker({
                   !value ? 'bg-lantern-primary-background' : ''
                 }`}
               >
-                <Text className={`text-sm ${!value ? 'font-semibold text-lantern-primary' : 'text-lantern-text'}`}>
+                <Text className={`text-sm ${!value ? 'font-semibold text-lantern-primary-text' : 'text-lantern-text'}`}>
                   {emptyLabel}
                 </Text>
               </Pressable>
@@ -121,7 +121,7 @@ export function CampusPicker({
                       selected ? 'bg-lantern-primary-background' : ''
                     }`}
                   >
-                    <Text className={`text-sm ${selected ? 'font-semibold text-lantern-primary' : 'text-lantern-text'}`}>
+                    <Text className={`text-sm ${selected ? 'font-semibold text-lantern-primary-text' : 'text-lantern-text'}`}>
                       {campus.name}
                     </Text>
                     <Text className="text-xs text-lantern-text-secondary mt-0.5">

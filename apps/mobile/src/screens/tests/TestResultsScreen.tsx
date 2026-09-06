@@ -28,6 +28,9 @@ import {
 } from '../../utils/testAnalysisHelpers';
 import type { RecentTest } from '../../types/dashboardStats';
 import { AppIcon } from '../../components/ui/AppIcon';
+// Wave T: the six type steps replace this file's eleven ad-hoc sizes. The
+// score numeral is `display` + tabular-nums so it does not reflow as it lands.
+import { typeScale, tabularNums } from '../../design/typeScale';
 import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
 import { toTab } from '../../navigation/nestedTab';
 import {
@@ -289,7 +292,7 @@ export default function TestResultsScreen() {
         <View style={styles.errorContainer}>
           <Text style={[styles.errorText, { color: colors.textSecondary }]}>Results not found</Text>
           <TouchableOpacity onPress={dismissResults}>
-            <Text style={[styles.errorLink, { color: colors.primary }]}>Go Back</Text>
+            <Text style={[styles.errorLink, { color: colors.primaryText }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </Screen>
@@ -466,7 +469,7 @@ export default function TestResultsScreen() {
             not covered. The stats read as well in either order; a primary
             action that needs a scroll to be discovered does not. */}
         <TouchableOpacity
-          style={[styles.analysisButton, { backgroundColor: colors.primary }]}
+          style={[styles.analysisButton, { backgroundColor: colors.primaryFill }]}
           onPress={openDetailedAnalysis}
           accessibilityRole="button"
           accessibilityLabel="View detailed analysis of this test"
@@ -493,7 +496,7 @@ export default function TestResultsScreen() {
             <Text style={styles.statLabel}>Points</Text>
           </View>
           <View style={styles.statCard}>
-            <AppIcon name="time" size={24} color="#6366f1" />
+            <AppIcon name="time" size={24} color={colors.primaryText} />
             <Text style={styles.statValue}>{formatTime(attempt.timeSpent)}</Text>
             <Text style={styles.statLabel}>Time</Text>
           </View>
@@ -582,7 +585,7 @@ export default function TestResultsScreen() {
                     setShowExplain(true);
                   }}
                 >
-                  <AppIcon name="sparkles" size={14} color="#6366f1" />
+                  <AppIcon name="sparkles" size={14} color={colors.primaryText} />
                   <Text style={styles.explainButtonText}>Explain</Text>
                 </TouchableOpacity>
               )}
@@ -648,7 +651,7 @@ export default function TestResultsScreen() {
           <AppIcon
             name="refresh"
             size={20}
-            color={retakeBlocked ? colors.textSecondary : '#6366f1'}
+            color={retakeBlocked ? colors.textSecondary : colors.primaryText}
           />
           {/* The label carries the state too — never colour alone. */}
           <Text
@@ -689,7 +692,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     padding: 4,
   },
   headerTitle: {
-    fontSize: 18,
+    ...typeScale.heading,
     fontWeight: '600',
     color: c.text,
   },
@@ -717,14 +720,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     marginBottom: 16,
   },
   testName: {
-    fontSize: 20,
+    ...typeScale.title,
     fontWeight: '600',
     color: c.text,
     marginBottom: 8,
     textAlign: 'center',
   },
   resultStatus: {
-    fontSize: 24,
+    ...typeScale.title,
     fontWeight: 'bold',
     marginBottom: 20,
   },
@@ -738,16 +741,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     marginBottom: 16,
   },
   scorePercentage: {
-    fontSize: 32,
+    ...typeScale.display,
+    ...tabularNums,
     fontWeight: 'bold',
     color: c.text,
   },
   scoreLabel: {
-    fontSize: 14,
+    ...typeScale.caption,
     color: c.textSecondary,
   },
   dateText: {
-    fontSize: 14,
+    ...typeScale.caption,
     color: '#6b7280',
   },
   statsGrid: {
@@ -765,13 +769,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 20,
+    ...typeScale.title,
+    ...tabularNums,
     fontWeight: 'bold',
     color: c.text,
     marginTop: 8,
   },
   statLabel: {
-    fontSize: 12,
+    ...typeScale.caption,
     color: c.textSecondary,
     marginTop: 4,
   },
@@ -786,14 +791,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   analysisButtonText: {
     color: '#fff',
-    fontSize: 15,
+    ...typeScale.body,
     fontWeight: '700',
   },
   progressSection: {
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 18,
+    ...typeScale.heading,
     fontWeight: '600',
     color: c.text,
     marginBottom: 16,
@@ -835,7 +840,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: 5,
   },
   progressLabelText: {
-    fontSize: 14,
+    ...typeScale.caption,
     color: c.textSecondary,
   },
   reviewSection: {
@@ -861,17 +866,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
   },
   questionNumber: {
-    fontSize: 14,
+    ...typeScale.body,
     fontWeight: '600',
     color: c.text,
     marginBottom: 2,
   },
   questionAnswer: {
-    fontSize: 12,
+    ...typeScale.caption,
     color: c.textSecondary,
   },
   questionStem: {
-    fontSize: 13,
+    ...typeScale.body,
     color: c.text,
     marginBottom: 4,
   },
@@ -879,18 +884,19 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: '#fca5a5',
   },
   questionCorrectAnswer: {
-    fontSize: 12,
+    ...typeScale.caption,
     color: '#86efac',
     marginTop: 2,
   },
   questionExplanation: {
-    fontSize: 12,
+    ...typeScale.caption,
     color: c.textSecondary,
     marginTop: 4,
     fontStyle: 'italic',
   },
   questionPoints: {
-    fontSize: 16,
+    ...typeScale.body,
+    ...tabularNums,
     fontWeight: '700',
   },
   explainButton: {
@@ -900,13 +906,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#6366f120',
+    backgroundColor: c.primaryBackground,
     marginRight: 8,
   },
   explainButtonText: {
-    fontSize: 12,
+    ...typeScale.caption,
     fontWeight: '600',
-    color: '#6366f1',
+    color: c.primaryText,
   },
   bottomActions: {
     flexDirection: 'row',
@@ -930,7 +936,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     marginBottom: 4,
   },
   practiceFailedButtonText: {
-    fontSize: 16,
+    ...typeScale.body,
     fontWeight: '600',
     color: c.success,
   },
@@ -950,7 +956,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: '#6366f120',
+    backgroundColor: c.primaryBackground,
   },
   retryButtonDisabled: {
     // Muted fill AND a changed label ("Cannot retake") — the state never rests
@@ -958,14 +964,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.backgroundSecondary,
   },
   retryButtonText: {
-    fontSize: 16,
+    ...typeScale.body,
     fontWeight: '600',
-    color: '#6366f1',
+    color: c.primaryText,
   },
   retakeNotice: {
     width: '100%',
-    fontSize: 13,
-    lineHeight: 18,
+    ...typeScale.caption,
   },
   doneButton: {
     flexGrow: 1,
@@ -975,12 +980,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
+    // Build 153: this was a hardcoded #6366f1 and the white label sat at
+    // 4.45:1. `primaryFill` is the token whose contract is "white reads on me".
+    backgroundColor: c.primaryFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   doneButtonText: {
-    fontSize: 16,
+    ...typeScale.body,
     fontWeight: '600',
     color: '#ffffff',
   },
@@ -990,13 +997,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    fontSize: 18,
+    ...typeScale.heading,
     color: c.textSecondary,
     marginBottom: 16,
   },
   errorLink: {
-    fontSize: 16,
-    color: '#6366f1',
+    ...typeScale.body,
+    color: c.primaryText,
     fontWeight: '600',
   },
 });

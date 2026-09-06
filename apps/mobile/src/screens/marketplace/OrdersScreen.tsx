@@ -211,7 +211,7 @@ export function OrdersScreen({
               onPress={() => switchRole(r)}
               accessibilityRole="button"
               accessibilityState={{ selected: role === r }}
-              className={`px-4 py-2 rounded-full ${role === r ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface'}`}
+              className={`px-4 py-2 rounded-full ${role === r ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary dark:bg-lantern-surface'}`}
             >
               <Text className={role === r ? 'text-white font-semibold' : 'text-lantern-text-secondary'}>
                 {r === 'buyer' ? 'Buying' : 'Selling'}
@@ -273,7 +273,7 @@ export function OrdersScreen({
                       {item.listing?.title || 'Listing'}
                     </Text>
                     <View className="flex-row items-center gap-2 mt-1">
-                      <Text className="text-lantern-primary font-bold">
+                      <Text className="text-lantern-primary-text font-bold">
                         {formatPrice(Number(item.amount))}
                       </Text>
                       {(item.quantity || 1) > 1 ? (

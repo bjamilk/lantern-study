@@ -119,7 +119,7 @@ export function BoardActionRow({
     bookmark: {
       icon: 'bookmark',
       active: bookmarked,
-      activeColor: colors.primary,
+      activeColor: colors.primaryText,
       label: boardBookmarkAccessibilityLabel(bookmarked),
       onPress: onBookmark,
       hidden: !bookmarksSupported,

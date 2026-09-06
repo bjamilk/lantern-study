@@ -271,7 +271,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {loading ? <ActivityIndicator color={colors.primary} style={{ marginBottom: 12 }} /> : null}
+        {loading ? <ActivityIndicator color={colors.primaryText} style={{ marginBottom: 12 }} /> : null}
 
         {/* Identity */}
         <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Your university</Text>
@@ -350,7 +350,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
             onPress={() => void handleSaveProfile()}
             disabled={saving || loading}
             accessibilityRole="button"
-            style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: saving || loading ? 0.6 : 1 }]}
+            style={[styles.primaryButton, { backgroundColor: colors.primaryFill, opacity: saving || loading ? 0.6 : 1 }]}
           >
             {saving ? (
               <ActivityIndicator color={colors.textInverse} />
@@ -363,7 +363,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         {/* My courses */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>My courses · {academicYear}</Text>
-          {coursesLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+          {coursesLoading ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
         </View>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.label, { color: colors.textSecondary }]}>Add a course</Text>
@@ -428,7 +428,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
                     accessibilityLabel={`Save exam date for ${row.course.code}`}
                     style={[
                       styles.examSave,
-                      { backgroundColor: dirty ? colors.primary : colors.inputBackground, borderColor: colors.inputBorder },
+                      { backgroundColor: dirty ? colors.primaryFill : colors.inputBackground, borderColor: colors.inputBorder },
                     ]}
                   >
                     {savingExamFor === row.course.id ? (
@@ -449,7 +449,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
             style={[styles.secondaryButton, { borderColor: colors.border, opacity: archiving ? 0.6 : 1 }]}
           >
             {archiving ? (
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.primaryText} />
             ) : (
               <>
                 <AppIcon name="archive" size={16} color={colors.textSecondary} />

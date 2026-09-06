@@ -25,8 +25,8 @@ export const DashboardStatGrid: React.FC<DashboardStatGridProps> = ({ items }) =
             {item.icon}
           </div>
           <div className="min-w-0">
-            <p className="text-xs text-lantern-text-secondary truncate">{item.label}</p>
-            <p className="text-2xl font-bold text-lantern-text">{item.value}</p>
+            <p className="text-caption text-lantern-text-secondary truncate">{item.label}</p>
+            <p className="text-display tabular-nums text-lantern-text">{item.value}</p>
           </div>
         </div>
       </div>

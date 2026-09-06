@@ -102,7 +102,7 @@ function DmBubbleComponent({
             accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
             className="mt-1.5"
           >
-            <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+            <Text className="text-xs font-semibold" style={{ color: colors.primaryText }}>
               {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
             </Text>
           </Pressable>
@@ -148,7 +148,7 @@ function DmBubbleComponent({
             <Text
               importantForAccessibility="no"
               className="text-xs font-semibold"
-              style={{ color: colors.primary }}
+              style={{ color: colors.primaryText }}
             >
               {senderName?.trim() || 'Member'}
             </Text>
@@ -216,7 +216,7 @@ function DmBubbleComponent({
             ) : null}
             <Text
               importantForAccessibility="no"
-              className="text-[10px]"
+              className="text-label"
               style={{ color: isOwn ? colors.chatBubbleMeta : colors.textTertiary }}
             >
               {timeLabel}
@@ -224,7 +224,7 @@ function DmBubbleComponent({
             {message.editedAt ? (
               <Text
                 importantForAccessibility="no"
-                className="text-[10px] ml-1"
+                className="text-label ml-1"
                 style={{ color: isOwn ? colors.chatBubbleMeta : colors.textTertiary }}
               >
                 edited
@@ -233,7 +233,7 @@ function DmBubbleComponent({
             {isOwn && message.deliveryState === 'pending' ? (
               <Text
                 importantForAccessibility="no"
-                className="text-[10px] ml-1"
+                className="text-label ml-1"
                 style={{ color: colors.chatBubbleMeta }}
               >
                 Sending…
@@ -246,7 +246,7 @@ function DmBubbleComponent({
                 accessibilityLabel="Message not sent. Tap to retry."
                 className="ml-1"
               >
-                <Text className="text-[10px] font-semibold" style={{ color: colors.error }}>
+                <Text className="text-label font-semibold" style={{ color: colors.error }}>
                   Not sent · Retry
                 </Text>
               </Pressable>
@@ -266,7 +266,7 @@ function DmBubbleComponent({
             accessibilityRole="button"
             accessibilityLabel={`${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}, open thread`}
           >
-            <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+            <Text className="text-xs font-semibold" style={{ color: colors.primaryText }}>
               {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
             </Text>
           </Pressable>

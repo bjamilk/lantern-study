@@ -87,10 +87,10 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                   <ClockIcon className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="font-semibold text-lantern-text">
+                  <p className="text-heading text-lantern-text">
                     {activeTestSession ? 'Test paused' : 'Study session paused'}
                   </p>
-                  <p className="text-sm text-lantern-text-secondary">
+                  <p className="text-caption text-lantern-text-secondary">
                     Pick up where you left off — progress is saved to your account when online
                   </p>
                 </div>
@@ -106,10 +106,10 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
         <Card padding="lg">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-lantern-text">
+              <h2 className="text-heading text-lantern-text">
                 {dueCardsCount > 0 ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review` : 'All caught up!'}
               </h2>
-              <p className="text-sm text-lantern-text-secondary mt-1">
+              <p className="text-caption text-lantern-text-secondary mt-1">
                 {dueCardsCount > 0
                   ? 'Spaced repetition keeps knowledge fresh — review when cards are ready.'
                   : 'Create or import material, then come back when cards are ready.'}
@@ -128,7 +128,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-lantern-border">
             <StatPill label="Decks" value={decks.length} accent="primary" icon={<RectangleStackIcon className="w-4 h-4" />} />
             {recentTestCount > 0 && onViewRecentTests && (
-              <button type="button" onClick={onViewRecentTests} className="text-sm text-lantern-primary font-medium hover:underline">
+              <button type="button" onClick={onViewRecentTests} className="text-body text-lantern-primary-text font-medium hover:underline">
                 {recentTestCount} recent test{recentTestCount !== 1 ? 's' : ''}
               </button>
             )}
@@ -141,9 +141,9 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             onClick={onOpenAITools}
             className="text-left p-4 rounded-xl border border-lantern-border bg-lantern-surface hover:border-lantern-primary transition-colors"
           >
-            <SparklesIcon className="w-6 h-6 text-lantern-primary mb-2" />
-            <p className="font-semibold text-lantern-text">AI Tools</p>
-            <p className="text-xs text-lantern-text-secondary mt-1">Import PDFs, paste notes, generate flashcards</p>
+            <SparklesIcon className="w-6 h-6 text-lantern-primary-text mb-2" />
+            <p className="text-heading text-lantern-text">AI Tools</p>
+            <p className="text-caption text-lantern-text-secondary mt-1">Import PDFs, paste notes, generate flashcards</p>
           </button>
           <button
             type="button"
@@ -151,14 +151,14 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             className="text-left p-4 rounded-xl border border-lantern-border bg-lantern-surface hover:border-lantern-primary transition-colors"
           >
             <RectangleStackIcon className="w-6 h-6 text-emerald-600 mb-2" />
-            <p className="font-semibold text-lantern-text">Library</p>
-            <p className="text-xs text-lantern-text-secondary mt-1">Browse notes and flashcard decks</p>
+            <p className="text-heading text-lantern-text">Library</p>
+            <p className="text-caption text-lantern-text-secondary mt-1">Browse notes and flashcard decks</p>
           </button>
         </div>
 
         {topDecks.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold text-lantern-text-secondary uppercase tracking-wide mb-3">{deckSectionLabel}</h3>
+            <h3 className="text-label text-lantern-text-secondary uppercase mb-3">{deckSectionLabel}</h3>
             <div className="space-y-2">
               {topDecks.map((deck) => {
                 const dueCount = getDeckDueCount(deck.id);
@@ -170,8 +170,8 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                   className="flex items-center justify-between gap-3 p-3 rounded-xl border border-lantern-border bg-lantern-surface"
                 >
                   <button type="button" onClick={() => onSelectDeck(deck)} className="text-left min-w-0 flex-1">
-                    <p className="font-medium text-lantern-text truncate">{deck.name}</p>
-                    <p className="text-xs text-lantern-text-secondary truncate">{deck.description || 'Flashcard deck'}</p>
+                    <p className="text-body font-semibold text-lantern-text truncate">{deck.name}</p>
+                    <p className="text-caption text-lantern-text-secondary truncate">{deck.description || 'Flashcard deck'}</p>
                   </button>
                   {canStartSrsReview ? (
                     <div className="flex items-center gap-2 flex-shrink-0">

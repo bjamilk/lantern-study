@@ -813,7 +813,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
               key={preset}
               onPress={() => setSaleEndsPreset(preset)}
               className={`px-3 py-1.5 rounded-lg border ${
-                saleEndsPreset === preset ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+                saleEndsPreset === preset ? 'bg-lantern-primary-fill border-lantern-primary' : 'border-lantern-border'
               }`}
             >
               <Text className={`text-xs font-medium ${saleEndsPreset === preset ? 'text-white' : 'text-lantern-text-secondary'}`}>
@@ -853,7 +853,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
             onPress={handleGenerateDescription}
             disabled={generatingDesc || !title.trim()}
             className={`flex-row items-center px-3 py-1.5 rounded-lg ${
-              generatingDesc || !title.trim() ? 'bg-lantern-border' : 'bg-lantern-primary'
+              generatingDesc || !title.trim() ? 'bg-lantern-border' : 'bg-lantern-primary-fill'
             }`}
           >
             {generatingDesc ? (

@@ -18,6 +18,10 @@ import {
 } from '@lantern/shared/utils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { AppIcon } from '../ui/AppIcon';
+import { useTheme } from '../../theme';
+// Wave T: the axis labels were the app's smallest strings (9 sp) AND its only
+// hardcoded chart ink. Both come from the scale and the theme now.
+import { typeScale } from '../../design/typeScale';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
@@ -136,6 +140,7 @@ function buildHierarchicalOptions(
 
 export function GroupPerformanceChartCard({ groups, testResults }: GroupPerformanceChartCardProps) {
   const lowDataMode = useSettingsStore((s) => s.settings.appearance.lowDataMode);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -355,7 +360,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
     <Card className="mb-4">
       <View className="flex-row items-center gap-2 mb-2">
         <AppIcon name="stats-chart" size={16} color="#4f46e5" />
-        <Text className="text-sm font-semibold text-lantern-text">Group performance</Text>
+        <Text className="text-body font-semibold text-lantern-text">Group performance</Text>
       </View>
 
       <View className="flex-row flex-wrap gap-1.5 mb-3">
@@ -369,11 +374,11 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
               accessibilityState={{ selected: active }}
               accessibilityLabel={opt.label}
               className={`px-2.5 py-1.5 rounded-lg min-h-[36px] justify-center ${
-                active ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+                active ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary'
               }`}
             >
               <Text
-                className={`text-xs font-semibold ${
+                className={`text-caption font-semibold ${
                   active ? 'text-white' : 'text-lantern-text-secondary'
                 }`}
               >
@@ -390,7 +395,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
           disabled={options.length === 0}
           className="flex-1 min-w-[140px] flex-row items-center justify-between px-3 py-2 rounded-xl border border-lantern-border bg-lantern-surface"
         >
-          <Text className="text-sm text-lantern-text flex-1 pr-2" numberOfLines={1}>
+          <Text className="text-body text-lantern-text flex-1 pr-2" numberOfLines={1}>
             {options.length === 0 ? 'No group data' : buttonLabel}
           </Text>
           <AppIcon name="chevron-down" size={16} color="#94a3b8" />
@@ -399,10 +404,10 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
           <View className="flex-row rounded-xl overflow-hidden border border-lantern-border">
             <Pressable
               onPress={() => setDisplayMode('timeline')}
-              className={`px-3 py-2 ${displayMode === 'timeline' ? 'bg-lantern-primary' : 'bg-lantern-surface'}`}
+              className={`px-3 py-2 ${displayMode === 'timeline' ? 'bg-lantern-primary-fill' : 'bg-lantern-surface'}`}
             >
               <Text
-                className={`text-xs font-semibold ${
+                className={`text-caption font-semibold ${
                   displayMode === 'timeline' ? 'text-white' : 'text-lantern-text-secondary'
                 }`}
               >
@@ -411,10 +416,10 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
             </Pressable>
             <Pressable
               onPress={() => setDisplayMode('weekly')}
-              className={`px-3 py-2 ${displayMode === 'weekly' ? 'bg-lantern-primary' : 'bg-lantern-surface'}`}
+              className={`px-3 py-2 ${displayMode === 'weekly' ? 'bg-lantern-primary-fill' : 'bg-lantern-surface'}`}
             >
               <Text
-                className={`text-xs font-semibold ${
+                className={`text-caption font-semibold ${
                   displayMode === 'weekly' ? 'text-white' : 'text-lantern-text-secondary'
                 }`}
               >
@@ -426,42 +431,42 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       </View>
 
       {isMulti ? (
-        <Text className="text-[11px] text-lantern-text-tertiary mb-2">
+        <Text className="text-caption text-lantern-text-tertiary mb-2">
           Comparing multiple groups uses weekly averages so different test dates line up.
         </Text>
       ) : null}
       {includesParentRollup ? (
-        <Text className="text-[11px] text-lantern-text-tertiary mb-2">
+        <Text className="text-caption text-lantern-text-tertiary mb-2">
           Parent includes subgroup tests in its series.
         </Text>
       ) : null}
 
       {options.length === 0 ? (
-        <Text className="text-sm text-lantern-text-tertiary py-4 text-center">
+        <Text className="text-body text-lantern-text-tertiary py-4 text-center">
           {periodResults.length === 0
             ? 'No group tests in this period. Try a wider range or All.'
             : 'Take a test in an active group to see performance here.'}
         </Text>
       ) : selectedSeries.length === 0 ? (
-        <Text className="text-sm text-lantern-text-tertiary py-4 text-center">
+        <Text className="text-body text-lantern-text-tertiary py-4 text-center">
           Select one or more groups to view the chart.
         </Text>
       ) : (
         <>
           <View className="flex-row border border-lantern-border rounded-xl mb-3 overflow-hidden">
             <View className="flex-1 items-center py-2">
-              <Text className="text-[10px] text-lantern-text-secondary">Tests</Text>
-              <Text className="text-base font-bold text-lantern-text">{summary.testCount}</Text>
+              <Text className="text-label text-lantern-text-secondary">Tests</Text>
+              <Text className="text-heading font-bold text-lantern-text">{summary.testCount}</Text>
             </View>
             <View className="flex-1 items-center py-2 border-l border-lantern-border">
-              <Text className="text-[10px] text-lantern-text-secondary">Avg</Text>
-              <Text className="text-base font-bold text-lantern-text">
+              <Text className="text-label text-lantern-text-secondary">Avg</Text>
+              <Text className="text-heading font-bold text-lantern-text">
                 {summary.averageScore.toFixed(1)}%
               </Text>
             </View>
             <View className="flex-1 items-center py-2 border-l border-lantern-border">
-              <Text className="text-[10px] text-lantern-text-secondary">Accuracy</Text>
-              <Text className="text-base font-bold text-lantern-text">
+              <Text className="text-label text-lantern-text-secondary">Accuracy</Text>
+              <Text className="text-heading font-bold text-lantern-text">
                 {summary.accuracy.toFixed(1)}%
               </Text>
             </View>
@@ -469,11 +474,11 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
 
           {lowDataMode ? (
             <View className="py-3 px-2 rounded-xl bg-lantern-background-secondary">
-              <Text className="text-sm font-medium text-lantern-text-secondary text-center mb-1">
+              <Text className="text-body font-medium text-lantern-text-secondary text-center mb-1">
                 Chart hidden in Low-Data Mode
               </Text>
               {selectedSeries.map((s) => (
-                <Text key={s.id} className="text-xs text-lantern-text-tertiary text-center">
+                <Text key={s.id} className="text-caption text-lantern-text-tertiary text-center">
                   {s.name}: {s.averageScore.toFixed(1)}% avg across {s.testCount} test
                   {s.testCount !== 1 ? 's' : ''}
                 </Text>
@@ -500,8 +505,8 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                   color5={SERIES_COLORS[4]}
                   thickness={2}
                   hideDataPoints={lineDatasets[0].data.length > 12}
-                  yAxisTextStyle={{ color: '#94a3b8', fontSize: 10 }}
-                  xAxisLabelTextStyle={{ color: '#94a3b8', fontSize: 9 }}
+                  yAxisTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
+                  xAxisLabelTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
                   noOfSections={4}
                   maxValue={100}
                   yAxisOffset={0}
@@ -518,8 +523,8 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                   color={SERIES_COLORS[0]}
                   thickness={2}
                   hideDataPoints={false}
-                  yAxisTextStyle={{ color: '#94a3b8', fontSize: 10 }}
-                  xAxisLabelTextStyle={{ color: '#94a3b8', fontSize: 9 }}
+                  yAxisTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
+                  xAxisLabelTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
                   noOfSections={4}
                   maxValue={100}
                   isAnimated
@@ -527,7 +532,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
               )}
             </View>
           ) : (
-            <Text className="text-sm text-lantern-text-tertiary text-center py-4">No chart points yet.</Text>
+            <Text className="text-body text-lantern-text-tertiary text-center py-4">No chart points yet.</Text>
           )}
 
           {selectedSeries.length > 1 ? (
@@ -543,11 +548,11 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                         backgroundColor: SERIES_COLORS[index % SERIES_COLORS.length],
                       }}
                     />
-                    <Text className="text-xs text-lantern-text" numberOfLines={1}>
+                    <Text className="text-caption text-lantern-text" numberOfLines={1}>
                       {s.name}
                     </Text>
                   </View>
-                  <Text className="text-xs font-semibold text-lantern-primary">
+                  <Text className="text-caption font-semibold text-lantern-primary-text">
                     {s.averageScore.toFixed(1)}%
                   </Text>
                 </View>
@@ -566,11 +571,11 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
           >
             <View className="flex-row items-center justify-between px-4 py-3 border-b border-lantern-border">
               <Pressable onPress={() => updateSelection(options.map((o) => o.id))}>
-                <Text className="text-xs font-semibold text-lantern-primary">Select all</Text>
+                <Text className="text-caption font-semibold text-lantern-primary-text">Select all</Text>
               </Pressable>
-              <Text className="text-sm font-semibold text-lantern-text">Groups</Text>
+              <Text className="text-body font-semibold text-lantern-text">Groups</Text>
               <Pressable onPress={() => updateSelection([])}>
-                <Text className="text-xs font-semibold text-lantern-text-secondary">Clear</Text>
+                <Text className="text-caption font-semibold text-lantern-text-secondary">Clear</Text>
               </Pressable>
             </View>
             <ScrollView>
@@ -589,12 +594,12 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                   >
                     <View
                       className={`w-5 h-5 rounded border items-center justify-center ${
-                        checked ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+                        checked ? 'bg-lantern-primary-fill border-lantern-primary' : 'border-lantern-border'
                       }`}
                     >
                       {checked ? <AppIcon name="checkmark" size={14} color="#fff" /> : null}
                     </View>
-                    <Text className="text-sm text-lantern-text flex-1" numberOfLines={1}>
+                    <Text className="text-body text-lantern-text flex-1" numberOfLines={1}>
                       {opt.level > 0 ? '└ ' : ''}
                       {opt.name}
                       {/* Archived groups still hold test history and are counted
@@ -608,9 +613,9 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
             </ScrollView>
             <Pressable
               onPress={() => setPickerOpen(false)}
-              className="m-4 py-3 rounded-xl bg-lantern-primary items-center"
+              className="m-4 py-3 rounded-xl bg-lantern-primary-fill items-center"
             >
-              <Text className="text-sm font-semibold text-white">Done</Text>
+              <Text className="text-body font-semibold text-white">Done</Text>
             </Pressable>
           </Pressable>
         </Pressable>

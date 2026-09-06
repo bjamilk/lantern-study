@@ -331,14 +331,14 @@ const Sidebar: React.FC<SidebarProps> = ({
       title={label}
     >
       <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'} ${isActive ? 'text-lantern-primary' : ''}`} aria-hidden="true" />
-      {showText && <span className="flex-grow text-left text-[15px] tracking-tight">{label}</span>}
+      {showText && <span className="flex-grow text-left text-body tracking-tight">{label}</span>}
       {showText && countLabel ? (
-        <span aria-hidden="true" className="ml-2 shrink-0 rounded-full bg-lantern-background-secondary px-2 py-0.5 text-[11px] font-semibold text-lantern-text-secondary">
+        <span aria-hidden="true" className="ml-2 shrink-0 rounded-full bg-lantern-background-secondary px-2 py-0.5 text-label tracking-normal text-lantern-text-secondary">
           {countLabel}
         </span>
       ) : null}
       {showBadge && (
-          <span aria-hidden="true" className={`absolute top-1.5 right-1.5 bg-lantern-error text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full`}>
+          <span aria-hidden="true" className={`absolute top-1.5 right-1.5 bg-lantern-error text-white text-label tracking-normal px-1.5 py-0.5 rounded-full`}>
               {formatUnreadBadgeCount(badgeCount!)}
           </span>
       )}
@@ -356,7 +356,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         {showText && (
           <div className="flex items-center gap-2.5">
               <LanternIcon size={28} />
-              <h1 className="font-display text-xl font-semibold tracking-tight text-lantern-text">Lantern Study</h1>
+              <h1 className="font-display text-title font-semibold tracking-tight text-lantern-text">Lantern Study</h1>
           </div>
         )}
         <div className={`flex items-center space-x-1 ${!showText && 'w-full justify-center'}`}>
@@ -381,7 +381,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               >
                 <ChatBubbleLeftRightIcon className="w-6 h-6" aria-hidden="true" />
                 {showChatsHeaderBadge && (
-                  <span aria-hidden="true" className="absolute top-0 right-0 bg-lantern-error text-white text-[10px] font-bold min-w-[1rem] h-4 px-1 flex items-center justify-center rounded-full">
+                  <span aria-hidden="true" className="absolute top-0 right-0 bg-lantern-error text-white text-label tracking-normal font-bold min-w-[1rem] h-4 px-1 flex items-center justify-center rounded-full">
                     {formatUnreadBadgeCount(totalUnreadChatCount)}
                   </span>
                 )}
@@ -402,7 +402,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div className="p-2 space-y-1">
                 <button onClick={() => onResumeSession(sessionAppMode)} className={`w-full flex items-center p-3 rounded-md text-white bg-yellow-500 hover:bg-yellow-600 animate-pulse ${!showText && 'justify-center'}`} title={`Resume ${pausedSessionLabel}`}>
                     <PlayIcon className={`w-6 h-6 ${showText && 'mr-2'}`} />
-                    {showText && <span className="font-semibold text-sm">Resume Session</span>}
+                    {showText && <span className="font-semibold text-body">Resume Session</span>}
                 </button>
                 <button 
                     onClick={onCancelSession} 
@@ -410,7 +410,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     title="Cancel Session"
                 >
                     <XCircleIcon className={`w-5 h-5 ${showText && 'mr-2'}`} />
-                    {showText && <span className="font-semibold text-xs">Cancel Session</span>}
+                    {showText && <span className="font-semibold text-caption">Cancel Session</span>}
                 </button>
             </div>
         )}
@@ -528,10 +528,10 @@ const Sidebar: React.FC<SidebarProps> = ({
       {chatsFlyoutOpen && (
         <div className="w-80 h-full flex flex-col">
           <div className="flex items-center justify-between gap-2 h-16 px-4 border-b border-lantern-border flex-shrink-0">
-            <h2 className="text-sm font-bold text-lantern-text flex items-center gap-2 min-w-0">
+            <h2 className="text-heading font-bold text-lantern-text flex items-center gap-2 min-w-0">
               <span className="truncate">Chats</span>
               {totalUnreadChatCount > 0 && (
-                <span className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                <span className="bg-lantern-error text-white text-label tracking-normal font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
                   {formatUnreadBadgeCount(totalUnreadChatCount)}
                 </span>
               )}
@@ -568,7 +568,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex-1 min-h-0 overflow-y-auto py-1">
             {messageRequestChats.length > 0 && (
               <div className="mb-1">
-                <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                <p className="px-3 py-2 text-label uppercase text-amber-700 dark:text-amber-300">
                   Message requests ({messageRequestChats.length})
                 </p>
                 {messageRequestChats.map((chat) => (
@@ -603,13 +603,13 @@ const Sidebar: React.FC<SidebarProps> = ({
               );
             })}
             {topLevelChats.length === 0 && messageRequestChats.length === 0 && (
-              <p className="px-3 py-2 text-sm text-lantern-text-secondary">No active chats.</p>
+              <p className="px-3 py-2 text-body text-lantern-text-secondary">No active chats.</p>
             )}
             {archivedGroups.length > 0 && (
               <div className="mt-2 pt-2 border-t border-lantern-border">
                 <button
                   onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
-                  className="w-full flex items-center justify-between p-3 text-xs font-semibold text-lantern-text-secondary uppercase hover:text-lantern-text focus:outline-none"
+                  className="w-full flex items-center justify-between p-3 text-label text-lantern-text-secondary uppercase hover:text-lantern-text focus:outline-none"
                   aria-expanded={isArchivedExpanded}
                 >
                   <span className="flex items-center"><ArchiveBoxIcon className="w-4 h-4 mr-2"/> Archived</span>

@@ -71,7 +71,7 @@ export function LegacyQuestionCard({
         accessibilityLabel={COMMUNITY_BOARD_COPY.openStudyGroup}
         className="mt-2 min-h-[44px] justify-center rounded-xl bg-lantern-background-secondary px-3 active:opacity-90"
       >
-        <Text className="text-[13px] font-semibold text-lantern-primary">
+        <Text className="text-[13px] font-semibold text-lantern-primary-text">
           {COMMUNITY_BOARD_COPY.openStudyGroup}
         </Text>
       </Pressable>

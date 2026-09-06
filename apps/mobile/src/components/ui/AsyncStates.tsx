@@ -26,7 +26,7 @@ export function LoadingState({ label }: { label?: string }) {
       accessibilityRole="progressbar"
       accessibilityLabel={label || 'Loading'}
     >
-      <ActivityIndicator size="large" color={colors.primary} />
+      <ActivityIndicator size="large" color={colors.primaryText} />
       {label ? (
         <Text className="text-sm text-lantern-text-secondary mt-3">{label}</Text>
       ) : null}
@@ -65,7 +65,7 @@ export function ErrorState({
           accessibilityRole="button"
           accessibilityLabel={retryLabel}
           hitSlop={8}
-          className="px-4 py-2 rounded-xl bg-lantern-primary active:opacity-80"
+          className="px-4 py-2 rounded-xl bg-lantern-primary-fill active:opacity-80"
         >
           <Text className="text-sm font-semibold text-white">{retryLabel}</Text>
         </Pressable>
@@ -133,7 +133,7 @@ export function EmptyState({
     <View className="flex-1 items-center justify-center px-6 py-16">
       {icon ? (
         <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center mb-4">
-          <AppIcon name={icon} size={32} color={colors.primary} />
+          <AppIcon name={icon} size={32} color={colors.primaryText} />
         </View>
       ) : null}
       <Text className="text-base font-semibold text-lantern-text mb-1 text-center">{title}</Text>

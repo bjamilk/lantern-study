@@ -44,7 +44,7 @@ export function PinnedBanner({
       >
         <View className="flex-row items-center">
           <AppIcon name="pin" size={12} color="#6366f1" />
-          <Text className="ml-1 text-[10px] font-bold tracking-wide text-lantern-primary">
+          <Text className="ml-1 text-label font-bold tracking-wide text-lantern-primary-text">
             {COMMUNITY_BOARD_COPY.pinnedLabel}
           </Text>
           <Text className="ml-2 text-[11px] text-lantern-text-tertiary" numberOfLines={1}>
@@ -67,7 +67,7 @@ export function PinnedBanner({
           className="ml-2 min-h-[44px] min-w-[44px] items-center justify-center"
           style={busy ? { opacity: 0.5 } : undefined}
         >
-          <Text className="text-xs font-semibold text-lantern-primary">
+          <Text className="text-xs font-semibold text-lantern-primary-text">
             {COMMUNITY_BOARD_COPY.unpin}
           </Text>
         </Pressable>

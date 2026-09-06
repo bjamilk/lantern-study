@@ -101,7 +101,7 @@ export function MyJobPostingsScreen() {
         right={
           <Pressable
             onPress={() => navigation.navigate("CreateJob")}
-            className="rounded-lg bg-lantern-primary px-3 py-2"
+            className="rounded-lg bg-lantern-primary-fill px-3 py-2"
           >
             <Text className="text-sm font-semibold text-white">Post job</Text>
           </Pressable>
@@ -157,7 +157,7 @@ export function MyJobPostingsScreen() {
                 {totalApplicants}
               </Text>
               {totalNeedsReview > 0 ? (
-                <Text className="mt-1 text-xs font-medium text-lantern-primary">
+                <Text className="mt-1 text-xs font-medium text-lantern-primary-text">
                   {totalNeedsReview} new
                 </Text>
               ) : null}
@@ -217,7 +217,7 @@ export function MyJobPostingsScreen() {
 
                 <View className="mt-4 flex-row flex-wrap gap-2">
                   <Pressable
-                    className="flex-row items-center gap-2 rounded-lg bg-lantern-primary px-3 py-2"
+                    className="flex-row items-center gap-2 rounded-lg bg-lantern-primary-fill px-3 py-2"
                     onPress={() =>
                       navigation.navigate("JobApplicants", { jobId: job.id })
                     }
@@ -285,7 +285,7 @@ export function MyJobPostingsScreen() {
               </Text>
               <Pressable
                 onPress={() => navigation.navigate("CreateJob")}
-                className="mt-4 items-center rounded-xl bg-lantern-primary py-3"
+                className="mt-4 items-center rounded-xl bg-lantern-primary-fill py-3"
               >
                 <Text className="text-sm font-semibold text-white">
                   Create job post

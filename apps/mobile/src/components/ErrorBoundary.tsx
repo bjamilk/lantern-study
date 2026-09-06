@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
           </Text>
           <Pressable
             onPress={this.handleRetry}
-            className="px-4 py-2 rounded-lg bg-lantern-primary"
+            className="px-4 py-2 rounded-lg bg-lantern-primary-fill"
             accessibilityRole="button"
             accessibilityLabel="Try again"
           >

@@ -72,7 +72,7 @@ export function GroupPerformanceMultiSelect({
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((value) => !value)}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-lantern border border-lantern-border bg-lantern-surface text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-body rounded-lantern border border-lantern-border bg-lantern-surface text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <span className="truncate text-left">{buttonLabel}</span>
         <ChevronDownIcon
@@ -90,7 +90,7 @@ export function GroupPerformanceMultiSelect({
           <div className="sticky top-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
             <button
               type="button"
-              className="text-xs font-semibold text-lantern-primary hover:underline"
+              className="text-caption font-semibold text-lantern-primary-text hover:underline"
               onClick={() => onChange(options.map((opt) => opt.id))}
               disabled={allSelected}
             >
@@ -98,7 +98,7 @@ export function GroupPerformanceMultiSelect({
             </button>
             <button
               type="button"
-              className="text-xs font-semibold text-lantern-text-secondary hover:underline"
+              className="text-caption font-semibold text-lantern-text-secondary hover:underline"
               onClick={() => onChange([])}
               disabled={selectedCount === 0}
             >
@@ -115,13 +115,13 @@ export function GroupPerformanceMultiSelect({
                     role="option"
                     aria-selected={checked}
                     onClick={() => toggleId(opt.id)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-lantern-background-secondary"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-body text-left hover:bg-lantern-background-secondary"
                     style={{ paddingLeft: `${0.75 + opt.level * 0.85}rem` }}
                   >
                     <span
                       className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
                         checked
-                          ? 'bg-lantern-primary border-lantern-primary text-white'
+                          ? 'bg-lantern-primary-fill border-lantern-primary text-white'
                           : 'border-lantern-border bg-lantern-surface'
                       }`}
                     >

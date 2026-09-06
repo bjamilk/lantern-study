@@ -141,7 +141,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
         <View className="flex-1">
           <Text className="text-lg font-bold text-lantern-text">From your network</Text>
           {connectionLine ? (
-            <Text className="text-xs text-lantern-primary">{connectionLine}</Text>
+            <Text className="text-xs text-lantern-primary-text">{connectionLine}</Text>
           ) : null}
         </View>
       </View>

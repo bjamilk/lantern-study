@@ -60,7 +60,7 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
         <View className="bg-lantern-surface rounded-t-3xl max-h-[85%]">
           <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold">Message customers</Text>
-            <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
+            <Pressable onPress={onClose}><Text className="text-lantern-primary-text font-semibold">Close</Text></Pressable>
           </View>
           <ScrollView
             className="p-4"
@@ -77,7 +77,7 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
                     key={s.id || 'all'}
                     onPress={() => setSegment(s.id)}
                     className={`px-3 py-1.5 rounded-full border ${
-                      segment === s.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+                      segment === s.id ? 'bg-lantern-primary-fill border-lantern-primary' : 'border-lantern-border'
                     }`}
                   >
                     <Text className={`text-xs ${segment === s.id ? 'text-white font-semibold' : 'text-lantern-text-secondary'}`}>

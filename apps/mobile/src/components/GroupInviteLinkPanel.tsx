@@ -47,7 +47,7 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
   return (
     <View style={[styles.section, { backgroundColor: colors.background }]}>
       <View style={styles.sectionHeader}>
-        <AppIcon name="link" size={22} color={colors.primary} />
+        <AppIcon name="link" size={22} color={colors.primaryText} />
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Share Invite Link</Text>
       </View>
       <Text style={[styles.sectionDescription, { color: colors.textSecondary }]}>
@@ -64,13 +64,13 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <Text style={[styles.linkText, { color: colors.primary }]} numberOfLines={1}>
+            <Text style={[styles.linkText, { color: colors.primaryText }]} numberOfLines={1}>
               {inviteLink}
             </Text>
             <TouchableOpacity
               style={[
                 styles.copyButton,
-                { backgroundColor: copied ? colors.success : colors.primary },
+                { backgroundColor: copied ? colors.success : colors.primaryFill },
               ]}
               onPress={() => void handleCopyLink()}
               accessibilityRole="button"
@@ -82,7 +82,7 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
 
           <View style={styles.shareButtons}>
             <TouchableOpacity
-              style={[styles.shareButton, { backgroundColor: colors.primary }]}
+              style={[styles.shareButton, { backgroundColor: colors.primaryFill }]}
               onPress={() => void handleShareLink()}
               accessibilityRole="button"
               accessibilityLabel={`Share invite link for ${groupName}`}
@@ -91,7 +91,7 @@ export function GroupInviteLinkPanel({ groupName, inviteId }: GroupInviteLinkPan
               <Text style={styles.shareButtonText}>Share</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.shareButton, { backgroundColor: colors.primary }]}
+              style={[styles.shareButton, { backgroundColor: colors.primaryFill }]}
               onPress={() => void handleCopyLink()}
               accessibilityRole="button"
               accessibilityLabel={copied ? 'Invite link copied' : 'Copy invite link'}

@@ -199,7 +199,7 @@ export function StudyRoomScreen({
               accessibilityRole="button"
               accessibilityLabel="Join or create a room"
               accessibilityState={{ disabled: !canStart || starting, busy: starting }}
-              className="mt-4 min-h-[44px] justify-center rounded-lg bg-lantern-primary px-4"
+              className="mt-4 min-h-[44px] justify-center rounded-lg bg-lantern-primary-fill px-4"
               style={{ opacity: !canStart || starting ? 0.6 : 1 }}
             >
               <Text className="text-center text-sm font-semibold text-white">
@@ -232,7 +232,7 @@ export function StudyRoomScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel={room.joined ? 'Leave room' : 'Join room'}
-              className="mt-4 min-h-[44px] justify-center rounded-lg bg-lantern-primary px-4"
+              className="mt-4 min-h-[44px] justify-center rounded-lg bg-lantern-primary-fill px-4"
             >
               <Text className="text-center text-sm font-semibold text-white">
                 {room.joined ? 'Leave room' : 'Join room'}

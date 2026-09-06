@@ -1,3 +1,9 @@
+import {
+  AA_LARGE,
+  ensureFillContrast,
+  ensureTextContrastOn,
+  relativeLuminance,
+} from '../design/contrast';
 import type { AccessibilitySettings, AppearanceSettings, UserSettings } from './userSettings';
 
 export interface AppearanceEffectFlags {
@@ -46,14 +52,51 @@ export function applyHighContrastToColors<T extends Record<string, string>>(colo
   } as T;
 }
 
+/** The shipped default accent. Choosing it means "no override": the palette's own
+ * primaryFill/primaryText/tabBarActive win, so the brand fill is one value
+ * (#4f46e5) everywhere instead of the accent-derived #5e61e5 beside it (build 154). */
+export const DEFAULT_ACCENT_COLOR = '#6366f1';
+
 export function applyAccentToColors<T extends Record<string, string>>(
   colors: T,
   accentColor: string
 ): T {
+  if (!accentColor || accentColor.toLowerCase() === DEFAULT_ACCENT_COLOR) {
+    return colors;
+  }
+  // ONE accent, TWO derived roles — the build-153 split.
+  //
+  //   primaryFill  the accent darkened just enough that a WHITE label on it
+  //                reaches AA. The default accent #6366f1 is 4.47:1 under
+  //                white, so even the default needed one step.
+  //   primaryText  the accent adjusted until it clears AA on the surface AND
+  //                on the `primaryBackground` tint composited over it. Only
+  //                the surface used to be checked, which is why dark's
+  //                "Try Again" (#6b6ef2) passed at 4.59 on the card and
+  //                failed at 4.07 on its own tint.
+  //
+  // `primary` is the deprecated dual-role token and keeps each theme's
+  // dominant role — fill on light, text on dark — exactly as the static
+  // palettes do, so no un-migrated call site shifts.
+  const ground = colors.surface || colors.card || colors.background || '#ffffff';
+  const tint = colors.primaryBackground || ground;
+  const isDarkGround = relativeLuminance(ground) < 0.5;
+
+  const primaryFill = ensureFillContrast(accentColor, '#ffffff');
+  const primaryText = ensureTextContrastOn(accentColor, [ground, tint]);
+
   return {
     ...colors,
-    primary: accentColor,
-    tabBarActive: accentColor,
+    primaryFill,
+    primaryText,
+    primary: isDarkGround ? primaryText : primaryFill,
+    // Chrome, not text: the tab bar's active icon+label is always paired with
+    // a filled indicator and a label, so 3:1 is the right bar (WCAG 1.4.11).
+    tabBarActive: ensureTextContrastOn(
+      accentColor,
+      [colors.tabBar || ground],
+      AA_LARGE
+    ),
     switchThumbOn: accentColor,
   } as T;
 }

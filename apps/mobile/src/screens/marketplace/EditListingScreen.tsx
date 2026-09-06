@@ -419,7 +419,7 @@ export function EditListingScreen({
                     setShowCategories(false);
                   }}
                   className={`px-3 py-1.5 rounded-full border ${
-                    category === cat.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+                    category === cat.id ? 'bg-lantern-primary-fill border-lantern-primary' : 'border-lantern-border'
                   }`}
                 >
                   <Text className={`text-xs ${category === cat.id ? 'text-white' : 'text-lantern-text-secondary'}`}>
@@ -526,7 +526,7 @@ export function EditListingScreen({
                   if (preset === 'none') setSalePrice('');
                 }}
                 className={`px-3 py-1.5 rounded-lg border ${
-                  saleEndsPreset === preset ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+                  saleEndsPreset === preset ? 'bg-lantern-primary-fill border-lantern-primary' : 'border-lantern-border'
                 }`}
               >
                 <Text className={`text-xs font-medium ${saleEndsPreset === preset ? 'text-white' : 'text-lantern-text-secondary'}`}>

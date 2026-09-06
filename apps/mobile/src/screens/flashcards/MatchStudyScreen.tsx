@@ -204,7 +204,7 @@ export function MatchStudyScreen({ navigation, route }: Props) {
                 className={`w-[47%] min-h-[88px] rounded-2xl border p-3 items-center justify-center active:opacity-90 ${tileClass}`}
               >
                 <Text
-                  className={`text-xs text-center font-medium ${tile.side === 'front' ? 'text-lantern-primary' : 'text-lantern-text'}`}
+                  className={`text-xs text-center font-medium ${tile.side === 'front' ? 'text-lantern-primary-text' : 'text-lantern-text'}`}
                   numberOfLines={4}
                 >
                   {tile.text}

@@ -41,6 +41,12 @@ svg[data-slot="icon"] {
   --color-primary-light: 99 102 241;
   --color-primary-dark: 55 48 163;
   --color-primary-background: #eef2ff;
+  /* Build 153: one `primary` served both a fill under white text and text on
+     a tint. `-fill` is the ground (white on it is 6.29:1); `-text` is the ink
+     (6.29 on white, 5.80 on cream, 5.62 on the #eef2ff tint). Mirrors
+     packages/shared/src/design/tokens.ts. */
+  --color-primary-fill: 79 70 229;
+  --color-primary-text: 79 70 229;
   /* Accent/success/warning darkened one step: the 600-weight values sat at
      3.0-3.6:1 as text on white/cream and behind white button labels. The 700
      weights clear AA both as text and as button fills with white labels. */
@@ -48,7 +54,12 @@ svg[data-slot="icon"] {
   --color-accent-background: #fff7ed;
   --color-success: 4 120 87;
   --color-warning: 180 83 9;
-  --color-error: 220 38 38;
+  /* red-600 was 4.46:1 on the cream page ground - 0.04 short of AA for field
+     errors. #d42323 clears it at 4.77 and is indistinguishable. */
+  --color-error: 212 35 35;
+  /* New this wave: sky-700. sky-500 (the old `info` token) was 2.63:1 as text
+     on cream, which is why no info var ever shipped. */
+  --color-info: 3 105 161;
   --color-border: 197 206 221;
   --radius-lg: 16px;
   --radius-xl: 20px;
@@ -57,15 +68,53 @@ svg[data-slot="icon"] {
   --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 8px rgba(15, 23, 42, 0.06);
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-display: var(--font-sans);
-  --color-feature-dashboard: 79 70 229;
-  --color-feature-library: 244 63 94;
-  --color-feature-admin: 100 116 139;
-  --color-feature-flashcards: 244 63 94;
-  --color-feature-groups: 16 185 129;
-  --color-feature-marketplace: 139 92 246;
-  --color-feature-offline: 245 158 11;
-  --color-feature-tests: 14 165 233;
-  --color-feature-budget: 20 184 166;
+  /* Was missing entirely; `code, pre, kbd, samp` and any serif prose had no
+     token to reach for. System faces only - no font bytes ship this wave. */
+  --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+
+  /* ===== Feature accents, spec v3 5.6 =====
+     Eight identities, each an `ink` (the only value allowed to carry text or
+     a glyph) and a `tint` (a ground, never text). RGB channels because
+     Tailwind consumes them as `rgb(var(--x) / <alpha-value>)`.
+     Source of truth: packages/shared/src/design/tokens.ts
+     (`featureAccentsLight` / `featureAccentsDark`). `scripts/design/contrast.mjs`
+     fails if this block and that file disagree, or if any ink drops below
+     4.5:1 on its tint, on the surface or on the page ground. */
+  --color-feature-notes-ink: 15 118 110;
+  --color-feature-notes-tint: 204 251 241;
+  --color-feature-flashcards-ink: 77 124 15;
+  --color-feature-flashcards-tint: 236 252 203;
+  --color-feature-tests-ink: 3 105 161;
+  --color-feature-tests-tint: 224 242 254;
+  --color-feature-recording-ink: 162 28 175;
+  --color-feature-recording-tint: 250 232 255;
+  --color-feature-ai-ink: 79 70 229;
+  --color-feature-ai-tint: 238 242 255;
+  --color-feature-groups-ink: 4 120 87;
+  --color-feature-groups-tint: 209 250 229;
+  --color-feature-campus-ink: 109 40 217;
+  --color-feature-campus-tint: 237 233 254;
+  --color-feature-budget-ink: 180 83 9;
+  --color-feature-budget-tint: 254 243 199;
+
+  /* @deprecated one release: the nine pre-wave feature vars, now aliases of
+     the light inks above so the ~38 existing call sites keep rendering.
+     dashboard -> ai (identical hex), library -> notes, admin/marketplace ->
+     campus, offline -> budget. Delete with the Wave V1 call-site migration. */
+  --color-feature-dashboard: var(--color-feature-ai-ink);
+  --color-feature-library: var(--color-feature-notes-ink);
+  --color-feature-admin: var(--color-feature-campus-ink);
+  --color-feature-flashcards: var(--color-feature-flashcards-ink);
+  --color-feature-groups: var(--color-feature-groups-ink);
+  --color-feature-marketplace: var(--color-feature-campus-ink);
+  --color-feature-offline: var(--color-feature-budget-ink);
+  --color-feature-tests: var(--color-feature-tests-ink);
+  --color-feature-budget: var(--color-feature-budget-ink);
+
+  /* The six --type-* steps live in design/type.css (imported right after
+     this file in index.tsx) so the text-size setting can scale them through
+     one --type-scale multiplier. Do not redefine them here. */
   --app-atmosphere:
     radial-gradient(1200px 600px at 12% -10%, rgba(79, 70, 229, 0.12), transparent 55%),
     radial-gradient(900px 500px at 88% 0%, rgba(217, 119, 6, 0.1), transparent 50%),
@@ -88,21 +137,55 @@ svg[data-slot="icon"] {
   /* Values mirror packages/shared/src/design/tokens.ts darkTheme exactly —
      that file is the palette's source of truth for both platforms. */
   --color-primary-background: #6366f120;
+  /* Same fill as light on purpose: white needs a dark ground in either theme.
+     Dark's `--color-primary` (#818cf8) under a white label is 2.98:1. The ink
+     stays #818cf8 — 6.29 on the surface, 5.58 on the composited tint. */
+  --color-primary-fill: 79 70 229;
+  --color-primary-text: 129 140 248;
   --color-accent: 251 191 36;
   --color-accent-background: #f59e0b20;
   --color-border: 47 51 54;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.45);
-  --color-feature-dashboard: 129 140 248;
-  --color-feature-library: 251 113 133;
-  --color-feature-admin: 148 163 184;
-  --color-feature-flashcards: 251 113 133;
-  --color-feature-groups: 52 211 153;
-  --color-feature-marketplace: 167 139 250;
-  --color-feature-offline: 251 191 36;
-  --color-feature-tests: 56 189 248;
-  --color-feature-budget: 45 212 191;
+  /* THE DRIFT THIS WAVE FIXES: `.dark` redefined primary/accent/border but
+     NOT success/warning/error, so every state colour in dark mode was the
+     LIGHT value inherited from :root - emerald-700 #047857 on a black ground.
+     These mirror tokens.ts `darkTheme` exactly. */
+  --color-success: 16 185 129;
+  --color-warning: 251 191 36;
+  --color-error: 239 68 68;
+  --color-info: 125 211 252;
+
+  /* Feature accents - spec v3 5.6 dark column. */
+  --color-feature-notes-ink: 94 234 212;
+  --color-feature-notes-tint: 15 47 44;
+  --color-feature-flashcards-ink: 190 242 100;
+  --color-feature-flashcards-tint: 26 46 10;
+  --color-feature-tests-ink: 125 211 252;
+  --color-feature-tests-tint: 12 42 59;
+  --color-feature-recording-ink: 240 171 252;
+  --color-feature-recording-tint: 59 15 64;
+  --color-feature-ai-ink: 129 140 248;
+  --color-feature-ai-tint: 28 28 58;
+  --color-feature-groups-ink: 110 231 183;
+  --color-feature-groups-tint: 11 46 34;
+  --color-feature-campus-ink: 196 181 253;
+  --color-feature-campus-tint: 42 27 77;
+  --color-feature-budget-ink: 251 191 36;
+  --color-feature-budget-tint: 58 42 8;
+
+  /* @deprecated one release - see the :root block. The var() indirection means
+     the dark inks are picked up automatically. */
+  --color-feature-dashboard: var(--color-feature-ai-ink);
+  --color-feature-library: var(--color-feature-notes-ink);
+  --color-feature-admin: var(--color-feature-campus-ink);
+  --color-feature-flashcards: var(--color-feature-flashcards-ink);
+  --color-feature-groups: var(--color-feature-groups-ink);
+  --color-feature-marketplace: var(--color-feature-campus-ink);
+  --color-feature-offline: var(--color-feature-budget-ink);
+  --color-feature-tests: var(--color-feature-tests-ink);
+  --color-feature-budget: var(--color-feature-budget-ink);
   /* Lights-out dark is flat black, X-style — no tinted atmosphere. */
   --app-atmosphere: linear-gradient(180deg, #000000 0%, #000000 100%);
 }

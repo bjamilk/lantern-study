@@ -27,6 +27,8 @@ import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { resolveTestTimeLimitMinutes } from './testConfigRules';
+// Wave T: the six type steps replace this file's eleven ad-hoc sizes.
+import { typeScale, tabularNums } from '../../design/typeScale';
 
 type TabType = 'tests' | 'history';
 
@@ -301,7 +303,7 @@ export default function TestScreen() {
       activeOpacity={0.7}
     >
       <View style={[styles.testIcon, { backgroundColor: colors.primaryBackground }]}>
-        <AppIcon name="document-text" size={24} color={colors.primary} />
+        <AppIcon name="document-text" size={24} color={colors.primaryText} />
       </View>
       
       <View style={styles.testInfo}>
@@ -386,8 +388,8 @@ export default function TestScreen() {
           onPress={() => void handleRetake(item)}
           activeOpacity={0.7}
         >
-          <AppIcon name="refresh" size={16} color={colors.primary} />
-          <Text style={[styles.retakeButtonText, { color: colors.primary }]}>Retake</Text>
+          <AppIcon name="refresh" size={16} color={colors.primaryText} />
+          <Text style={[styles.retakeButtonText, { color: colors.primaryText }]}>Retake</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.deleteHistoryButton, { borderColor: colors.border }]}
@@ -411,7 +413,7 @@ export default function TestScreen() {
         <AppIcon 
           name={activeTab === 'tests' ? 'document-text' : 'time'} 
           size={64} 
-          color={colors.primary} 
+          color={colors.primaryText} 
         />
       </View>
       <Text style={[styles.emptyTitle, { color: colors.text }]}>
@@ -451,18 +453,18 @@ export default function TestScreen() {
       {/* Tabs */}
       <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'tests' && [styles.activeTab, { backgroundColor: colors.primary + '20' }]]}
+          style={[styles.tab, activeTab === 'tests' && [styles.activeTab, { backgroundColor: colors.primaryFill + '20' }]]}
           onPress={() => setActiveTab('tests')}
         >
-          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'tests' && { color: colors.primary }]}>
+          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'tests' && { color: colors.primaryText }]}>
             Available Tests
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'history' && [styles.activeTab, { backgroundColor: colors.primary + '20' }]]}
+          style={[styles.tab, activeTab === 'history' && [styles.activeTab, { backgroundColor: colors.primaryFill + '20' }]]}
           onPress={() => setActiveTab('history')}
         >
-          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'history' && { color: colors.primary }]}>
+          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'history' && { color: colors.primaryText }]}>
             History
           </Text>
         </TouchableOpacity>
@@ -488,12 +490,12 @@ export default function TestScreen() {
               paddingHorizontal: 10,
               paddingVertical: 6,
               borderRadius: 999,
-              backgroundColor: colors.primary + '20',
+              backgroundColor: colors.primaryFill + '20',
               maxWidth: historyCourse.topicId ? '50%' : '70%',
             }}
           >
-            <AppIcon name="school" size={14} color={colors.primary} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, flexShrink: 1 }} numberOfLines={1}>
+            <AppIcon name="school" size={14} color={colors.primaryText} />
+            <Text style={{ ...typeScale.caption, fontWeight: '600', color: colors.primaryText, flexShrink: 1 }} numberOfLines={1}>
               {historyCourse.label}
             </Text>
             <TouchableOpacity
@@ -502,7 +504,7 @@ export default function TestScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Clear course filter ${historyCourse.label}`}
             >
-              <AppIcon name="close-circle" size={16} color={colors.primary} />
+              <AppIcon name="close-circle" size={16} color={colors.primaryText} />
             </TouchableOpacity>
           </View>
           {/* The topic narrows the list further, so it gets its own chip: a
@@ -521,7 +523,7 @@ export default function TestScreen() {
               }}
             >
               <AppIcon name="bookmark" size={13} color={colors.textSecondary} />
-              <Text style={{ fontSize: 12, color: colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>
+              <Text style={{ ...typeScale.caption, color: colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>
                 {historyTopicLabel(historyCourse)}
               </Text>
               <TouchableOpacity
@@ -535,7 +537,7 @@ export default function TestScreen() {
               </TouchableOpacity>
             </View>
           ) : null}
-          <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+          <Text style={{ ...typeScale.caption, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
             {visibleAttempts.length} of {attempts.length} results
           </Text>
         </View>
@@ -593,7 +595,7 @@ export default function TestScreen() {
               <>
                 <View style={styles.modalHeader}>
                   <View style={[styles.modalIcon, { backgroundColor: colors.primaryBackground }]}>
-                    <AppIcon name="document-text" size={32} color={colors.primary} />
+                    <AppIcon name="document-text" size={32} color={colors.primaryText} />
                   </View>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedTest.name}</Text>
                   <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>
@@ -617,7 +619,7 @@ export default function TestScreen() {
                       <View style={[
                         styles.modeIconContainer,
                         { backgroundColor: colors.card },
-                        selectedMode === 'test' && { backgroundColor: colors.primary }
+                        selectedMode === 'test' && { backgroundColor: colors.primaryFill }
                       ]}>
                         <AppIcon 
                           name="timer" 
@@ -628,14 +630,14 @@ export default function TestScreen() {
                       <Text style={[
                         styles.modeTitle,
                         { color: colors.text },
-                        selectedMode === 'test' && { color: colors.primary }
+                        selectedMode === 'test' && { color: colors.primaryText }
                       ]}>Test Mode</Text>
                       <Text style={[styles.modeDescription, { color: colors.textSecondary }]}>
                         Timed • Scored{'\n'}No hints
                       </Text>
                       {selectedMode === 'test' && (
                         <View style={styles.modeCheck}>
-                          <AppIcon name="checkmark-circle" size={20} color={colors.primary} />
+                          <AppIcon name="checkmark-circle" size={20} color={colors.primaryText} />
                         </View>
                       )}
                     </TouchableOpacity>
@@ -679,7 +681,7 @@ export default function TestScreen() {
 
                 <View style={styles.modalStats}>
                   <View style={styles.modalStatItem}>
-                    <AppIcon name="help-circle" size={24} color={colors.primary} />
+                    <AppIcon name="help-circle" size={24} color={colors.primaryText} />
                     <Text style={[styles.modalStatValue, { color: colors.text }]}>{selectedTest.questionCount}</Text>
                     <Text style={[styles.modalStatLabel, { color: colors.textSecondary }]}>Questions</Text>
                   </View>
@@ -727,6 +729,7 @@ export default function TestScreen() {
                   <TouchableOpacity
                     style={[
                       styles.startButton,
+                      { backgroundColor: colors.primaryFill },
                       selectedMode === 'study' && styles.startButtonStudy
                     ]}
                     onPress={() => {
@@ -806,18 +809,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   clearHistoryText: {
-    fontSize: 14,
+    ...typeScale.body,
     fontWeight: '600',
   },
   headerTitle: {
-    fontSize: 28,
+    ...typeScale.display,
     fontWeight: 'bold',
     color: '#ffffff',
   },
   headerSubtitle: {
-    fontSize: 14,
+    ...typeScale.body,
     marginTop: 4,
-    lineHeight: 20,
   },
   tabContainer: {
     flexDirection: 'row',
@@ -837,7 +839,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366f1',
   },
   tabText: {
-    fontSize: 14,
+    ...typeScale.body,
     fontWeight: '600',
     color: '#9ca3af',
   },
@@ -868,13 +870,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   testName: {
-    fontSize: 17,
+    ...typeScale.heading,
     fontWeight: '600',
     color: '#ffffff',
     marginBottom: 4,
   },
   testDescription: {
-    fontSize: 14,
+    ...typeScale.body,
     color: '#9ca3af',
     marginBottom: 8,
   },
@@ -889,7 +891,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {
-    fontSize: 12,
+    ...typeScale.caption,
     color: '#6b7280',
   },
   attemptCard: {
@@ -914,17 +916,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   attemptName: {
-    fontSize: 17,
+    ...typeScale.heading,
     fontWeight: '600',
     color: '#ffffff',
     marginBottom: 2,
   },
   attemptSource: {
-    fontSize: 13,
+    ...typeScale.caption,
     marginBottom: 2,
   },
   attemptDate: {
-    fontSize: 13,
+    ...typeScale.caption,
     color: '#6b7280',
     marginBottom: 8,
   },
@@ -939,11 +941,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   scoreText: {
-    fontSize: 14,
+    ...typeScale.body,
+    ...tabularNums,
     fontWeight: '700',
   },
   attemptMeta: {
-    fontSize: 13,
+    ...typeScale.caption,
     color: '#9ca3af',
   },
   attemptActions: {
@@ -961,7 +964,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   retakeButtonText: {
-    fontSize: 14,
+    ...typeScale.body,
     fontWeight: '600',
   },
   deleteHistoryButton: {
@@ -975,7 +978,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   deleteHistoryButtonText: {
-    fontSize: 14,
+    ...typeScale.body,
     fontWeight: '600',
     color: '#ef4444',
   },
@@ -994,13 +997,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 20,
+    ...typeScale.title,
     fontWeight: '600',
     color: '#ffffff',
     marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: 14,
+    ...typeScale.body,
     color: '#9ca3af',
     textAlign: 'center',
   },
@@ -1031,14 +1034,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 22,
+    ...typeScale.title,
     fontWeight: 'bold',
     color: '#ffffff',
     marginBottom: 8,
     textAlign: 'center',
   },
   modalDescription: {
-    fontSize: 14,
+    ...typeScale.body,
     color: '#9ca3af',
     textAlign: 'center',
   },
@@ -1054,13 +1057,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalStatValue: {
-    fontSize: 24,
+    ...typeScale.title,
+    ...tabularNums,
     fontWeight: 'bold',
     color: '#ffffff',
     marginTop: 8,
   },
   modalStatLabel: {
-    fontSize: 12,
+    ...typeScale.caption,
     color: '#6b7280',
     marginTop: 4,
   },
@@ -1076,7 +1080,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: 16,
+    ...typeScale.body,
     fontWeight: '600',
     color: '#ffffff',
   },
@@ -1094,7 +1098,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#10b981',
   },
   startButtonText: {
-    fontSize: 16,
+    ...typeScale.body,
     fontWeight: '600',
     color: '#ffffff',
   },
@@ -1103,7 +1107,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modeSectionTitle: {
-    fontSize: 16,
+    ...typeScale.heading,
     fontWeight: '600',
     color: '#ffffff',
     marginBottom: 12,
@@ -1139,7 +1143,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366f1',
   },
   modeTitle: {
-    fontSize: 15,
+    ...typeScale.body,
     fontWeight: '700',
     color: '#9ca3af',
     marginBottom: 6,
@@ -1148,10 +1152,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   modeDescription: {
-    fontSize: 12,
+    ...typeScale.caption,
     color: '#6b7280',
     textAlign: 'center',
-    lineHeight: 18,
   },
   modeCheck: {
     position: 'absolute',
@@ -1167,7 +1170,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   advancedLinkText: {
-    fontSize: 14,
+    ...typeScale.body,
     color: '#6366f1',
     fontWeight: '500',
   },

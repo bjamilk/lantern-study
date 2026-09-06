@@ -141,7 +141,7 @@ export function CookieNoticeBanner() {
             Essential on-device storage keeps you signed in. Optional first-party analytics help improve Lantern and stay
             off unless you allow them.{' '}
             <Text
-              className="text-lantern-primary underline"
+              className="text-lantern-primary-text underline"
               onPress={() => void Linking.openURL('https://lanternstudy.com/cookies')}
             >
               Cookie Policy
@@ -166,7 +166,7 @@ export function CookieNoticeBanner() {
             </Pressable>
             <Pressable
               onPress={() => persistAndClose(acceptAllCookiePreferences())}
-              className="flex-1 shrink-0 rounded-lg bg-lantern-primary px-2 py-2.5 active:opacity-90"
+              className="flex-1 shrink-0 rounded-lg bg-lantern-primary-fill px-2 py-2.5 active:opacity-90"
               accessibilityRole="button"
               accessibilityLabel="Accept all including analytics"
             >
@@ -269,7 +269,7 @@ export function CookieNoticeBanner() {
             </Pressable>
             <Pressable
               onPress={confirmChoices}
-              className="rounded-lg bg-lantern-primary px-4 py-3 active:opacity-90"
+              className="rounded-lg bg-lantern-primary-fill px-4 py-3 active:opacity-90"
               accessibilityRole="button"
             >
               <Text className="text-sm font-semibold text-white text-center">Confirm my choices</Text>

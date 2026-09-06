@@ -79,7 +79,7 @@ const MCQSingleComponent = ({
         style={[
           s(colors).optionButton,
           { backgroundColor: colors.inputBackground, borderColor: colors.border },
-          selectedAnswer === option && { backgroundColor: colors.primary, borderColor: colors.primary },
+          selectedAnswer === option && { backgroundColor: colors.primaryFill, borderColor: colors.primary },
         ]}
         onPress={() => onAnswer(option)}
         activeOpacity={0.7}
@@ -135,7 +135,7 @@ const MCQMultipleComponent = ({
             style={[
               s(colors).optionButton,
               { backgroundColor: colors.inputBackground, borderColor: colors.border },
-              isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
+              isSelected && { backgroundColor: colors.primaryFill, borderColor: colors.primary },
             ]}
             onPress={() => toggleOption(option)}
             activeOpacity={0.7}
@@ -1048,7 +1048,7 @@ export default function TestTakingScreen() {
           <Text style={[s(colors).errorText, { color: colors.textSecondary }]}>{endedCopy}</Text>
           {!isSubmitting && (
             <TouchableOpacity onPress={dismissSession}>
-              <Text style={[s(colors).errorLink, { color: colors.primary }]}>Go Back</Text>
+              <Text style={[s(colors).errorLink, { color: colors.primaryText }]}>Go Back</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1158,7 +1158,7 @@ export default function TestTakingScreen() {
         <View style={[s(colors).questionCard, { backgroundColor: colors.card }]}>
           <View style={s(colors).questionHeader}>
             <View style={[s(colors).questionTypeBadge, { backgroundColor: colors.primaryBackground }]}>
-              <Text style={[s(colors).questionTypeText, { color: colors.primary }]}>
+              <Text style={[s(colors).questionTypeText, { color: colors.primaryText }]}>
                 {getQuestionTypeLabel(currentQuestion.type)}
               </Text>
             </View>
@@ -1300,7 +1300,7 @@ export default function TestTakingScreen() {
                     s(colors).dot,
                     { backgroundColor: colors.border },
                     isAnswered && { backgroundColor: colors.success },
-                    isCurrent && { backgroundColor: colors.primary, width: 12 },
+                    isCurrent && { backgroundColor: colors.primaryFill, width: 12 },
                     isStudyMode && isRevealed && { backgroundColor: colors.info },
                     isFlagged && { backgroundColor: colors.warning },
                     isLocked && { backgroundColor: colors.textTertiary, opacity: 0.6 },
@@ -1335,8 +1335,8 @@ export default function TestTakingScreen() {
             style={s(colors).navButton}
             onPress={nextQuestion}
           >
-            <Text style={[s(colors).navButtonText, { color: colors.primary }]}>Next</Text>
-            <AppIcon name="chevron-forward" size={24} color={colors.primary} />
+            <Text style={[s(colors).navButtonText, { color: colors.primaryText }]}>Next</Text>
+            <AppIcon name="chevron-forward" size={24} color={colors.primaryText} />
           </TouchableOpacity>
         )}
       </View>
@@ -1462,7 +1462,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.error,
   },
   submitButton: {
-    backgroundColor: '#6366f1',
+    // White label: the fill role, not the raw #6366f1 (4.47:1 under white).
+    backgroundColor: c.primaryFill,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,

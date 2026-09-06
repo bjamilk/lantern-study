@@ -106,17 +106,17 @@ const AcademicSetupBanner: React.FC<{ currentUser: User }> = ({ currentUser }) =
   return (
     <div
       role="status"
-      className="bg-lantern-primary-background border-b border-lantern-border px-4 py-2 flex items-center justify-between gap-3 text-sm"
+      className="bg-lantern-primary-background border-b border-lantern-border px-4 py-2 flex items-center justify-between gap-3 text-body"
     >
       <p className="min-w-0 truncate text-lantern-text">
-        <AcademicCapOutline className="w-4 h-4 inline-block mr-1.5 -mt-0.5 text-lantern-primary" aria-hidden />
+        <AcademicCapOutline className="w-4 h-4 inline-block mr-1.5 -mt-0.5 text-lantern-primary-text" aria-hidden />
         Finish setting up your profile — add your university and courses.
       </p>
       <div className="flex items-center gap-1 shrink-0">
         <button
           type="button"
           onClick={() => openModal('usernameRequired')}
-          className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-lantern-primary hover:bg-lantern-primary-dark"
+          className="px-2.5 py-1 rounded-md text-caption font-semibold text-white bg-lantern-primary-fill hover:bg-lantern-primary-dark"
         >
           Set up
         </button>
@@ -363,7 +363,7 @@ const StudyHeatmap = ({ data, theme }: { data: Map<string, number>, theme: 'ligh
                 })}
             </div>
             </div>
-            <div className="flex items-center gap-1 text-xs text-lantern-text-secondary">
+            <div className="flex items-center gap-1 text-caption text-lantern-text-secondary">
                 <span>Less</span>
                 {legendLevels.map(level => (
                     <div
@@ -1208,10 +1208,10 @@ export default function DashboardScreen({
           <div className="flex items-center gap-3">
             <span className="text-2xl" aria-hidden>🔥</span>
             <div>
-              <p className="font-bold text-sm leading-tight tracking-tight">
+              <p className="font-bold text-body leading-tight tracking-tight">
                 Day {streakData.streak} streak! +{bonusXP} XP bonus claimed!
               </p>
-              <p className="text-orange-50/90 text-xs">
+              <p className="text-orange-50/90 text-caption">
                 {streakData.streak >= 7
                   ? `${streakData.streak} days in a row — incredible! Keep it up!`
                   : streakData.streak >= 3
@@ -1338,7 +1338,7 @@ export default function DashboardScreen({
             {
               label: 'Tests Taken',
               value: totalTestsTakenOverall,
-              icon: <ChartBarIcon className="w-5 h-5 text-lantern-primary" />,
+              icon: <ChartBarIcon className="w-5 h-5 text-lantern-primary-text" />,
               iconBgClass: 'bg-lantern-primary-background',
             },
             {
@@ -1374,7 +1374,7 @@ export default function DashboardScreen({
               <p className="font-semibold text-amber-800 dark:text-amber-300">
                 {activeTestSession ? 'Test in progress' : 'Study session in progress'}
               </p>
-              <p className="text-sm text-amber-700 dark:text-amber-400">
+              <p className="text-body text-amber-700 dark:text-amber-400">
                 Pick up where you left off — progress is saved to your account when online.
               </p>
             </div>
@@ -1415,15 +1415,15 @@ export default function DashboardScreen({
         {onGetStudyRecommendations && (
           <Card padding="md">
             {lowDataMode ? (
-              <p className="text-sm text-lantern-text-secondary flex items-center gap-2">
-                <SparklesIcon className="w-5 h-5 text-lantern-primary shrink-0" />
+              <p className="text-body text-lantern-text-secondary flex items-center gap-2">
+                <SparklesIcon className="w-5 h-5 text-lantern-primary-text shrink-0" />
                 {syncCopy.lowDataAiHint}
               </p>
             ) : (
           <>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
-                <SparklesIcon className="w-5 h-5 mr-2 text-lantern-primary" />
+              <h2 className="text-heading font-semibold text-lantern-text flex items-center">
+                <SparklesIcon className="w-5 h-5 mr-2 text-lantern-primary-text" />
                 AI Study Coach
               </h2>
               <button
@@ -1455,7 +1455,7 @@ export default function DashboardScreen({
                   setIsCoachLoading(false);
                 }}
                 disabled={isCoachLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary/10 border border-lantern-primary/30 rounded-lantern transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-lantern-primary-text bg-lantern-primary-background hover:bg-lantern-primary/10 border border-lantern-primary/30 rounded-lantern transition-colors disabled:opacity-50"
               >
                 {isCoachLoading ? 'Analyzing...' : aiCoachData ? 'Refresh' : 'Get Recommendations'}
               </button>
@@ -1463,27 +1463,27 @@ export default function DashboardScreen({
             {aiCoachData ? (
               <div className="space-y-3">
                 <div className="p-3 bg-lantern-primary-background rounded-lantern">
-                  <p className="text-sm font-medium text-lantern-primary mb-1">💡 Study Tip</p>
-                  <p className="text-sm text-lantern-text">{aiCoachData.studyTip}</p>
+                  <p className="text-body font-medium text-lantern-primary-text mb-1">💡 Study Tip</p>
+                  <p className="text-body text-lantern-text">{aiCoachData.studyTip}</p>
                 </div>
                 {aiCoachData.weakTopics.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-lantern-text-secondary mb-1">Focus Areas</p>
+                    <p className="text-caption font-semibold text-lantern-text-secondary mb-1">Focus Areas</p>
                     <div className="flex flex-wrap gap-1.5">
                       {aiCoachData.weakTopics.map((topic, i) => (
-                        <span key={i} className="px-2 py-1 text-xs bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-md">
+                        <span key={i} className="px-2 py-1 text-caption bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-md">
                           {topic}
                         </span>
                       ))}
                     </div>
                   </div>
                 )}
-                <p className="text-xs text-lantern-text-secondary">
+                <p className="text-caption text-lantern-text-secondary">
                   ⏱ Estimated study time: <span className="font-semibold">{aiCoachData.estimatedMinutes} min</span>
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-lantern-text-secondary">
+              <p className="text-body text-lantern-text-secondary">
                 Click "Get Recommendations" to receive personalized study tips based on your performance.
               </p>
             )}
@@ -1495,7 +1495,7 @@ export default function DashboardScreen({
         {/* ─── Activity Heatmap & Filter ─── */}
         <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
           <div className="p-4 md:p-5 border-b border-lantern-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+            <h2 className="text-heading font-semibold text-lantern-text flex items-center">
               <CalendarDaysIcon className="w-5 h-5 mr-2 text-emerald-500" />
               Study Activity
             </h2>
@@ -1504,7 +1504,7 @@ export default function DashboardScreen({
               <select
                 value={selectedTimePeriod}
                 onChange={(e) => setSelectedTimePeriod(e.target.value as TimePeriodOptionValue)}
-                className="text-sm p-1.5 bg-lantern-surface border border-lantern-border text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
+                className="text-body p-1.5 bg-lantern-surface border border-lantern-border text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
               >
                 {timePeriodOptions.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -1516,15 +1516,15 @@ export default function DashboardScreen({
             <div className="px-4 py-3 bg-lantern-background-secondary border-b border-lantern-border">
               <div className="flex flex-col sm:flex-row gap-3">
                 <div>
-                  <label className="block text-xs text-lantern-text-secondary mb-0.5">Start Date</label>
+                  <label className="block text-caption text-lantern-text-secondary mb-0.5">Start Date</label>
                   <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)}
-                    className="p-1.5 text-sm border border-lantern-border rounded-lantern bg-lantern-surface text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
+                    className="p-1.5 text-body border border-lantern-border rounded-lantern bg-lantern-surface text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
                     max={customEndDate || undefined} />
                 </div>
                 <div>
-                  <label className="block text-xs text-lantern-text-secondary mb-0.5">End Date</label>
+                  <label className="block text-caption text-lantern-text-secondary mb-0.5">End Date</label>
                   <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="p-1.5 text-sm border border-lantern-border rounded-lantern bg-lantern-surface text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
+                    className="p-1.5 text-body border border-lantern-border rounded-lantern bg-lantern-surface text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
                     min={customStartDate || undefined} />
                 </div>
               </div>
@@ -1557,7 +1557,7 @@ export default function DashboardScreen({
 
         <details open className="group">
           <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
-            <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+            <h2 className="text-heading font-semibold text-lantern-text flex items-center">
               <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
               Achievements &amp; Topic Insights
             </h2>
@@ -1568,7 +1568,7 @@ export default function DashboardScreen({
           {/* Achievements Card */}
           <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
             <div className="p-4 md:p-5 border-b border-lantern-border">
-              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+              <h2 className="text-heading font-semibold text-lantern-text flex items-center">
                 <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
                 Achievements
               </h2>
@@ -1597,24 +1597,24 @@ export default function DashboardScreen({
                     <span className="text-3xl flex-shrink-0">{definition.icon}</span>
                     <div className="flex-grow min-w-0">
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold text-sm text-lantern-text truncate">{userBadge ? userBadge.name : definition.baseName}</p>
-                        {userBadge && <span className="text-xs bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ml-2">Lv.{userBadge.level}</span>}
+                        <p className="font-semibold text-body text-lantern-text truncate">{userBadge ? userBadge.name : definition.baseName}</p>
+                        {userBadge && <span className="text-caption bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ml-2">Lv.{userBadge.level}</span>}
                       </div>
                       {isRisingStar ? (
                         nextLevelInfo ? (
-                          <p className="text-xs text-lantern-text-secondary mt-0.5">
+                          <p className="text-caption text-lantern-text-secondary mt-0.5">
                             Goal: {nextLevelInfo.threshold} upvotes on one question
                           </p>
                         ) : (
-                          <p className="text-xs text-green-500 font-semibold mt-0.5">Max Level!</p>
+                          <p className="text-caption text-green-500 font-semibold mt-0.5">Max Level!</p>
                         )
                       ) : (
                         <div className="mt-1.5">
-                          <div className="flex justify-between text-[10px] text-lantern-text-secondary mb-0.5">
+                          <div className="flex justify-between text-caption text-lantern-text-secondary mb-0.5">
                             <span>{progressText}</span>
                           </div>
                           <div className="w-full bg-lantern-background-secondary rounded-full h-1.5">
-                            <div className="bg-lantern-primary h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(progress, 100)}%` }}></div>
+                            <div className="bg-lantern-primary-fill h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(progress, 100)}%` }}></div>
                           </div>
                         </div>
                       )}
@@ -1628,43 +1628,43 @@ export default function DashboardScreen({
           {/* Topic Performance Card */}
           <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
             <div className="p-4 md:p-5 border-b border-lantern-border">
-              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
-                <TagIcon className="w-5 h-5 mr-2 text-lantern-primary" />
+              <h2 className="text-heading font-semibold text-lantern-text flex items-center">
+                <TagIcon className="w-5 h-5 mr-2 text-lantern-primary-text" />
                 Topic Insights
               </h2>
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase text-emerald-600 dark:text-emerald-400 tracking-wider mb-2">Strongest</h4>
+                <h4 className="text-label uppercase text-emerald-600 dark:text-emerald-400 mb-2">Strongest</h4>
                 <div className="space-y-1.5">
                   {analysisData.strongestTopics.length > 0 ? analysisData.strongestTopics.map(topic => (
                     <div key={topic.tag} className="flex items-center justify-between p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-                      <span className="text-sm text-lantern-text truncate pr-2">{topic.tag}</span>
-                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0">{topic.accuracy.toFixed(0)}%</span>
+                      <span className="text-body text-lantern-text truncate pr-2">{topic.tag}</span>
+                      <span className="text-body font-bold tabular-nums text-emerald-600 dark:text-emerald-400 flex-shrink-0">{topic.accuracy.toFixed(0)}%</span>
                     </div>
-                  )) : <p className="text-xs text-lantern-text-tertiary italic">Not enough data yet.</p>}
+                  )) : <p className="text-caption text-lantern-text-tertiary italic">Not enough data yet.</p>}
                 </div>
               </div>
               <div>
-                <h4 className="text-xs font-semibold uppercase text-red-600 dark:text-red-400 tracking-wider mb-2">Needs Work</h4>
+                <h4 className="text-label uppercase text-red-600 dark:text-red-400 mb-2">Needs Work</h4>
                 <div className="space-y-1.5">
                   {analysisData.weakestTopics.length > 0 ? analysisData.weakestTopics.map(topic => (
                     <div key={topic.tag} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                      <span className="text-sm text-lantern-text truncate pr-2">{topic.tag}</span>
-                      <span className="text-sm font-bold text-red-600 dark:text-red-400 flex-shrink-0">{topic.accuracy.toFixed(0)}%</span>
+                      <span className="text-body text-lantern-text truncate pr-2">{topic.tag}</span>
+                      <span className="text-body font-bold tabular-nums text-red-600 dark:text-red-400 flex-shrink-0">{topic.accuracy.toFixed(0)}%</span>
                     </div>
-                  )) : <p className="text-xs text-lantern-text-tertiary italic">Not enough data yet.</p>}
+                  )) : <p className="text-caption text-lantern-text-tertiary italic">Not enough data yet.</p>}
                 </div>
               </div>
               <div>
-                <h4 className="text-xs font-semibold uppercase text-lantern-primary tracking-wider mb-2">Speed by Type</h4>
+                <h4 className="text-label uppercase text-lantern-primary-text mb-2">Speed by Type</h4>
                 <div className="space-y-1.5">
                   {analysisData.speedAnalysis.length > 0 ? analysisData.speedAnalysis.map(item => (
                     <div key={item.type} className="flex items-center justify-between p-2 bg-lantern-primary-background rounded-lantern">
-                      <span className="text-sm text-lantern-text">{getQuestionTypeLabel(item.type)}</span>
-                      <span className="text-sm font-bold text-lantern-primary flex-shrink-0">{item.avgTime.toFixed(1)}s</span>
+                      <span className="text-body text-lantern-text">{getQuestionTypeLabel(item.type)}</span>
+                      <span className="text-body font-bold text-lantern-primary-text flex-shrink-0">{item.avgTime.toFixed(1)}s</span>
                     </div>
-                  )) : <p className="text-xs text-lantern-text-tertiary italic">No time data available.</p>}
+                  )) : <p className="text-caption text-lantern-text-tertiary italic">No time data available.</p>}
                 </div>
               </div>
             </div>
@@ -1678,7 +1678,7 @@ export default function DashboardScreen({
         {SHOW_DASHBOARD_QUESTIONS_TO_REVIEW && troublesomeQuestions.length > 0 && (
           <details open className="group">
             <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
-              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+              <h2 className="text-heading font-semibold text-lantern-text flex items-center">
                 <ExclamationTriangleIcon className="w-5 h-5 mr-2 text-amber-500" />
                 Questions to Review
               </h2>
@@ -1688,11 +1688,11 @@ export default function DashboardScreen({
               {troublesomeQuestions.map(q => (
                 <div key={q.id} className="p-4 flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{q.accuracy.toFixed(0)}%</span>
+                    <span className="text-body font-bold tabular-nums text-amber-600 dark:text-amber-400">{q.accuracy.toFixed(0)}%</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-lantern-text whitespace-pre-wrap break-words">{q.stem}</p>
-                    <p className="text-xs text-lantern-text-tertiary mt-1">{q.incorrectAttempts} incorrect attempt{q.incorrectAttempts !== 1 ? 's' : ''}</p>
+                    <p className="text-body text-lantern-text whitespace-pre-wrap break-words">{q.stem}</p>
+                    <p className="text-caption text-lantern-text-tertiary mt-1">{q.incorrectAttempts} incorrect attempt{q.incorrectAttempts !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
               ))}
@@ -1705,8 +1705,8 @@ export default function DashboardScreen({
           <div className="p-4 md:p-5 border-b border-lantern-border">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-lantern-text flex items-center">
-                  <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary" />
+                <h2 className="text-heading font-semibold text-lantern-text flex items-center">
+                  <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary-text" />
                   Group performance
                 </h2>
               </div>
@@ -1722,7 +1722,7 @@ export default function DashboardScreen({
                     value={groupPerfPeriod}
                     onChange={(e) => handleGroupPerfPeriodChange(e.target.value as GroupPerformancePeriod)}
                     aria-label="Group performance period"
-                    className="min-h-[36px] text-xs sm:text-sm p-1.5 rounded-lg bg-lantern-surface border border-lantern-border text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
+                    className="min-h-[36px] text-caption sm:text-body p-1.5 rounded-lg bg-lantern-surface border border-lantern-border text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
                   >
                     {GROUP_PERFORMANCE_PERIOD_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1742,9 +1742,9 @@ export default function DashboardScreen({
                     <button
                       type="button"
                       onClick={() => setChartDisplayMode('line')}
-                      className={`px-3 py-2 text-xs rounded-l-lg border transition-colors ${
+                      className={`px-3 py-2 text-caption rounded-l-lg border transition-colors ${
                         chartDisplayMode === 'line'
-                          ? 'bg-lantern-primary text-white border-lantern-primary'
+                          ? 'bg-lantern-primary-fill text-white border-lantern-primary'
                           : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'
                       }`}
                     >
@@ -1753,9 +1753,9 @@ export default function DashboardScreen({
                     <button
                       type="button"
                       onClick={() => setChartDisplayMode('bar')}
-                      className={`px-3 py-2 text-xs rounded-r-lg border transition-colors ${
+                      className={`px-3 py-2 text-caption rounded-r-lg border transition-colors ${
                         chartDisplayMode === 'bar'
-                          ? 'bg-lantern-primary text-white border-lantern-primary'
+                          ? 'bg-lantern-primary-fill text-white border-lantern-primary'
                           : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'
                       }`}
                     >
@@ -1766,12 +1766,12 @@ export default function DashboardScreen({
               </div>
             </div>
             {isMultiGroupChart && (
-              <p className="text-[11px] text-lantern-text-tertiary mt-2">
+              <p className="text-caption text-lantern-text-tertiary mt-2">
                 Comparing multiple groups uses weekly averages so different test dates line up.
               </p>
             )}
             {selectionIncludesParentRollup && (
-              <p className="text-[11px] text-lantern-text-tertiary mt-1">
+              <p className="text-caption text-lantern-text-tertiary mt-1">
                 Parent includes subgroup tests in its series.
               </p>
             )}
@@ -1780,7 +1780,7 @@ export default function DashboardScreen({
           {activeGroupChartOptions.length === 0 ? (
             <div className="p-8 text-center">
               <UsersIcon className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
-              <p className="text-sm text-lantern-text-tertiary">
+              <p className="text-body text-lantern-text-tertiary">
                 {groupPerformanceResults.length === 0
                   ? 'No group tests in this period. Try a wider range or All Time.'
                   : 'Take a test in an active group to see performance here.'}
@@ -1788,7 +1788,7 @@ export default function DashboardScreen({
             </div>
           ) : selectedGroupPerformance.length === 0 ? (
             <div className="p-8 text-center">
-              <p className="text-sm text-lantern-text-tertiary">
+              <p className="text-body text-lantern-text-tertiary">
                 Select one or more groups from the dropdown to view the chart.
               </p>
             </div>
@@ -1796,28 +1796,28 @@ export default function DashboardScreen({
             <>
               <div className="grid grid-cols-3 gap-px bg-lantern-border">
                 <div className="bg-lantern-surface p-3 text-center">
-                  <p className="text-xs text-lantern-text-secondary">Tests</p>
-                  <p className="text-lg font-bold text-lantern-text">{selectedGroupsSummary.testCount}</p>
+                  <p className="text-caption text-lantern-text-secondary">Tests</p>
+                  <p className="text-heading font-bold tabular-nums text-lantern-text">{selectedGroupsSummary.testCount}</p>
                 </div>
                 <div className="bg-lantern-surface p-3 text-center">
-                  <p className="text-xs text-lantern-text-secondary">Avg Score</p>
-                  <p className="text-lg font-bold text-lantern-text">
+                  <p className="text-caption text-lantern-text-secondary">Avg Score</p>
+                  <p className="text-heading font-bold tabular-nums text-lantern-text">
                     {selectedGroupsSummary.averageScore.toFixed(1)}%
                   </p>
                 </div>
                 <div className="bg-lantern-surface p-3 text-center">
-                  <p className="text-xs text-lantern-text-secondary">Accuracy</p>
-                  <p className="text-lg font-bold text-lantern-text">
+                  <p className="text-caption text-lantern-text-secondary">Accuracy</p>
+                  <p className="text-heading font-bold tabular-nums text-lantern-text">
                     {selectedGroupsSummary.accuracy.toFixed(1)}%
                   </p>
                 </div>
               </div>
               <div className="p-4">
                 {lowDataMode ? (
-                  <div className="py-4 text-center text-sm text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern space-y-1">
+                  <div className="py-4 text-center text-body text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern space-y-1">
                     <p className="font-medium">Chart hidden in Low-Data Mode</p>
                     {selectedGroupPerformance.map((group) => (
-                      <p key={group.id} className="text-xs">
+                      <p key={group.id} className="text-caption">
                         {group.name}: {group.averageScore.toFixed(1)}% avg across {group.testCount}{' '}
                         test{group.testCount !== 1 ? 's' : ''}
                       </p>
@@ -1832,7 +1832,7 @@ export default function DashboardScreen({
                 ) : null}
                 {selectedGroupPerformance.length > 1 && (
                   <div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-xs text-left">
+                    <table className="w-full text-caption text-left">
                       <thead>
                         <tr className="text-lantern-text-secondary border-b border-lantern-border">
                           <th className="py-1.5 pr-3 font-medium">Group</th>
@@ -1846,7 +1846,7 @@ export default function DashboardScreen({
                           <tr key={group.id} className="border-b border-lantern-border/60 last:border-0">
                             <td className="py-1.5 pr-3 text-lantern-text font-medium">{group.name}</td>
                             <td className="py-1.5 pr-3 text-lantern-text-secondary">{group.testCount}</td>
-                            <td className="py-1.5 pr-3 text-lantern-primary font-semibold">
+                            <td className="py-1.5 pr-3 text-lantern-primary-text font-semibold">
                               {group.averageScore.toFixed(1)}%
                             </td>
                             <td className="py-1.5 text-lantern-text-secondary">
@@ -1866,7 +1866,7 @@ export default function DashboardScreen({
         {/* ─── Recent Tests ─── */}
         <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
           <button onClick={toggleRecentTestsExpansion} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-lantern-background-secondary/60 transition-colors" aria-expanded={isRecentTestsExpanded}>
-            <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+            <h2 className="text-heading font-semibold text-lantern-text flex items-center">
               <PresentationChartLineIcon className="w-5 h-5 mr-2 text-blue-500" />
               Recent Tests
             </h2>
@@ -1875,19 +1875,19 @@ export default function DashboardScreen({
           {isRecentTestsExpanded && (
             <div className="border-t border-lantern-border">
               <div className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-lantern-border bg-lantern-background-secondary/40">
-                <label className="flex items-center gap-2 text-xs text-lantern-text-secondary">
+                <label className="flex items-center gap-2 text-caption text-lantern-text-secondary">
                   <span>Sort</span>
                   <select
                     value={recentSort}
                     onChange={(e) => setRecentSort(e.target.value as TestResultsSort)}
-                    className="rounded-md border border-lantern-border bg-lantern-surface px-2 py-1 text-xs text-lantern-text"
+                    className="rounded-md border border-lantern-border bg-lantern-surface px-2 py-1 text-caption text-lantern-text"
                   >
                     <option value="newest">Newest</option>
                     <option value="oldest">Oldest</option>
                     <option value="highestScore">Highest score</option>
                   </select>
                 </label>
-                <p className="text-[11px] text-lantern-text-tertiary">
+                <p className="text-caption text-lantern-text-tertiary">
                   {recentTotal > 0
                     ? `Page ${recentPage} of ${recentTotalPages} · ${recentTotal} test${recentTotal !== 1 ? 's' : ''}`
                     : 'No tests in this period'}
@@ -1896,7 +1896,7 @@ export default function DashboardScreen({
               {/* The Library's scope, always visible and always clearable: a
                   silently narrowed list reads as missing tests. */}
               {recentCourseId && (
-                <div className="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-lantern-border bg-lantern-background-secondary/20 text-[11px] text-lantern-text-secondary">
+                <div className="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-lantern-border bg-lantern-background-secondary/20 text-caption text-lantern-text-secondary">
                   <span>
                     Filtered to{' '}
                     <span className="font-semibold text-lantern-text">
@@ -1934,7 +1934,7 @@ export default function DashboardScreen({
               )}
               <div className="divide-y divide-lantern-border">
                 {recentLoading ? (
-                  <div className="p-8 text-center text-sm text-lantern-text-tertiary">Loading tests…</div>
+                  <div className="p-8 text-center text-body text-lantern-text-tertiary">Loading tests…</div>
                 ) : recentPageData.length > 0 ? (
                   recentPageData.map((result, index) => {
                     const answers = result.session?.userAnswers || {};
@@ -1959,37 +1959,37 @@ export default function DashboardScreen({
                         className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-lantern-background-secondary transition-colors"
                       >
                         <div className="min-w-0">
-                          <p className="font-medium text-sm text-lantern-text truncate">
+                          <p className="font-medium text-body text-lantern-text truncate">
                             {getGroupName(result.session.config?.groupId, result.session.config?.groupName)}
                           </p>
-                          <p className="text-xs text-lantern-text-tertiary mt-0.5">
+                          <p className="text-caption text-lantern-text-tertiary mt-0.5">
                             {new Date(result.session.startTime).toLocaleString()}
                           </p>
                         </div>
                         <div className="flex items-center gap-4 flex-shrink-0">
                           <div className="text-center">
-                            <p className="text-lg font-bold text-lantern-primary">{result.score.toFixed(1)}%</p>
-                            <p className="text-[10px] text-lantern-text-tertiary">
+                            <p className="text-heading font-bold tabular-nums text-lantern-primary-text">{result.score.toFixed(1)}%</p>
+                            <p className="text-caption text-lantern-text-tertiary">
                               {result.correctAnswersCount}/{result.totalQuestions}
                             </p>
                           </div>
                           {avgTime && (
                             <div className="text-center">
-                              <p className="text-lg font-bold text-lantern-text-secondary">{avgTime}s</p>
-                              <p className="text-[10px] text-lantern-text-tertiary">avg/q</p>
+                              <p className="text-heading font-bold tabular-nums text-lantern-text-secondary">{avgTime}s</p>
+                              <p className="text-caption text-lantern-text-tertiary">avg/q</p>
                             </div>
                           )}
                           <button
                             type="button"
                             onClick={() => void handleViewRecentReview(result)}
-                            className="px-3 py-1.5 bg-lantern-background-secondary hover:bg-lantern-border/40 text-lantern-text rounded-lantern text-xs font-semibold flex items-center gap-1 transition-colors border border-lantern-border"
+                            className="px-3 py-1.5 bg-lantern-background-secondary hover:bg-lantern-border/40 text-lantern-text rounded-lantern text-caption font-semibold flex items-center gap-1 transition-colors border border-lantern-border"
                           >
                             Review
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleViewRecentAnalysis(result)}
-                            className="px-3 py-1.5 bg-lantern-primary-background hover:bg-lantern-primary/15 text-lantern-primary rounded-lantern text-xs font-semibold flex items-center gap-1 transition-colors"
+                            className="px-3 py-1.5 bg-lantern-primary-background hover:bg-lantern-primary/15 text-lantern-primary-text rounded-lantern text-caption font-semibold flex items-center gap-1 transition-colors"
                           >
                             <PresentationChartLineIcon className="w-3.5 h-3.5" />
                             Analyze
@@ -2001,7 +2001,7 @@ export default function DashboardScreen({
                 ) : (
                   <div className="p-8 text-center">
                     <AcademicCapOutline className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
-                    <p className="text-sm text-lantern-text-tertiary">
+                    <p className="text-body text-lantern-text-tertiary">
                       No tests taken yet. Start a test from one of your groups!
                     </p>
                   </div>
@@ -2013,7 +2013,7 @@ export default function DashboardScreen({
                     type="button"
                     disabled={recentPage <= 1 || recentLoading}
                     onClick={() => setRecentPage((p) => Math.max(1, p - 1))}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lantern border border-lantern-border disabled:opacity-40"
+                    className="px-3 py-1.5 text-caption font-semibold rounded-lantern border border-lantern-border disabled:opacity-40"
                   >
                     Previous
                   </button>
@@ -2021,7 +2021,7 @@ export default function DashboardScreen({
                     type="button"
                     disabled={recentPage >= recentTotalPages || recentLoading}
                     onClick={() => setRecentPage((p) => p + 1)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lantern border border-lantern-border disabled:opacity-40"
+                    className="px-3 py-1.5 text-caption font-semibold rounded-lantern border border-lantern-border disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -2052,7 +2052,7 @@ export default function DashboardScreen({
                   ? <BoltIcon className="w-5 h-5 text-yellow-500" />
                   : <AcademicCapOutline className="w-5 h-5 text-emerald-500" />
                 }
-                <h2 id="quick-action-group-picker-title" className="text-base font-semibold text-lantern-text">
+                <h2 id="quick-action-group-picker-title" className="text-body font-semibold text-lantern-text">
                   Select a group for Quick {quickActionPicker === 'test' ? 'Test' : 'Study'}
                 </h2>
               </div>
@@ -2068,7 +2068,7 @@ export default function DashboardScreen({
             {/* Group list */}
             <div className="max-h-72 overflow-y-auto divide-y divide-lantern-border">
               {availableGroups.length === 0 ? (
-                <p className="text-center text-sm text-lantern-text-tertiary py-8">
+                <p className="text-center text-body text-lantern-text-tertiary py-8">
                   No groups available. Join or create a group first.
                 </p>
               ) : (
@@ -2086,13 +2086,13 @@ export default function DashboardScreen({
                       />
                     ) : (
                       <div className="w-9 h-9 rounded-full bg-lantern-primary-background flex items-center justify-center flex-shrink-0">
-                        <UsersIcon className="w-5 h-5 text-lantern-primary" />
+                        <UsersIcon className="w-5 h-5 text-lantern-primary-text" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-lantern-text truncate">{group.name}</p>
+                      <p className="text-body font-semibold text-lantern-text truncate">{group.name}</p>
                       {group.members && group.members.length > 0 && (
-                        <p className="text-xs text-lantern-text-tertiary">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</p>
+                        <p className="text-caption text-lantern-text-tertiary">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</p>
                       )}
                     </div>
                     {quickActionPicker === 'test'

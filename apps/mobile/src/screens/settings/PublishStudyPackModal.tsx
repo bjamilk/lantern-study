@@ -206,7 +206,7 @@ export function PublishStudyPackModal({
               borderBottomColor: colors.border,
             }}
           >
-            <AppIcon name="storefront" size={20} color={colors.primary} />
+            <AppIcon name="storefront" size={20} color={colors.primaryText} />
             <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: colors.text }}>
               Sell as a Study Pack
             </Text>
@@ -387,7 +387,7 @@ export function PublishStudyPackModal({
                   {RIGHTS_ATTESTATION_TEXT}
                 </Text>
                 <Pressable onPress={openSellerTerms} hitSlop={6} accessibilityRole="link">
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primaryText }}>
                     Read the {LEGAL_DOCUMENT_TITLES['seller-terms']}
                   </Text>
                 </Pressable>
@@ -427,7 +427,7 @@ export function PublishStudyPackModal({
                 alignItems: 'center',
                 paddingVertical: 12,
                 borderRadius: 10,
-                backgroundColor: canSubmit ? colors.primary : colors.primary + '66',
+                backgroundColor: canSubmit ? colors.primaryFill : colors.primaryFill + '66',
               }}
             >
               <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>

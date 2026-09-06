@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   categoryName: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#9ca3af',
     textAlign: 'center',
   },

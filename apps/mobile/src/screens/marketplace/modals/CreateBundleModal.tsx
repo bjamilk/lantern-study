@@ -114,7 +114,7 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
         <View className="bg-lantern-surface rounded-t-3xl max-h-[90%]">
           <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold">Create bundle</Text>
-            <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
+            <Pressable onPress={onClose}><Text className="text-lantern-primary-text font-semibold">Close</Text></Pressable>
           </View>
           <ScrollView
             className="p-4"
@@ -174,7 +174,7 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
                 <Text className="flex-1 text-sm font-medium text-lantern-text" numberOfLines={1}>
                   {l.title}
                 </Text>
-                <Text className="text-sm text-lantern-primary">{formatPrice(l.price)}</Text>
+                <Text className="text-sm text-lantern-primary-text">{formatPrice(l.price)}</Text>
               </Pressable>
             ))}
             <TextInput

@@ -120,7 +120,7 @@ export default function AIUsageBadge({
         >
           <View style={styles.modalHeader}>
             <View style={styles.cardHeader}>
-              <AppIcon name="sparkles" size={20} color={colors.primary} />
+              <AppIcon name="sparkles" size={20} color={colors.primaryText} />
               <Text style={[styles.cardTitle, { color: colors.text }]}>AI Requests</Text>
             </View>
             <TouchableOpacity onPress={closeDetail} hitSlop={12} accessibilityLabel="Close">
@@ -202,7 +202,7 @@ export default function AIUsageBadge({
     return (
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.cardHeader}>
-          <AppIcon name="sparkles" size={20} color={colors.primary} />
+          <AppIcon name="sparkles" size={20} color={colors.primaryText} />
           <Text style={[styles.cardTitle, { color: colors.text }]}>AI Usage</Text>
         </View>
 
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dockedText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
     color: '#fff',
   },

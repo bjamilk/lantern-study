@@ -26,7 +26,7 @@ export function ResendEmailButton({
       {loading ? (
         <ActivityIndicator size="small" color="#6366f1" />
       ) : (
-        <Text className="text-center text-sm font-medium text-lantern-primary">
+        <Text className="text-center text-sm font-medium text-lantern-primary-text">
           {cooldownSeconds > 0 ? `${label} (${cooldownSeconds}s)` : label}
         </Text>
       )}

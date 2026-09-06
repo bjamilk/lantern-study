@@ -512,7 +512,7 @@ export default function TestConfigModal({
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <AppIcon name="filter" size={20} color={colors.primary} />
+                <AppIcon name="filter" size={20} color={colors.primaryText} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Question visibility</Text>
               </View>
               <View style={{ gap: 8, marginTop: 8 }}>
@@ -556,9 +556,9 @@ export default function TestConfigModal({
             {/* Number of Questions */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <AppIcon name="list" size={20} color={colors.primary} />
+                <AppIcon name="list" size={20} color={colors.primaryText} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Number of Questions</Text>
-                <Text style={[styles.questionCount, { color: colors.primary }]}>
+                <Text style={[styles.questionCount, { color: colors.primaryText }]}>
                   {numberOfQuestions} / {effectiveMaxQuestions}
                 </Text>
               </View>
@@ -571,7 +571,7 @@ export default function TestConfigModal({
               <View style={styles.sliderContainer}>
                 <View style={styles.numberInputRow}>
                   <TouchableOpacity
-                    style={[styles.numberButton, { backgroundColor: colors.primary }]}
+                    style={[styles.numberButton, { backgroundColor: colors.primaryFill }]}
                     onPress={() => setNumberOfQuestions(Math.max(1, numberOfQuestions - 1))}
                     disabled={numberOfQuestions <= 1}
                   >
@@ -591,7 +591,7 @@ export default function TestConfigModal({
                   />
                   
                   <TouchableOpacity
-                    style={[styles.numberButton, { backgroundColor: colors.primary }]}
+                    style={[styles.numberButton, { backgroundColor: colors.primaryFill }]}
                     onPress={() => setNumberOfQuestions(Math.min(effectiveMaxQuestions, numberOfQuestions + 1))}
                     disabled={numberOfQuestions >= effectiveMaxQuestions}
                   >
@@ -607,7 +607,7 @@ export default function TestConfigModal({
                       style={[
                         styles.quickSelectButton,
                         { backgroundColor: colors.inputBackground, borderColor: colors.border },
-                        numberOfQuestions === num && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        numberOfQuestions === num && { backgroundColor: colors.primaryFill, borderColor: colors.primary },
                       ]}
                       onPress={() => setNumberOfQuestions(num)}
                     >
@@ -623,7 +623,7 @@ export default function TestConfigModal({
                       style={[
                         styles.quickSelectButton,
                         { backgroundColor: colors.inputBackground, borderColor: colors.border },
-                        numberOfQuestions === effectiveMaxQuestions && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        numberOfQuestions === effectiveMaxQuestions && { backgroundColor: colors.primaryFill, borderColor: colors.primary },
                       ]}
                       onPress={() => setNumberOfQuestions(effectiveMaxQuestions)}
                     >
@@ -778,7 +778,7 @@ export default function TestConfigModal({
                     placeholder="Preset name"
                     placeholderTextColor={colors.textSecondary}
                   />
-                  <TouchableOpacity style={[styles.presetSaveButton, { backgroundColor: colors.primary }]} onPress={handleSavePreset}>
+                  <TouchableOpacity style={[styles.presetSaveButton, { backgroundColor: colors.primaryFill }]} onPress={handleSavePreset}>
                     <Text style={styles.presetSaveText}>Save</Text>
                   </TouchableOpacity>
                   {onDeletePreset && selectedPresetId ? (
@@ -849,7 +849,7 @@ export default function TestConfigModal({
             {/* Course (academic archive) */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <AppIcon name="school" size={20} color={colors.primary} />
+                <AppIcon name="school" size={20} color={colors.primaryText} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Course</Text>
               </View>
               <CoursePicker
@@ -878,11 +878,11 @@ export default function TestConfigModal({
               style={[styles.advancedToggle, { borderTopColor: colors.border }]}
               onPress={() => setShowAdvanced(!showAdvanced)}
             >
-              <Text style={[styles.advancedToggleText, { color: colors.primary }]}>Advanced Options</Text>
+              <Text style={[styles.advancedToggleText, { color: colors.primaryText }]}>Advanced Options</Text>
               <AppIcon 
                 name={showAdvanced ? 'chevron-up' : 'chevron-down'} 
                 size={20} 
-                color={colors.primary} 
+                color={colors.primaryText} 
               />
             </TouchableOpacity>
 
@@ -981,8 +981,8 @@ export default function TestConfigModal({
                 onPress={handleDownload}
                 disabled={isDownloading || effectiveMaxQuestions === 0}
               >
-                <AppIcon name="cloud-download" size={18} color={colors.primary} />
-                <Text style={[styles.downloadButtonText, { color: colors.primary }]}>
+                <AppIcon name="cloud-download" size={18} color={colors.primaryText} />
+                <Text style={[styles.downloadButtonText, { color: colors.primaryText }]}>
                   {isDownloading ? 'Downloading…' : 'Download for offline'}
                 </Text>
               </TouchableOpacity>

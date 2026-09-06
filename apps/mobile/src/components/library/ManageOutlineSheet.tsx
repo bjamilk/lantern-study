@@ -260,7 +260,7 @@ export function ManageOutlineSheet({
               happen to be on screen. Same gate as web's skeleton. */}
           {loading ? (
             <View style={styles.center}>
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.primaryText} />
               <Text style={[styles.centerText, { color: colors.textSecondary }]}>{COURSE_TOPIC_COPY.loading}</Text>
             </View>
           ) : loadError ? (
@@ -307,7 +307,7 @@ export function ManageOutlineSheet({
                           accessibilityRole="button"
                           accessibilityLabel={COURSE_TOPIC_COPY.rename}
                         >
-                          <AppIcon name="checkmark" size={20} color={colors.primary} />
+                          <AppIcon name="checkmark" size={20} color={colors.primaryText} />
                         </Pressable>
                         <Pressable
                           onPress={() => setEditingId(null)}
@@ -377,7 +377,7 @@ export function ManageOutlineSheet({
 
           {busy ? (
             <View style={styles.busyRow}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.primaryText} />
             </View>
           ) : null}
         </View>

@@ -88,7 +88,7 @@ function SegmentBar({
               numberOfLines={1}
               className={`text-sm ${
                 selected
-                  ? 'font-bold text-lantern-primary'
+                  ? 'font-bold text-lantern-primary-text'
                   : 'font-medium text-lantern-text-secondary'
               }`}
             >
@@ -101,7 +101,7 @@ function SegmentBar({
                 width: '60%',
                 marginTop: 4,
                 borderRadius: 1,
-                backgroundColor: selected ? colors.primary : 'transparent',
+                backgroundColor: selected ? colors.primaryFill : 'transparent',
               }}
             />
           </Pressable>
@@ -244,7 +244,7 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
         className="flex-row items-center gap-3 px-4 py-3 border-b border-lantern-border"
       >
         <View className="w-10 h-10 rounded-xl bg-lantern-primary-background dark:bg-lantern-primary-dark/30 items-center justify-center">
-          <AppIcon name="people" size={20} color={colors.primary} />
+          <AppIcon name="people" size={20} color={colors.primaryText} />
         </View>
         <View className="flex-1 min-w-0">
           <Text className="text-base font-semibold text-lantern-text" numberOfLines={1}>
@@ -255,11 +255,11 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
           </Text>
         </View>
         {busy ? (
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={colors.primaryText} />
         ) : (
           <Text
             className={`text-xs font-semibold px-2 py-1.5 ${
-              joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'
+              joined ? 'text-lantern-text-secondary' : 'text-lantern-primary-text'
             }`}
           >
             {joined ? 'Open' : action}
@@ -293,7 +293,7 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
 
       {listState === 'loading' ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.primaryText} />
         </View>
       ) : listState === 'failed' ? (
         // Nothing cached to fall back on: the whole panel says what happened
@@ -313,7 +313,7 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
                 setRefreshing(true);
                 void load(query, { silent: true });
               }}
-              tintColor={colors.primary}
+              tintColor={colors.primaryText}
             />
           }
           ListHeaderComponent={

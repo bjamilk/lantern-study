@@ -7,12 +7,13 @@ import { useScreenBottomPadding } from '../layout/Screen';
 import { useToastStore } from '../../stores/toastStore';
 import { useConfirmStore } from '../../stores/confirmStore';
 import { BackButton } from './BackButton';
+import { useTheme } from '../../theme';
 
 type Variant = 'primary' | 'secondary' | 'accent' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const variantClass: Record<Variant, string> = {
-  primary: 'bg-lantern-primary active:bg-lantern-primary-dark',
+  primary: 'bg-lantern-primary-fill active:bg-lantern-primary-dark',
   secondary: 'bg-lantern-surface border border-lantern-border',
   accent: 'bg-lantern-accent active:opacity-90',
   ghost: 'bg-transparent',
@@ -134,8 +135,11 @@ export function ScreenHeader({
         <BackButton onPress={onBack} style={{ marginLeft: -8, marginRight: 4 }} />
       ) : null}
       <View className="flex-1 min-w-0 pr-3">
-        <Text className="text-2xl font-bold text-lantern-text tracking-tight">{title}</Text>
-        {subtitle ? <Text className="text-sm text-lantern-text-secondary mt-0.5">{subtitle}</Text> : null}
+        {/* `title` step: 22/28/-0.02em/700. Was `text-2xl` — 21 sp at this
+            project's NativeWind rem of 14, i.e. a size that existed nowhere in
+            the scale. */}
+        <Text className="text-title font-bold text-lantern-text">{title}</Text>
+        {subtitle ? <Text className="text-caption text-lantern-text-secondary mt-0.5">{subtitle}</Text> : null}
       </View>
       {right}
     </View>
@@ -149,16 +153,23 @@ export function Avatar({ name, size = 40 }: { name?: string; size?: number }) {
       style={{ width: size, height: size }}
       className="rounded-full bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center"
     >
-      <Text className="font-semibold text-lantern-primary">{initial}</Text>
+      <Text className="font-semibold text-lantern-primary-text">{initial}</Text>
     </View>
   );
 }
 
 export function Badge({ count }: { count: number }) {
+  const { colors } = useTheme();
   if (!count || count <= 0) return null;
   return (
-    <View className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-lantern-error items-center justify-center">
-      <Text className="text-[10px] font-bold text-white">{count > 99 ? '99+' : count}</Text>
+    // `errorStrong`, not `error`: the fill has to carry a WHITE numeral, and
+    // dark mode's `error` (#ef4444) is only 3.76:1 under white.
+    <View
+      style={{ backgroundColor: colors.errorStrong }}
+      className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full items-center justify-center"
+    >
+      {/* 11 sp is the floor; the badge was the app's other sub-floor string. */}
+      <Text className="text-label font-bold tracking-normal text-white">{count > 99 ? '99+' : count}</Text>
     </View>
   );
 }
@@ -180,7 +191,7 @@ export function SkeletonCard() {
 const toastBg: Record<string, string> = {
   success: 'bg-emerald-600',
   error: 'bg-red-600',
-  info: 'bg-lantern-primary',
+  info: 'bg-lantern-primary-fill',
 };
 
 export function ToastHost() {
@@ -241,7 +252,7 @@ export function ConfirmSheetHost() {
             </Pressable>
             <Pressable
               onPress={handleConfirm}
-              className={`flex-1 py-3 rounded-2xl items-center ${options.danger ? 'bg-red-500' : 'bg-lantern-primary'}`}
+              className={`flex-1 py-3 rounded-2xl items-center ${options.danger ? 'bg-red-500' : 'bg-lantern-primary-fill'}`}
             >
               <Text className="font-semibold text-white">{options.confirmLabel || 'Confirm'}</Text>
             </Pressable>
@@ -259,3 +270,15 @@ export { LoadingState, ErrorState, InlineErrorBanner, EmptyState } from './Async
 export { IconButton } from './IconButton';
 export { BackButton } from './BackButton';
 export { AppIcon, type AppIconName, isAppIconName, strokeWidthForSize } from './AppIcon';
+// The six type steps, for screens built out of StyleSheet rather than classes.
+export {
+  T,
+  Display,
+  Title,
+  Heading,
+  Body,
+  Caption,
+  Label,
+  type TypeProps,
+  type TypeTone,
+} from './Text';

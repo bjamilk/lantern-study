@@ -101,7 +101,7 @@ export function CourseMultiSelect({
         <View style={styles.chips}>
           {selected.map(course => (
             <View key={course.id} style={[styles.chip, { backgroundColor: colors.primaryBackground }]}>
-              <Text style={[styles.chipText, { color: colors.primary }]} numberOfLines={1}>
+              <Text style={[styles.chipText, { color: colors.primaryText }]} numberOfLines={1}>
                 {formatCourseLabel(course)}
               </Text>
               {!disabled ? (
@@ -111,7 +111,7 @@ export function CourseMultiSelect({
                   accessibilityRole="button"
                   accessibilityLabel={`Remove ${course.code}`}
                 >
-                  <AppIcon name="close" size={14} color={colors.primary} />
+                  <AppIcon name="close" size={14} color={colors.primaryText} />
                 </Pressable>
               ) : null}
             </View>
@@ -138,7 +138,7 @@ export function CourseMultiSelect({
           style={[styles.searchInput, { color: colors.inputText }]}
           accessibilityLabel="Search courses"
         />
-        {searching ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+        {searching ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
       </View>
 
       {showDropdown && (options.length > 0 || addCode || createCode) ? (
@@ -158,7 +158,7 @@ export function CourseMultiSelect({
                   </Text>
                 ) : null}
               </View>
-              <AppIcon name="add-circle" size={18} color={colors.primary} />
+              <AppIcon name="add-circle" size={18} color={colors.primaryText} />
             </Pressable>
           ))}
 
@@ -171,8 +171,8 @@ export function CourseMultiSelect({
               accessibilityRole="button"
               style={[styles.row, { borderBottomColor: colors.border }]}
             >
-              <AppIcon name="add-circle" size={18} color={colors.primary} />
-              <Text style={[styles.addText, { color: colors.primary }]}>Add ‘{addCode}’</Text>
+              <AppIcon name="add-circle" size={18} color={colors.primaryText} />
+              <Text style={[styles.addText, { color: colors.primaryText }]}>Add ‘{addCode}’</Text>
             </Pressable>
           ) : null}
 
@@ -201,7 +201,7 @@ export function CourseMultiSelect({
                   onPress={() => void submitCreate()}
                   disabled={creating}
                   accessibilityRole="button"
-                  style={[styles.createSubmit, { backgroundColor: colors.primary, opacity: creating ? 0.6 : 1 }]}
+                  style={[styles.createSubmit, { backgroundColor: colors.primaryFill, opacity: creating ? 0.6 : 1 }]}
                 >
                   {creating ? (
                     <ActivityIndicator size="small" color={colors.textInverse} />

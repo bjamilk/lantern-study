@@ -62,7 +62,7 @@ export default function AddInvestmentScreen() {
           <AppIcon name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Add Investment</Text>
-        <TouchableOpacity style={styles.saveButton} onPress={() => void handleSubmit()} disabled={isLoading}>
+        <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primaryFill }]} onPress={() => void handleSubmit()} disabled={isLoading}>
           <Text style={styles.saveButtonText}>Save</Text>
         </TouchableOpacity>
       </View>

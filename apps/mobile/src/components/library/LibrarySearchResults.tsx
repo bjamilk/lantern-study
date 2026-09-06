@@ -39,7 +39,7 @@ function MatchBadge({ field }: { field?: LibrarySearchMatchField }) {
   if (!label) return null;
   return (
     <View className="px-1.5 py-0.5 rounded-full bg-lantern-background-secondary self-start mt-1">
-      <Text className="text-[10px] text-lantern-text-secondary">{label}</Text>
+      <Text className="text-label text-lantern-text-secondary">{label}</Text>
     </View>
   );
 }
@@ -71,7 +71,7 @@ function ResultRow({
         indent ? 'ml-6' : ''
       }`}
     >
-      <AppIcon name={icon} size={18} color={colors.primary} style={{ marginTop: 1 }} />
+      <AppIcon name={icon} size={18} color={colors.primaryText} style={{ marginTop: 1 }} />
       <View className="flex-1 min-w-0">
         <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
           {title || 'Untitled'}
@@ -143,7 +143,7 @@ export function LibrarySearchResults({
       contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: bottomPadding }}
     >
       <View className="flex-row items-center gap-2 mb-2">
-        {searching ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+        {searching ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
         <Text className="text-xs text-lantern-text-secondary flex-1" numberOfLines={2}>
           {searching
             ? `Searching for “${query.trim()}”…`

@@ -158,7 +158,7 @@ export default function RecurringScreen() {
               <TouchableOpacity
                 key={t}
                 onPress={() => setType(t)}
-                className={`flex-1 py-2.5 rounded-lg items-center ${type === t ? 'bg-lantern-primary' : ''}`}
+                className={`flex-1 py-2.5 rounded-lg items-center ${type === t ? 'bg-lantern-primary-fill' : ''}`}
               >
                 <Text className={`text-sm font-medium ${type === t ? 'text-white' : 'text-lantern-text-secondary'}`}>
                   {t === 'expense' ? 'Expense' : 'Income'}
@@ -177,7 +177,7 @@ export default function RecurringScreen() {
                 onPress={() => setFrequency(f)}
                 className={`flex-1 py-2.5 rounded-xl items-center border ${frequency === f ? 'border-lantern-primary bg-lantern-primary-background' : 'border-lantern-border bg-lantern-surface'}`}
               >
-                <Text className={`text-sm ${frequency === f ? 'text-lantern-primary font-semibold' : 'text-lantern-text-secondary'}`}>
+                <Text className={`text-sm ${frequency === f ? 'text-lantern-primary-text font-semibold' : 'text-lantern-text-secondary'}`}>
                   {f === 'monthly' ? 'Monthly' : 'Weekly'}
                 </Text>
               </TouchableOpacity>
@@ -192,7 +192,7 @@ export default function RecurringScreen() {
                 onPress={() => setCategory(cat.id)}
                 className={`px-3 py-2 rounded-xl border ${category === cat.id ? 'border-lantern-primary bg-lantern-primary-background' : 'border-lantern-border bg-lantern-surface'}`}
               >
-                <Text className={`text-xs ${category === cat.id ? 'text-lantern-primary font-semibold' : 'text-lantern-text-secondary'}`}>
+                <Text className={`text-xs ${category === cat.id ? 'text-lantern-primary-text font-semibold' : 'text-lantern-text-secondary'}`}>
                   {cat.icon} {cat.label.split('/')[0].split('&')[0].split('(')[0].trim()}
                 </Text>
               </TouchableOpacity>

@@ -65,7 +65,7 @@ export function SellerCouponsModal({ visible, onClose }: Props) {
         <View className="bg-lantern-surface rounded-t-3xl max-h-[85%]">
           <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold text-lantern-text">Seller coupons</Text>
-            <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
+            <Pressable onPress={onClose}><Text className="text-lantern-primary-text font-semibold">Close</Text></Pressable>
           </View>
           <ScrollView
             className="p-4"
@@ -85,7 +85,7 @@ export function SellerCouponsModal({ visible, onClose }: Props) {
                 <Pressable
                   key={t}
                   onPress={() => setDiscountType(t)}
-                  className={`flex-1 py-2 rounded-lg items-center ${discountType === t ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'}`}
+                  className={`flex-1 py-2 rounded-lg items-center ${discountType === t ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary'}`}
                 >
                   <Text className={discountType === t ? 'text-white text-xs font-semibold' : 'text-lantern-text-secondary text-xs'}>
                     {t === 'percent' ? '% off' : '₦ off'}

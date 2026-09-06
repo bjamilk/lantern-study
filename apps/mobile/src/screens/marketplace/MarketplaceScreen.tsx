@@ -648,7 +648,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           </Pressable>
           {own ? (
             <View className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-lantern-primary/90">
-              <Text className="text-[10px] font-semibold text-white">Yours</Text>
+              <Text className="text-label font-semibold text-white">Yours</Text>
             </View>
           ) : null}
         </View>
@@ -656,7 +656,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
             {item.title}
           </Text>
-          <Text className="text-[10px] text-lantern-text-tertiary mt-0.5" numberOfLines={1}>
+          <Text className="text-label text-lantern-text-tertiary mt-0.5" numberOfLines={1}>
             {listingTypeLabel(item, getCategoryInfo(item.category).name)}
           </Text>
           {(item.rating_count ?? 0) > 0 && item.rating_avg != null ? (
@@ -674,7 +674,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               browse row and nothing rendered it. 'new' shows no chip. */}
           {shouldShowTrustChip((item.seller as { trustLevel?: string } | undefined)?.trustLevel) ? (
             <View className="mt-1 self-start rounded-full bg-lantern-primary/15 px-1.5 py-0.5">
-              <Text className="text-[10px] font-semibold text-lantern-primary">
+              <Text className="text-label font-semibold text-lantern-primary-text">
                 {trustLabel((item.seller as { trustLevel?: string } | undefined)?.trustLevel)}
               </Text>
             </View>
@@ -687,7 +687,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               </Text>
             </View>
           ) : (
-            <Text className="text-base font-bold text-lantern-primary mt-1">
+            <Text className="text-base font-bold text-lantern-primary-text mt-1">
               {formatPrice(item.price)}
             </Text>
           )}
@@ -717,7 +717,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
               >
                 <ListingImage uri={item.images?.[0]} className="w-full h-20" />
-                <Text numberOfLines={2} className="text-[10px] p-1.5 text-lantern-text">
+                <Text numberOfLines={2} className="text-label p-1.5 text-lantern-text">
                   {item.title}
                 </Text>
               </Pressable>
@@ -736,7 +736,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
               >
                 <ListingImage uri={item.images?.[0]} className="w-full h-20" />
-                <Text numberOfLines={2} className="text-[10px] p-1.5 text-lantern-text">
+                <Text numberOfLines={2} className="text-label p-1.5 text-lantern-text">
                   {item.title}
                 </Text>
               </Pressable>
@@ -897,7 +897,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               accessibilityRole="button"
               accessibilityLabel="Sell an item"
               hitSlop={4}
-              className="h-9 flex-1 flex-row items-center justify-center gap-1 px-2 rounded-lg bg-lantern-primary"
+              className="h-9 flex-1 flex-row items-center justify-center gap-1 px-2 rounded-lg bg-lantern-primary-fill"
             >
               <AppIcon name="add" size={16} color="#fff" />
               <Text className="text-sm font-semibold text-white">Sell</Text>
@@ -953,7 +953,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 // handed to the neighbouring row above.
                 className="min-h-[44px] justify-center px-3 py-2"
               >
-                <Text className="text-xs font-medium text-lantern-primary">Clear recent searches</Text>
+                <Text className="text-xs font-medium text-lantern-primary-text">Clear recent searches</Text>
               </Pressable>
             ) : null}
           </View>
@@ -1009,7 +1009,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             >
               <Text
                 numberOfLines={1}
-                className={`text-sm font-medium ${activeTab === tab ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}
+                className={`text-sm font-medium ${activeTab === tab ? 'text-lantern-primary-text' : 'text-lantern-text-secondary'}`}
               >
                 {marketplaceTabLabel(tab)}
               </Text>
@@ -1037,7 +1037,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                     className={`text-[11px] ${
                       index === taxonomyPath.length - 1
                         ? 'font-semibold text-lantern-text'
-                        : 'text-lantern-primary'
+                        : 'text-lantern-primary-text'
                     }`}
                   >
                     {crumb.label}
@@ -1071,7 +1071,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             hitSlop={6}
             className={
               openPanel === 'filters' || activeFilterCount > 0
-                ? 'flex-row items-center gap-1 min-h-[32px] px-2.5 rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-dark/40'
+                ? 'flex-row items-center gap-1 min-h-[32px] px-2.5 rounded-lg bg-lantern-primary-background'
                 : 'flex-row items-center gap-1 min-h-[32px] px-2.5 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
             }
           >
@@ -1083,15 +1083,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             <Text
               className={
                 activeFilterCount > 0
-                  ? 'text-[11px] font-medium text-lantern-primary'
+                  ? 'text-[11px] font-medium text-lantern-primary-text'
                   : 'text-[11px] font-medium text-lantern-text-secondary'
               }
             >
               Filters
             </Text>
             {activeFilterCount > 0 ? (
-              <View className="ml-0.5 px-1.5 py-0.5 rounded-full bg-lantern-primary">
-                <Text className="text-[9px] font-bold text-white">{activeFilterCount}</Text>
+              <View className="ml-0.5 px-1.5 py-0.5 rounded-full bg-lantern-primary-fill">
+                <Text className="text-[11px] font-bold text-white">{activeFilterCount}</Text>
               </View>
             ) : null}
             <AppIcon
@@ -1108,9 +1108,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             accessibilityRole="button"
             accessibilityLabel="Save this search as an alert"
             hitSlop={6}
-            className="min-h-[32px] px-2.5 justify-center rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-dark/40"
+            className="min-h-[32px] px-2.5 justify-center rounded-lg bg-lantern-primary-background"
           >
-            <Text className="text-[11px] font-medium text-lantern-primary">Save search</Text>
+            <Text className="text-[11px] font-medium text-lantern-primary-text">Save search</Text>
           </Pressable>
         </View>
         ) : null}
@@ -1136,7 +1136,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   hitSlop={{ top: 6, bottom: 6 }}
                   className="min-h-[32px] px-2 justify-center"
                 >
-                  <Text className="text-xs font-semibold text-lantern-primary">Reset filters</Text>
+                  <Text className="text-xs font-semibold text-lantern-primary-text">Reset filters</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -1156,7 +1156,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   accessibilityLabel="All categories"
                   accessibilityState={{ selected: !selectedCategory }}
                   hitSlop={6}
-                  className={`min-h-[32px] justify-center px-3 py-1.5 rounded-full border ${!selectedCategory ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'}`}
+                  className={`min-h-[32px] justify-center px-3 py-1.5 rounded-full border ${!selectedCategory ? 'bg-lantern-primary-fill border-lantern-primary' : 'border-lantern-border'}`}
                 >
                   <Text className={`text-xs font-medium ${!selectedCategory ? 'text-white' : 'text-lantern-text-secondary'}`}>All</Text>
                 </Pressable>
@@ -1169,7 +1169,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                     accessibilityState={{ selected: selectedCategory === cat.id }}
                     hitSlop={6}
                     className={`min-h-[32px] justify-center px-3 py-1.5 rounded-full border ${
-                      selectedCategory === cat.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+                      selectedCategory === cat.id ? 'bg-lantern-primary-fill border-lantern-primary' : 'border-lantern-border'
                     }`}
                   >
                     <Text className={`text-xs font-medium ${selectedCategory === cat.id ? 'text-white' : 'text-lantern-text-secondary'}`}>
@@ -1227,7 +1227,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: sortBy === 'trending' }}
-                className={`px-3 py-1.5 rounded-lg ${sortBy === 'trending' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'trending' ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
                 <Text className={`text-xs ${sortBy === 'trending' ? 'text-white' : 'text-lantern-text-secondary'}`}>
                   Trending
@@ -1240,7 +1240,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: sortBy === 'created_at' }}
-                className={`px-3 py-1.5 rounded-lg ${sortBy === 'created_at' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'created_at' ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
                 <Text className={`text-xs ${sortBy === 'created_at' ? 'text-white' : 'text-lantern-text-secondary'}`}>
                   Newest {sortBy === 'created_at' && sortOrder === 'asc' ? '↑' : '↓'}
@@ -1250,7 +1250,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 onPress={() => setSortBy('price')}
                 accessibilityRole="button"
                 accessibilityState={{ selected: sortBy === 'price' }}
-                className={`px-3 py-1.5 rounded-lg ${sortBy === 'price' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'price' ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
                 <Text className={`text-xs ${sortBy === 'price' ? 'text-white' : 'text-lantern-text-secondary'}`}>
                   Price
@@ -1263,7 +1263,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: sortBy === 'rating' }}
-                className={`px-3 py-1.5 rounded-lg ${sortBy === 'rating' ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                className={`px-3 py-1.5 rounded-lg ${sortBy === 'rating' ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
               >
                 <Text className={`text-xs ${sortBy === 'rating' ? 'text-white' : 'text-lantern-text-secondary'}`}>
                   Top rated
@@ -1283,7 +1283,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     accessibilityLabel={`Condition ${option.label}`}
-                    className={`px-3 py-1.5 rounded-lg ${selected ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                    className={`px-3 py-1.5 rounded-lg ${selected ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
                   >
                     <Text className={`text-xs ${selected ? 'text-white' : 'text-lantern-text-secondary'}`}>
                       {option.label}
@@ -1303,7 +1303,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     accessibilityLabel={value ? `Rated ${value} stars and up` : 'Any rating'}
-                    className={`px-3 py-1.5 rounded-lg ${selected ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
+                    className={`px-3 py-1.5 rounded-lg ${selected ? 'bg-lantern-primary-fill' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
                   >
                     <Text className={`text-xs ${selected ? 'text-white' : 'text-lantern-text-secondary'}`}>
                       {value ? `★ ${value}+` : 'Any'}
@@ -1411,7 +1411,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                     {item.avatarUrl ? (
                       <ListingImage uri={item.avatarUrl} className="w-full h-full" />
                     ) : (
-                      <Text className="font-bold text-lantern-primary">
+                      <Text className="font-bold text-lantern-primary-text">
                         {item.shopName.charAt(0).toUpperCase()}
                       </Text>
                     )}

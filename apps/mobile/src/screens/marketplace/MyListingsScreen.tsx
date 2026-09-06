@@ -291,7 +291,7 @@ export function MyListingsScreen({
           >
             <Text
               className={`text-sm font-medium ${
-                activeTab === tab.id ? 'text-lantern-primary' : 'text-lantern-text-secondary'
+                activeTab === tab.id ? 'text-lantern-primary-text' : 'text-lantern-text-secondary'
               }`}
             >
               {tab.label} ({tabCounts[tab.id]})
@@ -401,7 +401,7 @@ export function MyListingsScreen({
                   <Text className="text-sm font-semibold text-lantern-text" numberOfLines={1}>
                     {item.title}
                   </Text>
-                  <Text className="text-sm font-bold text-lantern-primary mt-0.5">
+                  <Text className="text-sm font-bold text-lantern-primary-text mt-0.5">
                     {formatPrice(item.price)}
                   </Text>
                   <Text className="text-[11px] text-lantern-text-secondary mt-0.5">
@@ -489,7 +489,7 @@ function Kpi({ label, value, accent }: { label: string; value: string; accent?: 
   return (
     <View className="px-3 py-2 rounded-lg bg-lantern-surface border border-lantern-border min-w-[45%] flex-1">
       <Text className="text-[11px] text-lantern-text-secondary">{label}</Text>
-      <Text className={`font-bold ${accent ? 'text-lantern-primary' : 'text-lantern-text'}`}>{value}</Text>
+      <Text className={`font-bold ${accent ? 'text-lantern-primary-text' : 'text-lantern-text'}`}>{value}</Text>
     </View>
   );
 }

@@ -214,7 +214,7 @@ export function NoteImageGallery({
       <ScrollView className="max-h-[480px] p-3" nestedScrollEnabled>
         {loading && (
           <View className="py-8 items-center">
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.primaryText} />
           </View>
         )}
         {error && !loading && (

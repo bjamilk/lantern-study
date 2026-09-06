@@ -47,7 +47,7 @@ export function RightsAttestationCheckbox({ value, onChange, error, disabled }: 
         <Text className="flex-1 text-xs leading-relaxed text-lantern-text">{RIGHTS_ATTESTATION_TEXT}</Text>
       </Pressable>
       <Pressable onPress={openSellerTerms} hitSlop={6} className="self-start mt-2 ml-8" accessibilityRole="link">
-        <Text className="text-xs font-semibold text-lantern-primary">
+        <Text className="text-xs font-semibold text-lantern-primary-text">
           Read the {LEGAL_DOCUMENT_TITLES['seller-terms']}
         </Text>
       </Pressable>
